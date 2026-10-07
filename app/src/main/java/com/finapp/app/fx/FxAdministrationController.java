@@ -134,20 +134,20 @@ public class FxAdministrationController {
             @NotBlank String destination,
             @NotBlank String purpose,
             @NotEmpty List<@NotBlank String> providers,
-            @NotBlank String spread,
-            @NotBlank String markup,
+            @NotBlank @Size(min = 1, max = 32) String spread,
+            @NotBlank @Size(min = 1, max = 32) String markup,
             @NotNull Integer rateScale,
             @NotBlank String rateRounding,
             @NotBlank String amountRounding,
             @NotBlank String marginRounding,
             @NotNull Long windowSeconds,
             @NotNull Long coverMarginSeconds,
-            @NotBlank String band,
+            @NotBlank @Size(min = 1, max = 32) String band,
             @NotNull Long referenceMaxAgeSeconds,
-            @NotBlank String sourceMinimum,
-            @NotBlank String sourceMaximum,
-            @NotBlank String destinationMinimum,
-            @NotBlank String destinationMaximum) {}
+            @NotBlank @Size(min = 1, max = 32) String sourceMinimum,
+            @NotBlank @Size(min = 1, max = 32) String sourceMaximum,
+            @NotBlank @Size(min = 1, max = 32) String destinationMinimum,
+            @NotBlank @Size(min = 1, max = 32) String destinationMaximum) {}
 
     /** A decision's reason. */
     @ClosedBody

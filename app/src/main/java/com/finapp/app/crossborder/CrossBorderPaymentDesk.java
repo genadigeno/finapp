@@ -158,7 +158,10 @@ public final class CrossBorderPaymentDesk {
         if (authorized.takenOver()) {
             boolean renewed = transactions.inTransaction(unitOfWork -> execution.renewPermit(unitOfWork, authorized.dispatched()));
             if (!renewed) {
-                // A cancellation requested a recall: an instruction with a recall requested is never re-sent (D22).
+                // Nothing to re-send: a cancellation requested a recall (an instruction with a recall requested is
+                // never re-sent, D22), or the credit is already concluded or received - a concluded instruction
+                // re-sent would be paid by a provider that never saw it, the hold already released (the Phase 9 -> 10
+                // transition). The payment is answered as it stands.
                 transactions.inTransaction(unitOfWork -> {
                     executor.complete(unitOfWork, key, true, StoredResponse.of(
                             ("OK|" + authorized.payment().id()).getBytes(StandardCharsets.UTF_8), "text/plain"));

@@ -1,5 +1,6 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.api.DecimalText;
 import com.finapp.fx.AvailabilitySubject;
 import com.finapp.fx.FxAvailability;
 import com.finapp.fx.FxErrorCode;
@@ -27,7 +28,6 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.MonetaryException;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.RoundingPolicy;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
@@ -245,21 +245,21 @@ public final class FxAdministrationDesk {
                                                 new PricingPair(
                                                         source,
                                                         destination,
-                                                        Margin.of(pair.spread()),
-                                                        Margin.of(pair.markup()),
+                                                        Margin.of(DecimalText.parse(pair.spread()).toPlainString()),
+                                                        Margin.of(DecimalText.parse(pair.markup()).toPlainString()),
                                                         pair.rateScale(),
                                                         RoundingPolicy.valueOf(pair.rateRounding()),
                                                         RoundingPolicy.valueOf(pair.amountRounding()),
                                                         RoundingPolicy.valueOf(pair.marginRounding()),
                                                         new NotionalBounds(
-                                                                Money.of(new BigDecimal(pair.sourceMinimum()), source),
-                                                                Money.of(new BigDecimal(pair.sourceMaximum()), source)),
+                                                                Money.of(DecimalText.parse(pair.sourceMinimum()), source),
+                                                                Money.of(DecimalText.parse(pair.sourceMaximum()), source)),
                                                         new NotionalBounds(
-                                                                Money.of(new BigDecimal(pair.destinationMinimum()), destination),
-                                                                Money.of(new BigDecimal(pair.destinationMaximum()), destination))),
+                                                                Money.of(DecimalText.parse(pair.destinationMinimum()), destination),
+                                                                Money.of(DecimalText.parse(pair.destinationMaximum()), destination))),
                                                 Duration.ofSeconds(pair.windowSeconds()),
                                                 Duration.ofSeconds(pair.coverMarginSeconds()),
-                                                new BigDecimal(pair.band()),
+                                                DecimalText.parse(pair.band()),
                                                 Duration.ofSeconds(pair.referenceMaxAgeSeconds()));
                                     })
                             .toList();

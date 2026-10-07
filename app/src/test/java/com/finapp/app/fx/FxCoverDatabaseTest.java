@@ -59,8 +59,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -84,6 +87,7 @@ import org.springframework.test.context.DynamicPropertySource;
 @Order(Integer.MAX_VALUE - 1)
 @DisplayName("the FX cover: once, exactly the plan, however the provider answers (P9-TSK-012)")
 @SuppressWarnings("try")
+@ExtendWith(OutputCaptureExtension.class)
 class FxCoverDatabaseTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
@@ -109,6 +113,8 @@ class FxCoverDatabaseTest {
     @Autowired private OutboxWriter<Connection> outbox;
     @Autowired private AuditWriter<Connection> audit;
     @Autowired private IdGenerator ids;
+    @Autowired private com.finapp.fx.TradeStore trades;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meters;
 
     @DynamicPropertySource
     static void providerUrl(DynamicPropertyRegistry registry) throws Exception {
@@ -158,6 +164,11 @@ class FxCoverDatabaseTest {
         assertThat(scalar("SELECT provider_trade_ref || ':' || realised_sold_minor || ':' || realised_bought_minor"
                 + " || ':' || executed_off_plan FROM fx.cover_execution WHERE cover_id = ?", cover))
                 .matches("FT-[0-9a-f]{8}-\\d+:0:0:false");
+        assertThat(scalar("SELECT quoted_computed_minor || ':' || computed_deviation || ':' || executed_rate_coherent"
+                + " FROM fx.cover_execution WHERE cover_id = ?", cover))
+                .as("judged against the plan it executed: quoted at the plan's computed leg, executed at it, the rate"
+                        + " explaining the amounts")
+                .isEqualTo("108502:false:true");
         assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?", cover.toString()))
                 .as("both legs").isEqualTo(2);
         // Each leg IS its clearing line's copy, dated and pinned by the FX source's v1 (ADR-0067).
@@ -230,6 +241,106 @@ class FxCoverDatabaseTest {
         dispatch.hint(t1, Actor.SYSTEM);
         assertThat(count("SELECT count(*) FROM fx.cover_attempt WHERE cover_id = ?", cover))
                 .as("a hint naming the superseded T1 moves nothing").isEqualTo(2);
+        // The Phase 9 to 10 transition: the requote stored the counter its fresh firm quote stated, and the execution
+        // was judged against it - a legitimate re-price, no deviation.
+        assertThat(scalar("SELECT stated_counter_minor FROM fx.cover_attempt WHERE cover_id = ? AND attempt = 2", cover))
+                .isEqualTo("108410");
+        assertThat(scalar("SELECT quoted_computed_minor || ':' || computed_deviation || ':' || executed_rate_coherent"
+                + " FROM fx.cover_execution WHERE cover_id = ?", cover)).isEqualTo("108410:false:true");
+        // The superseded T1 is terminal for reconciliation's lookup whatever its cover went on to do; T2 is the cover.
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(trades.coverByClientReference(app, t1)).get()
+                    .isEqualTo(new com.finapp.fx.TradeStore.CoverByReference(cover, com.finapp.fx.CoverStatus.EXECUTED, true));
+            assertThat(trades.coverByClientReference(app, t2)).get()
+                    .isEqualTo(new com.finapp.fx.TradeStore.CoverByReference(cover, com.finapp.fx.CoverStatus.EXECUTED, false));
+        }
+    }
+
+    @Test
+    @DisplayName("the transition's finding: a FIXED_SOURCE EUR 1,000.00 whose firm counter is USD 1,085.02, executed at"
+            + " USD 1,075.00 on attempt 1 - booked as executed (a 10.02 realised loss), but flagged computed_deviation"
+            + " against the plan, the rate flagged incoherent, both counted and alerted naming identifiers only")
+    void aComputedLegOffItsFirmQuoteIsCaughtOnAttemptOne(CapturedOutput output) throws Exception {
+        String trade = booked("1000.00");
+        UUID cover = coverOf(trade);
+        double deviations = coverOutcome("computed_deviation");
+        double incoherent = coverOutcome("rate_incoherent");
+        double offPlan = coverOutcome("off_plan");
+        engine.deviateNextNovelExecution(1002);
+
+        dispatch.dispatchNow(cover, Actor.SYSTEM);
+
+        assertThat(status(cover)).isEqualTo("EXECUTED");
+        assertThat(scalar("SELECT quoted_computed_minor || ':' || computed_deviation || ':' || executed_off_plan || ':'"
+                + " || executed_rate_coherent || ':' || realised_bought_minor FROM fx.cover_execution WHERE cover_id = ?",
+                cover)).isEqualTo("108502:true:false:false:-1002");
+        assertThat(coverLines(cover)).as("the money as the provider executed it - FX_POSITION still closed exactly")
+                .containsExactly("FX_POSITION EUR DEBIT 100000", "FX_PROVIDER_CLEARING EUR CREDIT 100000",
+                        "FX_PROVIDER_CLEARING USD DEBIT 107500", "FX_REALISED_LOSSES USD DEBIT 1002",
+                        "FX_POSITION USD CREDIT 108502");
+        assertThat(positionNet(trade, "USD")).isZero();
+        assertThat(coverOutcome("computed_deviation") - deviations).as("counted").isEqualTo(1.0);
+        assertThat(coverOutcome("rate_incoherent") - incoherent).isEqualTo(1.0);
+        assertThat(coverOutcome("off_plan") - offPlan).as("the fixed leg held: not off plan").isZero();
+        assertThat(scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event"
+                + " WHERE event_type = 'fx.FxCoverExecuted' AND aggregate_id = ?", cover))
+                .contains("\"computedDeviation\":\"true\"").contains("\"executedRateCoherent\":\"false\"");
+        assertThat(scalar("SELECT change_summary FROM platform.audit_record WHERE operation = 'fx.CoverExecuted'"
+                + " AND target_id = ?", cover.toString())).contains("computedDeviation=true");
+        assertTheAlertNamesIdentifiersOnly(output, cover, 1);
+    }
+
+    @Test
+    @DisplayName("after a requote: the fresh firm quote's stated counter (USD 1,084.10) is stored with T2 before the send,"
+            + " and T2 executed at USD 1,081.00 is flagged computed_deviation against THAT counter - never the original"
+            + " plan's - counted and alerted")
+    void aComputedLegOffItsFirmQuoteIsCaughtAfterARequote(CapturedOutput output) throws Exception {
+        String trade = booked("1000.00");
+        UUID cover = coverOf(trade);
+        engine.advance(Duration.ofMinutes(10));
+        dispatch.dispatchNow(cover, Actor.SYSTEM);
+        assertThat(status(cover)).isEqualTo("REJECTED");
+        engine.rate("EUR/USD", "1.0841000000");
+        double deviations = coverOutcome("computed_deviation");
+        engine.deviateNextNovelExecution(310);
+
+        dispatch.dispatchNow(cover, Actor.SYSTEM);
+
+        assertThat(status(cover)).isEqualTo("EXECUTED");
+        assertThat(scalar("SELECT coalesce(stated_counter_minor::text, 'none') FROM fx.cover_attempt WHERE cover_id = ?"
+                + " AND attempt = 1", cover)).as("attempt 1 executed its quote's plan").isEqualTo("none");
+        assertThat(scalar("SELECT stated_counter_minor FROM fx.cover_attempt WHERE cover_id = ? AND attempt = 2", cover))
+                .isEqualTo("108410");
+        assertThat(scalar("SELECT attempt || ':' || quoted_computed_minor || ':' || computed_deviation || ':'"
+                + " || executed_off_plan || ':' || executed_rate_coherent || ':' || realised_bought_minor"
+                + " FROM fx.cover_execution WHERE cover_id = ?", cover)).isEqualTo("2:108410:true:false:false:-402");
+        assertThat(coverLines(cover)).contains("FX_PROVIDER_CLEARING USD DEBIT 108100", "FX_REALISED_LOSSES USD DEBIT 402",
+                "FX_POSITION USD CREDIT 108502");
+        assertThat(positionNet(trade, "USD")).isZero();
+        assertThat(coverOutcome("computed_deviation") - deviations).isEqualTo(1.0);
+        assertTheAlertNamesIdentifiersOnly(output, cover, 2);
+    }
+
+    @Test
+    @DisplayName("the execution is judged at birth for every writer (fx V010): quoted at anything but its attempt's firm"
+            + " quote, a deviation flag contradicting the amounts, or no rate verdict - each refused by the database")
+    void theExecutionIsJudgedForEveryWriter() throws Exception {
+        UUID unsent = coverOf(booked("1000.00"));
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            try (java.sql.Statement statement = migrator.createStatement()) {
+                refusedNamed(statement, executionInsert(unsent, "q.position_destination_minor", "false", "true"),
+                        "cover_execution_deviation_is_the_computed_leg");
+                refusedNamed(statement, executionInsert(unsent, "NULL", "false", "true"), "firm quote");
+                refusedNamed(statement, executionInsert(unsent, "q.position_destination_minor - 1002", "false", "true"),
+                        "firm quote");
+                refusedNamed(statement, executionInsert(unsent, "q.position_destination_minor", "true", "NULL"),
+                        "executed rate");
+                statement.execute(executionInsert(unsent, "q.position_destination_minor", "true", "false"));
+            } finally {
+                migrator.rollback();
+            }
+        }
     }
 
     @Test
@@ -346,7 +457,7 @@ class FxCoverDatabaseTest {
             UUID reversal = tradeReversals.propose(app, com.finapp.fx.FxTradeId.of(UUID.fromString(trade)),
                     new Actor(UUID.randomUUID().toString(), com.finapp.platform.security.ActorType.EMPLOYEE),
                     "the fixture's erroneous conversion", correlation).reversalId();
-            tradeReversals.approve(app, reversal,
+            tradeReversals.approve(app, com.finapp.fx.FxTradeId.of(UUID.fromString(trade)), reversal,
                     new Actor(UUID.randomUUID().toString(), com.finapp.platform.security.ActorType.EMPLOYEE),
                     "checked", correlation);
             app.commit();
@@ -480,6 +591,51 @@ class FxCoverDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+
+    private double coverOutcome(String outcome) {
+        io.micrometer.core.instrument.Counter counter = meters.find(FxCoverMetrics.COVER)
+                .tag("provider", "fx-sim-a").tag("type", "cover").tag("outcome", outcome).counter();
+        assertThat(counter).as("finapp.fx.cover{outcome=%s} is registered", outcome).isNotNull();
+        return counter.count();
+    }
+
+    /** The deviation's alert names the cover, its attempt and the provider - never an amount or a rate. */
+    private static void assertTheAlertNamesIdentifiersOnly(CapturedOutput output, UUID cover, int attempt) {
+        List<String> alerts = output.getAll().lines()
+                .filter(line -> line.contains("ALERT: cover " + cover + " attempt " + attempt)
+                        && line.contains("computed leg off the firm quote"))
+                .toList();
+        assertThat(alerts).as("one ERROR alert for the deviation").hasSize(1);
+        assertThat(alerts.getFirst()).contains("ERROR");
+        String message = alerts.getFirst().substring(alerts.getFirst().indexOf("ALERT:")).replace(cover.toString(), "<cover>");
+        assertThat(message).as("identifiers only: the cover, its attempt, the provider - no amount, rate or reference")
+                .matches("ALERT: cover <cover> attempt " + attempt + " at provider fx-sim-a executed its computed leg off"
+                        + " the firm quote it was executed under - booked as executed, realised result posted(\\W.*)?");
+    }
+
+    /** A raw execution fact for {@code cover}'s attempt 1, its computed leg 10.02 under the plan's. */
+    private static String executionInsert(UUID cover, String quoted, String deviation, String coherent) {
+        return "INSERT INTO fx.cover_execution (cover_id, attempt, client_reference, provider_code, provider_trade_ref,"
+                + " fixed_side, sold_currency, sold_minor, sold_scale, bought_currency, bought_minor, bought_scale,"
+                + " executed_rate, value_date, plan_sold_minor, plan_bought_minor, realised_sold_minor,"
+                + " realised_bought_minor, executed_off_plan, recorded_on, correlation_id, quoted_computed_minor,"
+                + " computed_deviation, executed_rate_coherent)"
+                + " SELECT c.id, 1, a.client_reference, c.provider_code, 'FT-raw-' || substr(md5(random()::text), 1, 12),"
+                + " c.fixed_side, q.source_currency, q.position_source_minor, q.source_scale, q.destination_currency,"
+                + " q.position_destination_minor - 1002, q.destination_scale, 1.085024, current_date,"
+                + " q.position_source_minor, q.position_destination_minor, 0, -1002, false, current_date, c.correlation_id, "
+                + quoted + ", " + deviation + ", " + coherent
+                + " FROM fx.cover c JOIN fx.cover_attempt a ON a.cover_id = c.id AND a.attempt = 1"
+                + " JOIN fx.quote q ON q.id = c.quote_id WHERE c.id = '" + cover + "'";
+    }
+
+    /** Refused, its message naming {@code named}; the statement's savepoint rolled back. */
+    private static void refusedNamed(java.sql.Statement statement, String sql, String named) throws SQLException {
+        statement.execute("SAVEPOINT refused");
+        assertThatThrownBy(() -> statement.execute(sql)).as(named)
+                .isInstanceOfSatisfying(SQLException.class, e -> assertThat(e.getMessage()).contains(named));
+        statement.execute("ROLLBACK TO SAVEPOINT refused");
+    }
 
     private String booked(String amount) throws Exception {
         FxTestClient client = new FxTestClient(port);

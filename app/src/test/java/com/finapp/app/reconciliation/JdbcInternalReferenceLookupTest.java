@@ -11,6 +11,7 @@ import com.finapp.reconciliation.InternalClassification;
 import com.finapp.reconciliation.InternalReferenceLookup;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +83,58 @@ class JdbcInternalReferenceLookupTest {
             };
             assertThat(JdbcInternalReferenceLookup.classifyCover(status)).as("cover %s", status).isEqualTo(expected);
         }
+    }
+
+    @Test
+    @DisplayName("a SUPERSEDED cover attempt is TERMINAL whatever its cover went on to do (the Phase 9 to 10 transition):"
+            + " T1 rejected and requoted, T2 executed - a provider line naming T1 contradicts a rejection at once, never a"
+            + " 24 h MISSING_INTERNAL read off the cover's later execution; the current attempt is its cover's status")
+    void aSupersededCoverAttemptIsTerminal() {
+        for (com.finapp.fx.CoverStatus status : com.finapp.fx.CoverStatus.values()) {
+            UUID cover = UUID.randomUUID();
+            assertThat(JdbcInternalReferenceLookup.classifyCover(
+                            new com.finapp.fx.TradeStore.CoverByReference(cover, status, true)))
+                    .as("superseded, its cover %s", status).isEqualTo(InternalClassification.TERMINAL);
+            assertThat(JdbcInternalReferenceLookup.classifyCover(
+                            new com.finapp.fx.TradeStore.CoverByReference(cover, status, false)))
+                    .as("current, its cover %s", status).isEqualTo(JdbcInternalReferenceLookup.classifyCover(status));
+        }
+        // Through the lookup itself: the item's currency-qualified COVER_REF resolves to the superseded attempt.
+        UUID cover = UUID.randomUUID();
+        java.util.List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.finapp.fx.TradeStore covers = (com.finapp.fx.TradeStore) java.lang.reflect.Proxy.newProxyInstance(
+                com.finapp.fx.TradeStore.class.getClassLoader(), new Class<?>[] {com.finapp.fx.TradeStore.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return method.getName().equals("toString") ? "covers" : null;
+                    }
+                    asked.add(method.getName() + ":" + args[1]);
+                    return Optional.of(new com.finapp.fx.TradeStore.CoverByReference(
+                            cover, com.finapp.fx.CoverStatus.EXECUTED, "T-superseded".equals(args[1])));
+                });
+        JdbcInternalReferenceLookup lookup = new JdbcInternalReferenceLookup(
+                recording(com.finapp.payments.PaymentAttemptStore.class, "attempts", asked),
+                recording(com.finapp.payments.RefundStore.class, "refunds", asked),
+                recording(com.finapp.payments.DisputeStore.class, "disputes", asked),
+                recording(com.finapp.payments.WithdrawalStore.class, "withdrawals", asked),
+                recording(com.finapp.merchant.MerchantPayoutStore.class, "payouts", asked),
+                recording(com.finapp.payments.SchemeExecutionClaimStore.class, "claims", asked),
+                (uow, source) -> Optional.empty(),
+                covers,
+                (uow, source) -> Optional.empty(),
+                recording(com.finapp.payments.OutboundCreditStore.class, "outboundCredits", asked));
+        InternalReferenceLookup.InternalReference superseded = lookup.classify(null, new InternalReferenceLookup.LookupSubject(
+                Optional.empty(), java.util.Map.of(com.finapp.reconciliation.KeyKind.COVER_REF, "T-superseded:USD"),
+                Optional.empty()));
+        assertThat(superseded.classification()).isEqualTo(InternalClassification.TERMINAL);
+        assertThat(superseded.state()).contains(JdbcInternalReferenceLookup.SUPERSEDED_ATTEMPT);
+        assertThat(superseded.operationRef()).contains(cover.toString());
+        assertThat(lookup.classify(null, new InternalReferenceLookup.LookupSubject(Optional.empty(),
+                        java.util.Map.of(com.finapp.reconciliation.KeyKind.COVER_REF, "T-current:USD"), Optional.empty()))
+                .classification())
+                .as("the executed attempt itself is the cover's completion")
+                .isEqualTo(InternalClassification.COMPLETED);
+        assertThat(asked).containsExactly("coverByClientReference:T-superseded", "coverByClientReference:T-current");
     }
 
     private static InternalClassification operationExpectation(String name) {

@@ -272,3 +272,7 @@ use), ADR-0048 (a hold is not a posting).
   fixed-side value and point 3's position legs, fixed the four-eyes cross-border return
   approval's missing multi-entry pre-lock in code and recorded it under point 9, and corrected
   the residual meter's tags.
+
+## Amended by the Phase 9 → 10 transition (2026-10-07)
+
+§9's multi-entry pre-lock now takes the union's accounts `FOR KEY SHARE` in id order before their projection rows — the order every posting already follows (the journal line's foreign key first) — because the exit review's pre-lock took the rows first and could deadlock against a wallet decider's `FOR UPDATE` (`JdbcBalanceProjection.lockInOrder`; `CrossBorderReturnDatabaseTest#thePreLockSharesKeysBeforeRows`). The cross-border completion locks the payment and then the quote before releasing the hold or posting (`OutboundCreditComposition.lockSubject`; `OutboundCreditResolutionDatabaseTest#theCompletionLocksTheQuoteBeforeTheFxPosition`). See [`reviews/PHASE_9_TO_10_TRANSITION.md`](../project/reviews/PHASE_9_TO_10_TRANSITION.md) and `PHASE_9_PLAN.md` §21.

@@ -315,3 +315,7 @@ retained), `INV-PAY-03` (provider vocabulary confined to format adapters).
   shape is accepted and surfaces at hop 2 as an unmatched remittance and its break - loud, never silent; refusing it
   at parse against the receiving source's own shape needs a rejection code (a settlement migration), left to a later
   task.
+
+## Amended by the Phase 9 → 10 transition (2026-10-07)
+
+A source's first rule-set version must date every kind its evidence settles (`SettledExpectationKinds`, composed in `app` from the source's declared position): a v1 without the cover legs' or the corridor credits' lags rolled back every money movement of that kind. With no `ACTIVE` version the money paths roll back until one is activated — the designed precondition, alerted, ruled by the transition rather than changed. See [`reviews/PHASE_9_TO_10_TRANSITION.md`](../project/reviews/PHASE_9_TO_10_TRANSITION.md) and `PHASE_9_PLAN.md` §21.

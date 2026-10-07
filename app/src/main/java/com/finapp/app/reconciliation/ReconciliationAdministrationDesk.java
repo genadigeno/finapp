@@ -280,7 +280,7 @@ public class ReconciliationAdministrationDesk {
                                     new RuleSetProposal.FeeTerms(
                                             ExternalLineType.valueOf(terms.lineType()),
                                             CurrencyCode.of(terms.currency()),
-                                            new BigDecimal(terms.rate()),
+                                            com.finapp.app.api.DecimalText.parse(terms.rate()),
                                             terms.fixedMinor(),
                                             terms.scale(),
                                             terms.roundingPolicy()))

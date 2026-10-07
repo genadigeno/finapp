@@ -68,6 +68,21 @@ Exposure
 Delinquency
 BNPL Agreement
 
+Credit Data
+Credit Data Source
+Credit Bureau Record
+Credit Attribute
+Decision Request
+Decision Snapshot
+Credit Assessment
+Affordability Assessment
+Credit Policy
+Policy Version
+Model Version
+Reason Code
+Underwriting Case
+Credit Product
+
 Money
 Currency
 Minor unit
@@ -146,7 +161,18 @@ guard. The machines they name are in
 [`FX_AND_CROSS_BORDER_LIFECYCLES.md`](FX_AND_CROSS_BORDER_LIFECYCLES.md).)* *(The Phase 9 exit review, `P9-DOC-001`,
 2026-10-07, added six: Posting Plan and Unwind to the FX books, and Cancellation Request, Recall,
 Cross-Border Return and Payee Check to the cross-border model — Phase 9 built each as a distinct
-concept, and neither list named one.)*
+concept, and neither list named one.)* *(The Phase 9 → 10 transition, 2026-10-07 —
+ADR-0084…0089 (`Proposed`), `PHASE_10_PLAN.md` §3 — added the fourteen Phase 10 terms in the
+credit block after BNPL Agreement: the data side (Credit Data, Credit Data Source, Credit Bureau
+Record, Credit Attribute), the request and its frozen input (Decision Request, Decision
+Snapshot), the figures (Credit Assessment, Affordability Assessment), policy and model as
+versioned data (Credit Policy, Policy Version, Model Version, Reason Code), the manual review
+(Underwriting Case) and the closed product vocabulary (Credit Product) — each keeping a
+distinction Phase 10 could collapse, `CLAUDE.md`'s Credit Score / Risk Score / Credit Decision /
+Underwriting made physical. Nothing of Phase 10 is built: each is the planned design, defined in
+the glossary with the same guard, and the machines are in `CREDIT_DECISIONING_LIFECYCLES.md`. The
+same transition settled `Risk Score`'s owner as `risk` (Phase 13), credit consuming a risk
+signal through a seam — the glossary's §10.)*
 
 ---
 

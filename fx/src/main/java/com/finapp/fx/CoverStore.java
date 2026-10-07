@@ -54,8 +54,19 @@ public interface CoverStore {
         }
     }
 
-    /** One attempt: our reference {@code T} and the provider quote it executes. */
-    record AttemptRow(UUID coverId, int attempt, String clientReference, String providerQuoteReference) {}
+    /**
+     * One attempt: our reference {@code T}, the provider quote it executes and - for an attempt priced by a fresh
+     * firm quote (a requote, an unwind's) - the counter that quote stated, in the computed leg's minor units
+     * (fx {@code V010}); empty for a COVER's attempt 1, which executes its quote's plan.
+     */
+    record AttemptRow(
+            UUID coverId, int attempt, String clientReference, String providerQuoteReference,
+            Optional<Long> statedCounterMinor) {
+
+        public AttemptRow {
+            Objects.requireNonNull(statedCounterMinor, "statedCounterMinor must not be null");
+        }
+    }
 
     /** The cover's execution fact, as the acting applier inserts it. */
     record ExecutionDraft(
@@ -70,9 +81,12 @@ public interface CoverStore {
             ExchangeRate executedRate,
             LocalDate valueDate,
             CoverLines.Plan plan,
-            String correlationId) {
+            String correlationId,
+            Optional<Money> quotedComputed,
+            boolean executedRateCoherent) {
 
         public ExecutionDraft {
+            Objects.requireNonNull(quotedComputed, "quotedComputed must not be null");
             Objects.requireNonNull(coverId, "coverId must not be null");
             Objects.requireNonNull(clientReference, "clientReference must not be null");
             Objects.requireNonNull(providerCode, "providerCode must not be null");
@@ -164,10 +178,12 @@ public interface CoverStore {
     boolean insertUnwind(Connection unitOfWork, UnwindDraft draft);
 
     /**
-     * An unwind's attempt 1 - our reference and the fresh firm quote it executes - stored before its first send;
-     * false when another instance stored it first ({@code (cover_id, attempt)} the arbiter).
+     * An unwind's attempt 1 - our reference, the fresh firm quote it executes and the counter that quote stated -
+     * stored before its first send; false when another instance stored it first ({@code (cover_id, attempt)} the
+     * arbiter).
      */
-    boolean insertFirstAttempt(Connection unitOfWork, UUID coverId, String clientReference, String providerQuoteReference);
+    boolean insertFirstAttempt(
+            Connection unitOfWork, UUID coverId, String clientReference, String providerQuoteReference, Money statedCounter);
 
     /** The attempt that minted {@code clientReference}, whichever cover and attempt it is. */
     Optional<AttemptRow> attemptByReference(Connection unitOfWork, String clientReference);
@@ -176,11 +192,13 @@ public interface CoverStore {
     boolean transition(Connection unitOfWork, UUID coverId, int attempt, CoverStatus from, CoverStatus to);
 
     /**
-     * The requote: attempt n+1's row with {@code T(n+1)} stored first, then the conditional
-     * {@code REJECTED -> DISPATCHED} with the permit renewed and the failures reset. {@code false}
+     * The requote: attempt n+1's row with {@code T(n+1)} and the fresh quote's stated counter stored first, then the
+     * conditional {@code REJECTED -> DISPATCHED} with the permit renewed and the failures reset. {@code false}
      * when another applier already advanced the cover (the attempt unique, then the conditional).
      */
-    boolean requote(Connection unitOfWork, UUID coverId, int fromAttempt, String clientReference, String providerQuoteReference);
+    boolean requote(
+            Connection unitOfWork, UUID coverId, int fromAttempt, String clientReference, String providerQuoteReference,
+            Money statedCounter);
 
     /** One more refused requote of a still-{@code REJECTED} cover - the backoff. */
     boolean recordRequoteFailure(Connection unitOfWork, UUID coverId, int attempt);

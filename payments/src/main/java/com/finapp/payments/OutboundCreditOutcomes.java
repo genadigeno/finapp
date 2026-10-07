@@ -196,7 +196,11 @@ public final class OutboundCreditOutcomes {
             case CorridorRail.RecallAnswer.TooLate tooLate -> {
                 requireLanded(credits.recordRecallOutcome(unitOfWork, locked.id(), OutboundCreditStore.RecallOutcome.REFUSED));
                 composition.recallAnswered(unitOfWork, locked.subject(), OutboundCreditStore.RecallOutcome.REFUSED);
-                yield new Applied(locked.status(), true);
+                // "Too late" is the provider saying it holds the credit and has committed to it: a DISPATCHED or UNKNOWN
+                // credit is RECEIVED from here, so no later inconsistent "unrecognised" can conclude it NEVER_RECEIVED
+                // and release the hold while the provider pays (the Phase 9 -> 10 transition).
+                Applied received = receive(unitOfWork, locked, Optional.empty(), correlation, "recall");
+                yield new Applied(received.status(), true);
             }
             case CorridorRail.RecallAnswer.Unrecognised unrecognised -> {
                 boolean concludable = (locked.status() == OutboundCreditStore.Status.DISPATCHED
@@ -252,6 +256,10 @@ public final class OutboundCreditOutcomes {
                     + " stands, and the earlier record is an integration break (one execution, one money fact - V026)",
                     locked.id(), standing.subject(), standing.subjectId());
         }
+        // (2b) The subject's rows - the payment, then the quote - in the global lock order, before the hold's wallet and
+        // any projection row (the Phase 9 -> 10 transition: locking the quote only after posting deadlocked with the
+        // cover applier, which holds the quote and then posts to the same FX position).
+        composition.lockSubject(unitOfWork, locked.subject());
         // (3) The hold released - it must have been standing, or another writer moved this credit's money.
         HoldService.Release release = holds.release(unitOfWork, HoldId.of(locked.holdId()))
                 .filter(HoldService.Release::released)

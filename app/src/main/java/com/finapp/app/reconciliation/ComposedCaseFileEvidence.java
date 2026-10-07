@@ -122,8 +122,10 @@ public final class ComposedCaseFileEvidence implements EvidenceTargets, TraceEvi
                     // A cover leg's provider evidence is the cover's own, retained by fx under
                     // its request reference - the trace joins it with the cover (P9-TSK-012).
                     case FX_SELL_LEG, FX_BUY_LEG -> List.of();
-                    // An outbound credit's provider evidence arrives with the credit (P9-TSK-019);
-                    // until then nothing opens these kinds (P9-TSK-014).
+                    // An outbound credit's provider evidence is the credit's own (payments
+                    // provider_evidence by outbound_credit_id) - the operator trace joins it with
+                    // the credit (P9-TSK-027); the case file links none of it (the transition's
+                    // read, 2026-10-07: the comment said "until then nothing opens these kinds").
                     case CROSSBORDER_PAYOUT, CROSSBORDER_RETURN -> List.of();
                 };
         return found.stream().map(ProviderEvidenceStore.EvidenceMetadata::id).toList();

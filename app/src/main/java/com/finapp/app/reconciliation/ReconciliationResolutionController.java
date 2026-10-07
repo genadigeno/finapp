@@ -1,5 +1,6 @@
 package com.finapp.app.reconciliation;
 
+import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -62,6 +63,9 @@ public class ReconciliationResolutionController {
      * transition, SEC-01): each field optional; one that is not the proposal's stored operand is
      * refused {@code 409 ResolutionStale} with nothing written.
      */
+    // Closed (the Phase 9 -> 10 transition): a misspelled echo field ("targetAccount") was dropped silently and the
+    // stale-operand check skipped - now refused 422 with nothing written.
+    @ClosedBody
     public record ResolutionApprovalRequest(
             String targetAccountId, String offsetItemId, String chosenExpectationId) {}
 

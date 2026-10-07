@@ -252,6 +252,122 @@ class CrossBorderReturnDatabaseTest {
         assertThat(walletBalance(walletAccount(paid, "USD").orElseThrow())).isEqualTo(107_960);
     }
 
+    @Test
+    @DisplayName("the Phase 9 -> 10 transition: delivered, then returned - a delivery the provider reports after the return"
+            + " is the credit's history only: the payment stays RETURNED, the inquiry no longer rolls back, and the sweep"
+            + " never claims a returned credit for a delivery poll")
+    void aDeliveryReportedAfterTheReturnIsHistoryOnly() throws Exception {
+        Paid paid = paid("Clear Person");
+        acceptedBatch(corridorReport("USD", List.of(bouncedLine(1, "1079.60", paid)), "1079.60"));
+        matchUntilQuiet();
+        assertThat(worker.sweep().applied()).isGreaterThanOrEqualTo(1);
+        assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", paid.payment())).isEqualTo("RETURNED");
+        assertThat(scalar("SELECT delivered_at IS NULL FROM payments.outbound_credit WHERE id = ?", paid.credit()))
+                .as("the return was recorded before any delivery was known").isEqualTo("t");
+
+        CORRIDOR.deliver(paid.reference());
+        CORRIDOR.returnCredit(paid.reference());
+        resolve(paid.reference());
+        assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", paid.payment())).isEqualTo("RETURNED");
+        assertThat(scalar("SELECT delivered_at IS NOT NULL FROM payments.outbound_credit WHERE id = ?", paid.credit()))
+                .as("the delivery recorded as the credit's history").isEqualTo("t");
+        assertThat(count("SELECT count(*) FROM payments.outbound_credit_return WHERE outbound_credit_id = ?", paid.credit()))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM crossborder.payment_event WHERE payment_id = ? AND to_status = 'DELIVERED'",
+                paid.payment())).as("never shown delivered after its return").isZero();
+
+        // A returned credit is never a delivery poll: the sweep's claim passes it by, whatever else is due.
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem()) {
+            resolution.sweep();
+        }
+        assertThat(scalar("SELECT last_inquired_at IS NULL FROM payments.outbound_credit WHERE id = ?", paid.credit()))
+                .as("never claimed by the sweep").isEqualTo("t");
+    }
+
+    @Test
+    @DisplayName("the Phase 9 -> 10 transition (untested): one return reported twice in a file and again in a second file"
+            + " - one return fact, one wallet credit, one fee refund, the CROSSBORDER_RETURN settled by exactly one item;"
+            + " every duplicate item parks owned at grace, never allocated a second time")
+    void aReturnLineRepeatedWithinAndAcrossFilesReturnsOnce() throws Exception {
+        Paid paid = paid("Clear Person");
+        UUID first = acceptedBatch(corridorReport("USD", List.of(bouncedLine(1, "1079.60", paid),
+                bouncedLine(2, "1079.60", paid)), "2159.20"));
+        matchUntilQuiet();
+        worker.sweep();
+        worker.sweep();
+        matchUntilQuiet();
+        UUID second = acceptedBatch(corridorReport("USD", List.of(bouncedLine(1, "1079.60", paid)), "1079.60"));
+        matchUntilQuiet();
+        worker.sweep();
+        matchUntilQuiet();
+
+        assertThat(count("SELECT count(*) FROM payments.outbound_credit_return WHERE outbound_credit_id = ?", paid.credit()))
+                .as("one return fact").isEqualTo(1);
+        assertThat(walletBalance(walletAccount(paid, "USD").orElseThrow())).as("one wallet credit").isEqualTo(107_960);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                PostingService.IDEMPOTENCY_SCOPE + ":crossborder-return:" + paid.credit())).as("one return entry").isEqualTo(1);
+        assertThat(scalar("SELECT status FROM reconciliation.expectation WHERE kind = 'CROSSBORDER_RETURN' AND operation_ref = ?",
+                paid.credit().toString())).isEqualTo("SETTLED");
+        List<UUID> items = new ArrayList<>(returnedItems(first));
+        items.addAll(returnedItems(second));
+        assertThat(items).hasSize(3);
+        assertThat(items.stream().filter(item -> {
+            try {
+                return "MATCHED".equals(itemStatus(item));
+            } catch (Exception failure) {
+                throw new IllegalStateException(failure);
+            }
+        }).count()).as("exactly one item settles the return").isEqualTo(1);
+        for (UUID item : items) {
+            if (!"MATCHED".equals(itemStatus(item))) {
+                expireGrace(item);
+            }
+        }
+        matchUntilQuiet();
+        for (UUID item : items) {
+            assertThat(itemStatus(item)).as("item %s", item).isIn("MATCHED", "PARKED");
+        }
+        assertThat(count("SELECT count(*) FROM payments.outbound_credit_return WHERE outbound_credit_id = ?", paid.credit()))
+                .as("still one return fact").isEqualTo(1);
+        assertThat(walletBalance(walletAccount(paid, "USD").orElseThrow())).isEqualTo(107_960);
+    }
+
+    @Test
+    @DisplayName("the Phase 9 -> 10 transition's double credit: a bounce whose end-to-end reference names nothing ours but"
+            + " whose provider reference is this credit's parks; its four-eyes transfer is recorded as the credit's return"
+            + " (fact RESOLUTION, fee refunded, payment RETURNED) - and a later inquiry reporting the return credits nothing")
+    void aParkedReturnFoundByItsProviderReferenceIsTheCreditsReturn() throws Exception {
+        Paid paid = paid("Clear Person");
+        client().addCurrency(paid.customer(), paid.product(), "USD");
+        UUID usdWallet = walletAccount(paid, "USD").orElseThrow();
+        String strangerE = "UNKNOWN" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
+        UUID report = acceptedBatch(corridorReport("USD", List.of(bouncedLine(1, "1000.00", paid.providerReference(),
+                strangerE)), "1000.00"));
+        matchUntilQuiet();
+        worker.sweep();
+        UUID item = returnedItem(report);
+        expireGrace(item);
+        matchUntilQuiet();
+        assertThat(itemStatus(item)).isEqualTo("PARKED");
+        UUID breakId = UUID.fromString(scalar("SELECT id::text FROM reconciliation.break WHERE external_item_id = ?"
+                + " AND cause = 'RETURN_NOT_APPLICABLE'", item));
+
+        fourEyesTransfer(breakId, usdWallet);
+        assertThat(scalar("SELECT applied_by FROM payments.outbound_credit_return WHERE outbound_credit_id = ?", paid.credit()))
+                .as("recorded as the credit's return").isEqualTo("RESOLUTION");
+        assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", paid.payment())).isEqualTo("RETURNED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                PostingService.IDEMPOTENCY_SCOPE + ":crossborder-return-fee:" + paid.credit())).isEqualTo(1);
+        assertThat(walletBalance(usdWallet)).isEqualTo(100_000);
+
+        CORRIDOR.returnCredit(paid.reference());
+        resolve(paid.reference());
+        assertThat(count("SELECT count(*) FROM payments.outbound_credit_return WHERE outbound_credit_id = ?", paid.credit()))
+                .as("one return").isEqualTo(1);
+        assertThat(walletBalance(usdWallet)).as("credited once - never the inquiry's return besides").isEqualTo(100_000);
+    }
+
     // ------------------------------------------------------------------ before the completion is known
 
     @Test
@@ -449,6 +565,47 @@ class CrossBorderReturnDatabaseTest {
             approver.shutdownNow();
         }
         assertThat(walletBalance(usdWallet)).isEqualTo(100_000);
+    }
+
+    @Test
+    @DisplayName("the Phase 9 -> 10 transition: the pre-lock shares the accounts' keys BEFORE their projection rows - held"
+            + " at a wallet a decider holds FOR UPDATE, the approval holds no projection row of that wallet yet, so the"
+            + " decider's own balance row never waits on it (the deadlock P9-DOC-001's first pre-lock order made)")
+    void thePreLockSharesKeysBeforeRows() throws Exception {
+        Paid paid = paid("Clear Person");
+        client().addCurrency(paid.customer(), paid.product(), "USD");
+        UUID usdWallet = walletAccount(paid, "USD").orElseThrow();
+        UUID eurWallet = walletAccount(paid, "EUR").orElseThrow();
+        UUID breakId = parked(paid, "1000.00");
+        HttpResponse<String> proposed = propose(breakId, usdWallet);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+
+        ExecutorService approver = Executors.newSingleThreadExecutor();
+        try (Connection decider = DatabaseRoles.migrator()) {
+            decider.setAutoCommit(false);
+            try (PreparedStatement lock = decider.prepareStatement(
+                    "SELECT 1 FROM ledger.ledger_account WHERE id = ? FOR UPDATE")) {
+                lock.setObject(1, eurWallet);
+                lock.executeQuery().close();
+            }
+            Future<HttpResponse<String>> approval = approver.submit(() -> client().post(DESK + "/resolutions/"
+                    + field(proposed.body(), "resolutionId") + "/approval", "{}",
+                    sessionWith(RoleName.RECONCILIATION_OPERATOR), null));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (count("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+                    + " AND query LIKE '%ledger_account%' AND query NOT LIKE '%pg_stat_activity%'") == 0) {
+                assertThat(System.nanoTime()).as("the approval reached the decider's wallet").isLessThan(deadline);
+                Thread.sleep(50);
+            }
+            assertThat(tryLockBalance(decider, eurWallet))
+                    .as("the decider's own balance row is free: the approval took the key share first")
+                    .isTrue();
+            decider.rollback();
+            HttpResponse<String> approved = approval.get(1, TimeUnit.MINUTES);
+            assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        } finally {
+            approver.shutdownNow();
+        }
     }
 
     private static void lockBalance(Connection unitOfWork, UUID account) throws Exception {

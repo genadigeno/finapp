@@ -5,6 +5,7 @@ import static com.finapp.app.fx.FxCoverFixtures.coverOf;
 import static com.finapp.app.fx.FxCoverFixtures.reference;
 import static com.finapp.app.fx.FxCoverFixtures.status;
 import static com.finapp.app.fx.FxTestClient.count;
+import static com.finapp.app.fx.FxTestClient.field;
 import static com.finapp.app.fx.FxTestClient.fund;
 import static com.finapp.app.fx.FxTestClient.money;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -144,8 +145,11 @@ class FxCallbackDuplicateDatabaseTest {
         assertThat(engine.executionsOf(t1)).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM fx.cover_execution WHERE cover_id = ?", cover)).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reference = ?", "fx-cover:" + cover)).isEqualTo(1);
+        // Keyed on THIS callback's own event id - exactly one dedupe record for ten deliveries (the Phase 9 to 10
+        // transition: a LIKE over the whole container's callbacks, asserted positive, held whatever the door did).
         assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE consumer = 'fx.provider-webhook'"
-                + " AND dedupe_key LIKE ?", "fx-sim-a:fxcb-%")).isPositive();
+                + " AND dedupe_key = ?", "fx-sim-a:" + field(body, "eventId")))
+                .as("ten deliveries of one callback, one inbox record").isEqualTo(1);
         assertThat(callbackEvidence(t1) - evidenceBefore).as("every delivery retained").isEqualTo(10);
     }
 

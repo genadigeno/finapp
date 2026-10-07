@@ -144,8 +144,12 @@ public final class JdbcOutboundCreditStore implements OutboundCreditStore {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         String doing = "renewing outbound credit " + id + "'s permit";
         try (PreparedStatement update = unitOfWork.prepareStatement(
+                // Only an unconcluded instruction is ever re-sent: a takeover after the credit was RECEIVED,
+                // COMPLETED or FAILED would put E back on the wire - and a provider that never saw it (the
+                // NEVER_RECEIVED conclusion's very premise) pays it while the hold is already released (the Phase 9
+                // -> 10 transition's critical find; payments V029 refuses it for every writer).
                 "UPDATE payments.outbound_credit SET last_dispatched_at = statement_timestamp() WHERE id = ?"
-                        + " AND recall_requested_at IS NULL")) {
+                        + " AND recall_requested_at IS NULL AND status IN ('DISPATCHED', 'UNKNOWN')")) {
             return run(update, doing, id.value()) == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(DatabaseFailure.describe(doing, failure));
@@ -184,23 +188,25 @@ public final class JdbcOutboundCreditStore implements OutboundCreditStore {
             Duration deliveryAge, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                // THE ORDER IS FAIRNESS (P9-TST-001's storm found its absence): a credit awaiting its outcome holds the
-                // customer's money, so every one comes before any delivery poll - oldest permit first; a COMPLETED
-                // credit stays due until its delivery is known, so delivery polls rotate, least recently inquired first
-                // (its latest inquiry evidence). Ordered by the permit alone, more undelivered credits than one page
-                // re-read that same page on every sweep and starved every newer RECEIVED, UNKNOWN and DISPATCHED one.
-                "SELECT " + COLUMNS + " FROM payments.outbound_credit c WHERE"
+                // THE ORDER IS FAIRNESS (P9-TST-001's storm, then the Phase 9 -> 10 transition): a credit awaiting its
+                // outcome holds the customer's money, so every one comes before any delivery poll; within each, the least
+                // recently inquired first - the database's own stamp, set by this very claim - so pages rotate. Ordered by
+                // the send permit, which no inquiry moves, the oldest RECEIVED or UNKNOWN credits held the head of every
+                // page and starved a newer credit whose send was lost (never concluded, its hold standing). Claimed in ONE
+                // statement under FOR UPDATE SKIP LOCKED, so N instances take disjoint pages. A returned credit is never
+                // polled for its delivery: its delivery decides nothing any more.
+                "UPDATE payments.outbound_credit SET last_inquired_at = statement_timestamp() WHERE id IN ("
+                        + " SELECT c.id FROM payments.outbound_credit c WHERE"
                         + " (status = 'DISPATCHED' AND last_dispatched_at <= statement_timestamp() - ? * interval '1 millisecond')"
                         + " OR (status = 'UNKNOWN' AND last_dispatched_at <= statement_timestamp() - ? * interval '1 millisecond')"
                         + " OR (status = 'RECEIVED' AND last_dispatched_at <= statement_timestamp() - ? * interval '1 millisecond')"
                         + " OR (status IN ('DISPATCHED', 'UNKNOWN', 'RECEIVED') AND recall_requested_at IS NOT NULL"
                         + "     AND recall_outcome IS NULL)"
                         + " OR (status = 'COMPLETED' AND delivered_at IS NULL"
-                        + "     AND created_at <= statement_timestamp() - ? * interval '1 millisecond')"
-                        + " ORDER BY (status = 'COMPLETED'),"
-                        + " CASE WHEN status = 'COMPLETED' THEN (SELECT max(e.recorded_at) FROM payments.provider_evidence e"
-                        + "     WHERE e.outbound_credit_id = c.id) END NULLS FIRST,"
-                        + " last_dispatched_at, id LIMIT ?")) {
+                        + "     AND created_at <= statement_timestamp() - ? * interval '1 millisecond'"
+                        + "     AND NOT EXISTS (SELECT 1 FROM payments.outbound_credit_return r WHERE r.outbound_credit_id = c.id))"
+                        + " ORDER BY (status = 'COMPLETED'), last_inquired_at NULLS FIRST, last_dispatched_at, id"
+                        + " FOR UPDATE SKIP LOCKED LIMIT ?) RETURNING " + COLUMNS)) {
             select.setLong(1, dispatchedAge.toMillis());
             select.setLong(2, unknownAge.toMillis());
             select.setLong(3, receivedAge.toMillis());
@@ -214,7 +220,7 @@ public final class JdbcOutboundCreditStore implements OutboundCreditStore {
             }
             return due;
         } catch (SQLException failure) {
-            throw new PaymentsStorageException(DatabaseFailure.describe("reading the outbound credits due", failure));
+            throw new PaymentsStorageException(DatabaseFailure.describe("claiming the outbound credits due", failure));
         }
     }
 

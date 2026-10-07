@@ -115,7 +115,10 @@ public class CorridorCallbackService {
         }
         record Consumed(InboxConsumer.Outcome outcome, boolean known) {}
         Consumed consumed = transactions.inTransaction(unitOfWork -> {
-            Optional<OutboundCreditStore.Row> credit = credits.byReference(unitOfWork, reference.get());
+            // Only a credit sent over THIS door's rail (the Phase 9 to 10 transition gate): a callback authenticated by
+            // one provider's key names nothing on another's - no evidence filed under it, no inquiry triggered.
+            Optional<OutboundCreditStore.Row> credit = credits.byReference(unitOfWork, reference.get())
+                    .filter(row -> row.rail().value().equals(rail));
             credit.ifPresent(row -> evidence.appendForOutboundCredit(unitOfWork, row.id(), EvidenceKind.WEBHOOK, rawBody,
                     Instant.now(clock)));
             // The handler records nothing but the dedupe: the callback's claim is never an effect.

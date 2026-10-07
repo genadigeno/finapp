@@ -1,5 +1,6 @@
 package com.finapp.crossborder;
 
+import com.finapp.platform.persistence.DatabaseFailure;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,7 +25,7 @@ public final class JdbcCancellationStore implements CancellationStore {
             insert.setString(4, correlationId);
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException("could not record a payment's cancellation request", failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("could not record a payment's cancellation request", failure));
         }
     }
 
@@ -38,7 +39,7 @@ public final class JdbcCancellationStore implements CancellationStore {
                 return row.next() ? Optional.of(row.getTimestamp(1).toInstant()) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException("could not read a payment's cancellation request", failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("could not read a payment's cancellation request", failure));
         }
     }
 }

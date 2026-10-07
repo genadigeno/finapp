@@ -196,6 +196,37 @@ class SimulatedCorridorContractTest {
     }
 
     @Test
+    @DisplayName("the Phase 9 -> 10 transition (ADR-0008's timeout modes, untested for the corridor): a provider that never"
+            + " answers, or answers after the timeout, is Indeterminate(TIMEOUT) on the send, the inquiry and the recall -"
+            + " never NothingSent, which would fail a first send the provider may already hold")
+    void aTimeoutIsNeverNothingSent() throws Exception {
+        try (com.finapp.platform.testing.provider.SimulatedProvider harness =
+                com.finapp.platform.testing.provider.SimulatedProvider.start()) {
+            CorridorRail slow = new SimulatedCorridorAdapter(URI.create(harness.baseUrl()), Duration.ofMillis(500), KEY);
+            CorridorRail.CreditInstruction credit =
+                    new CorridorRail.CreditInstruction(e("XB-T1"), beneficiary(), Money.of(new BigDecimal("5.00"), USD));
+            String credits = SimulatedCorridorAdapter.CREDITS_PATH;
+            String one = credits + "/XB-T1";
+
+            harness.neverResponds(credits);
+            assertThat(slow.send(credit)).isInstanceOfSatisfying(SendAnswer.Indeterminate.class,
+                    answer -> assertThat(answer.cause()).isEqualTo(CorridorRail.Indeterminacy.TIMEOUT));
+            harness.reset();
+            harness.respondsAfter(credits, Duration.ofSeconds(2), 200, "{\"status\":\"accepted\"}");
+            assertThat(slow.send(credit)).isInstanceOfSatisfying(SendAnswer.Indeterminate.class,
+                    answer -> assertThat(answer.cause()).isEqualTo(CorridorRail.Indeterminacy.TIMEOUT));
+            harness.reset();
+            harness.neverResponds(one);
+            assertThat(slow.inquire(e("XB-T1"))).isInstanceOfSatisfying(InquiryAnswer.Indeterminate.class,
+                    answer -> assertThat(answer.cause()).isEqualTo(CorridorRail.Indeterminacy.TIMEOUT));
+            harness.reset();
+            harness.neverResponds(one + SimulatedCorridorAdapter.RECALL_SUFFIX);
+            assertThat(slow.recall(e("XB-T1"))).isInstanceOfSatisfying(RecallAnswer.Indeterminate.class,
+                    answer -> assertThat(answer.cause()).isEqualTo(CorridorRail.Indeterminacy.TIMEOUT));
+        }
+    }
+
+    @Test
     @DisplayName("every unreadable answer is Indeterminate - an unknown status, a malformed body, a 5xx, an"
             + " over-precise return - and a refused connection is NothingSent, the one piece of knowledge")
     void totality() {

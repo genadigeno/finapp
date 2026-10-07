@@ -14280,6 +14280,1525 @@ providers), each owned by Phase 15 and gating nothing here.
 
 ---
 
+# Phase 10 — Credit Decisioning
+
+Status: `READY` — entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
+granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
+`P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
+engineering plan is [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md); decisions are ADR-0084…ADR-0089
+(`Proposed` at the transition); the domain statement is
+[`CREDIT_DECISIONING_LIFECYCLES.md`](../domain/CREDIT_DECISIONING_LIFECYCLES.md), written before the
+first task (the `FX_AND_CROSS_BORDER_LIFECYCLES.md` precedent). The in-scope invariants are whatever
+the catalogue marks `Phase: 10` — **twelve at planning**: the four the catalogue already carried
+(`INV-CRD-01`…`-04`, catalogued at Phase 0) and the transition's eight (`INV-CRD-05`…`-12`) — **read
+from the catalogue at the gate, never from this file**. Until Phase 10's first task lands, nothing
+in this section is implemented; every statement is the decided design, corrected by the tasks that
+build it.
+
+**Phase 10 moves no money.** It posts nothing to the ledger, holds nothing, disburses nothing, and
+`credit` has no build edge to `ledger` (`CreditModuleIsolationTest`). The one money-adjacent fact it
+owns is the **credit exposure** an approval reserves until it lapses or is consumed, and
+`DEFINITION_OF_DONE.md` §2 names credit exposure in `DOD-FIN`'s scope — so the tasks that judge or
+reserve exposure (`-010`, `-016`, `-018`, `P10-TST-001`) carry `DOD-FIN`, with the supplement read
+as: F1, F2, F4 and F5 vacuous for want of any posting or external financial event (asserted by the
+isolation test, not assumed), F3, F6 and F7 binding on the exposure reservation and the credit
+arithmetic, and F8 answered per task `N/A — credit moves no money` with its reason. Every other task
+names the profiles that apply to it.
+
+**Every task below states the gate's twenty-three fields** — objective, bounded context,
+dependencies, scope, out of scope, domain changes, persistence, APIs, events, financial impact,
+invariants, distributed-system concerns (the ten-instance question answered), idempotency,
+consistency, atomicity, failure handling, security, audit, observability, reconciliation
+implications, tests, acceptance criteria and definition of done, with the standing risk and
+complexity at its end — Phase 9's labels, kept unchanged, **plus two this phase adds**:
+**Policy/model versioning** (what the task versions, pins or freezes, `INV-CRD-01`'s and
+`INV-CRD-05`'s subject) and **Probe** (the deliberate break its completion gate performs and must
+see caught, each restore byte-identical, sha256-verified). A task's design (`task-design`) may
+correct its entry, and says so in the entry — the `P6-TSK-001` precedent. The ten-instance answer is
+`PASS` only on the counted tests the entry names; it is never claimed by construction. A task
+without them answers `UNKNOWN` and is not complete. Every keyed scope is per principal from birth.
+Migration numbers name the expected order (credit `V001`…`V012`, consent `V003`, identity `V020`);
+the task that builds a migration may renumber within its module and says so.
+
+**Milestones**: M10.1 Foundations (`P10-TSK-001`…`-003`) · M10.2 Credit data (`P10-TSK-004`…`-007`)
+· M10.3 Assessment (`P10-TSK-008`…`-011`) · M10.4 Policy (`P10-TSK-012`, `-013`) · M10.5 Decisioning
+(`P10-TSK-014`…`-017`) · M10.6 Underwriting (`P10-TSK-018`) · M10.7 Proof (`P10-TSK-019`…`-021`) ·
+M10.8 Exit (`P10-TST-001`, `P10-TST-002`, `P10-DOC-001`). Acceptance per milestone in
+`PHASE_10_PLAN.md` §16.
+
+**If the phase must shrink**, cut `P10-TSK-021` (a second bureau and source selection) first; its
+deferral is recorded with Phase 15 as owner, and the provider-neutrality criterion is then met by
+the port's contract suite (`CreditBureauContract`) and the single adapter. Never cut: the consent
+gate, the snapshot, the four-eyes versioning, the exposure lock, underwriting, replay, the storm or
+the battery.
+
+**The Phase 11 boundary** (`PHASE_10_PLAN.md` §17): no task below builds a loan application, offer,
+counter-offer, acceptance, disbursement, repayment schedule, interest, servicing, delinquency,
+collection or BNPL; no ledger posting, hold or money movement; no risk score or fraud rule (Phase 13
+— only the `CreditRiskSignal` seam); no real bureau connectivity; no machine-learned model; no
+evidence purge or crypto-shredding (Phase 15, a debt row). A reviewer finding any of it in a Phase
+10 change refuses the change.
+
+**Where the plan was silent or self-contradictory, the owner decided at the transition** (each
+folded into `PHASE_10_PLAN.md`, `CREDIT_DECISIONING_LIFECYCLES.md` and ADR-0084…0089; a task's
+design may revisit one only by saying so, and `P10-DOC-001` reads each against the code): **G1** a
+decision's consumption is not a column on the immutable `credit_decision` row but a separate
+born-once `credit_decision_consumption` fact (`UNIQUE (decision_id)`), created empty by `-016` for
+Phase 11 to write — `INV-CRD-02`'s "never `UPDATE` for any role" stands without exception, and
+reserved exposure is `APPROVED`, `valid_until > statement_timestamp()` and no consumption row
+(`-010`, `-016`); **G2** the policy and scorecard versions are pinned on the request at `SUBMITTED →
+COLLECTING` (the claim-time precedent: the pinned policy decides which sources are collected and
+their maximum age) and re-read `FOR SHARE` at evaluation and decision, so an activation mid-request
+never changes them and never yields a snapshot the evaluating policy cannot read (`-015`); **G3**
+each source kind's collection deadline and retry cadence are configuration, stamped on the data
+request at its birth so a change never moves an open request's deadline (`-006`); **G4** advisory
+namespace `10` is registered by `-011`, its first writer (the scorecard administration precedes the
+policy's), and extended by `-012`; **G5** the expiry-against-decision boundary race and the crash
+between evaluation and decision (§14 rows 12 and 18) are proven by `-016`, the first task that
+records a decision — `-015` proves expiry against every earlier step; **G6** the request validity is
+a declaration of `CreditProduct` beside the decision validity — 7 days and 30 days for both products
+(`-001`); **G7** a person's approval is bounded by the evaluation's approved amount and by the
+exposure limit re-read under the profile lock — beyond it `422 credit.ExposureLimitExceeded`,
+nothing recorded, and the person decides again (a decline, or a smaller approval; never a
+counter-offer) (`-018`); **G8** the underwriting case gains the terminal `CLOSED`, carrying its
+request's reason, when the request closes undecided — from `OPEN` when the request expires or the
+sweep abandons it (standing lost), and from `ASSIGNED` or `AWAITING_SECOND` only when the person's own
+deciding transaction abandons the request; a taken case is otherwise decided by its person whatever
+the request's validity (`-018`); **G9** two routes join the plan's §9: `POST
+/v1/operator/credit/records/{id}/evidence-read` (`CREDIT_INVESTIGATE`, a reason required, audited
+`credit.EvidenceRead`) and `POST /v1/operator/credit/review-cases/{id}/release` (`CREDIT_UNDERWRITE`,
+audited `credit.ReviewCaseReleased`) (`-017`, `-018`); **G10** foreign keys arrive with the tables
+they reference: data requests and snapshots are built before the decision request exists, so `-006`
+and `-008` carry `decision_request_id NOT NULL` and `-014`'s migration adds the keys (the tables
+hold no production rows before `-014`'s door); the pinned-version keys arrive with `-011` and
+`-012`; **G11** a `RECEIVED` data request stays `RECEIVED` (terminal); the gate is re-read for every
+source kind at the freeze and in the deciding transaction, a withdrawal abandoning the request
+(`ABANDONED`, `CONSENT_WITHDRAWN`) with nothing frozen or decided (§14 row 31, now last in its
+order), and a retry is gated like the first ask (`UNAVAILABLE → CONSENT_WITHDRAWN`) (`-006`,
+`-015`, `-016`). Two more: **a second approver who disagrees** refuses the second approval —
+`AWAITING_SECOND → ASSIGNED`, back to the first underwriter, reason required, audited
+`credit.ReviewSecondApprovalRefused` — through the second-approval door (`-018`); and **case
+assignment locks the request, then the case** (and so do release and the refusal), so an
+assignment and an expiry serialise (`-018`).
+
+**P10-TSK-001 — The credit module boundary and floors** — `READY` (marked by the Phase 9 → 10 transition, 2026-10-07)
+- **Objective**: make `credit` a build-graph fact with a privilege floor and its closed
+  vocabularies, before any behaviour (the `P5-/P6-/P8-/P9-TSK-001` precedent).
+- **Bounded context**: Credit Decisioning (scaffolding); `app` (guards).
+- **Dependencies**: none.
+- **Scope**: `settings.gradle.kts` include and a build file from the sibling templates (per-schema
+  Flyway, `db/migration/credit`); `credit V001` (schema `credit`; owner `finapp_migrator`; `REVOKE
+  ALL FROM PUBLIC`; `USAGE` to `finapp_app`); `credit V002` `reason_code` (code, category, customer
+  text, adverse flag — seeded with the closed catalogue the v1 policies need,
+  `CRD-SOURCE-UNAVAILABLE` and `CRD-AUTO-APPROVAL-CEILING` among them; `SELECT` only to
+  `finapp_app`; a trigger refusing `UPDATE` and `DELETE` for every role);
+  `CreditModuleIsolationTest` requiring exactly `{platform, sharedkernel}` and refusing every
+  sibling — `ledger`, `consent`, `kyc`, `party`, `identity` named — with planted probes; every
+  sibling isolation test gains `credit` (nothing depends on it in Phase 10); `ProductionModules`
+  picks it up from the classpath; `NoFloatingPointMoneyRulesTest`'s module guard covers it; the
+  closed vocabularies: `CreditProduct` (`PERSONAL_LOAN` EUR 500.00–25,000.00, 6–60 months;
+  `CREDIT_LINE` EUR 250.00–5,000.00, revolving, no term — each declaring its currency, amount and
+  term bounds, four-eyes threshold, request validity (7 days, G6), decision validity (30 days) and
+  evidence retention, default 25 months), `CreditAttributeCode` (`PHASE_10_PLAN.md` §12.2's list plus the
+  `SOURCE_UNAVAILABLE` and `CURRENCY_NOT_SUPPORTED` markers), `ReasonCode` (mirroring the table),
+  `DecisionOutcome` (`APPROVED`, `DECLINED` — a decision is never `REFER`; the evaluation's outcome
+  is `-013`'s, `INV-CRD-04`); `package-info` stating the module's responsibility and its Phase 11
+  boundary; the `lombok.config` opt-in (records' `toString` names identifiers only); the planned
+  register rows (`DISTRIBUTED_EXECUTION.md` §3, `AUDITABLE_ACTIONS.md`, `DATA_CLASSIFICATION.md`)
+  promoted by the tasks that land them.
+- **Out of scope**: every other table, every port, bean, route, permission, event and schedule.
+- **Domain changes**: the closed vocabularies only.
+- **Persistence**: `credit V001` (floor), `credit V002` (`reason_code`, seeded).
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: none versioned here — a new product, attribute code or reason code is
+  a reviewed code change with its migration (ADR-0084 §6), never a string; the reason-code catalogue
+  is immutable once seeded (a retired code stays for replay).
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-04` (attribute, score, evaluation outcome and decision outcome are
+  distinct types from birth); `INV-CRD-12` (the floating-point guard covers the module from its
+  first class); `INV-CRD-02`'s catalogue element (reason codes immutable); ADR-0084's isolation.
+- **Distributed-system concerns**: no shared state; migrations run under Flyway's lock. Ten
+  instances: `PASS` (no state).
+- **Idempotency**: forward-only migrations with checksums.
+- **Consistency**: the enum and the catalogue table agree in both directions (a guard).
+- **Atomicity**: each migration is one transaction.
+- **Failure handling**: a wrong ACL, a missing guard or an enum–table disagreement fails the build.
+- **Security**: schema ACL exactly `{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC`; `reason_code`
+  `SELECT`-only; its columns classified `INTERNAL` under `ColumnClassificationTest`.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: N/A — credit moves no money: no posting, no settlement, no
+  external cash leg to match.
+- **Tests**: `CreditMigrationTest` (the schema ACL; the catalogue's grant; `UPDATE` and `DELETE` on
+  `reason_code` refused by raw SQL as `finapp_app` and as the owner); `CreditModuleIsolationTest`
+  with planted probes (a `credit` → `ledger` import, a `credit` → `consent` import, a sibling →
+  `credit` import); `ReasonCodeCatalogueTest` (enum ↔ rows, both directions, a planted extra on each
+  side caught); `CreditProductTest` (§12.1's bounds and currency; `CREDIT_LINE` has no term; the
+  request and decision validities; every product declares every property); the floating-point module guard; `ColumnClassificationTest`.
+- **Probe**: a `com.finapp.ledger` import planted in a `credit` class → `CreditModuleIsolationTest`
+  red; a `ReasonCode` constant added without its row → `ReasonCodeCatalogueTest` red; each restored
+  byte-identical (sha256-verified).
+- **Acceptance criteria**: the build is green; the ACL is exact; the isolation asymmetries are
+  demonstrated and every planted probe is caught; the catalogue agrees with its enum both ways.
+- **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
+
+**P10-TSK-002 — Credit consent purposes** — `PLANNED`
+- **Objective**: give bureau access and financial-data access each its own recorded lawful basis,
+  and give `credit` an authoritative gate over them.
+- **Bounded context**: `consent`; Credit Decisioning (the port); `app` (the adapter).
+- **Dependencies**: `-001`.
+- **Scope**: `ConsentPurpose` gains `CREDIT_BUREAU_ACCESS` and `FINANCIAL_DATA_ACCESS` (the
+  javadoc's single reserved Phase 10 member becomes two, and the javadoc says so; purposes are never
+  removed — ADR-0037's rule); `consent V003` their
+  consent texts (`V002`'s versioned-text shape); the existing customer grant and withdrawal doors
+  carry the two purposes (an additive OpenAPI enum change); the `CreditConsentGate` port in `credit`
+  (a source kind → whether a current lawful basis exists, read in the caller's transaction) and its
+  `app` adapter over the consent gate, owning the source-kind → purpose mapping;
+  `NoProcessLocalConsentStateTest` covering the adapter.
+- **Out of scope**: using the gate (`-006`, `-007`, `-014`); a combined "credit" purpose (refused: a
+  bureau basis must not admit a financial-data pull).
+- **Domain changes**: two purposes; the `CreditConsentGate` port.
+- **Persistence**: `consent V003`.
+- **APIs**: no new route; the consent routes' purpose enum gains two values (additive,
+  `OpenApiChangeTest`).
+- **Events**: the existing consent events carry the new purposes (an additive enum value; consumers
+  tolerate unknown values).
+- **Policy/model versioning**: the consent texts are versioned rows; a wording change is a new text
+  version, and the record names the version granted.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-03` (the basis the gate checks exists, per source kind); `INV-CNS-01`
+  (the gate); `INV-CNS-02` (consent history append-only); ADR-0037's purposes-never-removed rule.
+- **Distributed-system concerns**: the gate is a plain `READ COMMITTED` read in the acting
+  transaction with no process-local cache; a withdrawal committed on one instance is seen by the
+  next acting transaction on any other. `PASS` on
+  `ConsentGateDatabaseTest#creditPurposesAreReadAuthoritatively` (withdraw on one connection, gate
+  on another).
+- **Idempotency**: grant and withdrawal keep their existing keyed semantics.
+- **Consistency**: the gate's read is authoritative, never cached.
+- **Atomicity**: `V003` is one transaction.
+- **Failure handling**: an unknown purpose is refused at deserialisation; a purpose without its
+  current text is refused by the existing text guard.
+- **Security**: a customer grants and withdraws only their own consent; consent texts `INTERNAL`.
+- **Audit**: the existing consent acts cover the new purposes.
+- **Observability**: the existing consent meters gain two `purpose` values.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `ConsentGateDatabaseTest#creditPurposesAreReadAuthoritatively`;
+  `CreditConsentPurposeMappingTest` (every source kind mapped, exhaustively; `BUREAU` →
+  `CREDIT_BUREAU_ACCESS`, `FINANCIAL_DATA` → `FINANCIAL_DATA_ACCESS`; a bureau grant alone answers
+  "absent" for financial data); the purposes-never-removed guard; `OpenApiChangeTest` accepting the
+  additive change.
+- **Probe**: map `FINANCIAL_DATA` to `CREDIT_BUREAU_ACCESS` in the adapter →
+  `CreditConsentPurposeMappingTest` red; delete `V003`'s text row for one purpose → the text guard
+  red.
+- **Acceptance criteria**: a customer can grant and withdraw each purpose; the gate answers per
+  source kind from the database, on every instance alike.
+- **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-DOMAIN`. **Risk**: Low. **Cx**: S.
+
+**P10-TSK-003 — Credit permissions and roles** — `PLANNED`
+- **Objective**: the three credit permissions and two roles, least-privilege and separable, before
+  any route needs them.
+- **Bounded context**: `identity`.
+- **Dependencies**: `-001`.
+- **Scope**: `identity V020`: permissions `CREDIT_POLICY_ADMINISTER`, `CREDIT_INVESTIGATE`,
+  `CREDIT_UNDERWRITE`; roles `CREDIT_POLICY_OFFICER` (the first two) and `UNDERWRITER` (the third),
+  admitted by the role-name `CHECK` (the `V019` shape); `RoleNameTest`; the planned
+  `RoutePermissionRegisterTest` rows (each promoted when its route lands).
+- **Out of scope**: every route (`-011`, `-012`, `-017`…`-020`); four-eyes self-refusal (a per-act
+  domain rule and `CHECK`, not a role property — `-011`, `-012`, `-018`).
+- **Domain changes**: none in `credit`; three permissions and two roles in `identity`.
+- **Persistence**: `identity V020`.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: none.
+- **Financial impact**: none.
+- **Invariants**: `INV-AUD-04` (four-eyes needs two distinct holders of one permission); the
+  precondition of `INV-CRD-05` and `INV-CRD-11`.
+- **Distributed-system concerns**: role grants are rows read per request; no process-local cache.
+  `PASS` (no contended state).
+- **Idempotency**: forward-only migration.
+- **Consistency**: n/a.
+- **Atomicity**: one migration, one transaction.
+- **Failure handling**: an unadmitted role name is refused by the `CHECK`.
+- **Security**: exact grants: `UNDERWRITER` holds neither `CREDIT_POLICY_ADMINISTER` nor
+  `CREDIT_INVESTIGATE`; `CREDIT_POLICY_OFFICER` does not hold `CREDIT_UNDERWRITE` — the policy's
+  author is not the queue's decider.
+- **Audit**: assigning the roles is the existing identity administration act.
+- **Observability**: none.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `RoleNameTest`; `IdentityMigrationTest` (the two roles admitted; each role's
+  permissions exactly as above, both directions); the negatives named in Security.
+- **Probe**: grant `CREDIT_UNDERWRITE` to `CREDIT_POLICY_OFFICER` in `V020` → the exact-grant test
+  red.
+- **Acceptance criteria**: both roles assignable; the grants are exact; every negative holds.
+- **Definition of done**: `DOD-SEC`. **Risk**: Low. **Cx**: S.
+
+**P10-TSK-004 — The credit profile** — `PLANNED`
+- **Objective**: one row per party that every decision for the party serialises on, holding no
+  figures of its own.
+- **Bounded context**: Credit Decisioning.
+- **Dependencies**: `-001`.
+- **Scope**: `credit V003` `credit_profile` (id, `party_id UNIQUE`, created-at from the database;
+  `INSERT` only to `finapp_app`); `CreditProfiles.ensure(partyId)` (`INSERT … ON CONFLICT DO
+  NOTHING`, then read — every caller gets the same id); `CreditProfiles.lockForDecision(partyId)`
+  (`SELECT … FOR UPDATE`, lock-order element (1)); the `DISTRIBUTED_EXECUTION.md` §3 credit
+  lock-order row created with element (1), later elements promoted by `-006`, `-008`, `-014`,
+  `-016`, `-018`.
+- **Out of scope**: the customer's profile summary route (`-017`: it shows records and decisions,
+  which do not exist yet); any figure, score or limit on the profile.
+- **Domain changes**: the `CreditProfile` aggregate.
+- **Persistence**: `credit V003`.
+- **APIs**: none.
+- **Events**: none (the profile is a lock target, not an integration fact).
+- **Policy/model versioning**: none.
+- **Financial impact**: none — the lock target `INV-CRD-09`'s exposure judgement will serialise on.
+- **Invariants**: `INV-CRD-09` (the lock target exists, exactly once per party); `INV-CRD-04` (the
+  profile carries no figure — a schema guard refuses a numeric column).
+- **Distributed-system concerns**: ten instances ensuring one party leave one row and return one id
+  (counted); `FOR UPDATE` serialises two lockers. `PASS` on
+  `CreditProfileDatabaseTest#tenEnsurersLeaveOneProfile` and `#aSecondLockerWaits`.
+- **Idempotency**: `ensure` is born-once by the unique.
+- **Consistency**: the party id is a reference, not a foreign key (no `party` edge); the standing
+  check is `-014`'s.
+- **Atomicity**: `ensure` is one statement.
+- **Failure handling**: a lost response to `ensure` is harmless — the retry reads the same row.
+- **Security**: `party_id` `CONFIDENTIAL`; `UPDATE` and `DELETE` not granted.
+- **Audit**: none (no privileged act).
+- **Observability**: none.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `CreditProfileDatabaseTest` (`#tenEnsurersLeaveOneProfile`, ids equal;
+  `#aSecondLockerWaits` on two connections until the first commits; `UPDATE` and `DELETE` refused
+  for `finapp_app` by raw SQL; `#theProfileHasNoFigureColumn`); `ColumnClassificationTest`.
+- **Probe**: replace `ON CONFLICT DO NOTHING` with select-then-insert →
+  `#tenEnsurersLeaveOneProfile` red (a unique violation surfaces to a caller).
+- **Acceptance criteria**: one profile per party under ten racing ensurers; the lock serialises.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
+
+**P10-TSK-005 — The credit bureau port and the simulated bureau** — `PLANNED`
+- **Objective**: a provider-neutral bureau port whose every adapter answers inside a closed contract
+  — data, partial data or unavailable, never a fault dressed as data — and a simulated bureau that
+  exercises every branch.
+- **Bounded context**: Credit Decisioning (the port, the normalised attribute model); `app` (the
+  simulated adapter).
+- **Dependencies**: `-001`.
+- **Scope**: the `CreditBureau` port: `pull(BureauRequest)` (our reference, a subject reference the
+  `app` adapter resolves to the party's identifying facts, the product) → `BureauAnswer`, sealed:
+  `Received` (normalised attributes, the raw payload bytes, the provider's retrieved-at), `Partial`
+  (the attributes present, the codes absent), `Unavailable` (`TIMEOUT`, `MALFORMED`,
+  `UNKNOWN_STATUS`, `PROVIDER_ERROR`, with the raw bytes when any arrived) — an adapter never throws
+  for a provider fault; `CreditAttribute` (code, typed value — integer, money as minor units +
+  currency, boolean, code — and provenance); normalisation per adapter, recording its
+  `normaliser_version`; a money value in a currency other than the product's → the attribute
+  `ABSENT` with the `CURRENCY_NOT_SUPPORTED` marker, never converted; `bureau-sim-a` in `app`
+  (deterministic per subject; dedupes by our reference — one counted pull per reference, a repeat
+  answering the first; fault injection: timeout, slow beyond the client timeout, malformed, partial,
+  unknown status, duplicate delivery, success with the response lost); `CreditBureauContract`
+  (abstract, every adapter subclasses it); golden normalisation files per adapter;
+  `CreditProviderVocabularyIsConfinedTest` (provider field names confined to the adapter package —
+  the `FxProviderVocabularyIsConfinedTest` shape); the client timeout as configuration.
+- **Out of scope**: persistence, consent, retries and audit (`-006`); financial data (`-007`); a
+  second bureau (`-021`); real connectivity (§17).
+- **Domain changes**: the `CreditBureau` port, `BureauAnswer`, `CreditAttribute`.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: each answer carries its adapter's `normaliser_version` into the
+  record's provenance; replay reads the stored attributes and never re-normalises, so a normaliser
+  change cannot move a past decision (`INV-CRD-01`).
+- **Financial impact**: none.
+- **Invariants**: `INV-LIFE-03` (an unknown status is a modelled state); `INV-CRD-10` (unavailable
+  and partial are values, never data); `INV-CRD-12` (no conversion); `INV-CRD-07` (every attribute
+  carries its provenance).
+- **Distributed-system concerns**: the adapter is stateless; the reference is the provider's
+  idempotency key, so ten instances asking under one reference cost one counted pull. `PASS` on
+  `SimulatedBureauContractTest#tenCallersOneReferenceOnePull`.
+- **Idempotency**: our reference, honoured by the provider.
+- **Consistency**: n/a (no state).
+- **Atomicity**: n/a.
+- **Failure handling**: `PHASE_10_PLAN.md` §14 rows 2, 3, 4: partial → present attributes plus
+  `ABSENT`; malformed → `Unavailable(MALFORMED)` with the bytes kept as evidence, never parsed into
+  attributes; unknown status → `Unavailable(UNKNOWN_STATUS)`, never data; timeout and slowness →
+  `Unavailable(TIMEOUT)`.
+- **Security**: the subject's identifying facts cross only the adapter; no attribute or payload in a
+  log line, an exception message or a `toString`; attribute values `RESTRICTED-FINANCIAL`.
+- **Audit**: none here (the access is audited where the request is opened, `-006`).
+- **Observability**: none here (`-006` counts outcomes).
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `SimulatedBureauContractTest extends CreditBureauContract` (normal; partial; malformed;
+  timeout; slow beyond timeout; duplicate delivery; unknown status → `Unavailable`, never data;
+  response lost then re-asked under the same reference → the first answer, one counted pull;
+  `#tenCallersOneReferenceOnePull`); `BureauNormalisationGoldenTest` (golden files);
+  `#aForeignCurrencyBalanceIsAbsentNeverConverted`; `CreditProviderVocabularyIsConfinedTest` with a
+  planted violation; the floating-point guard.
+- **Probe**: make the simulator's unknown status normalise to `Received` with no attributes → the
+  contract suite red; parse a malformed payload's surviving fields into attributes → the golden test
+  red.
+- **Acceptance criteria**: every contract case passes for `bureau-sim-a`; no provider vocabulary
+  outside the adapter; no answer of a faulty provider ever carries an attribute.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P10-TSK-006 — Bureau data collection** — `PLANNED`
+- **Objective**: retrieve bureau data under recorded consent, once per reference, with the evidence
+  encrypted and retained to a stored deadline, and outages, duplicates, lost responses and
+  withdrawals all safe.
+- **Bounded context**: Credit Decisioning; `app` (the gate's adapter, the schedule, the
+  `credit-evidence` key purpose).
+- **Dependencies**: `-002`, `-004`, `-005`.
+- **Scope**: `credit V004`: `data_request` (id; `decision_request_id NOT NULL`, its foreign key
+  added by `-014` (G10); source kind `BUREAU` | `FINANCIAL_DATA`; provider code; `request_reference
+  UNIQUE`; status `REQUESTED` | `RECEIVED` | `UNAVAILABLE` | `CONSENT_WITHDRAWN`; attempts; permit;
+  `deadline_at` and the retry cadence stamped at birth from the source kind's configuration on
+  `statement_timestamp()` (G3), frozen thereafter; a machine trigger refusing every invalid edge,
+  `UNAVAILABLE → REQUESTED` only while `statement_timestamp() < deadline_at`, `UNAVAILABLE →
+  CONSENT_WITHDRAWN` admitted (G11)); `data_request_attempt` (append-only); `credit_record` (`data_request_id UNIQUE`, retrieved-at, the normalised attributes,
+  the normaliser version; `INSERT` only); `credit_evidence` (per attempt; ciphertext under the
+  ADR-0066 envelope with key purpose `credit-evidence` and AAD bound to the evidence id; a
+  `duplicate` flag; a `consent_withdrawn` flag with no payload; `retain_until` = retrieval + the
+  product's evidence retention; `INSERT` only; `SELECT` revoked from `finapp_app`; a `SECURITY
+  DEFINER` function `credit.read_evidence(id, reason)` refusing an empty reason, called by `-017`'s
+  door); `CreditDataCollection`: **open** (Tx1: the gate for the source kind read authoritatively;
+  the data request born `REQUESTED`; `credit.BureauDataRequested` audited; commit; then the provider
+  asked with no connection held — ADR-0081's screening shape) and **record** (Tx2: the data request
+  `FOR UPDATE`, conditional on `REQUESTED`; the gate re-read — absent → `CONSENT_WITHDRAWN`, the
+  payload discarded unread, the evidence row recording only that a response arrived; present → the
+  record born once, the evidence stored, `CreditDataCollected`; `Unavailable` → `UNAVAILABLE` with
+  the attempt and any evidence, the permit re-stamped); an answer arriving after `RECEIVED` → an
+  evidence row flagged `duplicate`, never a second record; `CreditDataRetrySchedule`
+  (`SmartLifecycle`, `scheduleWithFixedDelay`, off in test contexts, leaderless,
+  `finapp.credit.data.retry.sweeper.enabled`, joining
+  `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` twenty → twenty-one): data
+  requests `UNAVAILABLE`, or `REQUESTED` past their permit (a crash after Tx1), taken
+  oldest-permit-first in one `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` stamping a new
+  permit from `statement_timestamp()` at the request's stamped cadence, the gate re-read before
+  each re-ask (absent → `CONSENT_WITHDRAWN`, nothing asked), re-asked under the same reference;
+  past the deadline the request stays `UNAVAILABLE` and `CreditDataUnavailable` is emitted once (a
+  conditional flag); a
+  request that cannot act re-stamps rather than holding the page (the `P9-TST-001` starvation
+  lesson); the §3 lock-order element (4) and the component-register row; the evidence-retention
+  purge recorded as a debt row owned by Phase 15.
+- **Out of scope**: the decision request (`-014`) and driving collection from it (`-015`); financial
+  data (`-007`); freshness (`-008`); the evidence-read door (`-017`); any purge.
+- **Domain changes**: the `CreditDataRequest` and `CreditRecord` aggregates; `CreditDataCollection`.
+- **Persistence**: `credit V004`.
+- **APIs**: none (internal).
+- **Events**: `CreditDataCollected` (request id, source kind, provider code, retrieved-at — never an
+  attribute or payload); `CreditDataUnavailable` (source, attempts) — the platform envelope, through
+  the outbox, producer `credit`, `eventVersion` 1.
+- **Policy/model versioning**: the deadline and cadence are configuration, frozen per data request
+  at birth; the normaliser version is recorded on the record.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-03` (the gate at open, at every retry and again at record); `INV-CRD-10` (unavailability
+  is a state, never data); `INV-LIFE-03`; `INV-AUD-01` (every access audited); `INV-CRD-07`
+  (provenance on every record).
+- **Distributed-system concerns**: `PHASE_10_PLAN.md` §7 rows 4–6: an answer delivered twice → one
+  record (`UNIQUE (data_request_id)` and the conditional `REQUESTED → RECEIVED`); success with the
+  response lost → the retry asks under the same reference and the simulator counts one pull; consent
+  withdrawn in flight → `CONSENT_WITHDRAWN` by the re-read; ten retry sweepers on one data request →
+  one ask per permit (counted at the simulator); permits and deadlines on the database clock, so a
+  ±5 s skewed instance neither retries early nor gives up early (`SendPermitsAreTheDatabasesTest`
+  extended to the credit data store). `PASS` on those counts.
+- **Idempotency**: the reference is unique per data request and the provider's dedupe key; the
+  record is born once; every edge is conditional.
+- **Consistency**: the gate's read is authoritative in both transactions; every window on
+  `statement_timestamp()`.
+- **Atomicity**: Tx2 writes the record, the evidence, the status, the event and the outbox row
+  together (failure injection after the record insert leaves nothing).
+- **Failure handling**: §14 rows 1, 5, 6, 7, 29: unavailable → retried until the deadline; response
+  lost → re-asked under the same reference; duplicate → evidence marked, no second record;
+  withdrawal mid-pull → payload discarded; slow beyond timeout → timed out, `UNAVAILABLE`, retried;
+  a crash after Tx1 → re-asked by the sweep; a crash in Tx2 → rolled back and re-asked, the provider
+  returning its first answer; §14 row 31's data side — a withdrawal after the answer leaves the
+  record `RECEIVED` (terminal) and is acted on by the request (`-015`, `-016`, G11).
+- **Security**: evidence encrypted at rest; no `SELECT` for the application role (raw-SQL negative);
+  the definer function demands a reason; every new column classified (`RESTRICTED-FINANCIAL` for
+  payload and attribute values); a needle planted in the simulated payload absent from every table
+  except the ciphertext and from every log line.
+- **Audit**: `credit.BureauDataRequested` — a platform act on the applicant's behalf, written in Tx1
+  by the opener only; the summary names the request and the source kind, never an attribute. A retry
+  is the same access under the same reference (one pull at the provider), recorded as an attempt
+  row, not a second act.
+- **Observability**: `finapp.credit.data.request{source_kind, provider, outcome}` (received,
+  unavailable, consent_withdrawn, duplicate); `finapp.credit.data.latency`;
+  `finapp.credit.data.retry.sweeper.enabled`.
+- **Reconciliation implications**: N/A — credit moves no money; the provider's pull count is checked
+  against our references by the storm (`P10-TST-001`), an operational census, not a financial
+  reconciliation.
+- **Tests**: `BureauCollectionDatabaseTest` (`#anAnswerDeliveredTwiceLeavesOneRecord`;
+  `#aLostResponseIsReaskedUnderTheSameReference` (one simulator pull);
+  `#consentWithdrawnInFlightDiscardsThePayload`; `#consentAbsentAtOpenAsksNothing` (zero pulls);
+  `#tenRetrySweepersAskOncePerPermit`; `#theDeadlineStopsRetriesAndEmitsUnavailableOnce`;
+  `#aSkewedSweeperNeitherRetriesEarlyNorGivesUpEarly`; `#aTimeoutIsUnavailableAndRetried`;
+  `#aCrashAfterTheOpeningTransactionIsReasked`; `#undueWorkNeverStarvesDueWork`;
+  `#aWithdrawalAfterTheAnswerLeavesTheRecordReceived`; `#aRetryAfterAWithdrawalAsksNothing` (zero
+  pulls, `UNAVAILABLE → CONSENT_WITHDRAWN`); every machine edge, valid and invalid, by raw
+  SQL (`RECEIVED → CONSENT_WITHDRAWN` refused); `UPDATE`/`DELETE` on `credit_record` and
+  `credit_evidence` refused; `SELECT` on `credit_evidence` refused to `finapp_app`; the definer
+  refusing an empty reason); `SendPermitsAreTheDatabasesTest` extended; the needle.
+- **Probe**: drop the gate re-read from Tx2 → `#consentWithdrawnInFlightDiscardsThePayload` red;
+  stamp the permit from the instance clock → the skew test and `SendPermitsAreTheDatabasesTest` red;
+  drop `UNIQUE (data_request_id)` → `#anAnswerDeliveredTwiceLeavesOneRecord` red.
+- **Acceptance criteria**: one record per answered reference under every seeded fault; no pull
+  without a current basis; no plaintext payload readable by the application role.
+- **Definition of done**: `DOD-SEC`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
+
+**P10-TSK-007 — Financial data: the port, a simulated provider and collection** — `PLANNED`
+- **Objective**: verified income and committed expenditure from a provider-neutral financial-data
+  source, collected on `-006`'s machinery under its own consent purpose.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-006`.
+- **Scope**: the `FinancialDataProvider` port (`-005`'s answer shape); `findata-sim-a`
+  (deterministic, per-reference dedupe, the same fault injection); `FinancialDataProviderContract`;
+  golden normalisation files; normalisation to `FINDATA_MONTHLY_INCOME` and
+  `FINDATA_MONTHLY_COMMITTED_EXPENDITURE` (money as minor units + currency; another currency →
+  `ABSENT` with `CURRENCY_NOT_SUPPORTED`); collection through `CreditDataCollection` with source
+  kind `FINANCIAL_DATA`, gated on `FINANCIAL_DATA_ACCESS`; `credit.FinancialDataRequested` audited;
+  the vocabulary guard extended.
+- **Out of scope**: open-banking connectivity; categorisation models beyond the simulator's declared
+  fields.
+- **Domain changes**: the `FinancialDataProvider` port.
+- **Persistence**: none expected (`V004` declares both source kinds).
+- **APIs**: none.
+- **Events**: `CreditDataCollected`, `CreditDataUnavailable` with source kind `FINANCIAL_DATA`.
+- **Policy/model versioning**: the normaliser version on each record, as `-005`.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-03` (its own purpose), `INV-CRD-10`, `INV-CRD-12`, `INV-AUD-01`.
+- **Distributed-system concerns**: `-006`'s arbiters unchanged; the duplicate, lost-response and
+  withdrawal races re-run for this source kind (counted). `PASS` on
+  `FinancialDataCollectionDatabaseTest`.
+- **Idempotency**: as `-006`.
+- **Consistency**: as `-006`.
+- **Atomicity**: as `-006`.
+- **Failure handling**: as `-006` and `-005` for this provider.
+- **Security**: as `-006`; financial-data payloads under the same key purpose and grants.
+- **Audit**: `credit.FinancialDataRequested` (as `credit.BureauDataRequested`).
+- **Observability**: the `source_kind` and `provider` tags gain values.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `SimulatedFinancialDataContractTest extends FinancialDataProviderContract`;
+  `FinancialDataNormalisationGoldenTest`; `FinancialDataCollectionDatabaseTest`
+  (`#anAnswerDeliveredTwiceLeavesOneRecord`, `#aLostResponseIsReaskedUnderTheSameReference`,
+  `#consentWithdrawnInFlightDiscardsThePayload`, `#aBureauConsentDoesNotAdmitAFinancialDataPull`).
+- **Probe**: gate `FINANCIAL_DATA` on `CREDIT_BUREAU_ACCESS` →
+  `#aBureauConsentDoesNotAdmitAFinancialDataPull` red.
+- **Acceptance criteria**: financial data collected once per reference under every seeded fault,
+  only under its own purpose.
+- **Definition of done**: `DOD-SEC`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
+
+**P10-TSK-008 — The decision input snapshot** — `PLANNED`
+- **Objective**: freeze, once per evaluation, a complete, sealed, canonical snapshot of every input
+  the engine may read, every record in it fresh on the database clock.
+- **Bounded context**: Credit Decisioning; `app` (the party-facts and risk-signal adapters).
+- **Dependencies**: `-006`, `-007`.
+- **Scope**: `credit V005` `decision_snapshot` (id; `decision_request_id NOT NULL` (G10);
+  `sequence`; `UNIQUE (decision_request_id, sequence)` — sequence 1 at the freeze, a successor only
+  when `-016`'s deciding transaction finds the reserved exposure changed; `snapshot_format`; the
+  canonical JSON; its SHA-256; the pinned policy, model and engine versions (their foreign keys
+  arrive with `-011`, `-012`); `INSERT` only); `CanonicalSnapshot` (attributes sorted by code; fixed
+  textual forms — integers, money as minor units + ISO currency, booleans, codes, `ABSENT` explicit;
+  the requested product, amount and term; the pinned versions; UTF-8, no locale, no map ordering)
+  and its hash; `SnapshotFreezer.freeze(input)`, called inside the caller's locked transaction:
+  takes the request's data requests `FOR UPDATE` by id (element (4)); reads each required source's
+  `RECEIVED` record and judges freshness as `retrieved_at >= statement_timestamp() − max_age(source
+  kind)` (the pinned policy's parameter, handed in); a stale record re-opens collection by the
+  lifecycle's one backward edge — the request `READY → COLLECTING` with a new data request under a
+  new reference, the stale record belonging to no snapshot (§14 row 9); a source `UNAVAILABLE` past
+  its deadline enters as `ABSENT` with `SOURCE_UNAVAILABLE`; the declared figures (`DECLARED_*`);
+  party facts (`PARTY_AGE_YEARS`, `PARTY_RESIDENCY_COUNTRY`) through the `CreditPartyStanding` port
+  `app` implements (declared here for the party facts; `-014` adds its standing read); `RISK_SIGNAL` through the `CreditRiskSignal` port, whose Phase 10 composition
+  `NotAssessedUntilPhase13` answers `NOT_ASSESSED` with the seam's version;
+  `PLATFORM_RESERVED_EXPOSURE` through `-010`'s `ReservedExposure` contract — every attribute with
+  its provenance; a money attribute in a currency other than the product's → `ABSENT` with
+  `CURRENCY_NOT_SUPPORTED`; the snapshot's accessor throws on an attribute it lacks — never a
+  default.
+- **Out of scope**: the request's machine (`-014`, `-015`); pinning (`-015`); successor snapshots
+  (`-016`); the assessment (`-009`…`-011`).
+- **Domain changes**: the `DecisionSnapshot` aggregate; the `CreditPartyStanding` (party facts)
+  and `CreditRiskSignal` ports.
+- **Persistence**: `credit V005`.
+- **APIs**: none.
+- **Events**: none (the snapshot's hash is carried by `CreditAssessmentCreated`, `-011`).
+- **Policy/model versioning**: `snapshot_format` 1 — a change to the canonical form is a new format,
+  the old one kept in code for replay; the risk-signal seam's version recorded in the snapshot, so a
+  decision made before Phase 13 replays identically after it.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-07` (complete, sealed, re-verifiable); `INV-CRD-08` (fresh on the
+  database clock at the freeze); `INV-CRD-06` (born once per sequence; one assessment and one
+  evaluation per snapshot follow from it); `INV-CRD-12` (money exact, one currency, never
+  converted); `INV-CRD-04` (the risk signal recorded as given, never computed); `INV-CRD-10` (an
+  unavailable source is `ABSENT` with its marker).
+- **Distributed-system concerns**: §7 row 7 — a freeze racing a fresher record: the recording
+  transaction and the freeze meet on the data-request rows, and the snapshot is fixed by its unique,
+  so a later record belongs to no snapshot; ten freezers on one request → one snapshot per sequence
+  (`ON CONFLICT DO NOTHING`, then read); freshness on the database clock under ±5 s skew. `-015`
+  places the freeze inside the request's row lock (element (2)). `PASS` on
+  `DecisionSnapshotDatabaseTest`'s counts.
+- **Idempotency**: born once per `(request, sequence)`.
+- **Consistency**: freshness judged on `statement_timestamp()` in the freezing transaction.
+- **Atomicity**: the snapshot and any re-collection's new data request commit together or not at
+  all.
+- **Failure handling**: §14 rows 9 and 28: stale at the freeze → re-collected, never decides; a
+  foreign-currency source → partial data with the marker, never converted.
+- **Security**: the canonical JSON is `RESTRICTED-FINANCIAL`; it never appears in a log, a span or
+  an event.
+- **Audit**: none (an internal step; the access acts are `-006`'s).
+- **Observability**: none new (the freeze span is `-020`'s).
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `CanonicalSnapshotTest` (golden canonical JSON; attribute insertion order permuted →
+  identical bytes and hash; another default locale, time zone and charset → identical; `ABSENT`
+  explicit); `DecisionSnapshotDatabaseTest` (`#aRecordOneSecondPastMaxAgeReCollects`;
+  `#aRecordAtExactlyMaxAgeIsFresh`; `#aSkewedInstanceNeitherAcceptsStaleNorRefusesFresh` (±5 s);
+  `#tenFreezersLeaveOneSnapshot`; `#aFresherRecordArrivingDuringTheFreezeBelongsToNoSnapshot`;
+  `#anUnavailableSourceEntersAbsentWithItsMarker`; `#aForeignCurrencySourceIsPartialNeverConverted`;
+  `#theRiskSignalIsRecordedWithItsSeamVersion`; `#aSnapshotRowIsNeverUpdated` by raw SQL);
+  `#aMissingAttributeReadIsAnErrorNeverADefault`; `NoAmbientTimeRulesTest` covering `credit`.
+- **Probe**: judge freshness on the instance's clock → the skew test and `NoAmbientTimeRulesTest`
+  red; order the attributes by a hash map → `CanonicalSnapshotTest`'s permutation red.
+- **Acceptance criteria**: the same inputs always produce the same bytes and hash; no snapshot
+  contains a stale record; ten freezers, one snapshot.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: High. **Cx**: M.
+
+**P10-TSK-009 — Affordability** — `PLANNED`
+- **Objective**: the affordability figure, exact decimal in the product's one currency, rounded once
+  at a declared point.
+- **Bounded context**: Credit Decisioning.
+- **Dependencies**: `-008`.
+- **Scope**: `AffordabilityAssessment` (`PHASE_10_PLAN.md` §12.3): income = min(verified, declared),
+  verified meaning financial data where present; expenditure = max(verified committed, declared);
+  obligations = the bureau's monthly obligations; repayment = annuity(requested amount, term, the
+  policy's assessment rate) for `PERSONAL_LOAN`, limit × the policy's minimum payment ratio for
+  `CREDIT_LINE`; disposable = income − expenditure − obligations − repayment; affordable ⇔
+  disposable ≥ the policy's minimum disposable; the annuity in `BigDecimal` at scale 10 `HALF_EVEN`,
+  rounded once to minor units `HALF_UP` at the end, a zero rate degenerating to amount ÷ term;
+  inputs read only from the snapshot; a money input in another currency refused (never converted);
+  an absent bureau obligations attribute an evaluation error unless the policy reasons about it as
+  `ABSENT` (no silent zero).
+- **Out of scope**: persisting the figures (`-011`'s `credit_assessment`); pricing the credit (Phase
+  11).
+- **Domain changes**: `AffordabilityAssessment`.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: the formula, scale and rounding are the engine's (`engine_version` 1
+  — a change is a new engine version, the old kept for replay); the rate, ratio and minimum are the
+  pinned policy's parameters.
+- **Financial impact**: none — an assessment figure, not a balance.
+- **Invariants**: `INV-CRD-12`; `INV-MON-01`, `INV-MON-02`; `INV-CRD-07` (reads only the snapshot).
+- **Distributed-system concerns**: pure computation, no state. `PASS` (no state).
+- **Idempotency**: deterministic — the same snapshot and parameters give the same figure.
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: a currency mismatch or a missing required attribute is an error, never a
+  default.
+- **Security**: no figure in a log or exception message.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `AffordabilityTest` (hand-computed worked cases to the minor unit, both products, a
+  zero rate, the rounding point); `AffordabilityPropertiesTest` (disposable monotone non-decreasing
+  in income, non-increasing in amount, rate and term-shortening; exact across generated inputs);
+  `#aForeignCurrencyInputIsRefused`; `NoFloatingPointMoneyRulesTest`.
+- **Probe**: round at every intermediate step instead of once → `AffordabilityTest` red; take max
+  instead of min of the incomes → the property test red.
+- **Acceptance criteria**: every worked case exact to the minor unit; every property holds; no
+  floating point.
+- **Definition of done**: `DOD-DOMAIN`. **Risk**: Medium. **Cx**: S.
+
+**P10-TSK-010 — Exposure** — `PLANNED`
+- **Objective**: the exposure arithmetic, and the reserved-exposure contract the deciding
+  transaction will re-read under the party's lock.
+- **Bounded context**: Credit Decisioning; `app` (the platform-exposure composition).
+- **Dependencies**: `-008`.
+- **Scope**: `ExposureAssessment` (§12.4): exposure = the bureau's total balance + platform
+  outstanding credit (the `PlatformCreditExposure` port; Phase 10's composition
+  `NoLoansUntilPhase11` answers zero, recorded with its version) + reserved exposure + the requested
+  amount (for `CREDIT_LINE`, the limit); within ⇔ exposure ≤ the policy's maximum;
+  `EXPOSURE_HEADROOM` = maximum − exposure (may be negative); the `ReservedExposure` contract: Σ
+  approved amounts of the party's `APPROVED` decisions with `valid_until > statement_timestamp()`
+  and no consumption row (G1), specified as an interface with a contract suite run here over an
+  in-memory fake — the JDBC implementation and its lock land with `credit_decision` in `-016`.
+- **Out of scope**: the reservation's concurrency proof (`-016`); writing consumption (Phase 11).
+- **Domain changes**: `ExposureAssessment`; the `PlatformCreditExposure` port; the
+  `ReservedExposure` contract.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: the formula is the engine's; the maximum is the pinned policy's; the
+  platform-exposure port's version is recorded in the snapshot.
+- **Financial impact**: defines the credit exposure an approval reserves — no posting, no hold.
+- **Invariants**: `INV-CRD-09` (the arithmetic it serialises); `INV-CRD-12`.
+- **Distributed-system concerns**: pure; the reservation race is proven by `-016` and is `UNKNOWN`
+  until then — this task answers `PASS` for its own (stateless) scope only.
+- **Idempotency**: deterministic.
+- **Consistency**: the contract fixes the database clock as the lapse judge.
+- **Atomicity**: n/a.
+- **Failure handling**: a currency mismatch is an error, never converted.
+- **Security**: no figure in a log.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: N/A — credit moves no money; exposure is a decision input, not a
+  ledger balance.
+- **Tests**: `ExposureTest` (worked cases; the headroom sign); `ReservedExposureContract` over the
+  fake (a decision lapsing exactly at `valid_until` excluded; a consumed decision excluded; a
+  declined one excluded; another party's excluded);
+  `#platformOutstandingIsRecordedZeroWithItsVersion`.
+- **Probe**: include decisions with `valid_until <= now` in the fake → the contract suite red; drop
+  the reserved term → `ExposureTest` red.
+- **Acceptance criteria**: every worked case exact; the contract pins exactly which decisions
+  reserve.
+- **Definition of done**: `DOD-FIN` (credit exposure; F1, F2, F4, F5 vacuous, F7 binding, F8 N/A),
+  `DOD-DOMAIN`. **Risk**: Medium. **Cx**: S.
+
+**P10-TSK-011 — The scorecard model and its versioning** — `PLANNED`
+- **Objective**: a versioned points-table scorecard, activated only by two people, and the
+  assessment row that holds the three figures with their inputs.
+- **Bounded context**: Credit Decisioning; `app` (the administration door).
+- **Dependencies**: `-003`, `-009`, `-010`.
+- **Scope**: `credit V006`: `scorecard_model_version` (family, version, status `PROPOSED` | `ACTIVE`
+  | `RETIRED` | `REJECTED`, base points, `proposed_by`, `approved_by`, `CHECK (approved_by <>
+  proposed_by)`, effective from/to on the database clock, partial uniques — one `PROPOSED` and one
+  `ACTIVE` per family — a machine trigger letting only the status, approval and effective columns
+  move), `scorecard_band` (attribute code, ordinal, `[lower, upper)` or a code set, an absent band,
+  integer points — **born with the version, in the proposal's transaction, and immutable for every
+  writer from insert**: a trigger refuses any `UPDATE` or `DELETE` and any band inserted for a
+  version not created in the same transaction; a correction is a rejection and a new proposal),
+  `scorecard_model_event`; `credit V007` `credit_assessment` (`snapshot_id UNIQUE`; affordability,
+  exposure and score with their inputs' references; the model and engine versions; `INSERT` only);
+  `Scorecard.score(snapshot)` (base + Σ the band points each attribute falls in, `ABSENT` taking its
+  declared band; integer only); `CreditAssessments.assess(snapshot)` (born once per snapshot;
+  `CreditAssessmentCreated`); administration: propose (keyed `credit.scorecard:EMPLOYEE:<id>`; the
+  full points table as the body, validated — bands contiguous and non-overlapping per attribute, an
+  absent band for each, every code in the vocabulary — else `422 credit.ScorecardInvalid`), approve
+  (a second person; the active row `FOR UPDATE` retired beside the successor in one transaction),
+  reject (with a reason); advisory namespace `10` on `hashtext(family)` — credit's own blocking lock
+  (the pricing policy has none), the partial unique kept as the backstop — registered in
+  `DISTRIBUTED_EXECUTION.md` §3 here (G4); `RETAIL_SCORECARD` v1 seeded **as a proposal** — no model
+  is migration-activated.
+- **Out of scope**: a statistical model family (§17); the policy (`-012`).
+- **Domain changes**: the `ScorecardModelVersion` and `CreditAssessment` aggregates.
+- **Persistence**: `credit V006`, `credit V007`.
+- **APIs**: `POST /v1/operator/credit/scorecards`, `POST …/{versionId}/approval`, `POST
+  …/{versionId}/rejection` — `CREDIT_POLICY_ADMINISTER`, keyed, sync; `409 credit.ProposalPending`,
+  `409 credit.PolicyStale` (the version is no longer `PROPOSED`), `403 credit.SelfApprovalRefused`,
+  `422 credit.ScorecardInvalid`, `422 credit.ReasonRequired` (rejection).
+- **Events**: `ScorecardModelVersionActivated` (version, family, effective-from, predecessor — never
+  the bands); `CreditAssessmentCreated` (request id, snapshot hash, model version — never a figure).
+- **Policy/model versioning**: this task — a version's bands are born with it and immutable from
+  insert (a correction is a rejection and a new proposal); one `ACTIVE` per family at every instant;
+  which was active at any past instant is answerable from the rows; a pinned version scores its
+  decisions forever (`INV-HIST-04`).
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-05`; `INV-HIST-04`; `INV-AUD-04`; `INV-CRD-04` (the score is a figure of
+  the assessment, not a decision); `INV-CRD-06` (one assessment per snapshot).
+- **Distributed-system concerns**: ten approvers of one proposal → one activation, nine
+  `PolicyStale` (the version row `FOR UPDATE`, conditional on `PROPOSED`); ten proposers → one
+  proposal (namespace `10`); ten assessors of one snapshot → one assessment; an activation racing an
+  assessment → the assessment keeps the model it pinned (§14 row 17; the decision-side proof in
+  `-016`). `PASS` on `ScorecardVersionDatabaseTest` and `CreditAssessmentDatabaseTest` counts.
+- **Idempotency**: the acts are keyed per employee; the assessment is born once.
+- **Consistency**: activation retires the predecessor in the same transaction; effective periods on
+  the database clock.
+- **Atomicity**: the retire, the activation, the event and the audit commit together.
+- **Failure handling**: a lost approval response replays the stored response; a stale approval is
+  `409`, nothing changed.
+- **Security**: `CREDIT_POLICY_ADMINISTER` only; the proposer can never approve (domain and
+  `CHECK`); every route's negative.
+- **Audit**: `credit.ScorecardVersionProposed`, `credit.ScorecardVersionActivated`,
+  `credit.ScorecardVersionRejected` (reason required) — each in its act's transaction; losers record
+  nothing.
+- **Observability**: none new (the active-version gauge is the policy's, `-012`).
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `ScorecardTest` (band edges `[lower, upper)`; absent bands; code sets; integer sums);
+  `ScorecardVersionDatabaseTest` (`#tenApproversActivateOnce`; `#tenProposersLeaveOneProposal`;
+  `#theProposerCannotApprove` at the domain and by raw SQL against the `CHECK`;
+  `#bandsAreImmutableFromInsert` by raw SQL (an `UPDATE`, a `DELETE` and a late band insert refused
+  while still `PROPOSED`, and again once `ACTIVE`); `#oneActivePerFamily` by raw SQL;
+  `#theVersionActiveAtAnyPastInstantIsAnswerable`; `#anActivationMidAssessmentKeepsThePinnedModel`);
+  `CreditAssessmentDatabaseTest#tenAssessorsLeaveOneAssessment`; the route negatives (an
+  `UNDERWRITER` `403`, a missing key `400`); `RoutePermissionRegisterTest` rows.
+- **Probe**: drop `CHECK (approved_by <> proposed_by)` → the raw-SQL self-approval accepted →
+  `#theProposerCannotApprove` red; drop the band-immutability trigger →
+  `#bandsAreImmutableFromInsert` red.
+- **Acceptance criteria**: v1 activated by two people in the suites; every race counted; the active
+  model at any instant answerable.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: Medium. **Cx**:
+  L.
+
+**P10-TSK-012 — The credit policy and its versioning** — `PLANNED`
+- **Objective**: credit policy as versioned data — rules as rows over a closed vocabulary, four-eyes
+  activation, effective periods — and no policy that could approve on missing data.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-011`.
+- **Scope**: `credit V008`: `credit_policy_version` (product, version, status, the parameters —
+  assessment rate, minimum disposable, minimum payment ratio, maximum exposure, maximum data age per
+  source kind, the unavailable-source fallback `REFER` | `DECLINE` (`CHECK`: never approve), the
+  auto-approval ceiling — `proposed_by`, `approved_by`, the four-eyes `CHECK`, effective periods,
+  partial uniques, machine and freeze triggers), `credit_policy_rule` (ordinal, rule code, attribute
+  or derived figure, operator from `LT, LE, GT, GE, EQ, NE, IN, NOT_IN, IS_ABSENT, IS_PRESENT`,
+  typed operand, effect `HARD_DECLINE` | `DECLINE` | `REFER` | `CAP_AMOUNT`, reason code referencing
+  the catalogue — **born with the version, in the proposal's transaction, and immutable for every
+  writer from insert**, as `-011`'s bands), `credit_policy_event`; the foreign keys from
+  `decision_snapshot`'s pinned versions; administration as `-011`, namespace `10` extended to
+  `hashtext(product)` (the partial unique the backstop); validation at proposal — every attribute in
+  the vocabulary, every reason code in the catalogue, operator and operand types agreeing, every
+  adverse effect carrying an adverse reason code, `CAP_AMOUNT` operands in the product's currency,
+  and **a fallback rule for every source kind the policy reads** (`IS_ABSENT` → the declared
+  fallback with `CRD-SOURCE-UNAVAILABLE`) — else `422 credit.PolicyIncomplete`; the
+  policy-at-instant read; v1 per product seeded **as a proposal**;
+  `finapp.credit.policy.active{product}`.
+- **Out of scope**: the evaluator (`-013`); product pricing (Phase 11).
+- **Domain changes**: the `CreditPolicyVersion` aggregate.
+- **Persistence**: `credit V008`.
+- **APIs**: `POST /v1/operator/credit/policies`, `POST …/{versionId}/approval`, `POST
+  …/{versionId}/rejection` — `CREDIT_POLICY_ADMINISTER`, keyed `credit.policy:EMPLOYEE:<id>`, sync;
+  `GET /v1/operator/credit/policies?product=&at=` — `CREDIT_INVESTIGATE`, read; errors `409
+  credit.PolicyStale`, `409 credit.ProposalPending`, `403 credit.SelfApprovalRefused`, `422
+  credit.PolicyIncomplete`, `422 credit.ProductNotOffered`, `422 credit.ReasonRequired`.
+- **Events**: `CreditPolicyVersionActivated` (version, product, effective-from, predecessor — never
+  the rules).
+- **Policy/model versioning**: this task — `INV-CRD-05` for policies: rules born with the version
+  and immutable from insert (a correction is a rejection and a new proposal), one `ACTIVE` per
+  product, the active version at any past instant answerable, a pinned version deciding its requests
+  after retirement (`INV-HIST-04`).
+- **Financial impact**: none directly — the maximum exposure it declares is what `-016` enforces.
+- **Invariants**: `INV-CRD-05`; `INV-HIST-04`; `INV-AUD-04`; `INV-CRD-10` (a fallback for every
+  source, never approve); `INV-CRD-02` (every adverse rule carries a reason code).
+- **Distributed-system concerns**: §7 rows 9–10: ten approvers → one activation, nine `PolicyStale`;
+  an activation racing a decision → the decision's `FOR SHARE` on its pinned version against the
+  activation's `FOR UPDATE` on the active row (§14 rows 16, 24; the decision side in `-016`). `PASS`
+  on `CreditPolicyVersionDatabaseTest`.
+- **Idempotency**: keyed per employee.
+- **Consistency**: effective periods on the database clock; retire and activate in one transaction.
+- **Atomicity**: the retire, the activation, the event and the audit together.
+- **Failure handling**: an incomplete or ill-typed policy is refused at proposal, never at decision
+  time; a stale approval is `409`.
+- **Security**: as `-011`; thresholds are `CONFIDENTIAL` and never leave the operator surface.
+- **Audit**: `credit.PolicyVersionProposed`, `credit.PolicyVersionActivated`,
+  `credit.PolicyVersionRejected` (reason required).
+- **Observability**: `finapp.credit.policy.active{product}` (alerted by `-020` when an offered
+  product has none).
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `CreditPolicyVersionDatabaseTest` (`#tenApproversActivateOnce`;
+  `#tenProposersLeaveOneProposal`; `#selfApprovalIsRefusedAtTheDomainAndTheCheck`;
+  `#rulesAreImmutableFromInsert` by raw SQL — an `UPDATE`, a `DELETE` and a late rule insert refused
+  while `PROPOSED` and once `ACTIVE` (§14 row 24); `#oneActivePerProduct` by raw SQL;
+  `#theVersionActiveAtAnyPastInstantIsAnswerable` over a three-version history, the boundary
+  instants included; `#anActivationWaitsForAPinnedReader`); `CreditPolicyValidationTest`
+  (`#aPolicyWithoutAFallbackForASourceItReadsIsIncomplete`; `#aFallbackOfApproveIsUnrepresentable`;
+  an unknown reason code; an operand of the wrong type; an adverse rule without an adverse code);
+  the route negatives; `RoutePermissionRegisterTest`.
+- **Probe**: let the at-instant query ignore `effective_to` →
+  `#theVersionActiveAtAnyPastInstantIsAnswerable` red; remove the fallback-completeness check →
+  `#aPolicyWithoutAFallbackForASourceItReadsIsIncomplete` red.
+- **Acceptance criteria**: v1 of each product activated by two people in the suites; no incomplete
+  policy accepted; the policy active at any instant answerable from the rows alone.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: High. **Cx**:
+  L.
+
+**P10-TSK-013 — The policy evaluator** — `PLANNED`
+- **Objective**: a pure, deterministic, versioned evaluator whose outcome, amount and ordered
+  reasons follow from the snapshot, the assessment and the pinned policy alone.
+- **Bounded context**: Credit Decisioning.
+- **Dependencies**: `-011`, `-012`.
+- **Scope**: `PolicyEvaluator` `engine_version` 1 (§12.6): every rule in ordinal order over
+  attributes and the derived figures `SCORE`, `DISPOSABLE_INCOME`, `AFFORDABLE`, `EXPOSURE`,
+  `EXPOSURE_HEADROOM`; the outcome the most severe effect triggered (`HARD_DECLINE > DECLINE > REFER
+  > APPROVE`); the approved amount min(requested, every `CAP_AMOUNT` triggered, the auto-approval
+  ceiling), an approval below the request carrying the cap's reason code — the triggered
+  `CAP_AMOUNT` rule's, or `CRD-AUTO-APPROVAL-CEILING` when the ceiling (a policy parameter, not a
+  rule) binds; reason codes the triggered rules' in ordinal order, deduplicated keeping the first;
+  an adverse outcome without a reason unrepresentable; `EvaluationOutcome` (`APPROVE`, `REFER`,
+  `DECLINE`, `HARD_DECLINE`); `EngineVersions` (engine 1 kept in code forever; replay selects by the
+  pinned version); `credit V009` `policy_evaluation` (`assessment_id UNIQUE`, outcome, approved
+  amount, engine and policy versions, the ordered reason codes with a `CHECK` that an adverse
+  outcome has at least one; `INSERT` only) and `policy_evaluation_rule` (every rule's ordinal, code,
+  effect and whether it triggered; append-only).
+- **Out of scope**: what follows the evaluation (`-016`, `-018`); counter-offers (Phase 11).
+- **Domain changes**: `PolicyEvaluator`, `EvaluationOutcome`, the `PolicyEvaluation` aggregate.
+- **Persistence**: `credit V009`.
+- **APIs**: none.
+- **Events**: none (the decision's event carries the outcome).
+- **Policy/model versioning**: `engine_version` 1; a change of semantics — an operator, the severity
+  order, the dedup rule — is a new engine version, and every older one stays for replay
+  (`INV-CRD-01`, §14 row 26).
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-01` (determinism); `INV-CRD-02` (adverse ⇒ reasons); `INV-CRD-04` (the
+  evaluation a record distinct from the decision); `INV-CRD-06` (one evaluation per assessment);
+  `INV-CRD-10` (the fallback rule fires on `SOURCE_UNAVAILABLE`).
+- **Distributed-system concerns**: the evaluator is pure; the row is born once. `PASS` on
+  `PolicyEvaluationDatabaseTest#tenEvaluatorsLeaveOneEvaluation`.
+- **Idempotency**: deterministic; born once.
+- **Consistency**: reads no clock, no locale, no hash ordering.
+- **Atomicity**: the evaluation and its rule rows together.
+- **Failure handling**: an attribute absent from the snapshot is an evaluation error, never a
+  default; §14 row 2 — a partial answer's `ABSENT` attributes decided by the rules that reason about
+  them explicitly.
+- **Security**: thresholds and triggered rules stay inside `credit` and the operator surface.
+- **Audit**: none (the decision is the audited act).
+- **Observability**: none new.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `PolicyEvaluatorTest` (every operator against every value type; every effect; every
+  severity combination; reason ordering and dedup; several caps, a cap above the request, the
+  ceiling binding with `CRD-AUTO-APPROVAL-CEILING` (and a rule cap below the ceiling carrying its
+  own code); the fallback on `SOURCE_UNAVAILABLE`, `REFER` and `DECLINE` variants; a partial answer
+  decided explicitly; adverse without a reason unrepresentable in the domain);
+  `EvaluatorDeterminismTest` (one input evaluated under shuffled rule-load orders, three locales and
+  three time zones → identical); `EngineVersionTest` (a planted engine 2 differing in one operator
+  leaves engine-1 evaluations identical); `PolicyEvaluationDatabaseTest`
+  (`#tenEvaluatorsLeaveOneEvaluation`; the adverse-without-reason `CHECK` by raw SQL).
+- **Probe**: swap `REFER` and `DECLINE` in the severity order → `PolicyEvaluatorTest`'s combination
+  cases red; deduplicate keeping the last → the ordering case red; drop the `CHECK` → its raw-SQL
+  case red.
+- **Acceptance criteria**: every combination case and the determinism battery pass; the engine
+  version is recorded on every evaluation.
+- **Definition of done**: `DOD-DOMAIN`. **Risk**: High. **Cx**: M.
+
+**P10-TSK-014 — The decision request** — `PLANNED`
+- **Objective**: a customer submits a credit decision request — keyed, consented, standing-checked,
+  one open per product — and reads its status.
+- **Bounded context**: Credit Decisioning; `app` (the door, the standing adapter).
+- **Dependencies**: `-002`, `-003`, `-004`, `-012`.
+- **Scope**: `credit V010` `decision_request` (party, profile, product, requested amount as minor
+  units + currency, term (absent for `CREDIT_LINE`), declared income and expenditure, status,
+  permit, `expires_at` = submission + the product's request validity on `statement_timestamp()`,
+  correlation; the partial `UNIQUE (party_id, product) WHERE status IN ('SUBMITTED', 'COLLECTING',
+  'READY', 'EVALUATED', 'IN_REVIEW')`; terminal states `DECIDED`, `CANCELLED`, `EXPIRED`,
+  `ABANDONED` (the last with its reason `STANDING_LOST` | `CONSENT_WITHDRAWN`); a machine trigger
+  for every edge of the lifecycle document — `READY → COLLECTING` the one backward edge — invalid
+  ones refused, `CANCELLED` after `EVALUATED`, `EVALUATED → COLLECTING` and `COLLECTING → EVALUATED`
+  among them) and `decision_request_event` (append-only); the foreign keys from `data_request` and
+  `decision_snapshot` (G10); the `CreditPartyStanding` port's standing read (`ACTIVE`, KYC
+  `VERIFIED`; the port declared by `-008` for the party facts), implemented in `app` over the
+  existing customer-standing port; the submission door (an MFA-assured session;
+  `@ClosedBody`; `IdempotentExecutor` claim `credit.decision:CUSTOMER:<id>`; in one transaction —
+  standing read in-transaction, the product offered (an `ACTIVE` policy), the amount and term within
+  the product's bounds, consent for every source kind the active policy reads, the profile ensured,
+  the request born `SUBMITTED`, `CreditDecisionRequested`; `202` with the request id); cancellation
+  (keyed `credit.decision-cancellation:CUSTOMER:<id>`; the row `FOR UPDATE`, conditional on
+  `SUBMITTED` | `COLLECTING` | `READY` → `CANCELLED`); the status read (owner-scoped; the outcome
+  view is `-017`'s).
+- **Out of scope**: driving the request (`-015`); the decision (`-016`); the outcome and reasons in
+  the read (`-017`).
+- **Domain changes**: the `DecisionRequest` aggregate; the `CreditPartyStanding` port's standing
+  read.
+- **Persistence**: `credit V010`.
+- **APIs**: `POST /v1/me/credit/decision-requests` (customer, MFA, keyed, async `202`); `GET
+  /v1/me/credit/decision-requests/{id}` (own requests only); `POST
+  /v1/me/credit/decision-requests/{id}/cancellation` (keyed, sync); errors `409
+  credit.DecisionRequestOpen` (naming the open request), `409 credit.RequestNotCancellable`, `422
+  credit.ProductNotOffered`, `422 credit.AmountOutOfRange`, `403 credit.ConsentRequired` (the
+  purpose named), the platform's elevated-session refusal without MFA, `404` for another party's
+  request.
+- **Events**: `CreditDecisionRequested` (request id, party, product, requested amount and term —
+  never declared income); `CreditDecisionRequestClosed` (status `CANCELLED`).
+- **Policy/model versioning**: the request records no version yet — the pin is taken at `SUBMITTED →
+  COLLECTING` (`-015`, G2); the consent check at submission reads the policy active at that instant.
+- **Financial impact**: none — a request reserves nothing.
+- **Invariants**: `INV-CRD-03` (refused before any provider is asked); `INV-IDEM-01`…`03`;
+  `INV-CON-02`; `INV-CRD-12` (amounts exact in the product's currency); `INV-CRD-06`'s precondition
+  (one open request per party and product).
+- **Distributed-system concerns**: §7 rows 1–2: ten submissions under one key → one request, the
+  same response replayed, `409` while in progress; two keys for one party and product → one open,
+  the other `409 credit.DecisionRequestOpen` naming it (the partial unique). `PASS` on
+  `DecisionRequestDatabaseTest`'s counts.
+- **Idempotency**: keyed per principal, claimed before any write.
+- **Consistency**: standing and consent read in the submitting transaction; expiry stamped from the
+  database clock.
+- **Atomicity**: the request, its first history row, the event and the outbox row together.
+- **Failure handling**: §14 rows 8, 13, 14: consent absent → `403`, nothing asked; the same key →
+  the same response; a second key → `409`; a lost `202` → the retry replays it.
+- **Security**: owner-scoped in every query (`OwnershipIsScopedTest`); MFA for submission; closed
+  bodies (no score, rate or decision field accepted); declared income `RESTRICTED-FINANCIAL`;
+  `RoutePermissionRegisterTest` rows; a negative test per route.
+- **Audit**: `credit.DecisionRequestCancelled` (a customer act, the `fx.QuoteCancelled` precedent;
+  no reason required). Submission is not an audit record: the request's row, history and event
+  record it, and the access it leads to is audited by `-006`.
+- **Observability**: none new (the request-age gauge is `-020`'s).
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `DecisionRequestDatabaseTest` (`#tenSubmissionsUnderOneKeyLeaveOneRequest`;
+  `#twoKeysForOnePartyAndProductLeaveOneOpen`; `#twoProductsForOnePartyMayBothBeOpen`;
+  `#consentAbsentIsRefusedBeforeAnyProviderIsAsked` (zero simulator pulls);
+  `#anUnverifiedPartyIsRefused`; `#amountBoundsAtMinMaxAndOneMinorUnitBeyond` for both products;
+  `#aClosedRequestFreesTheSlot`; every machine edge, valid and invalid, by raw SQL;
+  `#anotherPartysRequestIsNotFound`); `DecisionRequestApiTest` (the `202` shape; the error contract
+  per code; MFA required; unknown fields refused).
+- **Probe**: drop the partial unique → `#twoKeysForOnePartyAndProductLeaveOneOpen` red; make another
+  party's read answer `403` → `#anotherPartysRequestIsNotFound` red.
+- **Acceptance criteria**: every race counted; no request exists without a current basis for every
+  source its policy reads; a customer never learns of another's request.
+- **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**:
+  L.
+
+**P10-TSK-015 — Decision orchestration** — `PLANNED`
+- **Objective**: drive every request from submission to evaluation across N instances, leaderless,
+  crash-safe, on the database clock — and expire what is not decided in time.
+- **Bounded context**: Credit Decisioning; `app` (the schedule).
+- **Dependencies**: `-006`, `-007`, `-008`, `-011`, `-013`, `-014`.
+- **Scope**: `CreditDecisionProgressSchedule` (`SmartLifecycle`, `scheduleWithFixedDelay`, off in
+  test contexts, leaderless, `finapp.credit.progress.sweeper.enabled`, `LEASE_PROTECTED_SCHEDULERS`
+  twenty-one → twenty-two): due requests claimed oldest-permit-first in one `UPDATE … WHERE id IN
+  (SELECT … FOR UPDATE SKIP LOCKED)` stamping a permit from `statement_timestamp()`; each step its
+  own transaction under the request row (element (2)), its edge re-judged conditionally:
+  **`SUBMITTED → COLLECTING`** — the `ACTIVE` policy and scorecard versions read `FOR SHARE` and
+  pinned on the request, once (G2), one data request opened per source kind the pinned policy reads
+  (`-006`'s open; the asks follow the commit, a crash covered by the retry schedule); **`COLLECTING → READY`** — every
+  required source `RECEIVED` or `UNAVAILABLE` past its deadline; a data request ending
+  `CONSENT_WITHDRAWN` abandons the request (`ABANDONED`, `CONSENT_WITHDRAWN`); **`READY →
+  EVALUATED`** — in one transaction: the request, its data requests, the pinned versions `FOR SHARE`
+  (element (5)); the gate re-read for every source kind — a withdrawal after a source answered
+  abandons the request with nothing frozen (§14 row 31, G11); the freeze (`-008`; stale → `READY →
+  COLLECTING`); the assessment (`-011`); the evaluation (`-013`); **the deciding step** — the claim
+  transaction released, `-016`'s transaction opened profile-first (until `-016` lands, the sweep
+  stops at `EVALUATED`); **expiry** — `expires_at <= statement_timestamp()` → `EXPIRED` (meaning
+  only that no decision came within the validity) from any open state except `IN_REVIEW` with a
+  taken case (an `OPEN` case closing `CLOSED` with it once `-018` lands),
+  `CreditDecisionRequestClosed`; **standing** re-read in every step, the visit to an `IN_REVIEW`
+  request with an `OPEN` case included — lost → `ABANDONED` (`STANDING_LOST`), never `EXPIRED`;
+  the unavailable-source fallback (§12.6): the request reaches
+  `READY` with the source `ABSENT` and `SOURCE_UNAVAILABLE`, and the pinned policy's fallback rule
+  decides `REFER` or `DECLINE`; a step that cannot act re-stamps rather than holding the page;
+  recovery from rows alone; the §3 lock-order row's element (2) promoted.
+- **Out of scope**: the deciding transaction's content (`-016`); the case (`-018`); a request-level
+  retry of a stale snapshot beyond re-collection.
+- **Domain changes**: the request's progress steps; the pin.
+- **Persistence**: none expected (`V010` carries the permit and pin columns).
+- **APIs**: none.
+- **Events**: `CreditDecisionRequestClosed` (status `EXPIRED`, or `ABANDONED` with reason
+  `STANDING_LOST` | `CONSENT_WITHDRAWN`).
+- **Policy/model versioning**: the pin at `SUBMITTED → COLLECTING`; the evaluation reads exactly the
+  pinned rows, `FOR SHARE`, even after their retirement (`INV-HIST-04`).
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-08`, `INV-CRD-10`, `INV-CRD-06`, `INV-HIST-04`, `INV-CON-02`,
+  `INV-CRD-03` (a withdrawal abandons the request, before or after its source answered).
+- **Distributed-system concerns**: §7 row 3 — ten instances progressing one request → one step per
+  state, counted per edge from `decision_request_event` (§14 row 30); the expiry side of §7's
+  boundary row, raced here against the evaluation step (the decision side in `-016`, G5); permits
+  and expiry on the database clock under ±5 s skew. `PASS` on `DecisionOrchestrationDatabaseTest`'s
+  counts.
+- **Idempotency**: every step a conditional edge; every child born once.
+- **Consistency**: every window on `statement_timestamp()`; the pin fixed once.
+- **Atomicity**: each step's writes, history, events and outbox rows together.
+- **Failure handling**: §14 rows 1, 7, 9, 10, 11, 27, 31: unavailable past the deadline → the
+  fallback; a data request `CONSENT_WITHDRAWN` → the request `ABANDONED`; stale at the freeze →
+  re-collected; a crash after submission → another instance opens the data
+  requests; a crash after data received → another instance freezes once; standing suspended
+  mid-request → the step refuses and the request `ABANDONED` (`STANDING_LOST`); consent withdrawn
+  after a source answered → `ABANDONED` (`CONSENT_WITHDRAWN`), nothing decided.
+- **Security**: no attribute, figure or party in a log line or span attribute.
+- **Audit**: none new (the data-access acts are `-006`'s, the decision `-016`'s).
+- **Observability**: `finapp.credit.progress.sweeper.enabled`; the request-age gauge and spans are
+  `-020`'s.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `DecisionOrchestrationDatabaseTest` (`#tenSweepersTakeOneStepPerState`;
+  `#aCrashAfterSubmissionIsDrivenByAnotherInstance`; `#aCrashAfterDataReceivedFreezesOnce`;
+  `#aSourceUnavailablePastItsDeadlineFallsBack`, `REFER` and `DECLINE` policies each, never
+  `APPROVE` even when every other rule would approve;
+  `#consentWithdrawnMidCollectionAbandonsTheRequest`;
+  `#consentWithdrawnAfterTheSourceAnsweredAbandonsBeforeTheFreeze`;
+  `#aStaleRecordAtTheFreezeReCollects`; `#expiryRacesTheEvaluationStepExactlyOne`;
+  `#aSuspendedPartyIsAbandonedStandingLostNeverExpired`; `#undueWorkNeverStarvesDueWork`;
+  `#aSkewedSweeperNeitherExpiresEarlyNorLate`;
+  `#thePinnedPolicyDecidesAfterAnActivationMidCollection`); `NoSingleInstanceAssumptionRulesTest`
+  (twenty-two).
+- **Probe**: hold the page instead of re-stamping → `#undueWorkNeverStarvesDueWork` red; drop the
+  conditional from the `READY → EVALUATED` edge → `#tenSweepersTakeOneStepPerState` red (two
+  snapshots attempted); stamp the permit from the instance clock → the skew test red.
+- **Acceptance criteria**: every request reaches `EVALUATED`, `CANCELLED`, `EXPIRED` or `ABANDONED`
+  (with its reason) under ten sweepers and every seeded crash, each step once.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
+
+**P10-TSK-016 — Recording the decision** — `PLANNED`
+- **Objective**: record each decision exactly once, immutably, with its ordered reasons, pinned
+  versions and snapshot hash — the exposure it reserves judged under the party's lock.
+- **Bounded context**: Credit Decisioning.
+- **Dependencies**: `-010`, `-015`.
+- **Scope**: `credit V011`: `credit_decision` (`decision_request_id UNIQUE`; profile; the snapshot
+  it was made from and its SHA-256; outcome `APPROVED` | `DECLINED`; approved amount (minor units +
+  currency) and term, present iff `APPROVED`; `valid_until` = decided + the product's decision
+  validity on the database clock; `decided_by` (`SYSTEM` or the person's id); decided-at; the pinned
+  policy, model and engine versions; `INSERT` only — **no `UPDATE` or `DELETE` for any role**,
+  revoked and refused by a trigger that also catches the owner), `credit_decision_reason` (ordinal,
+  reason code; a deferred constraint trigger refusing the commit of a `DECLINED` or capped decision
+  without reasons), `credit_decision_consumption` (decision id `UNIQUE`; created empty for Phase 11,
+  G1); `JdbcReservedExposure` (`-010`'s contract, read under the profile lock); the published
+  `CreditDecisions` port (the decision read Phase 11's `lending` will use; no consumer in Phase
+  10); **the deciding transaction** (§12.7), profile-first: the profile `FOR UPDATE` (element (1)); the request `FOR
+  UPDATE`, conditional on `EVALUATED` and `expires_at > statement_timestamp()` for a system decision
+  (a person's decision is conditional on the case instead, `-018`); standing and the consent gate
+  re-read in-transaction — lost standing → `ABANDONED` (`STANDING_LOST`), a withdrawal → `ABANDONED`
+  (`CONSENT_WITHDRAWN`), nothing decided (§14 rows 27, 31); the pinned versions `FOR SHARE`; the
+  reserved exposure re-read — if it differs from the snapshot's `PLATFORM_RESERVED_EXPOSURE`, a
+  successor snapshot (sequence n+1, the same records, the new exposure), re-assessed and
+  re-evaluated (the snapshot is per evaluation; the request keeps its first in history);
+  `APPROVE`/`DECLINE`/`HARD_DECLINE` → the decision and its reasons, the request `DECIDED`,
+  `CreditDecisionRecorded`, `credit.DecisionRecorded`; `REFER` → handed to `-018` (until `-018`
+  lands, re-stamped at `EVALUATED`); the lock-order row completed.
+- **Out of scope**: the referral case (`-018`); the outcome read (`-017`); writing consumption
+  (Phase 11).
+- **Domain changes**: the `CreditDecision` aggregate; the deciding transaction; the
+  `CreditDecisions` port.
+- **Persistence**: `credit V011`.
+- **APIs**: none (internal).
+- **Events**: `CreditDecisionRecorded` (request id, decision id, outcome, approved amount and term,
+  valid-until, pinned versions, snapshot hash, reason codes — never an attribute or score);
+  `eventVersion` 1, additive evolution only; no `CreditDecisionUpdated` exists.
+- **Policy/model versioning**: the decision stores the versions it pinned and the snapshot hash; an
+  activation mid-decision changes nothing (§14 rows 16, 17).
+- **Financial impact**: an approval reserves credit exposure until `valid_until` or consumption — no
+  posting, no hold, no money moved.
+- **Invariants**: `INV-CRD-02`; `INV-CRD-06` (one decision per request, naming the snapshot it was
+  made from; one assessment and one evaluation per successor snapshot); `INV-CRD-09`; `INV-HIST-04`;
+  `INV-CRD-01` (the pins and hash stored); `INV-CRD-04`.
+- **Distributed-system concerns**: §7 rows 8–9 and the boundary row: two products for one party at
+  the exposure limit → serialised on the profile, the second seeing the first's reservation (§14 row
+  15); ten deciders on one request → one decision; an activation mid-decision → the pinned versions
+  decide; a crash between evaluation and decision → decided once by another instance (§14 row 12,
+  G5); expiry against decision at the boundary → exactly one of `DECIDED`, `EXPIRED` by
+  complementary conditionals on the database clock, under ±5 s skew (§14 row 18, G5). `PASS` on
+  `CreditDecisionDatabaseTest`'s counts.
+- **Idempotency**: born once per request; the conditional edge.
+- **Consistency**: the reserved exposure read under the profile lock; validity and expiry on the
+  database clock.
+- **Atomicity**: any successor snapshot, assessment and evaluation, the decision, its reasons, the
+  request edge, the event, the outbox row and the audit row in one transaction (failure injection
+  after the decision insert leaves nothing).
+- **Failure handling**: §14 rows 12, 15, 16, 17, 18, 25, and the deciding side of 27 and 31.
+- **Security**: decision rows immutable for every role; the event carries no figure.
+- **Audit**: `credit.DecisionRecorded` — written by the acting decider only (losers record nothing);
+  the summary names the request, the decision and the outcome, never an amount (`INV-AUD-02`).
+- **Observability**: `finapp.credit.decision{product, outcome, policy_version, decided_by}`,
+  `finapp.credit.reason{product, reason_code}`, `finapp.credit.decision.latency{product}`, counted
+  after commit.
+- **Reconciliation implications**: N/A — credit moves no money; the reserved exposure is explained
+  from decision rows alone (the storm's exposure census, `P10-TST-001`).
+- **Tests**: `CreditDecisionDatabaseTest` (`#twoProductsAtTheExposureLimitSerialise`, a hundred
+  rounds, never both approved beyond the limit; `#tenDecidersRecordOneDecision`;
+  `#aGrownReservationFreezesASuccessorSnapshot` (sequence 2 decides and is named by the decision,
+  sequence 1 kept with its own assessment and evaluation);
+  `#anActivationMidDecisionKeepsThePinnedPolicyAndModel`;
+  `#aCrashBetweenEvaluationAndDecisionIsDecidedOnce`;
+  `#expiryAndDecisionAtTheBoundaryLeaveExactlyOne` (±5 s skew);
+  `#aDecisionRowIsNeverUpdatedOrDeletedByAnyRole` (`finapp_app` and the owner, raw SQL);
+  `#aDeclineWithoutReasonsCannotCommit`; `#lapsedAndConsumedDecisionsReserveNothing`;
+  `#standingLostOrConsentWithdrawnAtTheDecisionAbandons`;
+  `#theDecidingTransactionTakesTheProfileFirst`).
+- **Probe**: read the reserved exposure before taking the profile lock →
+  `#twoProductsAtTheExposureLimitSerialise` red; drop the immutability trigger → the owner's
+  `UPDATE` accepted → `#aDecisionRowIsNeverUpdatedOrDeletedByAnyRole` red; judge `expires_at` on the
+  instance's clock → the boundary test red.
+- **Acceptance criteria**: no party's approvals together exceed the limit their policy declared,
+  across every race; every decision immutable; one decision per request.
+- **Definition of done**: `DOD-FIN` (credit exposure; F3, F6, F7 binding; F1, F2, F4, F5 vacuous; F8
+  N/A), `DOD-EVENT`, `DOD-SEC`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
+
+**P10-TSK-017 — Decision retrieval and adverse-action explanation** — `PLANNED`
+- **Objective**: tell the customer the outcome and, when adverse, the reasons in plain words — and
+  give an investigator the full explanation from the rows alone, audited.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-016`.
+- **Scope**: `GET /v1/me/credit/decision-requests/{id}` extended — a closed request shows its
+  terminal status (`CANCELLED`, `EXPIRED`, `ABANDONED` with a customer text for its reason); when
+  `DECIDED`: outcome, approved amount and term, `valid_until`, the adverse reasons' customer texts
+  in ordinal order; never a bureau datum, a score, a threshold or a risk signal; `GET
+  /v1/me/credit/profile` (the sources on file with their retrieval dates, the current decisions with
+  their validity — no figure); `GET /v1/operator/credit/decisions/{id}/explanation`
+  (`CREDIT_INVESTIGATE`: the snapshot's attributes with provenance and retrieval times, the pinned
+  policy, model and engine versions, the rules evaluated and which fired, in order, the reason
+  codes, outcome, when and by whom — built from rows alone; `credit.ExplanationRead` in the read's
+  transaction); `POST /v1/operator/credit/records/{id}/evidence-read` (G9;
+  `CREDIT_INVESTIGATE`; a reason in the body; calls `credit.read_evidence`; `credit.EvidenceRead`;
+  no idempotency — no state but its audit).
+- **Out of scope**: replay (`-019`); reports (`-020`); notices to the customer beyond the read (no
+  messaging channel in Phase 10).
+- **Domain changes**: the customer view and the explanation read models.
+- **Persistence**: none.
+- **APIs**: the four routes above; errors `404` for another party's request or decision, `422
+  credit.ReasonRequired` (evidence without a reason), the permission refusals.
+- **Events**: none.
+- **Policy/model versioning**: the explanation names the pinned versions and reads their frozen
+  rules — never the current ones.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-02` (the adverse-action explanation); `INV-CRD-07`; `INV-AUD-01`,
+  `INV-AUD-02`.
+- **Distributed-system concerns**: read-only, each read in one transaction with its audit row.
+  `PASS` (no contended state).
+- **Idempotency**: reads; the evidence read records one act per serving.
+- **Consistency**: each response from one snapshot.
+- **Atomicity**: the audit row in the read's transaction — no serving without its record.
+- **Failure handling**: an unreadable evidence key → `503`, audited as attempted, nothing returned.
+- **Security**: owner scoping (`404`); a needle per internal figure absent from every customer body;
+  plaintext evidence only through the definer function, never a direct `SELECT`; every route's
+  negative; `RoutePermissionRegisterTest`.
+- **Audit**: `credit.ExplanationRead`; `credit.EvidenceRead` (reason required).
+- **Observability**: none new.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `DecisionExplanationDatabaseTest` (`#everyDecisionExplainsFromRowsAlone` in a fresh
+  context; `#theCustomerSeesReasonTextsInOrder`; `#aCappedApprovalCarriesTheCapReason`;
+  `#noInternalFigureReachesTheCustomer` — a needle per score, attribute value, threshold, risk
+  signal and payload; `#anotherPartysRequestAndProfileAreNotFound`; `#everyServingIsAudited`;
+  `#evidenceWithoutAReasonIs422`; `#evidenceIsReadableOnlyThroughTheDefiner`); the route negatives.
+- **Probe**: serialise the score into the customer response → `#noInternalFigureReachesTheCustomer`
+  red; order reasons alphabetically → `#theCustomerSeesReasonTextsInOrder` red.
+- **Acceptance criteria**: every adverse decision explains to the customer in at least one reason
+  text; every decision explains fully to an investigator from rows alone; no internal figure reaches
+  a customer.
+- **Definition of done**: `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P10-TSK-018 — Underwriting: the manual review case** — `PLANNED`
+- **Objective**: referrals decided by people — with reasons, never overriding a hard decline or the
+  exposure limit, and under four-eyes above the product's threshold.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-003`, `-016`.
+- **Scope**: `credit V012` `underwriting_case` (`decision_request_id UNIQUE`; status `OPEN` |
+  `ASSIGNED` | `AWAITING_SECOND` | `DECIDED` | `CLOSED` (G8, carrying the request's reason);
+  assignee; the first decision (outcome, amount, reasons, by whom); the second approver; `CHECK
+  (second_approver <> first_decider)`; a reason required on every decision and on a refused second
+  approval; a machine trigger) and `underwriting_case_event` (append-only); on a `REFER` evaluation
+  the deciding step opens the case `OPEN` and moves the request `IN_REVIEW` (`ManualReviewRequired`);
+  the queue: list, assign (`OPEN → ASSIGNED`, the request row then the case row `FOR UPDATE`,
+  conditional on an `IN_REVIEW` request — so an assignment and an expiry serialise), release
+  (`ASSIGNED → OPEN`, the same two locks, G9), decide (`APPROVED` | `DECLINED` with at least one
+  reason code; approving a request whose evaluation triggered a `HARD_DECLINE` refused — the
+  evaluator never refers one, and the domain checks again; an approval above the product's four-eyes
+  threshold → `AWAITING_SECOND`; otherwise `-016`'s deciding transaction with `decided_by` the
+  person, the case's reasons and the system evaluation kept as the case's basis), second approval (a
+  different person: approve → the deciding transaction; or refuse with a reason → `AWAITING_SECOND →
+  ASSIGNED`, the first decision cleared from the case and kept in its history, the case back with
+  its first underwriter, under the request and case locks); a person's approval is bounded by the
+  evaluation's approved amount and by the exposure limit re-read under the profile lock — beyond
+  either, `422 credit.ExposureLimitExceeded`, nothing recorded, the case unchanged, and the person
+  decides again (G7); **a taken case (`ASSIGNED`, `AWAITING_SECOND`) is decided by its person
+  whatever the request's validity** — the person's deciding transaction is conditional on the
+  case's state and assignee, not on `expires_at`, so a taken case is never stuck; the case's
+  terminal `CLOSED` (G8, carrying the request's reason): from `OPEN` when its request expires or the
+  sweep abandons it (standing lost), and from `ASSIGNED` or `AWAITING_SECOND` only when the person's
+  own deciding transaction — re-reading standing and consent as `-016`'s does — abandons the
+  request.
+- **Out of scope**: counter-offers, an amount above the evaluation's and pricing (Phase 11's
+  offer); automatic re-evaluation of a case.
+- **Domain changes**: the `UnderwritingCase` aggregate.
+- **Persistence**: `credit V012`.
+- **APIs**: `GET /v1/operator/credit/review-cases?status=`, `POST …/{id}/assignment`, `POST
+  …/{id}/release`, `POST …/{id}/decision`, `POST …/{id}/second-approval` (approve, or refuse with a
+  reason) — `CREDIT_UNDERWRITE`, keyed `credit.review:EMPLOYEE:<id>`, sync; errors `409
+  credit.CaseTaken`, `403 credit.SelfApprovalRefused`, `422 credit.HardDeclineNotOverridable`, `422
+  credit.ReasonRequired`, `422 credit.ExposureLimitExceeded`.
+- **Events**: `ManualReviewRequired` (request id, case id, referral reason codes — never
+  attributes); `CreditDecisionRecorded` via `-016`. `UnderwritingStarted` is refused (an internal,
+  audited step no one consumes).
+- **Policy/model versioning**: the case is judged against the request's pinned versions; a person's
+  decision records them unchanged.
+- **Financial impact**: a person's approval reserves credit exposure exactly as a system approval
+  does — no posting, no hold.
+- **Invariants**: `INV-CRD-11`; `INV-CRD-09` (people are bound by the limit too); `INV-AUD-04`;
+  `INV-CRD-02`; `INV-CRD-06`.
+- **Distributed-system concerns**: `PHASE_10_PLAN.md` §7's rows: two underwriters taking one case →
+  one `ASSIGNED`, the other `409 credit.CaseTaken` (§14 row 21); an unassigned case's assignment
+  racing its request's expiry → exactly one of `ASSIGNED`, `EXPIRED` (request then case, both
+  sides); a manual approval beside a system decision for one party → serialised on the profile; ten
+  second approvers → one decision. `PASS` on `UnderwritingCaseDatabaseTest`'s counts.
+- **Idempotency**: every act keyed per employee; the case born once per request.
+- **Consistency**: lock order profile → request → case for deciding acts; request → case for
+  assign, release and a refused second approval — never the case alone.
+- **Atomicity**: the case edge, the decision (when it decides), the request edge, events and audit
+  together.
+- **Failure handling**: §14 rows 19–22; an unworked (`OPEN`) case closes with its expiring request,
+  the reason recorded; a taken case past the request's validity is still decided by its person; a
+  released case past the validity closes on the next sweep.
+- **Security**: `CREDIT_UNDERWRITE` only; self-second-approval refused at the domain and the
+  `CHECK`; a `CREDIT_POLICY_OFFICER` and a customer refused; a needle check that case reads expose
+  no raw payload.
+- **Audit**: `credit.ReviewCaseAssigned`, `credit.ReviewCaseReleased`, `credit.ReviewDecided`
+  (reason required), `credit.ReviewSecondApproval`, `credit.ReviewSecondApprovalRefused` (reason
+  required).
+- **Observability**: `finapp.credit.review.age` (the oldest open case; alerted by `-020`).
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `UnderwritingCaseDatabaseTest` (`#twoUnderwritersTakeOneCase`;
+  `#theFirstDeciderCannotSecondApprove` at the domain and by raw SQL;
+  `#aHardDeclineCannotBeApproved`; `#aDecisionWithoutAReasonIsRefused`;
+  `#anApprovalAboveTheThresholdAwaitsASecondPerson`;
+  `#aManualApprovalAndASystemDecisionForOnePartySerialise` at the exposure limit;
+  `#aPersonCannotApproveBeyondTheExposureLimit`; `#anOpenCaseClosesWithItsExpiringRequest`;
+  `#aTakenCaseIsDecidedAfterTheRequestsValidity`; `#aCaseWhoseRequestIsAbandonedCloses` (from
+  `OPEN` by the sweep and from `ASSIGNED` by the person's deciding transaction);
+  `#assignmentRacesExpiryExactlyOne`; `#aRefusedSecondApprovalReturnsToTheFirstUnderwriter` (reason
+  required, the first decider refused as refuser); `#tenSecondApproversRecordOneDecision`;
+  `#aReleasedCaseCanBeRetaken`; every case edge by raw SQL);
+  the route negatives; `RoutePermissionRegisterTest`.
+- **Probe**: drop `CHECK (second_approver <> first_decider)` → its raw-SQL case red; skip the
+  exposure re-read on a person's approval → `#aManualApprovalAndASystemDecisionForOnePartySerialise`
+  red.
+- **Acceptance criteria**: every referral reaches a person's decision, or closes `CLOSED` with its
+  expiring or abandoned request; no person approves their own case twice, a hard decline, more than
+  the evaluation approved, or beyond the limit.
+- **Definition of done**: `DOD-FIN` (credit exposure; F3, F6, F7 binding; F1, F2, F4, F5 vacuous; F8
+  N/A), `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
+
+**P10-TSK-019 — Decision replay and verification** — `PLANNED`
+- **Objective**: prove, on demand and continuously, that every decision re-derives identically from
+  its stored snapshot and pinned versions.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-017`, `-018`.
+- **Scope**: `DecisionReplayer` (the snapshot's SHA-256 re-verified over its canonical JSON; the
+  pinned engine re-run from `EngineVersions` with the pinned policy and model rows over the stored
+  snapshot; outcome, approved amount and ordered reason codes compared → `IDENTICAL` or `DIVERGED`
+  naming what differs — `HASH`, `OUTCOME`, `AMOUNT`, `REASONS`; for a person's decision the
+  evaluation re-derived to its `REFER` and the decision verified equal to the case's recorded
+  decision — a person's judgement is verified, not re-derived); `POST
+  /v1/operator/credit/decisions/{id}/replay` (`CREDIT_INVESTIGATE`, a reason required, sync, no
+  idempotency — no state but its audit); `CreditReplayProof` (every decision per reading in one
+  `REPEATABLE READ` read-only transaction, rolled back); `finapp.credit.replay{verdict}`.
+- **Out of scope**: the alert rule (`-020`); repair of a divergence (an incident, never an
+  `UPDATE`).
+- **Domain changes**: `DecisionReplayer`, `CreditReplayProof`.
+- **Persistence**: none.
+- **APIs**: the replay route; errors `422 credit.ReasonRequired`, `404`, the permission refusal.
+- **Events**: none.
+- **Policy/model versioning**: replay reads the pinned versions and engine — never the active ones;
+  old engines kept in code.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-01`; `INV-CRD-07`; `INV-CRD-05`; `INV-HIST-04`.
+- **Distributed-system concerns**: §7's last row — every instance computes the same verdict from one
+  snapshot per reading, writing nothing. `PASS` on
+  `DecisionReplayDatabaseTest#twoInstancesReachTheSameVerdict`.
+- **Idempotency**: no state.
+- **Consistency**: one `REPEATABLE READ` snapshot per reading.
+- **Atomicity**: the replay route's audit row in its own transaction.
+- **Failure handling**: §14 rows 23, 24, 26: a tampered snapshot → `DIVERGED` (hash); a rule row
+  forced past its trigger → `DIVERGED`; a new engine version → old decisions replay `IDENTICAL`
+  under theirs.
+- **Security**: `CREDIT_INVESTIGATE`; the response names differences by kind and code, never
+  attribute values.
+- **Audit**: `credit.DecisionReplayed` (reason required).
+- **Observability**: `finapp.credit.replay{verdict}`.
+- **Reconciliation implications**: N/A — credit moves no money; replay is the decision's own proof,
+  not a reconciliation.
+- **Tests**: `DecisionReplayDatabaseTest` (`#everyDecisionReplaysIdentical`;
+  `#aTamperedSnapshotDivergesByHash`; `#aForcedRuleChangeDiverges`;
+  `#aNewEngineVersionLeavesOldDecisionsIdentical`; `#aPersonsDecisionVerifiesAgainstItsCase`;
+  `#theProofReadsOneSnapshotAndWritesNothing`; `#twoInstancesReachTheSameVerdict`;
+  `#replayWithoutAReasonIs422`; `#everyReplayIsAudited`); the route negatives.
+- **Probe**: make the replayer read the currently active policy instead of the pinned one →
+  `#everyDecisionReplaysIdentical` red after an activation; skip hash verification →
+  `#aTamperedSnapshotDivergesByHash` red.
+- **Acceptance criteria**: every decision in the suites replays `IDENTICAL`; every seeded tamper
+  `DIVERGED`.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`, `DOD-OBS` (the gauge). **Risk**: High.
+  **Cx**: M.
+
+**P10-TSK-020 — Credit meters, spans, reports, alerts and the dashboard row** — `PLANNED`
+- **Objective**: operate Phase 10 by counts, ages, verdicts and audited reports — never by amounts,
+  scores, attributes or parties.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-016`, `-018`, `-019`.
+- **Scope**: every `PHASE_10_PLAN.md` §15 row not shipped earlier
+  (`finapp.credit.request.open.age{status}` among them); `product`, `reason_code`, `source_kind`,
+  `policy_version` and `decided_by` joining `MetricNames`; spans for submission, collection, freeze,
+  evaluation and decision linked by the request's correlation; `GET
+  /v1/operator/reports/credit/{outcomes,reasons,sources}` (`CREDIT_INVESTIGATE`; one `REPEATABLE
+  READ` snapshot; bounded rows; a bad period `422` before any read; `credit.ReportRead` per
+  serving); the alert rules in `infra/prometheus/rules/credit.yml` (decision-latency p99 above the
+  objective this task declares; the unavailability ratio; open-request age above the request
+  validity; review age above the review objective it declares; any `DIVERGED`; no active policy for
+  an offered product; a sweeper gauge at 0 in a non-test profile); the dashboard row; all resolved
+  against a live scrape.
+- **Out of scope**: credit portfolio reporting (Phase 14).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: the three report routes.
+- **Events**: none.
+- **Policy/model versioning**: the outcome report groups by pinned policy version.
+- **Financial impact**: none.
+- **Invariants**: `INV-AUD-02`; `INV-CRD-02` (no figure leaks through telemetry); `INV-CRD-01` (the
+  `DIVERGED` alert).
+- **Distributed-system concerns**: gauges are fleet-`max()`; counters count after commit. `PASS`
+  (report-only).
+- **Idempotency**: n/a.
+- **Consistency**: each report from one snapshot.
+- **Atomicity**: the `ReportRead` audit in the read's transaction.
+- **Failure handling**: an unreadable gauge reads NaN, never zero.
+- **Security**: `CREDIT_INVESTIGATE`; no amount, score, attribute or party in any tag or span
+  attribute.
+- **Audit**: `credit.ReportRead`.
+- **Observability**: this task.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `PlannedMetersExistTest#phase10PlannedMetersAreAlreadyPublished`;
+  `AlertRulesResolveTest#theCreditRulesResolve`; `DashboardQueriesResolveTest#theCreditRowResolves`;
+  `Phase10ReportsDatabaseTest`; `Phase10SpansTest`; `CreditTelemetryCarriesNoFigureTest`.
+- **Probe**: tag `finapp.credit.decision` with the approved amount →
+  `CreditTelemetryCarriesNoFigureTest` red; rename a series an alert reads → `AlertRulesResolveTest`
+  red.
+- **Acceptance criteria**: a fresh instance publishes every row; every alert and panel resolves
+  against a live scrape; no figure appears in any series.
+- **Definition of done**: `DOD-OBS`, `DOD-API` (the reports). **Risk**: Low. **Cx**: M.
+
+**P10-TSK-021 — A second bureau and source selection** — `PLANNED` (cut candidate — first in the cut order; deferral owner Phase 15)
+- **Objective**: make provider neutrality real for bureau data — two bureaus with different wire
+  vocabularies normalising to the same attributes, and selection between them. If cut, the deferral
+  is recorded with Phase 15 as owner and the provider-neutrality criterion is met by
+  `CreditBureauContract` and the single adapter.
+- **Bounded context**: Credit Decisioning; `app`.
+- **Dependencies**: `-006`, `-015`.
+- **Scope**: `bureau-sim-b` (its own wire vocabulary, normaliser, golden files,
+  `CreditBureauContract` subclass); source selection: a configured provider order per source kind,
+  the provider fixed on the data request at birth, a disabled provider skipped; the record's
+  provenance naming its provider; mid-request failover weighed by the task's design and, if taken, a
+  successor data request under a new reference (never a second provider under one reference); the
+  vocabulary guard extended.
+- **Out of scope**: merging two bureaus' answers for one request; best-source pricing.
+- **Domain changes**: none (an adapter and configuration).
+- **Persistence**: none expected.
+- **APIs**: none.
+- **Events**: the `provider` field gains a value.
+- **Policy/model versioning**: attributes keep their codes and meaning across providers; replay
+  reads stored attributes, so the provider never matters to a past decision.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-07` (provenance names the provider); `INV-CRD-03` (the same purpose gates
+  both); `INV-CRD-10`.
+- **Distributed-system concerns**: selection is a pure function of configuration at birth; every
+  `-006` race re-run with `b` (counted). `PASS` on `BureauSelectionDatabaseTest`.
+- **Idempotency**: one reference per provider per data request.
+- **Consistency**: as `-006`.
+- **Atomicity**: as `-006`.
+- **Failure handling**: both providers disabled or unavailable → `UNAVAILABLE` and the policy's
+  fallback, never data.
+- **Security**: `b`'s vocabulary confined to its adapter; its payloads under the same key purpose.
+- **Audit**: `credit.BureauDataRequested` names the provider.
+- **Observability**: the `provider` tag gains a value.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `SecondBureauContractTest extends CreditBureauContract`; `BureauSelectionDatabaseTest`
+  (`#aDisabledProviderIsSkippedAtBirth`; `#theRecordNamesItsProvider`;
+  `#bothUnavailableFallsBackNeverData`; `#bothProvidersNormaliseOneSubjectAlike`);
+  `CreditProviderVocabularyIsConfinedTest` covering `b`.
+- **Probe**: map one of `b`'s delinquency fields to the wrong attribute code →
+  `#bothProvidersNormaliseOneSubjectAlike` red.
+- **Acceptance criteria**: a request collected from `b` decides, explains and replays exactly as one
+  from `a`.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P10-TST-001 — The credit decision storm** — `PLANNED`
+- **Objective**: prove decision correctness under every provider fault, crash, duplication,
+  activation and race, at once, on two skewed instances.
+- **Bounded context**: every Phase 10 context.
+- **Dependencies**: every `P10-TSK` (`-021` unless cut).
+- **Scope**: in its own container, **two application contexts whose clocks disagree by ten seconds**
+  (one 5 s ahead of the database server, one 5 s behind, server-anchored); movers on both submitting
+  requests for a shared pool of parties across both products; progress and retry sweepers on both;
+  faults in both simulators (timeout, slow, malformed, partial, unknown status, duplicate delivery,
+  lost responses); consent withdrawals mid-collection and after a source answered; standing
+  suspensions; policy and scorecard activations mid-flight by two officers; underwriters on both
+  instances taking, releasing, deciding and second-approving; requests expiring at the boundary; a
+  crash after each step (a forced rollback or a killed transaction). Every round, in one `REPEATABLE
+  READ` snapshot: the **exposure census** (no party's live approvals exceed the limit their deciding
+  policy declared, recomputed from decision rows alone); exactly one decision per `DECIDED` request
+  and none otherwise (no decision on any `ABANDONED`, `EXPIRED` or `CANCELLED` request, and every
+  `ABANDONED` one carrying its reason); one snapshot per sequence; one open request per party and
+  product; at most one taker per case. At rest: `CreditReplayProof` zero `DIVERGED`; each
+  simulator's counted pulls one per reference, and the references answered `RECEIVED` equal to the
+  records; no pull without a basis; every gauge at zero; **the needle walked** — a bureau payload
+  marker absent from every table but the evidence ciphertext, from every log line and from every
+  response.
+- **Out of scope**: the fleet-wide database battery (the owner's Phase 9 instruction, recorded as a
+  deviation if it still stands).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: existing.
+- **Events**: existing.
+- **Policy/model versioning**: activations mid-flight; every decision's pins verified by replay.
+- **Financial impact**: proof only — the exposure census.
+- **Invariants**: every `Phase: 10` invariant.
+- **Distributed-system concerns**: this item *is* the ten-instance answer's capstone. `PASS` only on
+  its counts.
+- **Idempotency**: every keyed act raced; every born-once row counted.
+- **Consistency**: the snapshot every round.
+- **Atomicity**: the crash points.
+- **Failure handling**: every `PHASE_10_PLAN.md` §14 scenario it can seed.
+- **Security**: the needle; withdrawn consents never followed by a recorded payload.
+- **Audit**: every access and decision act counted against its rows.
+- **Observability**: the gauges read 0 at rest; the decision door's p99 recorded.
+- **Reconciliation implications**: N/A — credit moves no money; the censuses are the decision's own
+  proofs.
+- **Tests**: three consecutive fresh runs green; `MUTATION_TESTING.md` §4 rows.
+- **Probe**: the storm's own, at least three, each caught by a census: the profile lock removed from
+  the deciding transaction → the exposure census; the gate re-read removed from the recording
+  transaction → the consent census; the evaluator iterating a hash set → the replay census.
+- **Acceptance criteria**: every census exact every round; every decision `IDENTICAL` at rest.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN` (the exposure census). **Risk**: High. **Cx**: L.
+
+**P10-TST-002 — The decision reproducibility battery** — `PLANNED`
+- **Objective**: prove at scale that decisions are reproducible and that the proof is not vacuous.
+- **Bounded context**: Credit Decisioning.
+- **Dependencies**: `-019`.
+- **Scope**: at least 10,000 generated applicants across both products (a seeded generator, the seed
+  recorded); every reason code in the catalogue exercised at least once (a coverage assertion naming
+  any code left unexercised); every operator and effect exercised; every decision replayed
+  `IDENTICAL`; perturbations, each flipping the verdict: one byte of a stored snapshot (`DIVERGED`,
+  hash), a rule operand forced past its trigger in the test only (`DIVERGED`), the engine version
+  swapped (`DIVERGED`); determinism across default locale, time zone and charset; replaying twice
+  identical.
+- **Out of scope**: the multi-instance storm (`P10-TST-001`).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: decisions spread across at least two policy and two scorecard
+  versions per product, each replayed under its own.
+- **Financial impact**: none.
+- **Invariants**: `INV-CRD-01`, `INV-CRD-02`, `INV-CRD-05`, `INV-CRD-07`, `INV-CRD-12`.
+- **Distributed-system concerns**: single-process by design; reproducibility is a property of the
+  data, and the storm carries the multi-instance answer. `PASS` (no contended state).
+- **Idempotency**: replaying twice is identical.
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: n/a.
+- **Security**: n/a.
+- **Audit**: n/a.
+- **Observability**: n/a.
+- **Reconciliation implications**: N/A — credit moves no money.
+- **Tests**: `DecisionReproducibilityBatteryTest`; `MUTATION_TESTING.md` rows for each perturbation.
+- **Probe**: the perturbations proven non-vacuous; a planted nondeterminism (deduplicating reasons
+  through a hash set) → the battery red.
+- **Acceptance criteria**: ≥ 10,000 decisions, every reason code covered, every replay `IDENTICAL`,
+  every perturbation caught.
+- **Definition of done**: `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P10-DOC-001 — The Phase 10 exit review** — `PLANNED`
+- **Objective**: close Phase 10 against its gate, with the documents made true.
+- **Bounded context**: all.
+- **Dependencies**: `P10-TST-001`, `P10-TST-002`.
+- **Scope**: the review areas; the twelve universal criteria, F1–F8 as this section reads them, the
+  `PHASE_GATES.md` §5 Phase 10 criteria as extended by the transition; ADR-0084…0089 read against
+  the code and accepted or amended; `PHASE_10_PLAN.md`, `CREDIT_DECISIONING_LIFECYCLES.md`,
+  `MODULE_ARCHITECTURE.md` (Risk Score under `risk`), `BOUNDED_CONTEXTS.md`, `GLOSSARY.md`,
+  `CREDIT_MODEL.md`, `DISTRIBUTED_EXECUTION.md` §3, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`,
+  `DATA_CLASSIFICATION.md`, `CAPABILITY_MAP.md`, `ROADMAP.md`, `DECISIONS.md` and the ADR index made
+  true; G1–G11 and the two further decisions above read against the code; the Phase 11 boundary verified (no loan, offer or
+  disbursement code; no `ledger` edge); the Phase 15 evidence-purge debt row present; the mutation
+  register for every `Phase: 10` invariant; the flip, proven non-vacuous.
+- **Out of scope**: Phase 11.
+- **Domain changes**: corrections only.
+- **Persistence**: corrections only.
+- **APIs**: n/a.
+- **Events**: n/a.
+- **Policy/model versioning**: re-audited.
+- **Financial impact**: none.
+- **Invariants**: all `Phase: 10` invariants.
+- **Distributed-system concerns**: every task's answer re-checked against its counted tests.
+- **Idempotency**: n/a.
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: CRITICAL and IMPORTANT findings corrected and probed before the flip.
+- **Security**: re-audited.
+- **Audit**: re-audited.
+- **Observability**: re-audited.
+- **Reconciliation implications**: N/A re-confirmed — credit moves no money.
+- **Tests**: fresh targeted tiers; the document guards.
+- **Probe**: the flip — a `Phase: 10` invariant's register rows withheld →
+  `MutationDemonstrationTest` red naming exactly it, restored byte-identical.
+- **Acceptance criteria**: the gate holds, counted.
+- **Definition of done**: `DOD-DOC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -14985,7 +16504,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
 
 ---
 
-# Phases 10–16 — Epics
+# Phases 11–16 — Epics
 
 Status: `PLANNED` — capabilities elaborated at each phase's entry gate.
 *(The Phase 6 row was elaborated to the section above by the Phase 5 → 6 transition,
@@ -15001,11 +16520,15 @@ twenty-seven items above. The Phase 9 row went the same way at the Phase 8 → 9
 2026-10-02: rate sourcing and staleness, quote lifecycle and rate lock, spread and margin
 recognition, conversion execution, multi-currency accounting and FX position, rounding residual
 handling, corridor policy, cross-border payment workflow, and FX reconciliation are Phase 9's
-thirty items above.)*
+thirty items above. The Phase 10 row went the same way at the Phase 9 → 10 transition,
+2026-10-07: credit profile, bureau adapter and evidence, affordability assessment, versioned
+policy engine, decision recording and immutability, reason codes and adverse action, decision
+reproducibility and exposure tracking are Phase 10's twenty-four items above — and its "risk
+scoring" epic was settled as `risk`'s (Phase 13; ADR-0084), Phase 10 building only the
+`CreditRiskSignal` seam and the versioned credit scorecard.)*
 
 | Phase | Epics |
 |-------|-------|
-| 10 Credit Decisioning | Credit profile; bureau adapter and evidence; affordability assessment; risk scoring; versioned policy engine; decision recording and immutability; reason codes and adverse action; decision reproducibility; exposure tracking |
 | 11 Lending | Loan application; offer and expiry; underwriting integration; disbursement; repayment schedule and amortisation; interest accrual; repayment allocation; early settlement; delinquency; restructuring; loan accounting |
 | 12 BNPL | Eligibility at checkout; instalment plan; agreement lifecycle; merchant financing; merchant settlement; customer obligation; refund and return adjustment; late fees; BNPL accounting and reconciliation |
 | 13 Risk, Fraud, AML | Signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls |

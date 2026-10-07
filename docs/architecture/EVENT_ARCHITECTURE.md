@@ -101,8 +101,13 @@ currency's own (ADR-0003). A digit string is an inert value, so `EventPayload`'s
 nothing needs escaping and nothing personal is carried. Only an event whose fact *is* an amount
 carries one: `merchant.FeeAssessed` (gross, fee and net under the pinned version, so a consumer
 can reproduce the fee from the version alone — `INV-HIST-04` on the wire) and
-`merchant.FeeReturned`. Every other event names identifiers, and a consumer that needs an amount
-reads it from its owner. An amount on the wire is information, never the balance: the ledger stays
+`merchant.FeeReturned`; and, since Phase 9, the FX and cross-border facts whose subject is an amount
+— `fx.FxQuoteIssued`, `fx.FxTradeExecuted`, the cover execution, `crossborder.CrossBorderPaymentInitiated` — which carry
+each amount as `<name>Minor`, `<name>Currency` and `<name>Scale` siblings (the scale explicit, because five
+currencies at three scales now travel; *corrected by the Phase 9 → 10 transition, 2026-10-07, which also gave
+`CrossBorderPaymentInitiated` the currencies it had omitted*). A posting reference on the wire (`fx-trade-<id>`,
+`outbound-credit-<id>`) is an identifier, not the stored ledger key (`EventPayload` admits no colon). Every other
+event names identifiers, and a consumer that needs an amount reads it from its owner. An amount on the wire is information, never the balance: the ledger stays
 the record (`INV-EVT-02`).
 
 ### Causation at the root of a flow

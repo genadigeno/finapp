@@ -424,7 +424,9 @@ record reached.)*
 **Phase 9 — FX and Cross-Border Payments**
 Status: ✅ **`COMPLETE`** (2026-10-07) — **all twelve universal criteria, all eight F1–F8
 supplement criteria re-assessed at the gate, and all twenty-seven phase-specific criteria hold**,
-ruled by the exit review ([`reviews/PHASE_9_REVIEW.md`](reviews/PHASE_9_REVIEW.md), `P9-DOC-001`) -
+ruled by the exit review ([`reviews/PHASE_9_REVIEW.md`](reviews/PHASE_9_REVIEW.md), `P9-DOC-001`) and **confirmed
+after repair by the Phase 9 → 10 transition** ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md):
+two CRITICAL and twenty-three IMPORTANT defects found by its seven audits, every one repaired and probed) -
 criterion 7 and the Testing bullet with their recorded deviation (no fleet-wide database or kafka
 count, on the owner's standing instruction). Entered `IN_PROGRESS` 2026-10-03 (`P9-TSK-001`) — entry
 gate: all twelve criteria hold, by the Phase 8 → 9 transition
@@ -451,8 +453,22 @@ corridor's settlement to cash (`P9-TSK-022`), cross-border returns (`P9-TSK-023`
 meters, spans, reports and trace (`P9-TSK-027`), with `X-TSK-013` (the Phase 5–7 send permits database-stamped),
 the FX and cross-border storm (`P9-TST-001`) and the exit review (`P9-DOC-001`), which moved two windows onto the
 database clock, pre-locked the parked return's two entries, filed `INV-FX-09`'s row, pinned the second corridor rail,
-asserted eighteen audited acts and four refusals, made every Phase 9 document true and accepted ADR-0074…0083; next
-**the Phase 9 → 10 transition** — `READY` ([§Current Task](#current-task) is kept current).
+asserted eighteen audited acts and four refusals, made every Phase 9 document true and accepted ADR-0074…0083; then
+the Phase 9 → 10 transition (2026-10-07), which confirmed the phase after repair and initialised Phase 10.
+
+**Phase 10 — Credit Decisioning**
+Status: 🟡 **`READY`** (2026-10-07) — entry gate: all twelve criteria hold, by the Phase 9 → 10
+transition ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md) §9).
+Planned in [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md); decided in ADR-0084…0089 (`Proposed`); the
+machines in [`CREDIT_DECISIONING_LIFECYCLES.md`](../domain/CREDIT_DECISIONING_LIFECYCLES.md): a
+decision is an immutable fact reproducible from a sealed snapshot of the data it used, evaluated by a
+versioned policy (rules as data) and a versioned scorecard through a deterministic engine with its
+own version, carrying ordered reason codes; credit data collected from provider-neutral bureau and
+financial-data adapters under recorded consent, its evidence encrypted; affordability and exposure
+exact, decisions for one party serialised on its profile; referrals decided by people under
+four-eyes; every decision replayed. Credit moves no money; Phase 11 begins where a decision is
+consumed. Eight new invariants take the platform to **128**. Twenty-four backlog items across eight
+milestones (M10.1–M10.8); `P10-TSK-001` `READY`. **No Phase 10 code exists.**
 
 ## Current Milestone
 
@@ -467,47 +483,39 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**The Phase 9 → 10 transition** — `READY`: Phase 9 is `COMPLETE` (`P9-DOC-001`, 2026-10-07); the
-transition plans Phase 10 (credit decisioning) against what Phase 9 left - a platform that converts
-and pays across borders, and the debt rows owned by Phases 15 and 16. **Not started.**
+**`P10-TSK-001` — The credit module boundary and floors** — `READY`: marked by the Phase 9 → 10
+transition (2026-10-07), which confirmed Phase 9 `COMPLETE` after repair and initialised Phase 10.
+**Not started.**
 
 ### Just completed
 
-**`P9-DOC-001` — The Phase 9 exit review** — `COMPLETE` (2026-10-07). **Phase 9 `COMPLETE`; M9.9 closed at
-4 of 4.** The review ([`reviews/PHASE_9_REVIEW.md`](reviews/PHASE_9_REVIEW.md)): 8 review areas, 12 universal
-criteria, F1–F8 re-assessed and 27 phase-specific criteria `PASS` - criterion 7 and the Testing bullet with their
-recorded deviation. **Found and fixed in code:** (1) the outbound credit's `NEVER_RECEIVED` and recall bound read the
-instance's clock - now `DatabaseTime.now` inside both locked transactions
-(`OutboundCreditResolutionDatabaseTest#aSkewedResolverConcludesNothingEarly`; `SendPermitsAreTheDatabasesTest`
-extended to `JdbcOutboundCreditStore` and `JdbcCoverStore`); (2) a clearance's lapse judged on the caller's instant
-in `OfferIssuance` and `PaymentAuthorization` - now the database's (`CrossBorderPaymentDatabaseTest#aSkewedInstanceDoesNotLapseAClearance`,
-`INV-XB-02`); (3) the four-eyes approval of a parked return posted the fee refund and the transfer without the
-multi-entry pre-lock - `ParkedReturn` now carries the transfer's accounts and `CorridorReturnResolutions` locks the
-union first (`CrossBorderReturnDatabaseTest#theApprovalPreLocksBothEntriesInOrder`). **Found and filled in tests:**
-`INV-FX-09`'s missing register rows (the flip would have failed naming it); `corridor-sim-b` pinned in
-`RailMoneySemanticsArePinnedTest`; eighteen audited acts asserted positively; four refusals negatively tested
-(the reports and the trace, the reversal's approval and rejection); the payment's and outbound credit's machines,
-three born-once arbiters and the cancellation request exercised by raw SQL; the provenance columns' `NOT NULL` and
-the plan perturbation over the internal rate and the disclosed margin; **the column-classification guard, red since
-`P9-TSK-017` and unseen with the database tier skipped** (`crossborder.beneficiary` and `transfers.beneficiary` merged
-under a `table.column` key) - shared names now keyed `schema.table.column`
-(`ColumnClassificationTest#tableNamesSharedBySchemasAreQualified`, probed) and seventy columns classified. **Ruled:** ARCH-P8-02 re-owned to Phase 15
-(the second callers arrived without diverging); four clock-dated Phase 9 posters named in `X-TSK-011` (each a
-single-application transition). **Documents:** ADR-0074…0083 read against the code, corrected and `Accepted`;
-`PHASE_9_PLAN.md` (§20 errata), the lifecycle document, `DISTRIBUTED_EXECUTION.md` §3, `MODULE_ARCHITECTURE.md`,
-the glossary (six terms) and domain model, `LEDGER_MODEL.md` §9, `RECONCILIATION_MODEL.md` §16,
-`BOUNDED_CONTEXTS.md`, `DATA_CLASSIFICATION.md` (70 columns), `ERROR_CONTRACT.md`, the `DELIVERY_PLAN.md` addendum,
-`CAPABILITY_MAP.md`, `ROADMAP.md` and three code comments made true. **PROBES**: SEVEN, SEVEN CAUGHT, every restore
-byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +7 rows. **The flip**, proven non-vacuous: without
-`INV-FX-09`'s rows the guard failed `(currently 9)` naming exactly `["INV-FX-09"]`; restored byte-identical.
-**Multi-instance PASS.** **NEXT**: the Phase 9 → 10 transition `READY`. **Verified** by fresh runs on the final code -
-the fleet-wide hermetic tier 2549 across 419 suites and 18 modules and the architecture tier 162 across 28 after the
-flip; the adjacent database suites 153 across 16 (the payout return suite in its own container); the app hermetic and
-architecture tiers re-run after the records landed; ALL 0 FAILURES - the fleet-wide database and kafka tiers skipped on the owner's instruction.
+**The Phase 9 → 10 transition** — `COMPLETE` (2026-10-07). **Phase 9 `COMPLETE`, confirmed after repair;
+Phase 10 `READY`** ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)). Seven adversarial
+read-only audits (FX and cross-border financial correctness, multi-instance, settlement and reconciliation, security,
+architecture and events, test adequacy) found **two CRITICAL** defects the exit review had passed over - a takeover
+re-sending a concluded outbound credit to a provider that had never seen it (the beneficiary paid, the hold released;
+payments `V029`) and a parked return approved as an ordinary transfer and then applied again from the inquiry (a double
+credit) - and **twenty-three IMPORTANT**: the outbound sweep's starvation (payments `V030`, a claiming statement rotated
+by `last_inquired_at`), a delivery after a return rolling every inquiry back, a "too late" recall left concludable
+`NEVER_RECEIVED`, two deadlocks (the completion against the cover applier; the exit review's own pre-lock against the
+wallet deciders - now key share before rows), a first rule-set version lacking lags, the cover's computed leg booked
+unchecked (fx `V010`), a superseded attempt mis-typed, a reversal decided on another trade's route and its reasons
+unscreened (fx `V011`), storage failures logging the refused row (two build rules), an exponent amount exhausting every
+money door (`DecimalText`, `RequestDecimalsAreBoundedTest`), a refused quote committing a kyc re-screen, a screening
+reviewable by its requester (kyc `V010`), an event without currencies, and eight test gaps. Every one repaired and
+tested; the MINOR correctness, concurrency and security ones repaired too (routing and screening stamps on the database
+clock, the outbound destination's shape `CHECK`s - payments `V031` - the corridor door's rail check, error details,
+the approval echo closed); the rest recorded as Phase 15 debt. Three guards found red unseen with the database tier
+skipped (`FxReasonScreenDatabaseTest`, `FxMigrationTest`, `CrossborderMigrationTest`), corrected. **PROBES**: THIRTY-ONE, ALL CAUGHT (two first-form tests SURVIVED, recorded as no verdict, re-aimed and caught), every restore byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +26 rows.
+**Phase 10 initialised** (not built): `PHASE_10_PLAN.md`, ADR-0084…0089 (`Proposed`),
+`CREDIT_DECISIONING_LIFECYCLES.md`, `INV-CRD-05`…`12` (128 invariants), the gate's Phase 10 extension (19 criteria),
+twenty-four backlog items across M10.1–M10.8, the glossary and domain model (fourteen terms; the risk score settled as
+`risk`'s), the module, context, distributed-execution, delivery-plan, capability and roadmap documents. **Multi-instance
+PASS** after repair. **NEXT**: `P10-TSK-001` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2563 across 423 suites and 18 modules, the architecture tier 169 across 31, the slice tier 109 across 19, the database tier over every suite the repairs reach 598 across 72 and 19 in their own containers (the storm and the payout return suite); the three hermetic failures (this transition's own guards) and the one database failure (a Phase 7 routing test red since P9-TSK-019) fixed and re-run green (38 across 12; 20 across 2); ALL 0 FAILURES on the final code - the fleet-wide database and kafka tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 224 blocks, from `P9-TST-001` back to project initiation
+The per-task completion records — 225 blocks, from `P9-DOC-001` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -974,6 +982,9 @@ carries, what triggers paying it down, and the owning phase.
 | **The Phase 5 and Phase 7 providers adopt a callback's own outcome** - ADR-0083 makes a verified callback a hint, adopted only from an authenticated inquiry; the PSP and instant-rail pipelines predate it (the Phase 8 → 9 transition, D25) | Re-plumbing two live pipelines is its own task with its own failure modes | A forged-but-verified callback class is already excluded by HMAC; the hint rule is defence in depth | `X-TSK-015`'s trigger: the first provider whose callback authenticity the platform cannot verify | Phase 15 (`X-TSK-015`) |
 | **Funds owed to a closed customer by a parked corridor return rest in suspense** - a cross-border return whose customer has closed parks under its break with no payable party (the Phase 8 → 9 transition; `PHASE_9_PLAN.md` §12.9's returns) | The Phase 8 resolution kinds already hold the value visibly; paying it out needs the escheatment design | Value waits in `SUSPENSE_UNMATCHED`, aged and owned, until a person resolves it | The client-money/escheatment review | Phase 15 |
 | **Small Phase 7 residues**: the card door's refund attribution is not scoped to its rail (#34/#75); a VOIDED payment renders `FAILED` with no reason and the redirect's void dispatch writes no dispatch audit (#35); a withdrawal's replay is gated by the resolver (#37); a book refund to a payer wallet closed since is refused with no remedy (#40); provider vocabulary outside the adapters (#46); one event version shared by every payments event (#49); the merchant drill-down's label for adjustments (#50); the routing counter counting inside Tx1 (#69); `MANUAL` capture latent in two readings (#62/#70); the storm's reach (#79/#80) *(Ruled by the Phase 8 exit review, `P8-DOC-001`, 2026-10-01: Phase 8 owns none of these: its one item (#71) is the dashboard row above, paid. The rest stay with their owners per the transition record)* | Each MINOR and none a financial-correctness defect: defence in depth, rendering, reporting or latent until a producer exists | Named per item in the transition record | Each item's own trigger in the transition record §11 | Phases 13 and 15 |
+| **Phase 9 residues the transition ruled MINOR** (recorded by the Phase 9 → 10 transition (2026-10-07)): the corridor door keeps no evidence for an authenticated callback naming no credit (payments has no subject-less append); `CrossBorderPaymentReturned` carries no returned amount (the payments outcome port does not); screenings created before kyc `V010` have no recorded requester (the self-review refusal is the domain's alone for them); the screening retry's `next_attempt_at` and both callback doors' freshness window are judged on the instance clock (pacing and hints only, no money); the cross-module vocabularies bridged by name (payments' `FailureReason` in crossborder's `CHECK`, `PayeeCheck`/`EntityType`) have no parity guard; the return fact has two writers and the fee-refund lines are composed twice | Each is outside a money path or already held by a database rank; the transition repaired every CRITICAL and IMPORTANT finding and the MINOR ones on correctness, concurrency and security paths | A future vocabulary addition rolling back every failing outcome (the parity gap) is the only one with a money-adjacent consequence: a sweep that never concludes | The next change to any of those vocabularies, or Phase 15's operational-readiness pass | **Phase 15** |
+| **Phase 9 operator-path residues** (recorded by the Phase 9 → 10 transition (2026-10-07)): a failed operator lookup (a 404 on the trace or the provenance) leaves no audit record; the trade reversal's decisions take no idempotency key, so a same-approver retry after a lost response is `409 ProposalNotPending` rather than a replay; no privileged Phase 9 act requires a multi-factor session (the platform's existing posture); `ReconciliationNeverConvertsTest` reads only the settlement and reconciliation packages, not `app`'s port implementations | Enumeration probing is bounded by the permission; no money moves twice; MFA posture is platform-wide; no conversion exists in the app ports today | Enumeration of operator ids unseen; an approver's confusing 409 | Phase 15's security hardening | **Phase 15** |
+| **Phase 9 test-hygiene residues** (recorded by the Phase 9 → 10 transition (2026-10-07)): `PHASE_9_PLAN.md` §14's sixty scenarios have no scenario-to-test map (the §20 errata and §21 name the moved ones); the storm's break census excludes every `REVERSAL_MISMATCH`; `FX_LEG_DIFFERS` is proven on the buy leg only; `RECEIVED`-then-rejected is proven only in the storm; four suites sleep against database-stamped permits; one credit records one return, so a second partial bounce of the same credit is disposed of without a transfer and the full fee is refunded on a partial return (ruled: one return per credit is the design; the fee rule stands until a product decision says otherwise) | The audit found no defect behind them; each is a weaker test, not a missing control | A regression on those exact paths passing a weaker test | The next change to those paths | **Phase 15** |
 
 None of these is financial-correctness debt.
 
@@ -1052,8 +1063,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 9 → 10 transition** — `READY`
-(the Current Task), marked by `P9-DOC-001`'s completion gate - Phase 9 `COMPLETE`.
+**`P10-TSK-001` — The credit module boundary and floors** — `READY`
+(the Current Task), marked by the Phase 9 → 10 transition - Phase 10 `READY`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

@@ -1,5 +1,6 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.api.DecimalText;
 import com.finapp.fx.AvailabilitySubject;
 import com.finapp.fx.FixedSide;
 import com.finapp.fx.FxAvailability;
@@ -268,7 +269,8 @@ public final class FxQuoteDesk {
         }
         Money amount;
         try {
-            BigDecimal value = new BigDecimal(body.amount());
+            // The shape first (the Phase 9 to 10 transition gate): an exponent never reaches Money.of's rescale.
+            BigDecimal value = DecimalText.parse(body.amount());
             amount = Money.of(value, fixedSide == FixedSide.FIXED_SOURCE ? source : destination);
         } catch (RuntimeException malformed) {
             throw invalid("amount must be an exact decimal at the fixed currency's minor units");

@@ -394,7 +394,12 @@ class PaymentEndpointDatabaseTest {
                                 + " AND target_id = ?",
                         paymentId))
                 .as("the confirmation names the pin it dispatched under")
-                .contains("policyVersion=4") // the seeded version in force since V019 (P7-TSK-011)
+                // The version the decision recorded - in force when it dispatched. It read the literal 4 (V019's seed)
+                // and went red unseen when payments V025 seeded version 5 (P9-TSK-019) with the database tier skipped;
+                // the Phase 9 -> 10 transition found it.
+                .contains("policyVersion=" + oneString("SELECT v.version::text FROM payments.routing_decision d"
+                        + " JOIN payments.routing_policy_version v ON v.id = d.policy_version_id"
+                        + " WHERE d.intent_id = ?::uuid", paymentId))
                 .contains("decision=");
 
         // And the decision is frozen for every writer, the migrator included.

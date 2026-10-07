@@ -65,8 +65,7 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
             insert.setTimestamp(10, Timestamp.from(recordedAt));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new FxStorageException(
-                    DatabaseFailure.describe("retaining FX provider evidence", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("retaining FX provider evidence", failure));
         }
     }
 
@@ -106,8 +105,7 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
                 }
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(
-                    DatabaseFailure.describe("reading FX provider evidence", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading FX provider evidence", failure));
         }
         return payloads;
     }

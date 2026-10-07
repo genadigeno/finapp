@@ -61,6 +61,13 @@ public interface OutboundCreditComposition<T> {
      */
     List<JournalLine> completionLines(T unitOfWork, Completion completion);
 
+    /**
+     * Before a completion releases the hold or posts: the subject's rows locked in the global lock order - after the
+     * credit the caller holds, before any wallet or projection row - so a completion never holds the FX position's
+     * projection rows while waiting for the quote a cover outcome holds (the Phase 9 -> 10 transition's deadlock).
+     */
+    void lockSubject(T unitOfWork, UUID subject);
+
     /** After the entry posted: the subject's own completion - the trade booked onto {@code entry}, its edges. */
     void completed(T unitOfWork, Completion completion, JournalEntryId entry);
 

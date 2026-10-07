@@ -858,6 +858,87 @@ four-eyes (O7); the cut order — M9.8's second providers first, then the operat
 reversal, each recorded with Phase 15 as owner (O8); charge bearer `OUR` only (O9); no
 conversion fee, margin only (O10).
 
+### Credit decisioning (Phase 10, `Proposed` at the Phase 9 → 10 transition)
+Planned by the Phase 9 → 10 transition (2026-10-07) in `PHASE_10_PLAN.md`; nothing of it is built.
+The phase's tasks are `P10-TSK-001`…`P10-TSK-021`, `P10-TST-001`, `P10-TST-002` and
+`P10-DOC-001`, whose review reads each ADR against the code and corrects it before accepting
+any, the `P9-DOC-001` precedent. The invariants are `INV-CRD-01`…`12` (eight new). The phase's
+ADRs are ADR-0084…ADR-0089. Phase 10 moves no money.
+
+**Credit is one bounded context in one module, and it stops where lending begins.** `credit`
+holds credit data, the credit profile, the assessment, the versioned policy and model,
+underwriting and the decision as separate aggregates, `CLAUDE.md`'s Credit Score / Risk Score /
+Credit Decision / Underwriting distinction made physical; one consistency boundary, because the
+decision and the snapshot it was made from commit together. A second module for data collection
+was weighed and refused: its only consumer is credit's own snapshot, and it would put the
+freshness and consent judgements across a port from the decision. `credit` depends on `platform`
+and `sharedkernel` only and reaches consent, the party's standing, the risk signal and the
+platform's outstanding credit through ports `app` implements. It posts, holds and disburses
+nothing; loan application, offer and servicing are Phase 11's. The risk score is `risk`'s
+(Phase 13): credit consumes it through the `CreditRiskSignal` seam, which answers `NOT_ASSESSED`
+in Phase 10 and is recorded, so a decision replays identically after Phase 13. Products are a
+closed `CreditProduct` enumeration. → [ADR-0084](../adr/ADR-0084-the-credit-bounded-context.md)
+
+**Credit data is collected through provider-neutral ports, under consent checked twice, and kept
+encrypted with a stored deadline.** `CreditBureau` and `FinancialDataProvider` adapters normalise
+every answer into the closed `CreditAttributeCode` vocabulary, each value with its provenance; a
+missing attribute is `ABSENT`, never a default, and an unknown, malformed or foreign-currency
+answer is `UNAVAILABLE` or partial data, never data and never converted. The data request takes
+the screening shape (ADR-0081): born on a unique reference, the provider asked with no
+connection held and deduping on that reference, the answer applied under the row lock, retried
+by a leaderless sweep over database-stamped permits. Consent is read in the transaction that
+opens the request and in the one that records the answer; a withdrawal between them discards
+the payload unread. Raw evidence is encrypted under its own key, unreadable by the application
+role, with `retain_until` stored; no purge runs in Phase 10 (Phase 15 owns it). Freshness is
+judged on the database clock at the freeze. →
+[ADR-0085](../adr/ADR-0085-credit-data-collection.md)
+
+**Credit policy and the scorecard are versioned data judged by a versioned engine.** Rules are
+rows over closed operators, derived figures and effects, each naming a catalogued reason code;
+the evaluator is pure, evaluates every rule in ordinal order, takes the most severe effect
+(`HARD_DECLINE > DECLINE > REFER > APPROVE`), caps the approved amount, and orders and
+deduplicates the reason codes; a change of its semantics is a new `engine_version`, and every old
+one stays in the code for replay. The scorecard is an integer points table. Versions go
+`PROPOSED → ACTIVE → RETIRED` under four-eyes at the domain and the `CHECK`, one `ACTIVE` per
+product or model family, none activated by migration — the pricing policy's shape (ADR-0075
+§7); the version active at any past instant is answerable from the rows. A policy without a
+fallback rule for every source kind it reads is refused at proposal. The administration's
+writers serialise on advisory namespace `10`. →
+[ADR-0086](../adr/ADR-0086-credit-policy-and-model-as-versioned-data.md)
+
+**A credit decision is born once, immutable, made from a sealed snapshot, and replayable.** The
+decision request is submitted keyed and asynchronously (`202`), one open per party and product,
+and driven through an explicit machine by a leaderless progress sweep. The snapshot is the
+canonical JSON of every attribute the engine reads, with its provenance and the pinned versions,
+sealed by a SHA-256 re-verified on replay; assessment, evaluation and decision are each born
+once. The deciding transaction locks the party's profile first, re-reads the reserved exposure
+and re-evaluates against a successor snapshot if it changed; a decision is never updated or
+deleted by any role and an adverse one always carries ordered reason codes, whose customer texts
+are all the applicant sees. Request expiry and decision are complementary conditionals on the
+database clock. Explanation and replay are audited operator doors, and a proof replays every
+decision. `CreditDecisionUpdated` and `UnderwritingStarted` are refused as events. →
+[ADR-0087](../adr/ADR-0087-the-credit-decision.md)
+
+**Affordability and exposure are exact, single-currency arithmetic, and exposure is judged under
+the party's lock.** Income is the lower of verified and declared, expenditure the higher, the
+repayment an annuity at the policy's stress rate (a credit line's a minimum payment ratio);
+`BigDecimal` at scale 10 `HALF_EVEN`, rounded once to minor units `HALF_UP`, the formula and
+rounding the engine's, the rates and limits the policy's, nothing ever converted. Exposure is the
+bureau balance, the platform's outstanding credit (a port answering zero in Phase 10, recorded),
+the reserved exposure of the party's current approvals and the request; it is read under the
+party's `credit_profile` row lock in the deciding transaction, so concurrent approvals never
+together exceed the limit. Lapse ends a reservation in Phase 10; the consumption column is
+Phase 11's to write. → [ADR-0088](../adr/ADR-0088-affordability-and-exposure.md)
+
+**A referral meets a person, whose power is bounded.** A `REFER` opens one underwriting case; a
+person decides `APPROVED` or `DECLINED`, always with reason codes, never approves a request whose
+evaluation included a hard decline, and never second-approves their own decision; an approval
+above the product's threshold waits for a second underwriter. The case is taken by one person
+under a row lock, and the person's decision runs the system's profile-first deciding transaction,
+so it is as immutable and exposure-safe as the system's. A case nobody takes expires the request
+with a recorded reason, and the review-age gauge alerts first. →
+[ADR-0089](../adr/ADR-0089-underwriting-and-manual-review.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

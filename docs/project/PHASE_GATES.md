@@ -860,6 +860,181 @@ its conditional clause:*
   identifiable for any point in time.
 - Decisions are immutable.
 
+*Extended by the Phase 9 → 10 transition (2026-10-07): the five criteria above predate
+ADR-0084…0089 and said nothing measurable about the credit profile, data collection and its
+providers, freshness, affordability, exposure under concurrency, the scorecard, the policy
+engine, underwriting, the frozen snapshot, security, audit, observability or the ten-instance
+question — the things Phase 10's review will be judged on. Each of the five is kept as written
+and made measurable by one criterion below: the first by The policy engine, the second by
+Explainability, the third by Credit data, the fourth by Versioning, the fifth by Decisioning;
+the other criteria are the additions. Every count is taken from a fresh run, and each criterion
+names the tasks that build its proof (**Owners**). A criterion that rests on the cut candidate —
+`P10-TSK-021`, the second bureau and source selection (`PHASE_10_PLAN.md` §16) — is met by the
+task, or by the deferral recorded with Phase 15 as owner, and carries its conditional clause.
+Nothing of Phase 10 is built at the transition:*
+
+- **Credit data.** No data request is opened, and no answer recorded, without a current grant of
+  its source kind's purpose (`CREDIT_BUREAU_ACCESS`, `FINANCIAL_DATA_ACCESS`) read in that
+  transaction; a submission without it is refused `403 credit.ConsentRequired` with every
+  provider's pull count unchanged; a withdrawal between the ask and the record — or before a
+  retry — ends `CONSENT_WITHDRAWN` with the payload discarded unread (a retry asks nothing) and the
+  decision request `ABANDONED` (`CONSENT_WITHDRAWN`), nothing decided; a withdrawal after the
+  answer leaves the data request `RECEIVED` and, found by the gate's re-read at the freeze or in the
+  deciding transaction, abandons the request the same way, nothing frozen or decided. Under lost
+  responses, retries, timeouts and duplicate answers each provider counts one pull per reference,
+  the references answered `RECEIVED` equal the records, and each reference has at most one record,
+  a duplicate's evidence marked; every evidence row is encrypted under key purpose
+  `credit-evidence` with `retain_until` stored, and the application role's `SELECT` on it is
+  refused — the raw payload readable only through the audited, reasoned evidence-read door; a
+  record one second past the pinned policy's maximum age (database clock) is re-collected, and an
+  instance skewed ±5 s neither uses stale data nor refuses fresh. **Owners**: `P10-TSK-002` (the
+  purposes), `-005` (the bureau port and normalisation), `-006` (the data request, the consent
+  reads at open, retry and record, the retry sweep, duplicates and lost responses), `-007`
+  (financial data), `-008` (freshness at the freeze), `-014` (the refusal at submission), `-015`
+  and `-016` (the re-read at the freeze and in the deciding transaction), `-017` (the evidence
+  read).
+- **Credit profile.** Ten concurrent first submissions for one party leave exactly one
+  `credit_profile` row; the row holds no figures, and the application role's `UPDATE` and
+  `DELETE` on it are refused; every deciding transaction takes it first. **Owners**:
+  `P10-TSK-004`, `-016`.
+- **Affordability.** The worked cases of `PHASE_10_PLAN.md` §12.3 are exact to the minor unit for
+  both products (the annuity and the `CREDIT_LINE` minimum-payment ratio); property tests show
+  disposable income monotone in income, amount and rate; the annuity rounds once, at its declared
+  point; a source in a currency other than the product's is normalised as partial data — the
+  attribute `ABSENT` with the recorded `CURRENCY_NOT_SUPPORTED` marker — never a conversion and
+  never an error; `NoFloatingPointMoneyRulesTest` covers `credit`, with a planted violation
+  refused. **Owners**: `P10-TSK-005`, `-007` (normalisation), `-008` (the marker in the snapshot),
+  `-009`.
+- **Exposure.** Exposure is the sum of the snapshot's bureau balance, the platform-exposure
+  seam's recorded zero, the reserved exposure and the requested amount; reserved exposure counts
+  exactly the party's `APPROVED` decisions with `valid_until` after the database's now and no
+  `credit_decision_consumption` row, read under the profile lock — the decision row itself never
+  updated; two products for one party at the limit, raced ten ways, never both approve beyond it;
+  a person's approval beyond the evaluation's approved amount or the re-read limit is refused `422
+  credit.ExposureLimitExceeded`, nothing recorded; at rest in the storm no party's reserved
+  exposure exceeds its limit. **Owners**: `P10-TSK-010`, `-016`, `-018`, `P10-TST-001` (the
+  census).
+- **Underwriting.** Every invalid transition of the underwriting case is refused by the domain
+  and by raw SQL; two underwriters taking one case leave one `ASSIGNED` and one `409
+  credit.CaseTaken`; an approval above the product's threshold needs a second, different
+  underwriter, self-approval refused at the domain and at the `CHECK`, each alone; no case exists
+  for a hard-declined evaluation and a person's approval of one is refused `422
+  credit.HardDeclineNotOverridable`; a decision without a reason code is refused `422
+  credit.ReasonRequired`; an unassigned case's request expiring races its assignment (both taking
+  the request, then the case) to exactly one of `EXPIRED`, `ASSIGNED`; a taken case (`ASSIGNED` or
+  `AWAITING_SECOND`) is decided by its person after the request's validity has passed, and its
+  request is never `EXPIRED`; a disagreeing second approver refuses the second approval
+  (`AWAITING_SECOND → ASSIGNED`, reasoned, audited) and the first underwriter decides again; a case
+  whose request closes undecided ends `CLOSED` with the request's reason, never stranded; release
+  and the refusal are audited. **Owners**: `P10-TSK-018`.
+- **The policy engine.** Decision-rule tests cover every operator, effect and severity
+  combination, caps, the fallback and reason-code ordering and deduplication; the evaluator reads
+  only the snapshot; replaying every stored decision against its pinned policy, model and engine
+  versions reproduces outcome, approved amount and ordered reason codes `IDENTICAL` — over the
+  battery, the storm and at rest — and `CreditReplayProof` reads `DIVERGED` under a perturbed
+  snapshot, a perturbed rule row and a changed evaluator kept under its old `engine_version`.
+  **Owners**: `P10-TSK-011` (the scorecard), `-013` (the evaluator), `-019` (the replay proof),
+  `P10-TST-002`.
+- **Decisioning.** Requests are decided end to end across instances; every invalid transition of
+  the decision request and the data request is refused by the domain and by raw SQL; a `DECIDED`
+  request carries exactly one decision, naming the snapshot it was made from, with its pinned
+  versions and snapshot hash, and a successor snapshot exists only where the deciding transaction
+  found the reserved exposure changed; `UPDATE` and `DELETE` on the decision tables are refused
+  for every role, by privilege and by trigger, each proven alone; an expiry and a decision racing
+  at the boundary over ≥ 200 requests leave exactly one of `DECIDED`, `EXPIRED` each; a party
+  whose standing is lost, or whose consent is withdrawn, before the decision leaves its request
+  `ABANDONED` with that reason, never `EXPIRED` and never decided. **Owners**: `P10-TSK-006`,
+  `-008`, `-014`, `-015`, `-016`.
+- **Explainability.** Every adverse decision carries at least one adverse reason code, and every
+  code in the catalogue is exercised by the battery; every decision explains from its rows alone
+  — attributes with provenance, versions, rules fired, reasons, outcome, when and by whom —
+  through the audited explanation door; the customer's read returns the adverse reasons'
+  customer texts in order and, by a needle per figure, no score, attribute, threshold or risk
+  signal. **Owners**: `P10-TSK-001` (the catalogue), `-013`, `-016`, `-017`, `-019`.
+- **Versioning.** Policy and scorecard versions are proposed, activated and rejected only through
+  their doors, four-eyes at the domain and the `CHECK`, each act audited; no version is
+  migration-activated; ten racing approvers leave one `ACTIVE`; a rule or band updated, deleted,
+  or inserted outside its version's proposing transaction is refused for a raw-SQL writer, a
+  `PROPOSED` version's included; the version active at an instant is answered exactly
+  over a generated history, the instants of each switch included; a policy or scorecard
+  activated mid-decision leaves the pinned version deciding (`PHASE_10_PLAN.md` §14 scenarios 16
+  and 17); a policy lacking a fallback for a source kind it reads is refused
+  `422 credit.PolicyIncomplete`, a points table with overlapping or gapped bands `422
+  credit.ScorecardInvalid`; the versions are pinned on the request at `SUBMITTED → COLLECTING`
+  and an activation after the pin changes nothing for it. **Owners**: `P10-TSK-011`, `-012`,
+  `-015` (the pin), `-016`.
+- **Provider abstraction.** Each adapter passes the port's contract suite (normal, partial,
+  malformed, timeout, duplicate, unknown status ending `UNAVAILABLE`, never data) and its
+  normalisation golden files; no provider type is reachable outside its adapter, with a planted
+  violation refused; no provider fault ever yields an approval on an absent source. With
+  `P10-TSK-021` landed, two bureaus serve one port and source selection is proven; if it is cut,
+  the criterion is met by the contract suite and the single adapter, its deferral recorded with
+  Phase 15 as owner. **Owners**: `P10-TSK-005`, `-007`, `-021` (conditional).
+- **Multi-instance correctness.** The born-once arbiters — `UNIQUE (credit_profile.party_id)`
+  (`P10-TSK-004`), `request_reference` and `UNIQUE (credit_record.data_request_id)` (`-006`),
+  `UNIQUE (decision_snapshot.decision_request_id, sequence)` (`-008`),
+  `UNIQUE (credit_assessment.snapshot_id)` (`-011`), `UNIQUE (policy_evaluation.assessment_id)`
+  (`-013`), `UNIQUE (credit_decision.decision_request_id)` (`-016`) and
+  `UNIQUE (underwriting_case.decision_request_id)` (`-018`) — each survive a lock-bypass probe;
+  two application contexts with clocks skewed by ±5 s race the same submission, step, decision,
+  activation and case with one effect each; both schedules are registered in
+  `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` (twenty-two) with their
+  gauges; the lock order and advisory namespace `10` (credit's own lock, the one-`PROPOSED`
+  partial unique its backstop: ten proposers leave one proposal; registered by `-011`, its first
+  writer) are registered in `DISTRIBUTED_EXECUTION.md` §3; every task's ten-instance answer is
+  `PASS` on its named tests, never by construction. **Owners**: `P10-TSK-004` (the profile), the
+  tasks of `PHASE_10_PLAN.md` §7's table (`-006`, `-008`, `-011`, `-012`, `-014`, `-015`, `-016`,
+  `-018`, `-019`); `P10-TST-001`.
+- **Concurrency.** Every contention of `PHASE_10_PLAN.md` §7 has a counted race: ten submissions
+  per key; two keys per party and product; ten progress sweepers per request; a bureau answer
+  delivered twice; consent withdrawn mid-pull; a freeze racing a fresher record; two products for
+  one party at the limit; an activation racing a decision; ten approvers per proposal; two
+  underwriters per case; an assignment against its request's expiry; ten second approvers per
+  case; expiry against decision. **Owners**: `P10-TSK-006`, `-008`, `-011`, `-012`, `-014`,
+  `-015`, `-016`, `-018`.
+- **Idempotency.** Ten submissions under one key create one request and replay one response,
+  `409` while in progress; the cancellation and every keyed operator act (assignment, release,
+  decision, second approval or its refusal, propose, approve, reject) replays its response; every
+  internal step converges on a retry, a duplicate or a second instance by its born-once unique and
+  conditional edge, nothing doubled. **Owners**: `P10-TSK-006`, `-011`, `-012`, `-014`, `-015`,
+  `-016`, `-018`.
+- **Failure recovery.** A crash after each step — submission, collection, the freeze, the
+  evaluation, between evaluation and decision — is re-driven by another instance with nothing
+  doubled; each of the thirty-one failure scenarios of `PHASE_10_PLAN.md` §14 is a test or a
+  documented, accepted rationale. **Owners**: the tasks §14 names; `-015`, `-016`.
+- **Security.** The three permissions and two roles carry `RoleNameTest`'s exact grants; every
+  route is negatively tested and in `RoutePermissionRegisterTest`; another party's request
+  answers `404`; submission requires an MFA-assured session and the party's standing,
+  in-transaction; every new column is classified under `ColumnClassificationTest`; the
+  `INV-RAIL-03` needle walk extends to credit's doors, and no attribute, score, threshold or
+  reason text appears in a log line, metric tag, span attribute, event or exception message.
+  **Owners**: `P10-TSK-001`, `-003`, `-006`, `-011`, `-012`, `-014`, `-017`, `-018`, `-019`,
+  `-020`; the full walk `P10-TST-001`.
+- **Audit.** Every act of `PHASE_10_PLAN.md` §11 is catalogued in `AUDITABLE_ACTIONS.md`, with
+  `requiresReason` where a person judges, and recorded in the act's own transaction; losers
+  record nothing; every pull, explanation, replay and report read is audited. **Owners**: every
+  task that adds an act; `P10-TSK-020` (the reports).
+- **Observability.** `PHASE_10_PLAN.md` §15's series are published by a freshly started instance
+  (`PlannedMetersExistTest`, armed by the phase's flip to `COMPLETE`), with no amount, score,
+  attribute or party in any tag, both sweeper gauges included; the latency, unavailability,
+  request-age, review-age, replay and no-active-policy alerts resolve against a live scrape.
+  **Owners**: `P10-TSK-020`, and each task for the series it ships.
+- **Testing.** The credit decisioning storm (`P10-TST-001`), green in three consecutive fresh
+  runs, and the reproducibility battery (`P10-TST-002`) of ≥ 10,000 generated applicants across
+  both products, every decision replayed `IDENTICAL`, both probed; the fleet-wide battery counted
+  from fresh results, or its deliberate skip recorded as a deviation with the owner's
+  instruction. **Owners**: `P10-TST-001`, `P10-TST-002`.
+- **Documentation and invariants.** Every `Phase: 10` invariant in `FINANCIAL_INVARIANTS.md` —
+  **read from the catalogue, not from the phase plan** — has a `MUTATION_TESTING.md` §2
+  demonstration, and `P10-TST-*` have their §4 rows; ADR-0084…0089 are read against the code and
+  accepted or amended; `CREDIT_DECISIONING_LIFECYCLES.md` (every machine, the born-once facts and
+  each of its §5 points — settled at the transition — read against the code), `CREDIT_MODEL.md`,
+  the glossary, `DOMAIN_MODEL.md`,
+  `MODULE_ARCHITECTURE.md` (the risk score moved to `risk`), `BOUNDED_CONTEXTS.md`,
+  `DISTRIBUTED_EXECUTION.md` §3, `DATA_CLASSIFICATION.md`, `AUDITABLE_ACTIONS.md` and
+  `ERROR_CONTRACT.md` are current. **Owners**: `P10-DOC-001`, with each task writing its own
+  documents as it lands.
+
 ### Phase 11 — Lending
 - Accrual is idempotent per period: rerunning produces no additional accrual, proven under
   crash-and-restart.

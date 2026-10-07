@@ -61,6 +61,9 @@ public final class CorridorReturnResolutions implements ResolvedCorridorReturns 
     @NonNull private final Clock clock;
     @NonNull private final io.micrometer.core.instrument.MeterRegistry meters;
     @NonNull private final com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics;
+    /** The claim store and the corridor rails: a credit found by the line's provider reference, as the worker finds it. */
+    @NonNull private final com.finapp.payments.SchemeExecutionClaimStore<Connection> claims;
+    @NonNull private final List<com.finapp.payments.RailId> corridorRails;
 
     private record Judged(Judgement judgement, Optional<OutboundCreditStore.Row> credit, Optional<UUID> customer) {}
 
@@ -126,6 +129,20 @@ public final class CorridorReturnResolutions implements ResolvedCorridorReturns 
                 return Optional.empty();
             }
         });
+        if (found.isEmpty() && parked.providerReference().isPresent()) {
+            // Reached by its provider reference through the execution claim - the matcher's, the lookup's and the
+            // return worker's path (the Phase 9 -> 10 transition): a line whose end-to-end reference names nothing
+            // ours is still this credit's return, and must be recorded as its return, never an ordinary transfer.
+            for (com.finapp.payments.RailId rail : corridorRails) {
+                Optional<com.finapp.payments.SchemeExecutionClaim> claim = claims.findByExecution(unitOfWork, rail,
+                        new com.finapp.payments.ProviderReference(parked.providerReference().get()));
+                if (claim.isPresent()
+                        && claim.get().subject() == com.finapp.payments.SchemeExecutionClaim.Subject.OUTBOUND_CREDIT) {
+                    found = credits.lock(unitOfWork, com.finapp.payments.OutboundCreditId.of(claim.get().subjectId()));
+                    break;
+                }
+            }
+        }
         if (found.isEmpty()) {
             return new Judged(Judgement.NOT_A_CORRIDOR_RETURN, Optional.empty(), Optional.empty());
         }

@@ -52,6 +52,12 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
     }
 
     @Override
+    public void lockSubject(Connection unitOfWork, UUID subject) {
+        PaymentProgress.Locked locked = progress.lock(unitOfWork, subject);
+        booking.lockQuote(unitOfWork, FxQuoteId.of(locked.payment().quote()));
+    }
+
+    @Override
     public void completed(Connection unitOfWork, Completion completion, JournalEntryId entry) {
         PaymentProgress.Locked locked = progress.lock(unitOfWork, completion.subject());
         FxTradeId trade = booking.book(unitOfWork, FxQuoteId.of(locked.payment().quote()), entry.value(),

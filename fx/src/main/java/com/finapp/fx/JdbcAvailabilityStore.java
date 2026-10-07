@@ -33,7 +33,7 @@ public final class JdbcAvailabilityStore implements AvailabilityStore {
             lock.setString(2, subject.kind().name() + ":" + subject.subject());
             lock.execute();
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("locking an availability subject", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("locking an availability subject", failure));
         }
     }
 
@@ -51,7 +51,7 @@ public final class JdbcAvailabilityStore implements AvailabilityStore {
                 return !row.next() || row.getBoolean(1);
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("reading availability", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading availability", failure));
         }
     }
 
@@ -81,7 +81,7 @@ public final class JdbcAvailabilityStore implements AvailabilityStore {
             insert.setObject(next + 5, enableRequestId.orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("recording availability", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("recording availability", failure));
         }
     }
 
@@ -109,7 +109,7 @@ public final class JdbcAvailabilityStore implements AvailabilityStore {
             if (UNIQUE_VIOLATION.equals(failure.getSQLState())) {
                 throw new FxAvailability.EnablePending(failure);
             }
-            throw new FxStorageException(DatabaseFailure.describe("proposing an enabling", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("proposing an enabling", failure));
         }
     }
 
@@ -136,7 +136,7 @@ public final class JdbcAvailabilityStore implements AvailabilityStore {
                                 Optional.ofNullable(row.getString("decided_by"))));
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("locking an enable request", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("locking an enable request", failure));
         }
     }
 
@@ -159,7 +159,7 @@ public final class JdbcAvailabilityStore implements AvailabilityStore {
             update.setObject(5, id);
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("deciding an enable request", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("deciding an enable request", failure));
         }
     }
 

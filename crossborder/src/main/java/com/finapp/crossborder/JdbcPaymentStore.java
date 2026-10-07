@@ -41,7 +41,7 @@ public final class JdbcPaymentStore implements PaymentStore {
             insert.setTimestamp(12, Timestamp.from(payment.createdAt()));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a cross-border payment", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a cross-border payment", failure));
         }
     }
 
@@ -60,7 +60,7 @@ public final class JdbcPaymentStore implements PaymentStore {
             insert.setTimestamp(6, Timestamp.from(at));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a move of payment " + payment, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a move of payment " + payment, failure));
         }
     }
 
@@ -88,7 +88,7 @@ public final class JdbcPaymentStore implements PaymentStore {
                 return row.next() ? Optional.of(read(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("locking payment " + id, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("locking payment " + id, failure));
         }
     }
 
@@ -104,7 +104,7 @@ public final class JdbcPaymentStore implements PaymentStore {
             update.setString(4, from.name());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("moving payment " + id, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("moving payment " + id, failure));
         }
     }
 
@@ -118,7 +118,7 @@ public final class JdbcPaymentStore implements PaymentStore {
                 return row.next() ? Optional.of(read(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure));
         }
     }
 
@@ -136,7 +136,7 @@ public final class JdbcPaymentStore implements PaymentStore {
             }
             return oldest;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException("could not read the payments in transit", failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("could not read the payments in transit", failure));
         }
     }
 

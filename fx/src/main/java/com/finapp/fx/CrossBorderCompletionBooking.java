@@ -60,6 +60,18 @@ public final class CrossBorderCompletionBooking {
     }
 
     /**
+     * The cross-border quote locked {@code FOR UPDATE} - the completion's place in the lock order (quote before any
+     * wallet or projection row), taken before payments releases the hold or posts; {@link #book} then re-locks it, a
+     * no-op in the same transaction (the Phase 9 -> 10 transition).
+     */
+    public void lockQuote(Connection unitOfWork, FxQuoteId quoteId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        QuoteStore.PlanRow plan = crossBorderPlan(unitOfWork, quoteId);
+        quotes.lockOwned(unitOfWork, quoteId, plan.owner())
+                .orElseThrow(() -> new IllegalStateException("a completing quote always reads back"));
+    }
+
+    /**
      * The trade booked onto {@code journalEntryId} - the completion entry payments just posted - and the quote
      * {@code ACCEPTED -> EXECUTED}, with {@code fx.FxTradeExecuted} naming the entry by {@code postingReference}
      * (an identifier, as the conversion's {@code fx-trade-<id>}).

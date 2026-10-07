@@ -246,7 +246,7 @@ the classpath; `NoFloatingPointMoneyRulesTest`'s module guard covers both from `
 | `RateSnapshot` | `fx` | fetched by the leaderless schedule | `ON CONFLICT (source, pair, observed_at) DO NOTHING`, and only newer than the pair's latest |
 | `CrossBorderBeneficiary` | `crossborder` | register (keyed; the grant single-use); revoke (the customer, from every non-terminal state, one identical response); moved by the screening listener | Keyed per principal; the selection pinned at registration and recomputable |
 | `CorridorPolicyVersion` / `Corridor` (+ `corridor_enable_request`) | `crossborder` | propose; approve; reject; availability as fx's | As the pricing policy's |
-| `PaymentOffer` / `offer_request` | `crossborder` | created with its quote in one transaction (Tx2); frozen | Scope `crossborder.quote:<actorType>:<actorId>`; the **pinned** `corridor_policy_version_id` on `offer_request`; `UNIQUE (quote_id)` |
+| `PaymentOffer` / `offer_request` | `crossborder` | created with its quote in one transaction (Tx2); frozen | Scope `crossborder.quote:<actorType>:<actorId>`; the **pinned** `corridor_policy_id` on `offer_request`; `UNIQUE (claim_key)` *(as built; the transition's read)* |
 | `CrossBorderPayment` | `crossborder` | authorize (Tx1, T-b); moved by the outbound credit's appliers; returned by the applier or by `ResolvedCorridorReturns` | Scope `crossborder.payment:<actorType>:<actorId>` (two-transaction); `UNIQUE (payment.quote_id)` |
 | `CancellationRequest` | `crossborder` | request (the customer, keyed `crossborder.cancel`, step-up) | A born-once fact: `UNIQUE (payment_id)`, append-only (an every-writer trigger refuses `UPDATE` and `DELETE`) |
 | `OutboundCredit` (+ `outbound_credit_return`) | `payments` | born `DISPATCHED` in Tx1 with `E` minted and stored before any send; resolved by `OutboundCreditOutcomes` (answer, inquiry, hinted inquiry); recall; the return fact | `dispatch_key` unique per customer; the database-stamped permit; the claim `(rail, provider_reference)` subject `OUTBOUND_CREDIT`; posting key `outbound-credit:<id>`; `UNIQUE (outbound_credit_return.outbound_credit_id)` under the credit's row lock (*as built, `P9-DOC-001`: the planned claim `(rail, return_reference)` subject `CROSSBORDER_RETURN` was never built*); posting keys `crossborder-return:<id>`, `crossborder-return-fee:<id>` |
@@ -430,7 +430,7 @@ removed.
 | Beneficiary revocation vs a screening or review decision | The beneficiary row `FOR UPDATE` in both; conditional edges; the listener a no-op on `REVOKED` | Either order coherent; a revoked beneficiary never becomes `ACTIVE` | `-017` |
 | Outbound credit: takeover re-send vs resolution sweep | The permit re-judged on the locked row; first-send-only `NOTHING_SENT`; `NEVER_RECEIVED` only past the declared deadline + margin since the **latest** permit (ADR-0057 §4) | Either order is safe; provider instruction count 1 | `-019`, `-020` |
 | Outbound outcome appliers (answer, inquiry, hinted inquiry) | The row `FOR UPDATE` + conditional; ★ the `payments.scheme_execution_claim (rail, provider_reference)` PK, subject `OUTBOUND_CREDIT`; the posting key; the expectation unique | Records nothing; 1 entry, 1 fee line, 1 expectation | `-020` |
-| Recall vs acceptance | The provider decides; one conditional transition wins locally; no re-send after a recall request | Coherent: `COMPLETED` (recall `TOO_LATE`) or `FAILED(RECALLED)`, never both | `-024` |
+| Recall vs acceptance | The provider decides; one conditional transition wins locally; no re-send after a recall request | Coherent: `COMPLETED` (recall outcome `REFUSED` — the provider's too-late, which since the Phase 9 → 10 transition also moves an unconcluded credit `RECEIVED`) or `FAILED(RECALLED)`, never both | `-024` |
 | Return: hinted inquiry vs settlement-line worker vs ten redeliveries | ★ `UNIQUE (outbound_credit_return.outbound_credit_id)` (the sole arbiter as built - no return-reference claim was built, `V027`'s recorded deviation); the posting key; the item re-read `FOR SHARE` (ADR-0073 §7) | Converges; 1 return, 1 credit, 1 fee refund | `-023` |
 | A parked return's resolution vs an inquiry-applied return | The same ★ unique, inserted by the port before the transfer posts; reconciliation's namespace-4 advisory and the item lock against the rematch leg | One wins: the approval (the applier then writes nothing) or the inquiry (the approval rolls back `409 ResolutionStale`, the break closes `EVIDENCED`); never two credits | `-023` |
 | Ten sweepers escalating one overdue FX leg whose pair is allocated | The namespace-4 advisory first; the expected-value severity step (`… WHERE severity <> 'CRITICAL'`); reconciliation `V004`'s severity-only-rises trigger | 0 rows; one `SEVERITY_ESCALATED` event | `-013` |
@@ -786,7 +786,7 @@ receives a value already at or below its scale; the domain refuses one that is n
 amounts. Coherence bounds the provider term strictly below 1 minor unit; under half policies
 each rounding term is at most ½, so **\|r\| ≤ 1**; under directed policies each is below 1, so
 **\|r\| ≤ 2**. `fx.quote` and `fx.trade` therefore carry
-`CHECK (residual_amount_minor BETWEEN -2 AND 2)` — universal, so no named policy can produce an
+`CHECK (residual_minor BETWEEN -2 AND 2)` — universal, so no named policy can produce an
 unstorable plan — and the domain additionally asserts the policy's own bound. The residual posts
 to `ROUNDING_RESIDUAL` in its currency (CR when positive — the platform kept the fraction; DR
 when negative — the platform bears it; no line at zero), and is never folded into the margin,
@@ -1696,3 +1696,51 @@ rest are recorded here, each the truth that holds:
 - **Routing version 5** was seeded by payments `V025` (`INV-HIST-04`'s NOT NULL refuses a routing decision with no
   pinned policy - the `V013`/`V016`/`V017`/`V019` precedent), a recorded deviation from ADR-0080 §5(b)'s operator door;
   it names `corridor-sim-a` only - routing to `corridor-sim-b` takes an operator-door version (`P9-TSK-026`).
+
+## 21. Repairs at the Phase 9 → 10 transition (2026-10-07)
+
+The transition's second, independent gate (seven adversarial audits —
+[`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)) found what the exit review had not, and
+repaired it before Phase 10 was initialised. What this plan says above is corrected by these, each tested and broken on
+purpose (`MUTATION_TESTING.md` §2):
+
+- **A concluded outbound credit is never re-sent** (critical). The desk's takeover renewed the send permit on any
+  status, so a retry under the same key after `FAILED(NEVER_RECEIVED)` re-sent `E` to a provider that had never seen
+  it — paid while the hold was released. The renewal now requires `DISPATCHED`/`UNKNOWN` and no recall, in the store
+  and by payments `V029`'s trigger for every writer.
+- **A parked return is found by either reference** (critical). The four-eyes resolution found the credit by the line's
+  end-to-end reference only; a line whose `E` named nothing ours went through as an ordinary transfer, and a later
+  inquiry applied the same return again — the customer credited twice. It now also follows the provider reference
+  through the execution claim, as the matcher and the worker do.
+- **The outbound sweep claims its candidates** (payments `V030`): one `UPDATE … FOR UPDATE SKIP LOCKED RETURNING` statement
+  stamping `last_inquired_at`, awaiting-outcome credits first, each least recently inquired first — the permit no
+  inquiry moves had let the oldest `RECEIVED`/`UNKNOWN` credits starve a newer lost send. A returned credit is never
+  a delivery poll.
+- **A delivery reported after a return is history** (the payment stays `RETURNED`; the inquiry no longer rolls back
+  for ever). **A recall answered "too late" moves an unconcluded credit `RECEIVED`** — the provider holds it, so no
+  later inconsistent "unrecognised" concludes it `NEVER_RECEIVED`.
+- **The lock order, as §7 states it, now holds in two places it did not:** the completion locks the payment and then
+  the quote before the hold's wallet and any projection row (it had locked the quote after posting to `FX_POSITION`,
+  deadlocking with the cover applier); and `lockBalancesInOrder` takes the accounts' `FOR KEY SHARE` before their
+  projection rows, the order every posting follows (the exit review's pre-lock had inverted it against the wallet
+  deciders).
+- **A source's first rule-set version dates every kind its evidence settles** (`SettledExpectationKinds`): a v1
+  without the cover legs' or the corridor credits' lags would have rolled back every money movement of that kind.
+  *Ruled, not repaired:* with no `ACTIVE` version at all the money paths roll back until one is activated — the
+  designed precondition, alerted (`finapp.reconciliation.rule.set.missing`) and converging on activation.
+- **The cover is judged against its firm quote** (fx `V010`): the requote's stated counter stored before any send; the
+  execution records the computed leg it was quoted at, `computed_deviation` and `executed_rate_coherent`, each alerting
+  (`finapp.fx.cover{outcome=computed_deviation|rate_incoherent}`); money still booked exactly as executed. A cover is
+  born only from its quote's plan, for every writer. A superseded attempt executed late types `TERMINAL` at once.
+- **Security:** no fx or crossborder storage failure carries the driver's exception (the refused row's `DETAIL`
+  reached the log); a provider's shaped destination reference is refused as a provider fault; decimal text from every
+  request is shape-checked before parsing (`DecimalText` — an exponent like `1E+500000000` exhausted CPU and memory);
+  a refused cross-border quote commits only its refusal (no kyc re-screen, no offer request, no quote); a screening is
+  never reviewed by its own requester (kyc `V010`); the trade reversal's reasons are screened (fx `V011`) and its
+  decision refused on another trade's route; `CrossBorderPaymentInitiated` carries its currencies; the outbound
+  credit's destination carries the withdrawal's shape `CHECK`s (payments `V031`); a corridor callback names only its
+  own rail's credits.
+- **Windows on the database clock:** cross-border routing picks the version in force by `DatabaseTime`; the screening's
+  `decided_at` and `requested_at` are the database's.
+- **Migrations added:** payments `V029`–`V031`, fx `V010`–`V011`, kyc `V010`.
+

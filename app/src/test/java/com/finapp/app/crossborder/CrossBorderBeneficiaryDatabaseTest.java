@@ -61,9 +61,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -424,6 +427,71 @@ class CrossBorderBeneficiaryDatabaseTest {
         } catch (SQLException refused) {
             assertThat(refused.getMessage()).contains("final");
         }
+    }
+
+    // ------------------------------------------------------------------ the Phase 9 to 10 transition
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("Phase 9 to 10 transition: a provider attesting an IBAN as its opaque reference is the provider's fault -"
+            + " 503 crossborder.ProviderUnavailable, nothing stored, and the identifier in no table, response or log line")
+    void aShapedProviderReferenceIsRefusedAsAProviderFault(CapturedOutput output) throws Exception {
+        String customer = sessionWith(null);
+        String iban = "DE89370400440532013000";
+        long beneficiaries = count("SELECT count(*) FROM crossborder.beneficiary");
+        long screenings = count("SELECT count(*) FROM kyc.counterparty_screening");
+        ENGINE.answerNextExchangeWith(iban);
+        HttpResponse<String> refused = register(customer, grant("match"), "Clear Person", false, key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(503);
+        assertThat(refused.body()).contains("crossborder.ProviderUnavailable").doesNotContain(iban);
+        assertThat(count("SELECT count(*) FROM crossborder.beneficiary")).as("no beneficiary").isEqualTo(beneficiaries);
+        assertThat(count("SELECT count(*) FROM kyc.counterparty_screening")).as("no screening requested").isEqualTo(screenings);
+        assertThat(tablesHolding(iban)).as("tables holding the identifier").isEmpty();
+        assertThat(output.getAll()).as("the captured log").doesNotContain(iban).doesNotContain("Failing row");
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: a KYC_REVIEWER who registers a beneficiary cannot review its screening over"
+            + " HTTP - 422 kyc.ScreeningReviewInvalid, nothing written; a second reviewer decides it")
+    void aReviewerNeverReleasesTheirOwnBeneficiary() throws Exception {
+        String reviewer = sessionWith(RoleName.KYC_REVIEWER);
+        BeneficiaryId own = registered(reviewer, grant("match"), "HIT Self Registered Person");
+        assertThat(statusOf(own)).isEqualTo("IN_REVIEW");
+        UUID screening = screeningOf(own);
+        String door = "/v1/operator/kyc/counterparty-screenings/" + screening + "/decision";
+        String release = "{\"decision\":\"RELEASE\",\"reasonCode\":\"FALSE_POSITIVE\",\"narrative\":\"my own payee\"}";
+        long audits = count("SELECT count(*) FROM platform.audit_record WHERE operation = 'kyc.CounterpartyScreeningDecided'"
+                + " AND target_id = ?", screening.toString());
+
+        HttpResponse<String> refused = post(door, release, reviewer, key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("kyc.ScreeningReviewInvalid");
+        assertThat(screeningStatus(own)).isEqualTo("IN_REVIEW");
+        assertThat(statusOf(own)).as("the beneficiary is not released").isEqualTo("IN_REVIEW");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'kyc.CounterpartyScreeningDecided'"
+                + " AND target_id = ?", screening.toString())).as("no decision recorded").isEqualTo(audits);
+
+        HttpResponse<String> second = post(door, release, sessionWith(RoleName.KYC_REVIEWER), key());
+        assertThat(second.statusCode()).as(second.body()).isEqualTo(200);
+        assertThat(statusOf(own)).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: a malformed registration answers a fixed detail - never the input, never an"
+            + " internal class name")
+    void aMalformedRegistrationEchoesNothing() throws Exception {
+        String customer = sessionWith(null);
+        HttpResponse<String> badType = post(DOOR, body("JP", "JPY", grant("match"), "Clear Person", false)
+                .replace("\"INDIVIDUAL\"", "\"PLANTED_ENTITY_TYPE\""), customer, key());
+        assertThat(badType.statusCode()).as(badType.body()).isEqualTo(422);
+        assertThat(badType.body()).contains("api.ValidationFailed").doesNotContain("com.finapp")
+                .doesNotContain("PLANTED_ENTITY_TYPE");
+        HttpResponse<String> badCountry = post(DOOR, body("Q!", "JPY", grant("match"), "Clear Person", false), customer, key());
+        assertThat(badCountry.statusCode()).as(badCountry.body()).isEqualTo(422);
+        assertThat(badCountry.body()).doesNotContain("com.finapp").doesNotContain("Q!");
+        HttpResponse<String> unbounded = post(DOOR, body("JP".repeat(40), "JPY", grant("match"), "Clear Person", false),
+                customer, key());
+        assertThat(unbounded.statusCode()).as("an unbounded country is refused at the boundary").isEqualTo(422);
     }
 
     // ------------------------------------------------------------------ plumbing

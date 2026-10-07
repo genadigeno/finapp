@@ -72,9 +72,26 @@ class CounterpartyScreeningMigrationTest {
         assertThat(migration()).contains("NOT kyc.holds_instrument_shape(decision_narrative)");
     }
 
+    @Test
+    @DisplayName("Phase 9 to 10 transition: V010 refuses a review by the requester, freezes the requester and grants no"
+            + " update of it")
+    void theRequesterNeverReviews() {
+        String v010 = migration(V010);
+        assertThat(v010)
+                .contains("CHECK (decided_by IS NULL OR requested_by IS NULL OR decided_by <> requested_by)")
+                .contains("OR NEW.requested_by IS DISTINCT FROM OLD.requested_by THEN")
+                .doesNotContainPattern("GRANT[^;]*UPDATE");
+    }
+
+    private static final String V010 = "db/migration/kyc/V010__a_screening_is_never_reviewed_by_its_requester.sql";
+
     private static String migration() {
-        try (InputStream in = CounterpartyScreeningMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
-            assertThat(in).as(MIGRATION + " must be on the classpath").isNotNull();
+        return migration(MIGRATION);
+    }
+
+    private static String migration(String path) {
+        try (InputStream in = CounterpartyScreeningMigrationTest.class.getClassLoader().getResourceAsStream(path)) {
+            assertThat(in).as(path + " must be on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);

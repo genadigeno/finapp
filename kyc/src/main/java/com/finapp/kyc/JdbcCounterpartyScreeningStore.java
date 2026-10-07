@@ -28,10 +28,20 @@ public final class JdbcCounterpartyScreeningStore implements CounterpartyScreeni
     private static final String TABLE = "kyc.counterparty_screening";
     private static final String ATTEMPTS = "kyc.counterparty_screening_attempt";
 
+    /**
+     * Every decision's instant, the DATABASE's (the Phase 9 to 10 transition gate): a clearance's lapse is judged against
+     * {@code DatabaseTime.now}, so its start must be on the same clock - an instance running behind would otherwise
+     * stamp a clearance that lapses early, one running ahead a clearance that outlives its validity. Never before
+     * {@code requested_at} (V009's {@code counterparty_screening_decided_after_requested}), which the requesting
+     * instance stamped.
+     */
+    private static final String DECIDED_NOW = "GREATEST(statement_timestamp(), requested_at)";
+
     private static final String COLUMNS =
             "id, request_reference, subject_ciphertext, subject_nonce, subject_key_version, country,"
                     + " entity_type, payee_verdict, status, review_reason, decision_basis, policy_version,"
-                    + " decided_at, decided_by, decision_reason_code, attempts, next_attempt_at, requested_at";
+                    + " decided_at, decided_by, decision_reason_code, attempts, next_attempt_at, requested_at,"
+                    + " requested_by";
 
     @Override
     public boolean insertRequested(Connection unitOfWork, NewScreening fresh) {
@@ -40,8 +50,8 @@ public final class JdbcCounterpartyScreeningStore implements CounterpartyScreeni
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO " + TABLE + " (id, request_reference, subject_ciphertext, subject_nonce,"
                         + " subject_key_version, country, entity_type, payee_verdict, status, attempts,"
-                        + " next_attempt_at, requested_at)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', 0, ?, ?)"
+                        + " next_attempt_at, requested_at, requested_by)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', 0, ?, statement_timestamp(), ?)"
                         + " ON CONFLICT (request_reference) DO NOTHING")) {
             insert.setObject(1, fresh.id().value());
             insert.setString(2, fresh.requestReference());
@@ -52,7 +62,7 @@ public final class JdbcCounterpartyScreeningStore implements CounterpartyScreeni
             insert.setString(7, fresh.entityType().name());
             insert.setString(8, fresh.payeeVerdict().name());
             insert.setTimestamp(9, Timestamp.from(fresh.dueAt()));
-            insert.setTimestamp(10, Timestamp.from(fresh.requestedAt()));
+            insert.setString(10, fresh.requestedBy().orElse(null));
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new KycStorageException(DatabaseFailure.describe("requesting a counterparty screening", failure));
@@ -122,16 +132,15 @@ public final class JdbcCounterpartyScreeningStore implements CounterpartyScreeni
         Objects.requireNonNull(outcome, "outcome must not be null");
         try (PreparedStatement update = unitOfWork.prepareStatement(
                 "UPDATE " + TABLE + " SET status = ?, review_reason = ?, decision_basis = 'AUTOMATIC',"
-                        + " policy_version = ?, decided_at = ?, attempts = ?, next_attempt_at = ?"
+                        + " policy_version = ?, decided_at = " + DECIDED_NOW + ", attempts = ?, next_attempt_at = ?"
                         + " WHERE id = ? AND status = ?")) {
             update.setString(1, outcome.status().name());
             update.setString(2, outcome.reviewReason().map(Enum::name).orElse(null));
             update.setString(3, outcome.policyVersion());
-            update.setTimestamp(4, Timestamp.from(outcome.decidedAt()));
-            update.setInt(5, outcome.attempts());
-            update.setTimestamp(6, outcome.nextAttemptAt().map(Timestamp::from).orElse(null));
-            update.setObject(7, id.value());
-            update.setString(8, expected.name());
+            update.setInt(4, outcome.attempts());
+            update.setTimestamp(5, outcome.nextAttemptAt().map(Timestamp::from).orElse(null));
+            update.setObject(6, id.value());
+            update.setString(7, expected.name());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new KycStorageException(DatabaseFailure.describe("deciding counterparty screening " + id, failure));
@@ -145,15 +154,14 @@ public final class JdbcCounterpartyScreeningStore implements CounterpartyScreeni
         Objects.requireNonNull(outcome, "outcome must not be null");
         try (PreparedStatement update = unitOfWork.prepareStatement(
                 "UPDATE " + TABLE + " SET status = ?, decision_basis = 'REVIEWER', decided_by = ?,"
-                        + " decision_reason_code = ?, decision_narrative = ?, policy_version = ?, decided_at = ?"
+                        + " decision_reason_code = ?, decision_narrative = ?, policy_version = ?, decided_at = " + DECIDED_NOW
                         + " WHERE id = ? AND status = 'IN_REVIEW'")) {
             update.setString(1, outcome.status().name());
             update.setString(2, outcome.decidedBy());
             update.setString(3, outcome.reasonCode().name());
             update.setString(4, outcome.narrative());
             update.setString(5, outcome.policyVersion());
-            update.setTimestamp(6, Timestamp.from(outcome.decidedAt()));
-            update.setObject(7, id.value());
+            update.setObject(6, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new KycStorageException(DatabaseFailure.describe("reviewing counterparty screening " + id, failure));
@@ -242,6 +250,7 @@ public final class JdbcCounterpartyScreeningStore implements CounterpartyScreeni
                 Optional.ofNullable(row.getString("decision_reason_code")).map(ReasonCode::valueOf),
                 row.getInt("attempts"),
                 Optional.ofNullable(row.getTimestamp("next_attempt_at")).map(Timestamp::toInstant),
-                row.getTimestamp("requested_at").toInstant());
+                row.getTimestamp("requested_at").toInstant(),
+                Optional.ofNullable(row.getString("requested_by")));
     }
 }

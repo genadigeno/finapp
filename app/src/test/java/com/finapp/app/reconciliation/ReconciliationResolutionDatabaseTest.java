@@ -436,6 +436,14 @@ class ReconciliationResolutionDatabaseTest {
                 .contains("\"narrative\":\"returned to the merchant per the remittance advice\"")
                 .contains("\"status\":\"PROPOSED\"");
 
+        // A misspelled echo is refused, never silently dropped (the Phase 9 -> 10 transition): the check it names
+        // would otherwise not run.
+        HttpResponse<String> misspelled = post(approver.token(), "/resolutions/" + resolution
+                + "/approval", null, "{\"targetAccount\":\"" + confederate + "\"}");
+        assertThat(misspelled.statusCode()).as(misspelled.body()).isEqualTo(422);
+        assertThat(one("SELECT status FROM reconciliation.resolution WHERE id = ?::uuid", resolution))
+                .isEqualTo("PROPOSED");
+
         HttpResponse<String> elsewhere = post(approver.token(), "/resolutions/" + resolution
                 + "/approval", null, "{\"targetAccountId\":\"" + confederate + "\"}");
         assertThat(elsewhere.statusCode())

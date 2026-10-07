@@ -49,8 +49,14 @@ all, returned exactly or parked for a person, cancelled only by a recall the pro
 and every position, fee, spread and residual reconciled per currency, never by conversion — all
 thirty items `COMPLETE`, the FX and cross-border storm (`P9-TST-001`) answering the ten-instances
 question across two instances whose clocks disagree. The fleet-wide database tiers were skipped
-on the owner's standing instruction and are the Phase 9 → 10 transition's to run. **Phase 10 —
-Credit Decisioning — is next**, behind that transition.
+on the owner's standing instruction. **The Phase 9 → 10 transition** (2026-10-07) confirmed Phase 9
+only after repair: its seven audits found two critical defects the exit review had passed over — a
+concluded cross-border credit re-sendable to a provider that had never seen it, and a parked return
+creditable twice — and twenty-three important ones (two deadlocks, one introduced by the exit
+review's own repair; a sweep page that could starve; storage failures logging refused rows; an
+exponent amount exhausting every money door), every one repaired, tested and broken on purpose.
+**Phase 10 — Credit Decisioning — is `READY`**: decisions as immutable, reproducible facts from
+versioned policy and models, with no money moved; `P10-TSK-001` is the first task.
 
 **Phase 8** closed on its
 exit review (`P8-DOC-001`, 2026-10-01 — 8 areas, 12 universal criteria, F1–F8 re-assessed and 28

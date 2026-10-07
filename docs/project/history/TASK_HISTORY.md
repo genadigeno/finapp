@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 224 "Previously" blocks, newest first, from `P9-TST-001` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 225 "Previously" blocks, newest first, from `P9-DOC-001` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,40 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-DOC-001` — The Phase 9 exit review** — `COMPLETE` (2026-10-07). **Phase 9 `COMPLETE`; M9.9 closed at
+4 of 4.** The review ([`reviews/PHASE_9_REVIEW.md`](reviews/PHASE_9_REVIEW.md)): 8 review areas, 12 universal
+criteria, F1–F8 re-assessed and 27 phase-specific criteria `PASS` - criterion 7 and the Testing bullet with their
+recorded deviation. **Found and fixed in code:** (1) the outbound credit's `NEVER_RECEIVED` and recall bound read the
+instance's clock - now `DatabaseTime.now` inside both locked transactions
+(`OutboundCreditResolutionDatabaseTest#aSkewedResolverConcludesNothingEarly`; `SendPermitsAreTheDatabasesTest`
+extended to `JdbcOutboundCreditStore` and `JdbcCoverStore`); (2) a clearance's lapse judged on the caller's instant
+in `OfferIssuance` and `PaymentAuthorization` - now the database's (`CrossBorderPaymentDatabaseTest#aSkewedInstanceDoesNotLapseAClearance`,
+`INV-XB-02`); (3) the four-eyes approval of a parked return posted the fee refund and the transfer without the
+multi-entry pre-lock - `ParkedReturn` now carries the transfer's accounts and `CorridorReturnResolutions` locks the
+union first (`CrossBorderReturnDatabaseTest#theApprovalPreLocksBothEntriesInOrder`). **Found and filled in tests:**
+`INV-FX-09`'s missing register rows (the flip would have failed naming it); `corridor-sim-b` pinned in
+`RailMoneySemanticsArePinnedTest`; eighteen audited acts asserted positively; four refusals negatively tested
+(the reports and the trace, the reversal's approval and rejection); the payment's and outbound credit's machines,
+three born-once arbiters and the cancellation request exercised by raw SQL; the provenance columns' `NOT NULL` and
+the plan perturbation over the internal rate and the disclosed margin; **the column-classification guard, red since
+`P9-TSK-017` and unseen with the database tier skipped** (`crossborder.beneficiary` and `transfers.beneficiary` merged
+under a `table.column` key) - shared names now keyed `schema.table.column`
+(`ColumnClassificationTest#tableNamesSharedBySchemasAreQualified`, probed) and seventy columns classified. **Ruled:** ARCH-P8-02 re-owned to Phase 15
+(the second callers arrived without diverging); four clock-dated Phase 9 posters named in `X-TSK-011` (each a
+single-application transition). **Documents:** ADR-0074…0083 read against the code, corrected and `Accepted`;
+`PHASE_9_PLAN.md` (§20 errata), the lifecycle document, `DISTRIBUTED_EXECUTION.md` §3, `MODULE_ARCHITECTURE.md`,
+the glossary (six terms) and domain model, `LEDGER_MODEL.md` §9, `RECONCILIATION_MODEL.md` §16,
+`BOUNDED_CONTEXTS.md`, `DATA_CLASSIFICATION.md` (70 columns), `ERROR_CONTRACT.md`, the `DELIVERY_PLAN.md` addendum,
+`CAPABILITY_MAP.md`, `ROADMAP.md` and three code comments made true. **PROBES**: SEVEN, SEVEN CAUGHT, every restore
+byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +7 rows. **The flip**, proven non-vacuous: without
+`INV-FX-09`'s rows the guard failed `(currently 9)` naming exactly `["INV-FX-09"]`; restored byte-identical.
+**Multi-instance PASS.** **NEXT**: the Phase 9 → 10 transition `READY`. **Verified** by fresh runs on the final code -
+the fleet-wide hermetic tier 2549 across 419 suites and 18 modules and the architecture tier 162 across 28 after the
+flip; the adjacent database suites 153 across 16 (the payout return suite in its own container); the app hermetic and
+architecture tiers re-run after the records landed; ALL 0 FAILURES - the fleet-wide database and kafka tiers skipped on the owner's instruction.
 
 ### Previously
 

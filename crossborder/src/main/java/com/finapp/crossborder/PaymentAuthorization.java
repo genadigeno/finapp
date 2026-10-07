@@ -153,9 +153,13 @@ public final class PaymentAuthorization {
                         .with("beneficiary", beneficiary.id().value().toString())
                         .with("corridor", offer.corridor().code())
                         .with("quote", quoteId.toString())
+                        // Every amount carries its currency beside its minor units and scale (INV-MON-02): added
+                        // additively at event version 1 by the Phase 9 to 10 transition gate.
                         .with("totalDebitMinor", Long.toString(offer.totalDebit().minorUnits()))
+                        .with("totalDebitCurrency", offer.totalDebit().currency().code())
                         .with("totalDebitScale", Integer.toString(offer.totalDebit().scale()))
                         .with("destinationMinor", Long.toString(offer.destination().minorUnits()))
+                        .with("destinationCurrency", offer.destination().currency().code())
                         .with("destinationScale", Integer.toString(offer.destination().scale()))
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);

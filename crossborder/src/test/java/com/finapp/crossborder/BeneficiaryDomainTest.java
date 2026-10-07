@@ -165,9 +165,26 @@ class BeneficiaryDomainTest {
                 .isEqualTo(Beneficiaries.exchangeReference(owner, "grant-secret-77"))
                 .isNotEqualTo(Beneficiaries.exchangeReference(UUID.randomUUID(), "grant-secret-77"));
         assertThat(new CounterpartyScreening.Request("r", "Akiko Tanaka", JP, EntityType.INDIVIDUAL,
-                        BeneficiaryVocabulary.PayeeCheck.MATCH).toString()).doesNotContain("Akiko");
+                        BeneficiaryVocabulary.PayeeCheck.MATCH, "registrant").toString()).doesNotContain("Akiko");
         assertThat(new CorridorDirectory.Exchange.Exchanged("dest-ref-9", "AB12", BeneficiaryVocabulary.PayeeCheck.MATCH, JP,
                         JPY, EntityType.INDIVIDUAL).toString()).doesNotContain("dest-ref-9");
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: a provider's reference holding a bank identifier or card number, or outside the"
+            + " column's charset, is not storable - refused before any write; an opaque reference is")
+    void aProvidersShapedReferenceIsNotStorable() {
+        assertThat(Beneficiaries.storable(exchanged("XD-1a2b3c4d-17", "0017"))).isTrue();
+        for (String shaped : List.of("DE89370400440532013000", "XD-DE89370400440532013000", "4111111111111111",
+                "ref:4111-1111-1111-1111", "not opaque!", "")) {
+            assertThat(Beneficiaries.storable(exchanged(shaped, "0017"))).as(shaped).isFalse();
+        }
+        assertThat(Beneficiaries.storable(exchanged("XD-1a2b3c4d-17", "17"))).as("a suffix is four").isFalse();
+    }
+
+    private static CorridorDirectory.Exchange.Exchanged exchanged(String destination, String suffix) {
+        return new CorridorDirectory.Exchange.Exchanged(destination, suffix, BeneficiaryVocabulary.PayeeCheck.MATCH, JP, JPY,
+                EntityType.INDIVIDUAL);
     }
 
     private static Beneficiaries.Registration registration(UUID owner, String grant, String nickname) {

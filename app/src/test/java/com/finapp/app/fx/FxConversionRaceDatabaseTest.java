@@ -9,6 +9,7 @@ import static com.finapp.app.fx.FxTestClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.database.ServerSkewedClock;
 import com.finapp.fx.ConversionParticipants;
 import com.finapp.fx.FxAvailability;
 import com.finapp.fx.FxConversion;
@@ -37,6 +38,7 @@ import java.lang.reflect.Proxy;
 import java.net.http.HttpResponse;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -265,6 +267,84 @@ class FxConversionRaceDatabaseTest {
                 .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'fx.FxQuoteExpired'"
                 + " AND aggregate_id = ?::uuid", unswept)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a skewed instance judges nothing on its own clock (the Phase 9 to 10 transition): at -5 s and +5 s from"
+            + " the database, the acceptance books every quote live on the database's clock and none lapsed on it; a"
+            + " sweeper handed now+5 s expires nothing early, and handed now-5 s still expires what lapsed")
+    void aSkewedInstanceJudgesNothingOnItsOwnClock() throws Exception {
+        FxTestClient client = new FxTestClient(port);
+        FxTestClient.Customer customer = client.verifiedCustomer();
+        fund(postings, client.openWallet(customer, "EUR"), money("1000.00", "EUR"));
+        for (Duration skew : List.of(Duration.ofSeconds(-5), Duration.ofSeconds(5))) {
+            FxConversion skewed = conversionOn(ServerSkewedClock.of(skew));
+
+            // Live on the database's clock: booked - though an instance 5 s ahead reads the 5 s window as past.
+            String live = client.quoteId(customer, "EUR", "USD", "FIXED_SOURCE", "10.00");
+            FxConversion.Outcome booked = convertOn(skewed, customer, live);
+            assertThat(booked).as("skew %s: a quote live on the database's clock is accepted", skew)
+                    .isInstanceOf(FxConversion.Booked.class);
+            assertThat(scalar("SELECT status FROM fx.quote WHERE id = ?::uuid", live)).isEqualTo("EXECUTED");
+            assertThat(scalar("SELECT e.occurred_at < q.expires_at FROM fx.quote_event e JOIN fx.quote q"
+                    + " ON q.id = e.quote_id WHERE q.id = ?::uuid AND e.to_status = 'ACCEPTED'", live)).isEqualTo("t");
+
+            // Lapsed on the database's clock: never accepted - though an instance 5 s behind reads it as live.
+            String lapsed = client.quoteId(customer, "EUR", "USD", "FIXED_SOURCE", "10.00");
+            awaitLapsedOnTheDatabaseClock(lapsed);
+            FxConversion.Outcome late = convertOn(skewed, customer, lapsed);
+            assertThat(late).as("skew %s: a quote lapsed on the database's clock is never accepted", skew)
+                    .isInstanceOf(FxConversion.Expired.class);
+            assertThat(scalar("SELECT status FROM fx.quote WHERE id = ?::uuid", lapsed)).isEqualTo("EXPIRED");
+            assertThat(count("SELECT count(*) FROM fx.trade WHERE quote_id = ?::uuid", lapsed)).isZero();
+            assertThat(scalar("SELECT detected_by FROM fx.quote_event WHERE quote_id = ?::uuid AND to_status = 'EXPIRED'",
+                    lapsed)).isEqualTo("ACCEPTANCE");
+        }
+
+        // The sweeper: handed an instant 5 s AHEAD of the database, it expires nothing the database holds live.
+        String held = client.quoteId(customer, "EUR", "USD", "FIXED_SOURCE", "10.00");
+        List<QuoteStore.ExpiredRow> ahead = sweepAt(ServerSkewedClock.of(Duration.ofSeconds(5)).instant());
+        assertThat(ahead).as("nothing live expired early").noneMatch(row -> row.id().value().toString().equals(held));
+        assertThat(scalar("SELECT status FROM fx.quote WHERE id = ?::uuid", held)).isEqualTo("ISSUED");
+        for (QuoteStore.ExpiredRow row : ahead) {
+            assertThat(scalar("SELECT q.expires_at <= e.occurred_at FROM fx.quote q JOIN fx.quote_event e"
+                            + " ON e.quote_id = q.id AND e.to_status = 'EXPIRED' WHERE q.id = ?::uuid",
+                    row.id().value().toString()))
+                    .as("every quote the skewed sweeper expired had lapsed on the database's clock").isEqualTo("t");
+        }
+        // Handed an instant 5 s BEHIND, it still expires the quote once the database's clock has passed it.
+        awaitLapsedOnTheDatabaseClock(held);
+        sweepAt(ServerSkewedClock.of(Duration.ofSeconds(-5)).instant());
+        assertThat(scalar("SELECT status FROM fx.quote WHERE id = ?::uuid", held)).isEqualTo("EXPIRED");
+    }
+
+    private FxConversion conversionOn(Clock clock) {
+        return new FxConversion(quotes, trades, availability, participants, ledgerAccountStore,
+                new AvailableBalance<>(new JdbcBalanceDerivation(), new JdbcHoldStore()),
+                new ChartOfAccounts<>(ledgerAccountStore), postings, auditWriter, outboxWriter, FxTestClient.IDS, clock);
+    }
+
+    private FxConversion.Outcome convertOn(FxConversion conversion, FxTestClient.Customer customer, String quote) {
+        Actor actor = new Actor(customer.party().toString(), ActorType.CUSTOMER);
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope scope = SecurityContext.enter(actor)) {
+            return fxTransactionRunner.inTransaction(unitOfWork -> conversion.convert(unitOfWork,
+                    FxQuoteId.of(UUID.fromString(quote)), customer.party(), actor, CorrelationId.generate(FxTestClient.IDS)));
+        }
+    }
+
+    /** Every page a sweeper handed {@code now} expires, until a short page. */
+    private List<QuoteStore.ExpiredRow> sweepAt(Instant now) {
+        List<QuoteStore.ExpiredRow> expired = new ArrayList<>();
+        try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
+            List<QuoteStore.ExpiredRow> page;
+            do {
+                page = fxTransactionRunner.inTransaction(unitOfWork ->
+                        lifecycle.expirePage(unitOfWork, 50, now, SecurityContext.require()));
+                expired.addAll(page);
+            } while (page.size() == 50);
+        }
+        return expired;
     }
 
     /**

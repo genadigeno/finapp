@@ -201,7 +201,7 @@ class CounterpartyScreeningDatabaseTest {
         assertThat(provider.total.get()).isEqualTo(1);
         assertThatThrownBy(() -> screenings.screen(new CounterpartyScreenings.Request(request.requestReference(),
                         new CounterpartySubject("Someone Else", CountryCode.of("US"), EntityType.INDIVIDUAL),
-                        PayeeVerdict.MATCH), correlation()))
+                        PayeeVerdict.MATCH, "requester-" + UUID.randomUUID()), correlation()))
                 .isInstanceOf(CounterpartyScreenings.RequestConflict.class);
 
         CounterpartyScreenings.Screening rescreened = screenings.rescreen(first.id(), "rescreen-" + UUID.randomUUID(), correlation());
@@ -390,7 +390,7 @@ class CounterpartyScreeningDatabaseTest {
         CounterpartyScreenings screenings = service(new Scripted(Verdict.HIT), recordingListener, CounterpartyScreeningObserver.NONE);
         CounterpartyScreenings.Request request = new CounterpartyScreenings.Request(
                 "needle-" + UUID.randomUUID(), new CounterpartySubject(needle, CountryCode.of("JP"), EntityType.BUSINESS),
-                PayeeVerdict.MATCH);
+                PayeeVerdict.MATCH, "requester-needle");
         CounterpartyScreeningId id = screenings.screen(request, correlation()).id();
         review(screenings, id, new Actor("reviewer-needle", ActorType.EMPLOYEE), Decision.BLOCK, ReasonCode.TRUE_MATCH,
                 "the listed entity itself");
@@ -476,6 +476,110 @@ class CounterpartyScreeningDatabaseTest {
         assertThat(released.body()).doesNotContain("different date of birth");
     }
 
+    // ------------------------------------------------------------------ the Phase 9 to 10 transition
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition (the domain's rank): the person who requested a screening never reviews it -"
+            + " refused, nothing written; another reviewer decides; a re-screen inherits the requester")
+    void aRequesterNeverReviewsTheirOwnScreening() throws Exception {
+        CounterpartyScreenings screenings = service(new Scripted(Verdict.HIT), recordingListener, CounterpartyScreeningObserver.NONE);
+        String requester = "registrant-" + UUID.randomUUID();
+        CounterpartyScreenings.Request request = new CounterpartyScreenings.Request("self-" + UUID.randomUUID(),
+                new CounterpartySubject("Ana Lima Self", CountryCode.of("US"), EntityType.INDIVIDUAL), PayeeVerdict.MATCH,
+                requester);
+        CounterpartyScreeningId id = screenings.screen(request, correlation()).id();
+        assertThat(scalar("SELECT requested_by FROM kyc.counterparty_screening WHERE id = ?", id.value())).isEqualTo(requester);
+        Actor self = new Actor(requester, ActorType.CUSTOMER);
+        for (Decision decision : Decision.values()) {
+            ReasonCode code = decision == Decision.RELEASE ? ReasonCode.FALSE_POSITIVE : ReasonCode.TRUE_MATCH;
+            assertThatThrownBy(() -> review(screenings, id, self, decision, code, "my own payee"))
+                    .isInstanceOf(CounterpartyScreenings.ScreeningReviewInvalid.class)
+                    .hasMessageContaining("someone other than the person who requested it");
+        }
+        assertThat(row(id)).containsEntry("status", "IN_REVIEW");
+        assertThat(row(id).get("decided_by")).isNull();
+        assertThat(auditReasons(id)).as("only the automatic decision").hasSize(1);
+        assertThat(events(id)).isEqualTo(1);
+
+        CounterpartyScreenings.Screening rescreened = screenings.rescreen(id, "self-rescreen-" + UUID.randomUUID(), correlation());
+        assertThat(scalar("SELECT requested_by FROM kyc.counterparty_screening WHERE id = ?", rescreened.id().value()))
+                .as("the re-screen inherits the requester").isEqualTo(requester);
+        assertThatThrownBy(() -> review(screenings, rescreened.id(), self, Decision.RELEASE, ReasonCode.FALSE_POSITIVE, "mine"))
+                .isInstanceOf(CounterpartyScreenings.ScreeningReviewInvalid.class);
+
+        Actor other = new Actor("reviewer-" + UUID.randomUUID(), ActorType.EMPLOYEE);
+        assertThat(review(screenings, id, other, Decision.BLOCK, ReasonCode.TRUE_MATCH, "a second person").status())
+                .isEqualTo(CounterpartyScreeningStatus.BLOCKED);
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition (the database's rank, alone): V010 refuses by raw SQL a reviewer's decision"
+            + " naming the requester, and the requester is frozen - never updatable by the application")
+    void theSchemaRefusesASelfReview() throws Exception {
+        String requester = "registrant-" + UUID.randomUUID();
+        CounterpartyScreeningId id = service(new Scripted(Verdict.HIT), recordingListener, CounterpartyScreeningObserver.NONE)
+                .screen(new CounterpartyScreenings.Request("raw-self-" + UUID.randomUUID(),
+                        new CounterpartySubject("Raw Self", CountryCode.of("US"), EntityType.INDIVIDUAL), PayeeVerdict.MATCH,
+                        requester), correlation())
+                .id();
+        refused("23514", "counterparty_screening_reviewer_is_not_the_requester",
+                "UPDATE kyc.counterparty_screening SET status = 'RELEASED', decision_basis = 'REVIEWER', decided_by = ?,"
+                        + " decision_reason_code = 'FALSE_POSITIVE', decision_narrative = 'my own payee' WHERE id = ?",
+                requester, id.value());
+        refused("42501", "permission denied",
+                "UPDATE kyc.counterparty_screening SET requested_by = 'someone-else' WHERE id = ?", id.value());
+        try (Connection owner = DatabaseRoles.migrator();
+                PreparedStatement thaw = owner.prepareStatement(
+                        "UPDATE kyc.counterparty_screening SET requested_by = 'someone-else' WHERE id = ?")) {
+            thaw.setObject(1, id.value());
+            thaw.executeUpdate();
+            throw new AssertionError("the requester was thawed");
+        } catch (SQLException frozen) {
+            assertThat(frozen.getMessage()).contains("requester are frozen");
+        }
+        assertThat(row(id)).containsEntry("status", "IN_REVIEW");
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: a decision's instant is the database's - an instance an hour ahead or behind"
+            + " stamps decided_at (and requested_at) within seconds of the database's now, never its own clock")
+    void theDecisionInstantIsTheDatabases() throws Exception {
+        for (Duration skew : List.of(Duration.ofHours(1), Duration.ofHours(-1))) {
+            CounterpartyScreenings skewed = new CounterpartyScreenings(counterpartyScreeningStore, counterpartySubjectCipher,
+                    new Scripted(Verdict.HIT), recordingListener, CounterpartyScreeningObserver.NONE, auditWriter, outboxWriter,
+                    kycTransactionRunner, idGenerator, Clock.offset(clock, skew));
+            CounterpartyScreeningId id = skewed.screen(request(PayeeVerdict.MATCH), correlation()).id();
+            assertThat(secondsFromDatabaseNow("decided_at", id)).as("the automatic decision, skew " + skew).isLessThan(60);
+            assertThat(secondsFromDatabaseNow("requested_at", id)).as("the request, skew " + skew).isLessThan(60);
+            review(skewed, id, new Actor("reviewer-" + UUID.randomUUID(), ActorType.EMPLOYEE), Decision.RELEASE,
+                    ReasonCode.FALSE_POSITIVE, "a different person");
+            assertThat(secondsFromDatabaseNow("decided_at", id)).as("the person's decision, skew " + skew).isLessThan(60);
+        }
+    }
+
+    private static long secondsFromDatabaseNow(String column, CounterpartyScreeningId id) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement("SELECT abs(extract(epoch FROM (" + column
+                        + " - now())))::bigint FROM kyc.counterparty_screening WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    private static String scalar(String sql, Object arg) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement(sql)) {
+            select.setObject(1, arg);
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).as(sql).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private CounterpartyScreenings service(
@@ -494,7 +598,7 @@ class CounterpartyScreeningDatabaseTest {
         return new CounterpartyScreenings.Request("screen-" + UUID.randomUUID(),
                 new CounterpartySubject("Ana Lima " + UUID.randomUUID().toString().substring(0, 6), CountryCode.of("US"),
                         EntityType.INDIVIDUAL),
-                payee);
+                payee, "requester-" + UUID.randomUUID());
     }
 
     private static CorrelationId correlation() {

@@ -537,7 +537,11 @@ silently bear an intermediary's deduction under a promise of `OUR`. A person see
 - The port also refuses, rolling the approval back the same way, while the outbound credit is not
   `COMPLETED`: a person resolves a return only once its credit's outcome is known. A credit that
   ends `FAILED` leaves the parked line to be offset against the late execution's
-  `UNKNOWN_EXTERNAL` (a four-eyes `OFFSET_SUSPENSE`), never transferred to the customer.
+  `REVERSAL_MISMATCH(TERMINAL_STATE_CONTRADICTED)` (a four-eyes `OFFSET_SUSPENSE`; *corrected by the Phase 9 → 10
+  transition, 2026-10-07 — the lookup answers `TERMINAL` for a `FAILED` credit, never `UNKNOWN_EXTERNAL`*), never
+  transferred to the customer. The credit is found by the line's end-to-end reference **or its provider reference**
+  (the claim's path, as the matcher and the worker find it; *the Phase 9 → 10 transition: a line whose `E` named nothing
+  ours was approved as an ordinary transfer and a later inquiry applied the same return again*).
 - A closed customer's value stays parked with its HIGH break, aged and escalated: there is no
   `ACTIVE` wallet to credit. Funds owed to a closed customer are recorded as debt with Phase 15
   as owner.

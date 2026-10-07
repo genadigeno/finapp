@@ -38,15 +38,23 @@ public interface ResolvedCorridorReturns {
     }
 
     /**
-     * The parked return: the line's end-to-end reference, its value, the transfer's chosen target, and the accounts
+     * The parked return: the line's end-to-end reference and provider reference - the credit is found by either, as
+     * the matcher, the lookup and the return worker find it (the Phase 9 -> 10 transition: a line whose end-to-end
+     * reference reached nothing was approved as an ordinary transfer, no return fact recorded, and a later inquiry
+     * applied the same return again) - its value, the transfer's chosen target, and the accounts
      * the transfer's own entry posts - so a recorder that posts a second entry in the approval's transaction (the
      * fee refund) pre-locks the union of both entries' projection rows in order before its first posting
      * ({@code PostingService.lockBalancesInOrder}, the multi-entry rule; `P9-DOC-001`).
      */
     record ParkedReturn(
-            Optional<String> endToEndReference, Money amount, UUID targetAccountId, Set<UUID> transferAccounts) {
+            Optional<String> endToEndReference,
+            Optional<String> providerReference,
+            Money amount,
+            UUID targetAccountId,
+            Set<UUID> transferAccounts) {
         public ParkedReturn {
             Objects.requireNonNull(endToEndReference, "endToEndReference must not be null");
+            Objects.requireNonNull(providerReference, "providerReference must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
             Objects.requireNonNull(targetAccountId, "targetAccountId must not be null");
             transferAccounts = Set.copyOf(transferAccounts);

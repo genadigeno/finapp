@@ -388,10 +388,23 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
 
     private InternalReference ofCover(com.finapp.fx.TradeStore.CoverByReference cover) {
         return new InternalReference(
-                classifyCover(cover.status()),
+                classifyCover(cover),
                 Optional.of(cover.coverId().toString()),
-                Optional.of(cover.status().name()),
+                Optional.of(cover.superseded() ? SUPERSEDED_ATTEMPT : cover.status().name()),
                 Optional.of(InternalSubject.COVER));
+    }
+
+    /** The state a superseded cover attempt reports - a rejected attempt its cover requoted past. */
+    static final String SUPERSEDED_ATTEMPT = "SUPERSEDED";
+
+    /**
+     * The attempt a cover reference names, in reconciliation's words (the Phase 9 to 10 transition): a SUPERSEDED
+     * attempt - definitively rejected, its cover requoted - is TERMINAL whatever its cover's status, so a provider
+     * line executing it is TERMINAL_STATE_CONTRADICTED at once, never a 24 h MISSING_INTERNAL read off the cover's
+     * later execution; the current attempt is its cover's status.
+     */
+    static InternalClassification classifyCover(com.finapp.fx.TradeStore.CoverByReference cover) {
+        return cover.superseded() ? InternalClassification.TERMINAL : classifyCover(cover.status());
     }
 
     private InternalReference ofPayout(MerchantPayout payout) {

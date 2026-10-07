@@ -18,6 +18,13 @@ public interface CoverObserver {
         EXECUTED,
         /** The execution deviated on the fixed leg - booked, flagged, alerting. */
         OFF_PLAN,
+        /**
+         * The execution's computed leg differs from the firm quote it was executed under (the Phase 9 to 10
+         * transition) - booked as executed, flagged {@code computed_deviation}, alerting.
+         */
+        COMPUTED_DEVIATION,
+        /** The provider's executed rate does not explain its executed amounts - booked from the amounts, alerting. */
+        RATE_INCOHERENT,
         /** A definitive refusal. */
         REJECTED,
         /** A send's answer was lost: the cover is UNKNOWN until an inquiry knows. */
