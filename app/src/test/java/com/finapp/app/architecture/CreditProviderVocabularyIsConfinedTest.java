@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
  * {@code INV-PAY-03}'s rule at the credit bureau boundary (`P10-TSK-005`, ADR-0085 section 2): the
  * {@code bureau-sim-a} wire's vocabulary - its path, its status words and its report's field names -
  * exists in exactly one production file, {@code SimulatedBureauAdapter}. Everything else speaks the
- * port's {@code BureauAnswer} and {@code CreditAttributeCode}. A second file naming
+ * port's {@code CreditDataAnswer} and {@code CreditAttributeCode}. A second file naming
  * {@code "report_partial"} or {@code "totalBalance"} is a second place a bureau's language could leak
  * into the decision, and this rule refuses it - the {@code FxProviderVocabularyIsConfinedTest} shape.
  *
@@ -32,12 +32,21 @@ class CreditProviderVocabularyIsConfinedTest {
 
     private static final String ADAPTER = "SimulatedBureauAdapter.java";
 
-    /** The wire's own words - path, statuses and field names no port speaks. */
-    private static final List<String> VOCABULARY =
-            List.of(
-                    "/bureau/reports", "report_complete", "report_partial", "externalScore",
-                    "activeAccounts", "delinquencies24m", "defaults72m", "insolvencyFlag",
-                    "monthlyObligations", "totalBalance");
+    /** The financial-data provider's adapter (`P10-TSK-007`) - its words confined to it, as the bureau's to its own. */
+    private static final String FINDATA_ADAPTER = "SimulatedFinancialDataAdapter.java";
+
+    /** Each adapter's wire words - path, statuses and field names no port speaks - and the one file allowed them. */
+    private static final Map<String, List<String>> VOCABULARIES =
+            Map.of(
+                    ADAPTER,
+                    List.of(
+                            "/bureau/reports", "report_complete", "report_partial", "externalScore",
+                            "activeAccounts", "delinquencies24m", "defaults72m", "insolvencyFlag",
+                            "monthlyObligations", "totalBalance"),
+                    FINDATA_ADAPTER,
+                    List.of(
+                            "/findata/summaries", "summary_complete", "summary_partial", "verifiedMonthlyIncome",
+                            "committedMonthlyExpenditure"));
 
     @Test
     @DisplayName("no production file but the adapter carries the wire's vocabulary - and the adapter really does")
@@ -56,6 +65,13 @@ class CreditProviderVocabularyIsConfinedTest {
                             assertThat(entry.getKey()).endsWith(ADAPTER);
                             assertThat(literalsOf(entry.getValue())).contains("report_partial", "totalBalance");
                         });
+        assertThat(sources.entrySet())
+                .as("not vacuous: the financial-data adapter carries its vocabulary")
+                .anySatisfy(
+                        entry -> {
+                            assertThat(entry.getKey()).endsWith(FINDATA_ADAPTER);
+                            assertThat(literalsOf(entry.getValue())).contains("summary_partial", "verifiedMonthlyIncome");
+                        });
     }
 
     @Test
@@ -70,8 +86,12 @@ class CreditProviderVocabularyIsConfinedTest {
                 "// the bureau answers report_partial; we map it at the adapter\nString s = \"x\";");
         planted.put("/x/app/src/main/java/com/finapp/app/credit/" + ADAPTER,
                 "case \"report_partial\" -> x;");
+        // One adapter's words in the OTHER adapter are a leak too - each wire is its own.
+        planted.put("/x/app/src/main/java/com/finapp/app/credit/" + FINDATA_ADAPTER,
+                "case \"summary_partial\" -> x; String leak = \"totalBalance\";");
         assertThat(violations(planted))
-                .hasSize(2)
+                .hasSize(3)
+                .anyMatch(v -> v.contains("totalBalance") && v.contains(FINDATA_ADAPTER))
                 .anyMatch(v -> v.contains("RogueEvaluator.java"))
                 .anyMatch(v -> v.contains("RogueReader.java"));
     }
@@ -82,15 +102,18 @@ class CreditProviderVocabularyIsConfinedTest {
         List<String> found = new ArrayList<>();
         sources.forEach(
                 (path, text) -> {
-                    if (Paths.get(path).getFileName().toString().equals(ADAPTER)) {
-                        return;
-                    }
+                    String file = Paths.get(path).getFileName().toString();
                     for (String literal : literalsOf(text)) {
-                        for (String word : VOCABULARY) {
-                            if (literal.contains(word)) {
-                                found.add(word + " in " + path);
+                        VOCABULARIES.forEach((adapter, words) -> {
+                            if (file.equals(adapter)) {
+                                return;
                             }
-                        }
+                            for (String word : words) {
+                                if (literal.contains(word)) {
+                                    found.add(word + " in " + path);
+                                }
+                            }
+                        });
                     }
                 });
         return found;

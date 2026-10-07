@@ -20,14 +20,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code bureau-sim-a}'s normalisation against its golden files (`P10-TSK-005`): each payload under
- * {@code credit/golden/bureau-sim-a/} normalises to exactly its {@code .expected} rendering - the
+ * {@code findata-sim-a}'s normalisation against its golden files (`P10-TSK-007`, the bureau's shape): each payload
+ * under {@code credit/golden/findata-sim-a/} normalises to exactly its {@code .expected} rendering - the
  * attributes sorted by code, every value in a fixed textual form - or to the unavailable answer it
  * must be. A change to the mapping is a change to these files, reviewed with a new
  * {@code NORMALISER_VERSION}; a malformed payload's surviving fields never become attributes.
  */
-@DisplayName("bureau-sim-a normalises its golden payloads exactly (P10-TSK-005)")
-class BureauNormalisationGoldenTest {
+@DisplayName("findata-sim-a normalises its golden payloads exactly (P10-TSK-007)")
+class FinancialDataNormalisationGoldenTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
@@ -38,7 +38,7 @@ class BureauNormalisationGoldenTest {
         List<Path> payloads = payloads();
         for (Path payload : payloads) {
             String expected = Files.readString(expectedFor(payload), StandardCharsets.UTF_8);
-            String actual = render(SimulatedBureauAdapter.normalise(Files.readAllBytes(payload), EUR));
+            String actual = render(SimulatedFinancialDataAdapter.normalise(Files.readAllBytes(payload), EUR));
             if (!actual.equals(expected)) {
                 mismatches.add(payload.getFileName() + ":\n  expected " + expected + "  actual   " + actual);
             }
@@ -100,7 +100,7 @@ class BureauNormalisationGoldenTest {
     }
 
     private static List<Path> payloads() throws IOException, URISyntaxException {
-        URL directory = BureauNormalisationGoldenTest.class.getClassLoader().getResource("credit/golden/bureau-sim-a");
+        URL directory = FinancialDataNormalisationGoldenTest.class.getClassLoader().getResource("credit/golden/findata-sim-a");
         assertThat(directory).as("the golden directory is on the test classpath").isNotNull();
         try (Stream<Path> files = Files.list(Path.of(directory.toURI()))) {
             return files.filter(path -> path.toString().endsWith(".json")).sorted().toList();

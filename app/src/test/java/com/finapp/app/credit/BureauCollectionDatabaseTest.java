@@ -7,7 +7,7 @@ import com.finapp.consent.ConsentGate;
 import com.finapp.consent.ConsentPurpose;
 import com.finapp.consent.ConsentRecord;
 import com.finapp.consent.JdbcConsentStore;
-import com.finapp.credit.BureauAnswer;
+import com.finapp.credit.CreditDataAnswer;
 import com.finapp.credit.CreditBureau;
 import com.finapp.credit.CreditDataCollection;
 import com.finapp.credit.CreditDataObserver;
@@ -86,7 +86,7 @@ class BureauCollectionDatabaseTest {
         engine = SimulatedBureauEngine.start();
         engine.slowness(Duration.ofMillis(2_000));
         adapter = new SimulatedBureauAdapter(engine.baseUrl(), Duration.ofMillis(600), KEY,
-                reference -> Optional.of(new BureauSubject(
+                reference -> Optional.of(new CreditDataSubject(
                         "Applicant " + reference, LocalDate.of(1980, 1, 1), CountryCode.of("DE"))));
     }
 
@@ -471,7 +471,8 @@ class BureauCollectionDatabaseTest {
     // ------------------------------------------------------------------ harness
 
     private CreditDataCollection collection(CreditBureau bureau, Clock clock, CreditDataCollection.Timing timing) {
-        return new CreditDataCollection(new JdbcCreditDataRequestStore(), bureau,
+        return new CreditDataCollection(new JdbcCreditDataRequestStore(),
+                CreditDataCollection.Sources.of(bureau, timing, new UnconfiguredFinancialData(), timing),
                 new ConsentBackedCreditConsentGate(new ConsentGate<>(consents)), cipher, new CreditDataObserver() {
                     @Override
                     public void answered(CreditSourceKind kind, String providerCode, Outcome outcome) {
@@ -480,7 +481,7 @@ class BureauCollectionDatabaseTest {
 
                     @Override
                     public void called(CreditSourceKind kind, String providerCode, Duration took) {}
-                }, new JdbcAuditWriter(), new JdbcOutboxWriter(), TRANSACTIONS, IDS, clock, timing);
+                }, new JdbcAuditWriter(), new JdbcOutboxWriter(), TRANSACTIONS, IDS, clock);
     }
 
     private static final TransactionRunner TRANSACTIONS = new TransactionRunner() {
@@ -503,7 +504,7 @@ class BureauCollectionDatabaseTest {
     };
 
     /** A bureau that runs {@code around} instead of the adapter's pull, keeping its code. */
-    private record Wrapped(CreditBureau inner, Function<com.finapp.credit.BureauRequest, BureauAnswer> around)
+    private record Wrapped(CreditBureau inner, Function<com.finapp.credit.CreditDataPull, CreditDataAnswer> around)
             implements CreditBureau {
         @Override
         public String code() {
@@ -511,7 +512,7 @@ class BureauCollectionDatabaseTest {
         }
 
         @Override
-        public BureauAnswer pull(com.finapp.credit.BureauRequest request) {
+        public CreditDataAnswer pull(com.finapp.credit.CreditDataPull request) {
             return around.apply(request);
         }
     }

@@ -8,7 +8,7 @@ import com.finapp.credit.CreditDataAnswer.UnavailableCause;
 import com.finapp.credit.CreditDataPull;
 import com.finapp.credit.CreditAttribute;
 import com.finapp.credit.CreditAttributeCode;
-import com.finapp.credit.CreditBureau;
+import com.finapp.credit.FinancialDataProvider;
 import com.finapp.credit.CreditEvidence;
 import com.finapp.credit.CreditSourceKind;
 import com.finapp.sharedkernel.money.CurrencyCode;
@@ -33,51 +33,37 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The simulated credit bureau {@code bureau-sim-a} (`P10-TSK-005`; ADR-0085 section 2, ADR-0008's
- * adapter shape) - the platform's first {@link CreditBureau}.
+ * The simulated financial-data provider {@code findata-sim-a} (`P10-TSK-007`; ADR-0085 section 2, ADR-0008's adapter
+ * shape) - the platform's first {@link FinancialDataProvider}: the applicant's verified monthly income and committed
+ * expenditure, read from their accounts.
  *
  * <h2>The wire is ours, and this class is the only place it exists</h2>
  *
- * <p>ADR-0008 simulates providers, so the vocabulary confined here is the one defined here:
- * {@code POST /bureau/reports}, the {@code status} words {@code report_complete} and
- * {@code report_partial}, and the report's field names. None of it crosses the port
- * ({@code CreditProviderVocabularyIsConfinedTest}). Amounts travel as JSON strings, read through
- * {@code DecimalText} - never a double, never an unbounded parse.
+ * <p>{@code POST /findata/summaries}, the {@code status} words {@code summary_complete} and {@code summary_partial},
+ * and the summary's field names - confined here ({@code CreditProviderVocabularyIsConfinedTest}). Amounts travel as
+ * JSON strings, read through {@code DecimalText}.
  *
- * <h2>Normalisation is total, and only a clean report is data</h2>
+ * <h2>Normalisation is total, as the bureau's</h2>
  *
- * <ul>
- *   <li>{@code report_complete}: every field must be present and valid, or the whole answer is
- *       {@code MALFORMED} - a surviving field of a broken report is never parsed into an attribute.
- *   <li>{@code report_partial}: the fields present must be valid (else {@code MALFORMED}); a field
- *       absent is {@link AttributeValue.Absent}, never a default.
- *   <li>Money in a currency other than the product's is {@code Absent}, with the
- *       {@code CURRENCY_NOT_SUPPORTED} marker naming the source kind - never converted
- *       ({@code INV-CRD-12}). Money more precise than its currency is {@code MALFORMED}.
- *   <li>Any other status is {@code UNKNOWN_STATUS}; a non-200 or a broken transport is
- *       {@code PROVIDER_ERROR}; the client's wait expiring is {@code TIMEOUT}. None carries an
- *       attribute.
- * </ul>
+ * <p>A complete summary with any unreadable field is {@code MALFORMED} - its surviving fields never become data; a
+ * partial summary's missing field is {@link AttributeValue.Absent}; money in a currency other than the product's is
+ * {@code Absent} with the {@code CURRENCY_NOT_SUPPORTED} marker naming {@code FINANCIAL_DATA}, never converted; any
+ * other status is {@code UNKNOWN_STATUS}; a non-200 or a broken transport {@code PROVIDER_ERROR}; the wait expiring
+ * {@code TIMEOUT}.
  *
- * <h2>What every request carries</h2>
- *
- * <p>Our reference as the {@code Idempotency-Key} header - the bureau dedupes on it, so a repeat
- * answers the first pull and is never counted twice - the API credential as a bearer token, and the
- * subject's identifying facts, resolved here from the opaque reference and sent nowhere else.
- *
- * <p>Stateless: the fields are configuration. Not yet a bean - bureau collection (`P10-TSK-006`)
- * wires it, binding the client timeout from configuration.
+ * <p>Our reference travels as the {@code Idempotency-Key}; the provider dedupes on it. Stateless; wired fail-safe
+ * until the account connection it reads exists (unresolved question #14).
  */
-public final class SimulatedBureauAdapter implements CreditBureau {
+public final class SimulatedFinancialDataAdapter implements FinancialDataProvider {
 
-    /** The bureau's code: its declaration's, its evidence's and its meter's tag value. */
-    public static final String CODE = "bureau-sim-a";
+    /** The provider's code: its declaration's, its evidence's and its meter's tag value. */
+    public static final String CODE = "findata-sim-a";
 
     /** The version of this adapter's normalisation - bump it when the mapping changes. */
     public static final int NORMALISER_VERSION = 1;
 
-    /** The report path. */
-    public static final String REPORTS_PATH = "/bureau/reports";
+    /** The summary path. */
+    public static final String SUMMARIES_PATH = "/findata/summaries";
 
     /** The idempotency header our reference travels in. */
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -85,22 +71,18 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     /** The retained body's bound - past it, the answer is malformed and nothing is retained. */
     public static final int MAX_EVIDENCE_BYTES = 64 * 1024;
 
-    private static final String COMPLETE = "report_complete";
-    private static final String PARTIAL = "report_partial";
+    private static final String COMPLETE = "summary_complete";
+    private static final String PARTIAL = "summary_partial";
 
     private static final Pattern OBJECT = Pattern.compile("(?s)^\\s*\\{.*\\}\\s*$");
     private static final Pattern STATUS = field("status");
     private static final Pattern RETRIEVED_AT = field("retrievedAt");
 
-    /** Each bureau attribute's wire field, and the currency field of the money ones. */
+    /** Each financial-data attribute's wire field, and its currency field. */
     private enum Field {
-        EXTERNAL_SCORE(CreditAttributeCode.BUREAU_EXTERNAL_SCORE, "externalScore", null),
-        ACTIVE_ACCOUNTS(CreditAttributeCode.BUREAU_ACTIVE_ACCOUNTS, "activeAccounts", null),
-        DELINQUENCIES(CreditAttributeCode.BUREAU_DELINQUENCIES_24M, "delinquencies24m", null),
-        DEFAULTS(CreditAttributeCode.BUREAU_DEFAULTS_72M, "defaults72m", null),
-        INSOLVENCY(CreditAttributeCode.BUREAU_INSOLVENCY_FLAG, "insolvencyFlag", null),
-        OBLIGATIONS(CreditAttributeCode.BUREAU_MONTHLY_OBLIGATIONS, "monthlyObligations", "monthlyObligationsCurrency"),
-        BALANCE(CreditAttributeCode.BUREAU_TOTAL_BALANCE, "totalBalance", "totalBalanceCurrency");
+        INCOME(CreditAttributeCode.FINDATA_MONTHLY_INCOME, "verifiedMonthlyIncome", "verifiedMonthlyIncomeCurrency"),
+        EXPENDITURE(CreditAttributeCode.FINDATA_MONTHLY_COMMITTED_EXPENDITURE, "committedMonthlyExpenditure",
+                "committedMonthlyExpenditureCurrency");
 
         private final CreditAttributeCode code;
         private final Pattern value;
@@ -114,7 +96,7 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     }
 
     private static final AttributeProvenance PROVENANCE =
-            new AttributeProvenance.Provider(CreditSourceKind.BUREAU, CODE, NORMALISER_VERSION);
+            new AttributeProvenance.Provider(CreditSourceKind.FINANCIAL_DATA, CODE, NORMALISER_VERSION);
 
     private final URI baseUrl;
     private final Duration timeout;
@@ -122,13 +104,13 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     private final CreditDataSubjectResolver subjects;
     private final HttpClient http;
 
-    public SimulatedBureauAdapter(URI baseUrl, Duration timeout, byte[] key, CreditDataSubjectResolver subjects) {
+    public SimulatedFinancialDataAdapter(URI baseUrl, Duration timeout, byte[] key, CreditDataSubjectResolver subjects) {
         this.baseUrl = Objects.requireNonNull(baseUrl, "baseUrl");
         this.timeout = Objects.requireNonNull(timeout, "timeout");
         Objects.requireNonNull(key, "key");
         this.subjects = Objects.requireNonNull(subjects, "subjects");
         if (timeout.isZero() || timeout.isNegative()) {
-            throw new IllegalArgumentException("a bureau timeout must be positive");
+            throw new IllegalArgumentException("a financial-data timeout must be positive");
         }
         this.key = key.clone();
         this.http = HttpClient.newBuilder().connectTimeout(timeout).build();
@@ -144,11 +126,11 @@ public final class SimulatedBureauAdapter implements CreditBureau {
         Objects.requireNonNull(request, "request");
         // Naming nobody is the caller's defect, not a provider fault: refused loudly, never sent.
         CreditDataSubject subject = subjects.resolve(request.subjectReference())
-                .orElseThrow(() -> new IllegalStateException("the bureau pull names no resolvable subject"));
+                .orElseThrow(() -> new IllegalStateException("the financial-data pull names no resolvable subject"));
         String body = "{\"subject\":{\"name\":\"" + escape(subject.fullName()) + "\",\"dateOfBirth\":\""
                 + subject.dateOfBirth() + "\",\"country\":\"" + subject.residenceCountry().code() + "\"},"
                 + "\"currency\":\"" + request.product().currency().code() + "\"}";
-        HttpRequest post = HttpRequest.newBuilder(baseUrl.resolve(REPORTS_PATH))
+        HttpRequest post = HttpRequest.newBuilder(baseUrl.resolve(SUMMARIES_PATH))
                 .timeout(timeout)
                 .header("Authorization", "Bearer " + Base64.getEncoder().encodeToString(key))
                 .header(IDEMPOTENCY_KEY_HEADER, request.reference())
@@ -180,7 +162,7 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     /** Never the key, never a subject. */
     @Override
     public String toString() {
-        return "SimulatedBureauAdapter[" + CODE + "]";
+        return "SimulatedFinancialDataAdapter[" + CODE + "]";
     }
 
     /**
@@ -231,7 +213,7 @@ public final class SimulatedBureauAdapter implements CreditBureau {
         }
         if (foreignCurrency) {
             attributes.add(attribute(CreditAttributeCode.CURRENCY_NOT_SUPPORTED,
-                    new AttributeValue.CodeValue(CreditSourceKind.BUREAU.name())));
+                    new AttributeValue.CodeValue(CreditSourceKind.FINANCIAL_DATA.name())));
         }
         CreditEvidence evidence = new CreditEvidence(received);
         boolean anyAbsent = attributes.stream().anyMatch(CreditAttribute::absent);

@@ -11,8 +11,8 @@ import java.util.Optional;
  * caller; the contract battery resolves from a fixture.
  */
 @FunctionalInterface
-public interface BureauSubjectResolver {
+public interface CreditDataSubjectResolver {
 
     /** The subject's identifying facts, or empty when the reference names nobody. */
-    Optional<BureauSubject> resolve(String subjectReference);
+    Optional<CreditDataSubject> resolve(String subjectReference);
 }

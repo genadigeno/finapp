@@ -2,7 +2,7 @@ package com.finapp.app.credit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finapp.credit.CreditBureau;
+import com.finapp.credit.FinancialDataProvider;
 import com.finapp.sharedkernel.money.CountryCode;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -16,15 +16,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The credit bureau contract battery for {@code bureau-sim-a} (`P10-TSK-005`): the adapter against
- * the honest, stateful {@link SimulatedBureauEngine}, every {@link CreditBureauContract} case, and the
- * wire facts only this adapter has - our reference on the wire, the bearer key, the subject sent and
- * resolved nowhere else.
+ * The financial-data provider contract battery for {@code findata-sim-a} (`P10-TSK-007`): the adapter against the
+ * simulated provider's summary wire, every {@link CreditDataSourceContract} case, and its own wire facts.
  */
-@DisplayName("the credit bureau contract battery - bureau-sim-a (P10-TSK-005)")
-class SimulatedBureauContractTest extends CreditBureauContract {
+@DisplayName("the financial-data provider contract battery - findata-sim-a (P10-TSK-007)")
+class SimulatedFinancialDataContractTest extends FinancialDataProviderContract {
 
-    private static final byte[] KEY = "a-bureau-test-key-of-32-bytes-ok!".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] KEY = "a-findata-test-key-of-32-bytes-ok".getBytes(StandardCharsets.UTF_8);
     private static final Duration TIMEOUT = Duration.ofMillis(800);
 
     private static final Map<String, CreditDataSubject> PEOPLE = Map.of(
@@ -32,13 +30,13 @@ class SimulatedBureauContractTest extends CreditBureauContract {
             "S-2", new CreditDataSubject("Grace Sample", LocalDate.of(1972, 11, 2), CountryCode.of("FR")));
 
     private SimulatedBureauEngine engine;
-    private CreditBureau bureau;
+    private FinancialDataProvider provider;
 
     @BeforeEach
     void start() throws Exception {
-        engine = SimulatedBureauEngine.start();
+        engine = SimulatedBureauEngine.startFinancialData();
         engine.slowness(Duration.ofMillis(2_500));
-        bureau = new SimulatedBureauAdapter(engine.baseUrl(), TIMEOUT, KEY,
+        provider = new SimulatedFinancialDataAdapter(engine.baseUrl(), TIMEOUT, KEY,
                 reference -> Optional.ofNullable(PEOPLE.get(reference)));
     }
 
@@ -48,8 +46,8 @@ class SimulatedBureauContractTest extends CreditBureauContract {
     }
 
     @Override
-    protected CreditBureau bureau() {
-        return bureau;
+    protected FinancialDataProvider provider() {
+        return provider;
     }
 
     @Override
@@ -77,29 +75,18 @@ class SimulatedBureauContractTest extends CreditBureauContract {
     }
 
     @Test
-    @DisplayName("our reference travels as the idempotency key, the bearer key beside it, and the subject's facts in"
-            + " the body - resolved here, from the opaque reference")
+    @DisplayName("our reference travels as the idempotency key, the bearer key beside it, the subject resolved here")
     void theWireCarriesOurReferenceTheKeyAndTheSubject() {
-        bureau.pull(request("R-20", 1));
+        provider.pull(request("R-20", 1));
         assertThat(engine.idempotencyKeys()).containsExactly("R-20");
         assertThat(engine.authorizations()).containsExactly("Bearer " + Base64.getEncoder().encodeToString(KEY));
         assertThat(engine.requestBodies()).singleElement().asString()
-                .contains("Ada Example").contains("1985-03-14").contains("\"currency\":\"EUR\"")
-                .doesNotContain("S-1");
+                .contains("Ada Example").contains("\"currency\":\"EUR\"").doesNotContain("S-1");
     }
 
     @Test
-    @DisplayName("a subject the resolver cannot name is refused before anything is sent")
-    void anUnresolvableSubjectIsNeverSent() {
-        org.assertj.core.api.Assertions.assertThatIllegalStateException()
-                .isThrownBy(() -> bureau.pull(request("R-21", 9)));
-        assertThat(engine.idempotencyKeys()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("the adapter and the subject render neither key nor identity")
+    @DisplayName("the adapter renders neither key nor identity")
     void nothingSensitiveRenders() {
-        assertThat(bureau.toString()).isEqualTo("SimulatedBureauAdapter[bureau-sim-a]");
-        assertThat(PEOPLE.get("S-1").toString()).doesNotContain("Ada").doesNotContain("1985");
+        assertThat(provider.toString()).isEqualTo("SimulatedFinancialDataAdapter[findata-sim-a]");
     }
 }
