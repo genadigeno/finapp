@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (1 of 24 items complete); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (2 of 24 items complete); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14445,7 +14445,8 @@ assignment and an expiry serialise (`-018`).
   demonstrated and every planted probe is caught; the catalogue agrees with its enum both ways.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P10-TSK-002 — Credit consent purposes** — `READY` (marked by `P10-TSK-001`'s completion gate, 2026-10-07)
+**P10-TSK-002 — Credit consent purposes** — `COMPLETE` (2026-10-07; marked `READY` by `P10-TSK-001`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is consent `V003` and `ConsentPurpose`, `credit`'s `CreditSourceKind` and `CreditConsentGate`, and `app`'s `ConsentBackedCreditConsentGate` - not yet a bean (the P1-TSK-007 licence; `P10-TSK-006` wires it). The suites are `ConsentMigrationTest` (reworked onto the newest definitions, with the never-removed guard), `CreditConsentPurposeMappingTest`, `ConsentGateDatabaseTest#creditPurposesAreReadAuthoritatively`, `ConsentEndpointDatabaseTest#theCreditPurposesAreGrantedAndWithdrawnSeparately` and `NoProcessLocalConsentStateTest#theCreditAdapterHoldsOnlyTheGate`. Corrections to this entry: the consent texts are `PUBLIC` as already classified, not `INTERNAL`; consent publishes no domain events, so "the existing consent events" are its audit acts; the contract classifier labels an added enum value `BREAKING`, accepted on review as a request-side widening.
 - **Objective**: give bureau access and financial-data access each its own recorded lawful basis,
   and give `credit` an authoritative gate over them.
 - **Bounded context**: `consent`; Credit Decisioning (the port); `app` (the adapter).
@@ -14497,7 +14498,7 @@ assignment and an expiry serialise (`-018`).
   source kind from the database, on every instance alike.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-DOMAIN`. **Risk**: Low. **Cx**: S.
 
-**P10-TSK-003 — Credit permissions and roles** — `PLANNED`
+**P10-TSK-003 — Credit permissions and roles** — `READY` (marked by `P10-TSK-002`'s completion gate, 2026-10-07)
 - **Objective**: the three credit permissions and two roles, least-privilege and separable, before
   any route needs them.
 - **Bounded context**: `identity`.

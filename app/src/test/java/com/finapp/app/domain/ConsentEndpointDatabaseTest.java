@@ -126,6 +126,39 @@ class ConsentEndpointDatabaseTest {
     }
 
     /**
+     * The two credit purposes through the existing doors ({@code P10-TSK-002}, {@code INV-CRD-03}):
+     * each granted and withdrawn on its own, each audited and metered under its own name, and a
+     * grant of one never a basis for the other - there is no combined credit purpose.
+     */
+    @Test
+    @DisplayName("each credit purpose is granted and withdrawn on its own, and neither admits the other")
+    void theCreditPurposesAreGrantedAndWithdrawnSeparately() throws Exception {
+        for (String purpose : java.util.List.of("CREDIT_BUREAU_ACCESS", "FINANCIAL_DATA_ACCESS")) {
+            String other = purpose.equals("CREDIT_BUREAU_ACCESS") ? "FINANCIAL_DATA_ACCESS" : "CREDIT_BUREAU_ACCESS";
+            String tag = purpose.toLowerCase(java.util.Locale.ROOT);
+            Person ada = givenAPerson();
+            double grantsBefore = consentCounter("finapp.consent.grant", tag);
+            double withdrawalsBefore = consentCounter("finapp.consent.withdrawal", tag);
+
+            assertThat(post("/me/consents", ada.session(),
+                                    "{\"purpose\":\"" + purpose + "\",\"textVersion\":1}")
+                            .statusCode())
+                    .as(purpose).isEqualTo(201);
+            assertThat(basisOf(ada, purpose)).as(purpose).isTrue();
+            assertThat(basisOf(ada, other)).as("%s's grant alone is no basis for %s", purpose, other).isFalse();
+
+            assertThat(delete("/me/consents/" + purpose, ada.session()).statusCode()).as(purpose).isEqualTo(204);
+            assertThat(basisOf(ada, purpose)).as(purpose).isFalse();
+
+            assertThat(auditSummaries(ada, "consent.ConsentGranted"))
+                    .contains("purpose=" + purpose).contains("textVersion=1");
+            assertThat(auditCount(ada, "consent.ConsentWithdrawn")).isEqualTo(1);
+            assertThat(consentCounter("finapp.consent.grant", tag)).isEqualTo(grantsBefore + 1.0d);
+            assertThat(consentCounter("finapp.consent.withdrawal", tag)).isEqualTo(withdrawalsBefore + 1.0d);
+        }
+    }
+
+    /**
      * {@code INV-CNS-01} at the surface: a person who never granted and a person who granted and
      * withdrew receive <strong>byte-identical</strong> rows from the query — asserted as an
      * equality between the two causes rather than as two assertions against a remembered

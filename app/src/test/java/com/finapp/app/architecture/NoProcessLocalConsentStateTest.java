@@ -88,6 +88,42 @@ class NoProcessLocalConsentStateTest {
                 .hasSize(2);
     }
 
+    /**
+     * The credit adapter holds the consent gate and nothing else (`P10-TSK-002`).
+     *
+     * <p>The sweep above sees a field retaining a {@code ConsentRecord} or a {@code ConsentText},
+     * and says plainly that it cannot see a bare boolean keyed by party - which is exactly the
+     * cache an adapter answering "may we pull this party's bureau data?" would be tempted to
+     * keep. So the adapter is held to a stricter shape of its own: its instance fields are the one
+     * {@code ConsentGate}, and a planted answer cache is caught.
+     */
+    @Test
+    @DisplayName("the credit consent adapter holds the consent gate and nothing else - no answer cache")
+    void theCreditAdapterHoldsOnlyTheGate() {
+        assertThat(instanceFieldTypes(com.finapp.app.credit.ConsentBackedCreditConsentGate.class))
+                .as("a field beside the gate is a process-local answer, and INV-CNS-03 becomes"
+                        + " 'refused once every instance's copy has expired'")
+                .containsExactly(com.finapp.consent.ConsentGate.class.getName());
+        assertThat(instanceFieldTypes(CachesCreditAnswers.class))
+                .as("the check sees a planted answer cache")
+                .hasSize(2);
+    }
+
+    /** What the adapter check exists to refuse: an answer cached per party beside the gate. */
+    @SuppressWarnings("unused")
+    private static final class CachesCreditAnswers {
+        private final com.finapp.consent.ConsentGate<java.sql.Connection> consents = null;
+        private final java.util.Map<java.util.UUID, Boolean> answered = new java.util.HashMap<>();
+    }
+
+    private static List<String> instanceFieldTypes(Class<?> type) {
+        return java.util.Arrays.stream(type.getDeclaredFields())
+                .filter(field -> !java.lang.reflect.Modifier.isStatic(field.getModifiers()))
+                .filter(field -> !field.isSynthetic())
+                .map(field -> field.getType().getName())
+                .toList();
+    }
+
     /** What this rule exists to make impossible: a consent cache on a singleton. */
     @SuppressWarnings("unused")
     private static final class HoldsConsent {

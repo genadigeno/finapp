@@ -468,7 +468,7 @@ financial-data adapters under recorded consent, its evidence encrypted; affordab
 exact, decisions for one party serialised on its profile; referrals decided by people under
 four-eyes; every decision replayed. Credit moves no money; Phase 11 begins where a decision is
 consumed. Eight new invariants take the platform to **128**. Twenty-four backlog items across eight
-milestones (M10.1–M10.8). **1 of 24 items complete**: the module boundary, schema floor and closed vocabularies (`P10-TSK-001`); `P10-TSK-002` `READY`.
+milestones (M10.1–M10.8). **2 of 24 items complete**: the module boundary, schema floor and closed vocabularies (`P10-TSK-001`) and the credit consent purposes (`P10-TSK-002`); `P10-TSK-003` `READY`.
 
 ## Current Milestone
 
@@ -483,37 +483,15 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P10-TSK-002` — Credit consent purposes** — `READY`: marked by `P10-TSK-001`'s completion gate (2026-10-07). **Not started.**
+**`P10-TSK-003` — Credit permissions and roles** — `READY`: marked by `P10-TSK-002`'s completion gate (2026-10-07). **Not started.**
 
 ### Just completed
 
-**`P10-TSK-001` — The credit module boundary and floors** — `COMPLETE` (2026-10-07). **Phase 10 `IN_PROGRESS`;
-M10.1 at 1 of 3.** The `credit` module is a build-graph fact: `settings.gradle.kts` includes it, its build file
-applies per-schema Flyway (`db/migration/credit`), and its one edge is `platform` (with `sharedkernel` through it) -
-the first business module since Phase 1 with **no ledger edge**, because credit moves no money (ADR-0084).
-`CreditModuleIsolationTest` refuses every business module - `ledger`, `consent`, `kyc`, `party` and `identity` named -
-and `app`, requires `platform` and `sharedkernel`, and probes its matcher in-suite; every one of the fifteen sibling
-isolation tests refuses `credit` from its side (nothing depends on it in Phase 10); `app` depends on it, so
-`ProductionModules` and `NoFloatingPointMoneyRulesTest`'s module guard cover it from its first class (`INV-CRD-12`).
-**credit `V001`**: the migrator-owned floor - `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no default
-privileges. **credit `V002`**: `reason_code` (code, category, customer text, adverse flag; shape, category and
-text `CHECK`s), seeded with the fourteen codes the v1 policies need - `CRD-SOURCE-UNAVAILABLE` and
-`CRD-AUTO-APPROVAL-CEILING` among them, the ceiling the one non-adverse code (it limits automation and judges no
-applicant) - `SELECT` only to the application, and `UPDATE`, `DELETE` and `TRUNCATE` refused for every role, the
-owner included, by a row and a statement trigger (`INV-CRD-02`'s catalogue element). **The closed vocabularies**:
-`CreditProduct` (`PERSONAL_LOAN` EUR 500.00-25,000.00 over 6-60 months, four-eyes above 10,000.00; `CREDIT_LINE`
-EUR 250.00-5,000.00, revolving with no term, four-eyes above 2,500.00; each a 7-day request validity, a 30-day
-decision validity and 25 months' evidence retention, checked as the class loads - the four-eyes thresholds, which
-the plan left open, chosen here as the product's declaration), `CreditAttributeCode` (§12.2's fifteen plus the
-`SOURCE_UNAVAILABLE` and `CURRENCY_NOT_SUPPORTED` markers, each with its `AttributeValueType` - integer, money,
-boolean, code; no floating point), `ReasonCode` with `ReasonCategory` (mirroring the table field for field) and
-`DecisionOutcome` (`APPROVED`, `DECLINED` - never `REFER`, `INV-CRD-04`); `package-info` states the responsibility
-and the Phase 11 boundary; the root `lombok.config` governs the module unchanged (no generated `toString` names a
-field unless included). **Gate findings**: no CRITICAL, no IMPORTANT; MINOR, recorded - the four-eyes thresholds the plan left open chosen here as the products' declaration; whether a reduced approval's customer read names the non-adverse auto-approval ceiling is `P10-TSK-017`'s question (§Unresolved Architectural Questions #12); the backlog's "a ledger import planted" probe realised as the edge and the import together, since an import alone does not compile without the edge. **PROBES**: EIGHT, ALL CAUGHT, every restore byte-identical (sha256-verified) - a credit -> ledger edge with an import and a credit -> consent edge (`CreditModuleIsolationTest`), a kyc -> credit edge (`KycModuleIsolationTest`), a `ReasonCode` member with no row (`ReasonCodeCatalogueTest`), the immutability trigger made to `RETURN NULL` (`CreditMigrationTest#theOwnerIsRefusedByTheTrigger`), a `double` field in `CreditProduct` (`NoFloatingPointMoneyRulesTest`), `REFER` added to `DecisionOutcome` (`CreditVocabularyTest`) and a `reason_code` column left unclassified (`ColumnClassificationTest`); `MUTATION_TESTING.md` §2 +3 rows (`INV-CRD-02`, `-04`, `-12`). **Multi-instance PASS** - no state: the catalogue is read-only to the application and the migrations run once under Flyway's lock however many instances start. **Financial**: N/A - credit moves no money. **NEXT**: `P10-TSK-002` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2584 across 428 suites and 19 modules and the architecture tier 211 across 50, the credit database tier with `ColumnClassificationTest` 15 across 2, and the document-reading guards after the records, ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
+**`P10-TSK-002` — Credit consent purposes** — `COMPLETE` (2026-10-07). **M10.1 at 2 of 3.** A bureau pull and a financial-data pull each have their own recorded lawful basis, and `credit` an authoritative gate over them (`INV-CRD-03`). `ConsentPurpose` gains `CREDIT_BUREAU_ACCESS` and `FINANCIAL_DATA_ACCESS`, appended - the javadoc's single reserved Phase 10 member became two, and says why: a basis for one must never admit the other, so there is deliberately no combined credit purpose. **consent `V003`** redefines both generated purpose `CHECK`s (the identity `V013` / ledger `V011` shape) and seeds each purpose's version-1 text (`requires_reconsent = false`); grants unchanged. `ConsentMigrationTest` now reads the NEWEST consent migration defining each constraint (the `RoleAssignmentMigrationTest` derivation), pins `V002`'s original `CHECK`s as history, finds every purpose's text in any consent migration, and refuses a removed purpose - every purpose any consent migration ever admitted must still be a member (ADR-0037's rule, a build failure for the first time). **The port**: `credit` gains `CreditSourceKind` (`BUREAU`, `FINANCIAL_DATA`) and `CreditConsentGate<T>` - asked by source kind, read on the caller's unit of work, no state; **the adapter** `app`'s `ConsentBackedCreditConsentGate` owns the kind-to-purpose mapping in an exhaustive switch over the consent gate, and is deliberately not yet a bean (the P1-TSK-007 licence: its first consumer, `P10-TSK-006`, wires it). The existing doors carry the purposes: `POST /v1/me/consents` and `DELETE /v1/me/consents/{purpose}` gain two request-enum values, the contract regenerated - the classifier's blanket `BREAKING` label on an added enum value reviewed and accepted, both being request-side (the precedent: a client that never sends the value cannot be broken by it) - and the consent meters and audit acts carry them unchanged. **Gate findings**: no CRITICAL, no IMPORTANT; MINOR, recorded - the backlog's "consent texts `INTERNAL`" is `PUBLIC` as already classified (the text is published to the person; no new column), and its "existing consent events" are the consent audit acts (consent publishes no domain event). **PROBES**: FIVE, FOUR CAUGHT AND ONE NO VERDICT, every restore byte-identical (sha256-verified) - `FINANCIAL_DATA` mapped to the bureau's purpose (`CreditConsentPurposeMappingTest`, all four cases), `V003`'s financial-data text deleted (the text guard), the adapter memoising its answers (`NoProcessLocalConsentStateTest#theCreditAdapterHoldsOnlyTheGate` and `ConsentGateDatabaseTest#creditPurposesAreReadAuthoritatively`), and a purpose removed - `SCREENING` first, refused by test compilation (no verdict), re-aimed at `FINANCIAL_DATA_ACCESS` and caught by the never-removed guard; `MUTATION_TESTING.md` §2 +4 rows (`INV-CRD-03`, `INV-CNS-02`, `-03`, `-04`). **Multi-instance PASS** - the adapter holds only the stateless gate; each kind granted on one instance answers on another, and a withdrawal committed on one refuses the other's very next question, proven per kind. **Financial**: N/A. **NEXT**: `P10-TSK-003` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2591 across 429 suites and 19 modules (778 across 149 executed in this run, the rest up to date against inputs unchanged since their last green execution) and the architecture tier 212 across 50 (177 executed), the contract slice test 8, the consent database suites with `ColumnClassificationTest` 27 across 5, ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 226 blocks, from the Phase 9 → 10 transition back to project initiation
+The per-task completion records — 227 blocks, from `P10-TSK-001` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1062,8 +1040,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P10-TSK-002` — Credit consent purposes** — `READY`
-(the Current Task), marked by `P10-TSK-001`'s completion gate - Phase 10 `IN_PROGRESS`.
+**`P10-TSK-003` — Credit permissions and roles** — `READY`
+(the Current Task), marked by `P10-TSK-002`'s completion gate - Phase 10 `IN_PROGRESS`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
