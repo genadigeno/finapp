@@ -2293,6 +2293,24 @@ role except through `credit.read_evidence` with a reason.
 | `credit_evidence` | `retain_until` | `INTERNAL` | System time plus the retention |
 | `credit_evidence` | `recorded_at` | `INTERNAL` | System time, stamped by the trigger |
 
+### `credit` - the decision snapshot - *added by `P10-TSK-008`*
+
+Everything a decision may read, frozen: the canonical text carries every attribute value of the applicant, so it is
+`RESTRICTED-FINANCIAL` and never reaches a log, a span or an event.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `decision_snapshot` | `id` | `INTERNAL` | Generated |
+| `decision_snapshot` | `decision_request_id` | `INTERNAL` | The decision request frozen |
+| `decision_snapshot` | `sequence` | `INTERNAL` | 1 at the freeze; a successor only for a changed exposure |
+| `decision_snapshot` | `snapshot_format` | `INTERNAL` | The canonical form's version |
+| `decision_snapshot` | `canonical` | `RESTRICTED-FINANCIAL` | Every input of the applicant's decision, with provenance |
+| `decision_snapshot` | `content_sha256` | `CONFIDENTIAL` | The canonical text's digest - comparable, so not public |
+| `decision_snapshot` | `policy_version_id` | `INTERNAL` | The pinned policy version |
+| `decision_snapshot` | `model_version_id` | `INTERNAL` | The pinned scorecard version |
+| `decision_snapshot` | `engine_version` | `INTERNAL` | The evaluator's version |
+| `decision_snapshot` | `frozen_at` | `INTERNAL` | System time, stamped by the trigger |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,
