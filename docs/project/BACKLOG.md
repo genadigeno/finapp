@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (5 of 24 items complete, M10.1 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (6 of 24 items complete, M10.1 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14643,7 +14643,8 @@ assignment and an expiry serialise (`-018`).
   outside the adapter; no answer of a faulty provider ever carries an attribute.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P10-TSK-006 — Bureau data collection** — `READY` (marked by `P10-TSK-005`'s completion gate, 2026-10-07)
+**P10-TSK-006 — Bureau data collection** — `COMPLETE` (2026-10-07; marked `READY` by `P10-TSK-005`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is credit `V004`, `CreditDataCollection`, `CreditDataRequestStore` / `JdbcCreditDataRequestStore`, `CreditEvidenceCipher`, `CreditAuditAction`, `CreditDataObserver` and credit's `TransactionRunner`, and `app`'s `CreditBeans`, `CreditDataRetrySchedule`, `CreditDataMetrics`, `CreditEvidenceKey` and `UnconfiguredBureau`; the suite is `BureauCollectionDatabaseTest` (16 cases). As built against this entry: the attributes are typed rows (`credit_record_attribute`), not a blob; the data request carries the party and the product (the gate and the pull need them); the event carries the retrieval time as epoch milliseconds (an event value is an identifier-shaped token); and the production bureau is fail-safe until unresolved question #13 is answered.
 - **Objective**: retrieve bureau data under recorded consent, once per reference, with the evidence
   encrypted and retained to a stored deadline, and outages, duplicates, lost responses and
   withdrawals all safe.
@@ -14747,7 +14748,7 @@ assignment and an expiry serialise (`-018`).
   without a current basis; no plaintext payload readable by the application role.
 - **Definition of done**: `DOD-SEC`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
 
-**P10-TSK-007 — Financial data: the port, a simulated provider and collection** — `PLANNED`
+**P10-TSK-007 — Financial data: the port, a simulated provider and collection** — `READY` (marked by `P10-TSK-006`'s completion gate, 2026-10-07)
 - **Objective**: verified income and committed expenditure from a provider-neutral financial-data
   source, collected on `-006`'s machinery under its own consent purpose.
 - **Bounded context**: Credit Decisioning; `app`.

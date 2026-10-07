@@ -106,7 +106,9 @@ class ConfinedCredentialVariablesTest {
                     // The twenty-third and twenty-fourth (P9-TSK-026, M9.8): the second providers' money-moving
                     // APIs - one key per counterparty, never their siblings'.
                     Map.entry(com.finapp.app.fx.FxProviderBKey.class, "finapp.fx.provider.b.key"),
-                    Map.entry(com.finapp.app.payments.CorridorProviderBKey.class, "finapp.corridor.provider.b.key"));
+                    Map.entry(com.finapp.app.payments.CorridorProviderBKey.class, "finapp.corridor.provider.b.key"),
+                    // The twenty-fifth (P10-TSK-006): credit evidence - its own key purpose, never another module's.
+                    Map.entry(com.finapp.app.credit.CreditEvidenceKey.class, "finapp.credit.evidence.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

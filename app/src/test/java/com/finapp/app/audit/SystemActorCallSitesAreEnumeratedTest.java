@@ -398,6 +398,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " unavailable screening - the platform asks its provider again, and what it"
                         + " decides is the automatic decision above."),
                     Map.entry(
+                            "com.finapp.credit.CreditDataCollection.openWithin",
+                    "The bureau data request (P10-TSK-006, ADR-0085): the platform opens it on the applicant's"
+                        + " behalf, from the decision request it is progressing (P10-TSK-015's sweep) - the applicant"
+                        + " asked for a decision, not for this pull, and no operator chose it. The access is the"
+                        + " platform's, under the applicant's recorded consent read in the same transaction, and"
+                        + " credit.BureauDataRequested records it so."),
+                    Map.entry(
+                            "com.finapp.app.credit.CreditDataRetrySchedule.sweepOnce",
+                    "The credit data retry (P10-TSK-006): nobody commands a re-ask of an unavailable bureau -"
+                        + " the platform asks again under the same reference after re-reading the consent gate, and"
+                        + " reports a request past its deadline."),
+                    Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
                         + " cover is the platform's own trade with its provider - nobody commands a"

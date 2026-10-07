@@ -567,6 +567,34 @@ class OwnershipIsScopedTest {
                                         + " asserted per route with nothing written by"
                                         + " CorridorAdministrationEndpointDatabaseTest.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-006. The private reader behind find and lock: the data request id is minted"
+                                        + " by credit when the request is opened (or returned by the sweep's claim), never"
+                                        + " a customer's value. A data request is the platform's collection record with no"
+                                        + " customer door in this task; the customer's view arrives with P10-TSK-017.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.transition",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-006. Every move takes an id from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id)), and each statement is conditional on the expected status; no door"
+                                        + " hands it a caller's identifier.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.insertAttempt",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-006. An insert keyed by a data request this transaction locked FOR UPDATE;"
+                                        + " the (request, attempt) primary key arbitrates two writers of one attempt.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.insertRecord",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-006. The record's id is minted here and its data request is the row this"
+                                        + " transaction locked FOR UPDATE from REQUESTED; UNIQUE (data_request_id) refuses"
+                                        + " a second record whatever the caller.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideAutomatically",
                             new Entry(
                                     Scope.ADMINISTERED,

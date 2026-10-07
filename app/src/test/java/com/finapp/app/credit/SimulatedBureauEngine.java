@@ -61,6 +61,7 @@ final class SimulatedBureauEngine implements AutoCloseable {
     private final List<String> authorizations = new CopyOnWriteArrayList<>();
     private final List<String> requestBodies = new CopyOnWriteArrayList<>();
     private volatile Duration slowness = Duration.ofSeconds(3);
+    private volatile String note = "";
 
     private SimulatedBureauEngine() throws IOException {
         this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -87,6 +88,11 @@ final class SimulatedBureauEngine implements AutoCloseable {
     /** How long a SLOW answer takes - longer than the client's timeout. */
     void slowness(Duration value) {
         slowness = value;
+    }
+
+    /** A note every later report carries in a field the adapter does not read - the storm's needle (`P10-TSK-006`). */
+    void note(String value) {
+        note = value;
     }
 
     /** Reports really produced - one per reference, however often it is asked. */
@@ -142,9 +148,12 @@ final class SimulatedBureauEngine implements AutoCloseable {
                 exchange.close();
             }
             default -> {
+                String carried = note;
                 String report = reports.computeIfAbsent(reference, key -> {
                     pulls.incrementAndGet();
-                    return render(body, fault);
+                    String rendered = render(body, fault);
+                    return carried.isEmpty() ? rendered
+                            : rendered.substring(0, rendered.length() - 1) + ",\"bureauNote\":\"" + carried + "\"}";
                 });
                 if (fault == Fault.SLOW) {
                     pause(slowness);

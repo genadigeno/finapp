@@ -2233,6 +2233,66 @@ first (`INV-CRD-09`). Never updated, deleted or truncated by any role.
 | `credit_profile` | `party_id` | `CONFIDENTIAL` | Which party the platform holds a credit profile for - that a person sought credit at all |
 | `credit_profile` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 
+### `credit` - credit data collection - *added by `P10-TSK-006`*
+
+A party's credit data as a bureau reported it: the attribute values and the payload are
+`RESTRICTED-FINANCIAL`; the payload is ciphertext under credit's own key, unreadable by the application
+role except through `credit.read_evidence` with a reason.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `data_request` | `id` | `INTERNAL` | Generated |
+| `data_request` | `decision_request_id` | `INTERNAL` | The decision request served |
+| `data_request` | `party_id` | `CONFIDENTIAL` | That this party's credit data was sought |
+| `data_request` | `product` | `INTERNAL` | A closed product code |
+| `data_request` | `source_kind` | `INTERNAL` | `BUREAU` or `FINANCIAL_DATA` |
+| `data_request` | `provider_code` | `INTERNAL` | A declared provider code |
+| `data_request` | `request_reference` | `INTERNAL` | Our reference - the provider's idempotency key |
+| `data_request` | `status` | `INTERNAL` | The machine's state |
+| `data_request` | `attempts` | `INTERNAL` | A count |
+| `data_request` | `retry_cadence` | `INTERNAL` | Configuration, frozen at birth |
+| `data_request` | `collection_window` | `INTERNAL` | Configuration, frozen at birth |
+| `data_request` | `next_attempt_at` | `INTERNAL` | The permit, on the database's clock |
+| `data_request` | `requested_at` | `INTERNAL` | System time, stamped by the trigger |
+| `data_request` | `deadline_at` | `INTERNAL` | System time, stamped by the trigger |
+| `data_request` | `unavailable_reported` | `INTERNAL` | A one-way flag |
+| `data_request_attempt` | `data_request_id` | `INTERNAL` | The request attempted |
+| `data_request_attempt` | `attempt` | `INTERNAL` | A count |
+| `data_request_attempt` | `outcome` | `INTERNAL` | A closed outcome - never data |
+| `data_request_attempt` | `answered_at` | `INTERNAL` | System time |
+| `credit_record` | `id` | `INTERNAL` | Generated |
+| `credit_record` | `data_request_id` | `INTERNAL` | One record per request (`UNIQUE`) |
+| `credit_record` | `party_id` | `CONFIDENTIAL` | Whose credit report this is |
+| `credit_record` | `source_kind` | `INTERNAL` | A closed code |
+| `credit_record` | `provider_code` | `INTERNAL` | The provenance (`INV-CRD-07`) |
+| `credit_record` | `normaliser_version` | `INTERNAL` | The provenance (`INV-CRD-07`) |
+| `credit_record` | `complete` | `INTERNAL` | Whether any attribute was absent |
+| `credit_record` | `retrieved_at` | `CONFIDENTIAL` | When the bureau produced the person's report |
+| `credit_record` | `recorded_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_record_attribute` | `record_id` | `INTERNAL` | The record it belongs to |
+| `credit_record_attribute` | `code` | `INTERNAL` | A closed attribute code |
+| `credit_record_attribute` | `value_type` | `INTERNAL` | A closed type |
+| `credit_record_attribute` | `integer_value` | `RESTRICTED-FINANCIAL` | A person's score, account or delinquency count |
+| `credit_record_attribute` | `money_minor` | `RESTRICTED-FINANCIAL` | A person's obligations or balance |
+| `credit_record_attribute` | `money_currency` | `CONFIDENTIAL` | Part of the monetary shape |
+| `credit_record_attribute` | `money_scale` | `INTERNAL` | Part of the monetary shape |
+| `credit_record_attribute` | `boolean_value` | `RESTRICTED-FINANCIAL` | A person's insolvency flag |
+| `credit_record_attribute` | `code_value` | `CONFIDENTIAL` | A closed code - a marker's source kind, a residency, a risk answer |
+| `credit_record_attribute` | `absent` | `CONFIDENTIAL` | That a person's bureau did not report a figure |
+| `credit_evidence` | `id` | `INTERNAL` | Generated - and the ciphertext's associated data |
+| `credit_evidence` | `data_request_id` | `INTERNAL` | The request it answered |
+| `credit_evidence` | `attempt` | `INTERNAL` | A count |
+| `credit_evidence` | `duplicate` | `INTERNAL` | An answer that changed nothing |
+| `credit_evidence` | `consent_withdrawn` | `INTERNAL` | An answer discarded unread |
+| `credit_evidence` | `content_ciphertext` | `RESTRICTED-FINANCIAL` | The bureau's bytes, AES-256-GCM - never readable by the application role |
+| `credit_evidence` | `content_nonce` | `INTERNAL` | GCM's nonce |
+| `credit_evidence` | `key_version` | `INTERNAL` | Which key wrote it |
+| `credit_evidence` | `checksum_sha256` | `CONFIDENTIAL` | The plaintext's digest - comparable, so not public |
+| `credit_evidence` | `content_length` | `INTERNAL` | A length |
+| `credit_evidence` | `retention_months` | `INTERNAL` | The product's retention |
+| `credit_evidence` | `retain_until` | `INTERNAL` | System time plus the retention |
+| `credit_evidence` | `recorded_at` | `INTERNAL` | System time, stamped by the trigger |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,
