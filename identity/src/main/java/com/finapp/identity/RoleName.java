@@ -192,7 +192,34 @@ public enum RoleName {
      * HTTP in both directions ({@code INV-AUD-03}). Since `P9-TSK-015` it also holds
      * {@code CROSSBORDER_ADMINISTER}: the corridors' transfer fees and limits are the same policy.
      */
-    FX_CONTROLLER(EnumSet.of(PermissionName.FX_ADMINISTER, PermissionName.CROSSBORDER_ADMINISTER));
+    FX_CONTROLLER(EnumSet.of(PermissionName.FX_ADMINISTER, PermissionName.CROSSBORDER_ADMINISTER)),
+
+    /**
+     * Writes credit policy and answers for what it decided (`P10-TSK-003`, ADR-0084, ADR-0086):
+     * holds {@link PermissionName#CREDIT_POLICY_ADMINISTER} - policy and scorecard versions under
+     * four eyes - and {@link PermissionName#CREDIT_INVESTIGATE} - explanation, evidence read,
+     * replay, reports.
+     *
+     * <p><strong>An eighth role, because this IS a distinct trust decision</strong>: the rules that
+     * approve, refer and decline credit are the platform's lending policy - neither operating money
+     * nor administering identities - and its author must not also decide the cases it refers
+     * ({@link #UNDERWRITER}). Holds none of the other populations' permissions and they hold none
+     * of these ({@code INV-AUD-03}).
+     */
+    CREDIT_POLICY_OFFICER(EnumSet.of(PermissionName.CREDIT_POLICY_ADMINISTER, PermissionName.CREDIT_INVESTIGATE)),
+
+    /**
+     * Decides referred credit requests (`P10-TSK-003`, ADR-0089): holds
+     * {@link PermissionName#CREDIT_UNDERWRITE} - the manual-review queue, a decision above the
+     * product's threshold waiting for a second underwriter.
+     *
+     * <p><strong>A ninth role, separate from the policy's author</strong>: deciding a case within
+     * the policy is not writing the policy, so this role holds neither credit-policy permission,
+     * and the officer does not hold this one - the person who wrote a rule cannot approve a case
+     * around it. Four-eyes on a large approval is inside the role (two distinct holders, at the
+     * domain and by {@code CHECK}), never between roles.
+     */
+    UNDERWRITER(EnumSet.of(PermissionName.CREDIT_UNDERWRITE));
 
     private final Set<PermissionName> permissions;
 

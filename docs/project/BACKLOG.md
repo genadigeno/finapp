@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (2 of 24 items complete); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (3 of 24 items complete, M10.1 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14498,7 +14498,8 @@ assignment and an expiry serialise (`-018`).
   source kind from the database, on every instance alike.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-DOMAIN`. **Risk**: Low. **Cx**: S.
 
-**P10-TSK-003 — Credit permissions and roles** — `READY` (marked by `P10-TSK-002`'s completion gate, 2026-10-07)
+**P10-TSK-003 — Credit permissions and roles** — `COMPLETE` (2026-10-07; marked `READY` by `P10-TSK-002`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is identity `V020`, `PermissionName` and `RoleName`; the suites are `RoleNameTest` (the two exact sets), `RoleAssignmentMigrationTest` (unchanged - it derives the newest definition; this entry's "`IdentityMigrationTest`" is that suite) and `IdentityAdministrationDatabaseTest#theCreditRolesAreAssignableAndRefusedAdministration`. No `RoutePermissionRegisterTest` row yet: each arrives with its route.
 - **Objective**: the three credit permissions and two roles, least-privilege and separable, before
   any route needs them.
 - **Bounded context**: `identity`.
@@ -14536,7 +14537,7 @@ assignment and an expiry serialise (`-018`).
 - **Acceptance criteria**: both roles assignable; the grants are exact; every negative holds.
 - **Definition of done**: `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P10-TSK-004 — The credit profile** — `PLANNED`
+**P10-TSK-004 — The credit profile** — `READY` (marked by `P10-TSK-003`'s completion gate, 2026-10-07)
 - **Objective**: one row per party that every decision for the party serialises on, holding no
   figures of its own.
 - **Bounded context**: Credit Decisioning.
