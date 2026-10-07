@@ -76,7 +76,10 @@ class SendPermitsAreTheDatabasesTest {
     private static final Map<String, String> BORN_BY_THE_DATABASE =
             Map.of(
                     "com.finapp.payments.JdbcOutboundCreditStore", "last_dispatched_at",
-                    "com.finapp.fx.JdbcCoverStore", "last_dispatched_at");
+                    "com.finapp.fx.JdbcCoverStore", "last_dispatched_at",
+                    // P10-TSK-006: the credit data request - born by its trigger, every renewal and claim
+                    // statement_timestamp() + the row's stamped cadence.
+                    "com.finapp.credit.JdbcCreditDataRequestStore", "next_attempt_at");
 
     private static final List<Class<?>> PORTS =
             List.of(

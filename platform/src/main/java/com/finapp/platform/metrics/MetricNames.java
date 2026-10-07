@@ -169,7 +169,12 @@ public final class MetricNames {
                     // customer of the corridor shares, structurally never a person or a resource, and a value
                     // the code writes from a stored payment's corridor, never from a request. A name-split
                     // would make "which corridor is failing" one query per corridor.
-                    "corridor");
+                    "corridor",
+                    // Which credit source kind (P10-TSK-006): BUREAU or FINANCIAL_DATA, the closed
+                    // CreditSourceKind - a category of data source every applicant shares, never a person or a
+                    // resource. finapp.credit.data.request{source_kind, provider, outcome} is the plan's own
+                    // series (PHASE_10_PLAN.md section 15): the unavailability ratio is per source kind.
+                    "source_kind");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

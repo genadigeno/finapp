@@ -287,7 +287,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // LOCKED); every answer is decided under the row lock from an unanswered status
                     // only, the attempt's primary key the second arbiter. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the herd is CounterpartyScreeningDatabaseTest's.
-                    "com.finapp.app.kyc.CounterpartyScreeningRetrySchedule");
+                    "com.finapp.app.kyc.CounterpartyScreeningRetrySchedule",
+                    // P10-TSK-006: the credit data retry - the same half, per row. Each tick claims the due
+                    // data requests in ONE statement on statement_timestamp() (the permit re-stamped at the
+                    // row's stamped cadence, rows another sweeper holds skipped), re-asks each under the SAME
+                    // reference after re-reading the gate - the provider dedupes - and records under the row
+                    // lock from REQUESTED only, UNIQUE (data_request_id) the second arbiter; the overdue
+                    // report is a conditional flag. Register row: DISTRIBUTED_EXECUTION.md section 3; the herd
+                    // is BureauCollectionDatabaseTest's.
+                    "com.finapp.app.credit.CreditDataRetrySchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

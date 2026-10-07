@@ -579,6 +579,15 @@ repudiation's with `P8-TSK-023`.
 | `crossborder.PaymentTraceRead` | No | An investigator read a cross-border payment's trace (`P9-TSK-027`, `FX_INVESTIGATE`): its identifier chain - quote, payment, outbound credit, entries, expectations, settlement lines and covers. Every serving is recorded, in the read's transaction; the target is the payment. |
 | `crossborder.CrossBorderCancellationRequested` | No | A customer requested a cross-border payment's cancellation (`P9-TSK-024`, ADR-0079 point 5): the outbound credit marked for recall - so no re-send ever follows - and the born-once `cancellation_request` recorded, in one transaction. A request, never a conclusion: only the corridor provider's definitive `RECALLED` cancels, recorded by the payment's own failure (`payments.OutboundCreditOutcomeApplied`, `FAILED(RECALLED)`); a refusal as too late leaves the payment to complete. The summary names the payment and what marking the credit found - never an amount, a name or a reference. No reason: the customer's own act. |
 
+### `credit` — `CreditAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `credit.BureauDataRequested` | No | The platform opened a credit bureau data request for a decision request (`P10-TSK-006`, ADR-0085, `INV-AUD-01`) - written once, by the opener, in the transaction that births the request, under a current lawful basis read in that transaction (`INV-CRD-03`); a platform act on the applicant's behalf, so the actor is the system. The summary names the data request, the decision request, the source kind and the provider - never an attribute or a payload. A retry is the same access under the same reference (one pull at the bureau), recorded as an attempt row, not a second act. |
+
+`credit.BureauDataRequested` joined at `P10-TSK-006`. The financial-data access
+(`credit.FinancialDataRequested`) joins with `P10-TSK-007`.
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
