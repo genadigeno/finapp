@@ -11598,7 +11598,9 @@
               "MERCHANT_ADMINISTRATOR",
               "RECONCILIATION_OPERATOR",
               "RECONCILIATION_CONTROLLER",
-              "FX_CONTROLLER"
+              "FX_CONTROLLER",
+              "CREDIT_POLICY_OFFICER",
+              "UNDERWRITER"
             ],
             "type": "string"
           }

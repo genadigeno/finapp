@@ -165,6 +165,28 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("CREDIT_POLICY_OFFICER grants exactly CREDIT_POLICY_ADMINISTER and CREDIT_INVESTIGATE - never CREDIT_UNDERWRITE")
+    void creditPolicyOfficerGrantsExactlyTwo() {
+        // The eighth population (P10-TSK-003, ADR-0084): the policy's author answers for what it
+        // decided, and must not decide the cases it refers.
+        assertThat(RoleName.CREDIT_POLICY_OFFICER.permissions())
+                .as("writing and investigating credit policy is not deciding the queue")
+                .containsExactlyInAnyOrder(PermissionName.CREDIT_POLICY_ADMINISTER, PermissionName.CREDIT_INVESTIGATE)
+                .doesNotContain(PermissionName.CREDIT_UNDERWRITE);
+    }
+
+    @Test
+    @DisplayName("UNDERWRITER grants exactly CREDIT_UNDERWRITE - neither credit-policy permission")
+    void underwriterGrantsExactlyOne() {
+        // The ninth population (P10-TSK-003, ADR-0089): the queue's decider cannot write the policy
+        // that referred the case, nor read evidence outside the case.
+        assertThat(RoleName.UNDERWRITER.permissions())
+                .as("deciding cases within the policy is not writing or investigating it")
+                .containsExactlyInAnyOrder(PermissionName.CREDIT_UNDERWRITE)
+                .doesNotContain(PermissionName.CREDIT_POLICY_ADMINISTER, PermissionName.CREDIT_INVESTIGATE);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -223,6 +245,7 @@ class RoleNameTest {
                 .isEqualTo(
                         "'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR',"
                                 + " 'MERCHANT_ADMINISTRATOR', 'RECONCILIATION_OPERATOR',"
-                                + " 'RECONCILIATION_CONTROLLER', 'FX_CONTROLLER'");
+                                + " 'RECONCILIATION_CONTROLLER', 'FX_CONTROLLER',"
+                                + " 'CREDIT_POLICY_OFFICER', 'UNDERWRITER'");
     }
 }

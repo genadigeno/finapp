@@ -977,6 +977,8 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-CNS-03` | `NoProcessLocalConsentStateTest#theCreditAdapterHoldsOnlyTheGate` | Recorded | A `P10-TSK-002` probe: an answer cache (`Map<String, Boolean>`) beside the gate in `ConsentBackedCreditConsentGate` - the shape the type-based sweep is blind to | Caught. Restored byte-identical (sha256-verified) |
 | `INV-CNS-02` | `ConsentMigrationTest#purposesAreNeverRemoved` | Recorded | Two `P10-TSK-002` probes: `SCREENING` removed from `ConsentPurpose` - **no verdict**, the module's own test compilation refused it first; re-aimed, `FINANCIAL_DATA_ACCESS` removed (no consent test names it) | The re-aimed probe caught (with the newest-CHECK guard). Restored byte-identical (sha256-verified) |
 | `INV-CNS-04` | `ConsentMigrationTest#everyPurposeHasASeededText` | Recorded | A `P10-TSK-002` probe: `V003`'s version-1 text row for `FINANCIAL_DATA_ACCESS` deleted | Caught. Restored byte-identical (sha256-verified) |
+| `INV-AUD-03` | `RoleNameTest#creditPolicyOfficerGrantsExactlyTwo`, `RoleNameTest#theGrantsArePairwiseDisjoint` | Recorded | A `P10-TSK-003` probe: `CREDIT_UNDERWRITE` granted to `CREDIT_POLICY_OFFICER` - the policy's author made the queue's decider | Caught by both (the exact set and the pairwise disjointness). Restored byte-identical (sha256-verified) |
+| `INV-AUD-03` | `RoleAssignmentMigrationTest` (the latest definition) | Recorded | A `P10-TSK-003` probe: `UNDERWRITER` dropped from `V020`'s role `CHECK` | Caught. Restored byte-identical (sha256-verified) |
 
 ## 3. What the register does not claim
 

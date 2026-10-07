@@ -16,6 +16,14 @@ package com.finapp.identity;
  * written, closed by `P1-TSK-028` and widened by `P2-TSK-004`.)</em> The permissions exist because
  * the ACTIONS do, and because a check with no vocabulary cannot be tested at all.
  *
+ * <p><strong>Phase 10's three arrive ahead of their routes</strong> (`P10-TSK-003`), the one
+ * exception, made deliberately: the credit actions are catalogued by {@code PHASE_10_PLAN.md}
+ * §§9 and 11 and decided by ADR-0084...0089, and the two roles that separate the policy's author
+ * from the queue's decider are settled before the first door so no task invents a grant on the
+ * way. Each one's javadoc names the routes and audit actions its tasks land; the
+ * {@code RoutePermissionRegisterTest} row and the {@code AUDITABLE_ACTIONS.md} row arrive with
+ * each route.
+ *
  * <h2>There is deliberately no `sqlValueList()`</h2>
  *
  * <p>{@link RoleName} has one because a `CHECK` constraint persists a role. **A permission is never
@@ -395,5 +403,46 @@ public enum PermissionName {
      * is judged by the population that already judges onboarding hits ({@code INV-KYC-04}). Whoever sets
      * prices ({@code FX_CONTROLLER}) cannot clear a screening.
      */
-    COUNTERPARTY_SCREENING_REVIEW
+    COUNTERPARTY_SCREENING_REVIEW,
+
+    /**
+     * Administer credit policy and the scorecard (`P10-TSK-003`; ADR-0086, {@code PHASE_10_PLAN.md}
+     * §11): propose, approve or reject a policy version per product and a scorecard model version -
+     * four-eyes, the same permission and different persons, held at the domain and by {@code CHECK}
+     * ({@code INV-CRD-05}, {@code INV-AUD-04}), never one's own proposal. The routes are
+     * {@code POST /v1/operator/credit/policies} and {@code /v1/operator/credit/scorecards} with their
+     * {@code .../'{versionId}'/approval|rejection} (`P10-TSK-011`, `-012`).
+     *
+     * <p><strong>Held by {@code CREDIT_POLICY_OFFICER}</strong>, never by {@code UNDERWRITER}: the
+     * author of the rules is not the person deciding the cases they refer.
+     */
+    CREDIT_POLICY_ADMINISTER,
+
+    /**
+     * Investigate credit decisions (`P10-TSK-003`; ADR-0085, ADR-0087, {@code PHASE_10_PLAN.md} §11):
+     * a decision's full explanation, its replay, a credit record's raw evidence read with a reason,
+     * the policy active at an instant and the credit reports - every read audited, nothing moved.
+     * The routes are {@code GET /v1/operator/credit/decisions/'{id}'/explanation},
+     * {@code POST .../replay}, {@code POST /v1/operator/credit/records/'{id}'/evidence-read},
+     * {@code GET /v1/operator/credit/policies?product=&at=} and
+     * {@code GET /v1/operator/reports/credit/...} (`P10-TSK-012`, `-017`, `-019`, `-020`).
+     *
+     * <p><strong>Held by {@code CREDIT_POLICY_OFFICER}</strong>, beside
+     * {@link #CREDIT_POLICY_ADMINISTER}: whoever answers for the policy needs to see what it decided
+     * and why. Never by {@code UNDERWRITER}, whose view is the case in hand.
+     */
+    CREDIT_INVESTIGATE,
+
+    /**
+     * Work the manual-review queue (`P10-TSK-003`; ADR-0089, {@code PHASE_10_PLAN.md} §11): take,
+     * release and decide a referred request's underwriting case, and second-approve - or refuse - an
+     * approval above the product's four-eyes threshold, never one's own case's first decision
+     * ({@code INV-CRD-11}, {@code INV-AUD-04}). The routes are
+     * {@code GET /v1/operator/credit/review-cases} and {@code POST .../'{id}'/assignment|release|decision|second-approval}
+     * (`P10-TSK-018`).
+     *
+     * <p><strong>Held by {@code UNDERWRITER} alone</strong>: the person deciding cases can neither
+     * write the policy that referred them nor read the evidence outside the case.
+     */
+    CREDIT_UNDERWRITE
 }
