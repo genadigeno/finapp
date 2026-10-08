@@ -118,7 +118,8 @@ class CreditMigrationTest {
                         "scorecard_model_version", "scorecard_band", "scorecard_model_event", "credit_assessment",
                         "credit_policy_version", "credit_policy_rule", "credit_policy_event", "policy_evaluation",
                         "policy_evaluation_rule", "decision_request", "decision_request_event", "credit_decision",
-                        "credit_decision_reason", "credit_decision_consumption");
+                        "credit_decision_reason", "credit_decision_consumption", "underwriting_case",
+                        "underwriting_case_event");
         assertRefusedByPrivilege("SELECT * FROM credit.flyway_schema_history");
     }
 

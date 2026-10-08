@@ -2491,6 +2491,39 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `credit_decision_consumption` | `id` | `INTERNAL` | Generated |
 | `credit_decision_consumption` | `decision_id` | `INTERNAL` | The approval consumed - once |
 | `credit_decision_consumption` | `consumed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `underwriting_case` | `id` | `INTERNAL` | Generated |
+| `underwriting_case` | `decision_request_id` | `INTERNAL` | The referred request - once |
+| `underwriting_case` | `party_id` | `INTERNAL` | The applicant's party |
+| `underwriting_case` | `product` | `INTERNAL` | A closed product |
+| `underwriting_case` | `currency` | `INTERNAL` | The product's currency |
+| `underwriting_case` | `basis_evaluation_id` | `INTERNAL` | The REFER evaluation kept as the case's basis |
+| `underwriting_case` | `requested_minor` | `RESTRICTED-FINANCIAL` | The applicant's requested amount |
+| `underwriting_case` | `approvable_minor` | `RESTRICTED-FINANCIAL` | The referral's ceiling - the most a person may approve |
+| `underwriting_case` | `four_eyes_threshold_minor` | `INTERNAL` | The product's published threshold, copied at birth |
+| `underwriting_case` | `status` | `CONFIDENTIAL` | The machine state |
+| `underwriting_case` | `assignee` | `CONFIDENTIAL` | The underwriter holding it |
+| `underwriting_case` | `first_outcome` | `RESTRICTED-FINANCIAL` | A person's decision on the applicant |
+| `underwriting_case` | `first_approved_minor` | `RESTRICTED-FINANCIAL` | The amount a person approved |
+| `underwriting_case` | `first_reason_codes` | `RESTRICTED-FINANCIAL` | Catalogued codes - what they say of the applicant (`INV-CRD-11`) |
+| `underwriting_case` | `first_reason` | `CONFIDENTIAL` | Free prose by a person about the applicant |
+| `underwriting_case` | `first_decided_by` | `CONFIDENTIAL` | The underwriter who decided |
+| `underwriting_case` | `first_decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `underwriting_case` | `second_decided_by` | `CONFIDENTIAL` | The second underwriter - never the first |
+| `underwriting_case` | `second_decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `underwriting_case` | `closure_reason` | `CONFIDENTIAL` | Why it closed with its request |
+| `underwriting_case` | `opened_at` | `INTERNAL` | System time, stamped by the trigger |
+| `underwriting_case_event` | `id` | `INTERNAL` | Generated |
+| `underwriting_case_event` | `case_id` | `INTERNAL` | The case moved |
+| `underwriting_case_event` | `from_status` | `CONFIDENTIAL` | The machine edge |
+| `underwriting_case_event` | `to_status` | `CONFIDENTIAL` | The machine edge |
+| `underwriting_case_event` | `actor_id` | `CONFIDENTIAL` | Who moved it - the platform or an underwriter |
+| `underwriting_case_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `underwriting_case_event` | `outcome` | `RESTRICTED-FINANCIAL` | A decision's outcome, as the edge carried it |
+| `underwriting_case_event` | `approved_minor` | `RESTRICTED-FINANCIAL` | A decision's amount, as the edge carried it |
+| `underwriting_case_event` | `reason_codes` | `RESTRICTED-FINANCIAL` | A decision's catalogued codes, as the edge carried them |
+| `underwriting_case_event` | `reason` | `CONFIDENTIAL` | Free prose by a person - a decision's or a refusal's reason |
+| `underwriting_case_event` | `first_decided_by` | `CONFIDENTIAL` | The first decider a second person's act answered |
+| `underwriting_case_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 
 ### Free text, classified at its ceiling
 

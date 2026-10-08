@@ -300,6 +300,7 @@ public class CreditBeans {
             OutboxWriter<Connection> outboxWriter,
             AuditWriter<Connection> auditWriter,
             CreditDecisionMetrics creditDecisionMetrics,
+            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore,
             IdGenerator idGenerator,
             Clock clock) {
         return new com.finapp.credit.DecisionMaking(creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(),
@@ -310,7 +311,8 @@ public class CreditBeans {
                 new com.finapp.credit.PolicyEvaluations(new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore,
                         com.finapp.credit.EngineVersions.STANDARD, idGenerator, clock),
                 new com.finapp.credit.JdbcPolicyEvaluationStore(), new com.finapp.credit.JdbcCreditDecisions(),
-                creditPartyStanding, creditConsentGate, outboxWriter, auditWriter, creditDecisionMetrics, idGenerator, clock);
+                underwritingCaseStore, creditPartyStanding, creditConsentGate, outboxWriter, auditWriter,
+                creditDecisionMetrics, idGenerator, clock);
     }
 
     /** The published decision read (`P10-TSK-016`) - Phase 11's lending's; no consumer in Phase 10. */
@@ -331,7 +333,8 @@ public class CreditBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock,
-            com.finapp.credit.DecisionMaking decisionMaking) {
+            com.finapp.credit.DecisionMaking decisionMaking,
+            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore) {
         return new com.finapp.credit.DecisionProgress(creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(),
                 creditPolicyStore, scorecardStore, new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
                 snapshotFreezer,
@@ -339,7 +342,8 @@ public class CreditBeans {
                         outboxWriter, idGenerator, clock),
                 new com.finapp.credit.PolicyEvaluations(new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore,
                         com.finapp.credit.EngineVersions.STANDARD, idGenerator, clock),
-                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock, decisionMaking);
+                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock, decisionMaking,
+                underwritingCaseStore);
     }
 
     /** The progress sweep - every instance, no lease, off in test contexts. */
@@ -379,5 +383,47 @@ public class CreditBeans {
                 new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore, scorecardStore,
                 new com.finapp.credit.JdbcCreditReads(), creditEvidenceCipher, auditWriter, idGenerator, clock),
                 creditTransactionRunner);
+    }
+
+    // ------------------------------------------------------------------ the manual review (P10-TSK-018)
+
+    /** The underwriting case's persistence over {@code credit V013}. */
+    @Bean
+    com.finapp.credit.UnderwritingCaseStore underwritingCaseStore() {
+        return new com.finapp.credit.JdbcUnderwritingCaseStore();
+    }
+
+    /** The underwriter's acts - the deciding transaction's second decider (ADR-0089). */
+    @Bean
+    com.finapp.credit.UnderwritingCases underwritingCases(
+            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore,
+            com.finapp.credit.DecisionMaking decisionMaking,
+            CreditPolicyStore creditPolicyStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.credit.UnderwritingCases(underwritingCaseStore, new com.finapp.credit.JdbcDecisionRequestStore(),
+                new com.finapp.credit.JdbcCreditProfiles(idGenerator), decisionMaking,
+                new com.finapp.credit.JdbcDecisionSnapshotStore(), new com.finapp.credit.JdbcPolicyEvaluationStore(),
+                creditPolicyStore, auditWriter, idGenerator, clock);
+    }
+
+    @Bean
+    UnderwritingCaseDesk underwritingCaseDesk(
+            com.finapp.credit.UnderwritingCases underwritingCases,
+            IdempotentExecutor idempotentExecutor,
+            TransactionRunner creditTransactionRunner) {
+        return new UnderwritingCaseDesk(underwritingCases, idempotentExecutor, creditTransactionRunner);
+    }
+
+    /** {@code finapp.credit.review.age}: the oldest open case's wait, in seconds (alerted by `P10-TSK-020`). */
+    @Bean
+    com.finapp.app.telemetry.CreditReviewMetrics creditReviewMetrics(
+            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.CreditReviewMetrics(
+                underwritingCaseStore, dataSource::getConnection, clock, meterRegistry);
     }
 }

@@ -46,8 +46,14 @@ import lombok.extern.slf4j.Slf4j;
  *       record re-collects ({@code READY -> COLLECTING}, the one backward edge, {@code INV-CRD-08}); the assessment and
  *       the evaluation, each born once.
  * </ul>
- * An {@code EVALUATED} request is handed to the {@link Decider} (`P10-TSK-016`) once the step's transaction is released;
- * an {@code IN_REVIEW} request's expiry waits for its case (`P10-TSK-018`).
+ * An {@code EVALUATED} request is handed to the {@link Decider} (`P10-TSK-016`) once the step's transaction is released.
+ *
+ * <p><strong>An {@code IN_REVIEW} request is its case's</strong> (`P10-TSK-018`, ADR-0089 point 7): the step locks the
+ * case after the request (lock order element (3)) and acts only while the case is {@code OPEN} - the party's standing
+ * lost abandons the request and closes the case ({@code STANDING_LOST}); the validity passed expires the request and
+ * closes the case ({@code EXPIRED}). A taken case ({@code ASSIGNED}, {@code AWAITING_SECOND}) is its person's: the step
+ * leaves it alone, so a taken case is never expired or abandoned under its underwriter, and the assignment and the
+ * expiry, taking the same two locks in the same order, leave exactly one of {@code ASSIGNED}, {@code EXPIRED}.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -68,6 +74,7 @@ public final class DecisionProgress {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
     @NonNull private final Decider decider;
+    @NonNull private final UnderwritingCaseStore cases;
 
     /** What one step did. */
     public enum Step {
@@ -82,7 +89,7 @@ public final class DecisionProgress {
         /** An {@code EVALUATED} request handed to the deciding step - internal to {@link #step}, never returned. */
         DECIDING,
         DECIDED,
-        /** The evaluation refers; the request waits at {@code EVALUATED} for its case (`P10-TSK-018`). */
+        /** The evaluation refers: the case is open and the request {@code IN_REVIEW} (`P10-TSK-018`). */
         REFERRED,
         EXPIRED,
         ABANDONED
@@ -128,11 +135,14 @@ public final class DecisionProgress {
             return Step.NOTHING;
         }
         DecisionRequest request = locked.get().request();
+        if (request.status() == DecisionRequestStatus.IN_REVIEW) {
+            return review(uow, request, locked.get().expired(), platform, correlation);
+        }
         if (!standing.inGoodStanding(uow, request.party())) {
             return close(uow, request, DecisionRequestStatus.ABANDONED, Optional.of(ClosureReason.STANDING_LOST), platform,
                     correlation);
         }
-        if (locked.get().expired() && request.status() != DecisionRequestStatus.IN_REVIEW) {
+        if (locked.get().expired()) {
             return close(uow, request, DecisionRequestStatus.EXPIRED, Optional.empty(), platform, correlation);
         }
         return switch (request.status()) {
@@ -140,8 +150,34 @@ public final class DecisionProgress {
             case COLLECTING -> ready(uow, request, platform, correlation);
             case READY -> evaluate(uow, request, platform, correlation, asks);
             case EVALUATED -> Step.DECIDING; // the deciding step, in a transaction of its own (P10-TSK-016)
-            default -> Step.WAITING; // IN_REVIEW: its case (P10-TSK-018)
+            default -> throw new IllegalStateException("an open request in " + request.status());
         };
+    }
+
+    // ------------------------------------------------------------------ IN_REVIEW: an OPEN case closes with its request
+
+    private Step review(Connection uow, DecisionRequest request, boolean expired, Actor platform, CorrelationId correlation) {
+        UnderwritingCase locked = cases.lockByRequest(uow, request.id())
+                .orElseThrow(() -> new IllegalStateException("an IN_REVIEW request has its case"));
+        if (locked.status() != UnderwritingCaseStatus.OPEN) {
+            return Step.WAITING; // a taken case is its person's (ADR-0089 points 6-7)
+        }
+        Step step;
+        String reason;
+        if (!standing.inGoodStanding(uow, request.party())) {
+            step = close(uow, request, DecisionRequestStatus.ABANDONED, Optional.of(ClosureReason.STANDING_LOST), platform,
+                    correlation);
+            reason = ClosureReason.STANDING_LOST.name();
+        } else if (expired) {
+            step = close(uow, request, DecisionRequestStatus.EXPIRED, Optional.empty(), platform, correlation);
+            reason = DecisionRequestStatus.EXPIRED.name();
+        } else {
+            return Step.WAITING;
+        }
+        if (!cases.move(uow, locked, UnderwritingCases.closure(reason, locked), platform)) {
+            throw new IllegalStateException("the locked case moved under its own lock");
+        }
+        return step;
     }
 
     // ------------------------------------------------------------------ SUBMITTED -> COLLECTING

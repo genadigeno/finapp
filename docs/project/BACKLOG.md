@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (17 of 24 items complete, M10.1, M10.2, M10.3, M10.4 and M10.5 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (18 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5 and M10.6 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15454,7 +15454,7 @@ assignment and an expiry serialise (`-018`).
   a customer.
 - **Definition of done**: `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P10-TSK-018 — Underwriting: the manual review case** — `READY` (marked by `P10-TSK-017`'s completion gate, 2026-10-08)
+**P10-TSK-018 — Underwriting: the manual review case** — `COMPLETE` (2026-10-08; marked `READY` by the previous task's completion gate)
 - **Objective**: referrals decided by people — with reasons, never overriding a hard decline or the
   exposure limit, and under four-eyes above the product's threshold.
 - **Bounded context**: Credit Decisioning; `app`.
@@ -15543,8 +15543,9 @@ assignment and an expiry serialise (`-018`).
   the evaluation approved, or beyond the limit.
 - **Definition of done**: `DOD-FIN` (credit exposure; F3, F6, F7 binding; F1, F2, F4, F5 vacuous; F8
   N/A), `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
+- **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-021` on the owner's instruction (2026-10-08). `credit V013` (`underwriting_case`, `underwriting_case_event`, the request's trigger redefined and its deferred "leaves `IN_REVIEW` with its case" trigger); `UnderwritingCase`, `UnderwritingCaseStatus`, `UnderwritingCaseStore`/`JdbcUnderwritingCaseStore`, `UnderwritingCases`; `DecisionMaking`'s referral and shared steps; `DecisionProgress`'s `IN_REVIEW` step; `app`'s `UnderwritingCaseController`, `UnderwritingCaseDesk`, `CreditReviewMetrics`. Corrections made by the design (ADR-0089 as built): the referral's ceiling for "the evaluation's approved amount" (a `REFER` approves none); the limit judged with the person's amount on the re-read deciding snapshot; a sixth audited act, `credit.ReviewCasesRead`, for the queue's basis; the first-decision `CHECK` in place of the planned reason-count deferred trigger; `P10-TSK-019`'s replay wording. Tests as named above, the raw-SQL edges as `#everyCaseEdgeIsHeldByTheDatabase`, the doors in `#anUnderwriterWorksACaseOverHttp` and `#theDoorsAreTheUnderwritersAlone`.
 
-**P10-TSK-019 — Decision replay and verification** — `PLANNED`
+**P10-TSK-019 — Decision replay and verification** — `READY` (marked by `P10-TSK-018`'s completion gate, 2026-10-08)
 - **Objective**: prove, on demand and continuously, that every decision re-derives identically from
   its stored snapshot and pinned versions.
 - **Bounded context**: Credit Decisioning; `app`.
@@ -15553,7 +15554,8 @@ assignment and an expiry serialise (`-018`).
   pinned engine re-run from `EngineVersions` with the pinned policy and model rows over the stored
   snapshot; outcome, approved amount and ordered reason codes compared → `IDENTICAL` or `DIVERGED`
   naming what differs — `HASH`, `OUTCOME`, `AMOUNT`, `REASONS`; for a person's decision the
-  evaluation re-derived to its `REFER` and the decision verified equal to the case's recorded
+  evaluation re-derived to its stored evaluation - the basis `REFER`, or the successor frozen under the person when the
+  reservation moved (corrected by `P10-TSK-018`'s design, ADR-0089 as built (3)) - and the decision verified equal to the case's recorded
   decision — a person's judgement is verified, not re-derived); `POST
   /v1/operator/credit/decisions/{id}/replay` (`CREDIT_INVESTIGATE`, a reason required, sync, no
   idempotency — no state but its audit); `CreditReplayProof` (every decision per reading in one
@@ -15685,6 +15687,7 @@ assignment and an expiry serialise (`-018`).
 - **Acceptance criteria**: a request collected from `b` decides, explains and replays exactly as one
   from `a`.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-018` on the owner's instruction, marked `READY` out of turn and merged after it. Mid-request failover weighed and refused (ADR-0085 §10). Beyond the scope as written: normaliser version 2 of both `-sim-a` adapters (a present-but-unreadable field is malformed, never absent) and the 2 GiB heap for every tagged test tier (`ArchitectureTierHeapTest`). Tests as named, plus `SecondBureauCollectionDatabaseTest` (every `-006` case re-run with `b`), `SecondBureauNormalisationGoldenTest`, `SourceSelectionTest`, `CreditSourceOrderTest` and `BureauSelectionDatabaseTest#theProviderIsFixedAtBirthNeverSubstituted`, `#anAnswerNamingAnotherProviderIsNeverRecorded`, `#aRequestCollectedFromBDecidesExplainsAndReplaysAsOneFromA`.
 
 **P10-TST-001 — The credit decision storm** — `PLANNED`
 - **Objective**: prove decision correctness under every provider fault, crash, duplication,

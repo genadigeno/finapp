@@ -282,6 +282,7 @@ extra["ownContainerSuites"] =
         "com.finapp.app.credit.DecisionExplanationDatabaseTest",
         "com.finapp.app.credit.DecisionOrchestrationDatabaseTest",
         "com.finapp.app.credit.DecisionRequestDatabaseTest",
+        "com.finapp.app.credit.UnderwritingCaseDatabaseTest",
         "com.finapp.app.fx.FxCrossBorderStormDatabaseTest",
         "com.finapp.app.merchant.PayoutReturnDatabaseTest",
         "com.finapp.app.reconciliation.BatchRepudiationDatabaseTest",

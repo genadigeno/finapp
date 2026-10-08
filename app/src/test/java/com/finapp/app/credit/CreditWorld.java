@@ -38,6 +38,7 @@ import com.finapp.credit.JdbcDecisionSnapshotStore;
 import com.finapp.credit.JdbcPolicyEvaluationStore;
 import com.finapp.credit.JdbcReservedExposure;
 import com.finapp.credit.JdbcScorecardStore;
+import com.finapp.credit.JdbcUnderwritingCaseStore;
 import com.finapp.credit.PolicyEvaluations;
 import com.finapp.credit.PolicyFigure;
 import com.finapp.credit.ScorecardAdministration;
@@ -223,8 +224,8 @@ final class CreditWorld {
                 new CreditAssessments(new JdbcCreditAssessmentStore(), SCORECARDS, new JdbcOutboxWriter(), IDS, clock),
                 new JdbcCreditAssessmentStore(),
                 new PolicyEvaluations(new JdbcPolicyEvaluationStore(), POLICIES, EngineVersions.STANDARD, IDS, clock),
-                new JdbcPolicyEvaluationStore(), new JdbcCreditDecisions(), STANDING, GATE, new JdbcOutboxWriter(),
-                new JdbcAuditWriter(), DecisionObserver.NONE, IDS, clock);
+                new JdbcPolicyEvaluationStore(), new JdbcCreditDecisions(), new JdbcUnderwritingCaseStore(), STANDING, GATE,
+                new JdbcOutboxWriter(), new JdbcAuditWriter(), DecisionObserver.NONE, IDS, clock);
     }
 
     static DecisionMaking deciding() {
@@ -242,7 +243,7 @@ final class CreditWorld {
                 collection, freezer(collection),
                 new CreditAssessments(new JdbcCreditAssessmentStore(), SCORECARDS, new JdbcOutboxWriter(), IDS, clock),
                 new PolicyEvaluations(new JdbcPolicyEvaluationStore(), POLICIES, EngineVersions.STANDARD, IDS, clock),
-                STANDING, GATE, new JdbcOutboxWriter(), IDS, clock, decider);
+                STANDING, GATE, new JdbcOutboxWriter(), IDS, clock, decider, new JdbcUnderwritingCaseStore());
     }
 
     /** A progress that stops at {@code EVALUATED} - the "crash" before the deciding step. */

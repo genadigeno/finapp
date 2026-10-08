@@ -997,6 +997,41 @@
           }
         }
       },
+      "credit.CaseTaken": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.CaseTaken"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.CaseTaken"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The review case is held by another underwriter or has moved on.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "credit.DecisionRequestOpen": {
         "content": {
           "application/problem+json": {
@@ -1058,6 +1093,76 @@
           }
         },
         "description": "[503] The credit evidence cannot be read now.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "credit.ExposureLimitExceeded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.ExposureLimitExceeded"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.ExposureLimitExceeded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "credit.HardDeclineNotOverridable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.HardDeclineNotOverridable"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.HardDeclineNotOverridable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A hard decline cannot be approved by a person; it may be declined.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1372,7 +1477,7 @@
             }
           }
         },
-        "description": "[403] A version is activated by someone other than its proposer; the proposer may reject it.",
+        "description": "[403] A second approval is someone else's: a version's activation is not its proposer's, nor a case's second approval its first decider's.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -12690,6 +12795,176 @@
         },
         "type": "object"
       },
+      "ReviewBasisAttributeView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReviewBasisRuleView": {
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "ruleCode": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReviewCaseReceipt": {
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReviewCaseView": {
+        "properties": {
+          "approvableAmount": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "basisAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewBasisAttributeView"
+            },
+            "type": "array"
+          },
+          "basisRules": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewBasisRuleView"
+            },
+            "type": "array"
+          },
+          "caseId": {
+            "type": "string"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "firstApprovedAmount": {
+            "type": "string"
+          },
+          "firstDecidedBy": {
+            "type": "string"
+          },
+          "firstOutcome": {
+            "type": "string"
+          },
+          "firstReason": {
+            "type": "string"
+          },
+          "firstReasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fourEyesThreshold": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "referralReasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requestExpiresAt": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "requestedAmount": {
+            "type": "string"
+          },
+          "secondDecidedBy": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReviewDecisionBody": {
+        "properties": {
+          "approvedAmount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          },
+          "outcome": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reasonCodes": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
       "ReviewOwnerView": {
         "properties": {
           "controlRole": {
@@ -13335,6 +13610,24 @@
           "decision",
           "narrative",
           "reasonCode"
+        ],
+        "type": "object"
+      },
+      "SecondApprovalBody": {
+        "properties": {
+          "decision": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
         ],
         "type": "object"
       },
@@ -16790,6 +17083,196 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreditEvidenceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/review-cases": {
+      "get": {
+        "operationId": "listReviewCases",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewCaseView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/review-cases/{id}/assignment": {
+      "post": {
+        "operationId": "assignReviewCase",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/review-cases/{id}/decision": {
+      "post": {
+        "operationId": "decideReviewCase",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/review-cases/{id}/release": {
+      "post": {
+        "operationId": "releaseReviewCase",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/review-cases/{id}/second-approval": {
+      "post": {
+        "operationId": "secondApproveReviewCase",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondApprovalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseReceipt"
                 }
               }
             },

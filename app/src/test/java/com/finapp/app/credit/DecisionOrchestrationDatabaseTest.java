@@ -234,7 +234,8 @@ class DecisionOrchestrationDatabaseTest {
                 new PolicyEvaluations(new JdbcPolicyEvaluationStore(), POLICIES, EngineVersions.STANDARD, IDS, clock),
                 STANDING, GATE, new JdbcOutboxWriter(), IDS, clock,
                 // The deciding step is CreditDecisionDatabaseTest's (P10-TSK-016); this suite drives to EVALUATED.
-                (id, correlation) -> com.finapp.credit.Decider.Decided.NOTHING);
+                (id, correlation) -> com.finapp.credit.Decider.Decided.NOTHING,
+                new com.finapp.credit.JdbcUnderwritingCaseStore());
     }
 
     private static DecisionProgress instance() {

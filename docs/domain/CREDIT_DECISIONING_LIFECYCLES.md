@@ -232,15 +232,15 @@ changes them.
 
 | Invalid edge | Why | Refused at the database, for every writer, by |
 |---|---|---|
-| any edge out of `DECIDED` or `CLOSED` | terminal; a change of mind is a new request | the generated `CHECK` and the edge trigger (`underwriting_case_edge_is_legal`, planned) |
+| any edge out of `DECIDED` or `CLOSED` | terminal; a change of mind is a new request | the edge trigger (`underwriting_case_permits_only_machine_edges`, `credit V013`) |
 | `OPEN → DECIDED \| AWAITING_SECOND` | a decision needs an assignee | the edge trigger |
 | `AWAITING_SECOND → OPEN` | a recorded first decision is not released to the queue; a disagreeing second approver refuses it back to its first underwriter (`AWAITING_SECOND → ASSIGNED`) | the edge trigger |
 | `AWAITING_SECOND → ASSIGNED` by the first decider, or without a reason | the refusal is the second person's, reasoned | the edge trigger; the reason `CHECK` on the event row |
 | `→ CLOSED` while the request is still open | a case closes only with its request, in the request's closing transaction | the edge trigger, reading the request's status under L2 |
 | `OPEN → ASSIGNED` under a request not `IN_REVIEW` | the request was closed first | the edge trigger, reading the request's status under L2 |
-| `ASSIGNED → DECIDED` approving above the case's threshold | four-eyes above the threshold | the edge trigger, against the copied threshold |
+| `ASSIGNED → DECIDED` approving above the case's threshold | four-eyes above the threshold | the state-shape `CHECK`: `DECIDED` carries a second approver exactly when the approval is above the copied threshold |
 | `AWAITING_SECOND → DECIDED` by the first decider | four-eyes | the `CHECK (second_decided_by <> first_decided_by)` |
-| `→ DECIDED \| AWAITING_SECOND` with no reason code | `INV-CRD-11` | a deferred constraint trigger counting the case's reason rows |
+| `→ DECIDED \| AWAITING_SECOND` with no reason code | `INV-CRD-11` | the first-decision `CHECK` (codes held on the case row, at least one; each the catalogue's by the edge trigger) |
 | a case whose basis evaluation carries a `HARD_DECLINE` | ADR-0089 §2 | the case's `BEFORE INSERT` trigger reading the evaluation |
 | a second case for one request | one review per referral | ★ `UNIQUE (decision_request_id)` |
 

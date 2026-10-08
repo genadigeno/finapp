@@ -18,6 +18,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,18 +42,27 @@ import lombok.RequiredArgsConstructor;
  *   <li>the reserved exposure re-read under the profile lock - when it differs from the snapshot's, a successor snapshot
  *       (the same records, the new exposure; the next sequence), assessed and evaluated under the same pinned versions;
  *   <li>the evaluation's outcome: an approval or a decline is recorded - the decision and its reasons, the request
- *       {@code DECIDED}, {@code credit.CreditDecisionRecorded} and {@code credit.DecisionRecorded}; a referral waits at
- *       {@code EVALUATED} for its case (`P10-TSK-018`).
+ *       {@code DECIDED}, {@code credit.CreditDecisionRecorded} and {@code credit.DecisionRecorded}; <strong>a referral
+ *       opens the underwriting case</strong> (`P10-TSK-018`, ADR-0089 point 1) - born {@code OPEN} once per request with
+ *       its basis evaluation, the referral's ceiling and the product's four-eyes threshold, the request
+ *       {@code IN_REVIEW}, {@code credit.ManualReviewRequired}.
  * </ol>
  *
+ * <p>Steps 3-5 ({@link #basisWithin}) and the recording ({@link #recordWithin}) are shared with a person's decision
+ * ({@link UnderwritingCases}), which runs the same transaction under the case's lock and with the person as decider -
+ * one deciding transaction, two deciders.
+ *
  * <p>Ten deciders on one request: the profile lock queues them, the first records, the rest find the request
- * {@code DECIDED} and do nothing - and {@code UNIQUE (decision_request_id)} beneath. The observer is told after the commit.
+ * {@code DECIDED} (or {@code IN_REVIEW}) and do nothing - and {@code UNIQUE (decision_request_id)} beneath, on the decision
+ * and on the case. The observer is told after the commit.
  */
 @RequiredArgsConstructor
 public final class DecisionMaking implements Decider {
 
     static final String RECORDED_EVENT = "credit.CreditDecisionRecorded";
+    static final String REVIEW_EVENT = "credit.ManualReviewRequired";
     static final String TARGET_TYPE = "credit_decision";
+    static final String CASE_TYPE = "underwriting_case";
 
     @NonNull private final TransactionRunner transactions;
     @NonNull private final DecisionRequestStore requests;
@@ -65,6 +75,7 @@ public final class DecisionMaking implements Decider {
     @NonNull private final PolicyEvaluations evaluations;
     @NonNull private final PolicyEvaluationStore evaluationStore;
     @NonNull private final JdbcCreditDecisions decisions;
+    @NonNull private final UnderwritingCaseStore cases;
     @NonNull private final CreditPartyStanding<Connection> standing;
     @NonNull private final CreditConsentGate<Connection> consents;
     @NonNull private final OutboxWriter<Connection> outbox;
@@ -73,29 +84,40 @@ public final class DecisionMaking implements Decider {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /** What the deciding transaction found under its locks, before it records anything. */
+    sealed interface Basis permits Basis.Abandoned, Basis.Ready {
+
+        /** The party's standing or a consent was lost: the request is closed {@code ABANDONED}, nothing decided. */
+        record Abandoned(ClosureReason reason) implements Basis {}
+
+        /** The pinned policy, the snapshot a decision is made from - a successor when the reservation moved - and its evaluation. */
+        record Ready(CreditPolicyStore.PolicyVersion policy, DecisionSnapshot snapshot, PolicyEvaluation evaluation)
+                implements Basis {}
+    }
+
+    /** A recorded decision with what its observer is told once the transaction commits. */
+    public record Recorded(CreditDecision decision, int policyVersion, Duration latency) {}
+
     @Override
     public Decided decide(DecisionRequestId id, CorrelationId correlation) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(correlation, "correlation");
         Actor platform = SecurityContext.require();
-        AtomicReference<CreditDecision> recorded = new AtomicReference<>();
-        AtomicReference<Duration> latency = new AtomicReference<>();
-        AtomicReference<Integer> policyVersion = new AtomicReference<>();
-        Decided decided = transactions.inTransaction(uow -> decideWithin(uow, id, platform, correlation, recorded, latency, policyVersion));
+        AtomicReference<Recorded> recorded = new AtomicReference<>();
+        Decided decided = transactions.inTransaction(uow -> decideWithin(uow, id, platform, correlation, recorded));
         if (recorded.get() != null) {
-            observer.recorded(recorded.get(), policyVersion.get(), latency.get());
+            observe(recorded.get());
         }
         return decided;
     }
 
+    /** Tells the observer of a committed decision - the caller's after-commit step. */
+    void observe(Recorded recorded) {
+        observer.recorded(recorded.decision(), recorded.policyVersion(), recorded.latency());
+    }
+
     private Decided decideWithin(
-            Connection uow,
-            DecisionRequestId id,
-            Actor platform,
-            CorrelationId correlation,
-            AtomicReference<CreditDecision> recorded,
-            AtomicReference<Duration> latency,
-            AtomicReference<Integer> policyVersion) {
+            Connection uow, DecisionRequestId id, Actor platform, CorrelationId correlation, AtomicReference<Recorded> recorded) {
         Optional<UUID> party = requests.partyOf(uow, id);
         if (party.isEmpty() || profiles.lockForDecision(uow, party.get()).isEmpty()) {
             return Decided.NOTHING;
@@ -105,14 +127,39 @@ public final class DecisionMaking implements Decider {
             return Decided.NOTHING;
         }
         DecisionRequest request = locked.get().request();
-        RequestClosures closures = new RequestClosures(requests, outbox, ids, clock);
-        if (!standing.inGoodStanding(uow, request.party())) {
-            closures.close(uow, request, DecisionRequestStatus.ABANDONED, Optional.of(ClosureReason.STANDING_LOST), platform,
-                    correlation);
+        Basis basis = basisWithin(uow, request, platform, correlation);
+        if (!(basis instanceof Basis.Ready ready)) {
             return Decided.ABANDONED;
         }
+        EvaluationResult result = ready.evaluation().result();
+        if (result.outcome() == EvaluationOutcome.REFER) {
+            return refer(uow, request, ready, platform, correlation) ? Decided.REFERRED : Decided.NOTHING;
+        }
+        DecisionOutcome outcome = result.outcome() == EvaluationOutcome.APPROVE ? DecisionOutcome.APPROVED
+                : DecisionOutcome.DECLINED;
+        Optional<Recorded> made = recordWithin(uow, request, DecisionRequestStatus.EVALUATED, ready, outcome,
+                result.approved(), result.reasons(), platform.id(), platform.type().name(), platform, correlation);
+        if (made.isEmpty()) {
+            return Decided.NOTHING;
+        }
+        recorded.set(made.get());
+        return Decided.DECIDED;
+    }
+
+    /**
+     * Steps 3-5 under the caller's profile and request locks: the standing and the consent gate re-read (either lost
+     * closes the request {@code ABANDONED}), the pinned versions {@code FOR SHARE}, and the reserved exposure re-read -
+     * a successor snapshot assessed and evaluated when it moved.
+     */
+    Basis basisWithin(Connection uow, DecisionRequest request, Actor actor, CorrelationId correlation) {
+        RequestClosures closures = new RequestClosures(requests, outbox, ids, clock);
+        if (!standing.inGoodStanding(uow, request.party())) {
+            closures.close(uow, request, DecisionRequestStatus.ABANDONED, Optional.of(ClosureReason.STANDING_LOST), actor,
+                    correlation);
+            return new Basis.Abandoned(ClosureReason.STANDING_LOST);
+        }
         PinnedVersions pinned = request.pinned()
-                .orElseThrow(() -> new IllegalStateException("an EVALUATED request carries its pinned versions"));
+                .orElseThrow(() -> new IllegalStateException("an evaluated request carries its pinned versions"));
         CreditPolicyVersionId policyId = CreditPolicyVersionId.of(pinned.policyVersion());
         if (!policies.sharePinned(uow, policyId)
                 || !scorecards.sharePinned(uow, ScorecardModelVersionId.of(pinned.modelVersion()))) {
@@ -123,40 +170,53 @@ public final class DecisionMaking implements Decider {
         for (CreditSourceKind kind : policy.sourceKinds()) {
             if (!consents.permits(uow, request.party(), kind)) {
                 closures.close(uow, request, DecisionRequestStatus.ABANDONED, Optional.of(ClosureReason.CONSENT_WITHDRAWN),
-                        platform, correlation);
-                return Decided.ABANDONED;
+                        actor, correlation);
+                return new Basis.Abandoned(ClosureReason.CONSENT_WITHDRAWN);
             }
         }
         DecisionSnapshot snapshot = freezer.latest(uow, request.id().value())
-                .orElseThrow(() -> new IllegalStateException("an EVALUATED request has its snapshot"));
+                .orElseThrow(() -> new IllegalStateException("an evaluated request has its snapshot"));
         Money reserved = freezer.reservedFor(uow, request.party(), request.application().product().currency());
-        EvaluationResult result;
+        PolicyEvaluation evaluation;
         if (reserved.equals(reservedIn(snapshot))) {
             CreditAssessment assessment = assessmentStore.bySnapshot(uow, snapshot.id())
-                    .orElseThrow(() -> new IllegalStateException("an EVALUATED request's snapshot is assessed"));
-            result = evaluationStore.byAssessment(uow, assessment.id())
-                    .orElseThrow(() -> new IllegalStateException("an EVALUATED request's assessment is evaluated"))
-                    .result();
+                    .orElseThrow(() -> new IllegalStateException("an evaluated request's snapshot is assessed"));
+            evaluation = evaluationStore.byAssessment(uow, assessment.id())
+                    .orElseThrow(() -> new IllegalStateException("an evaluated request's assessment is evaluated"));
         } else {
             // The reservation moved since the evaluation: a successor snapshot decides (section 12.7).
             snapshot = freezer.successor(uow, snapshot, reserved).snapshot();
             CreditAssessment assessment = assessments.assess(uow, snapshot, CreditAssessments.Terms.of(policy), correlation)
                     .assessment();
-            result = evaluations.evaluate(uow, snapshot, assessment).evaluation().result();
+            evaluation = evaluations.evaluate(uow, snapshot, assessment).evaluation();
         }
-        if (result.outcome() == EvaluationOutcome.REFER) {
-            return Decided.REFERRED;
-        }
-        DecisionOutcome outcome = result.outcome() == EvaluationOutcome.APPROVE ? DecisionOutcome.APPROVED
-                : DecisionOutcome.DECLINED;
+        return new Basis.Ready(pinnedPolicy, snapshot, evaluation);
+    }
+
+    /**
+     * Records the decision under the caller's locks: the decision and its reasons, the request {@code from -> DECIDED},
+     * {@code credit.CreditDecisionRecorded} and {@code credit.DecisionRecorded} by {@code actor}; empty when the request
+     * already had a decision.
+     */
+    Optional<Recorded> recordWithin(
+            Connection uow,
+            DecisionRequest request,
+            DecisionRequestStatus from,
+            Basis.Ready basis,
+            DecisionOutcome outcome,
+            Optional<Money> approved,
+            List<ReasonCode> reasons,
+            String decidedBy,
+            String decidedByType,
+            Actor actor,
+            CorrelationId correlation) {
         CreditDecisionId decisionId = CreditDecisionId.next(ids);
-        if (!decisions.insert(uow, new JdbcCreditDecisions.NewDecision(decisionId, request, snapshot, outcome,
-                result.approved(), result.reasons(), request.application().product().decisionValidity(), platform.id(),
-                platform.type().name()))) {
-            return Decided.NOTHING;
+        if (!decisions.insert(uow, new JdbcCreditDecisions.NewDecision(decisionId, request, basis.snapshot(), outcome,
+                approved, reasons, request.application().product().decisionValidity(), decidedBy, decidedByType))) {
+            return Optional.empty();
         }
-        if (!requests.transition(uow, request.id(), EnumSet.of(DecisionRequestStatus.EVALUATED),
-                DecisionRequestStatus.DECIDED, Optional.empty(), platform, Optional.empty())) {
+        if (!requests.transition(uow, request.id(), EnumSet.of(from), DecisionRequestStatus.DECIDED, Optional.empty(),
+                actor, Optional.empty())) {
             throw new IllegalStateException("the locked request moved under its own lock");
         }
         CreditDecision decision = decisions.byId(uow, decisionId)
@@ -164,7 +224,7 @@ public final class DecisionMaking implements Decider {
         publish(uow, decision, correlation);
         audit.append(uow, new AuditRecord(
                 AuditId.next(ids),
-                platform,
+                actor,
                 clock.instant(),
                 CreditAuditAction.DECISION_RECORDED,
                 TARGET_TYPE,
@@ -174,10 +234,53 @@ public final class DecisionMaking implements Decider {
                 correlation,
                 Optional.of("decision " + decisionId.value() + " for request " + request.id().value() + ": "
                         + outcome.name())));
-        recorded.set(decision);
-        policyVersion.set(pinnedPolicy.row().version());
-        latency.set(Duration.between(request.submittedAt(), decision.decidedAt()));
-        return Decided.DECIDED;
+        return Optional.of(new Recorded(decision, basis.policy().row().version(),
+                Duration.between(request.submittedAt(), decision.decidedAt())));
+    }
+
+    /**
+     * The referral: the case born {@code OPEN} with its basis, the referral's ceiling and the product's threshold, the
+     * request {@code EVALUATED -> IN_REVIEW}, and {@code credit.ManualReviewRequired}; false when the request already had
+     * its case.
+     */
+    private boolean refer(
+            Connection uow, DecisionRequest request, Basis.Ready basis, Actor platform, CorrelationId correlation) {
+        UnderwritingCaseId caseId = UnderwritingCaseId.next(ids);
+        Money ceiling = UnderwritingCases.ceiling(basis.evaluation().result(), basis.policy().policy());
+        if (!cases.open(uow, new UnderwritingCaseStore.NewCase(caseId, request, basis.evaluation().id(), ceiling,
+                request.application().product().fourEyesThreshold()), platform)) {
+            return false;
+        }
+        if (!requests.transition(uow, request.id(), EnumSet.of(DecisionRequestStatus.EVALUATED),
+                DecisionRequestStatus.IN_REVIEW, Optional.empty(), platform, Optional.empty())) {
+            throw new IllegalStateException("the locked request moved under its own lock");
+        }
+        // Identifiers and catalogue codes only - never an attribute. One field per code, so no count of codes can
+        // outgrow a payload value.
+        List<ReasonCode> reasons = basis.evaluation().result().reasons();
+        EventPayload payload = EventPayload.of()
+                .with("decisionRequestId", request.id().value().toString())
+                .with("caseId", caseId.value().toString())
+                .with("referralReasonCount", Integer.toString(reasons.size()));
+        for (int i = 0; i < reasons.size(); i++) {
+            payload = payload.with("referralReasonCode" + (i + 1), reasons.get(i).code());
+        }
+        outbox.write(
+                uow,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        REVIEW_EVENT,
+                        1,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        caseId,
+                        CASE_TYPE,
+                        clock.instant(),
+                        CreditDataCollection.PRODUCER,
+                        correlation,
+                        CausationId.of(correlation.value())),
+                payload.toBytes(),
+                EventPayload.MEDIA_TYPE);
+        return true;
     }
 
     private static Money reservedIn(DecisionSnapshot snapshot) {

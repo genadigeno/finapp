@@ -205,5 +205,38 @@ assignment).
   doors (release included), the four-eyes threshold, the assignment race against expiry, the
   manual deciding transaction bounded by the exposure limit, and its expiry. `P10-TST-001`: underwriters on both instances of
   the storm.
+- *As built by `P10-TSK-018` (2026-10-08), points 1-8.* `credit V013`: `underwriting_case` (born `OPEN` once per
+  referred request by the deciding transaction, with its basis evaluation, the referral's ceiling and the product's
+  four-eyes threshold copied at birth; the four-eyes `CHECK (second_decided_by <> first_decided_by)`; a first decision
+  whole or absent with at least one reason code; a state-shape `CHECK` per status, `DECIDED` carrying a second approver
+  exactly when the approval is above the threshold; the machine trigger - the birth on a `REFER` basis with no triggered
+  hard decline, assignment only under an `IN_REVIEW` request, a taken case kept by its underwriter, `CLOSED` only with
+  its closed request and carrying its reason, `DECIDED` only beside the request's decision) and `underwriting_case_event`
+  (append-only; a decision's edge reasoned, a second person's act never the first decider's - by `CHECK`); the request's
+  trigger redefined (`IN_REVIEW` only beside its open case, `IN_REVIEW → EXPIRED` only while the case is `OPEN`, the
+  system's referral refused once expired) and a deferred trigger letting a request leave `IN_REVIEW` only with its case
+  terminal. `UnderwritingCases` (the acts), `DecisionMaking`'s steps shared with it, `DecisionProgress`'s `IN_REVIEW`
+  step, `UnderwritingCaseDesk` and the five doors behind `CREDIT_UNDERWRITE`, keyed `credit.review:<type>:<id>`, and
+  `finapp.credit.review.age`. Five decisions taken in the building, recorded here. (1) **"The evaluation's approved
+  amount" for a referral is the referral's ceiling**: a `REFER` evaluation approves no amount (`EvaluationResult`
+  refuses one), so the bound is the requested amount capped by every `CAP_AMOUNT` rule the evaluation triggered - what
+  the evaluation's rules let through - and, when a successor is frozen under the person, the lesser of the case's and
+  the successor's. The auto-approval ceiling is not one: it bounds an AUTOMATED approval, and above the product's
+  four-eyes threshold a second person meets the approval instead. (2) **The limit is judged on what is known, with the
+  person's amount**: on the deciding snapshot (its reservation re-read under the profile lock), the platform's
+  outstanding credit plus reserved exposure plus the approval, plus the bureau's total balance when it was read - an
+  absent bureau balance is the referral's question, which the person answers, while the platform's own terms stay bound
+  by the limit. (3) **A person's decision names its deciding snapshot**: the basis, or the successor frozen under the
+  person; a successor evaluation that hard-declines refuses an approval (`422 credit.HardDeclineNotOverridable`) as the
+  basis would. `P10-TSK-019`'s replay re-derives the decision's snapshot to its STORED evaluation - the basis `REFER`,
+  or that successor's - and verifies the decision against the case's recorded decision. (4) **Two kinds of reason**: the
+  person's catalogued codes (at least one, about the applicant - `CRD-AUTO-APPROVAL-CEILING` speaks of automation and is
+  refused) are the decision's reason codes, as plan section 12.7 says; a free-text reason is required beside them and
+  goes to the case history and the audit row. (5) **`decided_by` is the first decider**, the judgement's maker; the
+  second approver is the case row's and the actor of `credit.ReviewSecondApproval` and `credit.DecisionRecorded`; the
+  decision's `decided_by_type` is `EMPLOYEE` whatever type the acting session's actor carries. The queue read serves each
+  case's basis (normalised attributes, the rules and their results), so it is audited per serving -
+  `credit.ReviewCasesRead`, a sixth act beside point 8's five. `ManualReviewRequired` carries its referral codes one
+  field each (`referralReasonCode1`…`N`), so no number of codes outgrows a payload value.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.
