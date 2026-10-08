@@ -890,7 +890,7 @@ proposal machine's own states.
 | Code | Status | Meaning |
 |---|---|---|
 | `credit.NotFound` | 404 | No credit record matches the requested identifier. |
-| `credit.SelfApprovalRefused` | 403 | A version is activated by someone other than its proposer; the proposer may reject it. |
+| `credit.SelfApprovalRefused` | 403 | A second approval is someone else's: a version's activation is not its proposer's, nor a case's second approval its first decider's. |
 | `credit.PolicyStale` | 409 | The version is no longer awaiting a decision. |
 | `credit.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
 | `credit.ScorecardInvalid` | 422 | The scorecard is not well formed. |
@@ -902,6 +902,9 @@ proposal machine's own states.
 | `credit.RequestNotCancellable` | 409 | The decision request can no longer be cancelled. |
 | `credit.ApplicantNotEligible` | 409 | The applicant is not a verified customer in good standing; complete verification and retry. |
 | `credit.EvidenceUnreadable` | 503 | The credit evidence cannot be read now. |
+| `credit.CaseTaken` | 409 | The review case is held by another underwriter or has moved on. |
+| `credit.HardDeclineNotOverridable` | 422 | A hard decline cannot be approved by a person; it may be declined. |
+| `credit.ExposureLimitExceeded` | 422 | The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less. |
 
 The scorecard doors (`P10-TSK-011`, ADR-0086 §3), every route behind `CREDIT_POLICY_ADMINISTER` and every act
 keyed per principal (`credit.scorecard:<type>:<id>`), so a lost response replays its receipt and a refusal stores
@@ -912,6 +915,18 @@ approvers; `ProposalPending` one proposal per family at a time. `ScorecardInvali
 or overlap in an attribute's ranges, a money attribute or a marker banded, a boolean half covered, an unknown code
 or family - never a value. `ReasonRequired` answers a decision or proposal with no reason, judged by the domain
 rather than the boundary so it carries its own code.
+
+The review-case doors (`P10-TSK-018`, ADR-0089), every route behind `CREDIT_UNDERWRITE` and every act keyed per
+principal (`credit.review:<type>:<id>`). `CaseTaken` answers an act on a case another underwriter holds, or that has
+moved on from the state the act needs - the loser of two underwriters taking one case, of ten second approvers, or an
+act on a decided or closed case. `SelfApprovalRefused` answers the first decider acting as the case's second approver,
+to approve or to refuse (also held by `credit V013`'s four-eyes `CHECK`). `HardDeclineNotOverridable` answers a
+person's approval of a request whose evaluation - the case's basis, or a successor frozen under the person - triggered a
+hard decline; a decline stands. `ExposureLimitExceeded` answers a person's approval above the evaluation's ceiling (the
+request capped by the caps the evaluation triggered) or beyond the party's exposure limit re-read under the profile lock
+(G7): nothing recorded - not even the successor snapshot - the case unchanged, and the person decides again.
+`ReasonRequired` answers a decision without a catalogued reason code about the applicant or without a reason, and a
+refused second approval without a reason. A malformed outcome, amount or status filter is `api.ValidationFailed`.
 
 The credit policy doors (`P10-TSK-012`, ADR-0086 §§4-6) answer the same codes on the same terms, keyed
 `credit.policy:<type>:<id>`, plus two of their own. `PolicyIncomplete` refuses a policy at PROPOSAL, never at decision

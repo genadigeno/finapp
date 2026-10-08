@@ -161,7 +161,11 @@ class PolicyEvaluationDatabaseTest {
         try (Connection owner = DatabaseRoles.migrator()) {
             refused(owner, "UPDATE credit.policy_evaluation SET outcome = 'APPROVE' WHERE id = '" + id + "'", "P0001");
             refused(owner, "DELETE FROM credit.policy_evaluation WHERE id = '" + id + "'", "P0001");
-            refused(owner, "TRUNCATE credit.policy_evaluation_rule, credit.policy_evaluation", "P0001");
+            // Since V013 (P10-TSK-018) the underwriting case references the evaluation, so a plain TRUNCATE meets its
+            // foreign key first (0A000); naming the case's tables too reaches the triggers.
+            refused(owner, "TRUNCATE credit.policy_evaluation_rule, credit.policy_evaluation", "0A000");
+            refused(owner, "TRUNCATE credit.policy_evaluation_rule, credit.policy_evaluation, credit.underwriting_case_event,"
+                    + " credit.underwriting_case", "P0001");
             refused(owner, "UPDATE credit.policy_evaluation_rule SET triggered = false WHERE evaluation_id = '" + id + "'",
                     "P0001");
             refused(owner, "DELETE FROM credit.policy_evaluation_rule WHERE evaluation_id = '" + id + "'", "P0001");

@@ -13,7 +13,7 @@ public interface Decider {
     enum Decided {
         /** The decision was recorded and the request is {@code DECIDED}. */
         DECIDED,
-        /** The evaluation refers: the request waits at {@code EVALUATED} for its case (`P10-TSK-018`). */
+        /** The evaluation refers: the case is open and the request {@code IN_REVIEW} (`P10-TSK-018`). */
         REFERRED,
         /** The party's standing or a consent was lost: the request is {@code ABANDONED}, nothing decided. */
         ABANDONED,

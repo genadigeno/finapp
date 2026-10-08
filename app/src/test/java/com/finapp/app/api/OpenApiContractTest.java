@@ -615,6 +615,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/credit/profile",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/decisions/{id}/explanation",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/records/{id}/evidence-read",
+                        // P10-TSK-018: the underwriter's review queue and the acts on a case.
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}/assignment",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}/release",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}/decision",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}/second-approval",
                         // P9-TSK-017: the customer's beneficiaries abroad (a session).
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}",

@@ -13,11 +13,15 @@ public enum CreditErrorCode implements ErrorCode {
     /** No scorecard model version has the identifier. */
     NOT_FOUND("credit.NotFound", 404, "No credit record matches the requested identifier."),
 
-    /** The approver proposed it - four eyes is two parties ({@code INV-AUD-04}). */
+    /**
+     * Four eyes is two parties ({@code INV-AUD-04}): the approver proposed the version, or (`P10-TSK-018`,
+     * {@code INV-CRD-11}) the second approver of a case made its first decision.
+     */
     SELF_APPROVAL_REFUSED(
             "credit.SelfApprovalRefused",
             403,
-            "A version is activated by someone other than its proposer; the proposer may reject it."),
+            "A second approval is someone else's: a version's activation is not its proposer's, nor a case's second"
+                    + " approval its first decider's."),
 
     /** The version was already decided, or retired. */
     POLICY_STALE("credit.PolicyStale", 409, "The version is no longer awaiting a decision."),
@@ -73,7 +77,27 @@ public enum CreditErrorCode implements ErrorCode {
      * Credit evidence that cannot be decrypted now - a key not configured or rotated away (`P10-TSK-017`). A
      * {@code 503}: the evidence is kept, the read is recorded FAILED, and nothing is served.
      */
-    EVIDENCE_UNREADABLE("credit.EvidenceUnreadable", 503, "The credit evidence cannot be read now.");
+    EVIDENCE_UNREADABLE("credit.EvidenceUnreadable", 503, "The credit evidence cannot be read now."),
+
+    /**
+     * The review case is not available for the act (`P10-TSK-018`): another underwriter holds it, or it has moved on -
+     * decided, closed, released, or no longer in the state the act needs. Re-read the queue.
+     */
+    CASE_TAKEN("credit.CaseTaken", 409, "The review case is held by another underwriter or has moved on."),
+
+    /** A person's approval of a request whose evaluation triggered a hard decline (`P10-TSK-018`, ADR-0089 point 2). */
+    HARD_DECLINE_NOT_OVERRIDABLE(
+            "credit.HardDeclineNotOverridable", 422, "A hard decline cannot be approved by a person; it may be declined."),
+
+    /**
+     * A person's approval above the evaluation's approved amount or beyond the party's exposure limit, re-read under the
+     * profile lock (`P10-TSK-018`, G7, {@code INV-CRD-09}): nothing recorded, the case unchanged - decide again, a
+     * decline or a smaller approval.
+     */
+    EXPOSURE_LIMIT_EXCEEDED(
+            "credit.ExposureLimitExceeded",
+            422,
+            "The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less.");
 
     private final String code;
     private final int status;

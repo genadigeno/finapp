@@ -202,6 +202,10 @@ taggedTiers.forEach { (taskName, tierTag) ->
         testClassesDirs = sourceSets.test.get().output.classesDirs
         classpath = sourceSets.test.get().runtimeClasspath
         useJUnitPlatform { includeTags(tierTag) }
+        // Every tagged tier, not only the external ones (P10-TSK-018, P10-TSK-021): app's
+        // `architectureTest` runs fifty bytecode sweeps over every module in one JVM, and on the
+        // 512 MiB default Phase 10's classes tipped it into OutOfMemoryError ("Java heap space").
+        maxHeapSize = "2g"
 
         if (taskName in externalInfrastructureTiers) {
             // Never cached: the point is to exercise real infrastructure, and a cached

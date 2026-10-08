@@ -98,6 +98,44 @@ public enum CreditAuditAction implements AuditableAction {
             "A holder of CREDIT_INVESTIGATE read a credit record's raw evidence through credit.read_evidence, with a"
                     + " reason (P10-TSK-017, ADR-0085 point 7); attempted reads that could not be decrypted are recorded"
                     + " FAILED, nothing served.",
+            true),
+
+    REVIEW_CASES_READ(
+            "credit.ReviewCasesRead",
+            "A holder of CREDIT_UNDERWRITE read the review queue - each case's basis, its normalised attributes and the"
+                    + " rules the evaluation triggered, never raw evidence (P10-TSK-018, ADR-0089 point 8, INV-AUD-01);"
+                    + " written in the read's own transaction.",
+            false),
+
+    REVIEW_CASE_ASSIGNED(
+            "credit.ReviewCaseAssigned",
+            "A holder of CREDIT_UNDERWRITE took an open review case (P10-TSK-018, ADR-0089 point 5) - under the request's"
+                    + " lock, then the case's; from here the request no longer expires under them.",
+            false),
+
+    REVIEW_CASE_RELEASED(
+            "credit.ReviewCaseReleased",
+            "The underwriter holding a review case released it back to the queue (P10-TSK-018, G9); the request's"
+                    + " validity governs it again.",
+            false),
+
+    REVIEW_DECIDED(
+            "credit.ReviewDecided",
+            "The underwriter holding a review case decided it, with reason codes and a reason (P10-TSK-018, INV-CRD-11):"
+                    + " recorded as the decision, or - an approval above the product's four-eyes threshold - awaiting a"
+                    + " second underwriter. Never names an amount.",
+            true),
+
+    REVIEW_SECOND_APPROVAL(
+            "credit.ReviewSecondApproval",
+            "A second holder of CREDIT_UNDERWRITE, never the first decider, approved a case's first decision above the"
+                    + " four-eyes threshold (P10-TSK-018, INV-AUD-04); the decision is recorded in the same transaction.",
+            false),
+
+    REVIEW_SECOND_APPROVAL_REFUSED(
+            "credit.ReviewSecondApprovalRefused",
+            "A second holder of CREDIT_UNDERWRITE, never the first decider, refused a case's first decision with a reason"
+                    + " (P10-TSK-018): the case returns to its first underwriter, the refused decision kept in its history.",
             true);
 
     private final String code;

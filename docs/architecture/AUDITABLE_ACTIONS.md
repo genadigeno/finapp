@@ -595,11 +595,19 @@ repudiation's with `P8-TSK-023`.
 | `credit.DecisionRecorded` | No | A credit decision recorded for a decision request (`P10-TSK-016`, ADR-0087) - by the deciding transaction, profile-first, beside the decision, its reasons, the request's `DECIDED` edge and `credit.CreditDecisionRecorded`; written once, by the acting decider only (ten deciders, one record). The summary names the request, the decision and the outcome, never an amount (`INV-AUD-02`); the platform's decision needs no reason, a person's (`P10-TSK-018`) carries its own act. |
 | `credit.ExplanationRead` | No | A holder of `CREDIT_INVESTIGATE` read a decision's full explanation (`P10-TSK-017`, `INV-AUD-01`) - the snapshot's attributes with provenance, the pinned rules and which fired; written in the read's own transaction, which commits before the answer, so no explanation is served without its record. The summary names the decision and the request. |
 | `credit.EvidenceRead` | **Yes** | A holder of `CREDIT_INVESTIGATE` read a credit record's raw evidence through `credit.read_evidence` (`P10-TSK-017`, ADR-0085 point 7) with a reason; an attempt its key could not decrypt is recorded `FAILED` and nothing served. The summary names the evidence and the record, never its content. |
+| `credit.ReviewCasesRead` | No | A holder of `CREDIT_UNDERWRITE` read the review queue (`P10-TSK-018`, ADR-0089 point 8, `INV-AUD-01`) - each case's basis, the snapshot's normalised attributes and the rules the evaluation triggered, never raw evidence; written in the read's own transaction. The target is the status filter; the summary counts the cases served. |
+| `credit.ReviewCaseAssigned` | No | A holder of `CREDIT_UNDERWRITE` took an open review case (`P10-TSK-018`, ADR-0089 point 5) - under the request's row lock, then the case's, conditional on an `IN_REVIEW` request; of two underwriters one is recorded. From here the request no longer expires under them. |
+| `credit.ReviewCaseReleased` | No | The underwriter holding a review case released it back to the queue (`P10-TSK-018`, G9) - the same two locks; the request's validity governs it again. |
+| `credit.ReviewDecided` | **Yes** | The underwriter holding a review case decided it with catalogued reason codes and a reason (`P10-TSK-018`, `INV-CRD-11`): recorded as the decision by the deciding transaction (beside `credit.DecisionRecorded`), or - an approval above the product's four-eyes threshold - recorded on the case, awaiting a second underwriter. Recorded `FAILED` when the deciding transaction found the party's standing or consent lost and closed the request and the case, nothing decided. Never names an amount. |
+| `credit.ReviewSecondApproval` | No | A second holder of `CREDIT_UNDERWRITE`, never the first decider (`INV-AUD-04`; `credit V013`'s `CHECK`), approved a case's first decision: the decision recorded in the same transaction with the first decision's content. `FAILED` as `credit.ReviewDecided` when the request was abandoned instead. |
+| `credit.ReviewSecondApprovalRefused` | **Yes** | A second holder of `CREDIT_UNDERWRITE`, never the first decider, refused a case's first decision with a reason (`P10-TSK-018`): the case back with its first underwriter, the refused decision kept in the case's history. |
 
 `credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`, the three
 scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`, `credit.DecisionRequestCancelled` at
 `P10-TSK-014`, `credit.DecisionRecorded` at `P10-TSK-016`, `credit.ExplanationRead` and
-`credit.EvidenceRead` at `P10-TSK-017`.
+`credit.EvidenceRead` at `P10-TSK-017`, and the six review acts (`credit.ReviewCasesRead`, `credit.ReviewCaseAssigned`,
+`credit.ReviewCaseReleased`, `credit.ReviewDecided`, `credit.ReviewSecondApproval`, `credit.ReviewSecondApprovalRefused`)
+at `P10-TSK-018`.
 
 ### What is emitted, and what is declared not to be
 
