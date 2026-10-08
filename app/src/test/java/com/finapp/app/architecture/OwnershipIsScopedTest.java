@@ -679,7 +679,17 @@ class OwnershipIsScopedTest {
                                     "P10-TSK-015. The platform's progress step: the request id comes only from claimDue's"
                                         + " page (FOR UPDATE SKIP LOCKED over the due open requests) - never a request"
                                         + " value; the progress has no customer door, and the request's owner is the party"
-                                        + " it carries, not the caller.")),
+                                        + " it carries, not the caller. P10-TSK-018: and the underwriter's acts, the id the"
+                                        + " review case's row names (lock order element (2) before the case's (3)), behind"
+                                        + " CREDIT_UNDERWRITE - an operator's door over any party's referral, every act"
+                                        + " audited.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcUnderwritingCaseStore.history",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-018, the JdbcDecisionRequestStore.history shape: the private trail writer behind"
+                                        + " open and move, its id only the case the caller just opened or just moved under its"
+                                        + " own conditional - append-only by trigger.")),
                     Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.partyOf",
                             new Entry(

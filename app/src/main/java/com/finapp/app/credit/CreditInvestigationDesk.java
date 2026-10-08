@@ -150,7 +150,7 @@ public final class CreditInvestigationDesk {
     }
 
     /** The investigator's rendering of a frozen value - this surface is CREDIT_INVESTIGATE's, never a customer's. */
-    private static String value(AttributeValue value) {
+    static String value(AttributeValue value) {
         return switch (value) {
             case AttributeValue.IntegerValue integer -> Long.toString(integer.value());
             case AttributeValue.MoneyValue money ->
@@ -161,7 +161,7 @@ public final class CreditInvestigationDesk {
         };
     }
 
-    private static String provenance(AttributeProvenance provenance) {
+    static String provenance(AttributeProvenance provenance) {
         return switch (provenance) {
             case AttributeProvenance.Provider provider -> "PROVIDER";
             case AttributeProvenance.Record record -> "RECORD";

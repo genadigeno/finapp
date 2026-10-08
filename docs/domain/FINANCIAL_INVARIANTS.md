@@ -1515,7 +1515,9 @@ at least one reason code.
 internal-fraud and regulatory exposure four-eyes exists for (`INV-AUD-04`); a human decision
 without a reason is no explanation.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (the four-eyes `CHECK`; the case's insert trigger
-refusing a hard-declined basis; the reason-count deferred constraint trigger).
+refusing a hard-declined basis; the first-decision `CHECK` - the codes held on the case row, at least
+one, each the catalogue's by the machine trigger - in place of the planned reason-count deferred
+trigger; *wording corrected by `P10-TSK-018`*).
 **Verify:** Self-approval refused at the domain and at the `CHECK`, each alone;
 `422 credit.HardDeclineNotOverridable`; `422 credit.ReasonRequired`; each by a raw-SQL writer too.
 **Phase:** 10

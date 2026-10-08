@@ -231,7 +231,14 @@ class RoutePermissionRegisterTest {
                     // P10-TSK-017: the investigator's doors - a decision's explanation from rows alone, and a record's
                     // raw evidence with a reason; each serving audited, held by CREDIT_POLICY_OFFICER.
                     entry("GET /v1/operator/credit/decisions/{id}/explanation", PermissionName.CREDIT_INVESTIGATE),
-                    entry("POST /v1/operator/credit/records/{id}/evidence-read", PermissionName.CREDIT_INVESTIGATE)));
+                    entry("POST /v1/operator/credit/records/{id}/evidence-read", PermissionName.CREDIT_INVESTIGATE),
+                    // P10-TSK-018: the underwriter's doors - the review queue and the acts on a referral's case, held by
+                    // UNDERWRITER alone (ADR-0089 point 8).
+                    entry("GET /v1/operator/credit/review-cases", PermissionName.CREDIT_UNDERWRITE),
+                    entry("POST /v1/operator/credit/review-cases/{id}/assignment", PermissionName.CREDIT_UNDERWRITE),
+                    entry("POST /v1/operator/credit/review-cases/{id}/release", PermissionName.CREDIT_UNDERWRITE),
+                    entry("POST /v1/operator/credit/review-cases/{id}/decision", PermissionName.CREDIT_UNDERWRITE),
+                    entry("POST /v1/operator/credit/review-cases/{id}/second-approval", PermissionName.CREDIT_UNDERWRITE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
