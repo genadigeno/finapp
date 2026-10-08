@@ -2465,6 +2465,32 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `decision_request_event` | `actor_type` | `INTERNAL` | A closed actor type |
 | `decision_request_event` | `reason` | `CONFIDENTIAL` | Free prose where an edge carries one |
 | `decision_request_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_decision` | `id` | `INTERNAL` | Generated |
+| `credit_decision` | `decision_request_id` | `INTERNAL` | The request decided - once |
+| `credit_decision` | `party_id` | `INTERNAL` | The applicant's party |
+| `credit_decision` | `profile_id` | `INTERNAL` | The party's credit profile |
+| `credit_decision` | `product` | `INTERNAL` | A closed product |
+| `credit_decision` | `snapshot_id` | `INTERNAL` | The snapshot it was made from |
+| `credit_decision` | `snapshot_sha256` | `CONFIDENTIAL` | The inputs' digest - comparable, so not public |
+| `credit_decision` | `outcome` | `RESTRICTED-FINANCIAL` | The decision on the applicant |
+| `credit_decision` | `currency` | `INTERNAL` | The product's currency |
+| `credit_decision` | `requested_minor` | `RESTRICTED-FINANCIAL` | The applicant's requested amount |
+| `credit_decision` | `approved_minor` | `RESTRICTED-FINANCIAL` | The amount approved - the exposure reserved |
+| `credit_decision` | `term_months` | `RESTRICTED-FINANCIAL` | The term approved |
+| `credit_decision` | `decision_validity` | `INTERNAL` | The product's decision validity, frozen |
+| `credit_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_decision` | `valid_until` | `INTERNAL` | System time plus the validity, stamped by the trigger |
+| `credit_decision` | `decided_by` | `CONFIDENTIAL` | The platform, or the person who decided |
+| `credit_decision` | `decided_by_type` | `INTERNAL` | SYSTEM or EMPLOYEE |
+| `credit_decision` | `policy_version_id` | `INTERNAL` | The pinned policy version |
+| `credit_decision` | `model_version_id` | `INTERNAL` | The pinned scorecard version |
+| `credit_decision` | `engine_version` | `INTERNAL` | The pinned engine version |
+| `credit_decision_reason` | `decision_id` | `INTERNAL` | The decision it explains |
+| `credit_decision_reason` | `ordinal` | `INTERNAL` | Its place, from 1 |
+| `credit_decision_reason` | `reason_code` | `RESTRICTED-FINANCIAL` | A catalogued code - what it says of the applicant (`INV-CRD-02`) |
+| `credit_decision_consumption` | `id` | `INTERNAL` | Generated |
+| `credit_decision_consumption` | `decision_id` | `INTERNAL` | The approval consumed - once |
+| `credit_decision_consumption` | `consumed_at` | `INTERNAL` | System time, stamped by the trigger |
 
 ### Free text, classified at its ceiling
 

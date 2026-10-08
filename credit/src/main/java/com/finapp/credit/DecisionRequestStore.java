@@ -68,4 +68,7 @@ public interface DecisionRequestStore {
      * true when this call moved it. The trigger admits the pins at this edge alone, once.
      */
     boolean pin(Connection unitOfWork, DecisionRequestId id, PinnedVersions versions, Actor actor);
+
+    /** The request's party, read without a lock - the deciding transaction locks the party's profile first (element (1)). */
+    Optional<UUID> partyOf(Connection unitOfWork, DecisionRequestId id);
 }

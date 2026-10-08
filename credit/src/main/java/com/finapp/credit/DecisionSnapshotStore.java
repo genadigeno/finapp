@@ -58,4 +58,7 @@ public interface DecisionSnapshotStore {
             PinnedVersions versions);
 
     Optional<StoredSnapshot> snapshotOf(Connection unitOfWork, UUID decisionRequestId, int sequence);
+
+    /** The request's latest snapshot - its highest sequence (`P10-TSK-016`: a successor follows its predecessor). */
+    Optional<StoredSnapshot> latestSnapshotOf(Connection unitOfWork, UUID decisionRequestId);
 }

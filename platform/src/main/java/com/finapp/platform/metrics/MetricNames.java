@@ -180,7 +180,21 @@ public final class MetricNames {
                     // a category every applicant for it shares, never a person or a resource. The plan's own
                     // series carry it (PHASE_10_PLAN.md section 15: finapp.credit.policy.active{product}, and the
                     // decision and reason counters that follow), registered eagerly per declared product.
-                    "product");
+                    "product",
+                    // Which policy version decided (P10-TSK-016): the version NUMBER of the pinned credit policy -
+                    // never its id - a count that grows by one per four-eyes activation, a handful per product over a
+                    // platform's life. The plan's own series carries it (PHASE_10_PLAN.md section 15:
+                    // finapp.credit.decision{product, outcome, policy_version, decided_by}): whether a new version
+                    // changed the approval rate is one query.
+                    "policy_version",
+                    // Who made a decision (P10-TSK-016): system or person - a KIND written by the code, never the person.
+                    // The plan's own name for it is decided_by, which carries the letters "id" (de-cid-ed); rather than a
+                    // third spelling exemption - the list is capped at two, a brake on working around the rule - the
+                    // key says what it holds.
+                    "decision_maker",
+                    // Which catalogued reason (P10-TSK-016): the closed ReasonCode catalogue's code, a reviewed code
+                    // change with its migration - finapp.credit.reason{product, reason_code}, the plan's series.
+                    "reason_code");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling
