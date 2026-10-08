@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Credit data collection - the bureau's (`P10-TSK-006`) and the financial-data provider's (`P10-TSK-007`) on one
@@ -48,6 +49,14 @@ import lombok.RequiredArgsConstructor;
  * {@code Unavailable} answer is {@code UNAVAILABLE}, its attempt and any bytes kept, the permit re-stamped. An answer
  * for a request that is no longer {@code REQUESTED} is evidence flagged duplicate - never a second record.
  *
+ * <h2>Source selection (`P10-TSK-021`, ADR-0085 section 10)</h2>
+ *
+ * <p>Each kind has a configured provider order; the opening selects the first provider not disabled (else the kind's
+ * fail-safe) and stamps it on the data request. Every ask - the first and each retry, on any instance - goes to that
+ * provider, under the request's one reference: never a second provider under one reference, and a provider this
+ * instance no longer configures is {@code Unavailable} without a call. Mid-request failover is refused (ADR-0085
+ * section 10): an unavailable source reaches its deadline and the policy's fallback.
+ *
  * <h2>Retries and the deadline</h2>
  *
  * <p>The sweep {@linkplain #claimDue claims} due requests on the database's clock and {@linkplain #retry re-asks} each
@@ -56,6 +65,7 @@ import lombok.RequiredArgsConstructor;
  * {@link #reportOverdue} emits {@code CreditDataUnavailable} for it exactly once, by a conditional flag.
  */
 @RequiredArgsConstructor
+@Slf4j
 public final class CreditDataCollection {
 
     public static final String COLLECTED_EVENT = "credit.CreditDataCollected";
@@ -88,27 +98,82 @@ public final class CreditDataCollection {
         }
     }
 
-    /** One source kind's configured provider and its collection timing. */
-    public record Configured(CreditDataSource source, Timing timing) {
+    /**
+     * One source kind's configured providers and its collection timing (`P10-TSK-021`, ADR-0085 section 10): the
+     * providers in their configured order, the codes disabled, and the fail-safe a kind falls to when every provider is
+     * disabled - a source whose every pull is {@code Unavailable}, so the request still reaches its deadline and the
+     * policy's fallback, never data.
+     *
+     * <p><strong>Selection is a pure function of this configuration, applied once, at birth</strong>: the first provider
+     * in order not disabled, else the fail-safe. The provider chosen is stamped on the data request and is the only one
+     * ever asked under its reference - disabling it later stops new births, never an open request's retries.
+     */
+    public record Configured(
+            List<CreditDataSource> order, java.util.Set<String> disabled, Optional<CreditDataSource> failSafe, Timing timing) {
         public Configured {
-            Objects.requireNonNull(source, "source");
+            order = List.copyOf(Objects.requireNonNull(order, "order"));
+            disabled = java.util.Set.copyOf(Objects.requireNonNull(disabled, "disabled"));
+            Objects.requireNonNull(failSafe, "failSafe");
             Objects.requireNonNull(timing, "timing");
+            java.util.Set<String> codes = new java.util.HashSet<>();
+            for (CreditDataSource source : order) {
+                if (!codes.add(source.code())) {
+                    throw new IllegalArgumentException(source.code() + " is configured twice");
+                }
+            }
+            if (failSafe.isPresent() && codes.contains(failSafe.get().code())) {
+                throw new IllegalArgumentException(failSafe.get().code() + " is both a provider and the fail-safe");
+            }
+            if (!codes.containsAll(disabled)) {
+                // A disabled code naming no provider is a typo that would silently disable nothing.
+                throw new IllegalArgumentException("a disabled provider is not in the configured order");
+            }
+            if (failSafe.isEmpty() && codes.equals(disabled)) {
+                throw new IllegalArgumentException("every provider is disabled and no fail-safe is configured");
+            }
+        }
+
+        /** A single provider, never disabled - the shape before selection existed. */
+        public Configured(CreditDataSource source, Timing timing) {
+            this(List.of(Objects.requireNonNull(source, "source")), java.util.Set.of(), Optional.empty(), timing);
+        }
+
+        /** The provider a data request born now names: the first in order not disabled, else the fail-safe. */
+        public CreditDataSource select() {
+            for (CreditDataSource source : order) {
+                if (!disabled.contains(source.code())) {
+                    return source;
+                }
+            }
+            return failSafe.orElseThrow(); // unreachable: the constructor refuses every provider disabled without one
+        }
+
+        /** The configured provider of {@code code}, disabled or not - the one a born request is asked of. */
+        public Optional<CreditDataSource> provider(String code) {
+            Objects.requireNonNull(code, "code");
+            return java.util.stream.Stream.concat(order.stream(), failSafe.stream())
+                    .filter(source -> source.code().equals(code))
+                    .findFirst();
+        }
+
+        private void requireKind(CreditSourceKind kind) {
+            java.util.stream.Stream.concat(order.stream(), failSafe.stream()).forEach(source -> {
+                if (source.kind() != kind) {
+                    throw new IllegalArgumentException(source.code() + " is not a " + kind + " source");
+                }
+            });
         }
     }
 
     /**
-     * The configured source per kind (`P10-TSK-007`): each source declares its own kind, and a kind with no source
-     * cannot be opened.
+     * The configured sources per kind (`P10-TSK-007`; an order per kind since `P10-TSK-021`): each source declares its
+     * own kind, and a kind with no source cannot be opened.
      */
     public record Sources(java.util.Map<CreditSourceKind, Configured> byKind) {
         public Sources {
             Objects.requireNonNull(byKind, "byKind");
             byKind = java.util.Map.copyOf(byKind);
-            byKind.forEach((kind, configured) -> {
-                if (configured.source().kind() != kind) {
-                    throw new IllegalArgumentException(configured.source().code() + " is not a " + kind + " source");
-                }
-            });
+            byKind.forEach((kind, configured) -> configured.requireKind(kind));
         }
 
         /** The configured source of {@code kind}. */
@@ -126,6 +191,12 @@ public final class CreditDataCollection {
             return new Sources(java.util.Map.of(
                     CreditSourceKind.BUREAU, new Configured(bureau, bureauTiming),
                     CreditSourceKind.FINANCIAL_DATA, new Configured(financialData, financialDataTiming)));
+        }
+
+        /** Sources for both kinds, each its own order (`P10-TSK-021`). */
+        public static Sources of(Configured bureau, Configured financialData) {
+            return new Sources(java.util.Map.of(
+                    CreditSourceKind.BUREAU, bureau, CreditSourceKind.FINANCIAL_DATA, financialData));
         }
     }
 
@@ -169,10 +240,12 @@ public final class CreditDataCollection {
         if (!gate.permits(uow, opening.partyId(), opening.kind())) {
             return new Opened.ConsentAbsent();
         }
+        // Selected once, here, from configuration alone: the provider is fixed on the request at its birth.
+        CreditDataSource provider = configured.select();
         CreditDataRequestId id = CreditDataRequestId.next(ids);
         store.insertRequested(uow, new CreditDataRequestStore.NewRequest(
                 id, opening.decisionRequestId(), opening.partyId(), opening.product(), opening.kind(),
-                configured.source().code(), REFERENCE_PREFIX + id.value(), configured.timing().retryCadence(),
+                provider.code(), REFERENCE_PREFIX + id.value(), configured.timing().retryCadence(),
                 configured.timing().collectionWindow()));
         Actor platform;
         try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
@@ -191,7 +264,7 @@ public final class CreditDataCollection {
                 AuditOutcome.SUCCEEDED,
                 correlation,
                 Optional.of("dataRequest=" + id.value() + ", decisionRequest=" + opening.decisionRequestId()
-                        + ", sourceKind=" + opening.kind().name() + ", provider=" + configured.source().code())));
+                        + ", sourceKind=" + opening.kind().name() + ", provider=" + provider.code())));
         return new Opened.Requested(id);
     }
 
@@ -215,9 +288,19 @@ public final class CreditDataCollection {
         if (row.status() != CreditDataRequestStatus.REQUESTED) {
             return row.status();
         }
-        Instant started = Instant.now(clock);
-        CreditDataAnswer answer = sources.of(row.kind()).source().pull(new CreditDataPull(row.reference(), row.partyId().toString(), row.product()));
-        observer.called(row.kind(), row.providerCode(), Duration.between(started, Instant.now(clock)));
+        // Asked of the provider the request was born naming - never another under its reference (P10-TSK-021).
+        Optional<CreditDataSource> provider = sources.of(row.kind()).provider(row.providerCode());
+        CreditDataAnswer answer;
+        if (provider.isEmpty()) {
+            // Configured out since the birth (a redeploy, or an instance configured otherwise): unavailable, nothing
+            // asked, no substitute - the deadline and the policy's fallback do the rest.
+            log.warn("A credit data request names provider {}, which this instance does not configure", row.providerCode());
+            answer = new CreditDataAnswer.Unavailable(CreditDataAnswer.UnavailableCause.PROVIDER_ERROR, Optional.empty());
+        } else {
+            Instant started = Instant.now(clock);
+            answer = provider.get().pull(new CreditDataPull(row.reference(), row.partyId().toString(), row.product()));
+            observer.called(row.kind(), row.providerCode(), Duration.between(started, Instant.now(clock)));
+        }
         return transactions.inTransaction(uow -> record(uow, id, answer, correlation));
     }
 
@@ -274,6 +357,11 @@ public final class CreditDataCollection {
             byte[] bytes,
             String outcome,
             CorrelationId correlation) {
+        if (!providerCode.equals(row.providerCode())) {
+            // INV-CRD-07: the record names the provider its request was born naming, or nothing is recorded.
+            throw new IllegalStateException("an answer from provider " + providerCode + " for a request born naming "
+                    + row.providerCode());
+        }
         requireMoved(store.receive(uow, row.id(), attempt));
         store.insertAttempt(uow, row.id(), attempt, outcome);
         store.insertRecord(uow, CreditRecordId.next(ids), row, providerCode, normaliserVersion, complete, retrievedAt,

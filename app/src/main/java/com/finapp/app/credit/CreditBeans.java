@@ -92,7 +92,10 @@ public class CreditBeans {
         return new JdbcCreditDataRequestStore();
     }
 
-    /** The bureau - fail-safe when unconfigured; a configured one is refused until party facts exist (#13). */
+    /**
+     * The bureau's fail-safe - the source its order falls to (`P10-TSK-021`); a configured URL is refused until party
+     * facts exist (#13).
+     */
     @Bean
     CreditBureau creditBureau(@Value("${finapp.credit.bureau.url:}") String bureauUrl) {
         if (!bureauUrl.isBlank()) {
@@ -136,11 +139,22 @@ public class CreditBeans {
             @Value("${finapp.credit.bureau.retry-cadence:PT1M}") Duration retryCadence,
             @Value("${finapp.credit.bureau.collection-window:PT30M}") Duration collectionWindow,
             @Value("${finapp.credit.findata.retry-cadence:PT1M}") Duration findataRetryCadence,
-            @Value("${finapp.credit.findata.collection-window:PT30M}") Duration findataCollectionWindow) {
+            @Value("${finapp.credit.findata.collection-window:PT30M}") Duration findataCollectionWindow,
+            // Each kind's provider order (P10-TSK-021): refused when it names a provider, until #13 and #14 are answered.
+            @Value("${finapp.credit.bureau.providers:}") String bureauProviders,
+            @Value("${finapp.credit.bureau.disabled:}") String bureauDisabled,
+            @Value("${finapp.credit.findata.providers:}") String findataProviders,
+            @Value("${finapp.credit.findata.disabled:}") String findataDisabled) {
         return new CreditDataCollection(creditDataRequestStore,
                 CreditDataCollection.Sources.of(
-                        creditBureau, new CreditDataCollection.Timing(retryCadence, collectionWindow),
-                        financialDataProvider, new CreditDataCollection.Timing(findataRetryCadence, findataCollectionWindow)),
+                        CreditSourceOrder.configured("finapp.credit.bureau", bureauProviders, bureauDisabled, creditBureau,
+                                new CreditDataCollection.Timing(retryCadence, collectionWindow),
+                                "a bureau pull needs the party's date of birth and residence, which the platform does not"
+                                        + " yet hold (unresolved question #13)"),
+                        CreditSourceOrder.configured("finapp.credit.findata", findataProviders, findataDisabled,
+                                financialDataProvider, new CreditDataCollection.Timing(findataRetryCadence, findataCollectionWindow),
+                                "a financial-data pull reads an account connection the platform does not yet hold"
+                                        + " (unresolved question #14)")),
                 creditConsentGate, creditEvidenceCipher, creditDataMetrics, auditWriter, outboxWriter,
                 creditTransactionRunner, idGenerator, clock);
     }

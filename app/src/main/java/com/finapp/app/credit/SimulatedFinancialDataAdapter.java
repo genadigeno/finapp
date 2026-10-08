@@ -59,8 +59,12 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
     /** The provider's code: its declaration's, its evidence's and its meter's tag value. */
     public static final String CODE = "findata-sim-a";
 
-    /** The version of this adapter's normalisation - bump it when the mapping changes. */
-    public static final int NORMALISER_VERSION = 1;
+    /**
+     * The version of this adapter's normalisation - bump it when the mapping changes. Version 2 (`P10-TSK-021`): a
+     * field present in any form but a readable string - a bare number, {@code null}, an object - is malformed, never
+     * absent; version 1 read such a field of a partial answer as absent.
+     */
+    public static final int NORMALISER_VERSION = 2;
 
     /** The summary path. */
     public static final String SUMMARIES_PATH = "/findata/summaries";
@@ -86,11 +90,13 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
 
         private final CreditAttributeCode code;
         private final Pattern value;
+        private final Pattern key;
         private final Pattern currency;
 
         Field(CreditAttributeCode code, String name, String currencyName) {
             this.code = code;
             this.value = field(name);
+            this.key = Pattern.compile("\"" + name + "\"\\s*:");
             this.currency = currencyName == null ? null : field(currencyName);
         }
     }
@@ -195,7 +201,8 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
         for (Field field : Field.values()) {
             Optional<String> raw = find(field.value, text);
             if (raw.isEmpty()) {
-                if (complete) {
+                // Absent means the field is not there at all; there in an unreadable form, it is malformed (version 2).
+                if (complete || field.key.matcher(text).find()) {
                     return unavailable(UnavailableCause.MALFORMED, received);
                 }
                 attributes.add(attribute(field.code, new AttributeValue.Absent()));

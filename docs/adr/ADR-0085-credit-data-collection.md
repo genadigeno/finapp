@@ -45,9 +45,8 @@ meets the outside world, and every hazard of the outside world applies:
    `UNAVAILABLE`, never data (`INV-LIFE-03`). Adapters are simulated in Phase 10 (real bureau
    connectivity is out of scope, plan §17); each passes the port's contract suite (normal,
    partial, malformed, timeout, duplicate, unknown status) with normalisation golden files per
-   adapter. A second bureau and source selection (`P10-TSK-021`) is the phase's first cut; if cut,
-   provider neutrality is met by the contract suite and the single adapter, the deferral recorded
-   with Phase 15 as owner.
+   adapter. A second bureau and source selection (`P10-TSK-021`) was the phase's first cut
+   candidate; it was built, not cut (point 10): `bureau-sim-b` passes the same contract suite.
 
 2. **The data request is born on a unique reference and asked with no connection held**
    (ADR-0046, ADR-0081's shape).
@@ -163,7 +162,55 @@ meets the outside world, and every hazard of the outside world applies:
    `statement_timestamp()` at the data request's stamped cadence. A request that cannot act
    re-stamps rather than holding the page (the P9-TST-001 starvation lesson).
 
+10. **Source selection: a configured order per source kind, the provider fixed at birth, no
+    failover under a reference** (*added by `P10-TSK-021`, 2026-10-08*). Each kind has a
+    provider order, the codes disabled, and a fail-safe (`CreditDataCollection.Configured`).
+    - **Selection is a pure function of configuration, applied once, in Tx1**: the first
+      provider in order not disabled, else the fail-safe (`bureau-none`, `findata-none` — every
+      pull `UNAVAILABLE`). The chosen code is stamped on `data_request.provider_code` (frozen by
+      the edge trigger since `P10-TSK-006`) and named in `credit.BureauDataRequested` /
+      `credit.FinancialDataRequested`; no instance state, no rotation, no load balancing.
+    - **Every ask goes to the provider the request was born naming** — the first and each retry,
+      on whatever instance claims it. Disabling a provider stops new births only: an open request's
+      retries keep its provider, because its reference is that provider's idempotency key and a
+      lost response must be re-asked of the provider that may have answered it. A provider the
+      asking instance no longer configures (a redeploy, a rolling deploy with diverging
+      configuration) is `UNAVAILABLE(PROVIDER_ERROR)` **without a call** — never a substitute
+      under the same reference. Tx2 refuses an answer naming another provider than the request's
+      (`INV-CRD-07`: the record names the provider its request was born naming).
+    - **Mid-request failover is refused** (Alternatives). An unavailable source reaches its
+      deadline and the policy's fallback (point 7); both providers disabled, or the selected one
+      unavailable, is `UNAVAILABLE` and never data. A stale record re-collected at the freeze
+      (point 8) is a successor data request under a new reference and is selected afresh.
+    - **Configuration** (`app`): `finapp.credit.<bureau|findata>.providers` and
+      `.disabled`. Until unresolved questions #13 and #14 are answered, any provider named is
+      refused at startup — the order is empty and every birth names the fail-safe; the selection
+      is proven against `bureau-sim-a` and `bureau-sim-b` (`BureauSelectionDatabaseTest`).
+    - **`bureau-sim-b`** speaks a wire sharing no word with `bureau-sim-a`'s (snake_case,
+      epoch-second retrieval, a `Y`/`N` marker, amounts as minor units with their code) and
+      normalises one person to the same attribute codes and values; each adapter's vocabulary is
+      confined to its own file (`CreditProviderVocabularyIsConfinedTest`). Replay reads stored
+      attributes, so the provider never matters to a past decision.
+
 ## Alternatives Considered
+
+### Fail over mid-request to the next provider (`P10-TSK-021`)
+Pros:
+- A decision would wait for one provider's outage window, not fall to the fallback.
+
+Cons:
+- The selected provider's unavailability is known only at its deadline; failing over then
+  doubles the collection window, which the decision request's own validity bounds.
+- It pulls the person's file from a second bureau — a second processing act and, on some
+  bureaus, a second inquiry — for a request the first bureau may yet have answered (a lost
+  response): exactly the double pull point 2 exists to prevent.
+- Done under the same reference it would put two providers' answers behind one key; done under
+  a new reference it needs a successor-request edge the machine does not have.
+- Operations already have the lever that matters: disabling a provider moves every new birth
+  at once.
+
+Refused (point 10). If a later phase takes it, it is a successor data request under a new
+reference, never a second provider under one.
 
 ### One port per provider, with provider fields reaching the rules
 Pros:
@@ -248,7 +295,8 @@ ADR-0038, ADR-0046, ADR-0066, ADR-0081.
   consent checks at open, retry and record, the retry schedule, duplicates and lost responses.
   `-007`: the financial-data provider. `-008`: the freeze and its freshness judgement. `-015`,
   `-016`: the gate re-read at the freeze and in the deciding transaction (scenario 31). `-017`:
-  the evidence-read door. `-021` (cut candidate): a second bureau and source selection.
+  the evidence-read door. `-021` (built 2026-10-08, not cut): a second bureau and source
+  selection (point 10).
 - Phase 15: evidence purge and crypto-shredding against `retain_until` (debt row).
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

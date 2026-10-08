@@ -193,19 +193,33 @@ final class CreditWorld {
     }
 
     static SnapshotFreezer freezer() {
-        return new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection(), STANDING, new NotAssessedUntilPhase13(),
+        return freezer(collection());
+    }
+
+    /** The freezer over {@code collection} - a case's own sources (`P10-TSK-021`). */
+    static SnapshotFreezer freezer(CreditDataCollection collection) {
+        return new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection, STANDING, new NotAssessedUntilPhase13(),
                 new JdbcReservedExposure(), new NoLoansUntilPhase11(), IDS);
     }
 
     static CreditDataCollection collection() {
-        return new CreditDataCollection(new JdbcCreditDataRequestStore(),
-                CreditDataCollection.Sources.of(BUREAU, TIMING, FINDATA, TIMING), GATE,
+        return collection(CreditDataCollection.Sources.of(BUREAU, TIMING, FINDATA, TIMING));
+    }
+
+    /** A collection over {@code sources} - a case's own providers and their order (`P10-TSK-021`). */
+    static CreditDataCollection collection(CreditDataCollection.Sources sources) {
+        return new CreditDataCollection(new JdbcCreditDataRequestStore(), sources, GATE,
                 cipher, CreditDataObserver.NONE, new JdbcAuditWriter(), new JdbcOutboxWriter(), TRANSACTIONS, IDS, CLOCK);
     }
 
     /** An instance's deciding transaction, on {@code clock}. */
     static DecisionMaking deciding(Clock clock) {
-        return new DecisionMaking(TRANSACTIONS, REQUESTS, new JdbcCreditProfiles(IDS), POLICIES, SCORECARDS, freezer(),
+        return deciding(clock, collection());
+    }
+
+    /** An instance's deciding transaction, on {@code clock}, freezing over {@code collection} - the one constructor call. */
+    static DecisionMaking deciding(Clock clock, CreditDataCollection collection) {
+        return new DecisionMaking(TRANSACTIONS, REQUESTS, new JdbcCreditProfiles(IDS), POLICIES, SCORECARDS, freezer(collection),
                 new CreditAssessments(new JdbcCreditAssessmentStore(), SCORECARDS, new JdbcOutboxWriter(), IDS, clock),
                 new JdbcCreditAssessmentStore(),
                 new PolicyEvaluations(new JdbcPolicyEvaluationStore(), POLICIES, EngineVersions.STANDARD, IDS, clock),
@@ -219,8 +233,13 @@ final class CreditWorld {
 
     /** An instance's progress on {@code clock}, handing an evaluated request to {@code decider}. */
     static DecisionProgress progress(Clock clock, Decider decider) {
+        return progress(clock, decider, collection());
+    }
+
+    /** An instance's progress over {@code collection} - the one constructor call (`P10-TSK-021`). */
+    static DecisionProgress progress(Clock clock, Decider decider, CreditDataCollection collection) {
         return new DecisionProgress(TRANSACTIONS, REQUESTS, POLICIES, SCORECARDS, new JdbcDecisionSnapshotStore(),
-                collection(), freezer(),
+                collection, freezer(collection),
                 new CreditAssessments(new JdbcCreditAssessmentStore(), SCORECARDS, new JdbcOutboxWriter(), IDS, clock),
                 new PolicyEvaluations(new JdbcPolicyEvaluationStore(), POLICIES, EngineVersions.STANDARD, IDS, clock),
                 STANDING, GATE, new JdbcOutboxWriter(), IDS, clock, decider);
