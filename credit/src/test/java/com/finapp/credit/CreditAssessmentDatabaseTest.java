@@ -123,7 +123,10 @@ class CreditAssessmentDatabaseTest {
             refused(owner, "UPDATE credit.credit_assessment SET score = 0 WHERE snapshot_id = '" + snapshot.id().value() + "'",
                     "P0001");
             refused(owner, "DELETE FROM credit.credit_assessment WHERE snapshot_id = '" + snapshot.id().value() + "'", "P0001");
-            refused(owner, "TRUNCATE credit.credit_assessment", "P0001");
+            // Since V009 (P10-TSK-013) the policy evaluation references the assessment, so a plain TRUNCATE is refused
+            // by that foreign key first - a second rank; CASCADE passes it and meets the assessment's own trigger.
+            refused(owner, "TRUNCATE credit.credit_assessment", "0A000");
+            refused(owner, "TRUNCATE credit.credit_assessment CASCADE", "P0001");
         }
         try (Connection application = DatabaseRoles.application()) {
             refused(application, "UPDATE credit.credit_assessment SET score = 0 WHERE snapshot_id = '"

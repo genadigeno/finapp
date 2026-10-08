@@ -116,7 +116,8 @@ class CreditMigrationTest {
                 .containsExactlyInAnyOrder("flyway_schema_history", "reason_code", "credit_profile", "data_request",
                         "data_request_attempt", "credit_record", "credit_record_attribute", "credit_evidence", "decision_snapshot",
                         "scorecard_model_version", "scorecard_band", "scorecard_model_event", "credit_assessment",
-                        "credit_policy_version", "credit_policy_rule", "credit_policy_event");
+                        "credit_policy_version", "credit_policy_rule", "credit_policy_event", "policy_evaluation",
+                        "policy_evaluation_rule");
         assertRefusedByPrivilege("SELECT * FROM credit.flyway_schema_history");
     }
 

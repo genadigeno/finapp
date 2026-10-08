@@ -2420,6 +2420,24 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `credit_policy_event` | `actor_id` | `CONFIDENTIAL` | Who moved it |
 | `credit_policy_event` | `reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
 | `credit_policy_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `policy_evaluation` | `id` | `INTERNAL` | Generated |
+| `policy_evaluation` | `assessment_id` | `INTERNAL` | The assessment evaluated - once |
+| `policy_evaluation` | `decision_request_id` | `INTERNAL` | The decision request |
+| `policy_evaluation` | `policy_version_id` | `INTERNAL` | The pinned policy version |
+| `policy_evaluation` | `engine_version` | `INTERNAL` | The engine's version - the one replay selects |
+| `policy_evaluation` | `outcome` | `RESTRICTED-FINANCIAL` | The evaluator's word on the applicant - never the decision (`INV-CRD-04`) |
+| `policy_evaluation` | `currency` | `INTERNAL` | The product's currency |
+| `policy_evaluation` | `requested_minor` | `RESTRICTED-FINANCIAL` | The applicant's requested amount |
+| `policy_evaluation` | `approved_minor` | `RESTRICTED-FINANCIAL` | The amount an approval would grant |
+| `policy_evaluation` | `reason_codes` | `RESTRICTED-FINANCIAL` | Catalogued codes - what they say of the applicant (`INV-CRD-02`) |
+| `policy_evaluation` | `fallback_applied` | `RESTRICTED-FINANCIAL` | Whether the applicant's data was missing (`INV-CRD-10`) |
+| `policy_evaluation` | `evaluated_at` | `INTERNAL` | System time, stamped by the trigger |
+| `policy_evaluation_rule` | `evaluation_id` | `INTERNAL` | The evaluation it was born with |
+| `policy_evaluation_rule` | `ordinal` | `INTERNAL` | The rule's place, from 1 |
+| `policy_evaluation_rule` | `rule_code` | `INTERNAL` | The rule's name |
+| `policy_evaluation_rule` | `effect` | `INTERNAL` | A closed effect |
+| `policy_evaluation_rule` | `triggered` | `CONFIDENTIAL` | Which rules held - read with the policy, they bound the thresholds |
+| `policy_evaluation_rule` | `assessed` | `CONFIDENTIAL` | Which rules read a missing value |
 
 ### Free text, classified at its ceiling
 
