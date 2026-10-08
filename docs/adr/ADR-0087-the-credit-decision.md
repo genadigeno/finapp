@@ -285,5 +285,23 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   decision. `-017`: the customer explanation, the operator explanation and the evidence read.
   `-019`: replay and `CreditReplayProof`.
 - `P10-TST-001` (the storm) and `P10-TST-002` (the reproducibility battery, ≥ 10,000 applicants).
+- *As built by `P10-TSK-014` (2026-10-08), the submission and the customer doors.* `credit V010`:
+  `decision_request` (the terms frozen, `submitted_at`/`expires_at`/the first permit stamped by the database, one
+  open per party and product by partial unique, the pins nullable until `SUBMITTED -> COLLECTING` and written once,
+  an every-writer machine trigger - `-> EVALUATED` only beside its `policy_evaluation`; `IN_REVIEW`'s and `DECIDED`'s
+  preconditions join with their tables in `-016`/`-018`) and `decision_request_event`; the foreign keys from
+  `data_request` (of the same party, by a composite reference) and `decision_snapshot`. Four decisions taken in the
+  building, recorded here. (1) **Consent absent is the platform's one consent refusal**, `409 consent.ConsentRequired`
+  naming the purpose - the backlog's `403 credit.ConsentRequired` corrected to the error contract, which keeps that
+  refusal deliberately not a `403` (the person can fix it), as KYC's door already does. (2) **An unverified applicant
+  is `409 credit.ApplicantNotEligible`**, cause-blind - the `accounts.AccountOpeningRefused` shape; the standing is the
+  party's live customer `ACTIVE` (`INV-KYC-05`'s projection of the KYC decision), read authoritatively by
+  `app`'s `PartyCreditStanding` (the facts adapter renamed and extended). (3) **Step-up is the platform's conditional**:
+  an identity with an active factor submits and cancels from a `MULTI_FACTOR` session (the cross-border precedent);
+  one without a factor is not locked out of credit. (4) **A refusal writes nothing**: the door runs in one transaction
+  under the `IdempotentExecutor` claim, and a refusal rolls the claim back with it, so a corrected retry under the
+  same key is judged afresh, while a success is replayed byte for byte. The decision request suite runs in a database
+  of its own (`own-container`), because bringing each product's seeded policy into force would change what the policy
+  suites find in the shared one.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

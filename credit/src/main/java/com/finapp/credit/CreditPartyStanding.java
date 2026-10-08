@@ -7,8 +7,8 @@ import java.util.UUID;
 
 /**
  * The party facts a snapshot records (`P10-TSK-008`; ADR-0084 section 3) - the applicant's age and country of
- * residence, read on the caller's unit of work and answered with the answering implementation's version. `P10-TSK-014`
- * adds the party's standing read to this port.
+ * residence, read on the caller's unit of work and answered with the answering implementation's version - and, since
+ * `P10-TSK-014`, the party's standing.
  *
  * <p>An empty fact is recorded {@code ABSENT}, never defaulted: the platform holds neither fact today (unresolved
  * question #13), and the policy reasons about the absence.
@@ -19,6 +19,13 @@ public interface CreditPartyStanding<T> {
 
     /** The party's facts as the platform holds them now. */
     PartyFacts facts(T unitOfWork, UUID partyId);
+
+    /**
+     * Whether the party is in good standing to apply for credit now (`P10-TSK-014`): a verified customer - {@code ACTIVE},
+     * which KYC's approval alone produces - read authoritatively on the caller's unit of work, never cached, so a
+     * suspension on another instance refuses this one's very next read.
+     */
+    boolean inGoodStanding(T unitOfWork, UUID partyId);
 
     /**
      * What is known of a party.

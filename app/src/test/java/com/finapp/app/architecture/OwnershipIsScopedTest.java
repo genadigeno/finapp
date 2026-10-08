@@ -616,6 +616,43 @@ class OwnershipIsScopedTest {
                                         + " deciding transaction (P10-TSK-015), never a customer's value; the assessment"
                                         + " has no customer door.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/credit/decision-requests/{id} - the identifier from the path, and"
+                                        + " party_id = ? in the statement is the session's own party; another party's"
+                                        + " request and an absent one are one empty answer, the 404 (P10-TSK-014).")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/credit/decision-requests/{id}/cancellation - ownedBy's statement plus"
+                                        + " FOR UPDATE (lock order element (2)), the cancellation's serialization point"
+                                        + " (P10-TSK-014).")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.insert",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-014. The request id is minted by DecisionRequests (DecisionRequestId.next) inside"
+                                        + " the submission's own transaction, never a request value; the party is the"
+                                        + " session's own, resolved from the proven Session; the partial UNIQUE (party_id,"
+                                        + " product) over the open states arbitrates every writer.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.history",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-014, the JdbcWithdrawalStore.appendHistory shape: the private trail writer"
+                                        + " behind insert and transition, its id only the one the caller just inserted or"
+                                        + " just moved under its own conditional - append-only by trigger.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.transition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
+                                    "P10-TSK-014. The request id comes from lockOwnedBy, which this transaction holds"
+                                        + " FOR UPDATE under party_id = ? - the cancellation's only door; the progress"
+                                        + " steps (P10-TSK-015) take it from their own claimed page.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcPolicyEvaluationStore.byAssessment",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2753,6 +2790,12 @@ class OwnershipIsScopedTest {
      */
     private static final Map<String, String> NEGATIVE_TESTS =
             Map.ofEntries(
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.ownedBy",
+                            "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
+                            "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),
                     Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
                             "com.finapp.app.checkout.CheckoutFlowDatabaseTest"

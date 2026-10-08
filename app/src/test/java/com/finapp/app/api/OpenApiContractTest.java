@@ -606,6 +606,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/policies",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/policies/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/policies/{versionId}/rejection",
+                        // P10-TSK-014: the customer's credit decision requests (a session; 202 on submit; the owner's
+                        // own requests only).
+                        ApiVersion.CURRENT_PREFIX + "/me/credit/decision-requests",
+                        ApiVersion.CURRENT_PREFIX + "/me/credit/decision-requests/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/me/credit/decision-requests/{id}/cancellation",
                         // P9-TSK-017: the customer's beneficiaries abroad (a session).
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}",

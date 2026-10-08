@@ -219,8 +219,10 @@ class FinancialDataCollectionDatabaseTest {
     }
 
     private static CreditDataCollection.Opening opening(UUID party) {
-        return new CreditDataCollection.Opening(IDS.next(), party, CreditProduct.PERSONAL_LOAN,
-                CreditSourceKind.FINANCIAL_DATA);
+        // A real request (`P10-TSK-014`): the data request references it.
+        UUID decision = TRANSACTIONS.inTransaction(
+                uow -> DecisionRequestRows.submitted(uow, party, CreditProduct.PERSONAL_LOAN));
+        return new CreditDataCollection.Opening(decision, party, CreditProduct.PERSONAL_LOAN, CreditSourceKind.FINANCIAL_DATA);
     }
 
     private static CreditDataRequestId opened(CreditDataCollection.Opened opened) {

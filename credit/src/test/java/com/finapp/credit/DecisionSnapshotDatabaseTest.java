@@ -64,8 +64,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("a record one second past the maximum age re-collects - a new data request, no snapshot")
     void aRecordOneSecondPastMaxAgeReCollects() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
             seedBureau(uow, decision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(1), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
@@ -84,8 +84,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("the platform's outstanding credit is recorded - zero in Phase 10 - with its port's version (P10-TSK-010)")
     void platformOutstandingIsRecordedZeroWithItsVersion() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
             seedBureau(uow, decision, party, databaseNow(uow).minusSeconds(60), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
@@ -100,8 +100,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("a record at exactly the maximum age is fresh")
     void aRecordAtExactlyMaxAgeIsFresh() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
             seedBureau(uow, decision, party, databaseNow(uow).minus(MAX_AGE), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
@@ -118,15 +118,17 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("a skewed instance neither accepts stale nor refuses fresh - the judgement is the database's")
     void aSkewedInstanceNeitherAcceptsStaleNorRefusesFresh() throws Exception {
-        UUID freshDecision = IDS.next();
-        UUID staleDecision = IDS.next();
+        UUID freshParty = IDS.next();
+        UUID staleParty = IDS.next();
+        UUID freshDecision = request(freshParty);
+        UUID staleDecision = request(staleParty);
         SnapshotFreezer.Freeze fresh = inOneTransaction(uow -> {
-            UUID party = IDS.next();
+            UUID party = freshParty;
             seedBureau(uow, freshDecision, party, databaseNow(uow).minus(MAX_AGE).plusSeconds(2), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(freshDecision, party, 1), correlation());
         });
         SnapshotFreezer.Freeze stale = inOneTransaction(uow -> {
-            UUID party = IDS.next();
+            UUID party = staleParty;
             seedBureau(uow, staleDecision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(2), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(staleDecision, party, 1), correlation());
         });
@@ -141,8 +143,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("ten freezers on one request leave one snapshot, and every one answers with it")
     void tenFreezersLeaveOneSnapshot() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         inOneTransaction(uow -> {
             seedBureau(uow, decision, party, databaseNow(uow).minus(Duration.ofDays(1)), cleanBureau());
             return null;
@@ -176,8 +178,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("a fresher record arriving during the freeze belongs to no snapshot")
     void aFresherRecordArrivingDuringTheFreezeBelongsToNoSnapshot() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         CreditRecordId first = inOneTransaction(uow ->
                 seedBureau(uow, decision, party, databaseNow(uow).minus(Duration.ofDays(2)), cleanBureau()));
         CreditRecordId later;
@@ -201,8 +203,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("an unavailable source enters ABSENT with its marker")
     void anUnavailableSourceEntersAbsentWithItsMarker() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         CreditDataRequestId request = inOneTransaction(uow -> {
             CreditDataRequestId id = CreditDataRequestId.next(IDS);
             requests.insertRequested(uow, new CreditDataRequestStore.NewRequest(id, decision, party,
@@ -227,8 +229,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("a foreign-currency source is partial data, never converted")
     void aForeignCurrencySourceIsPartialNeverConverted() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         List<CreditAttribute> foreign = new ArrayList<>(cleanBureau());
         foreign.removeIf(a -> a.code() == CreditAttributeCode.BUREAU_TOTAL_BALANCE
                 || a.code() == CreditAttributeCode.BUREAU_MONTHLY_OBLIGATIONS);
@@ -252,8 +254,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("the risk signal is recorded as given, with its seam's version")
     void theRiskSignalIsRecordedWithItsSeamVersion() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
             seedBureau(uow, decision, party, databaseNow(uow).minus(Duration.ofDays(1)), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 7)).freeze(uow, input(decision, party, 1), correlation());
@@ -269,8 +271,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("not ready and withdrawn sources freeze nothing")
     void notReadyAndWithdrawnFreezeNothing() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         SnapshotFreezer.Freeze none = inOneTransaction(uow ->
                 freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation()));
         assertThat(none).isEqualTo(new SnapshotFreezer.Freeze.NotReady(Set.of(CreditSourceKind.BUREAU)));
@@ -290,8 +292,8 @@ class DecisionSnapshotDatabaseTest {
     @Test
     @DisplayName("a snapshot row is never updated, deleted or truncated - and a body that disagrees with its hash is refused")
     void aSnapshotRowIsNeverUpdated() throws Exception {
-        UUID decision = IDS.next();
         UUID party = IDS.next();
+        UUID decision = request(party);
         inOneTransaction(uow -> {
             seedBureau(uow, decision, party, databaseNow(uow).minus(Duration.ofDays(1)), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
@@ -348,8 +350,17 @@ class DecisionSnapshotDatabaseTest {
                 CreditDataCollection.Sources.of(noBureau, timing, noFindata, timing), permits,
                 new CreditEvidenceCipher(new byte[32], 1, new SecureRandom()), CreditDataObserver.NONE,
                 new JdbcAuditWriter(), new JdbcOutboxWriter(), DecisionSnapshotDatabaseTest::inOneTransaction, IDS, CLOCK);
-        CreditPartyStanding<Connection> noFacts = (uow, partyId) ->
-                new CreditPartyStanding.PartyFacts(Optional.empty(), Optional.empty(), 1);
+        CreditPartyStanding<Connection> noFacts = new CreditPartyStanding<>() {
+            @Override
+            public CreditPartyStanding.PartyFacts facts(Connection uow, UUID partyId) {
+                return new CreditPartyStanding.PartyFacts(Optional.empty(), Optional.empty(), 1);
+            }
+
+            @Override
+            public boolean inGoodStanding(Connection uow, UUID partyId) {
+                return true;
+            }
+        };
         ReservedExposure<Connection> nothingReserved = new ReservedExposure<>() {
             @Override
             public int version() {
@@ -377,6 +388,11 @@ class DecisionSnapshotDatabaseTest {
 
     private static CreditRiskSignal<Connection> signal(String code, int version) {
         return (uow, partyId) -> new CreditRiskSignal.RiskSignal(code, version);
+    }
+
+    /** A real request for {@code party} (`P10-TSK-014`: the snapshot and the data requests reference it). */
+    private static UUID request(UUID party) {
+        return inOneTransaction(uow -> DecisionRequestRows.submitted(uow, party, CreditProduct.PERSONAL_LOAN));
     }
 
     private static SnapshotFreezer.FreezeInput input(UUID decision, UUID party, int sequence) {
