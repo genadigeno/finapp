@@ -410,6 +410,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " the platform asks again under the same reference after re-reading the consent gate, and"
                         + " reports a request past its deadline."),
                     Map.entry(
+                            "com.finapp.app.credit.CreditDecisionProgressSchedule.sweepOnce",
+                    "The credit decision progress (P10-TSK-015): nobody commands a request's next step - the platform"
+                        + " pins the versions in force, opens the data requests, freezes, assesses and evaluates, and"
+                        + " expires or abandons a request, each edge recorded in the request's history as the system's."),
+                    Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
                         + " cover is the platform's own trade with its provider - nobody commands a"

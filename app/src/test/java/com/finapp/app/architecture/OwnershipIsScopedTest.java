@@ -645,6 +645,21 @@ class OwnershipIsScopedTest {
                                         + " behind insert and transition, its id only the one the caller just inserted or"
                                         + " just moved under its own conditional - append-only by trigger.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-015. The platform's progress step: the request id comes only from claimDue's"
+                                        + " page (FOR UPDATE SKIP LOCKED over the due open requests) - never a request"
+                                        + " value; the progress has no customer door, and the request's owner is the party"
+                                        + " it carries, not the caller.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.pin",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-015. The id is the one the step holds FOR UPDATE through lock, under its own"
+                                        + " SUBMITTED conditional; the pins are the ACTIVE versions read FOR SHARE in the same"
+                                        + " transaction, written once by the V010 trigger's rule.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.transition",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

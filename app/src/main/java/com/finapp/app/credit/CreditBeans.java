@@ -256,4 +256,58 @@ public class CreditBeans {
         return new CreditDecisionRequestDesk(
                 decisionRequests, identityStore, mfaEnrolmentStore, idempotentExecutor, creditTransactionRunner);
     }
+    // ------------------------------------------------------------------ the progress (P10-TSK-015)
+
+    @Bean
+    com.finapp.credit.SnapshotFreezer snapshotFreezer(
+            CreditDataCollection creditDataCollection,
+            com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
+            IdGenerator idGenerator) {
+        return new com.finapp.credit.SnapshotFreezer(new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
+                creditPartyStanding, new NotAssessedUntilPhase13(), new NothingReservedBeforeDecisions(),
+                new NoLoansUntilPhase11(), idGenerator);
+    }
+
+    @Bean
+    com.finapp.credit.DecisionProgress decisionProgress(
+            TransactionRunner creditTransactionRunner,
+            CreditPolicyStore creditPolicyStore,
+            ScorecardStore scorecardStore,
+            CreditDataCollection creditDataCollection,
+            com.finapp.credit.SnapshotFreezer snapshotFreezer,
+            com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
+            CreditConsentGate<Connection> creditConsentGate,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.credit.DecisionProgress(creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(),
+                creditPolicyStore, scorecardStore, new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
+                snapshotFreezer,
+                new com.finapp.credit.CreditAssessments(new com.finapp.credit.JdbcCreditAssessmentStore(), scorecardStore,
+                        outboxWriter, idGenerator, clock),
+                new com.finapp.credit.PolicyEvaluations(new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore,
+                        com.finapp.credit.EngineVersions.STANDARD, idGenerator, clock),
+                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock);
+    }
+
+    /** The progress sweep - every instance, no lease, off in test contexts. */
+    @Bean
+    @ConditionalOnProperty(name = "finapp.credit.progress.sweeper.enabled", havingValue = "true", matchIfMissing = true)
+    CreditDecisionProgressSchedule creditDecisionProgressSchedule(
+            com.finapp.credit.DecisionProgress decisionProgress,
+            IdGenerator idGenerator,
+            @Value("${finapp.credit.progress.poll:PT5S}") Duration pollInterval,
+            @Value("${finapp.credit.progress.batch:20}") int batch,
+            @Value("${finapp.credit.progress.permit:PT30S}") Duration permit) {
+        return new CreditDecisionProgressSchedule(decisionProgress, idGenerator, pollInterval, batch, permit);
+    }
+
+    /** Whether this instance runs the progress sweep - eager either way (`P1-TSK-029`'s rule). */
+    @Bean
+    Gauge creditProgressSweeperEnabled(
+            @Value("${finapp.credit.progress.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
+        return Gauge.builder("finapp.credit.progress.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the credit decision progress sweep")
+                .register(meterRegistry);
+    }
 }

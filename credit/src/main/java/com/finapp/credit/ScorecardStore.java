@@ -75,4 +75,16 @@ public interface ScorecardStore {
 
     /** The family's version that was {@code ACTIVE} at {@code instant}, answered from the effective periods. */
     Optional<ScorecardModelVersionId> activeAt(Connection unitOfWork, ScorecardFamily family, Instant instant);
+
+    /**
+     * The family's {@code ACTIVE} version {@code FOR SHARE} (`P10-TSK-015`; lock order element (5)) - the pin at
+     * {@code SUBMITTED -> COLLECTING}: an activation committing meanwhile waits, so the version pinned is the one in force.
+     */
+    Optional<ScorecardModelVersionId> shareActive(Connection unitOfWork, ScorecardFamily family);
+
+    /**
+     * The pinned version {@code FOR SHARE} (`P10-TSK-015`; element (5)), whatever its status - read by the freeze and the
+     * evaluation even after its retirement ({@code INV-HIST-04}); false when no such version exists.
+     */
+    boolean sharePinned(Connection unitOfWork, ScorecardModelVersionId id);
 }

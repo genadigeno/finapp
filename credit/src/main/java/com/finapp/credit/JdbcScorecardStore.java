@@ -300,4 +300,17 @@ public final class JdbcScorecardStore implements ScorecardStore {
     private static Instant instant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
     }
+
+    @Override
+    public Optional<ScorecardModelVersionId> shareActive(Connection unitOfWork, ScorecardFamily family) {
+        return row(unitOfWork, "SELECT " + ROW_COLUMNS + " FROM credit.scorecard_model_version"
+                + " WHERE family = ? AND status = 'ACTIVE' FOR SHARE", family.name(), "sharing the active version")
+                .map(VersionRow::id);
+    }
+
+    @Override
+    public boolean sharePinned(Connection unitOfWork, ScorecardModelVersionId id) {
+        return row(unitOfWork, "SELECT " + ROW_COLUMNS + " FROM credit.scorecard_model_version WHERE id = ? FOR SHARE", id.value(),
+                "sharing a pinned version").isPresent();
+    }
 }

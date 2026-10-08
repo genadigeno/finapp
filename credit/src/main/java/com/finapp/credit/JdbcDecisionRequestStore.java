@@ -10,6 +10,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -139,6 +141,66 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
             return true;
         } catch (SQLException failure) {
             throw new CreditStorageException(DatabaseFailure.describe("moving a decision request", failure));
+        }
+    }
+
+    @Override
+    public List<DecisionRequestId> claimDue(Connection unitOfWork, int limit, Duration permit) {
+        if (limit < 1) {
+            throw new IllegalArgumentException("a claim takes at least one request");
+        }
+        try (PreparedStatement claim = unitOfWork.prepareStatement(
+                "UPDATE credit.decision_request SET next_step_at = statement_timestamp() + ? * interval '1 millisecond'"
+                        + " WHERE id IN (SELECT id FROM credit.decision_request WHERE status IN " + OPEN
+                        + " AND next_step_at <= statement_timestamp()"
+                        + " ORDER BY next_step_at, id LIMIT ? FOR UPDATE SKIP LOCKED)"
+                        + " AND status IN " + OPEN + " RETURNING id")) {
+            claim.setLong(1, permit.toMillis());
+            claim.setInt(2, limit);
+            List<DecisionRequestId> claimed = new ArrayList<>();
+            try (ResultSet rows = claim.executeQuery()) {
+                while (rows.next()) {
+                    claimed.add(DecisionRequestId.of(rows.getObject("id", UUID.class)));
+                }
+            }
+            return claimed;
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("claiming due decision requests", failure));
+        }
+    }
+
+    @Override
+    public Optional<Locked> lock(Connection unitOfWork, DecisionRequestId id) {
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS
+                + ", expires_at <= statement_timestamp() AS expired FROM credit.decision_request WHERE id = ? FOR UPDATE")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(new Locked(request(row), row.getBoolean("expired"))) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("locking a decision request", failure));
+        }
+    }
+
+    @Override
+    public boolean pin(Connection unitOfWork, DecisionRequestId id, PinnedVersions versions, Actor actor) {
+        try {
+            try (PreparedStatement update = unitOfWork.prepareStatement(
+                    "UPDATE credit.decision_request SET status = 'COLLECTING', pinned_policy_version_id = ?,"
+                            + " pinned_model_version_id = ?, pinned_engine_version = ? WHERE id = ? AND status = 'SUBMITTED'")) {
+                update.setObject(1, versions.policyVersion());
+                update.setObject(2, versions.modelVersion());
+                update.setInt(3, versions.engineVersion());
+                update.setObject(4, id.value());
+                if (update.executeUpdate() != 1) {
+                    return false;
+                }
+            }
+            history(unitOfWork, id, Optional.of(DecisionRequestStatus.SUBMITTED), DecisionRequestStatus.COLLECTING, actor,
+                    Optional.empty());
+            return true;
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("pinning a decision request", failure));
         }
     }
 

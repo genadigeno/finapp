@@ -295,7 +295,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // lock from REQUESTED only, UNIQUE (data_request_id) the second arbiter; the overdue
                     // report is a conditional flag. Register row: DISTRIBUTED_EXECUTION.md section 3; the herd
                     // is BureauCollectionDatabaseTest's.
-                    "com.finapp.app.credit.CreditDataRetrySchedule");
+                    "com.finapp.app.credit.CreditDataRetrySchedule",
+                    // P10-TSK-015: the same half for the credit decision request's progress. No external call is made
+                    // under a claim - the asks follow the step's commit; each tick claims due requests in ONE statement
+                    // on the database clock (FOR UPDATE SKIP LOCKED, the permit re-stamped), and every step is a
+                    // conditional edge under the request's row lock that the V010 trigger re-judges, with every child
+                    // born once (the snapshot, assessment and evaluation by their unique keys). Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is DecisionOrchestrationDatabaseTest's.
+                    "com.finapp.app.credit.CreditDecisionProgressSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =
