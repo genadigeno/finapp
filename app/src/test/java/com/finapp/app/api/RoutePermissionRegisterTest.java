@@ -215,7 +215,12 @@ class RoutePermissionRegisterTest {
                     // P9-TSK-016: the counterparty reviewer's door - a person releases or blocks a
                     // screening in review; held by KYC_REVIEWER beside KYC_REVIEW (ADR-0081 point 4).
                     entry("POST /v1/operator/kyc/counterparty-screenings/{id}/decision",
-                            PermissionName.COUNTERPARTY_SCREENING_REVIEW)));
+                            PermissionName.COUNTERPARTY_SCREENING_REVIEW),
+                    // P10-TSK-011: the scorecard doors - model versions under four eyes, held by
+                    // CREDIT_POLICY_OFFICER (ADR-0086 section 3); every act keyed.
+                    entry("POST /v1/operator/credit/scorecards", PermissionName.CREDIT_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/credit/scorecards/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/credit/scorecards/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
@@ -250,7 +255,8 @@ class RoutePermissionRegisterTest {
                         PermissionName.DISPUTE_ADMINISTER,
                         PermissionName.FX_ADMINISTER,
                         PermissionName.CROSSBORDER_ADMINISTER,
-                        PermissionName.COUNTERPARTY_SCREENING_REVIEW);
+                        PermissionName.COUNTERPARTY_SCREENING_REVIEW,
+                        PermissionName.CREDIT_POLICY_ADMINISTER);
     }
 
     private Map<String, PermissionName> declared() {

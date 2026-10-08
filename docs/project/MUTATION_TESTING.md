@@ -995,6 +995,9 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-CRD-12` | `AffordabilityPropertiesTest#verifiedDataIsOnlyEverPrudent`, `AffordabilityTest#verifiedDataIsReadPrudently` | Recorded | A `P10-TSK-009` probe: the higher of the verified and declared incomes taken instead of the lower | Caught by both. Restored byte-identical (sha256-verified) |
 | `INV-CRD-09` | `ReservedExposureContract#aLapsedDecisionReservesNothing` (run by `InMemoryReservedExposureContractTest`) | Recorded | A `P10-TSK-010` probe: the fake counting a decision whose `valid_until` is exactly now | Caught. Restored byte-identical (sha256-verified) |
 | `INV-CRD-09` | `ExposureTest#everyTermIsCounted`, `ExposureTest#theReservedTermCounts` | Recorded | A `P10-TSK-010` probe: the reserved term dropped from the exposure sum | Caught by both. Restored byte-identical (sha256-verified) |
+| `INV-AUD-04` | `ScorecardVersionDatabaseTest#theProposerCannotApprove` | Recorded | A `P10-TSK-011` probe: `credit V006`'s `scorecard_model_four_eyes` CHECK dropped | Caught - the raw-SQL self-activation accepted. Restored byte-identical (sha256-verified) |
+| `INV-CRD-05` | `ScorecardVersionDatabaseTest#bandsAreImmutableFromInsert` | Recorded | A `P10-TSK-011` probe: the band trigger (born with its version, immutable from insert) dropped | Caught - the raw-SQL UPDATE, DELETE and late insert accepted. Restored byte-identical (sha256-verified) |
+| `INV-CRD-05` | `ScorecardVersionDatabaseTest#tenProposersLeaveOneProposal` | Recorded | A `P10-TSK-011` probe: the family's advisory lock (namespace 10) skipped, the partial unique left as the only arbiter | Caught - the losers answered a storage error, not `ProposalPending`. Restored byte-identical (sha256-verified) |
 
 ## 3. What the register does not claim
 

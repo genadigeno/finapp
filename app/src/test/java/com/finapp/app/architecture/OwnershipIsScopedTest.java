@@ -609,6 +609,48 @@ class OwnershipIsScopedTest {
                                     "P10-TSK-008. The snapshot id is minted by the freezer; UNIQUE (decision_request_id,"
                                         + " sequence) arbitrates every writer, and the table refuses any change once born.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcCreditAssessmentStore.bySnapshot",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-011. The snapshot id is the snapshot the assessor holds - frozen in the"
+                                        + " deciding transaction (P10-TSK-015), never a customer's value; the assessment"
+                                        + " has no customer door.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.insertProposal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-011. The version id is minted by the administration; a scorecard model is"
+                                        + " platform-wide configuration with no owner to scope by, and every door is"
+                                        + " behind @RequiresPermission(CREDIT_POLICY_ADMINISTER), asserted per route by"
+                                        + " ScorecardAdministrationEndpointDatabaseTest with nothing written.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-011. The version id comes only from a row this transaction just inserted"
+                                        + " or locked FOR UPDATE; the history is append-only for every writer.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-011. The id comes only from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id)), the move conditional on PROPOSED; the model is platform-wide"
+                                        + " configuration behind CREDIT_POLICY_ADMINISTER, four-eyes by CHECK.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-011. The id comes only from the family's ACTIVE row this transaction locked"
+                                        + " FOR UPDATE (lockActive), the move conditional on ACTIVE, and a deferred trigger"
+                                        + " refuses a retirement that commits without its successor.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.model",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-011. A read of platform-wide configuration: the version id is the one a"
+                                        + " snapshot pinned or one this transaction locked; a scorecard has no owner to"
+                                        + " scope by and no customer door.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideAutomatically",
                             new Entry(
                                     Scope.ADMINISTERED,

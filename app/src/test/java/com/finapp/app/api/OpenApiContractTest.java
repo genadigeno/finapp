@@ -597,6 +597,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/corridors",
                         // P9-TSK-016: the counterparty reviewer's door (COUNTERPARTY_SCREENING_REVIEW).
                         ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings/{id}/decision",
+                        // P10-TSK-011: the scorecard doors (CREDIT_POLICY_ADMINISTER, keyed).
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards/{versionId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards/{versionId}/rejection",
                         // P9-TSK-017: the customer's beneficiaries abroad (a session).
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}",

@@ -885,6 +885,27 @@ answers a malformed trade id at the proposal; `NotFound` an unknown trade or rev
 `SelfApprovalRefused`, `ProposalNotPending` and `ProposalPending` (one live proposal per trade) are the
 proposal machine's own states.
 
+### `credit` — `CreditErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `credit.NotFound` | 404 | No credit record matches the requested identifier. |
+| `credit.SelfApprovalRefused` | 403 | A version is activated by someone other than its proposer; the proposer may reject it. |
+| `credit.PolicyStale` | 409 | The version is no longer awaiting a decision. |
+| `credit.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
+| `credit.ScorecardInvalid` | 422 | The scorecard is not well formed. |
+| `credit.ReasonRequired` | 422 | A reason is required. |
+
+The scorecard doors (`P10-TSK-011`, ADR-0086 §3), every route behind `CREDIT_POLICY_ADMINISTER` and every act
+keyed per principal (`credit.scorecard:<type>:<id>`), so a lost response replays its receipt and a refusal stores
+nothing. `NotFound` answers an unknown or malformed version id. `SelfApprovalRefused` is a `403`, not the corridor's
+`409`: the proposer is refused the act itself (four-eyes, `INV-AUD-04`, held also by `credit V006`'s `CHECK`), while
+the state is unchanged. `PolicyStale` answers a version already decided or retired - the loser of ten racing
+approvers; `ProposalPending` one proposal per family at a time. `ScorecardInvalid` names the table's defect - a gap
+or overlap in an attribute's ranges, a money attribute or a marker banded, a boolean half covered, an unknown code
+or family - never a value. `ReasonRequired` answers a decision or proposal with no reason, judged by the domain
+rather than the boundary so it carries its own code.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

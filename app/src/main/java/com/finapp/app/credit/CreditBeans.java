@@ -9,8 +9,12 @@ import com.finapp.credit.CreditDataCollection;
 import com.finapp.credit.CreditDataRequestStore;
 import com.finapp.credit.CreditEvidenceCipher;
 import com.finapp.credit.JdbcCreditDataRequestStore;
+import com.finapp.credit.JdbcScorecardStore;
+import com.finapp.credit.ScorecardAdministration;
+import com.finapp.credit.ScorecardStore;
 import com.finapp.credit.TransactionRunner;
 import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
 import io.micrometer.core.instrument.Gauge;
@@ -32,7 +36,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Wiring for credit data collection (`P10-TSK-006`; the financial-data source since `P10-TSK-007`): credit's own transaction runner, the consent gate's adapter, the
  * evidence cipher under credit's own key, the store, the bureau, the meters, the collection and the leaderless retry
- * schedule.
+ * schedule; and (`P10-TSK-011`) the scorecard administration behind its doors - its first consumer.
  *
  * <p><strong>The bureau is fail-safe until party facts exist.</strong> With no {@code finapp.credit.bureau.url}, the
  * bureau is {@link UnconfiguredBureau} - every pull {@code Unavailable}, nothing ever data. A configured URL is refused
@@ -156,5 +160,29 @@ public class CreditBeans {
         return Gauge.builder("finapp.credit.data.retry.sweeper.enabled", () -> enabled ? 1 : 0)
                 .description("Whether this instance runs the credit data retry sweep")
                 .register(meterRegistry);
+    }
+
+    @Bean
+    ScorecardStore scorecardStore() {
+        return new JdbcScorecardStore();
+    }
+
+    /** The scorecard model's four-eyes administration (`P10-TSK-011`). */
+    @Bean
+    ScorecardAdministration scorecardAdministration(
+            ScorecardStore scorecardStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new ScorecardAdministration(scorecardStore, auditWriter, outboxWriter, idGenerator, clock);
+    }
+
+    @Bean
+    ScorecardAdministrationDesk scorecardAdministrationDesk(
+            ScorecardAdministration scorecardAdministration,
+            IdempotentExecutor idempotentExecutor,
+            TransactionRunner creditTransactionRunner) {
+        return new ScorecardAdministrationDesk(scorecardAdministration, idempotentExecutor, creditTransactionRunner);
     }
 }
