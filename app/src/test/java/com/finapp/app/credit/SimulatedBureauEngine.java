@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,7 +29,7 @@ import java.util.regex.Pattern;
  * contract the adapter speaks.
  *
  * <p><strong>The contract that makes a retry safe: dedupe on our reference.</strong> A pull whose
- * {@code Idempotency-Key} was seen before answers the first report - byte for byte - and is not
+ * reference header was seen before answers the first report - byte for byte - and is not
  * counted again; {@link #pulls()} counts reports really produced, the number every "one pull"
  * assertion reads. The dedupe is one atomic {@code computeIfAbsent}, so ten concurrent callers under
  * one reference produce one report.
@@ -40,41 +41,54 @@ import java.util.regex.Pattern;
  * its balance in a foreign currency, a malformed body, an unknown status, a 503, silence past any
  * client's wait, an answer produced but slower than any client waits, and a report produced then its response lost (the connection closes).
  *
- * <p><strong>Two wires, one engine</strong> (`P10-TSK-007`): {@link #start()} serves {@code bureau-sim-a}'s report wire
- * and {@link #startFinancialData()} {@code findata-sim-a}'s summary wire - the same dedupe, determinism and faults,
- * each provider's own path, statuses and fields.
+ * <p><strong>Three wires, one engine</strong> (`P10-TSK-007`, `P10-TSK-021`): {@link #start()} serves
+ * {@code bureau-sim-a}'s report wire, {@link #startFinancialData()} {@code findata-sim-a}'s summary wire and
+ * {@link #startSecondBureau()} {@code bureau-sim-b}'s consumer-file wire - the same dedupe, determinism and faults,
+ * each provider's own path, headers, statuses and fields. The two bureaus derive a person's figures one way, so one
+ * subject's report and file carry the same facts in two vocabularies.
  *
  * <p>Test scope deliberately: simulators are harnesses, never production beans (ADR-0008).
  */
 final class SimulatedBureauEngine implements AutoCloseable {
 
-    /** One provider's wire: its path, its malformed and unknown-status bodies, and its renderer. */
-    private record Wire(String path, String malformed, String unknownStatus, Renderer renderer) {}
+    /**
+     * One provider's wire: its path, the headers our reference and its key travel in, the request's subject and
+     * currency fields, its malformed and unknown-status bodies, and its renderer.
+     */
+    private record Wire(String path, String referenceHeader, String keyHeader, Pattern name, Pattern dateOfBirth,
+            Pattern country, Pattern currency, String malformed, String unknownStatus, Renderer renderer) {}
 
     @FunctionalInterface
     private interface Renderer {
-        String render(String body, Fault fault);
+        /** Renders the answer for {@code subject} (its identifying facts, joined) in {@code currency}. */
+        String render(String subject, String currency, Fault fault, Instant retrievedAt);
     }
 
     private static final Wire BUREAU = new Wire(
-            SimulatedBureauAdapter.REPORTS_PATH,
+            SimulatedBureauAdapter.REPORTS_PATH, SimulatedBureauAdapter.IDEMPOTENCY_KEY_HEADER, "Authorization",
+            text("name"), text("dateOfBirth"), text("country"), text("currency"),
             "{\"status\":\"report_complete\",\"externalScore\":\"7",
             "{\"status\":\"report_pending_review\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"}",
             SimulatedBureauEngine::render);
 
     private static final Wire FINANCIAL_DATA = new Wire(
-            SimulatedFinancialDataAdapter.SUMMARIES_PATH,
+            SimulatedFinancialDataAdapter.SUMMARIES_PATH, SimulatedFinancialDataAdapter.IDEMPOTENCY_KEY_HEADER,
+            "Authorization", text("name"), text("dateOfBirth"), text("country"), text("currency"),
             "{\"status\":\"summary_complete\",\"verifiedMonthlyIncome\":\"3",
             "{\"status\":\"summary_pending_consent\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"}",
             SimulatedBureauEngine::renderSummary);
 
+    /** {@code bureau-sim-b}'s consumer-file wire (`P10-TSK-021`) - none of its words is {@code bureau-sim-a}'s. */
+    private static final Wire SECOND_BUREAU = new Wire(
+            SimulatedSecondBureauAdapter.FILES_PATH, SimulatedSecondBureauAdapter.REFERENCE_HEADER,
+            SimulatedSecondBureauAdapter.KEY_HEADER,
+            text("full_name"), text("birth_date"), text("residence"), text("reporting_currency"),
+            "{\"file_status\":\"FILE_FULL\",\"risk_grade_score\":\"7",
+            "{\"file_status\":\"FILE_LOCKED\",\"generated_at\":\"1791363600\"}",
+            SimulatedBureauEngine::renderFile);
+
     /** What the next novel pull does instead of answering a clean report. */
     enum Fault { NONE, PARTIAL, FOREIGN_CURRENCY, MALFORMED, UNKNOWN_STATUS, UNAVAILABLE, SILENT, SLOW, LOSE_RESPONSE }
-
-    private static final Pattern NAME = Pattern.compile("\"name\"\\s*:\\s*\"([^\"\\\\]*)\"");
-    private static final Pattern DATE_OF_BIRTH = Pattern.compile("\"dateOfBirth\"\\s*:\\s*\"([^\"]*)\"");
-    private static final Pattern COUNTRY = Pattern.compile("\"country\"\\s*:\\s*\"([^\"]*)\"");
-    private static final Pattern CURRENCY = Pattern.compile("\"currency\"\\s*:\\s*\"([^\"]*)\"");
 
     private final HttpServer server;
     private final ExecutorService handlers = Executors.newFixedThreadPool(16);
@@ -86,6 +100,7 @@ final class SimulatedBureauEngine implements AutoCloseable {
     private final List<String> requestBodies = new CopyOnWriteArrayList<>();
     private volatile Duration slowness = Duration.ofSeconds(3);
     private volatile String note = "";
+    private volatile Instant retrievedAt = Instant.parse("2026-10-07T09:00:00Z");
 
     private final Wire wire;
 
@@ -105,6 +120,14 @@ final class SimulatedBureauEngine implements AutoCloseable {
     /** The financial-data provider's summary wire (`P10-TSK-007`). */
     static SimulatedBureauEngine startFinancialData() throws IOException {
         return new SimulatedBureauEngine(FINANCIAL_DATA);
+    }
+
+    /**
+     * The second bureau's consumer-file wire (`P10-TSK-021`): the same person's file carries the same figures as
+     * {@link #start()}'s report - one derivation, two vocabularies - so the two adapters must normalise it alike.
+     */
+    static SimulatedBureauEngine startSecondBureau() throws IOException {
+        return new SimulatedBureauEngine(SECOND_BUREAU);
     }
 
     URI baseUrl() {
@@ -128,15 +151,25 @@ final class SimulatedBureauEngine implements AutoCloseable {
         note = value;
     }
 
+    /**
+     * The retrieval instant every later report states - fixed by default; a case whose records must pass a policy's
+     * freshness judgement on the database's clock stamps a recent one (`P10-TSK-021`).
+     */
+    void retrievedAt(Instant value) {
+        retrievedAt = value;
+    }
+
     /** Reports really produced - one per reference, however often it is asked. */
     int pulls() {
         return pulls.get();
     }
 
+    /** Every reference header received, in order. */
     List<String> idempotencyKeys() {
         return List.copyOf(idempotencyKeys);
     }
 
+    /** Every key header received, in order. */
     List<String> authorizations() {
         return List.copyOf(authorizations);
     }
@@ -155,9 +188,9 @@ final class SimulatedBureauEngine implements AutoCloseable {
 
     private void report(HttpExchange exchange) throws IOException {
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        String reference = exchange.getRequestHeaders().getFirst(SimulatedBureauAdapter.IDEMPOTENCY_KEY_HEADER);
+        String reference = exchange.getRequestHeaders().getFirst(wire.referenceHeader());
         idempotencyKeys.add(String.valueOf(reference));
-        authorizations.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+        authorizations.add(String.valueOf(exchange.getRequestHeaders().getFirst(wire.keyHeader())));
         requestBodies.add(body);
         if (reference == null) {
             respond(exchange, 400, "{\"error\":\"missing key\"}");
@@ -181,9 +214,11 @@ final class SimulatedBureauEngine implements AutoCloseable {
             }
             default -> {
                 String carried = note;
+                String subject = find(wire.name(), body) + "|" + find(wire.dateOfBirth(), body) + "|"
+                        + find(wire.country(), body);
                 String report = reports.computeIfAbsent(reference, key -> {
                     pulls.incrementAndGet();
-                    String rendered = wire.renderer().render(body, fault);
+                    String rendered = wire.renderer().render(subject, find(wire.currency(), body), fault, retrievedAt);
                     return carried.isEmpty() ? rendered
                             : rendered.substring(0, rendered.length() - 1) + ",\"bureauNote\":\"" + carried + "\"}";
                 });
@@ -200,50 +235,79 @@ final class SimulatedBureauEngine implements AutoCloseable {
         }
     }
 
-    /** The subject's report, derived from a hash of their identifying facts - deterministic. */
-    private static String render(String body, Fault fault) {
-        String subject = find(NAME, body) + "|" + find(DATE_OF_BIRTH, body) + "|" + find(COUNTRY, body);
-        byte[] hash = sha256(subject);
-        String currency = find(CURRENCY, body);
-        int score = 300 + Math.floorMod(word(hash, 0), 551);
-        int accounts = Math.floorMod(word(hash, 4), 10);
-        int delinquencies = Math.floorMod(word(hash, 8), 3);
-        int defaults = Math.floorMod(word(hash, 12), 2);
-        boolean insolvency = Math.floorMod(word(hash, 16), 50) == 0;
-        long obligationsMinor = Math.floorMod(word(hash, 20), 150_000);
-        long balanceMinor = Math.floorMod(word(hash, 24), 2_000_000);
+    /** A person's bureau figures, derived from a hash of their identifying facts - one derivation for both bureaus. */
+    private record Figures(int score, int accounts, int delinquencies, int defaults, boolean insolvency,
+            long obligationsMinor, long balanceMinor, int fileNumber) {
+        static Figures of(String subject) {
+            byte[] hash = sha256(subject);
+            return new Figures(300 + Math.floorMod(word(hash, 0), 551), Math.floorMod(word(hash, 4), 10),
+                    Math.floorMod(word(hash, 8), 3), Math.floorMod(word(hash, 12), 2),
+                    Math.floorMod(word(hash, 16), 50) == 0, Math.floorMod(word(hash, 20), 150_000),
+                    Math.floorMod(word(hash, 24), 2_000_000), Math.floorMod(word(hash, 28), 1_000_000));
+        }
+    }
+
+    /** The subject's report on {@code bureau-sim-a}'s wire - deterministic. */
+    private static String render(String subject, String currency, Fault fault, Instant retrievedAt) {
+        Figures figures = Figures.of(subject);
         StringBuilder report = new StringBuilder("{\"status\":\"")
                 .append(fault == Fault.PARTIAL ? "report_partial" : "report_complete")
-                .append("\",\"reportRef\":\"BR-").append(Math.floorMod(word(hash, 28), 1_000_000))
-                .append("\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"")
-                .append(",\"externalScore\":\"").append(score).append('"')
-                .append(",\"activeAccounts\":\"").append(accounts).append('"')
-                .append(",\"delinquencies24m\":\"").append(delinquencies).append('"');
+                .append("\",\"reportRef\":\"BR-").append(figures.fileNumber())
+                .append("\",\"retrievedAt\":\"").append(retrievedAt).append('"')
+                .append(",\"externalScore\":\"").append(figures.score()).append('"')
+                .append(",\"activeAccounts\":\"").append(figures.accounts()).append('"')
+                .append(",\"delinquencies24m\":\"").append(figures.delinquencies()).append('"');
         if (fault != Fault.PARTIAL) {
-            report.append(",\"defaults72m\":\"").append(defaults).append('"');
+            report.append(",\"defaults72m\":\"").append(figures.defaults()).append('"');
         }
-        report.append(",\"insolvencyFlag\":\"").append(insolvency).append('"')
-                .append(",\"monthlyObligations\":\"").append(decimal(obligationsMinor)).append('"')
+        report.append(",\"insolvencyFlag\":\"").append(figures.insolvency()).append('"')
+                .append(",\"monthlyObligations\":\"").append(decimal(figures.obligationsMinor())).append('"')
                 .append(",\"monthlyObligationsCurrency\":\"").append(currency).append('"');
         if (fault != Fault.PARTIAL) {
-            report.append(",\"totalBalance\":\"").append(decimal(balanceMinor)).append('"')
+            report.append(",\"totalBalance\":\"").append(decimal(figures.balanceMinor())).append('"')
                     .append(",\"totalBalanceCurrency\":\"")
                     .append(fault == Fault.FOREIGN_CURRENCY ? "USD" : currency).append('"');
         }
         return report.append('}').toString();
     }
 
+    /**
+     * The subject's consumer file on {@code bureau-sim-b}'s wire (`P10-TSK-021`) - the same figures as {@link #render},
+     * in its own words: snake_case, epoch seconds, a {@code Y}/{@code N} marker, amounts as minor units with their code.
+     * A thin file omits the same two figures a partial report does.
+     */
+    private static String renderFile(String subject, String currency, Fault fault, Instant retrievedAt) {
+        Figures figures = Figures.of(subject);
+        StringBuilder file = new StringBuilder("{\"file_status\":\"")
+                .append(fault == Fault.PARTIAL ? "FILE_THIN" : "FILE_FULL")
+                .append("\",\"file_id\":\"CF-").append(figures.fileNumber())
+                .append("\",\"generated_at\":\"").append(retrievedAt.getEpochSecond()).append('"')
+                .append(",\"risk_grade_score\":\"").append(figures.score()).append('"')
+                .append(",\"open_tradelines\":\"").append(figures.accounts()).append('"')
+                .append(",\"late_payments_24m\":\"").append(figures.delinquencies()).append('"');
+        if (fault != Fault.PARTIAL) {
+            file.append(",\"charge_offs_72m\":\"").append(figures.defaults()).append('"');
+        }
+        file.append(",\"bankruptcy_marker\":\"").append(figures.insolvency() ? "Y" : "N").append('"')
+                .append(",\"monthly_payments\":{\"amount_minor\":\"").append(figures.obligationsMinor())
+                .append("\",\"currency_code\":\"").append(currency).append("\"}");
+        if (fault != Fault.PARTIAL) {
+            file.append(",\"outstanding_debt\":{\"amount_minor\":\"").append(figures.balanceMinor())
+                    .append("\",\"currency_code\":\"").append(fault == Fault.FOREIGN_CURRENCY ? "USD" : currency)
+                    .append("\"}");
+        }
+        return file.append('}').toString();
+    }
+
     /** The subject's financial-data summary, derived from a hash of their identifying facts - deterministic. */
-    private static String renderSummary(String body, Fault fault) {
-        String subject = find(NAME, body) + "|" + find(DATE_OF_BIRTH, body) + "|" + find(COUNTRY, body);
+    private static String renderSummary(String subject, String currency, Fault fault, Instant retrievedAt) {
         byte[] hash = sha256("findata|" + subject);
-        String currency = find(CURRENCY, body);
         long incomeMinor = 150_000 + Math.floorMod(word(hash, 0), 650_000);
         long expenditureMinor = 50_000 + Math.floorMod(word(hash, 4), 300_000);
         StringBuilder summary = new StringBuilder("{\"status\":\"")
                 .append(fault == Fault.PARTIAL ? "summary_partial" : "summary_complete")
                 .append("\",\"summaryRef\":\"FS-").append(Math.floorMod(word(hash, 8), 1_000_000))
-                .append("\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"")
+                .append("\",\"retrievedAt\":\"").append(retrievedAt).append('"')
                 .append(",\"verifiedMonthlyIncome\":\"").append(decimal(incomeMinor)).append('"')
                 .append(",\"verifiedMonthlyIncomeCurrency\":\"").append(currency).append('"');
         if (fault != Fault.PARTIAL) {
@@ -269,6 +333,10 @@ final class SimulatedBureauEngine implements AutoCloseable {
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    private static Pattern text(String name) {
+        return Pattern.compile("\"" + name + "\"\\s*:\\s*\"([^\"\\\\]*)\"");
     }
 
     private static String find(Pattern pattern, String text) {

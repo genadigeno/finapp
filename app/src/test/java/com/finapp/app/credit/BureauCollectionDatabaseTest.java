@@ -83,11 +83,38 @@ class BureauCollectionDatabaseTest {
 
     @BeforeEach
     void start() throws Exception {
-        engine = SimulatedBureauEngine.start();
+        engine = startEngine();
         engine.slowness(Duration.ofMillis(2_000));
-        adapter = new SimulatedBureauAdapter(engine.baseUrl(), Duration.ofMillis(600), KEY,
+        adapter = adapter(engine, Duration.ofMillis(600), KEY,
                 reference -> Optional.of(new CreditDataSubject(
                         "Applicant " + reference, LocalDate.of(1980, 1, 1), CountryCode.of("DE"))));
+    }
+
+    // ------------------------------------------------------------------ the bureau under test (P10-TSK-021's hooks)
+
+    /** The simulated bureau this battery runs against - {@code bureau-sim-a}'s report wire here. */
+    protected SimulatedBureauEngine startEngine() throws java.io.IOException {
+        return SimulatedBureauEngine.start();
+    }
+
+    /** The adapter speaking {@code engine}'s wire. */
+    protected CreditBureau adapter(SimulatedBureauEngine engine, Duration timeout, byte[] key,
+            CreditDataSubjectResolver subjects) {
+        return new SimulatedBureauAdapter(engine.baseUrl(), timeout, key, subjects);
+    }
+
+    /** The adapter's code and normaliser version, as its records must carry them. */
+    protected String providerCode() {
+        return SimulatedBureauAdapter.CODE;
+    }
+
+    protected int normaliserVersion() {
+        return SimulatedBureauAdapter.NORMALISER_VERSION;
+    }
+
+    /** A word only a complete answer on this wire carries - read back out of the sealed evidence. */
+    protected String completeAnswerWord() {
+        return "report_complete";
     }
 
     @AfterEach
@@ -370,7 +397,10 @@ class BureauCollectionDatabaseTest {
         assertThat(count("SELECT count(*) FROM credit.credit_record_attribute a JOIN credit.credit_record r"
                 + " ON a.record_id = r.id WHERE r.data_request_id = ?", id)).isEqualTo(CreditBureau.ATTRIBUTES.size());
         assertThat(count("SELECT count(*) FROM credit.credit_record WHERE data_request_id = ? AND provider_code = '"
-                + SimulatedBureauAdapter.CODE + "' AND normaliser_version = 1 AND complete", id)).isEqualTo(1);
+                + providerCode() + "' AND normaliser_version = " + normaliserVersion() + " AND complete", id))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE id = ? AND provider_code = '" + providerCode()
+                + "'", id)).as("the request was born naming the provider that answered").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = '"
                 + CreditDataCollection.COLLECTED_EVENT + "'", id)).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ? AND operation ="
@@ -382,7 +412,7 @@ class BureauCollectionDatabaseTest {
         EvidenceRow evidence = readEvidence(id, "dispute review OPS-1");
         byte[] plaintext = cipher.decrypt(evidence.id(),
                 new CreditEvidenceCipher.Encrypted(evidence.ciphertext(), evidence.nonce(), evidence.keyVersion()));
-        assertThat(new String(plaintext, StandardCharsets.UTF_8)).contains("report_complete");
+        assertThat(new String(plaintext, StandardCharsets.UTF_8)).contains(completeAnswerWord());
         assertThatExceptionOfType(IllegalStateException.class).as("bound to its own row")
                 .isThrownBy(() -> cipher.decrypt(CreditEvidenceId.of(IDS.next()),
                         new CreditEvidenceCipher.Encrypted(evidence.ciphertext(), evidence.nonce(), evidence.keyVersion())));

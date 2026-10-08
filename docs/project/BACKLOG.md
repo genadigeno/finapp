@@ -15644,7 +15644,7 @@ assignment and an expiry serialise (`-018`).
   against a live scrape; no figure appears in any series.
 - **Definition of done**: `DOD-OBS`, `DOD-API` (the reports). **Risk**: Low. **Cx**: M.
 
-**P10-TSK-021 — A second bureau and source selection** — `PLANNED` (cut candidate — first in the cut order; deferral owner Phase 15)
+**P10-TSK-021 — A second bureau and source selection** — `COMPLETE` (2026-10-08; marked `READY` out of turn on the owner's instruction, 2026-10-08, to run in parallel with `P10-TSK-018`; was the cut candidate — first in the cut order — and was built, not cut)
 - **Objective**: make provider neutrality real for bureau data — two bureaus with different wire
   vocabularies normalising to the same attributes, and selection between them. If cut, the deferral
   is recorded with Phase 15 as owner and the provider-neutrality criterion is met by
@@ -15687,6 +15687,7 @@ assignment and an expiry serialise (`-018`).
 - **Acceptance criteria**: a request collected from `b` decides, explains and replays exactly as one
   from `a`.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-018` on the owner's instruction, marked `READY` out of turn and merged after it. Mid-request failover weighed and refused (ADR-0085 §10). Beyond the scope as written: normaliser version 2 of both `-sim-a` adapters (a present-but-unreadable field is malformed, never absent) and the 2 GiB heap for every tagged test tier (`ArchitectureTierHeapTest`). Tests as named, plus `SecondBureauCollectionDatabaseTest` (every `-006` case re-run with `b`), `SecondBureauNormalisationGoldenTest`, `SourceSelectionTest`, `CreditSourceOrderTest` and `BureauSelectionDatabaseTest#theProviderIsFixedAtBirthNeverSubstituted`, `#anAnswerNamingAnotherProviderIsNeverRecorded`, `#aRequestCollectedFromBDecidesExplainsAndReplaysAsOneFromA`.
 
 **P10-TST-001 — The credit decision storm** — `PLANNED`
 - **Objective**: prove decision correctness under every provider fault, crash, duplication,

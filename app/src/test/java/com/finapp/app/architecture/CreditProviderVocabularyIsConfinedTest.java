@@ -23,17 +23,23 @@ import org.junit.jupiter.api.Test;
  * port's {@code CreditDataAnswer} and {@code CreditAttributeCode}. A second file naming
  * {@code "report_partial"} or {@code "totalBalance"} is a second place a bureau's language could leak
  * into the decision, and this rule refuses it - the {@code FxProviderVocabularyIsConfinedTest} shape.
+ * Each provider since has its own entry - {@code findata-sim-a} (`P10-TSK-007`) and the second bureau
+ * {@code bureau-sim-b} (`P10-TSK-021`) - and one adapter's words in another adapter's file are a leak
+ * too: two bureaus normalise to one vocabulary, never into each other's.
  *
  * <p>Scans every module's {@code src/main/java} for string LITERALS carrying a vocabulary token
  * (comments are ignored - prose may name the wire); the adapter is the one permitted file.
  */
-@DisplayName("the credit bureau's wire vocabulary is confined to its adapter (P10-TSK-005)")
+@DisplayName("each credit provider's wire vocabulary is confined to its adapter (P10-TSK-005, -007, -021)")
 class CreditProviderVocabularyIsConfinedTest {
 
     private static final String ADAPTER = "SimulatedBureauAdapter.java";
 
     /** The financial-data provider's adapter (`P10-TSK-007`) - its words confined to it, as the bureau's to its own. */
     private static final String FINDATA_ADAPTER = "SimulatedFinancialDataAdapter.java";
+
+    /** The second bureau's adapter (`P10-TSK-021`) - a bureau's words confined to it, never in the other bureau's file. */
+    private static final String SECOND_ADAPTER = "SimulatedSecondBureauAdapter.java";
 
     /** Each adapter's wire words - path, statuses and field names no port speaks - and the one file allowed them. */
     private static final Map<String, List<String>> VOCABULARIES =
@@ -46,7 +52,12 @@ class CreditProviderVocabularyIsConfinedTest {
                     FINDATA_ADAPTER,
                     List.of(
                             "/findata/summaries", "summary_complete", "summary_partial", "verifiedMonthlyIncome",
-                            "committedMonthlyExpenditure"));
+                            "committedMonthlyExpenditure"),
+                    SECOND_ADAPTER,
+                    List.of(
+                            "/v2/consumer-files", "FILE_FULL", "FILE_THIN", "risk_grade_score", "open_tradelines",
+                            "late_payments_24m", "charge_offs_72m", "bankruptcy_marker", "monthly_payments",
+                            "outstanding_debt"));
 
     @Test
     @DisplayName("no production file but the adapter carries the wire's vocabulary - and the adapter really does")
@@ -72,6 +83,13 @@ class CreditProviderVocabularyIsConfinedTest {
                             assertThat(entry.getKey()).endsWith(FINDATA_ADAPTER);
                             assertThat(literalsOf(entry.getValue())).contains("summary_partial", "verifiedMonthlyIncome");
                         });
+        assertThat(sources.entrySet())
+                .as("not vacuous: the second bureau's adapter carries its vocabulary")
+                .anySatisfy(
+                        entry -> {
+                            assertThat(entry.getKey()).endsWith(SECOND_ADAPTER);
+                            assertThat(literalsOf(entry.getValue())).contains("FILE_THIN", "charge_offs_72m");
+                        });
     }
 
     @Test
@@ -89,8 +107,15 @@ class CreditProviderVocabularyIsConfinedTest {
         // One adapter's words in the OTHER adapter are a leak too - each wire is its own.
         planted.put("/x/app/src/main/java/com/finapp/app/credit/" + FINDATA_ADAPTER,
                 "case \"summary_partial\" -> x; String leak = \"totalBalance\";");
+        // Two bureaus, two wires: neither's words in the other's file, nor in a selector (P10-TSK-021).
+        planted.put("/x/app/src/main/java/com/finapp/app/credit/" + SECOND_ADAPTER,
+                "case \"FILE_THIN\" -> x; String leak = \"defaults72m\";");
+        planted.put("/x/credit/src/main/java/com/finapp/credit/RogueSelector.java",
+                "if (body.contains(\"late_payments_24m\")) { prefer(); }");
         assertThat(violations(planted))
-                .hasSize(3)
+                .hasSize(5)
+                .anyMatch(v -> v.contains("defaults72m") && v.contains(SECOND_ADAPTER))
+                .anyMatch(v -> v.contains("late_payments_24m") && v.contains("RogueSelector.java"))
                 .anyMatch(v -> v.contains("totalBalance") && v.contains(FINDATA_ADAPTER))
                 .anyMatch(v -> v.contains("RogueEvaluator.java"))
                 .anyMatch(v -> v.contains("RogueReader.java"));

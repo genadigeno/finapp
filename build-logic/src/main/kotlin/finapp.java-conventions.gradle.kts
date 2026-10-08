@@ -202,9 +202,13 @@ taggedTiers.forEach { (taskName, tierTag) ->
         testClassesDirs = sourceSets.test.get().output.classesDirs
         classpath = sourceSets.test.get().runtimeClasspath
         useJUnitPlatform { includeTags(tierTag) }
-        // Every tagged tier, not only the external ones (P10-TSK-018, P10-TSK-021): app's
-        // `architectureTest` runs fifty bytecode sweeps over every module in one JVM, and on the
-        // 512 MiB default Phase 10's classes tipped it into OutOfMemoryError ("Java heap space").
+        // Every tagged tier gets the explicit heap, not only the external ones (P10-TSK-018, P10-TSK-021 -
+        // found by both, in parallel): app's architecture tier runs ArchUnit's whole-codebase imports and
+        // the bytecode sweeps over every module (AuditCompletenessTest, SystemActorCallSitesAreEnumeratedTest,
+        // ModuleBoundaryRulesTest) in one JVM, and on Gradle's 512 MiB default Phase 10's classes tipped it
+        // into OutOfMemoryError ("Java heap space") - reproducibly, in app's run of the whole tier only,
+        // every suite passing alone. P9-TSK-002's finding for the hermetic tier, one tier across.
+        // ArchitectureTierHeapTest holds it.
         maxHeapSize = "2g"
 
         if (taskName in externalInfrastructureTiers) {

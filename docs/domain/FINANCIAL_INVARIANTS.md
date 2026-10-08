@@ -1469,7 +1469,11 @@ input the applicant was decided on.
 **Enforce:** `DOMAIN` (the evaluator reads only the snapshot; a missing attribute raises) +
 `DB-CONSTRAINT` (the snapshot insert-only, its hash `NOT NULL`).
 **Verify:** Replay re-verifying the hash, a tampered snapshot `DIVERGED`; a rule reading an
-attribute the snapshot lacks failing evaluation; canonical-form golden files.
+attribute the snapshot lacks failing evaluation; canonical-form golden files. *Since
+`P10-TSK-021`*: a record's source names the provider its data request was born naming - the
+request, its audit, its record and its event name one provider, and an answer naming another is
+never recorded (`BureauSelectionDatabaseTest#theRecordNamesItsProvider`,
+`#anAnswerNamingAnotherProviderIsNeverRecorded`).
 **Phase:** 10
 
 ### INV-CRD-08 — Stale data never decides
