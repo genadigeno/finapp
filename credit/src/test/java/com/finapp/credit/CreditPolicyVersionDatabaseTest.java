@@ -71,14 +71,20 @@ class CreditPolicyVersionDatabaseTest {
     void eachProductsV1IsActivatedByAPerson() throws SQLException {
         for (CreditProduct product : CreditProduct.values()) {
             Actor officer = employee();
-            CreditPolicyAdministration.Decided activated = inOneTransaction(uow -> ADMINISTRATION.approve(
-                    uow, CreditPolicyV1.id(product), officer, "v1 reviewed", correlation()));
-            assertThat(activated.status()).as(product.name()).isEqualTo(CreditPolicyStatus.ACTIVE);
-            assertThat(activated.retired()).as("the first version retires nothing").isEmpty();
-            assertThat(inOneTransaction(uow -> ADMINISTRATION.activeAt(uow, product, Optional.empty())).row().id())
-                    .isEqualTo(CreditPolicyV1.id(product));
-            assertThat(decidedBy(CreditPolicyV1.id(product))).as("two parties: the migration proposed, a person activated")
-                    .isEqualTo(officer.id());
+            // Another suite needing v1 in force may have activated it first (CreditPolicyFixtures.activateV1).
+            Optional<CreditPolicyAdministration.Decided> activated = CreditPolicyFixtures.activateV1(product, officer);
+            if (activated.isPresent()) {
+                assertThat(activated.get().status()).as(product.name()).isEqualTo(CreditPolicyStatus.ACTIVE);
+                assertThat(activated.get().retired()).as("the first version retires nothing").isEmpty();
+                assertThat(inOneTransaction(uow -> ADMINISTRATION.activeAt(uow, product, Optional.empty())).row().id())
+                        .isEqualTo(CreditPolicyV1.id(product));
+                assertThat(decidedBy(CreditPolicyV1.id(product)))
+                        .as("two parties: the migration proposed, a person activated").isEqualTo(officer.id());
+            } else {
+                assertThat(status(CreditPolicyV1.id(product))).as(product.name()).isIn("ACTIVE", "RETIRED");
+                assertThat(decidedBy(CreditPolicyV1.id(product)))
+                        .as("two parties: the migration proposed, a person activated").doesNotStartWith("migration:");
+            }
         }
     }
 

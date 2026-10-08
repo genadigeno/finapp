@@ -8,6 +8,7 @@ import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.Money;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.Clock;
 import java.util.HexFormat;
@@ -52,6 +53,20 @@ public final class CreditAssessments {
         public Terms {
             Objects.requireNonNull(affordability, "affordability");
             Objects.requireNonNull(maximumExposure, "maximumExposure");
+        }
+
+        /**
+         * The terms {@code policy} states (`P10-TSK-013`): its stress rate and payment ratio from basis points, its
+         * minimum disposable income and maximum exposure as written - the pinned policy's, handed to the assessment.
+         */
+        public static Terms of(CreditPolicy policy) {
+            Objects.requireNonNull(policy, "policy");
+            return new Terms(
+                    new AffordabilityAssessment.Parameters(
+                            BigDecimal.valueOf(policy.assessmentRateBps(), 4),
+                            BigDecimal.valueOf(policy.minimumPaymentRatioBps(), 4),
+                            policy.minimumDisposable()),
+                    policy.maximumExposure());
         }
     }
 

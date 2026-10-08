@@ -67,6 +67,22 @@ final class CreditPolicyFixtures {
         return proposed.id();
     }
 
+    /**
+     * Activates {@code product}'s seeded v1 by {@code officer} while it is still the migration's proposal, and answers
+     * the activation; empty when an earlier case already activated it (`P10-TSK-013`). The suites share one database
+     * and no class order, so whichever suite first needs v1 in force brings it there - the same four eyes either way.
+     */
+    static java.util.Optional<CreditPolicyAdministration.Decided> activateV1(CreditProduct product, Actor officer) {
+        return inOneTransaction(uow -> {
+            CreditPolicyStatus seed = STORE.policy(uow, CreditPolicyV1.id(product)).orElseThrow().row().status();
+            if (seed != CreditPolicyStatus.PROPOSED) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(ADMINISTRATION.approve(uow, CreditPolicyV1.id(product), officer, "v1 reviewed",
+                    ScorecardFixtures.correlation()));
+        });
+    }
+
     /** The version's status, read by the migrator. */
     static String status(CreditPolicyVersionId id) throws SQLException {
         try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement();

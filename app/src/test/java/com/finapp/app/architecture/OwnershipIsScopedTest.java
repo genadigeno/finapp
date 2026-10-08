@@ -616,6 +616,13 @@ class OwnershipIsScopedTest {
                                         + " deciding transaction (P10-TSK-015), never a customer's value; the assessment"
                                         + " has no customer door.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcPolicyEvaluationStore.byAssessment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-013. The assessment id is the assessment the evaluator holds - born in the"
+                                        + " deciding transaction (P10-TSK-015) from the snapshot it froze, never a"
+                                        + " customer's value; the evaluation has no customer door.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcScorecardStore.insertProposal",
                             new Entry(
                                     Scope.ADMINISTERED,
