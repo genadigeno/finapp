@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (16 of 24 items complete, M10.1, M10.2, M10.3 and M10.4 closed, M10.5 at 3 of 4); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (17 of 24 items complete, M10.1, M10.2, M10.3, M10.4 and M10.5 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14318,7 +14318,7 @@ see caught, each restore byte-identical, sha256-verified). A task's design (`tas
 correct its entry, and says so in the entry — the `P6-TSK-001` precedent. The ten-instance answer is
 `PASS` only on the counted tests the entry names; it is never claimed by construction. A task
 without them answers `UNKNOWN` and is not complete. Every keyed scope is per principal from birth.
-Migration numbers name the expected order (credit `V001`…`V012`, consent `V003`, identity `V020`);
+Migration numbers name the expected order (credit `V001`…`V013` - `V012` the evidence lookup `P10-TSK-017` found it needed, consent `V003`, identity `V020`);
 the task that builds a migration may renumber within its module and says so.
 
 **Milestones**: M10.1 Foundations (`P10-TSK-001`…`-003`) · M10.2 Credit data (`P10-TSK-004`…`-007`)
@@ -15401,7 +15401,7 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-FIN` (credit exposure; F3, F6, F7 binding; F1, F2, F4, F5 vacuous; F8
   N/A), `DOD-EVENT`, `DOD-SEC`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
 
-**P10-TSK-017 — Decision retrieval and adverse-action explanation** — `READY` (marked by `P10-TSK-016`'s completion gate, 2026-10-08)
+**P10-TSK-017 — Decision retrieval and adverse-action explanation** — `COMPLETE` (2026-10-08; marked `READY` by the previous task's completion gate)
 - **Objective**: tell the customer the outcome and, when adverse, the reasons in plain words — and
   give an investigator the full explanation from the rows alone, audited.
 - **Bounded context**: Credit Decisioning; `app`.
@@ -15454,12 +15454,12 @@ assignment and an expiry serialise (`-018`).
   a customer.
 - **Definition of done**: `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P10-TSK-018 — Underwriting: the manual review case** — `PLANNED`
+**P10-TSK-018 — Underwriting: the manual review case** — `READY` (marked by `P10-TSK-017`'s completion gate, 2026-10-08)
 - **Objective**: referrals decided by people — with reasons, never overriding a hard decline or the
   exposure limit, and under four-eyes above the product's threshold.
 - **Bounded context**: Credit Decisioning; `app`.
 - **Dependencies**: `-003`, `-016`.
-- **Scope**: `credit V012` `underwriting_case` (`decision_request_id UNIQUE`; status `OPEN` |
+- **Scope**: `credit V013` (renumbered: `P10-TSK-017` took `V012` for the evidence lookup) `underwriting_case` (`decision_request_id UNIQUE`; status `OPEN` |
   `ASSIGNED` | `AWAITING_SECOND` | `DECIDED` | `CLOSED` (G8, carrying the request's reason);
   assignee; the first decision (outcome, amount, reasons, by whom); the second approver; `CHECK
   (second_approver <> first_decider)`; a reason required on every decision and on a refused second
@@ -15487,7 +15487,7 @@ assignment and an expiry serialise (`-018`).
 - **Out of scope**: counter-offers, an amount above the evaluation's and pricing (Phase 11's
   offer); automatic re-evaluation of a case.
 - **Domain changes**: the `UnderwritingCase` aggregate.
-- **Persistence**: `credit V012`.
+- **Persistence**: `credit V013`.
 - **APIs**: `GET /v1/operator/credit/review-cases?status=`, `POST …/{id}/assignment`, `POST
   …/{id}/release`, `POST …/{id}/decision`, `POST …/{id}/second-approval` (approve, or refuse with a
   reason) — `CREDIT_UNDERWRITE`, keyed `credit.review:EMPLOYEE:<id>`, sync; errors `409

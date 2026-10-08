@@ -611,6 +611,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/credit/decision-requests",
                         ApiVersion.CURRENT_PREFIX + "/me/credit/decision-requests/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/credit/decision-requests/{id}/cancellation",
+                        // P10-TSK-017: the customer's credit profile, and the investigator's explanation and evidence.
+                        ApiVersion.CURRENT_PREFIX + "/me/credit/profile",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/decisions/{id}/explanation",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/records/{id}/evidence-read",
                         // P9-TSK-017: the customer's beneficiaries abroad (a session).
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}",

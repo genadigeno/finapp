@@ -112,6 +112,19 @@ public final class JdbcDecisionSnapshotStore implements DecisionSnapshotStore {
     }
 
     @Override
+    public Optional<StoredSnapshot> snapshotById(Connection unitOfWork, DecisionSnapshotId id) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT decision_request_id, sequence FROM credit.decision_snapshot WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? snapshotOf(unitOfWork, row.getObject(1, UUID.class), row.getInt(2)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("reading a decision snapshot", failure));
+        }
+    }
+
+    @Override
     public Optional<StoredSnapshot> latestSnapshotOf(Connection unitOfWork, UUID decisionRequestId) {
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT sequence FROM credit.decision_snapshot WHERE decision_request_id = ? ORDER BY sequence DESC LIMIT 1")) {

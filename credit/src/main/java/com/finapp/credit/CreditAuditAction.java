@@ -84,7 +84,21 @@ public enum CreditAuditAction implements AuditableAction {
             "A credit decision was recorded for a decision request (P10-TSK-016) - by the platform's deciding transaction,"
                     + " under the party's profile lock; written once, by the acting decider only. The summary names the"
                     + " request, the decision and the outcome, never an amount (INV-AUD-02).",
-            false);
+            false),
+
+    EXPLANATION_READ(
+            "credit.ExplanationRead",
+            "A holder of CREDIT_INVESTIGATE read a decision's full explanation - the snapshot's attributes, the rules"
+                    + " evaluated and which fired (P10-TSK-017, INV-AUD-01); written in the read's own transaction, so no"
+                    + " explanation is served without its record.",
+            false),
+
+    EVIDENCE_READ(
+            "credit.EvidenceRead",
+            "A holder of CREDIT_INVESTIGATE read a credit record's raw evidence through credit.read_evidence, with a"
+                    + " reason (P10-TSK-017, ADR-0085 point 7); attempted reads that could not be decrypted are recorded"
+                    + " FAILED, nothing served.",
+            true);
 
     private final String code;
     private final String description;

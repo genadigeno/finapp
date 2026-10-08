@@ -609,6 +609,34 @@ class OwnershipIsScopedTest {
                                     "P10-TSK-008. The snapshot id is minted by the freezer; UNIQUE (decision_request_id,"
                                         + " sequence) arbitrates every writer, and the table refuses any change once born.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionSnapshotStore.snapshotById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-017. GET /v1/operator/credit/decisions/{id}/explanation, behind"
+                                        + " CREDIT_INVESTIGATE - the snapshot id is the one the decision row names, never a"
+                                        + " caller's value; the investigator reads any party's decision, each read audited.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.retrievedAt",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-017. The explanation's provenance - the record id comes from the frozen"
+                                        + " snapshot's attribute, never a caller's value; the door is CREDIT_INVESTIGATE's"
+                                        + " and every serving is audited (credit.ExplanationRead).")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.evidenceOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-017. POST /v1/operator/credit/records/{id}/evidence-read, behind"
+                                        + " CREDIT_INVESTIGATE with a reason - an investigator's door over any party's record,"
+                                        + " each attempt audited (credit.EvidenceRead); no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.readEvidence",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-017. The evidence id is the one evidenceOf just resolved; the read goes"
+                                        + " through the SECURITY DEFINER credit.read_evidence with the reason, the only door to"
+                                        + " the ciphertext, behind CREDIT_INVESTIGATE and audited.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcCreditAssessmentStore.bySnapshot",
                             new Entry(
                                     Scope.ADMINISTERED,

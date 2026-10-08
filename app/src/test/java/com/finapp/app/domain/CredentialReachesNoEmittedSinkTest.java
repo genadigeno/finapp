@@ -473,6 +473,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // term and the declared monthly figures as decimal strings (RESTRICTED-FINANCIAL, stored on the
                         // request alone - never evented, viewed or audited). No secret; closed: never a score or a rate.
                         "CreditDecisionRequestBody",
+                        // P10-TSK-017: the evidence read's reason - an investigator's free prose bound for the audit
+                        // record's reason column, as every reasoned operator act. No secret.
+                        "CreditEvidenceReadRequest",
                         // P8-TSK-014: the investigator's case file. No secret in any of them.
                         // The assignee is an identity identifier; the classification carries a
                         // type and a REASON (screened like a note for card-number and account

@@ -901,6 +901,7 @@ proposal machine's own states.
 | `credit.DecisionRequestOpen` | 409 | An open decision request for this product already exists. |
 | `credit.RequestNotCancellable` | 409 | The decision request can no longer be cancelled. |
 | `credit.ApplicantNotEligible` | 409 | The applicant is not a verified customer in good standing; complete verification and retry. |
+| `credit.EvidenceUnreadable` | 503 | The credit evidence cannot be read now. |
 
 The scorecard doors (`P10-TSK-011`, ADR-0086 §3), every route behind `CREDIT_POLICY_ADMINISTER` and every act
 keyed per principal (`credit.scorecard:<type>:<id>`), so a lost response replays its receipt and a refusal stores
@@ -936,6 +937,8 @@ deliberately not a `403`), and `DecisionRequestOpen` naming the open request (on
 partial unique the arbiter). `RequestNotCancellable` answers a request already evaluated or closed. Another party's
 request is `NotFound`, exactly as an unknown or malformed id. An MFA-enrolled identity on a password-only session is
 `identity.AssuranceRequired` (`403`) before any of these.
+
+The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/credit/profile` answer `NotFound` for another party's request exactly as for an unknown one, and carry no figure. The investigator's doors, behind `CREDIT_INVESTIGATE`: the explanation answers `NotFound` for an unknown decision; the evidence read refuses a blank reason `422 ReasonRequired` before anything is read, answers `NotFound` for an unknown record or one with no readable evidence, and `503 EvidenceUnreadable` when its key cannot decrypt it - the attempt recorded FAILED and nothing served.
 
 ## 3a. Rejection at the boundary
 

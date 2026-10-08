@@ -328,5 +328,17 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   commit** through a `DecisionObserver`, the policy tagged by its version NUMBER and the decider by kind (`system` |
   `person`), never an id - under the key `decision_maker`, not the plan's `decided_by`, which carries the letters `id`
   and would have needed a third spelling exemption where the guard caps them at two.
+- *As built by `P10-TSK-017` (2026-10-08), the reads.* Four decisions taken in the building, recorded here. (1) **The
+  evidence read starts from a credit record** - the row the explanation names - and the application may read an
+  evidence row's identity and flags by a column-level grant (`credit V012`), never its ciphertext, nonce, checksum or
+  length; the bytes still come only through `credit.read_evidence` with a reason, decrypted outside the database. The
+  case table planned as `V012` (`-018`) becomes `V013`. (2) **A serving commits its audit row before it answers**:
+  the explanation and the evidence read run in one transaction with their record, and an evidence read its key cannot
+  decrypt is recorded `FAILED` and committed before the `503` - never a served read without a record, nor an attempt
+  without one. (3) **The customer's words are the catalogue's**: a decision's reasons render as their customer texts
+  in ordinal order (the ceiling's included, for a capped approval), and a closed request's status in a fixed plain
+  sentence per closure; codes, scores, thresholds and attribute values never reach a customer body. (4) **The
+  investigator's explanation reads the PINNED policy's frozen rules** beside the stored rule results, so it explains
+  what decided, never what is in force now.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

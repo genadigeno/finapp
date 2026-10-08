@@ -61,4 +61,7 @@ public interface DecisionSnapshotStore {
 
     /** The request's latest snapshot - its highest sequence (`P10-TSK-016`: a successor follows its predecessor). */
     Optional<StoredSnapshot> latestSnapshotOf(Connection unitOfWork, UUID decisionRequestId);
+
+    /** The snapshot {@code id} - the one a decision names (`P10-TSK-017`'s explanation). */
+    Optional<StoredSnapshot> snapshotById(Connection unitOfWork, DecisionSnapshotId id);
 }
