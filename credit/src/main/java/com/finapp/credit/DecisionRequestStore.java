@@ -3,6 +3,7 @@ package com.finapp.credit;
 import com.finapp.platform.security.Actor;
 import java.sql.Connection;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -46,4 +47,25 @@ public interface DecisionRequestStore {
             Optional<ClosureReason> closureReason,
             Actor actor,
             Optional<String> reason);
+
+    // ------------------------------------------------------------------ the progress (P10-TSK-015)
+
+    /**
+     * Claims at most {@code limit} due open requests, oldest permit first, in ONE statement: each claimed row's permit is
+     * re-stamped {@code statement_timestamp() + permit} and rows another sweeper holds are skipped - so concurrent sweepers
+     * claim disjoint pages, and a page no step can act on is retried only once its permit lapses.
+     */
+    List<DecisionRequestId> claimDue(Connection unitOfWork, int limit, java.time.Duration permit);
+
+    /** The request {@code FOR UPDATE} (lock order element (2)) for the platform's step, with whether it has expired. */
+    Optional<Locked> lock(Connection unitOfWork, DecisionRequestId id);
+
+    /** A locked request and whether {@code expires_at <= statement_timestamp()} - the database's clock, never ours. */
+    record Locked(DecisionRequest request, boolean expired) {}
+
+    /**
+     * Pins {@code versions} on a {@code SUBMITTED} request and moves it {@code COLLECTING}, with the edge's history row;
+     * true when this call moved it. The trigger admits the pins at this edge alone, once.
+     */
+    boolean pin(Connection unitOfWork, DecisionRequestId id, PinnedVersions versions, Actor actor);
 }

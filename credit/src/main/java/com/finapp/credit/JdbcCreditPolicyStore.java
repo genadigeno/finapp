@@ -401,4 +401,17 @@ public final class JdbcCreditPolicyStore implements CreditPolicyStore {
     private static Instant instant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
     }
+
+    @Override
+    public Optional<CreditPolicyVersionId> shareActive(Connection unitOfWork, CreditProduct product) {
+        return row(unitOfWork, "SELECT " + ROW_COLUMNS + " FROM credit.credit_policy_version"
+                + " WHERE product = ? AND status = 'ACTIVE' FOR SHARE", product.name(), "sharing the active version")
+                .map(VersionRow::id);
+    }
+
+    @Override
+    public boolean sharePinned(Connection unitOfWork, CreditPolicyVersionId id) {
+        return row(unitOfWork, "SELECT " + ROW_COLUMNS + " FROM credit.credit_policy_version WHERE id = ? FOR SHARE", id.value(),
+                "sharing a pinned version").isPresent();
+    }
 }

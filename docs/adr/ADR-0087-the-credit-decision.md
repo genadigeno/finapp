@@ -303,5 +303,17 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   same key is judged afresh, while a success is replayed byte for byte. The decision request suite runs in a database
   of its own (`own-container`), because bringing each product's seeded policy into force would change what the policy
   suites find in the shared one.
+- *As built by `P10-TSK-015` (2026-10-08), the orchestration to the evaluation.* credit's `DecisionProgress` and `app`'s
+  `CreditDecisionProgressSchedule`: the claim in one statement re-stamping the page's permits; each step a transaction
+  of its own under the request's row lock. Four decisions taken in the building, recorded here. (1) **The standing is
+  read before the expiry**, so a party whose standing is lost is `ABANDONED` (`STANDING_LOST`) and never `EXPIRED`,
+  whatever the clock says. (2) **The consent gate is read for every source kind at the pin as well as before the
+  freeze**: a basis gone between submission and the first step abandons the request (`CONSENT_WITHDRAWN`) before any
+  data request is opened, so no access is ever opened on a withdrawn basis. (3) **The providers are asked after the
+  step's commit**, holding no connection; an ask that fails is the retry sweep's (`P10-TSK-006`), and the step reads
+  the rows the next time - so a crash at any point leaves rows another instance carries on from. (4) **Nothing is
+  reserved before decisions exist**: the snapshot's reserved-exposure seam is `NothingReservedBeforeDecisions` (zero,
+  version 1) until `P10-TSK-016` records decisions and replaces it with a new version; an `EVALUATED` request waits for
+  that deciding step, and an `IN_REVIEW` request's expiry for its case (`-018`).
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

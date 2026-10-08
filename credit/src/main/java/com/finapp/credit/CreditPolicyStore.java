@@ -81,4 +81,16 @@ public interface CreditPolicyStore {
 
     /** Each product's {@code ACTIVE} version number; a product with none is absent. */
     Map<CreditProduct, Integer> activeVersions(Connection unitOfWork);
+
+    /**
+     * The product's {@code ACTIVE} version {@code FOR SHARE} (`P10-TSK-015`; lock order element (5)) - the pin at
+     * {@code SUBMITTED -> COLLECTING}: an activation committing meanwhile waits, so the version pinned is the one in force.
+     */
+    Optional<CreditPolicyVersionId> shareActive(Connection unitOfWork, CreditProduct product);
+
+    /**
+     * The pinned version {@code FOR SHARE} (`P10-TSK-015`; element (5)), whatever its status - read by the freeze and the
+     * evaluation even after its retirement ({@code INV-HIST-04}); false when no such version exists.
+     */
+    boolean sharePinned(Connection unitOfWork, CreditPolicyVersionId id);
 }

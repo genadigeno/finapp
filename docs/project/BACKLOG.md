@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (14 of 24 items complete, M10.1, M10.2, M10.3 and M10.4 closed, M10.5 at 1 of 4); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (15 of 24 items complete, M10.1, M10.2, M10.3 and M10.4 closed, M10.5 at 2 of 4); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15239,7 +15239,7 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**:
   L.
 
-**P10-TSK-015 — Decision orchestration** — `READY` (marked by `P10-TSK-014`'s completion gate, 2026-10-08)
+**P10-TSK-015 — Decision orchestration** — `COMPLETE` (2026-10-08; marked `READY` by the previous task's completion gate)
 - **Objective**: drive every request from submission to evaluation across N instances, leaderless,
   crash-safe, on the database clock — and expire what is not decided in time.
 - **Bounded context**: Credit Decisioning; `app` (the schedule).
@@ -15317,7 +15317,7 @@ assignment and an expiry serialise (`-018`).
   (with its reason) under ten sweepers and every seeded crash, each step once.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
 
-**P10-TSK-016 — Recording the decision** — `PLANNED`
+**P10-TSK-016 — Recording the decision** — `READY` (marked by `P10-TSK-015`'s completion gate, 2026-10-08)
 - **Objective**: record each decision exactly once, immutably, with its ordered reasons, pinned
   versions and snapshot hash — the exposure it reserves judged under the party's lock.
 - **Bounded context**: Credit Decisioning.
