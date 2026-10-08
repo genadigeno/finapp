@@ -227,7 +227,11 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),
-                    entry("GET /v1/operator/credit/policies", PermissionName.CREDIT_INVESTIGATE)));
+                    entry("GET /v1/operator/credit/policies", PermissionName.CREDIT_INVESTIGATE),
+                    // P10-TSK-017: the investigator's doors - a decision's explanation from rows alone, and a record's
+                    // raw evidence with a reason; each serving audited, held by CREDIT_POLICY_OFFICER.
+                    entry("GET /v1/operator/credit/decisions/{id}/explanation", PermissionName.CREDIT_INVESTIGATE),
+                    entry("POST /v1/operator/credit/records/{id}/evidence-read", PermissionName.CREDIT_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

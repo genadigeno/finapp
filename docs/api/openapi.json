@@ -1032,6 +1032,41 @@
           }
         }
       },
+      "credit.EvidenceUnreadable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.EvidenceUnreadable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.EvidenceUnreadable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The credit evidence cannot be read now.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "credit.NotFound": {
         "content": {
           "application/problem+json": {
@@ -8374,6 +8409,23 @@
         },
         "type": "object"
       },
+      "CreditCurrentDecisionView": {
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "validUntil": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreditDecisionRequestBody": {
         "properties": {
           "amount": {
@@ -8417,6 +8469,13 @@
       },
       "CreditDecisionRequestView": {
         "properties": {
+          "approvedAmount": {
+            "type": "string"
+          },
+          "approvedTermMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
           "closureReason": {
             "type": "string"
           },
@@ -8426,8 +8485,17 @@
           "expiresAt": {
             "type": "string"
           },
+          "outcome": {
+            "type": "string"
+          },
           "product": {
             "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "requestId": {
             "type": "string"
@@ -8438,12 +8506,187 @@
           "status": {
             "type": "string"
           },
+          "statusText": {
+            "type": "string"
+          },
           "submittedAt": {
             "type": "string"
           },
           "termMonths": {
             "format": "int32",
             "type": "integer"
+          },
+          "validUntil": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditEvidenceReadRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditEvidenceView": {
+        "properties": {
+          "contentBase64": {
+            "type": "string"
+          },
+          "evidenceId": {
+            "type": "string"
+          },
+          "recordId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditExplainedAttributeView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "retrievedAt": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditExplainedRuleView": {
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "operand": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "ruleCode": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditExplanationView": {
+        "properties": {
+          "approvedAmount": {
+            "type": "string"
+          },
+          "approvedTermMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/CreditExplainedAttributeView"
+            },
+            "type": "array"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decidedByType": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "engineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "evaluationOutcome": {
+            "type": "string"
+          },
+          "fallbackApplied": {
+            "type": "boolean"
+          },
+          "modelVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "modelVersionId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/CreditExplainedRuleView"
+            },
+            "type": "array"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "snapshotSequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "snapshotSha256": {
+            "type": "string"
+          },
+          "validUntil": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -8678,6 +8921,17 @@
         },
         "type": "object"
       },
+      "CreditSourceView": {
+        "properties": {
+          "retrievedAt": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CrossBorderBeneficiaryList": {
         "properties": {
           "beneficiaries": {
@@ -8894,6 +9148,23 @@
           },
           "position": {
             "$ref": "#/components/schemas/ReportAmount"
+          }
+        },
+        "type": "object"
+      },
+      "CustomerCreditProfileView": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/CreditCurrentDecisionView"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CreditSourceView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -15167,6 +15438,23 @@
         }
       }
     },
+    "/v1/me/credit/profile": {
+      "get": {
+        "operationId": "profile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerCreditProfileView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/me/cross-border/beneficiaries": {
       "get": {
         "operationId": "listBeneficiaries",
@@ -16286,6 +16574,33 @@
         }
       }
     },
+    "/v1/operator/credit/decisions/{id}/explanation": {
+      "get": {
+        "operationId": "explanation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditExplanationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/credit/policies": {
       "get": {
         "operationId": "readCreditPolicy",
@@ -16438,6 +16753,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreditPolicyReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/records/{id}/evidence-read": {
+      "post": {
+        "operationId": "evidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreditEvidenceReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditEvidenceView"
                 }
               }
             },

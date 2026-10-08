@@ -121,6 +121,9 @@ final class CreditWorld {
     static final ScorecardAdministration SCORECARD_ADMINISTRATION =
             new ScorecardAdministration(SCORECARDS, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK);
 
+    /** The evidence cipher the world's collection encrypts under - a zero key unless a case installs the application's. */
+    static volatile CreditEvidenceCipher cipher = new CreditEvidenceCipher(new byte[32], 1, new SecureRandom());
+
     static final Set<UUID> SUSPENDED = ConcurrentHashMap.newKeySet();
     static final Map<UUID, Set<CreditSourceKind>> WITHDRAWN = new ConcurrentHashMap<>();
     /** A party's bureau total balance, in minor units; 4,200.50 unless a case says otherwise. */
@@ -197,8 +200,7 @@ final class CreditWorld {
     static CreditDataCollection collection() {
         return new CreditDataCollection(new JdbcCreditDataRequestStore(),
                 CreditDataCollection.Sources.of(BUREAU, TIMING, FINDATA, TIMING), GATE,
-                new CreditEvidenceCipher(new byte[32], 1, new SecureRandom()), CreditDataObserver.NONE,
-                new JdbcAuditWriter(), new JdbcOutboxWriter(), TRANSACTIONS, IDS, CLOCK);
+                cipher, CreditDataObserver.NONE, new JdbcAuditWriter(), new JdbcOutboxWriter(), TRANSACTIONS, IDS, CLOCK);
     }
 
     /** An instance's deciding transaction, on {@code clock}. */

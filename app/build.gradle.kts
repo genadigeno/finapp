@@ -278,6 +278,7 @@ tasks.named<Test>("databaseTest") {
 extra["ownContainerSuites"] =
     listOf(
         "com.finapp.app.credit.CreditDecisionDatabaseTest",
+        "com.finapp.app.credit.DecisionExplanationDatabaseTest",
         "com.finapp.app.credit.DecisionOrchestrationDatabaseTest",
         "com.finapp.app.credit.DecisionRequestDatabaseTest",
         "com.finapp.app.fx.FxCrossBorderStormDatabaseTest",

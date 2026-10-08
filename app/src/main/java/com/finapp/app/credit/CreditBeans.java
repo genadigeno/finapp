@@ -253,8 +253,8 @@ public class CreditBeans {
             com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             IdempotentExecutor idempotentExecutor,
             TransactionRunner creditTransactionRunner) {
-        return new CreditDecisionRequestDesk(
-                decisionRequests, identityStore, mfaEnrolmentStore, idempotentExecutor, creditTransactionRunner);
+        return new CreditDecisionRequestDesk(decisionRequests, identityStore, mfaEnrolmentStore, idempotentExecutor,
+                creditTransactionRunner, new com.finapp.credit.JdbcCreditDecisions(), new com.finapp.credit.JdbcCreditReads());
     }
     // ------------------------------------------------------------------ the progress (P10-TSK-015)
 
@@ -347,5 +347,23 @@ public class CreditBeans {
         return Gauge.builder("finapp.credit.progress.sweeper.enabled", () -> enabled ? 1 : 0)
                 .description("Whether this instance runs the credit decision progress sweep")
                 .register(meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the investigator (P10-TSK-017)
+
+    @Bean
+    CreditInvestigationDesk creditInvestigationDesk(
+            CreditEvidenceCipher creditEvidenceCipher,
+            CreditPolicyStore creditPolicyStore,
+            ScorecardStore scorecardStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionRunner creditTransactionRunner) {
+        return new CreditInvestigationDesk(new com.finapp.credit.CreditInvestigations(new com.finapp.credit.JdbcCreditDecisions(),
+                new com.finapp.credit.JdbcDecisionSnapshotStore(), new com.finapp.credit.JdbcCreditAssessmentStore(),
+                new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore, scorecardStore,
+                new com.finapp.credit.JdbcCreditReads(), creditEvidenceCipher, auditWriter, idGenerator, clock),
+                creditTransactionRunner);
     }
 }

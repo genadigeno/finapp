@@ -67,7 +67,13 @@ public enum CreditErrorCode implements ErrorCode {
     APPLICANT_NOT_ELIGIBLE(
             "credit.ApplicantNotEligible",
             409,
-            "The applicant is not a verified customer in good standing; complete verification and retry.");
+            "The applicant is not a verified customer in good standing; complete verification and retry."),
+
+    /**
+     * Credit evidence that cannot be decrypted now - a key not configured or rotated away (`P10-TSK-017`). A
+     * {@code 503}: the evidence is kept, the read is recorded FAILED, and nothing is served.
+     */
+    EVIDENCE_UNREADABLE("credit.EvidenceUnreadable", 503, "The credit evidence cannot be read now.");
 
     private final String code;
     private final int status;
