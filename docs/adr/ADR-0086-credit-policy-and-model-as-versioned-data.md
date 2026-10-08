@@ -233,6 +233,8 @@ completeness), `INV-HIST-04` (pinned versions never change under a decision), `I
 
 ## Follow-up
 
+- *As built by `P10-TSK-011` (2026-10-08), the scorecard half of §3.* `credit V006`: `scorecard_model_version`, `scorecard_band`, `scorecard_model_event`; `V007`: `credit_assessment`. Three decisions taken in the building, recorded here. (1) **The seed's proposer is the reviewed migration** (`migration:V006`): no model is migration-activated, so v1 is activated by one person, distinct from its proposer by the same `CHECK` as every version; every later version is one person's proposal and another's activation (both shown over HTTP by `ScorecardAdministrationEndpointDatabaseTest`). (2) **The decider column is `decided_by`**, the corridor-policy precedent, not the plan's `approved_by` - a rejection's decider is not an approver; the four-eyes `CHECK` binds `ACTIVE` and `RETIRED`. (3) **A scorecard bands credit behaviour, never money**: `INTEGER` attributes take contiguous `[lower, upper)` ranges covering every value, `BOOLEAN` and `CODE` attributes disjoint code sets; a `MONEY` attribute is affordability's and exposure's and a marker is not scored; a code in no set is `UnscoredValue`, never a zero. A missing idempotency key answers the platform's `api.IdempotencyKeyRequired` (`422`), and `credit.SelfApprovalRefused` is a `403`.
+
 - `P10-TSK-011`: the scorecard model version, its points table and administration; v1 seeded as a
   proposal; advisory namespace `10` registered. `-012`: the policy version, rules as rows, the
   rule-immutability trigger, four-eyes, completeness, namespace `10` extended to products.

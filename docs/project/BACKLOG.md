@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (10 of 24 items complete, M10.1 and M10.2 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (11 of 24 items complete, M10.1, M10.2 and M10.3 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14958,7 +14958,8 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-FIN` (credit exposure; F1, F2, F4, F5 vacuous, F7 binding, F8 N/A),
   `DOD-DOMAIN`. **Risk**: Medium. **Cx**: S.
 
-**P10-TSK-011 — The scorecard model and its versioning** — `READY` (marked by `P10-TSK-010`'s completion gate, 2026-10-08)
+**P10-TSK-011 — The scorecard model and its versioning** — `COMPLETE` (2026-10-08; marked `READY` by the previous task's completion gate)
+- **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). `credit V006` and `V007`; `Scorecard`, `ScorecardFamily`, `ScorecardStatus`, `ScorecardStore` with `JdbcScorecardStore`, `ScorecardAdministration`, `CreditAssessment`, `CreditAssessmentStore` with `JdbcCreditAssessmentStore`, `CreditAssessments` and `CreditErrorCode`; `app`'s `ScorecardAdministrationController` and `ScorecardAdministrationDesk`. The suites are `ScorecardTest`, `ScorecardVersionDatabaseTest`, `CreditAssessmentDatabaseTest` and `ScorecardAdministrationEndpointDatabaseTest`; the decisions taken in the building are in ADR-0086's Follow-up.
 - **Objective**: a versioned points-table scorecard, activated only by two people, and the
   assessment row that holds the three figures with their inputs.
 - **Bounded context**: Credit Decisioning; `app` (the administration door).
@@ -15024,7 +15025,7 @@ assignment and an expiry serialise (`-018`).
   while still `PROPOSED`, and again once `ACTIVE`); `#oneActivePerFamily` by raw SQL;
   `#theVersionActiveAtAnyPastInstantIsAnswerable`; `#anActivationMidAssessmentKeepsThePinnedModel`);
   `CreditAssessmentDatabaseTest#tenAssessorsLeaveOneAssessment`; the route negatives (an
-  `UNDERWRITER` `403`, a missing key `400`); `RoutePermissionRegisterTest` rows.
+  `UNDERWRITER` `403`, a missing key `422 api.IdempotencyKeyRequired` - *corrected by `P10-TSK-011`'s gate from `400`, which the error contract never answered*); `RoutePermissionRegisterTest` rows.
 - **Probe**: drop `CHECK (approved_by <> proposed_by)` → the raw-SQL self-approval accepted →
   `#theProposerCannotApprove` red; drop the band-immutability trigger →
   `#bandsAreImmutableFromInsert` red.
@@ -15033,7 +15034,7 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: Medium. **Cx**:
   L.
 
-**P10-TSK-012 — The credit policy and its versioning** — `PLANNED`
+**P10-TSK-012 — The credit policy and its versioning** — `READY` (marked by `P10-TSK-011`'s completion gate, 2026-10-08)
 - **Objective**: credit policy as versioned data — rules as rows over a closed vocabulary, four-eyes
   activation, effective periods — and no policy that could approve on missing data.
 - **Bounded context**: Credit Decisioning; `app`.

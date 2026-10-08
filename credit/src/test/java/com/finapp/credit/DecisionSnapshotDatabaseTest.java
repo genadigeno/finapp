@@ -50,7 +50,8 @@ class DecisionSnapshotDatabaseTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Duration MAX_AGE = Duration.ofDays(30);
-    private static final PinnedVersions VERSIONS = new PinnedVersions(UUID.randomUUID(), UUID.randomUUID(), 1);
+    /** The model is the seeded RETAIL_SCORECARD v1 - V006 gave the pinned model its foreign key (P10-TSK-011). */
+    private static final PinnedVersions VERSIONS = new PinnedVersions(UUID.randomUUID(), RetailScorecardV1.ID.value(), 1);
 
     private final JdbcCreditDataRequestStore requests = new JdbcCreditDataRequestStore();
     private final JdbcDecisionSnapshotStore snapshots = new JdbcDecisionSnapshotStore();
@@ -306,7 +307,10 @@ class DecisionSnapshotDatabaseTest {
             owner.setAutoCommit(false);
             refused(owner, "UPDATE credit.decision_snapshot SET canonical = canonical" + where, "P0001");
             refused(owner, "DELETE FROM credit.decision_snapshot" + where, "P0001");
-            refused(owner, "TRUNCATE credit.decision_snapshot", "P0001");
+            // Since V007 (P10-TSK-011) a plain TRUNCATE meets credit_assessment's foreign key first (0A000); a
+            // CASCADE reaches both tables' truncate triggers, and the trigger still refuses it.
+            refused(owner, "TRUNCATE credit.decision_snapshot", "0A000");
+            refused(owner, "TRUNCATE credit.decision_snapshot CASCADE", "P0001");
         }
     }
 

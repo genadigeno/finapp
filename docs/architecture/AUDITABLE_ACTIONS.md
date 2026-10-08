@@ -585,8 +585,12 @@ repudiation's with `P8-TSK-023`.
 |---|---|---|
 | `credit.BureauDataRequested` | No | The platform opened a credit bureau data request for a decision request (`P10-TSK-006`, ADR-0085, `INV-AUD-01`) - written once, by the opener, in the transaction that births the request, under a current lawful basis read in that transaction (`INV-CRD-03`); a platform act on the applicant's behalf, so the actor is the system. The summary names the data request, the decision request, the source kind and the provider - never an attribute or a payload. A retry is the same access under the same reference (one pull at the bureau), recorded as an attempt row, not a second act. |
 | `credit.FinancialDataRequested` | No | The platform opened a financial-data request for a decision request (`P10-TSK-007`, ADR-0085, `INV-AUD-01`) - `credit.BureauDataRequested`'s twin for its own source, under its own purpose (`FINANCIAL_DATA_ACCESS`, `INV-CRD-03`): written once by the opener; the summary names the request, the source kind and the provider, never a figure. |
+| `credit.ScorecardVersionProposed` | **Yes** | A holder of CREDIT_POLICY_ADMINISTER proposed a whole scorecard model version (`P10-TSK-011`, ADR-0086 §3): its bands born with it in the proposing transaction and immutable from insert by trigger (`INV-CRD-05`), the family's proposals serialised on advisory namespace 10, awaiting a DIFFERENT person's activation (`INV-AUD-04`). |
+| `credit.ScorecardVersionActivated` | **Yes** | A different person activated a proposed scorecard model version (`INV-AUD-04`, also held by `credit V006`'s four-eyes `CHECK`), retiring its predecessor in the same transaction - their effective periods meeting on the database clock; the event `credit.ScorecardModelVersionActivated` carries the version, never the bands. |
+| `credit.ScorecardVersionRejected` | **Yes** | A proposed scorecard model version was rejected - or withdrawn by its proposer; no model changed. A correction is a rejection and a new proposal. |
 
-`credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`.
+`credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`, the three
+scorecard acts at `P10-TSK-011`.
 
 ### What is emitted, and what is declared not to be
 

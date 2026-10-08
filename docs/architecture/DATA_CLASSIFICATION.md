@@ -2311,6 +2311,65 @@ Everything a decision may read, frozen: the canonical text carries every attribu
 | `decision_snapshot` | `engine_version` | `INTERNAL` | The evaluator's version |
 | `decision_snapshot` | `frozen_at` | `INTERNAL` | System time, stamped by the trigger |
 
+### `credit` - the scorecard model and the assessment - *added by `P10-TSK-011`*
+
+The model is platform configuration - no person in it beyond who proposed and decided it; the assessment holds
+an applicant's figures, so it is `RESTRICTED-FINANCIAL` and none of it reaches a log, a span or an event.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `scorecard_model_version` | `id` | `INTERNAL` | Generated; v1 fixed by the seed |
+| `scorecard_model_version` | `family` | `INTERNAL` | The model family |
+| `scorecard_model_version` | `version` | `INTERNAL` | Numbered max + 1 per family |
+| `scorecard_model_version` | `status` | `INTERNAL` | The machine state |
+| `scorecard_model_version` | `base_points` | `INTERNAL` | Model configuration, no person in it |
+| `scorecard_model_version` | `proposed_by` | `CONFIDENTIAL` | Who proposed it - `migration:V006` for the seed (the `corridor_policy_version.proposed_by` precedent) |
+| `scorecard_model_version` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `scorecard_model_version` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person about a model decision (`audit_record.reason`'s reasoning) |
+| `scorecard_model_version` | `decided_by` | `CONFIDENTIAL` | Who activated or rejected it - the four-eyes fact (`scorecard_model_four_eyes`) |
+| `scorecard_model_version` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `scorecard_model_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
+| `scorecard_model_version` | `effective_from` | `INTERNAL` | The activation's database instant |
+| `scorecard_model_version` | `effective_to` | `INTERNAL` | The retirement's database instant - the successor's start |
+| `scorecard_band` | `model_version_id` | `INTERNAL` | The version it was born with |
+| `scorecard_band` | `attribute_code` | `INTERNAL` | A vocabulary code |
+| `scorecard_band` | `ordinal` | `INTERNAL` | 0 for the absent band, 1.. in order |
+| `scorecard_band` | `kind` | `INTERNAL` | `ABSENT`, `RANGE` or `CODES` |
+| `scorecard_band` | `lower_bound` | `INTERNAL` | Model configuration |
+| `scorecard_band` | `upper_bound` | `INTERNAL` | Model configuration |
+| `scorecard_band` | `codes` | `INTERNAL` | Model configuration |
+| `scorecard_band` | `points` | `INTERNAL` | Model configuration |
+| `scorecard_model_event` | `id` | `INTERNAL` | Generated |
+| `scorecard_model_event` | `model_version_id` | `INTERNAL` | The version moved |
+| `scorecard_model_event` | `from_status` | `INTERNAL` | The machine edge |
+| `scorecard_model_event` | `to_status` | `INTERNAL` | The machine edge |
+| `scorecard_model_event` | `actor_id` | `CONFIDENTIAL` | Who moved it |
+| `scorecard_model_event` | `reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
+| `scorecard_model_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_assessment` | `id` | `INTERNAL` | Generated |
+| `credit_assessment` | `snapshot_id` | `INTERNAL` | The snapshot assessed - once |
+| `credit_assessment` | `decision_request_id` | `INTERNAL` | The decision request |
+| `credit_assessment` | `snapshot_sha256` | `CONFIDENTIAL` | The inputs' digest - comparable, so not public |
+| `credit_assessment` | `policy_version_id` | `INTERNAL` | The pinned policy version |
+| `credit_assessment` | `model_version_id` | `INTERNAL` | The pinned scorecard version |
+| `credit_assessment` | `engine_version` | `INTERNAL` | The engine's version |
+| `credit_assessment` | `currency` | `INTERNAL` | The product's currency |
+| `credit_assessment` | `affordability_assessed` | `RESTRICTED-FINANCIAL` | Whether the applicant's affordability could be judged |
+| `credit_assessment` | `income_minor` | `RESTRICTED-FINANCIAL` | The applicant's affordability figure |
+| `credit_assessment` | `expenditure_minor` | `RESTRICTED-FINANCIAL` | The applicant's affordability figure |
+| `credit_assessment` | `obligations_minor` | `RESTRICTED-FINANCIAL` | The applicant's affordability figure |
+| `credit_assessment` | `repayment_minor` | `RESTRICTED-FINANCIAL` | The applicant's affordability figure |
+| `credit_assessment` | `disposable_minor` | `RESTRICTED-FINANCIAL` | The applicant's affordability figure |
+| `credit_assessment` | `affordable` | `RESTRICTED-FINANCIAL` | The applicant's affordability verdict |
+| `credit_assessment` | `affordability_absent` | `RESTRICTED-FINANCIAL` | Which of the applicant's inputs were absent |
+| `credit_assessment` | `exposure_assessed` | `RESTRICTED-FINANCIAL` | Whether the applicant's exposure could be judged |
+| `credit_assessment` | `exposure_minor` | `RESTRICTED-FINANCIAL` | The applicant's exposure figure |
+| `credit_assessment` | `headroom_minor` | `RESTRICTED-FINANCIAL` | The applicant's exposure figure |
+| `credit_assessment` | `within_limit` | `RESTRICTED-FINANCIAL` | The applicant's exposure verdict |
+| `credit_assessment` | `exposure_absent` | `RESTRICTED-FINANCIAL` | Which of the applicant's inputs were absent |
+| `credit_assessment` | `score` | `RESTRICTED-FINANCIAL` | The applicant's score - a figure, never a decision (`INV-CRD-04`) |
+| `credit_assessment` | `assessed_at` | `INTERNAL` | System time, stamped by the trigger |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

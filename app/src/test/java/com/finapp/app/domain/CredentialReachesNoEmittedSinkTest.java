@@ -437,6 +437,11 @@ class CredentialReachesNoEmittedSinkTest {
                         "CorridorPolicyRequest",
                         "CorridorDecisionRequest",
                         "CorridorAvailabilityRequest",
+                        // P10-TSK-011: the scorecard doors. No secret in any of them. A proposal is a
+                        // model - a family, integer points, attribute codes, integer bounds and code
+                        // sets, in nested schemas - with a REASON; a decision carries a REASON.
+                        "ScorecardProposalRequest",
+                        "ScorecardDecisionRequest",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's
