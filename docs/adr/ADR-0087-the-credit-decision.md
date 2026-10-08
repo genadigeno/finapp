@@ -315,5 +315,18 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   reserved before decisions exist**: the snapshot's reserved-exposure seam is `NothingReservedBeforeDecisions` (zero,
   version 1) until `P10-TSK-016` records decisions and replaces it with a new version; an `EVALUATED` request waits for
   that deciding step, and an `IN_REVIEW` request's expiry for its case (`-018`).
+- *As built by `P10-TSK-016` (2026-10-08), the deciding transaction.* `credit V011` (`credit_decision`,
+  `credit_decision_reason`, `credit_decision_consumption`, and the request's `DECIDED` precondition), `DecisionMaking`
+  behind the progress's `Decider` port, `JdbcReservedExposure` (version 2) and the published `CreditDecisions` read.
+  Four decisions taken in the building, recorded here. (1) **A successor snapshot is the previous content with only
+  the reservation replaced** - never a re-run of the freeze, which would re-judge freshness and could demand
+  re-collection from an `EVALUATED` request (an illegal edge); "the same records, the new exposure" exactly. (2) **The
+  reservation is compared by value** with the latest snapshot's `PLATFORM_RESERVED_EXPOSURE`: equal, the stored
+  evaluation decides; moved, the successor's. (3) **A decision's reasons are its evaluation's**: an approval below its
+  request carries its cap's one code, a full approval none, a decline every triggered rule's in order - and the table's
+  deferred trigger refuses at commit a decline or capped approval without them. (4) **The meters are told after the
+  commit** through a `DecisionObserver`, the policy tagged by its version NUMBER and the decider by kind (`system` |
+  `person`), never an id - under the key `decision_maker`, not the plan's `decided_by`, which carries the letters `id`
+  and would have needed a third spelling exemption where the guard caps them at two.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

@@ -592,10 +592,11 @@ repudiation's with `P8-TSK-023`.
 | `credit.PolicyVersionActivated` | **Yes** | A different person activated a proposed credit policy version (`INV-AUD-04`, also held by `credit V008`'s four-eyes `CHECK`), retiring the product's predecessor in the same transaction - their effective periods meeting; the event `credit.CreditPolicyVersionActivated` carries the version, never the rules. |
 | `credit.PolicyVersionRejected` | **Yes** | A proposed credit policy version was rejected - or withdrawn by its proposer; no policy changed. A correction is a rejection and a new proposal. |
 | `credit.DecisionRequestCancelled` | No | The applicant cancelled their own credit decision request before it was evaluated (`P10-TSK-014`; the `fx.QuoteCancelled` precedent) - a customer act, under the request row's lock (lock order element (2)), conditional on `SUBMITTED`, `COLLECTING` or `READY`; written once, in the cancelling transaction beside `credit.CreditDecisionRequestClosed`. The summary names the request and the status it left, never an amount. Submission is not an audit record: the request's row, its history and `credit.CreditDecisionRequested` record it, and the access it leads to is audited by the data request's opener. |
+| `credit.DecisionRecorded` | No | A credit decision recorded for a decision request (`P10-TSK-016`, ADR-0087) - by the deciding transaction, profile-first, beside the decision, its reasons, the request's `DECIDED` edge and `credit.CreditDecisionRecorded`; written once, by the acting decider only (ten deciders, one record). The summary names the request, the decision and the outcome, never an amount (`INV-AUD-02`); the platform's decision needs no reason, a person's (`P10-TSK-018`) carries its own act. |
 
 `credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`, the three
 scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`, `credit.DecisionRequestCancelled` at
-`P10-TSK-014`.
+`P10-TSK-014`, `credit.DecisionRecorded` at `P10-TSK-016`.
 
 ### What is emitted, and what is declared not to be
 

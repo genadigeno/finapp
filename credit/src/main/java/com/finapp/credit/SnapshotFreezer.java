@@ -196,6 +196,50 @@ public final class SnapshotFreezer {
         return new Freeze.Frozen(read(stored), !born);
     }
 
+    /**
+     * The successor of {@code previous} (`P10-TSK-016`; PHASE_10_PLAN.md section 12.7): the same request, versions and
+     * records, with the party's reserved exposure as it now stands under the deciding transaction's profile lock -
+     * frozen as the next sequence, born once ({@code UNIQUE (decision_request_id, sequence)}). Never a re-collection: the
+     * records are the ones the request was evaluated on; only the exposure moved.
+     */
+    public Freeze.Frozen successor(Connection uow, DecisionSnapshot previous, Money reserved) {
+        Objects.requireNonNull(uow, "uow");
+        Objects.requireNonNull(previous, "previous");
+        Objects.requireNonNull(reserved, "reserved");
+        SnapshotContent prior = previous.content();
+        int sequence = previous.sequence() + 1;
+        Optional<DecisionSnapshotStore.StoredSnapshot> already = store.snapshotOf(uow, prior.decisionRequest(), sequence);
+        if (already.isPresent()) {
+            return new Freeze.Frozen(read(already.get()), true);
+        }
+        List<CreditAttribute> attributes = new ArrayList<>();
+        for (CreditAttribute attribute : prior.attributes()) {
+            attributes.add(attribute.code() == CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE
+                    ? new CreditAttribute(attribute.code(), new AttributeValue.MoneyValue(reserved),
+                            new AttributeProvenance.Port("reserved-exposure", reservedExposure.version()))
+                    : attribute);
+        }
+        SnapshotContent content = new SnapshotContent(prior.decisionRequest(), prior.party(), prior.product(),
+                prior.requestedAmount(), prior.termMonths(), prior.versions(), attributes);
+        String canonical = CanonicalSnapshot.render(content);
+        byte[] sha256 = CanonicalSnapshot.sha256(canonical);
+        boolean born = store.insertSnapshot(uow, DecisionSnapshotId.next(ids), prior.decisionRequest(), sequence,
+                CanonicalSnapshot.FORMAT, canonical, sha256, prior.versions());
+        DecisionSnapshotStore.StoredSnapshot stored = store.snapshotOf(uow, prior.decisionRequest(), sequence)
+                .orElseThrow(() -> new IllegalStateException("a successor neither born nor found"));
+        return new Freeze.Frozen(read(stored), !born);
+    }
+
+    /** The request's latest snapshot - the one its latest evaluation was made on. */
+    public Optional<DecisionSnapshot> latest(Connection uow, UUID decisionRequest) {
+        return store.latestSnapshotOf(uow, decisionRequest).map(this::read);
+    }
+
+    /** The party's reserved exposure in {@code currency} as the freezer's seam reads it - the deciding step's re-read. */
+    public Money reservedFor(Connection uow, UUID party, com.finapp.sharedkernel.money.CurrencyCode currency) {
+        return reservedExposure.reservedFor(uow, party, currency);
+    }
+
     private List<CreditAttribute> attributes(
             Connection uow,
             FreezeInput input,

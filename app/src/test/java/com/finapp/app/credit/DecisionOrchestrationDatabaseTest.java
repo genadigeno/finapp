@@ -227,12 +227,14 @@ class DecisionOrchestrationDatabaseTest {
     private static DecisionProgress instance(CreditDataCollection.Timing timing, Clock clock) {
         CreditDataCollection collection = collection(timing, clock);
         SnapshotFreezer freezer = new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection, STANDING,
-                new NotAssessedUntilPhase13(), new NothingReservedBeforeDecisions(), new NoLoansUntilPhase11(), IDS);
+                new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(), new NoLoansUntilPhase11(), IDS);
         return new DecisionProgress(TRANSACTIONS, REQUESTS, POLICIES, SCORECARDS, new JdbcDecisionSnapshotStore(),
                 collection, freezer,
                 new CreditAssessments(new JdbcCreditAssessmentStore(), SCORECARDS, new JdbcOutboxWriter(), IDS, clock),
                 new PolicyEvaluations(new JdbcPolicyEvaluationStore(), POLICIES, EngineVersions.STANDARD, IDS, clock),
-                STANDING, GATE, new JdbcOutboxWriter(), IDS, clock);
+                STANDING, GATE, new JdbcOutboxWriter(), IDS, clock,
+                // The deciding step is CreditDecisionDatabaseTest's (P10-TSK-016); this suite drives to EVALUATED.
+                (id, correlation) -> com.finapp.credit.Decider.Decided.NOTHING);
     }
 
     private static DecisionProgress instance() {
@@ -335,7 +337,7 @@ class DecisionOrchestrationDatabaseTest {
         List<DecisionProgress.Step> steps = race(10, () -> step(instance(), id));
         assertThat(steps.stream().filter(step -> step == DecisionProgress.Step.EVALUATED)).hasSize(1);
         assertThat(steps).allSatisfy(step -> assertThat(step).isIn(DecisionProgress.Step.EVALUATED,
-                DecisionProgress.Step.WAITING));
+                DecisionProgress.Step.WAITING, DecisionProgress.Step.NOTHING));
         assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", id)).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM credit.policy_evaluation WHERE decision_request_id = ?", id)).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM credit.decision_request_event WHERE decision_request_id = ?"

@@ -204,6 +204,19 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
         }
     }
 
+    @Override
+    public Optional<UUID> partyOf(Connection unitOfWork, DecisionRequestId id) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT party_id FROM credit.decision_request WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(row.getObject(1, UUID.class)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("reading a decision request's party", failure));
+        }
+    }
+
     private static void history(
             Connection unitOfWork,
             DecisionRequestId id,

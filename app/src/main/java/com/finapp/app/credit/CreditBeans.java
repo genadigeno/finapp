@@ -264,8 +264,45 @@ public class CreditBeans {
             com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
             IdGenerator idGenerator) {
         return new com.finapp.credit.SnapshotFreezer(new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
-                creditPartyStanding, new NotAssessedUntilPhase13(), new NothingReservedBeforeDecisions(),
+                creditPartyStanding, new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(),
                 new NoLoansUntilPhase11(), idGenerator);
+    }
+
+    /** The decision's meters, counted after each commit (`P10-TSK-016`). */
+    @Bean
+    CreditDecisionMetrics creditDecisionMetrics(MeterRegistry meterRegistry) {
+        return new CreditDecisionMetrics(meterRegistry);
+    }
+
+    /** The deciding transaction, profile-first (`P10-TSK-016`). */
+    @Bean
+    com.finapp.credit.DecisionMaking decisionMaking(
+            TransactionRunner creditTransactionRunner,
+            CreditPolicyStore creditPolicyStore,
+            ScorecardStore scorecardStore,
+            com.finapp.credit.SnapshotFreezer snapshotFreezer,
+            com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
+            CreditConsentGate<Connection> creditConsentGate,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            CreditDecisionMetrics creditDecisionMetrics,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.credit.DecisionMaking(creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(),
+                new com.finapp.credit.JdbcCreditProfiles(idGenerator), creditPolicyStore, scorecardStore, snapshotFreezer,
+                new com.finapp.credit.CreditAssessments(new com.finapp.credit.JdbcCreditAssessmentStore(), scorecardStore,
+                        outboxWriter, idGenerator, clock),
+                new com.finapp.credit.JdbcCreditAssessmentStore(),
+                new com.finapp.credit.PolicyEvaluations(new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore,
+                        com.finapp.credit.EngineVersions.STANDARD, idGenerator, clock),
+                new com.finapp.credit.JdbcPolicyEvaluationStore(), new com.finapp.credit.JdbcCreditDecisions(),
+                creditPartyStanding, creditConsentGate, outboxWriter, auditWriter, creditDecisionMetrics, idGenerator, clock);
+    }
+
+    /** The published decision read (`P10-TSK-016`) - Phase 11's lending's; no consumer in Phase 10. */
+    @Bean
+    com.finapp.credit.CreditDecisions<Connection> creditDecisions() {
+        return new com.finapp.credit.JdbcCreditDecisions();
     }
 
     @Bean
@@ -279,7 +316,8 @@ public class CreditBeans {
             CreditConsentGate<Connection> creditConsentGate,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.credit.DecisionMaking decisionMaking) {
         return new com.finapp.credit.DecisionProgress(creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(),
                 creditPolicyStore, scorecardStore, new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
                 snapshotFreezer,
@@ -287,7 +325,7 @@ public class CreditBeans {
                         outboxWriter, idGenerator, clock),
                 new com.finapp.credit.PolicyEvaluations(new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore,
                         com.finapp.credit.EngineVersions.STANDARD, idGenerator, clock),
-                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock);
+                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock, decisionMaking);
     }
 
     /** The progress sweep - every instance, no lease, off in test contexts. */

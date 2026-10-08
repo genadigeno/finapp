@@ -1,13 +1,9 @@
 package com.finapp.credit;
 
-import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
-import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
-import com.finapp.sharedkernel.event.EventEnvelope;
-import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
@@ -18,7 +14,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,8 +46,8 @@ import lombok.extern.slf4j.Slf4j;
  *       record re-collects ({@code READY -> COLLECTING}, the one backward edge, {@code INV-CRD-08}); the assessment and
  *       the evaluation, each born once.
  * </ul>
- * {@code EVALUATED} waits for the deciding step (`P10-TSK-016`); an {@code IN_REVIEW} request's expiry waits for its
- * case (`P10-TSK-018`).
+ * An {@code EVALUATED} request is handed to the {@link Decider} (`P10-TSK-016`) once the step's transaction is released;
+ * an {@code IN_REVIEW} request's expiry waits for its case (`P10-TSK-018`).
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -72,6 +67,7 @@ public final class DecisionProgress {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final Decider decider;
 
     /** What one step did. */
     public enum Step {
@@ -83,6 +79,11 @@ public final class DecisionProgress {
         READY,
         RECOLLECTING,
         EVALUATED,
+        /** An {@code EVALUATED} request handed to the deciding step - internal to {@link #step}, never returned. */
+        DECIDING,
+        DECIDED,
+        /** The evaluation refers; the request waits at {@code EVALUATED} for its case (`P10-TSK-018`). */
+        REFERRED,
         EXPIRED,
         ABANDONED
     }
@@ -100,6 +101,15 @@ public final class DecisionProgress {
         Actor platform = SecurityContext.require();
         List<CreditDataRequestId> asks = new ArrayList<>();
         Step step = transactions.inTransaction(uow -> stepWithin(uow, id, platform, correlation, asks));
+        if (step == Step.DECIDING) {
+            // The claim transaction is released; the deciding transaction opens profile-first (element (1)).
+            step = switch (decider.decide(id, correlation)) {
+                case DECIDED -> Step.DECIDED;
+                case REFERRED -> Step.REFERRED;
+                case ABANDONED -> Step.ABANDONED;
+                case NOTHING -> Step.NOTHING;
+            };
+        }
         for (CreditDataRequestId ask : asks) {
             try {
                 collection.ask(ask, correlation);
@@ -129,7 +139,8 @@ public final class DecisionProgress {
             case SUBMITTED -> collect(uow, request, platform, correlation, asks);
             case COLLECTING -> ready(uow, request, platform, correlation);
             case READY -> evaluate(uow, request, platform, correlation, asks);
-            default -> Step.WAITING; // EVALUATED: the deciding step (P10-TSK-016); IN_REVIEW: its case (P10-TSK-018)
+            case EVALUATED -> Step.DECIDING; // the deciding step, in a transaction of its own (P10-TSK-016)
+            default -> Step.WAITING; // IN_REVIEW: its case (P10-TSK-018)
         };
     }
 
@@ -287,31 +298,7 @@ public final class DecisionProgress {
             Optional<ClosureReason> reason,
             Actor platform,
             CorrelationId correlation) {
-        Set<DecisionRequestStatus> from = EnumSet.copyOf(DecisionRequestStatus.OPEN);
-        if (!requests.transition(uow, request.id(), from, to, reason, platform, Optional.empty())) {
-            throw new IllegalStateException("the locked request moved under its own lock");
-        }
-        EventPayload payload = EventPayload.of()
-                .with("decisionRequestId", request.id().value().toString())
-                .with("status", to.name());
-        if (reason.isPresent()) {
-            payload = payload.with("closureReason", reason.get().name());
-        }
-        outbox.write(
-                uow,
-                new EventEnvelope(
-                        EventId.next(ids),
-                        DecisionRequests.CLOSED_EVENT,
-                        DecisionRequests.EVENT_VERSION,
-                        EventEnvelope.CURRENT_SCHEMA_VERSION,
-                        request.id(),
-                        DecisionRequests.AGGREGATE_TYPE,
-                        clock.instant(),
-                        CreditDataCollection.PRODUCER,
-                        correlation,
-                        CausationId.of(correlation.value())),
-                payload.toBytes(),
-                EventPayload.MEDIA_TYPE);
+        new RequestClosures(requests, outbox, ids, clock).close(uow, request, to, reason, platform, correlation);
         return to == DecisionRequestStatus.EXPIRED ? Step.EXPIRED : Step.ABANDONED;
     }
 }

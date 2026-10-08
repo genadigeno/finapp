@@ -653,6 +653,13 @@ class OwnershipIsScopedTest {
                                         + " value; the progress has no customer door, and the request's owner is the party"
                                         + " it carries, not the caller.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.partyOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-016. The deciding transaction's first read, to lock the party's profile before"
+                                        + " the request (lock order element (1)): the request id comes only from the progress"
+                                        + " step's claimed page, never a request value; the decision has no customer door.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.pin",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -77,6 +77,13 @@ public enum CreditAuditAction implements AuditableAction {
             "credit.DecisionRequestCancelled",
             "The applicant cancelled their own credit decision request before it was evaluated (P10-TSK-014; the"
                     + " fx.QuoteCancelled precedent); the summary names the request and the status it left, never an amount.",
+            false),
+
+    DECISION_RECORDED(
+            "credit.DecisionRecorded",
+            "A credit decision was recorded for a decision request (P10-TSK-016) - by the platform's deciding transaction,"
+                    + " under the party's profile lock; written once, by the acting decider only. The summary names the"
+                    + " request, the decision and the outcome, never an amount (INV-AUD-02).",
             false);
 
     private final String code;
