@@ -174,7 +174,13 @@ public final class MetricNames {
                     // CreditSourceKind - a category of data source every applicant shares, never a person or a
                     // resource. finapp.credit.data.request{source_kind, provider, outcome} is the plan's own
                     // series (PHASE_10_PLAN.md section 15): the unavailability ratio is per source kind.
-                    "source_kind");
+                    "source_kind",
+                    // Which credit product (P10-TSK-012): PERSONAL_LOAN or CREDIT_LINE, the closed
+                    // CreditProduct - a reviewed code change with its migration, never a string from a request;
+                    // a category every applicant for it shares, never a person or a resource. The plan's own
+                    // series carry it (PHASE_10_PLAN.md section 15: finapp.credit.policy.active{product}, and the
+                    // decision and reason counters that follow), registered eagerly per declared product.
+                    "product");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

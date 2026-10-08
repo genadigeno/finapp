@@ -962,6 +962,41 @@
           }
         }
       },
+      "credit.PolicyIncomplete": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.PolicyIncomplete"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.PolicyIncomplete"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The credit policy is incomplete or not well formed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "credit.PolicyStale": {
         "content": {
           "application/problem+json": {
@@ -988,6 +1023,41 @@
           }
         },
         "description": "[409] The version is no longer awaiting a decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "credit.ProductNotOffered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.ProductNotOffered"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.ProductNotOffered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The product is not offered.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -8164,6 +8234,236 @@
         },
         "type": "object"
       },
+      "CreditPolicyReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "retiredId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyRuleRequest": {
+        "properties": {
+          "booleanOperand": {
+            "type": "boolean"
+          },
+          "capMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "codesOperand": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 0,
+            "type": "array"
+          },
+          "effect": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "integerOperand": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "moneyOperandMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operator": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ruleCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "subjectKind": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "effect",
+          "operator",
+          "reasonCode",
+          "ruleCode",
+          "subject",
+          "subjectKind"
+        ],
+        "type": "object"
+      },
+      "CreditPolicyRuleView": {
+        "properties": {
+          "booleanOperand": {
+            "type": "boolean"
+          },
+          "capMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "codesOperand": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "integerOperand": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "moneyOperandMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "ruleCode": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicySourceRequest": {
+        "properties": {
+          "kind": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maximumDataAgeSeconds": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "maximumDataAgeSeconds"
+        ],
+        "type": "object"
+      },
+      "CreditPolicySourceView": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "maximumDataAgeSeconds": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyView": {
+        "properties": {
+          "assessmentRateBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "autoApprovalCeilingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maximumExposureMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minimumDisposableMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minimumPaymentRatioBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPolicyRuleView"
+            },
+            "type": "array"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPolicySourceView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unavailableFallback": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CrossBorderBeneficiaryList": {
         "properties": {
           "beneficiaries": {
@@ -10693,6 +10993,16 @@
         },
         "type": "object"
       },
+      "PolicyDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PolicyList": {
         "properties": {
           "truncated": {
@@ -10705,6 +11015,79 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "PolicyProposalRequest": {
+        "properties": {
+          "assessmentRateBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "autoApprovalCeilingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "maximumExposureMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minimumDisposableMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minimumPaymentRatioBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPolicyRuleRequest"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPolicySourceRequest"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          },
+          "unavailableFallback": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assessmentRateBps",
+          "autoApprovalCeilingMinor",
+          "currency",
+          "maximumExposureMinor",
+          "minimumDisposableMinor",
+          "minimumPaymentRatioBps",
+          "product",
+          "rules",
+          "sources",
+          "unavailableFallback"
+        ],
         "type": "object"
       },
       "PolicyReceipt": {
@@ -15582,6 +15965,166 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies": {
+      "get": {
+        "operationId": "readCreditPolicy",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeCreditPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies/{versionId}/approval": {
+      "post": {
+        "operationId": "approveCreditPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies/{versionId}/rejection": {
+      "post": {
+        "operationId": "rejectCreditPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyReceipt"
                 }
               }
             },

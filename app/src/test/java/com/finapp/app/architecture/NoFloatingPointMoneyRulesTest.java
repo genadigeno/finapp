@@ -292,6 +292,12 @@ class NoFloatingPointMoneyRulesTest {
                     // unreadable. A flag, never an amount or a rate (ADR-0072).
                     "com.finapp.app.telemetry.RuleSetMissingMetrics",
                     "com.finapp.app.telemetry.RuleSetMissingMetrics$Cached",
+                    // P10-TSK-012. The SAME case again: each offered product's ACTIVE credit policy
+                    // version NUMBER, 0 for none, published through the ToDoubleFunction a Gauge
+                    // imposes, NaN the sentinel for unreadable. A version number, never a threshold, an
+                    // amount or a rate (ADR-0072).
+                    "com.finapp.app.telemetry.CreditPolicyMetrics",
+                    "com.finapp.app.telemetry.CreditPolicyMetrics$Cached",
                     // P8-TSK-024. The SAME case again: the open breaks per type and severity
                     // (counts) and the oldest open break's age in whole SECONDS per severity,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel

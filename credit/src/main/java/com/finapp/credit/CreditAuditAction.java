@@ -50,6 +50,27 @@ public enum CreditAuditAction implements AuditableAction {
     SCORECARD_VERSION_REJECTED(
             "credit.ScorecardVersionRejected",
             "A proposed scorecard model version was rejected - or withdrawn by its proposer; no model changed.",
+            true),
+
+    /** A holder of CREDIT_POLICY_ADMINISTER proposed a whole credit policy version (`P10-TSK-012`, ADR-0086). */
+    POLICY_VERSION_PROPOSED(
+            "credit.PolicyVersionProposed",
+            "A holder of CREDIT_POLICY_ADMINISTER proposed a whole credit policy version for a product: its parameters and"
+                    + " rules born with it and frozen by trigger (INV-CRD-05), complete - a fallback for every source kind it"
+                    + " reads (INV-CRD-10) - and awaiting a DIFFERENT person's activation (INV-AUD-04).",
+            true),
+
+    /** A different person activated a proposed credit policy version, retiring its predecessor (`P10-TSK-012`). */
+    POLICY_VERSION_ACTIVATED(
+            "credit.PolicyVersionActivated",
+            "A different person activated a proposed credit policy version (INV-AUD-04), retiring the product's predecessor"
+                    + " in the same transaction; the event credit.CreditPolicyVersionActivated carries the version.",
+            true),
+
+    /** A proposed credit policy version was rejected, or withdrawn by its proposer (`P10-TSK-012`). */
+    POLICY_VERSION_REJECTED(
+            "credit.PolicyVersionRejected",
+            "A proposed credit policy version was rejected - or withdrawn by its proposer; no policy changed.",
             true);
 
     private final String code;

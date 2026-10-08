@@ -895,6 +895,8 @@ proposal machine's own states.
 | `credit.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
 | `credit.ScorecardInvalid` | 422 | The scorecard is not well formed. |
 | `credit.ReasonRequired` | 422 | A reason is required. |
+| `credit.PolicyIncomplete` | 422 | The credit policy is incomplete or not well formed. |
+| `credit.ProductNotOffered` | 422 | The product is not offered. |
 
 The scorecard doors (`P10-TSK-011`, ADR-0086 §3), every route behind `CREDIT_POLICY_ADMINISTER` and every act
 keyed per principal (`credit.scorecard:<type>:<id>`), so a lost response replays its receipt and a refusal stores
@@ -905,6 +907,16 @@ approvers; `ProposalPending` one proposal per family at a time. `ScorecardInvali
 or overlap in an attribute's ranges, a money attribute or a marker banded, a boolean half covered, an unknown code
 or family - never a value. `ReasonRequired` answers a decision or proposal with no reason, judged by the domain
 rather than the boundary so it carries its own code.
+
+The credit policy doors (`P10-TSK-012`, ADR-0086 §§4-6) answer the same codes on the same terms, keyed
+`credit.policy:<type>:<id>`, plus two of their own. `PolicyIncomplete` refuses a policy at PROPOSAL, never at decision
+time: no fallback rule guaranteed to refer or decline with `CRD-SOURCE-UNAVAILABLE` for a source kind the policy reads
+(`INV-CRD-10`) - an approving fallback is unnameable - a subject or reason code outside the vocabulary, an operator
+and operand that disagree in type, an adverse effect carrying a non-adverse code (`INV-CRD-02`), an amount outside
+the product's currency, an unbounded parameter; the detail names the defect, never a threshold. `ProductNotOffered`
+answers a product the platform does not offer, on the proposal and on the read. The read
+(`GET /v1/operator/credit/policies?product=&at=`, `CREDIT_INVESTIGATE`) answers `NotFound` when no version was in
+force at the instant, and the platform's `api.ValidationFailed` for an `at` that is not an ISO-8601 instant.
 
 ## 3a. Rejection at the boundary
 

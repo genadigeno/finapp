@@ -29,7 +29,17 @@ public enum CreditErrorCode implements ErrorCode {
     SCORECARD_INVALID("credit.ScorecardInvalid", 422, "The scorecard is not well formed."),
 
     /** A proposal or a decision carries no reason. */
-    REASON_REQUIRED("credit.ReasonRequired", 422, "A reason is required.");
+    REASON_REQUIRED("credit.ReasonRequired", 422, "A reason is required."),
+
+    /**
+     * A credit policy is incomplete or ill typed - no fallback for a source kind it reads, an unknown attribute or
+     * reason code, an operand of the wrong type, an adverse effect without an adverse code (`P10-TSK-012`,
+     * {@code INV-CRD-10}); the detail names the defect, never a threshold.
+     */
+    POLICY_INCOMPLETE("credit.PolicyIncomplete", 422, "The credit policy is incomplete or not well formed."),
+
+    /** The product is not one the platform offers (ADR-0084 section 6). */
+    PRODUCT_NOT_OFFERED("credit.ProductNotOffered", 422, "The product is not offered.");
 
     private final String code;
     private final int status;

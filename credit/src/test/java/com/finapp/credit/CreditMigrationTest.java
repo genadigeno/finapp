@@ -115,7 +115,8 @@ class CreditMigrationTest {
         assertThat(column("SELECT tablename FROM pg_tables WHERE schemaname = '" + SCHEMA + "'"))
                 .containsExactlyInAnyOrder("flyway_schema_history", "reason_code", "credit_profile", "data_request",
                         "data_request_attempt", "credit_record", "credit_record_attribute", "credit_evidence", "decision_snapshot",
-                        "scorecard_model_version", "scorecard_band", "scorecard_model_event", "credit_assessment");
+                        "scorecard_model_version", "scorecard_band", "scorecard_model_event", "credit_assessment",
+                        "credit_policy_version", "credit_policy_rule", "credit_policy_event");
         assertRefusedByPrivilege("SELECT * FROM credit.flyway_schema_history");
     }
 
@@ -157,7 +158,16 @@ class CreditMigrationTest {
         assertRefusedByTrigger("UPDATE credit.reason_code SET adverse = NOT adverse"
                 + " WHERE code = 'CRD-AUTO-APPROVAL-CEILING'");
         assertRefusedByTrigger("DELETE FROM credit.reason_code WHERE code = 'CRD-SOURCE-UNAVAILABLE'");
-        assertRefusedByTrigger("TRUNCATE credit.reason_code");
+        // Since V008 (P10-TSK-012) every policy rule's reason code is a foreign key into the catalogue, so a plain
+        // TRUNCATE is refused by that reference first - a second rank; CASCADE passes it and meets the catalogue's
+        // own trigger, which fires first for the table named first.
+        assertThatExceptionOfType(SQLException.class)
+                .as("TRUNCATE credit.reason_code")
+                .isThrownBy(() -> asMigrator("TRUNCATE credit.reason_code"))
+                .matches(e -> "0A000".equals(e.getSQLState()) && e.getMessage().contains("credit_policy_rule"),
+                        "the policy rule's foreign key's refusal");
+        migrator.rollback();
+        assertRefusedByTrigger("TRUNCATE credit.reason_code CASCADE");
     }
 
     @Test
