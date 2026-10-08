@@ -158,7 +158,10 @@ class CreditProfileDatabaseTest {
                     + party + "'", RAISE_EXCEPTION);
             assertRefused(migrator, "DELETE FROM credit.credit_profile WHERE party_id = '" + party + "'",
                     RAISE_EXCEPTION);
-            assertRefused(migrator, "TRUNCATE credit.credit_profile", RAISE_EXCEPTION);
+            // Since V010 (P10-TSK-014) the decision request references the profile, so a plain TRUNCATE is refused by
+            // that foreign key first - a second rank; CASCADE passes it and meets the profile's own trigger.
+            assertRefused(migrator, "TRUNCATE credit.credit_profile", "0A000");
+            assertRefused(migrator, "TRUNCATE credit.credit_profile CASCADE", RAISE_EXCEPTION);
         }
         assertThat(profileCount(party)).isEqualTo(1);
     }

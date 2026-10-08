@@ -94,8 +94,9 @@ final class ScorecardFixtures {
     }
 
     static DecisionSnapshot snapshot(ScorecardModelVersionId model, List<CreditAttribute> attributes) {
-        UUID decision = IDS.next();
-        SnapshotContent content = new SnapshotContent(decision, IDS.next(), CreditProduct.PERSONAL_LOAN,
+        UUID party = IDS.next();
+        UUID decision = inOneTransaction(uow -> DecisionRequestRows.submitted(uow, party, CreditProduct.PERSONAL_LOAN));
+        SnapshotContent content = new SnapshotContent(decision, party, CreditProduct.PERSONAL_LOAN,
                 com.finapp.sharedkernel.money.Money.ofMinorUnits(1_000_000, com.finapp.sharedkernel.money.CurrencyCode.of("EUR")),
                 java.util.Optional.of(36), new PinnedVersions(CreditPolicyV1.PERSONAL_LOAN_ID.value(), model.value(), 1), attributes);
         String canonical = CanonicalSnapshot.render(content);

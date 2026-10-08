@@ -2438,6 +2438,33 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `policy_evaluation_rule` | `effect` | `INTERNAL` | A closed effect |
 | `policy_evaluation_rule` | `triggered` | `CONFIDENTIAL` | Which rules held - read with the policy, they bound the thresholds |
 | `policy_evaluation_rule` | `assessed` | `CONFIDENTIAL` | Which rules read a missing value |
+| `decision_request` | `id` | `INTERNAL` | Generated |
+| `decision_request` | `party_id` | `INTERNAL` | The applicant's party - an identifier, owner-scoped in every customer read |
+| `decision_request` | `profile_id` | `INTERNAL` | The party's credit profile |
+| `decision_request` | `product` | `INTERNAL` | A closed product |
+| `decision_request` | `currency` | `INTERNAL` | The product's currency |
+| `decision_request` | `requested_minor` | `RESTRICTED-FINANCIAL` | The applicant's requested amount |
+| `decision_request` | `term_months` | `RESTRICTED-FINANCIAL` | The applicant's requested term |
+| `decision_request` | `declared_income_minor` | `RESTRICTED-FINANCIAL` | The applicant's declared income - never in an event or a view |
+| `decision_request` | `declared_expenditure_minor` | `RESTRICTED-FINANCIAL` | The applicant's declared expenditure - never in an event or a view |
+| `decision_request` | `status` | `CONFIDENTIAL` | Where the applicant's request stands |
+| `decision_request` | `closure_reason` | `CONFIDENTIAL` | Why the platform abandoned it - standing lost or consent withdrawn |
+| `decision_request` | `request_validity` | `INTERNAL` | The product's declared validity, frozen |
+| `decision_request` | `submitted_at` | `INTERNAL` | System time, stamped by the trigger |
+| `decision_request` | `expires_at` | `INTERNAL` | System time, stamped by the trigger |
+| `decision_request` | `next_step_at` | `INTERNAL` | The progress permit, on the database clock |
+| `decision_request` | `pinned_policy_version_id` | `INTERNAL` | The pinned policy version |
+| `decision_request` | `pinned_model_version_id` | `INTERNAL` | The pinned scorecard version |
+| `decision_request` | `pinned_engine_version` | `INTERNAL` | The pinned engine version |
+| `decision_request` | `correlation_id` | `INTERNAL` | The submission's correlation |
+| `decision_request_event` | `id` | `INTERNAL` | Generated |
+| `decision_request_event` | `decision_request_id` | `INTERNAL` | The request moved |
+| `decision_request_event` | `from_status` | `CONFIDENTIAL` | The machine edge |
+| `decision_request_event` | `to_status` | `CONFIDENTIAL` | The machine edge |
+| `decision_request_event` | `actor_id` | `CONFIDENTIAL` | Who moved it - the applicant, the platform or a person |
+| `decision_request_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `decision_request_event` | `reason` | `CONFIDENTIAL` | Free prose where an edge carries one |
+| `decision_request_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 
 ### Free text, classified at its ceiling
 

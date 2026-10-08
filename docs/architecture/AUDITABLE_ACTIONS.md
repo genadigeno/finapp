@@ -591,9 +591,11 @@ repudiation's with `P8-TSK-023`.
 | `credit.PolicyVersionProposed` | **Yes** | A holder of CREDIT_POLICY_ADMINISTER proposed a whole credit policy version for a product (`P10-TSK-012`, ADR-0086): complete - a fallback for every source kind it reads (`INV-CRD-10`), every rule well typed with an adverse catalogued reason (`INV-CRD-02`) - its parameters and rules born with it and immutable from insert by trigger (`INV-CRD-05`), awaiting a DIFFERENT person's activation (`INV-AUD-04`). The summary names the product, the version, the rule count and the source kinds - never a threshold. |
 | `credit.PolicyVersionActivated` | **Yes** | A different person activated a proposed credit policy version (`INV-AUD-04`, also held by `credit V008`'s four-eyes `CHECK`), retiring the product's predecessor in the same transaction - their effective periods meeting; the event `credit.CreditPolicyVersionActivated` carries the version, never the rules. |
 | `credit.PolicyVersionRejected` | **Yes** | A proposed credit policy version was rejected - or withdrawn by its proposer; no policy changed. A correction is a rejection and a new proposal. |
+| `credit.DecisionRequestCancelled` | No | The applicant cancelled their own credit decision request before it was evaluated (`P10-TSK-014`; the `fx.QuoteCancelled` precedent) - a customer act, under the request row's lock (lock order element (2)), conditional on `SUBMITTED`, `COLLECTING` or `READY`; written once, in the cancelling transaction beside `credit.CreditDecisionRequestClosed`. The summary names the request and the status it left, never an amount. Submission is not an audit record: the request's row, its history and `credit.CreditDecisionRequested` record it, and the access it leads to is audited by the data request's opener. |
 
 `credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`, the three
-scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`.
+scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`, `credit.DecisionRequestCancelled` at
+`P10-TSK-014`.
 
 ### What is emitted, and what is declared not to be
 

@@ -536,7 +536,10 @@ class BureauCollectionDatabaseTest {
     }
 
     private static CreditDataCollection.Opening opening(UUID party) {
-        return new CreditDataCollection.Opening(IDS.next(), party, CreditProduct.PERSONAL_LOAN, CreditSourceKind.BUREAU);
+        // A real request (`P10-TSK-014`): the data request references it.
+        UUID decision = TRANSACTIONS.inTransaction(
+                uow -> DecisionRequestRows.submitted(uow, party, CreditProduct.PERSONAL_LOAN));
+        return new CreditDataCollection.Opening(decision, party, CreditProduct.PERSONAL_LOAN, CreditSourceKind.BUREAU);
     }
 
     /** Tx1 alone, committed - the opener then "crashes" before asking. */

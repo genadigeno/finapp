@@ -223,4 +223,37 @@ public class CreditBeans {
         return new com.finapp.app.telemetry.CreditPolicyMetrics(
                 creditPolicyStore, dataSource::getConnection, clock, meterRegistry);
     }
+    // ------------------------------------------------------------------ the decision request (P10-TSK-014)
+
+    /** The party's credit standing and facts over the party store - a verified customer, ACTIVE (`P10-TSK-014`). */
+    @Bean
+    com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding(
+            com.finapp.party.PartyStore<Connection> partyStore) {
+        return new PartyCreditStanding(partyStore);
+    }
+
+    @Bean
+    com.finapp.credit.DecisionRequests decisionRequests(
+            CreditPolicyStore creditPolicyStore,
+            com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
+            CreditConsentGate<Connection> creditConsentGate,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.credit.DecisionRequests(new com.finapp.credit.JdbcDecisionRequestStore(),
+                new com.finapp.credit.JdbcCreditProfiles(idGenerator), creditPolicyStore, creditPartyStanding, creditConsentGate,
+                outboxWriter, auditWriter, idGenerator, clock);
+    }
+
+    @Bean
+    CreditDecisionRequestDesk creditDecisionRequestDesk(
+            com.finapp.credit.DecisionRequests decisionRequests,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            IdempotentExecutor idempotentExecutor,
+            TransactionRunner creditTransactionRunner) {
+        return new CreditDecisionRequestDesk(
+                decisionRequests, identityStore, mfaEnrolmentStore, idempotentExecutor, creditTransactionRunner);
+    }
 }

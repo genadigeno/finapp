@@ -897,6 +897,10 @@ proposal machine's own states.
 | `credit.ReasonRequired` | 422 | A reason is required. |
 | `credit.PolicyIncomplete` | 422 | The credit policy is incomplete or not well formed. |
 | `credit.ProductNotOffered` | 422 | The product is not offered. |
+| `credit.AmountOutOfRange` | 422 | The requested amount or term is outside the product's bounds. |
+| `credit.DecisionRequestOpen` | 409 | An open decision request for this product already exists. |
+| `credit.RequestNotCancellable` | 409 | The decision request can no longer be cancelled. |
+| `credit.ApplicantNotEligible` | 409 | The applicant is not a verified customer in good standing; complete verification and retry. |
 
 The scorecard doors (`P10-TSK-011`, ADR-0086 §3), every route behind `CREDIT_POLICY_ADMINISTER` and every act
 keyed per principal (`credit.scorecard:<type>:<id>`), so a lost response replays its receipt and a refusal stores
@@ -917,6 +921,21 @@ the product's currency, an unbounded parameter; the detail names the defect, nev
 answers a product the platform does not offer, on the proposal and on the read. The read
 (`GET /v1/operator/credit/policies?product=&at=`, `CREDIT_INVESTIGATE`) answers `NotFound` when no version was in
 force at the instant, and the platform's `api.ValidationFailed` for an `at` that is not an ISO-8601 instant.
+
+The customer's decision request doors (`P10-TSK-014`, CREDIT_DECISIONING_LIFECYCLES.md §3.1): submit keyed
+`credit.decision:<type>:<id>` (asynchronous, `202` with the request `SUBMITTED`), cancel keyed
+`credit.decision-cancellation:<type>:<id>`, read one's own. The refusals are judged in one transaction, in order, and
+each writes nothing - the claim rolls back with it, so a corrected retry under the same key is judged afresh:
+`ApplicantNotEligible` (a `409` and cause-blind, the `accounts.AccountOpeningRefused` shape - complete verification and
+retry), `ProductNotOffered` (an unknown product, or none with a policy in force), `AmountOutOfRange` (the amount
+outside the product's bounds or not in its currency at its scale, a term outside its months, a term on a revolving
+line or none on a loan - the detail names the bound), the platform's `consent.ConsentRequired` naming the purpose for
+the first source kind the policy in force reads without a current basis (`409`, `INV-CRD-03` - nothing is asked of any
+provider; the backlog's `403 credit.ConsentRequired` corrected to the contract's one consent refusal, which is
+deliberately not a `403`), and `DecisionRequestOpen` naming the open request (one open per party and product, the
+partial unique the arbiter). `RequestNotCancellable` answers a request already evaluated or closed. Another party's
+request is `NotFound`, exactly as an unknown or malformed id. An MFA-enrolled identity on a password-only session is
+`identity.AssuranceRequired` (`403`) before any of these.
 
 ## 3a. Rejection at the boundary
 

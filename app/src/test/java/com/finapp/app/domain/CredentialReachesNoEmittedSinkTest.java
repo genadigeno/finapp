@@ -469,6 +469,10 @@ class CredentialReachesNoEmittedSinkTest {
                         "QuoteRequestBody",
                         // P9-TSK-009: the conversion request - a quote id. No secret; closed.
                         "ConversionRequestBody",
+                        // P10-TSK-014: the customer's credit decision request - a product, an amount, a currency, a
+                        // term and the declared monthly figures as decimal strings (RESTRICTED-FINANCIAL, stored on the
+                        // request alone - never evented, viewed or audited). No secret; closed: never a score or a rate.
+                        "CreditDecisionRequestBody",
                         // P8-TSK-014: the investigator's case file. No secret in any of them.
                         // The assignee is an identity identifier; the classification carries a
                         // type and a REASON (screened like a note for card-number and account

@@ -71,7 +71,13 @@ public enum CreditAuditAction implements AuditableAction {
     POLICY_VERSION_REJECTED(
             "credit.PolicyVersionRejected",
             "A proposed credit policy version was rejected - or withdrawn by its proposer; no policy changed.",
-            true);
+            true),
+
+    DECISION_REQUEST_CANCELLED(
+            "credit.DecisionRequestCancelled",
+            "The applicant cancelled their own credit decision request before it was evaluated (P10-TSK-014; the"
+                    + " fx.QuoteCancelled precedent); the summary names the request and the status it left, never an amount.",
+            false);
 
     private final String code;
     private final String description;

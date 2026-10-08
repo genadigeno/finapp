@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (13 of 24 items complete, M10.1, M10.2, M10.3 and M10.4 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (14 of 24 items complete, M10.1, M10.2, M10.3 and M10.4 closed, M10.5 at 1 of 4); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15163,7 +15163,7 @@ assignment and an expiry serialise (`-018`).
   version is recorded on every evaluation.
 - **Definition of done**: `DOD-DOMAIN`. **Risk**: High. **Cx**: M.
 
-**P10-TSK-014 — The decision request** — `READY` (marked by `P10-TSK-013`'s completion gate, 2026-10-08)
+**P10-TSK-014 — The decision request** — `COMPLETE` (2026-10-08; marked `READY` by the previous task's completion gate)
 - **Objective**: a customer submits a credit decision request — keyed, consented, standing-checked,
   one open per product — and reads its status.
 - **Bounded context**: Credit Decisioning; `app` (the door, the standing adapter).
@@ -15239,7 +15239,7 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**:
   L.
 
-**P10-TSK-015 — Decision orchestration** — `PLANNED`
+**P10-TSK-015 — Decision orchestration** — `READY` (marked by `P10-TSK-014`'s completion gate, 2026-10-08)
 - **Objective**: drive every request from submission to evaluation across N instances, leaderless,
   crash-safe, on the database clock — and expire what is not decided in time.
 - **Bounded context**: Credit Decisioning; `app` (the schedule).
