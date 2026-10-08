@@ -601,6 +601,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards/{versionId}/rejection",
+                        // P10-TSK-012: the credit policy doors (CREDIT_POLICY_ADMINISTER, keyed; the read
+                        // CREDIT_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/policies",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/policies/{versionId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/policies/{versionId}/rejection",
                         // P9-TSK-017: the customer's beneficiaries abroad (a session).
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}",

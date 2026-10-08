@@ -588,9 +588,12 @@ repudiation's with `P8-TSK-023`.
 | `credit.ScorecardVersionProposed` | **Yes** | A holder of CREDIT_POLICY_ADMINISTER proposed a whole scorecard model version (`P10-TSK-011`, ADR-0086 §3): its bands born with it in the proposing transaction and immutable from insert by trigger (`INV-CRD-05`), the family's proposals serialised on advisory namespace 10, awaiting a DIFFERENT person's activation (`INV-AUD-04`). |
 | `credit.ScorecardVersionActivated` | **Yes** | A different person activated a proposed scorecard model version (`INV-AUD-04`, also held by `credit V006`'s four-eyes `CHECK`), retiring its predecessor in the same transaction - their effective periods meeting on the database clock; the event `credit.ScorecardModelVersionActivated` carries the version, never the bands. |
 | `credit.ScorecardVersionRejected` | **Yes** | A proposed scorecard model version was rejected - or withdrawn by its proposer; no model changed. A correction is a rejection and a new proposal. |
+| `credit.PolicyVersionProposed` | **Yes** | A holder of CREDIT_POLICY_ADMINISTER proposed a whole credit policy version for a product (`P10-TSK-012`, ADR-0086): complete - a fallback for every source kind it reads (`INV-CRD-10`), every rule well typed with an adverse catalogued reason (`INV-CRD-02`) - its parameters and rules born with it and immutable from insert by trigger (`INV-CRD-05`), awaiting a DIFFERENT person's activation (`INV-AUD-04`). The summary names the product, the version, the rule count and the source kinds - never a threshold. |
+| `credit.PolicyVersionActivated` | **Yes** | A different person activated a proposed credit policy version (`INV-AUD-04`, also held by `credit V008`'s four-eyes `CHECK`), retiring the product's predecessor in the same transaction - their effective periods meeting; the event `credit.CreditPolicyVersionActivated` carries the version, never the rules. |
+| `credit.PolicyVersionRejected` | **Yes** | A proposed credit policy version was rejected - or withdrawn by its proposer; no policy changed. A correction is a rejection and a new proposal. |
 
 `credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`, the three
-scorecard acts at `P10-TSK-011`.
+scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`.
 
 ### What is emitted, and what is declared not to be
 

@@ -442,6 +442,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // sets, in nested schemas - with a REASON; a decision carries a REASON.
                         "ScorecardProposalRequest",
                         "ScorecardDecisionRequest",
+                        // P10-TSK-012: the credit policy doors. No secret in any of them. A proposal is a
+                        // policy - a product, integer amounts and basis points, source kinds with ages, and
+                        // rules over vocabulary codes, in nested schemas - with a REASON; a decision carries a
+                        // REASON.
+                        "PolicyProposalRequest",
+                        "PolicyDecisionRequest",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's

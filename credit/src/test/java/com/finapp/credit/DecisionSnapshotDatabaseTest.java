@@ -50,8 +50,11 @@ class DecisionSnapshotDatabaseTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Duration MAX_AGE = Duration.ofDays(30);
-    /** The model is the seeded RETAIL_SCORECARD v1 - V006 gave the pinned model its foreign key (P10-TSK-011). */
-    private static final PinnedVersions VERSIONS = new PinnedVersions(UUID.randomUUID(), RetailScorecardV1.ID.value(), 1);
+    /**
+     * The model is the seeded RETAIL_SCORECARD v1 - V006 gave the pinned model its foreign key (P10-TSK-011) - and the
+     * policy the seeded PERSONAL_LOAN v1, V008 having given the pinned policy its own (P10-TSK-012).
+     */
+    private static final PinnedVersions VERSIONS = new PinnedVersions(CreditPolicyV1.PERSONAL_LOAN_ID.value(), RetailScorecardV1.ID.value(), 1);
 
     private final JdbcCreditDataRequestStore requests = new JdbcCreditDataRequestStore();
     private final JdbcDecisionSnapshotStore snapshots = new JdbcDecisionSnapshotStore();

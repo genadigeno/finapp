@@ -2370,6 +2370,57 @@ an applicant's figures, so it is `RESTRICTED-FINANCIAL` and none of it reaches a
 | `credit_assessment` | `score` | `RESTRICTED-FINANCIAL` | The applicant's score - a figure, never a decision (`INV-CRD-04`) |
 | `credit_assessment` | `assessed_at` | `INTERNAL` | System time, stamped by the trigger |
 
+### `credit` - the credit policy - *added by `P10-TSK-012`*
+A policy is platform configuration - no person in it beyond who proposed and decided it - but its THRESHOLDS are
+the lending rulebook: knowing them is knowing how to game a decision, so they are `CONFIDENTIAL` and leave the
+platform only on the operator surface (`GET /v1/operator/credit/policies`, `CREDIT_INVESTIGATE`), never in an event,
+a log, a span or a customer's explanation (which names reason codes alone, `INV-CRD-02`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `credit_policy_version` | `id` | `INTERNAL` | Generated; each product's v1 fixed by the seed |
+| `credit_policy_version` | `product` | `INTERNAL` | The offered product |
+| `credit_policy_version` | `version` | `INTERNAL` | Numbered max + 1 per product |
+| `credit_policy_version` | `status` | `INTERNAL` | The machine state |
+| `credit_policy_version` | `currency` | `INTERNAL` | The product's currency, stated once for every amount |
+| `credit_policy_version` | `scale` | `INTERNAL` | The currency's scale, stated with it (`INV-MON-03`) |
+| `credit_policy_version` | `assessment_rate_bps` | `CONFIDENTIAL` | A threshold: the affordability stress rate |
+| `credit_policy_version` | `minimum_disposable_minor` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_version` | `minimum_payment_ratio_bps` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_version` | `maximum_exposure_minor` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_version` | `max_data_age_bureau_seconds` | `INTERNAL` | Which sources the policy reads, and how stale it accepts |
+| `credit_policy_version` | `max_data_age_financial_data_seconds` | `INTERNAL` | As the bureau's |
+| `credit_policy_version` | `unavailable_fallback` | `INTERNAL` | `REFER` or `DECLINE` - never approve (`INV-CRD-10`) |
+| `credit_policy_version` | `auto_approval_ceiling_minor` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_version` | `proposed_by` | `CONFIDENTIAL` | Who proposed it - `migration:V008` for the seeds |
+| `credit_policy_version` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_policy_version` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person about a policy decision |
+| `credit_policy_version` | `decided_by` | `CONFIDENTIAL` | Who activated or rejected it - the four-eyes fact (`credit_policy_four_eyes`) |
+| `credit_policy_version` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_policy_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
+| `credit_policy_version` | `effective_from` | `INTERNAL` | The activation's database instant |
+| `credit_policy_version` | `effective_to` | `INTERNAL` | The retirement's database instant - the successor's start |
+| `credit_policy_rule` | `policy_version_id` | `INTERNAL` | The version it was born with |
+| `credit_policy_rule` | `ordinal` | `INTERNAL` | Its place in the rule list, from 1 |
+| `credit_policy_rule` | `rule_code` | `INTERNAL` | The rule's name |
+| `credit_policy_rule` | `subject_kind` | `INTERNAL` | `ATTRIBUTE` or `FIGURE` |
+| `credit_policy_rule` | `subject` | `INTERNAL` | A vocabulary code |
+| `credit_policy_rule` | `operator` | `INTERNAL` | A closed operator |
+| `credit_policy_rule` | `operand_integer` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_rule` | `operand_money_minor` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_rule` | `operand_boolean` | `CONFIDENTIAL` | A threshold |
+| `credit_policy_rule` | `operand_codes` | `CONFIDENTIAL` | A threshold - a set of codes |
+| `credit_policy_rule` | `effect` | `INTERNAL` | A closed effect |
+| `credit_policy_rule` | `cap_amount_minor` | `CONFIDENTIAL` | A threshold: the cap |
+| `credit_policy_rule` | `reason_code` | `INTERNAL` | A catalogued code (`INV-CRD-02`) |
+| `credit_policy_event` | `id` | `INTERNAL` | Generated |
+| `credit_policy_event` | `policy_version_id` | `INTERNAL` | The version moved |
+| `credit_policy_event` | `from_status` | `INTERNAL` | The machine edge |
+| `credit_policy_event` | `to_status` | `INTERNAL` | The machine edge |
+| `credit_policy_event` | `actor_id` | `CONFIDENTIAL` | Who moved it |
+| `credit_policy_event` | `reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
+| `credit_policy_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

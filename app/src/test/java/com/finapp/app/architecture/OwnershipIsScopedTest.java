@@ -651,6 +651,42 @@ class OwnershipIsScopedTest {
                                         + " snapshot pinned or one this transaction locked; a scorecard has no owner to"
                                         + " scope by and no customer door.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.insertProposal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-012. The version id is minted by the administration; a credit policy is"
+                                        + " platform-wide configuration with no owner to scope by, and every writing door is"
+                                        + " behind @RequiresPermission(CREDIT_POLICY_ADMINISTER), asserted per route by"
+                                        + " CreditPolicyEndpointDatabaseTest with nothing written.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-012. The version id comes only from a row this transaction just inserted"
+                                        + " or locked FOR UPDATE; the history is append-only for every writer.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-012. The id comes only from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id)), the move conditional on PROPOSED; the policy is platform-wide"
+                                        + " configuration behind CREDIT_POLICY_ADMINISTER, four-eyes by CHECK.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-012. The id comes only from the product's ACTIVE row this transaction"
+                                        + " locked FOR UPDATE (lockActive), the move conditional on ACTIVE, and a deferred"
+                                        + " trigger refuses a retirement that commits without its successor.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.policy",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-012. A read of platform-wide configuration: the version id is one the"
+                                        + " effective periods or the ACTIVE status answered, or one a snapshot pinned; a"
+                                        + " policy has no owner to scope by, and its one door is the investigator's, behind"
+                                        + " @RequiresPermission(CREDIT_INVESTIGATE).")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideAutomatically",
                             new Entry(
                                     Scope.ADMINISTERED,

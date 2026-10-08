@@ -220,7 +220,14 @@ class RoutePermissionRegisterTest {
                     // CREDIT_POLICY_OFFICER (ADR-0086 section 3); every act keyed.
                     entry("POST /v1/operator/credit/scorecards", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/scorecards/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
-                    entry("POST /v1/operator/credit/scorecards/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER)));
+                    entry("POST /v1/operator/credit/scorecards/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),
+                    // P10-TSK-012: the credit policy doors - policy versions under four eyes, every act keyed,
+                    // and the policy in force at an instant for the investigator; both held by
+                    // CREDIT_POLICY_OFFICER (ADR-0086 sections 4-5).
+                    entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/credit/policies", PermissionName.CREDIT_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
@@ -256,7 +263,8 @@ class RoutePermissionRegisterTest {
                         PermissionName.FX_ADMINISTER,
                         PermissionName.CROSSBORDER_ADMINISTER,
                         PermissionName.COUNTERPARTY_SCREENING_REVIEW,
-                        PermissionName.CREDIT_POLICY_ADMINISTER);
+                        PermissionName.CREDIT_POLICY_ADMINISTER,
+                        PermissionName.CREDIT_INVESTIGATE);
     }
 
     private Map<String, PermissionName> declared() {

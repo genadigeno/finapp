@@ -8,6 +8,9 @@ import com.finapp.credit.CreditConsentGate;
 import com.finapp.credit.CreditDataCollection;
 import com.finapp.credit.CreditDataRequestStore;
 import com.finapp.credit.CreditEvidenceCipher;
+import com.finapp.credit.CreditPolicyAdministration;
+import com.finapp.credit.CreditPolicyStore;
+import com.finapp.credit.JdbcCreditPolicyStore;
 import com.finapp.credit.JdbcCreditDataRequestStore;
 import com.finapp.credit.JdbcScorecardStore;
 import com.finapp.credit.ScorecardAdministration;
@@ -184,5 +187,40 @@ public class CreditBeans {
             IdempotentExecutor idempotentExecutor,
             TransactionRunner creditTransactionRunner) {
         return new ScorecardAdministrationDesk(scorecardAdministration, idempotentExecutor, creditTransactionRunner);
+    }
+
+    @Bean
+    CreditPolicyStore creditPolicyStore() {
+        return new JdbcCreditPolicyStore();
+    }
+
+    /** The credit policy's four-eyes administration (`P10-TSK-012`). */
+    @Bean
+    CreditPolicyAdministration creditPolicyAdministration(
+            CreditPolicyStore creditPolicyStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new CreditPolicyAdministration(creditPolicyStore, auditWriter, outboxWriter, idGenerator, clock);
+    }
+
+    @Bean
+    CreditPolicyDesk creditPolicyDesk(
+            CreditPolicyAdministration creditPolicyAdministration,
+            IdempotentExecutor idempotentExecutor,
+            TransactionRunner creditTransactionRunner) {
+        return new CreditPolicyDesk(creditPolicyAdministration, idempotentExecutor, creditTransactionRunner);
+    }
+
+    /**
+     * {@code finapp.credit.policy.active{product}} (`P10-TSK-012`): each offered product's ACTIVE policy version, 0 for
+     * none - alerted, so a product nobody can be decided for is never silent.
+     */
+    @Bean
+    com.finapp.app.telemetry.CreditPolicyMetrics creditPolicyMetrics(
+            CreditPolicyStore creditPolicyStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.CreditPolicyMetrics(
+                creditPolicyStore, dataSource::getConnection, clock, meterRegistry);
     }
 }
