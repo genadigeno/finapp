@@ -202,6 +202,13 @@ public final class JdbcCreditDataRequestStore implements CreditDataRequestStore 
                         + " WHERE (status = 'REQUESTED' OR (status = 'UNAVAILABLE' AND deadline_at > statement_timestamp()"
                         + " AND NOT unavailable_reported))"
                         + " AND next_attempt_at <= statement_timestamp()"
+                        // The retry stops asking for a closed request (CREDIT_DECISIONING_LIFECYCLES.md section 3.1;
+                        // P10-DOC-001): a cancelled, expired, abandoned or decided request needs no more data, and
+                        // asking again would be a paid pull of the applicant's data for nothing. A plain read - the
+                        // decision request's lock (L2) is never taken after a data request's (L4).
+                        + " AND EXISTS (SELECT 1 FROM credit.decision_request r WHERE r.id = " + TABLE
+                        + ".decision_request_id"
+                        + " AND r.status IN ('SUBMITTED', 'COLLECTING', 'READY', 'EVALUATED', 'IN_REVIEW'))"
                         + " ORDER BY next_attempt_at, id LIMIT ? FOR UPDATE SKIP LOCKED)"
                         + " RETURNING id")) {
             claim.setInt(1, limit);

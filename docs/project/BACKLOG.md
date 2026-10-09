@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (23 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed, M10.8 at 2 of 3); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `COMPLETE` (2026-10-09, `P10-DOC-001` - [`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)) — started 2026-10-07 with `P10-TSK-001` (24 of 24 items complete, M10.1 to M10.8 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15670,7 +15670,7 @@ assignment and an expiry serialise (`-018`).
 - **Invariants**: `INV-CRD-07` (provenance names the provider); `INV-CRD-03` (the same purpose gates
   both); `INV-CRD-10`.
 - **Distributed-system concerns**: selection is a pure function of configuration at birth; every
-  `-006` race re-run with `b` (counted). `PASS` on `BureauSelectionDatabaseTest`.
+  `-006` race re-run with `b` (counted). `PASS` on `BureauSelectionDatabaseTest`. *(Read at the exit review, `P10-DOC-001`: the `-006` races re-run with `b` are `SecondBureauCollectionDatabaseTest`, which extends `BureauCollectionDatabaseTest`; `BureauSelectionDatabaseTest` proves the selection.)*
 - **Idempotency**: one reference per provider per data request.
 - **Consistency**: as `-006`.
 - **Atomicity**: as `-006`.
@@ -15779,7 +15779,8 @@ assignment and an expiry serialise (`-018`).
   every perturbation caught.
 - **Definition of done**: `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P10-DOC-001 — The Phase 10 exit review** — `READY` (marked by `P10-TST-001`'s completion gate, 2026-10-09)
+**P10-DOC-001 — The Phase 10 exit review** — `COMPLETE` (2026-10-09; [`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md) - Phase 10 `COMPLETE`, M10.8 closed at 3 of 3; marked `READY` by `P10-TST-001`'s completion gate)
+- **As built** (2026-10-09): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded) and the review document holds in full. Corrections in code: the proposal door's exposure bound (`CreditPolicy.boundsExposure`, `INV-CRD-09`), the retry claim's open-request filter (`JdbcCreditDataRequestStore.claimDue`), the evaluating step's L4-before-L5 lock (`SnapshotFreezer.lockDataRequests`), freshness on `LEAST(retrieved_at, recorded_at)` (`INV-CRD-08`); no migration, no route, no event, no meter added. Tests added in the credit and app suites the review names; `MUTATION_TESTING.md` §2 +7 rows. ADR-0084…0089 `Accepted`.
 - **Objective**: close Phase 10 against its gate, with the documents made true.
 - **Bounded context**: all.
 - **Dependencies**: `P10-TST-001`, `P10-TST-002`.

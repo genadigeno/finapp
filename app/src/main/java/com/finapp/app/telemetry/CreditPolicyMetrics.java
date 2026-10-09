@@ -17,8 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * {@code finapp.credit.policy.active{product}} (`P10-TSK-012`, PHASE_10_PLAN.md section 15): the version number of the
  * product's {@code ACTIVE} credit policy, 0 when it has none, NaN when unreadable - never zero for a read that failed.
- * No migration activates a policy (ADR-0086 section 4), so until two officers activate a product's v1 no request for it
- * can be decided; this gauge is what makes that loud, and an offered product reading 0 is alerted (`P10-TSK-020`).
+ * No migration activates a policy (ADR-0086 section 4), so until a person other than its proposer activates a product's
+ * version - the seeded v1, proposed by its migration, by one officer (OPERATIONS_RUNBOOK.md section 6) - the product
+ * is not offered and no request for it is accepted or decided; this gauge is what makes that loud, and an offered product reading 0 is alerted (`P10-TSK-020`).
  * Registered eagerly per offered product, so every product has its series from startup; read from the database, so
  * every instance reports the same value - aggregate with {@code max()}, never {@code sum()}. Cached for 15 s, the
  * {@link RuleSetMissingMetrics} floor. A version number names no threshold and no person.
@@ -52,7 +53,8 @@ public final class CreditPolicyMetrics {
                     .tag("product", product.name())
                     .description(
                             "The version number of this product's ACTIVE credit policy - 0 when it has none, and no"
-                                    + " request for it can be decided until two officers activate one (alerted). NaN"
+                                    + " request for it is accepted or decided until a person other than its proposer"
+                                    + " activates one (alerted). NaN"
                                     + " when unreadable, never zero. Fleet-wide from every instance: aggregate with"
                                     + " max(), never sum()")
                     .strongReference(true)

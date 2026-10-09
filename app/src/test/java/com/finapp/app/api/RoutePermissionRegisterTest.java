@@ -281,7 +281,8 @@ class RoutePermissionRegisterTest {
                         PermissionName.CROSSBORDER_ADMINISTER,
                         PermissionName.COUNTERPARTY_SCREENING_REVIEW,
                         PermissionName.CREDIT_POLICY_ADMINISTER,
-                        PermissionName.CREDIT_INVESTIGATE);
+                        PermissionName.CREDIT_INVESTIGATE,
+                        PermissionName.CREDIT_UNDERWRITE);
     }
 
     private Map<String, PermissionName> declared() {

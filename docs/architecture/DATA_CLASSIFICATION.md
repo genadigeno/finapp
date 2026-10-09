@@ -2235,7 +2235,9 @@ first (`INV-CRD-09`). Never updated, deleted or truncated by any role.
 
 ### `credit` - credit data collection - *added by `P10-TSK-006`*
 
-A party's credit data as a bureau reported it: the attribute values and the payload are
+A party's credit data as a bureau or a financial-data provider reported it (one `credit_record` table for both
+source kinds; "as a bureau reported it" until the Phase 10 exit review, `P10-DOC-001`, 2026-10-09): the attribute
+values and the payload are
 `RESTRICTED-FINANCIAL`; the payload is ciphertext under credit's own key, unreadable by the application
 role except through `credit.read_evidence` with a reason.
 
@@ -2420,6 +2422,16 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `credit_policy_event` | `actor_id` | `CONFIDENTIAL` | Who moved it |
 | `credit_policy_event` | `reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
 | `credit_policy_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+
+### `credit` - the policy evaluation - *added by `P10-TSK-013`*
+
+What the pinned policy concluded about one assessment: its outcome, amounts and reason codes describe the applicant, so
+they are `RESTRICTED-FINANCIAL`; which rules triggered, read with the policy, bound its thresholds, so `CONFIDENTIAL`.
+*(The rows are unchanged; they sat under the credit policy's heading until the Phase 10 exit review, `P10-DOC-001`,
+2026-10-09, gave them their own.)*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
 | `policy_evaluation` | `id` | `INTERNAL` | Generated |
 | `policy_evaluation` | `assessment_id` | `INTERNAL` | The assessment evaluated - once |
 | `policy_evaluation` | `decision_request_id` | `INTERNAL` | The decision request |
@@ -2438,8 +2450,18 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `policy_evaluation_rule` | `effect` | `INTERNAL` | A closed effect |
 | `policy_evaluation_rule` | `triggered` | `CONFIDENTIAL` | Which rules held - read with the policy, they bound the thresholds |
 | `policy_evaluation_rule` | `assessed` | `CONFIDENTIAL` | Which rules read a missing value |
+
+### `credit` - the decision request - *added by `P10-TSK-014`*
+
+A customer's application: the requested terms and the declared income and expenditure are `RESTRICTED-FINANCIAL`, never
+in an event or a view; where the request stands is `CONFIDENTIAL`.
+*(The rows are unchanged; they sat under the credit policy's heading until the Phase 10 exit review, `P10-DOC-001`,
+2026-10-09, gave them their own.)*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
 | `decision_request` | `id` | `INTERNAL` | Generated |
-| `decision_request` | `party_id` | `INTERNAL` | The applicant's party - an identifier, owner-scoped in every customer read |
+| `decision_request` | `party_id` | `CONFIDENTIAL` | The applicant's party - an identifier, owner-scoped in every customer read - that this party sought credit, as for `credit_profile`, `data_request` and `credit_record` (`INTERNAL` until the Phase 10 exit review, `P10-DOC-001`, aligned it with its siblings) |
 | `decision_request` | `profile_id` | `INTERNAL` | The party's credit profile |
 | `decision_request` | `product` | `INTERNAL` | A closed product |
 | `decision_request` | `currency` | `INTERNAL` | The product's currency |
@@ -2465,9 +2487,19 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `decision_request_event` | `actor_type` | `INTERNAL` | A closed actor type |
 | `decision_request_event` | `reason` | `CONFIDENTIAL` | Free prose where an edge carries one |
 | `decision_request_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+
+### `credit` - the credit decision - *added by `P10-TSK-016`*
+
+What was decided about a person - the outcome, the amounts and the reasons - is `RESTRICTED-FINANCIAL`; the consumption
+fact, created empty with Phase 11 its only writer, holds identifiers and a stamp.
+*(The rows are unchanged; they sat under the credit policy's heading until the Phase 10 exit review, `P10-DOC-001`,
+2026-10-09, gave them their own.)*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
 | `credit_decision` | `id` | `INTERNAL` | Generated |
 | `credit_decision` | `decision_request_id` | `INTERNAL` | The request decided - once |
-| `credit_decision` | `party_id` | `INTERNAL` | The applicant's party |
+| `credit_decision` | `party_id` | `CONFIDENTIAL` | The applicant's party - that this party sought credit, as for `credit_profile`, `data_request` and `credit_record` (`INTERNAL` until the Phase 10 exit review, `P10-DOC-001`, aligned it with its siblings) |
 | `credit_decision` | `profile_id` | `INTERNAL` | The party's credit profile |
 | `credit_decision` | `product` | `INTERNAL` | A closed product |
 | `credit_decision` | `snapshot_id` | `INTERNAL` | The snapshot it was made from |
@@ -2491,9 +2523,19 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `credit_decision_consumption` | `id` | `INTERNAL` | Generated |
 | `credit_decision_consumption` | `decision_id` | `INTERNAL` | The approval consumed - once |
 | `credit_decision_consumption` | `consumed_at` | `INTERNAL` | System time, stamped by the trigger |
+
+### `credit` - the underwriting case - *added by `P10-TSK-018`*
+
+A person's review of a referred request: the decisions, amounts and reason codes it carries say what was decided about
+the applicant, so they are `RESTRICTED-FINANCIAL`; who held and decided it, and their prose, are `CONFIDENTIAL`.
+*(The rows are unchanged; they sat under the credit policy's heading until the Phase 10 exit review, `P10-DOC-001`,
+2026-10-09, gave them their own.)*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
 | `underwriting_case` | `id` | `INTERNAL` | Generated |
 | `underwriting_case` | `decision_request_id` | `INTERNAL` | The referred request - once |
-| `underwriting_case` | `party_id` | `INTERNAL` | The applicant's party |
+| `underwriting_case` | `party_id` | `CONFIDENTIAL` | The applicant's party - that this party sought credit, as for `credit_profile`, `data_request` and `credit_record` (`INTERNAL` until the Phase 10 exit review, `P10-DOC-001`, aligned it with its siblings) |
 | `underwriting_case` | `product` | `INTERNAL` | A closed product |
 | `underwriting_case` | `currency` | `INTERNAL` | The product's currency |
 | `underwriting_case` | `basis_evaluation_id` | `INTERNAL` | The REFER evaluation kept as the case's basis |

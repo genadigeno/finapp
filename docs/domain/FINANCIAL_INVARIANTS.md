@@ -1397,12 +1397,19 @@ authorization.
 *(Phase 10 subject named by the Phase 9 → 10 transition, 2026-10-07: the lawful basis is a
 current grant of `CREDIT_BUREAU_ACCESS` or `FINANCIAL_DATA_ACCESS` (consent `V003`), read
 authoritatively in the transaction that opens a data request and again in the one that records
-its answer. Measurable as: a submission without the purpose refused `403 credit.ConsentRequired`
+its answer. Measurable as: a submission without the purpose refused `409 consent.ConsentRequired`
 with every provider's pull count unchanged; a withdrawal between the ask and the record ending
 `CONSENT_WITHDRAWN` with the payload discarded unread and its decision request `ABANDONED`
 (reason `CONSENT_WITHDRAWN`), nothing decided; every pull audited as
 `credit.BureauDataRequested` or `credit.FinancialDataRequested`. Built by `P10-TSK-002`, `-006`
 and `-014`; ADR-0085.)*
+
+*(Corrected at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09: the refusal read
+`403 credit.ConsentRequired`, a code credit never defined. As built, `CreditDecisionRequestDesk`
+raises the platform's one consent refusal — `ConsentNotGrantedException`, mapped to
+`409 consent.ConsentRequired` naming the purpose, the `accounts.AccountOpeningRefused` shape. The
+gate is read at submission, at the data request's opening, at every retry, at the recording, at
+the freeze and in the deciding transaction.)*
 
 ### INV-CRD-04 — Score is not decision
 **Statement:** A credit score, risk score, decision and outcome are separately modelled and
@@ -1488,7 +1495,12 @@ declared maximum age for its source kind, judged on the database clock at the fr
 past it is re-collected, never used.
 **Why:** A decision on an out-of-date bureau file decides a different applicant from the one
 who applied; and an instance clock judging the age lets skew admit stale data or refuse fresh.
-**Enforce:** `DOMAIN` (judged against `DatabaseTime.now` in the freezing transaction).
+**Enforce:** `DOMAIN` (judged against `DatabaseTime.now` in the freezing transaction). The age
+runs from the earlier of the provider's stated retrieval and our own recording —
+`LEAST(retrieved_at, recorded_at) >= transaction_timestamp() - max age`
+(`JdbcDecisionSnapshotStore`), so a provider clock ahead of ours, or a re-stamped file, never
+keeps stale data fresh. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
+found the age judged on `retrieved_at` alone — the provider's word — and corrected it.)*
 **Verify:** A record one second past the maximum age re-collected; an instance skewed ±5 s
 neither accepting stale data nor refusing fresh.
 **Phase:** 10
@@ -1500,7 +1512,13 @@ products, and beside a person's approval — never together exceed the policy's 
 **Why:** Exposure judged outside a lock is a limit two requests each pass alone and break
 together — `INV-CON-03`'s lesson pointed at credit.
 **Enforce:** `DOMAIN` (lock-then-look: the profile row `FOR UPDATE` first in every deciding
-transaction, the reserved exposure summed under it).
+transaction, the reserved exposure summed under it). The evaluator judges exposure only through
+rules, so the policy proposal door refuses `422 credit.PolicyIncomplete` a policy with no rule
+guaranteed to stop an approval past its maximum exposure — `EXPOSURE_HEADROOM` `LT`/`LE` a
+non-negative amount, or `EXPOSURE` `GT`/`GE` at most the limit, with a non-approving effect
+(`CreditPolicy.boundsExposure`, `PolicyRule.refusesExposurePast`), judged at proposal so a stored
+version always reads back. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
+found a policy without such a rule admitted, and so able to approve past its own limit.)*
 **Verify:** Two products for one party at the limit raced ten ways, the second seeing the first's
 reservation; the storm's exposure census, no party's reserved exposure above its limit at rest.
 **Phase:** 10
@@ -1555,6 +1573,11 @@ prose. Decisions in ADR-0084…0089; the machines in `CREDIT_DECISIONING_LIFECYC
 given its Phase 10 subject at the same transition. Until Phase 10's first task lands, nothing
 these entries name is implemented; every statement is the decided design, corrected by the
 tasks that build it.*
+
+*(Built, 2026-10-09: every entry above is implemented by `P10-TSK-001`…`-021` and proven by
+`P10-TST-001` and `P10-TST-002`; each carries its `MUTATION_TESTING.md` §2 rows, read at the Phase
+10 exit review (`P10-DOC-001`), which recorded Phase 10 `COMPLETE` and so made the register guard
+demand them. The tasks' wording corrections stand in the entries where they were made.)*
 
 ---
 

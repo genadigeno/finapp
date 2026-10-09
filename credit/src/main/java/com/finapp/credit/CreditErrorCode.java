@@ -90,7 +90,8 @@ public enum CreditErrorCode implements ErrorCode {
             "credit.HardDeclineNotOverridable", 422, "A hard decline cannot be approved by a person; it may be declined."),
 
     /**
-     * A person's approval above the evaluation's approved amount or beyond the party's exposure limit, re-read under the
+     * A person's approval above the referral's ceiling ({@code approvable_minor}: the request capped by every cap the
+     * evaluation triggered - a referral approves no amount of its own) or beyond the party's exposure limit, re-read under the
      * profile lock (`P10-TSK-018`, G7, {@code INV-CRD-09}): nothing recorded, the case unchanged - decide again, a
      * decline or a smaller approval.
      */

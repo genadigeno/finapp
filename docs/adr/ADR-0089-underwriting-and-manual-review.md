@@ -1,6 +1,6 @@
 # ADR-0089 — Underwriting and manual review: a referral opens a case, a person decides with reasons, never overrides a hard decline, never second-approves their own decision, and an unworked case expires with a recorded reason
 
-Status: Proposed
+Status: Accepted (2026-10-09, `P10-DOC-001` — read against the code and corrected first)
 Date: 2026-10-07
 Phase: 10
 Context: Credit · Identity · Audit
@@ -39,7 +39,12 @@ person. That person is powerful, and the design must bound the power:
 
 2. **What a person may decide, and what they may not.**
    - **May:** `APPROVED` or `DECLINED`, always with at least one reason code from the seeded
-     catalogue (`422 credit.ReasonRequired` otherwise).
+     catalogue (`422 credit.ReasonRequired` otherwise). *(As built (`P10-DOC-001`, 2026-10-09):
+     the codes must be the catalogue's adverse codes, each given once — `CRD-AUTO-APPROVAL-CEILING`
+     speaks of automation and is refused `422 credit.ReasonRequired` (`UnderwritingCases`) — and a
+     free-text reason is required beside them (§Follow-up (4)). A malformed judgement — a decline
+     naming an amount, an approval without one, in another currency, not positive, or below the
+     product's minimum amount — is `JudgementInvalid`, answered `422 api.ValidationFailed`.)*
    - **May not override a hard decline.** A request whose evaluation included a `HARD_DECLINE` is
      never referred — the evaluator's severity order makes `HARD_DECLINE` the outcome
      (ADR-0086 §2) — and a person's approval of a request whose evaluation included one is
@@ -48,7 +53,12 @@ person. That person is powerful, and the design must bound the power:
      at the domain and by `CHECK` (`403 credit.SelfApprovalRefused`, scenario 19).
    - **May not exceed the evaluation or the limit.** A person's approval is bounded by the
      evaluation's approved amount and by the party's exposure limit re-read under the profile
-     lock (point 6); beyond either, `422 credit.ExposureLimitExceeded`, nothing recorded, and the
+     lock (point 6) *(as built (`P10-DOC-001`, 2026-10-09): a `REFER` evaluation has no approved
+     amount (`credit V009`), so the bound is the referral's ceiling `approvable_minor` — the
+     request capped by every `CAP_AMOUNT` rule the basis evaluation triggered, stamped on the case
+     at its birth (`credit V013`, which also bounds a first approval by it); at the deciding
+     transaction the lesser of it and the successor evaluation's ceiling; the auto-approval ceiling
+     not applied — §Follow-up (1))*; beyond either, `422 credit.ExposureLimitExceeded`, nothing recorded, and the
      person decides again — a decline, or a smaller approval. A person never makes a counter-offer
      (Phase 11's offer).
    - **May not change a decision once recorded.** The person's decision *is* the decision, recorded
@@ -60,14 +70,21 @@ person. That person is powerful, and the design must bound the power:
    the case's request closes undecided — from `OPEN` when the request expires (point 7) or the
    progress sweep abandons it for lost standing, and from `ASSIGNED` or `AWAITING_SECOND` only when
    the person's own deciding transaction abandons the request (point 6).** Terminal: `DECIDED`,
-   `CLOSED`. Held by a generated `CHECK`, an every-writer edge trigger and the domain; history in
+   `CLOSED`. Held by a status `CHECK` (a hand-written list of the five states, `credit V013`) and
+   a state-shape `CHECK` per status, an every-writer edge trigger and the domain; history in
    `underwriting_case_event`, append-only. The full machine is in
    `CREDIT_DECISIONING_LIFECYCLES.md`.
 
 4. **Four-eyes above the product's threshold.** A person's approval above the product's four-eyes
    threshold (declared on `CreditProduct`, ADR-0084 §6) moves the case `AWAITING_SECOND` instead
    of deciding; a second holder of `CREDIT_UNDERWRITE`, different from the first, approves it
-   (`POST …/{id}/second-approval`) and only then is the decision recorded. **A second approver
+   (`POST …/{id}/second-approval`) and only then is the decision recorded. *(As built
+   (`P10-DOC-001`, 2026-10-09): the first approval above the threshold takes only the request and
+   case locks — no profile lock — checks the hard decline and the referral's ceiling, records the
+   first decision on the case and no credit decision; the exposure bound is applied at the second
+   approval's deciding transaction (point 6). If the exposure check refuses the second approval
+   (`422 credit.ExposureLimitExceeded`, nothing recorded), the case stays `AWAITING_SECOND`; the
+   first underwriter decides again only after a second approver refuses the second approval.)* **A second approver
    who disagrees refuses the second approval** through the same door, with a reason:
    `AWAITING_SECOND → ASSIGNED`, the case back with its first underwriter, who decides again,
    audited `credit.ReviewSecondApprovalRefused` (reason required); nothing is recorded as a
@@ -86,19 +103,27 @@ person. That person is powerful, and the design must bound the power:
    `credit.ReviewCaseReleased`.
 
 6. **A person's decision runs the system's deciding transaction.** Profile first, then the
-   request (`IN_REVIEW`), then the case (plan §7's lock order: profile → request → case). **It
+   request (`IN_REVIEW`), then the case (plan §7's lock order: profile → request → case).
+   *(As built (`P10-DOC-001`, 2026-10-09): this holds for a decline, an approval at or below the
+   four-eyes threshold and a second approval; a first approval above the threshold records no
+   decision and takes no profile lock (point 4's note).)* **It
    judges the case, not the request's expiry**: the case must be `ASSIGNED` to the deciding
    person (or `AWAITING_SECOND`, for a second approver who is not the first), and a taken case is
    decided by its person whatever the request's validity — so a taken case is never stuck between
    a decision the clock forbids and an expiry the machine forbids. The party's standing and the
    consent gate are re-read in the transaction, as in the system's; either lost abandons the
    request (`ABANDONED`, `STANDING_LOST` or `CONSENT_WITHDRAWN`) and closes the case (`CLOSED`),
-   nothing decided. Reserved exposure is re-read under the profile lock and, if it moved, a
+   nothing decided. *(As built (`P10-DOC-001`, 2026-10-09): the person's act is then audited —
+   `credit.ReviewDecided` or `credit.ReviewSecondApproval` — with outcome `FAILED`, naming the
+   abandonment, and commits with the closure. For an `OPEN` case, the progress sweep abandons the
+   request only on lost standing (`DecisionProgress`); it does not re-read the consent gate, so a
+   consent withdrawal on an untaken case surfaces at the person's deciding transaction once the
+   case is taken, or the request expires (point 7).)* Reserved exposure is re-read under the profile lock and, if it moved, a
    successor snapshot re-evaluated (ADR-0088 §5) — a person's approval can no more exceed the
    party's exposure limit than the system's (`INV-CRD-09`, scenario 15's manual variant): an
-   approval above the evaluation's approved amount or beyond the limit is refused
-   `422 credit.ExposureLimitExceeded`, nothing recorded, the case unchanged, and the person decides
-   again. The decision is inserted with `decided_by` the
+   approval above the evaluation's approved amount (as built, the referral's ceiling — point 2's
+   note) or beyond the limit is refused `422 credit.ExposureLimitExceeded`, nothing recorded, the
+   case unchanged, and the person decides again. The decision is inserted with `decided_by` the
    person and the case's reason codes; the request moves `DECIDED`, the case `DECIDED`;
    `CreditDecisionRecorded` is emitted; the acts are audited — `credit.ReviewDecided` (reason
    required) and, for the second person, `credit.ReviewSecondApproval` — each in its own
@@ -118,8 +143,13 @@ person. That person is powerful, and the design must bound the power:
 8. **The doors and the role.** `GET /v1/operator/credit/review-cases?status=`, `POST
    …/{id}/assignment`, `POST …/{id}/release`, `POST …/{id}/decision`, `POST
    …/{id}/second-approval` (approve, or refuse with a reason), all under `CREDIT_UNDERWRITE` (held
-   by `UNDERWRITER`), keyed (`credit.review:EMPLOYEE:<id>`), each with a negative test in
-   `RoutePermissionRegisterTest`. Audited acts: `credit.ReviewCaseAssigned`,
+   by `UNDERWRITER`), the four `POST`s keyed (`credit.review:<actorType>:<actorId>`), each with a
+   negative test in `RoutePermissionRegisterTest`. *(As built (`P10-DOC-001`, 2026-10-09): the
+   `GET` queue read is not keyed — it is audited per serving, `credit.ReviewCasesRead`
+   (§Follow-up). The key's actor type is the session actor's as `SessionAuthenticationInterceptor`
+   types it — every session actor is `CUSTOMER`, an operator's included — so an underwriter's key
+   reads `credit.review:CUSTOMER:<identityId>`, not `EMPLOYEE` as first written; the decision's
+   `decided_by_type` is `EMPLOYEE` regardless (§Follow-up (5)).)* Audited acts: `credit.ReviewCaseAssigned`,
    `credit.ReviewCaseReleased`, `credit.ReviewDecided` (reason required),
    `credit.ReviewSecondApproval`, `credit.ReviewSecondApprovalRefused` (reason required). The
    underwriter sees the case's basis — the explanation's normalised attributes and triggered
@@ -182,12 +212,18 @@ Negative:
   four-eyes door.
 - An approval above the threshold waits for a second underwriter.
 
-Operational impact: `finapp.credit.review.age`, `finapp.credit.decision{…, decided_by}`
-(`system` / `person`); the runbook names the review objective and the second-approval
-expectation.
+Operational impact: `finapp.credit.review.age`, `finapp.credit.decision{…, decision_maker}`
+(`system` / `person` — the plan's `decided_by` tag, as built `decision_maker`, ADR-0087
+§Follow-up `P10-TSK-016` (4)); the runbook names the review objective and the second-approval
+expectation. *(As built (`P10-DOC-001`, 2026-10-09): the runbook's credit section
+(`OPERATIONS_RUNBOOK.md`) was missing until the exit review and was written by `P10-DOC-001`. The
+review objective is `CreditObjectives.REVIEW_AGE` — no `OPEN` case waits longer than a day — and
+its alert is `CreditReviewAged` (`infra/prometheus/rules/credit.yml`,
+`max(finapp_credit_review_age_seconds) > 86400` for 30 minutes).)*
 Security impact: `CREDIT_UNDERWRITE` is a dedicated role (`UNDERWRITER`, identity `V020`) in the
-pairwise-disjoint role model; every act audited with its reason; self-approval refused at two
-ranks.
+pairwise-disjoint role model; every act audited, a decision and a refused second approval with
+their reason (*as built*: assignment, release and a second approval need none); self-approval
+refused at two ranks.
 Financial impact: none posted. A person's approval reserves exposure exactly as a system approval
 does (ADR-0088).
 
@@ -201,10 +237,10 @@ assignment).
 
 ## Follow-up
 
-- `P10-TSK-018`: the case, its machine (`CLOSED` and the refused second approval included) and
-  doors (release included), the four-eyes threshold, the assignment race against expiry, the
-  manual deciding transaction bounded by the exposure limit, and its expiry. `P10-TST-001`: underwriters on both instances of
-  the storm.
+- **As built**: `P10-TSK-018` built the case, its machine (`CLOSED` and the refused second approval
+  included) and doors (release included), the four-eyes threshold, the assignment race against
+  expiry, the manual deciding transaction bounded by the exposure limit, and its expiry;
+  `P10-TST-001` ran underwriters on both instances of the storm.
 - *As built by `P10-TSK-018` (2026-10-08), points 1-8.* `credit V013`: `underwriting_case` (born `OPEN` once per
   referred request by the deciding transaction, with its basis evaluation, the referral's ceiling and the product's
   four-eyes threshold copied at birth; the four-eyes `CHECK (second_decided_by <> first_decided_by)`; a first decision
@@ -238,5 +274,5 @@ assignment).
   case's basis (normalised attributes, the rules and their results), so it is audited per serving -
   `credit.ReviewCasesRead`, a sixth act beside point 8's five. `ManualReviewRequired` carries its referral codes one
   field each (`referralReasonCode1`…`N`), so no number of codes outgrows a payload value.
-- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
-  accepting it.
+- **Acceptance.** **As built** (`P10-DOC-001`, 2026-10-09): the Phase 10 review read this ADR
+  against the code, corrected it in place above, and accepted it.

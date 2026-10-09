@@ -161,8 +161,9 @@ public final class ScorecardAdministration {
     /**
      * Activates a pending version - a different person's act. Under the version's row lock, then the {@code ACTIVE}
      * row's, the predecessor (if any) is retired FIRST and the proposal moves {@code PROPOSED -> ACTIVE} naming its
-     * approver; the effective period is the database's - the predecessor's end and the successor's start one
-     * {@code transaction_timestamp()}. Both history rows, the reasoned audit record and
+     * approver; the effective period is the database's - the predecessor's end and the successor's start one instant,
+     * {@code GREATEST(transaction_timestamp(), the predecessor's start + 1 us)}, so a database clock that steps back
+     * neither refuses the activation nor overlaps two periods ({@code credit V014}, `X-TSK-017`). Both history rows, the reasoned audit record and
      * {@code credit.ScorecardModelVersionActivated} commit with it.
      *
      * @throws ScorecardNotFound when no version has this id

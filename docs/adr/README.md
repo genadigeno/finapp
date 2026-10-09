@@ -20,7 +20,9 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   and accepted by the Phase 8 review (`P8-DOC-001`, 2026-10-01), which read each against the
   code and corrected every drifted passage - with dated notes where a decision changed -
   before accepting any; ADR-0074…0083 were written `Proposed` at the Phase 8 → 9 transition and
-  accepted by the Phase 9 review (`P9-DOC-001`, 2026-10-07) in the same way. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
+  accepted by the Phase 9 review (`P9-DOC-001`, 2026-10-07) in the same way; ADR-0084…0089 were
+  written `Proposed` at the Phase 9 → 10 transition and accepted by the Phase 10 review
+  (`P10-DOC-001`, 2026-10-09) in the same way. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
 
@@ -111,12 +113,12 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0081](ADR-0081-counterparty-screening-is-kycs.md) | Counterparty screening is kyc's: every outcome is a recorded decision, an unverified payee always meets a person, and unavailable means unpayable | Accepted | 9 | KYC · Cross-Border · Identity · Security |
 | [0082](ADR-0082-fx-and-corridor-settlement-and-reconciliation.md) | FX and corridor settlement and reconciliation: legs are single-currency expectations, new causes but no new break types, and reconciliation still never converts | Accepted | 9 | Settlement · Reconciliation · FX · Payments · Ledger |
 | [0083](ADR-0083-callbacks-are-hints.md) | Callbacks are hints: an outbound money flow adopts its outcome only from an authenticated inquiry | Accepted | 9 | Payments · FX · Security |
-| [0084](ADR-0084-the-credit-bounded-context.md) | The credit bounded context: data, assessment, policy and decision kept apart in one module that moves no money, and the risk score is risk's | Proposed | 10 | Credit · Consent · KYC · Risk · Platform |
-| [0085](ADR-0085-credit-data-collection.md) | Credit data collection: provider-neutral ports, a normalised attribute vocabulary, consent checked twice, encrypted evidence with a stored deadline, and freshness on the database clock | Proposed | 10 | Credit · Consent · Platform · Security |
-| [0086](ADR-0086-credit-policy-and-model-as-versioned-data.md) | Credit policy and model as versioned data: rules as rows over a closed vocabulary, a deterministic evaluator with its own engine version, four-eyes activation, and the active version answerable at any instant | Proposed | 10 | Credit · Identity · Platform |
-| [0087](ADR-0087-the-credit-decision.md) | The credit decision: a keyed request, a sealed snapshot, born-once assessment, evaluation and decision, recorded immutably with ordered reason codes, explained and replayed | Proposed | 10 | Credit · Platform · Identity · Events |
-| [0088](ADR-0088-affordability-and-exposure.md) | Affordability and exposure: exact decimal in one currency, rounded once at declared points, and the exposure an approval reserves judged under the party's profile lock | Proposed | 10 | Credit · Shared Kernel · Platform |
-| [0089](ADR-0089-underwriting-and-manual-review.md) | Underwriting and manual review: a referral opens a case, a person decides with reasons, never overrides a hard decline, never second-approves their own decision, and an unworked case expires with a recorded reason | Proposed | 10 | Credit · Identity · Audit |
+| [0084](ADR-0084-the-credit-bounded-context.md) | The credit bounded context: data, assessment, policy and decision kept apart in one module that moves no money, and the risk score is risk's | Accepted | 10 | Credit · Consent · KYC · Risk · Platform |
+| [0085](ADR-0085-credit-data-collection.md) | Credit data collection: provider-neutral ports, a normalised attribute vocabulary, consent checked twice, encrypted evidence with a stored deadline, and freshness on the database clock | Accepted | 10 | Credit · Consent · Platform · Security |
+| [0086](ADR-0086-credit-policy-and-model-as-versioned-data.md) | Credit policy and model as versioned data: rules as rows over a closed vocabulary, a deterministic evaluator with its own engine version, four-eyes activation, and the active version answerable at any instant | Accepted | 10 | Credit · Identity · Platform |
+| [0087](ADR-0087-the-credit-decision.md) | The credit decision: a keyed request, a sealed snapshot, born-once assessment, evaluation and decision, recorded immutably with ordered reason codes, explained and replayed | Accepted | 10 | Credit · Platform · Identity · Events |
+| [0088](ADR-0088-affordability-and-exposure.md) | Affordability and exposure: exact decimal in one currency, rounded once at declared points, and the exposure an approval reserves judged under the party's profile lock | Accepted | 10 | Credit · Shared Kernel · Platform |
+| [0089](ADR-0089-underwriting-and-manual-review.md) | Underwriting and manual review: a referral opens a case, a person decides with reasons, never overrides a hard decline, never second-approves their own decision, and an unworked case expires with a recorded reason | Accepted | 10 | Credit · Identity · Audit |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

@@ -1,6 +1,6 @@
 # ADR-0086 — Credit policy and model as versioned data: rules as rows over a closed vocabulary, a deterministic evaluator with its own engine version, four-eyes activation, and the active version answerable at any instant
 
-Status: Proposed
+Status: Accepted (2026-10-09, `P10-DOC-001` — read against the code and corrected first)
 Date: 2026-10-07
 Phase: 10
 Context: Credit · Identity · Platform
@@ -58,8 +58,12 @@ pressures shape how:
      `CAP_AMOUNT` rule's, or, when the auto-approval ceiling (a policy parameter, not a rule)
      binds, the catalogue's `CRD-AUTO-APPROVAL-CEILING`.
    - **Reason codes are the triggered rules' codes in ordinal order, deduplicated keeping the
-     first.** An adverse outcome with no reason code is unrepresentable — in the domain and by
-     the `CHECK` on the evaluation and the decision (`INV-CRD-02`).
+     first.** An adverse outcome with no reason code is unrepresentable — in the domain, by the
+     `CHECK` on the evaluation (`policy_evaluation_adverse_has_a_reason`, credit `V009`) and, for
+     the decision, by the deferred constraint trigger `credit_decision_is_explained` (credit `V011`:
+     a decline or an approval below its request commits only with its reason rows) (`INV-CRD-02`).
+     *(Corrected by `P10-DOC-001`: this read "the `CHECK` on the evaluation and the decision"; the
+     decision's reasons are rows, which a `CHECK` cannot see.)*
    - A rule, the scorecard or the arithmetic reading an attribute the snapshot lacks is an
      **evaluation error**, never a default (`INV-CRD-07`); `ABSENT` is a value, reasoned about
      with `IS_ABSENT` / `IS_PRESENT`.
@@ -68,7 +72,11 @@ pressures shape how:
      the engine version it ran under; replay dispatches on it.
    The evaluation is recorded as a `policy_evaluation` row (outcome, engine version, pinned
    versions) with its triggered rules in order (`policy_evaluation_rule`), born once per
-   assessment (`UNIQUE (assessment_id)`, `INV-CRD-06`).
+   assessment (`UNIQUE (assessment_id)`, `INV-CRD-06`). *(As built (credit `V009`, read by
+   `P10-DOC-001`, 2026-10-09): `policy_evaluation` records the pinned policy version and the
+   engine version — not the model version, which its assessment and snapshot carry — and
+   `policy_evaluation_rule` records **every** rule, each with whether it was assessed and whether
+   it triggered, not only the triggered ones.)*
 
 3. **The scorecard is a points table, versioned the same way.** A `scorecard_model_version` (model
    family `RETAIL_SCORECARD`) holds a base and, per attribute, ordered bands — `[lower, upper)`
@@ -80,15 +88,19 @@ pressures shape how:
 
 4. **Versions are immutable, four-eyes, and one is `ACTIVE` per scope** (`INV-CRD-05`,
    `INV-AUD-04`).
-   - The machine: `PROPOSED → ACTIVE → RETIRED`, `PROPOSED → REJECTED`, held by a generated
-     `CHECK`, an every-writer edge trigger and the domain.
+   - The machine: `PROPOSED → ACTIVE → RETIRED`, `PROPOSED → REJECTED`, held by a status
+     `CHECK` (a hand-written `IN` list — *corrected by `P10-DOC-001`; this read "generated"*), an
+     every-writer edge trigger — the control — and the domain.
    - **Proposal** carries the full rule set (or points table) as one body, written in the
      proposing transaction; **rules and bands are born with their version and immutable for
      every writer from insert** — a trigger refuses any `UPDATE` or `DELETE` of them, and any
      insert into a version outside its proposing transaction, in every status (failure scenario
      24); the domain offers no edit — a correction is a rejection and a new proposal.
    - **Approval** is a second person: approver ≠ proposer at the domain and by `CHECK`, each rank
-     proven alone (`403 credit.SelfApprovalRefused`). Rejection carries a reason. Proposal,
+     proven alone (`403 credit.SelfApprovalRefused`). Rejection carries a reason. *(As built
+     (credit `V006`/`V008`, read by `P10-DOC-001`): the column is `decided_by`, and the four-eyes
+     `CHECK` binds only `ACTIVE` and `RETIRED` — any holder, the proposer included, may reject a
+     proposal (a withdrawal), reasoned.)* Proposal,
      activation and rejection are distinct audited acts (`credit.PolicyVersionProposed` /
      `credit.PolicyVersionActivated` / `credit.PolicyVersionRejected`, and for scorecards
      `credit.ScorecardVersionProposed` / `credit.ScorecardVersionActivated` /
@@ -102,9 +114,15 @@ pressures shape how:
      unique; a second proposal while one is pending is `409 credit.ProposalPending`.
    - **No version is migration-activated**: scorecard v1 is seeded *as a proposal* by the task
      that builds it and activated by two persons in the suites and the runbook alike — the rule-set
-     precedent (D26). Policy v1 per product goes through the same door.
-   - Activation emits `CreditPolicyVersionActivated` / `ScorecardModelVersionActivated` (version
-     id, product or family, effective-from, predecessor; never the rules).
+     precedent (D26). Policy v1 per product goes through the same door. *(As built (`P10-DOC-001`,
+     2026-10-09; Follow-up `P10-TSK-011` (1)): the seeds' proposer is the reviewed migration —
+     `migration:V006` for `RETAIL_SCORECARD` v1, `migration:V008` for `PERSONAL_LOAN` and
+     `CREDIT_LINE` v1 — so each v1 is activated by **one** person holding
+     `CREDIT_POLICY_ADMINISTER`, distinct from its proposer by the same `CHECK`; every later version
+     is one person's proposal and another's approval. No version is migration-activated.
+     `OPERATIONS_RUNBOOK.md` §6 is the procedure.)*
+   - Activation emits `credit.CreditPolicyVersionActivated` / `credit.ScorecardModelVersionActivated`
+     (version id, product or family, effective-from, predecessor; never the rules).
 
 5. **Which version was active at any past instant is answerable from the rows** (`INV-CRD-05`).
    Each version records `effective_from` and, on retirement, `effective_to`, both from the
@@ -119,7 +137,18 @@ pressures shape how:
    with the declared fallback effect (`REFER` or `DECLINE`) and reason `CRD-SOURCE-UNAVAILABLE`
    — is refused at proposal, `422 credit.PolicyIncomplete`. Every approving path therefore
    requires the source's attributes `IS_PRESENT`, and an approval can never arise from missing
-   data.
+   data. *(As built: the fallback requirement is judged when the `CreditPolicy` is constructed
+   from the proposal's body, Follow-up `P10-TSK-012` (2).)*
+   **A policy must also bound its exposure** (`INV-CRD-09`; *added by `P10-DOC-001`, 2026-10-09,
+   a code correction*). The evaluator judges exposure only through rules, so a four-eyes policy
+   with no rule refusing past its maximum exposure would have approved past its own limit. The
+   proposal door (`CreditPolicyAdministration.propose`) now refuses such a policy
+   `422 credit.PolicyIncomplete`: `CreditPolicy.boundsExposure()` requires a rule
+   (`PolicyRule.refusesExposurePast(limit)`) guaranteed to stop such an approval — `EXPOSURE_HEADROOM`
+   `LT` or `LE` x with x ≥ 0, or `EXPOSURE` `GT` or `GE` x with x ≤ the maximum exposure, with
+   effect `HARD_DECLINE`, `DECLINE` or `REFER`, never `CAP_AMOUNT`. It is judged at proposal, not at
+   construction, so every stored version still reads back. Both seeded v1 policies carry one
+   (`EXPOSURE_LIMIT`: `EXPOSURE_HEADROOM LT 0`, `DECLINE`, `CRD-EXPOSURE-LIMIT`).
 
 7. **Pinning under concurrency** (`INV-HIST-04`, failure scenarios 16–17). The versions are
    **pinned on the request at `SUBMITTED → COLLECTING`** — the progress step reads the `ACTIVE`
@@ -131,7 +160,15 @@ pressures shape how:
    the evaluation and the decision; activation's `FOR UPDATE` on the active row waits for each
    share lock. The decision keeps the versions it pinned even if a successor activates before the
    decision is recorded — never a retired-but-unpinned mix. The pinned versions are the last step of the credit lock order
-   (plan §7: profile → request → case → data requests → versions `FOR SHARE`).
+   (plan §7: profile → request → case → data requests → versions `FOR SHARE`). *(As built
+   (`P10-DOC-001`, 2026-10-09): the versions are recorded on the snapshot (policy, model, engine),
+   the evaluation (policy, engine) and the decision (policy, model, engine). The review found the
+   evaluating step (`DecisionProgress.evaluate`, `READY → EVALUATED`) sharing the pinned versions
+   (5) before locking its data requests (4); no deadlock was possible — no writer holding a data
+   request's lock waits on a version — but the order was not the documented one. **Corrected by
+   `P10-DOC-001`:** the step now locks its data requests `FOR UPDATE` by id
+   (`SnapshotFreezer.lockDataRequests`) before sharing the versions, so the order holds in every
+   credit transaction.)*
 
 8. **Advisory namespace `10` serialises the administration's writers.** The policy and model
    writers take `pg_advisory_xact_lock(10, hashtext(product))` / `(10, hashtext(family))`,
@@ -139,7 +176,9 @@ pressures shape how:
    backstop rather than the only arbiter. The administration takes only version rows, in its own
    order (the proposal, then the active row). Registered in `DISTRIBUTED_EXECUTION.md` §3 by
    `P10-TSK-011`, its first writer (the scorecard administration); `P10-TSK-012` extends it to
-   the policy.
+   the policy. *(As built (`P10-DOC-001`): only proposals take namespace 10
+   (`CreditPolicyAdministration.propose`, `ScorecardAdministration.propose`); approval and
+   rejection arbitrate on the version rows `FOR UPDATE` alone.)*
 
 ## Alternatives Considered
 
@@ -217,9 +256,15 @@ Negative:
 
 Operational impact: `finapp.credit.policy.active{product}` (alerting when an offered product has
 no active version), `finapp.credit.decision{…, policy_version}`; the runbook gains the two-person
-activation of policy and scorecard v1.
+activation of policy and scorecard v1. *(As built (`P10-DOC-001`, 2026-10-09): the runbook entry
+was not delivered by `P10-TSK-011`/`-012`; the review wrote it — `OPERATIONS_RUNBOOK.md` §6 —
+and, because the seeds' proposer is the migration, v1's activation is one person's act (§4's
+note). The gauge and its alert, `CreditPolicyMissing`, cover the policy only: no gauge reports a
+missing `ACTIVE` scorecard, which equally holds every request at `SUBMITTED`.)*
 Security impact: `CREDIT_POLICY_ADMINISTER` (held by `CREDIT_POLICY_OFFICER`) proposes, approves
-and rejects — never one's own proposal; every act audited with a reason where required.
+and rejects — never approving one's own proposal (*corrected by `P10-DOC-001`*: any holder, the
+proposer included, may reject — a withdrawal — with a reason); every act audited with a reason
+where required.
 Financial impact: none posted. Policy fixes the *risk appetite* — the ceilings and limits that
 bound what Phase 11 may lend.
 
@@ -246,5 +291,17 @@ completeness), `INV-HIST-04` (pinned versions never change under a decision), `I
   `SUBMITTED → COLLECTING`.
 - `P10-TST-002`: the reproducibility battery — every reason code exercised, every decision
   replayed `IDENTICAL`, a perturbed rule flipping the verdict.
-- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
-  accepting it.
+- **As built** (2026-10-09, read against the code by `P10-DOC-001`): every item above is built —
+  `P10-TSK-011` (credit `V006`/`V007`, `ScorecardAdministration`, namespace 10), `-012` (`V008`,
+  `CreditPolicyAdministration`, the rule-immutability trigger, four-eyes, completeness), `-013`
+  (`V009`, `PolicyEvaluatorV1` held by `EngineVersions`), `-015` (the pin at
+  `SUBMITTED → COLLECTING`, `DecisionProgress.collect`) and `P10-TST-002` (the battery), all
+  `COMPLETE`; and `X-TSK-017`'s credit `V014` stamps the period ends with `GREATEST`, as its
+  amendment above records. The review's code corrections: the exposure-bound requirement at
+  proposal (§6) and the evaluating step's lock order (§7). Its text corrections: the decision's
+  reason requirement is a deferred constraint trigger (§2); what the evaluation records (§2); the
+  status `CHECK` (§4); rejection by any holder (§4, Security impact); the seeds activated by one
+  person (§4); the prefixed event types (§4); namespace 10 taken by proposals only (§8); the
+  runbook entry written by the review (Operational impact).
+- **Acceptance.** The Phase 10 review (`P10-DOC-001`) read this ADR against the code, corrected it
+  where it had drifted, and accepted it on 2026-10-09.

@@ -345,6 +345,49 @@ class DecisionOrchestrationDatabaseTest {
                 + " AND from_status = 'READY'", id)).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("the evaluating step takes its data requests (L4) BEFORE the pinned versions (L5) - held at the policy"
+            + " row, it already holds them (P10-DOC-001)")
+    void theEvaluatingStepLocksItsDataRequestsBeforeThePinnedVersions() throws Exception {
+        UUID id = request(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN.requestValidity());
+        DecisionProgress progress = instance();
+        assertThat(step(progress, id)).isEqualTo(DecisionProgress.Step.COLLECTING);
+        assertThat(step(progress, id)).as(dump(id)).isEqualTo(DecisionProgress.Step.READY);
+        UUID pinned = UUID.fromString(scalar("SELECT pinned_policy_version_id::text FROM credit.decision_request"
+                + " WHERE id = ?", id));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection blocker = DatabaseRoles.migrator()) {
+            blocker.setAutoCommit(false);
+            int blockerPid;
+            try (PreparedStatement hold = blocker.prepareStatement(
+                    "SELECT pg_backend_pid() FROM credit.credit_policy_version WHERE id = ? FOR UPDATE")) {
+                hold.setObject(1, pinned);
+                try (ResultSet row = hold.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    blockerPid = row.getInt(1);
+                }
+            }
+            Future<DecisionProgress.Step> evaluating = pool.submit(() -> step(progress, id));
+            awaitDatabase("SELECT count(*) > 0 FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))", blockerPid);
+            try (Connection probe = DatabaseRoles.migrator()) {
+                probe.setAutoCommit(false);
+                try (PreparedStatement nowait = probe.prepareStatement(
+                        "SELECT id FROM credit.data_request WHERE decision_request_id = ? FOR UPDATE NOWAIT")) {
+                    nowait.setObject(1, id);
+                    org.assertj.core.api.Assertions.assertThatExceptionOfType(SQLException.class)
+                            .as("waiting at the pinned policy, the step already holds its data requests")
+                            .isThrownBy(nowait::executeQuery)
+                            .matches(refused -> "55P03".equals(refused.getSQLState()), "SQLState 55P03");
+                }
+                probe.rollback();
+            }
+            blocker.rollback();
+            assertThat(evaluating.get(1, TimeUnit.MINUTES)).isEqualTo(DecisionProgress.Step.EVALUATED);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // ------------------------------------------------------------------ missing data, withdrawn consent, stale data
 
     @Test

@@ -33,6 +33,7 @@ import com.finapp.credit.PolicyOperator;
 import com.finapp.credit.ReasonCode;
 import com.finapp.credit.UnavailableFallback;
 import com.finapp.credit.UnderwritingCaseId;
+import com.finapp.credit.UnderwritingCaseStatus;
 import com.finapp.credit.UnderwritingCases;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -55,6 +56,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -663,6 +665,132 @@ class UnderwritingCaseDatabaseTest {
         assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", open.value())).isEqualTo("OPEN");
     }
 
+    @Test
+    @DisplayName("every act from a state its edge does not leave is refused by the domain, the case unchanged - and"
+            + " every edge out of a terminal case refused by raw SQL (P10-DOC-001)")
+    void everyInvalidTransitionIsRefusedByTheDomainAndByRawSql() throws Exception {
+        UUID closingRequest = referred(UUID.randomUUID(), eur(500_000), Duration.ofSeconds(6));
+        Actor person = underwriter();
+        Actor other = underwriter();
+        UnderwritingCaseId open = caseOf(referred(UUID.randomUUID(), eur(500_000), WEEK));
+        UnderwritingCaseId assigned = caseOf(referred(UUID.randomUUID(), eur(500_000), WEEK));
+        act(uow -> reviewing().assign(uow, assigned, person, correlation()));
+        UnderwritingCaseId awaiting = caseOf(referred(UUID.randomUUID(), eur(1_200_000), WEEK));
+        act(uow -> reviewing().assign(uow, awaiting, person, correlation()));
+        act(uow -> reviewing().decide(uow, awaiting, approve(eur(1_200_000)), person, correlation()));
+        UnderwritingCaseId decided = caseOf(referred(UUID.randomUUID(), eur(500_000), WEEK));
+        act(uow -> reviewing().assign(uow, decided, person, correlation()));
+        act(uow -> reviewing().decide(uow, decided, decline(), person, correlation()));
+        awaitExpiry(closingRequest);
+        assertThat(step(CreditWorld.progress(CreditWorld.CLOCK, deciding()), closingRequest))
+                .isEqualTo(DecisionProgress.Step.EXPIRED);
+        UnderwritingCaseId closed = caseOf(closingRequest);
+
+        // Each act and the one edge it takes: assign OPEN->ASSIGNED, release ASSIGNED->OPEN, decide ASSIGNED->DECIDED,
+        // a second approval AWAITING_SECOND->DECIDED, its refusal AWAITING_SECOND->ASSIGNED - each in the machine.
+        Map<String, UnderwritingCaseStatus> from = Map.of("assign", UnderwritingCaseStatus.OPEN,
+                "release", UnderwritingCaseStatus.ASSIGNED, "decide", UnderwritingCaseStatus.ASSIGNED,
+                "approveSecond", UnderwritingCaseStatus.AWAITING_SECOND,
+                "refuseSecond", UnderwritingCaseStatus.AWAITING_SECOND);
+        Map<String, UnderwritingCaseStatus> to = Map.of("assign", UnderwritingCaseStatus.ASSIGNED,
+                "release", UnderwritingCaseStatus.OPEN, "decide", UnderwritingCaseStatus.DECIDED,
+                "approveSecond", UnderwritingCaseStatus.DECIDED, "refuseSecond", UnderwritingCaseStatus.ASSIGNED);
+        from.forEach((name, source) -> assertThat(source.canTransitionTo(to.get(name)))
+                .as(name + "'s edge is in the machine").isTrue());
+        Map<UnderwritingCaseStatus, UnderwritingCaseId> cases = Map.of(UnderwritingCaseStatus.OPEN, open,
+                UnderwritingCaseStatus.ASSIGNED, assigned, UnderwritingCaseStatus.AWAITING_SECOND, awaiting,
+                UnderwritingCaseStatus.DECIDED, decided, UnderwritingCaseStatus.CLOSED, closed);
+        int refusals = 0;
+        for (Map.Entry<UnderwritingCaseStatus, UnderwritingCaseId> held : cases.entrySet()) {
+            UnderwritingCaseId id = held.getValue();
+            String before = scalar("SELECT status || '/' || coalesce(assignee, '-') FROM credit.underwriting_case"
+                    + " WHERE id = ?", id.value());
+            assertThat(before).as("the case under test").startsWith(held.getKey().name());
+            for (String name : from.keySet()) {
+                if (from.get(name) == held.getKey()) {
+                    continue;
+                }
+                // The holder where the act is a holder's; another underwriter where it is a second person's.
+                Actor actor = name.endsWith("Second") ? other : person;
+                Function<Connection, UnderwritingCases.Acted> attempt = switch (name) {
+                    case "assign" -> uow -> reviewing().assign(uow, id, actor, correlation());
+                    case "release" -> uow -> reviewing().release(uow, id, actor, correlation());
+                    case "decide" -> uow -> reviewing().decide(uow, id, decline(), actor, correlation());
+                    case "approveSecond" -> uow -> reviewing().approveSecond(uow, id, Optional.empty(), actor, correlation());
+                    default -> uow -> reviewing().refuseSecond(uow, id, "disagree", actor, correlation());
+                };
+                // The domain's refusal, never the trigger's: CaseTaken from the act's own precondition.
+                assertThatThrownBy(() -> act(attempt)).as(name + " from " + held.getKey())
+                        .isInstanceOf(UnderwritingCases.CaseTaken.class);
+                assertThat(scalar("SELECT status || '/' || coalesce(assignee, '-') FROM credit.underwriting_case"
+                        + " WHERE id = ?", id.value())).as(name + " from " + held.getKey() + " changed nothing")
+                        .isEqualTo(before);
+                refusals++;
+            }
+        }
+        assertThat(refusals).as("every act from every state it does not leave").isEqualTo(5 * 5 - 5);
+        try (Connection app = DatabaseRoles.application()) {
+            for (UnderwritingCaseId terminal : List.of(decided, closed)) {
+                String t = "'" + terminal.value() + "'";
+                for (String edge : List.of("status = 'OPEN', assignee = NULL", "status = 'ASSIGNED', assignee = 'x'",
+                        "status = 'AWAITING_SECOND'", "status = 'DECIDED'", "status = 'CLOSED', closure_reason = 'EXPIRED'")) {
+                    assertRefused(app, "UPDATE credit.underwriting_case SET " + edge + " WHERE id = " + t, "P0001");
+                }
+            }
+        }
+        assertThat(count("SELECT count(*) FROM credit.credit_decision d JOIN credit.underwriting_case c"
+                + " ON c.decision_request_id = d.decision_request_id WHERE c.id = ?", closed.value())).isZero();
+    }
+
+    @Test
+    @DisplayName("every born-once arbiter refuses a copy with every trigger off - the unique alone, never a lock or a"
+            + " trigger, holds the profile, the data request's reference, the snapshot, the assessment, the evaluation,"
+            + " the decision and the case (P10-DOC-001)")
+    void everyBornOnceArbiterRefusesACopyWithEveryTriggerOff() throws Exception {
+        UUID party = UUID.randomUUID();
+        UUID request = referred(party, eur(500_000), WEEK);
+        UnderwritingCaseId id = caseOf(request);
+        Actor person = underwriter();
+        act(uow -> reviewing().assign(uow, id, person, correlation()));
+        act(uow -> reviewing().decide(uow, id, decline(), person, correlation()));
+        // table -> the row to copy, and the column given a fresh identifier so only the arbiter can refuse the copy.
+        Map<String, String> arbiters = new java.util.LinkedHashMap<>();
+        arbiters.put("credit_profile", "party_id = '" + party + "'");
+        arbiters.put("data_request", "decision_request_id = '" + request + "'");
+        arbiters.put("decision_snapshot", "decision_request_id = '" + request + "'");
+        arbiters.put("credit_assessment", "decision_request_id = '" + request + "'");
+        arbiters.put("policy_evaluation", "decision_request_id = '" + request + "'");
+        arbiters.put("credit_decision", "decision_request_id = '" + request + "'");
+        arbiters.put("underwriting_case", "decision_request_id = '" + request + "'");
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            for (Map.Entry<String, String> arbiter : arbiters.entrySet()) {
+                String table = "credit." + arbiter.getKey();
+                try (Statement statement = owner.createStatement()) {
+                    statement.execute("ALTER TABLE " + table + " DISABLE TRIGGER USER");
+                    statement.execute("SAVEPOINT copy");
+                }
+                String copy = "INSERT INTO " + table + " SELECT (jsonb_populate_record(NULL::" + table
+                        + ", to_jsonb(t) || jsonb_build_object('id', gen_random_uuid()))).* FROM " + table + " t WHERE "
+                        + arbiter.getValue() + " LIMIT 1";
+                assertThat(count("SELECT count(*) FROM " + table + " WHERE " + arbiter.getValue()))
+                        .as(table + " holds the row to copy").isPositive();
+                assertThatThrownBy(() -> {
+                    try (Statement statement = owner.createStatement()) {
+                        statement.execute(copy);
+                    }
+                }).as(table).isInstanceOf(SQLException.class)
+                        .satisfies(refused -> assertThat(((SQLException) refused).getSQLState())
+                                .as(table + ": " + refused.getMessage()).isEqualTo("23505"));
+                try (Statement statement = owner.createStatement()) {
+                    statement.execute("ROLLBACK TO SAVEPOINT copy");
+                }
+            }
+            owner.rollback();
+        }
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", request)).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ the doors
 
     @Test
@@ -715,6 +843,48 @@ class UnderwritingCaseDatabaseTest {
     }
 
     @Test
+    @DisplayName("every keyed act replays its response under its key - the release, a decision, a refused second approval"
+            + " and a second approval - each recorded and audited once (P10-DOC-001)")
+    void everyKeyedActReplaysItsResponse() throws Exception {
+        // A real customer: the application's own standing port reads the party (a UUIDv7) in the deciding transaction.
+        UUID request = referred(client.consentingCustomer().party(), eur(1_200_000), WEEK);
+        UnderwritingCaseId id = caseOf(request);
+        String first = sessionWith(RoleName.UNDERWRITER);
+        String second = sessionWith(RoleName.UNDERWRITER);
+        String base = "/v1/operator/credit/review-cases/" + id.value();
+        String decision = "{\"outcome\":\"APPROVED\",\"approvedAmount\":\"12000.00\",\"currency\":\"EUR\","
+                + "\"reasonCodes\":[\"CRD-RISK-REFERRAL\"],\"reason\":\"verified by phone\"}";
+        assertThat(client.post(base + "/assignment", null, first, CreditTestClient.key()).statusCode()).isEqualTo(200);
+        assertReplays(base + "/release", null, first, "OPEN");
+        assertThat(client.post(base + "/assignment", null, first, CreditTestClient.key()).statusCode()).isEqualTo(200);
+        assertReplays(base + "/decision", decision, first, "AWAITING_SECOND");
+        assertReplays(base + "/second-approval", "{\"decision\":\"REFUSE\",\"reason\":\"income too thin\"}", second,
+                "ASSIGNED");
+        assertThat(client.post(base + "/decision", decision, first, CreditTestClient.key()).statusCode()).isEqualTo(200);
+        assertReplays(base + "/second-approval", "{\"decision\":\"APPROVE\",\"reason\":\"agreed\"}", second, "DECIDED");
+        String target = id.value().toString();
+        for (String operation : List.of("credit.ReviewCaseReleased", "credit.ReviewSecondApprovalRefused",
+                "credit.ReviewSecondApproval")) {
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = ? AND target_id = ?", operation,
+                    target)).as(operation + " once, whatever the replays").isEqualTo(1);
+        }
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewDecided'"
+                + " AND target_id = ?", target)).as("two first decisions, each once").isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", request)).isEqualTo(1);
+    }
+
+    /** Posts under one key twice: the same status and the byte-identical body - the replay, never a second act. */
+    private void assertReplays(String path, String body, String session, String status) throws Exception {
+        String key = CreditTestClient.key();
+        HttpResponse<String> once = client.post(path, body, session, key);
+        assertThat(once.statusCode()).as(path + ": " + once.body()).isEqualTo(200);
+        assertThat(CreditTestClient.field(once.body(), "status")).as(path).isEqualTo(status);
+        HttpResponse<String> again = client.post(path, body, session, key);
+        assertThat(again.statusCode()).as(path + " replayed").isEqualTo(200);
+        assertThat(again.body()).as(path + " replayed byte-identical").isEqualTo(once.body());
+    }
+
+    @Test
     @DisplayName("the doors are CREDIT_UNDERWRITE's alone - no session 401; a customer and a credit policy officer 403;"
             + " nothing taken, decided or recorded")
     void theDoorsAreTheUnderwritersAlone() throws Exception {
@@ -724,6 +894,11 @@ class UnderwritingCaseDatabaseTest {
         String second = "{\"decision\":\"APPROVE\"}";
         assertThat(client.get("/v1/operator/credit/review-cases", null).statusCode()).isEqualTo(401);
         assertThat(client.post(base + "/assignment", null, null, CreditTestClient.key()).statusCode()).isEqualTo(401);
+        // P10-DOC-001: every door without a session, not only the first two.
+        assertThat(client.post(base + "/release", null, null, CreditTestClient.key()).statusCode()).isEqualTo(401);
+        assertThat(client.post(base + "/decision", decision, null, CreditTestClient.key()).statusCode()).isEqualTo(401);
+        assertThat(client.post(base + "/second-approval", second, null, CreditTestClient.key()).statusCode())
+                .isEqualTo(401);
         CreditTestClient.Customer customer = client.customer(true);
         String officer = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
         for (String bearer : List.of(customer.token(), officer)) {

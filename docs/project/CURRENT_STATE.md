@@ -457,9 +457,14 @@ asserted eighteen audited acts and four refusals, made every Phase 9 document tr
 the Phase 9 → 10 transition (2026-10-07), which confirmed the phase after repair and initialised Phase 10.
 
 **Phase 10 — Credit Decisioning**
-Status: 🔵 **`IN_PROGRESS`** (2026-10-07, `P10-TSK-001`) — entry gate: all twelve criteria hold, by the Phase 9 → 10
+Status: ✅ **`COMPLETE`** (2026-10-09) — **all twelve universal criteria, all eight F1–F8
+supplement criteria re-assessed at the gate (F1, F2, F4 and F5 vacuous - credit posts nothing - and F8 `N/A`), and all
+twenty-four phase-specific criteria hold**, ruled by the exit review
+([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md), `P10-DOC-001`) - criterion 7 and the Testing bullet with
+their recorded deviation (no fleet-wide database or kafka count, on the owner's standing instruction). Entered
+`IN_PROGRESS` 2026-10-07 (`P10-TSK-001`) — entry gate: all twelve criteria hold, by the Phase 9 → 10
 transition ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md) §9).
-Planned in [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md); decided in ADR-0084…0089 (`Proposed`); the
+Planned in [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md); decided in ADR-0084…0089 (`Accepted` by the exit review); the
 machines in [`CREDIT_DECISIONING_LIFECYCLES.md`](../domain/CREDIT_DECISIONING_LIFECYCLES.md): a
 decision is an immutable fact reproducible from a sealed snapshot of the data it used, evaluated by a
 versioned policy (rules as data) and a versioned scorecard through a deterministic engine with its
@@ -468,7 +473,12 @@ financial-data adapters under recorded consent, its evidence encrypted; affordab
 exact, decisions for one party serialised on its profile; referrals decided by people under
 four-eyes; every decision replayed. Credit moves no money; Phase 11 begins where a decision is
 consumed. Eight new invariants take the platform to **128**. Twenty-four backlog items across eight
-milestones (M10.1–M10.8). **23 of 24 items complete** (M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed; M10.8 at 2 of 3): the module boundary, schema floor and closed vocabularies (`P10-TSK-001`), the credit consent purposes (`P10-TSK-002`), the credit permissions and roles (`P10-TSK-003`), the credit profile (`P10-TSK-004`), the bureau port with `bureau-sim-a` (`P10-TSK-005`), bureau data collection (`P10-TSK-006`), financial data (`P10-TSK-007`), the decision input snapshot (`P10-TSK-008`), affordability (`P10-TSK-009`), exposure (`P10-TSK-010`), the scorecard model and its versioning (`P10-TSK-011`), the credit policy and its versioning (`P10-TSK-012`), the policy evaluator (`P10-TSK-013`), the decision request (`P10-TSK-014`), decision orchestration (`P10-TSK-015`), recording the decision (`P10-TSK-016`), decision retrieval and the adverse-action explanation (`P10-TSK-017`), underwriting: the manual review case (`P10-TSK-018`) and decision replay and verification (`P10-TSK-019`), credit meters, spans, reports, alerts and the dashboard row (`P10-TSK-020`), and - out of turn, in parallel with `P10-TSK-018` on the owner's instruction - a second bureau and source selection (`P10-TSK-021`), and - out of turn, in parallel with `P10-TSK-020` on the owner's instruction - the decision reproducibility battery (`P10-TST-002`), and the credit decision storm (`P10-TST-001`); `P10-DOC-001` `READY`.
+milestones (M10.1–M10.8). **24 of 24 items complete** (M10.1 to M10.8 closed): the module boundary, schema floor and closed vocabularies (`P10-TSK-001`), the credit consent purposes (`P10-TSK-002`), the credit permissions and roles (`P10-TSK-003`), the credit profile (`P10-TSK-004`), the bureau port with `bureau-sim-a` (`P10-TSK-005`), bureau data collection (`P10-TSK-006`), financial data (`P10-TSK-007`), the decision input snapshot (`P10-TSK-008`), affordability (`P10-TSK-009`), exposure (`P10-TSK-010`), the scorecard model and its versioning (`P10-TSK-011`), the credit policy and its versioning (`P10-TSK-012`), the policy evaluator (`P10-TSK-013`), the decision request (`P10-TSK-014`), decision orchestration (`P10-TSK-015`), recording the decision (`P10-TSK-016`), decision retrieval and the adverse-action explanation (`P10-TSK-017`), underwriting: the manual review case (`P10-TSK-018`) and decision replay and verification (`P10-TSK-019`), credit meters, spans, reports, alerts and the dashboard row (`P10-TSK-020`), and - out of turn, in parallel with `P10-TSK-018` on the owner's instruction - a second bureau and source selection (`P10-TSK-021`), and - out of turn, in parallel with `P10-TSK-020` on the owner's instruction - the decision reproducibility battery (`P10-TST-002`), the credit decision storm (`P10-TST-001`) and the exit review (`P10-DOC-001`), which refused at proposal a policy that
+could approve past its own maximum exposure, stopped the retry sweep asking for closed requests, put the evaluating
+step's locks in the one order, aged a record from the earlier of its provider's date and its recording, asserted four
+audited acts, raced the expiry boundary over 240 requests, probed every born-once arbiter with its triggers off, made
+every Phase 10 document true and accepted ADR-0084…0089; next **the Phase 10 → 11 transition** — `READY`
+([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
 
@@ -483,63 +493,50 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P10-DOC-001` — The Phase 10 exit review** — `READY`: marked by `P10-TST-001`'s completion gate (2026-10-09) - every other Phase 10 item complete. **Not started.**
+**The Phase 10 → 11 transition** — `READY`: Phase 10 is `COMPLETE` (`P10-DOC-001`, 2026-10-09); the transition plans Phase 11 (lending) against what Phase 10 left - a decision it will reference and a reservation it will consume, through `CreditDecisions` and `credit_decision_consumption`, and the debt rows owned by Phases 13, 15 and 16. **Not started.**
 
 ### Just completed
 
-**`P10-TST-001` — The credit decision storm** — `COMPLETE` (2026-10-09). M10.8 at 2 of 3. Decision correctness under every provider fault, crash, duplicate, activation and race at once, on two skewed instances: the ten-instance answer's capstone, `PASS` on its counts (every `Phase: 10` invariant; `DOD-TEST`, `DOD-FIN` by the exposure census). `CreditDecisionStormDatabaseTest` (`database`, `own-container`, listed in `ownContainerSuites`; one case, the storm about 245 s, about 4.6 minutes a run). **Two application contexts over one database**: A is the suite's own, its clock 5 s ahead of the server; B is a second `FinappApplication` in the same JVM, 5 s behind (`ServerSkewedClock`). Both pull from one simulated bureau (`bureau-sim-a`) and one simulated financial-data provider (`findata-sim-a`) through their real adapters, so the providers' counts span both instances. **The load** (at least 90 s, 15 rounds and 300 decisions; about 380 rounds, 530-740 decisions a run): four movers per instance submit at their own door for a pool of 72 parties across both products. The parties' figures are chosen through the simulators' own derivation - good, referral and bad profiles. The movers replay keys on the other instance, cancel, and send applicants without consent (refused `consent.ConsentRequired`). Each instance runs two progress sweepers and a retry sweeper. Two underwriters per instance take, release, decline, approve (above four eyes where a referral allows) and second-approve; a refused second approval goes back to its first underwriter. Two officers activate loan, line and scorecard versions mid-flight on both doors. A chaos actor arms every fault of both simulators: timeout, slow, malformed, partial, unknown status, unavailable, lost response, and a foreign-currency balance. It also withdraws consents - at random, and through the simulator's own hook between producing an answer and writing it - suspends standings, delivers answers twice (one data request asked from both instances at once) and files requests with a validity of seconds. **Every round, in ONE `REPEATABLE READ` snapshot, every census exact** (soft, so a failure names every reading):
-- **the exposure census**: order-free from decision rows and their snapshots. For each limit among a party's live approvals, the least bureau balance plus the approvals decided under a limit at most that one fit it.
-- exactly one decision per `DECIDED` request and none otherwise; every `ABANDONED` with its reason.
-- snapshot sequences 1..n, each assessed and evaluated once, each decision from its request's latest snapshot.
-- one open request per party and product.
-- one taker per case: takes less releases is 0 or 1, as the case's state says.
-- every `IN_REVIEW` request with one live case, and persons' decisions and `DECIDED` cases one-to-one.
-- received data requests and records one-to-one.
-- **the consent census**: a record whose every answer was written after its subject's withdrawal had committed is a breach. Ordered by one JVM sequence, never by clocks.
-
-**Then**:
-- **two-instance races**: the doors' refusals on both instances (another customer's request 404, a customer or an officer taking a case 403, an underwriter proposing a policy 403, no session 401); one key on both doors; two keys for one product (202 and 409); ten steppers (one edge per state); one case taken on both (200 and 409); a self second-approval refused; one second approval by two underwriters (200 and 409); one proposal approved by two officers (200 and 409); cancellation against evaluation (exactly one).
-- **the exposure races**: twelve parties' loan and line, each within its limit alone and not together, decided at one instant on A and B. The census runs FIRST; then one approval and one `CRD-EXPOSURE-LIMIT` decline per pair.
-- **the catalogue**: every fault of each simulator one at a time, one report per reference; an answer delivered twice (one record, one duplicate evidence, one pull); consent withdrawn mid-pull and after an answer; standing suspended before the freeze and in the deciding transaction; a source past its deadline (never asked again, the fallback refers); a stale record re-collected; a policy and a scorecard activated mid-decision (the pinned versions decide); six requests raced at their expiry (exactly one of `DECIDED`, `EXPIRED`); four open cases' expiry against their assignment.
-- **nine crash points**: the submission, the opening, the recording (a KILLED backend: `pg_terminate_backend` from a trigger), `READY`, the freeze, the decision (killed), its outbox event, the referral and a person's decision. The others are forced rollbacks. Nothing was doubled.
-
-**Drain, then at rest**:
-- **the simulators' counts exactly ours**: pulls equal produced references; every reference asked or produced is one of our data requests; references `RECEIVED` equal the recorded ones; a produced reference is received, withdrawn or past its deadline; nothing still asked; nothing asked for a party who never consented.
-- **every act counted**: audit rows equal their rows (decisions, data requests per kind, assignments, releases, refusals, persons' decisions and second approvals, cancellations, activations, the queue reads, the explanation and the replay); outbox events equal decisions and cases; both instances' decision and reason meters equal the rows.
-- **the replay census**: every decision `IDENTICAL` in this JVM, in a second JVM (`ReplayInAnotherJvm`, `UTF-16`, `ar-EG`, `America/Adak`, other identity hash codes) and by the rule-order oracle; the replay gauge clean.
-- the open-age and review-age gauges at zero on both instances.
-- **the needle walked**: a marker in every simulated answer, in no table but the evidence ciphertext, no log line, and no response the storm received (every response searched as it arrived).
-- the doors' latency recorded: submission p99 68-104 ms, a person's decision p99 about 110-145 ms.
-
-**Four judgement calls**, in ADR-0087's Follow-up: the order-free exposure census; the consent census's JVM sequence; a boundary race that leaves both conditionals refused, settled by the next step (observed, the design); crash points as forced rollbacks or killed backends.
-
-**Gate findings**:
-- **IMPORTANT, PRODUCTION DEFECT, FIXED**: a credit data request's birth stamp (`requested_at`, `statement_timestamp()`) is what the freeze and the `READY` step order "the latest data request of a kind" by, and the database clock steps back (`X-TSK-017`'s class). A re-collection born within a step read as older than the stale request it replaced, and was re-collected again until the clock passed it - four bureau data requests where one re-collection was due, in one storm run. These were redundant paid pulls, never a stale decision. `credit V015` stamps a birth `GREATEST(statement_timestamp(), the decision request's latest + 1 µs)`, serialised by the request's row lock. Red first: `DecisionSnapshotDatabaseTest#aReCollectionOnAClockBehindItsStaleRecordIsTheLatest`. Recorded in ADR-0063, ADR-0085 and `DISTRIBUTED_EXECUTION.md`.
-- **IMPORTANT, FIXED, a census defect**: the consent census as first written flagged every answer held mid-pull that was recorded. A reference asked twice at once had its repeat answered before the withdrawal committed, so the platform read in time; it went red on an unprobed run. Only the order rule was kept, and the probe was re-performed.
-- **IMPORTANT, FIXED**: a second approval refused `credit.ExposureLimitExceeded`, the party's reservations having moved, was not absorbed. A refused second approval came back to an underwriter the drain never served. Now handled, with every underwriter in the drain.
-- **IMPORTANT, FIXED**: four eyes under load was effectively absent (approvals above the threshold need an uncapped referral). The chaos now arms the foreign-currency balance more often, and underwriters approve above the threshold where they can. Still only 0-2 a run - the deterministic race carries it. Also fixed: the door refusals and the submission crash point were added.
-- **MINOR, FIXED**: `DecisionOrchestrationDatabaseTest#undueWorkNeverStarvesDueWork` (`P10-TSK-015`) failed once in the adjacent own-container run: claimed 0 of 5, the births' permits not yet due on a database clock just stepped back. It now waits for the database to say they are due.
-- **MINOR, recorded**: at the boundary, a deciding transaction that read "unexpired" under its lock can be refused by the trigger on a later statement's clock (`CreditStorageException`, rolled back). The request stays `EVALUATED` for the next step - the design ("the trigger re-judges both").
-- **MINOR, recorded**: the first green series' first run passed, but its results file was lost to a collision with an earlier stopped build. Every count reported is from a fresh results file.
-
-**PROBES**: THREE, ALL CAUGHT on their first runs by the census each was aimed at, and all re-performed on the final storm and caught again. Every restore byte-identical (sha256-verified).
-- The profile lock removed from the deciding transaction: caught by the exposure census in the round after the exposure races (the load's rounds stayed green - chance alone rarely puts one party's two products in the deciding step together).
-- The gate re-read removed from the recording transaction: caught by the consent census in load round 5, and in round 4 on the corrected census.
-- The evaluator iterating a hash set: caught by the replay census - this JVM all `IDENTICAL`, the second JVM 103 then 269 `DIVERGED` by `REASONS`.
-
-`MUTATION_TESTING.md` §2 +4 rows (three probes and the fix's red-first), §4 +1.
-
-**Multi-instance PASS**, on the storm's counts.
-
-**Financial**: proof only - the exposure census; credit moves no money.
-
-**NEXT TASK**: `P10-DOC-001` `READY`.
-
-**Verified** by fresh runs: the storm three consecutive runs green on the final code (243-247 s each). The adjacent database suites on the final tree: credit's database tier 69 across 8 suites; app's credit suites 46 across 6 in the shared JVM and 97 across 11 in their own containers - the storm a fourth time, the battery 12 of 12, `DecisionOrchestrationDatabaseTest` 12 of 12 - all 0 failures. The fleet `test architectureTest --continue` over the records: the hermetic tier 2539 across 436 suites in 18 modules and the architecture tier 210 across 50 - the document guards among them - 0 failures; `sharedkernel`'s two tasks were up to date (inputs unchanged, not re-executed). The fleet-wide database and kafka tiers are not run, on the owner's standing instruction (the backlog's recorded deviation).
+**`P10-DOC-001` — The Phase 10 exit review** — `COMPLETE` (2026-10-09). **Phase 10 `COMPLETE`; M10.8 closed at
+3 of 3.** The review ([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)): 8 review areas, 12 universal criteria,
+F1–F8 re-assessed (F1, F2, F4, F5 vacuous - credit posts nothing; F8 `N/A`) and 24 phase-specific criteria `PASS` -
+criterion 7 and the Testing bullet with their recorded deviation; G1–G11 and the two further decisions read against the
+code (all hold; G7's "evaluation's approved amount" built as the referral's ceiling, G11's retry edge as the claim's
+`UNAVAILABLE → REQUESTED`, documents corrected); the Phase 11 boundary verified clean; the Phase 15 evidence-purge row
+present, its scope widened. Six read-only audits, then four document passes. **Found and fixed in code:** (1) **a policy
+could approve past its own maximum exposure** (`INV-CRD-09`) - the evaluator judges exposure only through rules and the
+proposal door demanded none: it now refuses `422 credit.PolicyIncomplete` (`CreditPolicy.boundsExposure`,
+`PolicyRule.refusesExposurePast`; `CreditPolicyValidationTest#onlyAGuaranteedRuleBoundsTheExposure`,
+`CreditPolicyEndpointDatabaseTest#theRefusals`); (2) the retry sweep kept asking providers for closed requests - the
+claim now admits only open ones (`BureauCollectionDatabaseTest#theRetrySweepStopsAskingForAClosedRequest`); (3) the
+evaluating step took the pinned versions (L5) before the data requests (L4), against the one lock order - now L4 first
+(`DecisionOrchestrationDatabaseTest#theEvaluatingStepLocksItsDataRequestsBeforeThePinnedVersions`); (4) a record's age
+ran from the provider's own date (`INV-CRD-08`) - now `LEAST(retrieved_at, recorded_at)`
+(`DecisionSnapshotDatabaseTest#aRecordDatedInTheFutureIsAgedFromItsRecording`). **Found and filled in tests:** four
+audited acts never asserted (the policy's and scorecard's proposal and rejection); the expiry-against-decision boundary
+over 240 requests where the gate says ≥ 200 (`CreditDecisionDatabaseTest#expiryAndDecisionAtTheBoundaryOverTwoHundredRequests`
+- its first version, timed once a minute early, saw every request on one side of the boundary: re-timed from the
+database a second before each race, 51 DECIDED, 189 EXPIRED, sixteen deciding transactions refused by the trigger and settled by the next step); every born-once arbiter refusing a copy with every trigger off
+(`UnderwritingCaseDatabaseTest#everyBornOnceArbiterRefusesACopyWithEveryTriggerOff`); the case's domain refusals and
+raw-SQL edges out of every terminal state in all three machines; the decision's side tables per role; five keyed acts
+replayed; a generated twelve-activation history; three `401`s; and a pre-existing flaky assertion
+(`#aDecisionCitingEveryAdverseCodeRecordsAndPublishes` refused "740" anywhere in a payload whose decision id can carry it).
+**Documents:** ADR-0084…0089 read against the code, corrected and `Accepted`; `PHASE_10_PLAN.md` (§20 errata),
+`CREDIT_DECISIONING_LIFECYCLES.md`, `CREDIT_MODEL.md`, `MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md`, the glossary
+(six terms; Credit Record) and `DOMAIN_MODEL.md`, `DISTRIBUTED_EXECUTION.md` §3, `DATA_CLASSIFICATION.md`,
+`AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `FINANCIAL_INVARIANTS.md`, the `DELIVERY_PLAN.md` addendum,
+`OPERATIONS_RUNBOOK.md` §6 (new), `CAPABILITY_MAP.md`, `ROADMAP.md`, `DECISIONS.md`, the ADR index, a dated read note
+under the gate's Phase 10 criteria, and eight code comments and texts made true - among them the consent refusal the gate
+itself named (`403 credit.ConsentRequired`; built `409 consent.ConsentRequired`). **PROBES**: SEVEN, SEVEN CAUGHT (one
+first attempt void - the dropped unique was production's `ON CONFLICT` target - and re-performed on another), every
+restore byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +7 rows. **The flip**, proven non-vacuous: without
+`INV-CRD-11`'s two rows the guard failed `(currently 10)` naming exactly `["INV-CRD-11"]`; restored byte-identical
+(sha256 `fec35ec6…`). **Multi-instance PASS.** **NEXT**: the Phase 10 → 11 transition `READY`. **Verified** by fresh runs
+on the final code - credit's database tier 73 across 8 suites; app's credit suites 48 across 6 in the shared JVM and 103 across 11 in their own containers (the storm among them, green); the fleet `test architectureTest --continue` after the flip and the records: the hermetic tier 2765 tests across 460 suites in 19 modules (credit's and app's executed fresh, 955 across 181; the other seventeen modules' tasks up to date - inputs unchanged since their last execution, not re-executed) and the architecture tier 213 across 51 (174 across 33 executed fresh) - the document guards among them; the document guards re-run after the last record edits (app's architecture tier 171 across 32 and its nine document-reading hermetic suites, 83 tests) - ALL 0 FAILURES; the fleet-wide database and kafka tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 249 blocks, from `X-TSK-017` back to project initiation
+The per-task completion records — 250 blocks, from `P10-TST-001` back to project initiation
 (`X-TSK-017` cross-cutting, standing between `P10-TST-001` and `P10-TST-002`; `X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1011,7 +1008,8 @@ carries, what triggers paying it down, and the owning phase.
 | **Phase 9 residues the transition ruled MINOR** (recorded by the Phase 9 → 10 transition (2026-10-07)): the corridor door keeps no evidence for an authenticated callback naming no credit (payments has no subject-less append); `CrossBorderPaymentReturned` carries no returned amount (the payments outcome port does not); screenings created before kyc `V010` have no recorded requester (the self-review refusal is the domain's alone for them); the screening retry's `next_attempt_at` and both callback doors' freshness window are judged on the instance clock (pacing and hints only, no money); the cross-module vocabularies bridged by name (payments' `FailureReason` in crossborder's `CHECK`, `PayeeCheck`/`EntityType`) have no parity guard; the return fact has two writers and the fee-refund lines are composed twice | Each is outside a money path or already held by a database rank; the transition repaired every CRITICAL and IMPORTANT finding and the MINOR ones on correctness, concurrency and security paths | A future vocabulary addition rolling back every failing outcome (the parity gap) is the only one with a money-adjacent consequence: a sweep that never concludes | The next change to any of those vocabularies, or Phase 15's operational-readiness pass | **Phase 15** |
 | **Phase 9 operator-path residues** (recorded by the Phase 9 → 10 transition (2026-10-07)): a failed operator lookup (a 404 on the trace or the provenance) leaves no audit record; the trade reversal's decisions take no idempotency key, so a same-approver retry after a lost response is `409 ProposalNotPending` rather than a replay; no privileged Phase 9 act requires a multi-factor session (the platform's existing posture); `ReconciliationNeverConvertsTest` reads only the settlement and reconciliation packages, not `app`'s port implementations | Enumeration probing is bounded by the permission; no money moves twice; MFA posture is platform-wide; no conversion exists in the app ports today | Enumeration of operator ids unseen; an approver's confusing 409 | Phase 15's security hardening | **Phase 15** |
 | **Phase 9 test-hygiene residues** (recorded by the Phase 9 → 10 transition (2026-10-07)): `PHASE_9_PLAN.md` §14's sixty scenarios have no scenario-to-test map (the §20 errata and §21 name the moved ones); the storm's break census excludes every `REVERSAL_MISMATCH`; `FX_LEG_DIFFERS` is proven on the buy leg only; `RECEIVED`-then-rejected is proven only in the storm; four suites sleep against database-stamped permits; one credit records one return, so a second partial bounce of the same credit is disposed of without a transfer and the full fee is refunded on a partial return (ruled: one return per credit is the design; the fee rule stands until a product decision says otherwise) | The audit found no defect behind them; each is a weaker test, not a missing control | A regression on those exact paths passing a weaker test | The next change to those paths | **Phase 15** |
-| **Credit evidence purge** (recorded by `P10-TSK-006` (2026-10-07)): `credit_evidence.retain_until` is stored for every row (recorded-at plus the product's evidence retention, on the database's clock) but nothing deletes past it - the table refuses `DELETE` for every role by trigger | A purge is a privileged, audited deletion of evidence with its own definer path and its own review, out of `-006`'s scope by the backlog | Evidence kept longer than its declared retention | The first credit evidence older than 25 months | **Phase 15** |
+| **Credit evidence purge** (recorded by `P10-TSK-006` (2026-10-07)): `credit_evidence.retain_until` is stored for every row (recorded-at plus the product's evidence retention, on the database's clock) but nothing deletes past it - the table refuses `DELETE` for every role by trigger | A purge is a privileged, audited deletion of evidence with its own definer path and its own review, out of `-006`'s scope by the backlog. *(Scope, read by the Phase 10 exit review, `P10-DOC-001`: the purge is a deletion or a crypto-shred of the ciphertext - `MODULE_ARCHITECTURE.md` and `DELIVERY_PLAN.md` §18 name both; the normalised attributes (`credit_record_attribute`) and each snapshot's canonical text, `RESTRICTED-FINANCIAL` and kept for replay, have no stated retention of their own - Phase 15 decides whether the purge reaches them, and how a purged decision then explains.)* | Evidence kept longer than its declared retention | The first credit evidence older than 25 months | **Phase 15** |
+| **No alert names a missing `ACTIVE` scorecard** (recorded by the Phase 10 exit review, `P10-DOC-001` (2026-10-09)): a product without an `ACTIVE` policy is refused at submission (`credit.ProductNotOffered`) and alerted (`CreditPolicyMissing`), but with no `ACTIVE` `RETAIL_SCORECARD` requests are admitted and wait at `SUBMITTED` until they expire - `CreditRequestOpenPastValidity` fires only after the seven-day validity | A new series and alert is a task's, not a review's; the seeded v1 is activated with the policies (`OPERATIONS_RUNBOOK.md` §6), and a scorecard is never retired without its successor, so the gap opens only before v1's first activation | Applicants waiting a week for a decision nothing can make | A deployment that admits requests before its scorecard v1 is activated | **Phase 15** (operational readiness) |
 | **History order rests on the database clock** (recorded by `P10-TSK-015` (2026-10-08)): every history table in the platform - `decision_request_event`, the policy and scorecard events, and their precedents - orders its rows by an `occurred_at` stamped from the database's clock, with no monotonic position. A clock stepped backwards (seen in the Docker Desktop VM the suites run on, which lags the host and is corrected in steps) misorders rows written by separate transactions; `DecisionOrchestrationDatabaseTest` met it and asserts its edges as a multiset - the trigger already forces their order. | A position column per history table is a migration across every module, out of one task's scope; production hosts slew their clocks rather than step them | A reader ordering history by time alone may show an edge before its predecessor after a clock step; no transition is affected - the machines are judged on the rows' status, never on their history's order | The first consumer that must read a history in order (an operator timeline, a replay of edges), or a production clock step | Cross-cutting |
 
 None of these is financial-correctness debt.
@@ -1094,8 +1092,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P10-DOC-001` — The Phase 10 exit review** — `READY`
-(the Current Task), marked by `P10-TST-001`'s completion gate - Phase 10 `IN_PROGRESS`.
+**The Phase 10 → 11 transition** — `READY`
+(the Current Task), marked by `P10-DOC-001`'s completion gate - Phase 10 `COMPLETE`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

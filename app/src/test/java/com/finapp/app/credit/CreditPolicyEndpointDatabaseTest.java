@@ -122,6 +122,14 @@ class CreditPolicyEndpointDatabaseTest {
                 officer, someKey());
         assertThat(approving.statusCode()).isEqualTo(422);
         assertThat(approving.body()).contains("credit.PolicyIncomplete");
+        // INV-CRD-09 (P10-DOC-001): the evaluator judges exposure only through rules - a policy with none that refuses
+        // past its maximum exposure would approve past it, so the door refuses it.
+        String unbounded = policy("CREDIT_LINE", 900, true, "REFER", "no exposure rule")
+                .replaceFirst("\\{\"ruleCode\":\"EXPOSURE_LIMIT\"[^}]*\\},", "");
+        assertThat(unbounded).doesNotContain("EXPOSURE_HEADROOM");
+        HttpResponse<String> exposureless = post(POLICIES, unbounded, officer, someKey());
+        assertThat(exposureless.statusCode()).as(exposureless.body()).isEqualTo(422);
+        assertThat(exposureless.body()).contains("credit.PolicyIncomplete");
         HttpResponse<String> unknown = post(POLICIES, policy("MORTGAGE", 900, true, "REFER", "x"), officer, someKey());
         assertThat(unknown.statusCode()).isEqualTo(422);
         assertThat(unknown.body()).contains("credit.ProductNotOffered");

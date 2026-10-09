@@ -34,7 +34,25 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-10-07).** **Phases 0 through 9 are `COMPLETE`.** Phase 9 closed on its
+**Current position (2026-10-09).** **Phases 0 through 10 are `COMPLETE`.** Phase 10 closed on its
+exit review (`P10-DOC-001`, 2026-10-09 — `PHASE_10_PLAN.md` and `CREDIT_DECISIONING_LIFECYCLES.md`
+read against the code and made true, inline where a statement was wrong and in the plan's errata
+for the rest; ADR-0084…0089 read against the code and accepted). Among what the review found and
+fixed: a policy whose rules did not bound its own maximum exposure would have let the platform
+approve past it; the retry sweep kept asking providers for requests already closed; the evaluating
+step took the pinned versions before the data requests, against the one lock order; and a record's
+age ran from the provider's own date. **The platform decides credit and moves no money**: a keyed
+request, data collected under consent re-read at every step, a sealed snapshot, an exact
+affordability and exposure judged under the party's lock, a versioned scorecard and a policy of
+rules as data through a versioned engine, an immutable decision with ordered reason codes, a
+referral decided by people under four-eyes, and every decision replayed `IDENTICAL` - all
+twenty-four items `COMPLETE`, the credit decision storm (`P10-TST-001`) answering the ten-instances
+question on two instances five seconds either side of the database, the battery (`P10-TST-002`)
+replaying ten thousand generated applicants in two JVMs. The fleet-wide database and kafka tiers
+were skipped on the owner's standing instruction. **Phase 11 — Lending — is next**, behind the
+Phase 10 → 11 transition.
+
+**Phase 9** closed on its
 exit review (`P9-DOC-001`, 2026-10-07 — `PHASE_9_PLAN.md` and
 `FX_AND_CROSS_BORDER_LIFECYCLES.md` read against the code and made true, inline where a
 statement was wrong and in the plan's §20 errata for the rest). Among what the review found and fixed: the beneficiary's
@@ -55,8 +73,9 @@ concluded cross-border credit re-sendable to a provider that had never seen it, 
 creditable twice — and twenty-three important ones (two deadlocks, one introduced by the exit
 review's own repair; a sweep page that could starve; storage failures logging refused rows; an
 exponent amount exhausting every money door), every one repaired, tested and broken on purpose.
-**Phase 10 — Credit Decisioning — is `READY`**: decisions as immutable, reproducible facts from
-versioned policy and models, with no money moved; `P10-TSK-001` is the first task.
+**Phase 10 — Credit Decisioning** opened `READY`: decisions as immutable, reproducible facts from
+versioned policy and models, with no money moved; `P10-TSK-001` the first task; all twenty-four
+`COMPLETE` by 2026-10-09 (`P10-DOC-001`).
 
 **Phase 8** closed on its
 exit review (`P8-DOC-001`, 2026-10-01 — 8 areas, 12 universal criteria, F1–F8 re-assessed and 28

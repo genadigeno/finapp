@@ -1,6 +1,6 @@
 # ADR-0084 — The credit bounded context: data, assessment, policy and decision kept apart in one module that moves no money, and the risk score is risk's
 
-Status: Proposed
+Status: Accepted (2026-10-09, `P10-DOC-001` — read against the code and corrected first)
 Date: 2026-10-07
 Phase: 10
 Context: Credit · Consent · KYC · Risk · Platform
@@ -27,7 +27,14 @@ constrain where it lives:
    the policy evaluation over the assessment and the decision itself commit together, and if
    the exposure an approval reserves is judged in the same transaction that records it
    (`INV-CRD-06`, `INV-CRD-07`, `INV-CRD-09`). Whatever module boundary is drawn must not cut
-   through that.
+   through that. *(As built (`P10-DOC-001`, 2026-10-09): two transactions, not one. The snapshot,
+   its assessment and its evaluation commit together in the evaluating step (`READY → EVALUATED`,
+   `DecisionProgress.evaluate`); the decision is recorded in a separate deciding transaction
+   (`DecisionMaking.decide`, `P10-TSK-016`) that locks the party's profile first, then the request,
+   re-shares the pinned versions, references the immutable snapshot and re-reads the reserved
+   exposure under the profile lock — and only when the reservation moved since the evaluation does a
+   successor snapshot, with its assessment and evaluation, commit beside the decision (ADR-0087 §5).
+   The exposure an approval reserves is still judged in the transaction that records it.)*
 3. **Data collection looks like a separate concern.** Bureau and financial-data retrieval has
    its own providers, its own evidence regime and its own consent purpose; a second module was a
    real candidate.
@@ -60,24 +67,39 @@ constrain where it lives:
    - the **decision** is a separate, born-once row (ADR-0087), never a status on the assessment.
 
 2. **Data collection stays inside `credit`; a second module was weighed and refused.** Its only
-   consumer is credit's own snapshot. The evidence's security boundary is a table-level grant
-   inside one schema (`credit_evidence` with `SELECT` revoked from the application role,
-   ADR-0085 §5), which a module boundary would not strengthen. And a second module would put the
+   consumer is credit's own snapshot. The evidence's security boundary is a grant inside one
+   schema (`credit_evidence` `INSERT` only to the application role, ADR-0085 §5 — *as built
+   (`P10-DOC-001`): credit `V012` grants it column `SELECT` on `id`, `data_request_id`, `attempt`,
+   `duplicate` and `consent_withdrawn` so the investigator's door can name a row; the content
+   columns stay unreadable, reached only through the reasoned, audited `SECURITY DEFINER` function
+   `credit.read_evidence`*), which a module boundary would not strengthen. And a second module would put the
    freshness judgement (`INV-CRD-08`) and the second consent check (`INV-CRD-03`) on the far
    side of a port from the freeze and the decision that depend on them — turning one locked
    read into a cross-module protocol. One module, one consistency boundary: the decision and
    the snapshot it was made from commit together; the exposure an approval reserves is judged in
-   the transaction that records it.
+   the transaction that records it. *(As built (`P10-DOC-001`, 2026-10-09): one schema, two
+   transactions — the snapshot, assessment and evaluation in the evaluating step, the decision in
+   the deciding transaction that references that immutable snapshot, with a successor snapshot
+   committed beside the decision only when the reserved exposure moved; see Context point 2's
+   note.)*
 
 3. **Build edges: `credit` → `platform`, `sharedkernel` only.** Credit reaches everything else
    through ports declared in `credit` and implemented in `app`:
    - **`CreditConsentGate`** — the consent gate for the two new purposes `CREDIT_BUREAU_ACCESS`
      and `FINANCIAL_DATA_ACCESS` (consent `V003`, ADR-0037's closed `ConsentPurpose`, whose javadoc
-     reserved bureau access for this phase as a single member — it becomes two when `P10-TSK-002`
-     lands);
+     reserved bureau access for this phase as a single member — it became two when `P10-TSK-002`
+     landed, consent `V003`);
    - **`CreditPartyStanding`** — the party's verification standing (`ACTIVE`, KYC `VERIFIED`) and
      the party facts a snapshot records (age, residency country), implemented over the existing
-     customer-standing port — kyc gains nothing;
+     customer-standing port — kyc gains nothing; *(as built (`P10-DOC-001`, 2026-10-09):
+     `app`'s `PartyCreditStanding` reads `party`'s `PartyStore` — the party's live customer
+     `ACTIVE`, the `VerifiedAccountHolder` gate verbatim, which `INV-KYC-05` makes a faithful
+     projection of KYC's approval, so no `kyc` read happens — and answers **both facts empty**
+     (facts version 1) because no module holds a date of birth or a residency country (unresolved
+     question #13). Every snapshot records `PARTY_AGE_YEARS` and `PARTY_RESIDENCY_COUNTRY`
+     `ABSENT`, no v1 policy rule reads them, and `CRD-AGE-INELIGIBLE` /
+     `CRD-RESIDENCY-INELIGIBLE` cannot fire in Phase 10 production; a real implementation is a
+     new facts version, so earlier decisions replay unchanged.)*
    - **`CreditBureau`** and **`FinancialDataProvider`** — the provider-neutral data ports
      (ADR-0085 §1), one adapter per provider in `app`;
    - **`CreditRiskSignal`** — the risk signal (point 5) — and **`PlatformCreditExposure`** — the
@@ -85,8 +107,11 @@ constrain where it lives:
 
    No edge to `consent`, `kyc`, `party`, `risk` or `ledger`. No module depends on `credit` in
    Phase 10; Phase 11's `lending` will, through credit's published decision-read port
-   **`CreditDecisions`** (declared by `P10-TSK-016`, with no consumer in Phase 10).
-   `CreditModuleIsolationTest` pins both directions. Every port read that a decision depends on
+   **`CreditDecisions`** (declared by `P10-TSK-016`, with no consumer outside credit's own
+   composition in Phase 10 — *as built (`P10-DOC-001`): `CreditInvestigations`, the replayer and
+   `app`'s `CreditDecisionRequestDesk` read through it*).
+   `CreditModuleIsolationTest` pins credit's own edges (`platform`, `sharedkernel` only); the
+   other direction is held by each sibling's isolation test, which refuses `credit`. Every port read that a decision depends on
    is taken inside the acting transaction as a plain `READ COMMITTED` read (the gate's
    authoritative read, `ConsentGateDatabaseTest`'s lesson), and no credit transaction takes a
    lock outside `credit` (plan §7).
@@ -106,7 +131,10 @@ constrain where it lives:
    answers `NOT_ASSESSED`.** A risk score answers a fraud question, from fraud inputs, with a
    fraud consequence; it is owned by `risk`. Credit declares the `CreditRiskSignal` port — a
    required parameter consulted in the evaluation, the shape of Phase 9's
-   `CrossBorderRiskDecision` seam (ADR-0081 §8). Phase 10's composition answers `NOT_ASSESSED`
+   `CrossBorderRiskDecision` seam (ADR-0081 §8). *(As built (`P10-DOC-001`, 2026-10-09): the
+   freeze records the answer in every snapshot as the `RISK_SIGNAL` attribute with provenance
+   `Port("risk-signal", seamVersion)` (`SnapshotFreezer`), available to any rule; no v1 policy
+   rule reads it, so in Phase 10 it is recorded, not consulted.)* Phase 10's composition answers `NOT_ASSESSED`
    for every party, deterministically; the snapshot records that answer as the `RISK_SIGNAL`
    attribute together with the seam's version, so a decision made before Phase 13 replays
    identically after it (`INV-CRD-01`). `MODULE_ARCHITECTURE.md` moves `Risk Score` from
@@ -183,7 +211,9 @@ Positive:
 - Every `CLAUDE.md` credit distinction is a separate table with its own arbiter; a reviewer can
   point at the row that is the score, the evaluation and the decision.
 - One consistency boundary: snapshot, assessment, evaluation and decision commit inside one
-  schema; no cross-module protocol stands between a decision and its inputs.
+  schema; no cross-module protocol stands between a decision and its inputs. *(As built
+  (`P10-DOC-001`): in two transactions of that one schema — the evaluating step, then the deciding
+  transaction over the immutable snapshot; Context point 2's note.)*
 - Phase 13 inherits a seam whose Phase 10 answers are recorded, so introducing a real risk
   signal changes future decisions only, never the replay of past ones.
 - Phase 11 inherits a decision it references and an exposure reservation it consumes, with no
@@ -198,12 +228,15 @@ Negative:
   direct edge would have avoided, accepted as ADR-0006's price.
 
 Operational impact: one module, one schema (`credit`), two leaderless schedules (ADR-0087 §6,
-ADR-0085 §4); `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` grows from twenty
-to twenty-two.
+ADR-0085 §9 — *corrected by `P10-DOC-001`; the retry sweep is §9, not §4*);
+`NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` grows from twenty to twenty-two
+(`CreditDataRetrySchedule`, `CreditDecisionProgressSchedule`).
 Security impact: credit holds the platform's most sensitive financial PII (bureau data); keeping
 it in one schema with table-level grants keeps the blast radius one module wide. Three
-permissions and two roles arrive in identity `V020` (`CREDIT_POLICY_ADMINISTER`,
-`CREDIT_INVESTIGATE` under `CREDIT_POLICY_OFFICER`; `CREDIT_UNDERWRITE` under `UNDERWRITER`).
+permissions and two roles (`CREDIT_POLICY_ADMINISTER`, `CREDIT_INVESTIGATE` under
+`CREDIT_POLICY_OFFICER`; `CREDIT_UNDERWRITE` under `UNDERWRITER`). *(As built (`P10-DOC-001`):
+the permissions are `PermissionName` members and the grants `RoleName`'s, in code; identity
+`V020` only admits the two role names to `role_assignment`'s role `CHECK`.)*
 Financial impact: none posted. A decision is a promise-shaped fact that moves no money; the only
 financially material output is the reserved exposure (ADR-0088), which bounds what Phase 11 may
 lend.
@@ -232,5 +265,13 @@ ADR-0037's rule, not an invariant), ADR-0081 §8 (the seam with a recorded answe
   pinned to the Phase 10 version keep replaying under it.
 - Phase 11: `lending` depends on `credit` through the `CreditDecisions` port and writes the
   consumption fact, `credit_decision_consumption` (ADR-0088 §4).
-- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
-  accepting it, the `P9-DOC-001` precedent.
+- **As built** (2026-10-09, read against the code by `P10-DOC-001`): `P10-TSK-001` (module,
+  schema, `CreditModuleIsolationTest`, vocabularies, the seeded catalogue), `-002` (consent `V003`)
+  and `-003` (identity `V020`, the routes in `RoutePermissionRegisterTest`, the grants in
+  `RoleNameTest`) are built; `MODULE_ARCHITECTURE.md` and `GLOSSARY.md` §10 carry `Risk Score`
+  under `risk`. The Phase 13 and Phase 11 items above stay future. The review's corrections: the
+  decision commits in its own deciding transaction, not with the snapshot (Context point 2's note);
+  the evidence's column grant (point 2); the party facts answered empty (point 3); the risk signal
+  recorded, not read by any v1 rule (point 5); the permissions in code (Security impact).
+- **Acceptance.** The Phase 10 review (`P10-DOC-001`) read this ADR against the code, corrected it
+  where it had drifted, and accepted it on 2026-10-09, the `P9-DOC-001` precedent.
