@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (22 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed, M10.8 at 1 of 3); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (23 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed, M10.8 at 2 of 3); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15691,7 +15691,8 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-018` on the owner's instruction, marked `READY` out of turn and merged after it. Mid-request failover weighed and refused (ADR-0085 §10). Beyond the scope as written: normaliser version 2 of both `-sim-a` adapters (a present-but-unreadable field is malformed, never absent) and the 2 GiB heap for every tagged test tier (`ArchitectureTierHeapTest`). Tests as named, plus `SecondBureauCollectionDatabaseTest` (every `-006` case re-run with `b`), `SecondBureauNormalisationGoldenTest`, `SourceSelectionTest`, `CreditSourceOrderTest` and `BureauSelectionDatabaseTest#theProviderIsFixedAtBirthNeverSubstituted`, `#anAnswerNamingAnotherProviderIsNeverRecorded`, `#aRequestCollectedFromBDecidesExplainsAndReplaysAsOneFromA`.
 
-**P10-TST-001 — The credit decision storm** — `READY` (marked by `P10-TSK-020`'s completion gate, 2026-10-09: every `P10-TSK` is complete)
+**P10-TST-001 — The credit decision storm** — `COMPLETE` (2026-10-09; marked `READY` by `P10-TSK-020`'s completion gate)
+- **As built** (2026-10-09): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). `CreditDecisionStormDatabaseTest` (`own-container`, listed in `ownContainerSuites`), with `SimulatedBureauEngine` given its storm levers (a hook between producing a novel answer and writing it, one answer sequence shared with the storm's withdrawals, its produced references, a gathering of two asks, its figures readable to choose applicants) and `ReplayInAnotherJvm` reused as the replay census's second JVM. **One production change, a gate finding**: `credit V015` - a data request's birth stamp never at or before an earlier one of its decision request, on a database clock that steps back (ADR-0063, ADR-0085). Beyond the scope as written: the submission's own crash point and killed backends at the recording and deciding transactions; every response searched for the needle as it arrived; both instances' decision and reason meters held to the rows; the review door's p99 beside the submission door's. **Deviation recorded**: the fleet-wide database and kafka tiers not run, on the owner's Phase 9 instruction, which still stands. The judgement calls are in ADR-0087's Follow-up.
 - **Objective**: prove decision correctness under every provider fault, crash, duplication,
   activation and race, at once, on two skewed instances.
 - **Bounded context**: every Phase 10 context.
@@ -15778,7 +15779,7 @@ assignment and an expiry serialise (`-018`).
   every perturbation caught.
 - **Definition of done**: `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P10-DOC-001 — The Phase 10 exit review** — `PLANNED`
+**P10-DOC-001 — The Phase 10 exit review** — `READY` (marked by `P10-TST-001`'s completion gate, 2026-10-09)
 - **Objective**: close Phase 10 against its gate, with the documents made true.
 - **Bounded context**: all.
 - **Dependencies**: `P10-TST-001`, `P10-TST-002`.

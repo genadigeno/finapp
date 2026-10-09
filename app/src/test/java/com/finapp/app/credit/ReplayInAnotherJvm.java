@@ -19,7 +19,8 @@ import java.util.TimeZone;
  * differs from the first JVM's. It writes, in UTF-8 whatever its default, the defaults it ran under and every verdict,
  * one line per decision, oldest first.
  *
- * <p>Run by {@code DecisionReproducibilityBatteryTest} alone, with the database's coordinates as system properties.
+ * <p>Run by {@code DecisionReproducibilityBatteryTest} and by the storm's replay census
+ * ({@code CreditDecisionStormDatabaseTest}, `P10-TST-001`), with the database's coordinates as system properties.
  */
 final class ReplayInAnotherJvm {
 

@@ -279,6 +279,7 @@ extra["ownContainerSuites"] =
     listOf(
         "com.finapp.app.credit.BureauSelectionDatabaseTest",
         "com.finapp.app.credit.CreditDecisionDatabaseTest",
+        "com.finapp.app.credit.CreditDecisionStormDatabaseTest",
         "com.finapp.app.credit.DecisionExplanationDatabaseTest",
         "com.finapp.app.credit.DecisionReplayDatabaseTest",
         "com.finapp.app.credit.DecisionReproducibilityBatteryTest",

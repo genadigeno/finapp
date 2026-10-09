@@ -169,3 +169,11 @@ Financial impact:
   it is `X-TSK-013`'s already-accepted database-permit form. The versions' `decided_at` is not
   clamped. No `CHECK` orders it against `proposed_at`, so it belongs to `X-TSK-006`'s reading of
   the class.
+- *2026-10-09, `P10-TST-001`*: a third database-own stamp in the class - a credit data request's
+  `requested_at` (`credit V004`), which the freeze and the `COLLECTING -> READY` step read as "the
+  latest data request of a kind". The credit decision storm found a re-collection born within a
+  backward step stamped before the stale request it replaced, so the stale one stayed "latest" and
+  was re-collected again, once per collection until the clock passed it. `credit V015` stamps a
+  birth `GREATEST(statement_timestamp(), the decision request's latest requested_at + 1 µs)`, every
+  birth serialised by the decision request's row lock - the same permit form, no instance clock, no
+  domain change.
