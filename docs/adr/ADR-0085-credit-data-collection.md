@@ -298,5 +298,12 @@ ADR-0038, ADR-0046, ADR-0066, ADR-0081.
   the evidence-read door. `-021` (built 2026-10-08, not cut): a second bureau and source
   selection (point 10).
 - Phase 15: evidence purge and crypto-shredding against `retain_until` (debt row).
+- *As found by `P10-TST-001` (2026-10-09)*: "the latest data request of a kind" - which the freeze and the
+  `COLLECTING -> READY` step both read - is ordered by `requested_at`, the database's statement clock, and that clock
+  steps back. A re-collection born inside a step read as older than the stale request it replaced, and was re-collected
+  again until the clock passed it: redundant paid pulls, never a stale decision. `credit V015` stamps each birth after
+  the decision request's latest (`GREATEST(statement_timestamp(), latest + 1 µs)`, serialised by the request's row
+  lock, ADR-0063 decision 2's permit form). Proven by
+  `DecisionSnapshotDatabaseTest#aReCollectionOnAClockBehindItsStaleRecordIsTheLatest`, red first on `V004`'s stamp.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

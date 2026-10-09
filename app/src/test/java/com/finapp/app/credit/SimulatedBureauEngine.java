@@ -20,6 +20,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -101,6 +103,11 @@ final class SimulatedBureauEngine implements AutoCloseable {
     private volatile Duration slowness = Duration.ofSeconds(3);
     private volatile String note = "";
     private volatile Instant retrievedAt = Instant.parse("2026-10-07T09:00:00Z");
+    /** The storm's levers (`P10-TST-001`): run before a novel report is answered, and the clock each answer is read on. */
+    private volatile Consumer<String> beforeAnswering = reference -> { };
+    private volatile LongSupplier sequence = () -> 0L;
+    private final Map<String, Long> firstAnswered = new ConcurrentHashMap<>();
+    private final Map<String, java.util.concurrent.CountDownLatch> gatherings = new ConcurrentHashMap<>();
 
     private final Wire wire;
 
@@ -159,6 +166,40 @@ final class SimulatedBureauEngine implements AutoCloseable {
         retrievedAt = value;
     }
 
+    /**
+     * A hook run after a NOVEL report is produced and before it is answered (`P10-TST-001`): the storm withdraws the
+     * subject's consent there, so the withdrawal commits before the platform can read the answer.
+     */
+    void beforeAnswering(Consumer<String> hook) {
+        beforeAnswering = hook;
+    }
+
+    /**
+     * The sequence each answer is stamped from just before it is written (`P10-TST-001`) - shared with the storm's own
+     * withdrawals, so "answered after the withdrawal committed" is an order in one JVM, never a comparison of clocks.
+     */
+    void sequence(LongSupplier source) {
+        sequence = source;
+    }
+
+    /**
+     * Holds every ask under {@code reference} until {@code callers} have arrived (`P10-TST-001`): two instances asking one
+     * data request both reach the provider, so the answer is delivered twice.
+     */
+    void gather(String reference, int callers) {
+        gatherings.put(reference, new java.util.concurrent.CountDownLatch(callers));
+    }
+
+    /** Each reference's earliest answered sequence - absent when no report was ever answered under it. */
+    Map<String, Long> firstAnswered() {
+        return Map.copyOf(firstAnswered);
+    }
+
+    /** The references a report was produced under - exactly {@link #pulls()} of them. */
+    java.util.Set<String> producedReferences() {
+        return java.util.Set.copyOf(reports.keySet());
+    }
+
     /** Reports really produced - one per reference, however often it is asked. */
     int pulls() {
         return pulls.get();
@@ -196,9 +237,19 @@ final class SimulatedBureauEngine implements AutoCloseable {
             respond(exchange, 400, "{\"error\":\"missing key\"}");
             return;
         }
+        java.util.concurrent.CountDownLatch gathering = gatherings.get(reference);
+        if (gathering != null) {
+            gathering.countDown();
+            try {
+                gathering.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
         String seen = reports.get(reference);
         if (seen != null) {
             // A repeat under a seen reference answers the first report and costs nothing.
+            firstAnswered.merge(reference, sequence.getAsLong(), Math::min);
             respond(exchange, 200, seen);
             return;
         }
@@ -216,12 +267,17 @@ final class SimulatedBureauEngine implements AutoCloseable {
                 String carried = note;
                 String subject = find(wire.name(), body) + "|" + find(wire.dateOfBirth(), body) + "|"
                         + find(wire.country(), body);
+                boolean[] novel = new boolean[1];
                 String report = reports.computeIfAbsent(reference, key -> {
                     pulls.incrementAndGet();
+                    novel[0] = true;
                     String rendered = wire.renderer().render(subject, find(wire.currency(), body), fault, retrievedAt);
                     return carried.isEmpty() ? rendered
                             : rendered.substring(0, rendered.length() - 1) + ",\"bureauNote\":\"" + carried + "\"}";
                 });
+                if (novel[0]) {
+                    beforeAnswering.accept(reference);
+                }
                 if (fault == Fault.SLOW) {
                     pause(slowness);
                 }
@@ -230,13 +286,18 @@ final class SimulatedBureauEngine implements AutoCloseable {
                     exchange.close();
                     return;
                 }
+                firstAnswered.merge(reference, sequence.getAsLong(), Math::min);
                 respond(exchange, 200, report);
             }
         }
     }
 
-    /** A person's bureau figures, derived from a hash of their identifying facts - one derivation for both bureaus. */
-    private record Figures(int score, int accounts, int delinquencies, int defaults, boolean insolvency,
+    /**
+     * A person's bureau figures, derived from a hash of their identifying facts - one derivation for both bureaus. The
+     * storm reads them to choose its applicants (`P10-TST-001`); {@code subject} is name, date of birth and country
+     * joined by {@code |}, as the request carries them.
+     */
+    record Figures(int score, int accounts, int delinquencies, int defaults, boolean insolvency,
             long obligationsMinor, long balanceMinor, int fileNumber) {
         static Figures of(String subject) {
             byte[] hash = sha256(subject);
@@ -299,11 +360,20 @@ final class SimulatedBureauEngine implements AutoCloseable {
         return file.append('}').toString();
     }
 
+    /** A person's financial-data figures - the summary's derivation, read by the storm to choose its applicants. */
+    record Summary(long incomeMinor, long expenditureMinor) {
+        static Summary of(String subject) {
+            byte[] hash = sha256("findata|" + subject);
+            return new Summary(150_000 + Math.floorMod(word(hash, 0), 650_000),
+                    50_000 + Math.floorMod(word(hash, 4), 300_000));
+        }
+    }
+
     /** The subject's financial-data summary, derived from a hash of their identifying facts - deterministic. */
     private static String renderSummary(String subject, String currency, Fault fault, Instant retrievedAt) {
         byte[] hash = sha256("findata|" + subject);
-        long incomeMinor = 150_000 + Math.floorMod(word(hash, 0), 650_000);
-        long expenditureMinor = 50_000 + Math.floorMod(word(hash, 4), 300_000);
+        long incomeMinor = Summary.of(subject).incomeMinor();
+        long expenditureMinor = Summary.of(subject).expenditureMinor();
         StringBuilder summary = new StringBuilder("{\"status\":\"")
                 .append(fault == Fault.PARTIAL ? "summary_partial" : "summary_complete")
                 .append("\",\"summaryRef\":\"FS-").append(Math.floorMod(word(hash, 8), 1_000_000))

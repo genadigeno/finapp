@@ -501,6 +501,10 @@ class DecisionOrchestrationDatabaseTest {
             }
             undue.add(later);
         }
+        // The births' permits are due on the database's clock - which steps back (X-TSK-017): a claim in the same
+        // millisecond as a birth on a clock just stepped behind it finds nothing due yet (P10-TST-001's adjacent run).
+        CreditWorld.awaitDatabase("SELECT max(next_step_at) <= statement_timestamp() FROM credit.decision_request"
+                + " WHERE status = 'SUBMITTED' AND next_step_at < statement_timestamp() + interval '30 minutes'");
         DecisionProgress progress = instance();
         Set<UUID> first = ids(progress.claimDue(5, Duration.ofMinutes(5)));
         Set<UUID> second = ids(progress.claimDue(5, Duration.ofMinutes(5)));

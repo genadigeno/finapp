@@ -371,5 +371,23 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   JVM**, since it is fixed at start-up: `ReplayInAnotherJvm` replays every decision under `UTF-16` (not
   ASCII-compatible), `ar-EG` and `America/Adak` - and other identity hash codes, so an order a hash set lends a result
   differs between the two JVMs; another locale and zone are also replayed in-process.
+- *As built by `P10-TST-001` (2026-10-09), the storm.* `CreditDecisionStormDatabaseTest`: two application contexts
+  over one database, their clocks five seconds either side of the server, under every simulator fault, consent
+  withdrawal, suspension, activation, race and crash point at once. Four judgement calls, recorded here. (1) **The
+  exposure census is order-free**: the decision rows hold no serialisation order a census could trust (`decided_at` is
+  one statement's clock, and the database clock steps back, `X-TSK-017`), so it checks what the profile lock implies
+  for every subset - for each limit m among a party's live approvals, the least bureau balance their snapshots read
+  plus the approvals decided under a limit at most m fit m, because the last of them in the lock's order saw the
+  others reserved. Sound with no order at all, and it catches the lock removed. (2) **The consent census orders by one
+  JVM sequence, never by clocks**: a withdrawal is stamped after its commit, each simulated answer just before it is
+  written, so a record whose every answer came after its subject's withdrawal is a gate that did not re-read. (3) **A
+  race straddling the request's expiry may leave both conditionals refused** - the deciding transaction read
+  "unexpired" under its lock and the trigger, on a later statement's clock, refused its `DECIDED` edge (a
+  `CreditStorageException`, rolled back), while the expiry's step had read "unexpired" too - so the request stays
+  `EVALUATED` and the next step settles it. Never both: the storm drives it on and counts one of `DECIDED`,
+  `EXPIRED`. This is the design ("the trigger re-judges both"), observed, not changed. (4) **Crash points are forced
+  rollbacks or killed backends**: a trigger raising beneath the step's write, or one calling
+  `pg_terminate_backend(pg_backend_pid())` - the application role ending its own session mid-transaction - at the
+  recording and deciding transactions.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

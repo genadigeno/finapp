@@ -78,6 +78,50 @@ class DecisionSnapshotDatabaseTest {
         assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", decision)).isZero();
     }
 
+    @Test
+    @DisplayName("a re-collection on a database clock behind its stale record's birth is the latest data request - the"
+            + " fresh record then freezes, never another re-collection (P10-TST-001's finding)")
+    void aReCollectionOnAClockBehindItsStaleRecordIsTheLatest() throws Exception {
+        UUID party = IDS.next();
+        UUID decision = request(party);
+        inOneTransaction(uow -> seedBureau(uow, decision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(1),
+                cleanBureau()));
+        // The stale request was born while the database clock stood an hour ahead of where it stands now - the clock
+        // steps back (X-TSK-017) - planted by the owner, the machine's trigger suspended for it.
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement ddl = owner.createStatement();
+                    PreparedStatement plant = owner.prepareStatement("UPDATE credit.data_request SET requested_at ="
+                            + " requested_at + interval '1 hour', deadline_at = deadline_at + interval '1 hour'"
+                            + " WHERE decision_request_id = ?")) {
+                ddl.execute("ALTER TABLE credit.data_request DISABLE TRIGGER USER");
+                plant.setObject(1, decision);
+                assertThat(plant.executeUpdate()).isEqualTo(1);
+                ddl.execute("ALTER TABLE credit.data_request ENABLE TRIGGER USER");
+            }
+            owner.commit();
+        }
+        SnapshotFreezer.Freeze recollected = inOneTransaction(uow ->
+                freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation()));
+        assertThat(recollected).isInstanceOf(SnapshotFreezer.Freeze.Recollecting.class);
+        CreditDataRequestId reopened = ((CreditDataCollection.Opened.Requested) ((SnapshotFreezer.Freeze.Recollecting)
+                recollected).reopened().get(CreditSourceKind.BUREAU)).id();
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ? AND requested_at <"
+                + " (SELECT max(requested_at) FROM credit.data_request x WHERE x.decision_request_id = ? AND x.id <> '"
+                + reopened.value() + "'::uuid) AND id = '" + reopened.value() + "'::uuid", decision, decision))
+                .as("the re-collection is born after the stale request, whatever the clock says").isZero();
+        SnapshotFreezer.Freeze frozen = inOneTransaction(uow -> {
+            requests.receive(uow, reopened, 1);
+            requests.insertRecord(uow, CreditRecordId.next(IDS), requests.find(uow, reopened).orElseThrow(),
+                    "bureau-test", 1, true, databaseNow(uow), cleanBureau());
+            return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
+        });
+        assertThat(frozen).as("the fresh record decides; the stale one is not read as the latest")
+                .isInstanceOf(SnapshotFreezer.Freeze.Frozen.class);
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ?", decision))
+                .as("one re-collection, not one per clock step").isEqualTo(2);
+    }
+
     /** Distinct from every other port's version, so the provenance is seen to be the port's own. */
     private static final int PLATFORM_EXPOSURE_VERSION = 2;
 
@@ -462,9 +506,11 @@ class DecisionSnapshotDatabaseTest {
         return CorrelationId.generate(IDS);
     }
 
-    private static int count(String sql, UUID decision) throws SQLException {
+    private static int count(String sql, UUID... decisions) throws SQLException {
         try (Connection migrator = DatabaseRoles.migrator(); PreparedStatement select = migrator.prepareStatement(sql)) {
-            select.setObject(1, decision);
+            for (int i = 0; i < decisions.length; i++) {
+                select.setObject(i + 1, decisions[i]);
+            }
             try (ResultSet row = select.executeQuery()) {
                 row.next();
                 return row.getInt(1);
