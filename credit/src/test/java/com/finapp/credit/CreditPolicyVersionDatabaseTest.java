@@ -241,6 +241,60 @@ class CreditPolicyVersionDatabaseTest {
     }
 
     @Test
+    @DisplayName("an activation on a database clock behind its predecessor's start commits: the predecessor ends one"
+            + " microsecond after it began, the successor starts exactly there (X-TSK-017)")
+    void anActivationSurvivesADatabaseClockBehindItsPredecessor() throws SQLException {
+        CreditPolicyVersionId predecessor = activate(LOAN, 913);
+        CreditPolicyAdministration.Proposed successor = propose(LOAN, 914, employee());
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try {
+                // The clock behind: the predecessor's start planted an hour past this transaction's, by the owner with the
+                // edge trigger disabled - inside a transaction rolled back, so no history keeps it.
+                Instant planted = plantStartAnHourAhead(owner, predecessor);
+                CreditPolicyAdministration.Decided activated =
+                        ADMINISTRATION.approve(owner, successor.id(), employee(), "a clock behind", correlation());
+                try (Statement now = owner.createStatement()) {
+                    now.execute("SET CONSTRAINTS ALL IMMEDIATE");
+                }
+                assertThat(activated.retired()).contains(predecessor);
+                Instant end = effectiveIn(owner, predecessor, "effective_to");
+                assertThat(end).as("never at or before its own start").isEqualTo(planted.plusNanos(1_000));
+                assertThat(effectiveIn(owner, successor.id(), "effective_from")).as("they meet").isEqualTo(end);
+            } finally {
+                owner.rollback();
+            }
+        }
+        assertThat(status(predecessor)).as("the plant rolled back with it").isEqualTo("ACTIVE");
+    }
+
+    private static Instant plantStartAnHourAhead(Connection owner, CreditPolicyVersionId id) throws SQLException {
+        try (Statement plant = owner.createStatement()) {
+            plant.execute("ALTER TABLE credit.credit_policy_version DISABLE TRIGGER credit_policy_permits_only_machine_edges");
+            Instant planted;
+            try (ResultSet row = plant.executeQuery("UPDATE credit.credit_policy_version SET effective_from ="
+                    + " transaction_timestamp() + interval '1 hour' WHERE id = '" + id.value() + "' RETURNING effective_from")) {
+                row.next();
+                planted = row.getTimestamp(1).toInstant();
+            }
+            // The plant queued the deferred successor check (a no-op for an ACTIVE row); fire it so the table can be
+            // altered again, then defer the checks once more for the activation under test.
+            plant.execute("SET CONSTRAINTS ALL IMMEDIATE");
+            plant.execute("ALTER TABLE credit.credit_policy_version ENABLE TRIGGER credit_policy_permits_only_machine_edges");
+            plant.execute("SET CONSTRAINTS ALL DEFERRED");
+            return planted;
+        }
+    }
+
+    private static Instant effectiveIn(Connection connection, CreditPolicyVersionId id, String column) throws SQLException {
+        try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery(
+                "SELECT " + column + " FROM credit.credit_policy_version WHERE id = '" + id.value() + "'")) {
+            row.next();
+            return row.getTimestamp(1).toInstant();
+        }
+    }
+
+    @Test
     @DisplayName("an activation waits for a decision holding the active version FOR SHARE as its pin, then retires it")
     void anActivationWaitsForAPinnedReader() throws Exception {
         CreditPolicyVersionId pinned = activate(LOAN, 911);

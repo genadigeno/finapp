@@ -1434,10 +1434,16 @@ unanswerable — the first question of an adverse-action review and of a regulat
 a rule or band row inserted outside its version's proposing transaction, and any `UPDATE` or
 `DELETE` of one, from insert; one `PROPOSED` and one `ACTIVE` partial uniques; retirement only
 beside its successor by a deferred constraint trigger, the predecessor's `effective_to` equal to
-the successor's `effective_from`; the approver ≠ proposer `CHECK`, no seed exemption) + `DOMAIN`.
+the successor's `effective_from`; both stamped by the database and clamped never to fall behind the
+version before them, so a database clock that steps back neither refuses an activation nor
+overlaps two periods (`X-TSK-017`, `credit V014`); the approver ≠ proposer `CHECK`, no seed
+exemption) + `DOMAIN`.
 **Verify:** A rule or band changed, deleted or added later by a raw-SQL writer refused, a
 `PROPOSED` version's included; ten racing approvers leave one `ACTIVE`; the active-at-instant
-query over a generated history; an activation mid-decision leaving the pinned version deciding.
+query over a generated history; an activation mid-decision leaving the pinned version deciding;
+an activation on a database clock behind its predecessor's start committing, the periods meeting
+(`CreditPolicyVersionDatabaseTest`, `ScorecardVersionDatabaseTest`
+`#anActivationSurvivesADatabaseClockBehindItsPredecessor`).
 **Phase:** 10
 
 ### INV-CRD-06 — A decision request is decided once, on one basis

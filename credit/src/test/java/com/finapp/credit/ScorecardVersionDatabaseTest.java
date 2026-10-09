@@ -181,6 +181,58 @@ class ScorecardVersionDatabaseTest {
     }
 
     @Test
+    @DisplayName("an activation on a database clock behind its predecessor's start commits: the predecessor ends one"
+            + " microsecond after it began, the successor starts exactly there (X-TSK-017)")
+    void anActivationSurvivesADatabaseClockBehindItsPredecessor() throws SQLException {
+        ScorecardModelVersionId predecessor = activate(621);
+        ScorecardAdministration.Proposed successor = propose(622, employee());
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try {
+                // The clock behind: the predecessor's start planted an hour past this transaction's, by the owner with the
+                // edge trigger disabled - inside a transaction rolled back, so no history keeps it.
+                Instant planted;
+                try (Statement plant = owner.createStatement()) {
+                    plant.execute("ALTER TABLE credit.scorecard_model_version DISABLE TRIGGER"
+                            + " scorecard_model_permits_only_machine_edges");
+                    try (ResultSet row = plant.executeQuery("UPDATE credit.scorecard_model_version SET effective_from ="
+                            + " transaction_timestamp() + interval '1 hour' WHERE id = '" + predecessor.value() + "'"
+                            + " RETURNING effective_from")) {
+                        row.next();
+                        planted = row.getTimestamp(1).toInstant();
+                    }
+                    // The plant queued the deferred successor check (a no-op for an ACTIVE row); fire it so the table
+                    // can be altered again, then defer the checks once more for the activation under test.
+                    plant.execute("SET CONSTRAINTS ALL IMMEDIATE");
+                    plant.execute("ALTER TABLE credit.scorecard_model_version ENABLE TRIGGER"
+                            + " scorecard_model_permits_only_machine_edges");
+                    plant.execute("SET CONSTRAINTS ALL DEFERRED");
+                }
+                ScorecardAdministration.Decided activated =
+                        ADMINISTRATION.approve(owner, successor.id(), employee(), "a clock behind", correlation());
+                try (Statement now = owner.createStatement()) {
+                    now.execute("SET CONSTRAINTS ALL IMMEDIATE");
+                }
+                assertThat(activated.retired()).contains(predecessor);
+                Instant end = effectiveIn(owner, predecessor, "effective_to");
+                assertThat(end).as("never at or before its own start").isEqualTo(planted.plusNanos(1_000));
+                assertThat(effectiveIn(owner, successor.id(), "effective_from")).as("they meet").isEqualTo(end);
+            } finally {
+                owner.rollback();
+            }
+        }
+        assertThat(status(predecessor)).as("the plant rolled back with it").isEqualTo("ACTIVE");
+    }
+
+    private static Instant effectiveIn(Connection connection, ScorecardModelVersionId id, String column) throws SQLException {
+        try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery(
+                "SELECT " + column + " FROM credit.scorecard_model_version WHERE id = '" + id.value() + "'")) {
+            row.next();
+            return row.getTimestamp(1).toInstant();
+        }
+    }
+
+    @Test
     @DisplayName("an activation committed while an assessment is under way leaves the assessment on the model its snapshot pinned")
     void anActivationMidAssessmentKeepsThePinnedModel() throws Exception {
         ScorecardModelVersionId pinned = activate(620);

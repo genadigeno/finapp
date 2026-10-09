@@ -16519,6 +16519,90 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   carried into the quote's history; no money path changes). **Cx**: M.
   **DoD**: `DOD-TEST`, `DOD-BUILD`
 
+**X-TSK-017 — Credit version periods survive a database clock that steps back** — `COMPLETE`
+*(2026-10-09. See **Result**)*
+- **Context**: `credit` (V006's and V008's version triggers, a new `V014`). Owner-directed,
+  2026-10-09. `UnderwritingCaseDatabaseTest` (`P10-TSK-018`'s, own-container) failed intermittently
+  in the full `:app:ownContainerDatabaseTest --tests "com.finapp.app.credit.*"` run (master with
+  `P10-TSK-020` and `P10-TST-002`) and passed alone and after only the `Phase10*` suites. The first
+  failure was `aHardDeclineCannotBeApproved` at `loan(Loan.REFERRING)`:
+  `CreditStorageException: retiring a credit policy version (SQLState 23514)` from
+  `JdbcCreditPolicyStore.retire`, and the thirteen cases after it cascaded from the static
+  `loanInForce`. ADR-0086 §5, ADR-0063, `X-TSK-013`; `INV-CRD-05`.
+- **Description**: confirm or refute the leading hypothesis, that the database clock stepped back
+  between two sequential activations. If it is confirmed, decide whether an activation should
+  survive such a step, without weakening `INV-CRD-05` or `credit_policy_retires_only_beside_its_successor`.
+- **Deps**: none. It displaces nothing: `P10-TST-001` stays `READY`.
+- **Accept**:
+  - the cause confirmed or refuted from evidence, not inferred;
+  - if confirmed, the decision recorded with its alternatives, with `INV-CRD-05`, the `CHECK` and
+    the successor-continuity trigger unchanged;
+  - a deterministic case on a clock behind the predecessor's start, for the policy and for the
+    scorecard (V006 has the same stamp), red before the fix with the reported failure;
+  - each half of the fix's removal caught (`MUTATION_TESTING.md` §2);
+  - the credit tiers and the credit own-container set green from a fresh run.
+- **Result (2026-10-09)**: every criterion holds.
+  - **Confirmed: the clock is the only cause.** By elimination first. `effective_coherent` can only
+    break as `effective_to < effective_from`. Both are the trigger's `transaction_timestamp()`, the
+    retiring transaction's start against the predecessor's activating transaction's start. Each
+    `TRANSACTIONS.inTransaction` opens a fresh `DriverManager` connection (no pool, so no leftover
+    transaction), and the suite's JVM and container are its own. The retiring transaction
+    therefore began after the predecessor's committed, and its start can only read earlier if the
+    clock went back. Then measured: a sampler in the Docker VM (all containers share its kernel
+    clock) read `CLOCK_REALTIME` against `CLOCK_MONOTONIC` every 2 ms through two full credit runs.
+    The VM's clock gains about 1.1 ms a second, and every 30 s a time sync steps realtime **back**
+    by 26-60 ms (larger under the battery's load). That is 2.36 s of backward correction in
+    32 minutes, never a forward step. ADR-0063 measured the same VM at 55-61 ms a second, stepped
+    back 1.7 s at a time: larger than the gap between two activations in
+    `aHardDeclineCannotBeApproved`. Then reproduced deterministically: an activation whose
+    transaction's clock is behind the predecessor's start (the start planted ahead by the owner, in
+    a transaction rolled back) fails with the reported exception, verbatim, for the policy, and
+    with `retiring a scorecard version (SQLState 23514)` for the scorecard. **The size of the step on the day
+    was not re-observed.** Two more full credit own-container runs passed: master alone, and with
+    `P10-TST-002`'s battery as on the day (its second-JVM case failed there on the reproduction
+    checkout's long path, `CreateProcess error=206`, which is unrelated). A temporary probe in the
+    suite's `loan(...)` measured the margin a step must beat in `aHardDeclineCannotBeApproved`: the
+    two activations' transactions began 0.99 s apart. Against it, this session's VM stepped back
+    64 times in 32 minutes, at most 60 ms, never forward, −2.36 s in all (the owner's ~2 s
+    offset). The mechanism is proven. That a single step exceeded about a second on the day rests on
+    ADR-0063's 1.7 s measurement on the same VM.
+  - **Decided: the activation survives the step.** `credit V014` replaces only the two stamps,
+    each function otherwise V006's and V008's verbatim (diffed). A retirement stamps
+    `GREATEST(transaction_timestamp(), effective_from + 1 µs)`, and an activation
+    `GREATEST(transaction_timestamp(), the scope's latest effective_to)`, which is the
+    predecessor's: it is retired first in the same transaction, and the partial unique refuses any
+    other order. This is ADR-0063 decision (2) on the database's own stamps, in `X-TSK-013`'s
+    accepted permit form (`GREATEST(permit + 1 µs, statement_timestamp())`). The `CHECK`s and both
+    deferred triggers are unchanged. The successor still starts exactly where its predecessor ends,
+    and every activated version keeps a period of at least 1 µs, so the version active at any instant
+    stays one row (`INV-CRD-05`). On a clock that is not behind, nothing changes.
+    **Rejected**: (a) refusing, with a named retryable error in place of the opaque `500`. A
+    four-eyes act would be unavailable for as long as the clock stands behind, although the order
+    is already decided by the row locks (proposal and active version `FOR UPDATE`). (b) A test
+    guard (wait until `clock_timestamp()` passes the predecessor's start). It leaves production's
+    NTP step unhandled. (c) Dropping or relaxing the `CHECK`. Its strict form is what keeps two
+    periods from overlapping.
+    **Cost**: inside a step, a period's start can lie ahead of the database's own clock by at most
+    the step. A decision is defended by its pins (ADR-0086 §7), never by the as-of read. The as-of
+    read during a step was already approximate before the fix, since the clock itself was wrong.
+  - **Tests**: `CreditPolicyVersionDatabaseTest` and `ScorecardVersionDatabaseTest`
+    `#anActivationSurvivesADatabaseClockBehindItsPredecessor` (the retirement ends 1 µs after the
+    planted start and the successor starts exactly there; the continuity trigger judged by
+    `SET CONSTRAINTS ALL IMMEDIATE`; the plant rolled back). `UnderwritingCaseDatabaseTest` is
+    unchanged: the cause is fixed where it lives, not guarded around in the suite.
+  - **Probes, three of three caught**, each restored byte-identical (sha256): V014 withheld (the
+    reported 23514, both cases; a first attempt was void on its own plant's pending trigger event
+    and was redone); the successor's start unclamped (the untouched continuity trigger refused,
+    `P0001`); the microsecond dropped (a zero-length period, refused by the assertion).
+  - **Recorded, not built**: the versions' `decided_at` is not clamped against `proposed_at`. No
+    `CHECK` orders them, so nothing is refused, and it belongs to `X-TSK-006`'s class (ADR-0063
+    §Follow-up). `theVersionActiveAtAnyPastInstantIsAnswerable` (both suites) sleeps 20 ms between
+    activations. Before V014 a 30 ms step in that window failed it with the same 23514. Under V014
+    it holds, because a 1 µs period still answers its own start.
+  - **Verified**: credit hermetic 109 across 17 suites; credit database 68 across 8; the app credit own-container set with V014 84 across 9, from a fresh run under a concurrent full run; all 0 failures. The fleet hermetic and architecture tiers (the document guards included) were started and stopped by the owner before finishing, so they are **not run** for this task.
+- **Risk**: Low. Two trigger stamps, the same answer on a clock that is not behind. **Cx**: S.
+  **DoD**: `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`
+
 ---
 
 # Phases 11–16 — Epics

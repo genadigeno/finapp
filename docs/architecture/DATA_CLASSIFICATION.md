@@ -2330,7 +2330,7 @@ an applicant's figures, so it is `RESTRICTED-FINANCIAL` and none of it reaches a
 | `scorecard_model_version` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
 | `scorecard_model_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
 | `scorecard_model_version` | `effective_from` | `INTERNAL` | The activation's database instant |
-| `scorecard_model_version` | `effective_to` | `INTERNAL` | The retirement's database instant - the successor's start |
+| `scorecard_model_version` | `effective_to` | `INTERNAL` | The retirement's database instant, never at or before the version's start (`X-TSK-017`) - the successor's start |
 | `scorecard_band` | `model_version_id` | `INTERNAL` | The version it was born with |
 | `scorecard_band` | `attribute_code` | `INTERNAL` | A vocabulary code |
 | `scorecard_band` | `ordinal` | `INTERNAL` | 0 for the absent band, 1.. in order |
@@ -2399,7 +2399,7 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `credit_policy_version` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
 | `credit_policy_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
 | `credit_policy_version` | `effective_from` | `INTERNAL` | The activation's database instant |
-| `credit_policy_version` | `effective_to` | `INTERNAL` | The retirement's database instant - the successor's start |
+| `credit_policy_version` | `effective_to` | `INTERNAL` | The retirement's database instant, never at or before the version's start (`X-TSK-017`) - the successor's start |
 | `credit_policy_rule` | `policy_version_id` | `INTERNAL` | The version it was born with |
 | `credit_policy_rule` | `ordinal` | `INTERNAL` | Its place in the rule list, from 1 |
 | `credit_policy_rule` | `rule_code` | `INTERNAL` | The rule's name |

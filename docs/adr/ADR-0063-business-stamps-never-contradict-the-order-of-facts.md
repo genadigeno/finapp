@@ -160,3 +160,12 @@ Financial impact:
   Phase 15's observability, because the clamp no longer surfaces skew.
 - `kyc.review_task` could take its ordering constraint back under this decision. That is not
   required, and it is recorded so the omission stays a choice.
+- *2026-10-09, `X-TSK-017`*: the rule applied to two stamps that are the **database's own**, not
+  an instance's, and that this ADR's table predates: the credit policy and scorecard versions'
+  effective periods (`credit V006`, `V008`). A database clock stepping back refused an activation,
+  `effective_to >= effective_from`. `credit V014` clamps both ends, `GREATEST(transaction_timestamp(),
+  effective_from + 1 µs)` at retirement and the successor's start equal to it (ADR-0086 §Follow-up).
+  It needed no instance clock and no domain change, so it did not wait on this ADR's acceptance:
+  it is `X-TSK-013`'s already-accepted database-permit form. The versions' `decided_at` is not
+  clamped. No `CHECK` orders it against `proposed_at`, so it belongs to `X-TSK-006`'s reading of
+  the class.
