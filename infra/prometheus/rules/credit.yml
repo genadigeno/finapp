@@ -1,0 +1,114 @@
+# Credit decisioning alerts (P10-TSK-020, PHASE_10_PLAN.md section 15; ADR-0087, ADR-0089).
+#
+# Every expression names a series the application publishes - AlertRulesResolveTest#theCreditRulesResolve checks each
+# one against a live scrape, the latency rule's objective bucket among them, and holds each threshold equal to the
+# objective the code declares (com.finapp.app.telemetry.CreditObjectives).
+#
+# Conventions (settlement-reconciliation.yml's and fx.yml's):
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with max(), never sum().
+#   Counters and timers are per instance: sum(rate/increase(...)). The sweeper flags are per instance's configuration,
+#   so they are alerted per series, the instance label naming which one.
+# - A gauge that cannot be read is NaN, never zero; x != x holds only for NaN, so the threshold rules cannot see it and
+#   the unreadable rule can.
+# - Never a figure anywhere: labels and annotations name products, states, kinds, providers and verdicts only - no
+#   amount, score, attribute or party exists in any credit series to name (INV-CRD-02).
+# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+
+groups:
+  - name: credit
+    rules:
+      - alert: CreditDecisionLatencyAboveObjective
+        # p99 of the platform's own decisions above the 45-minute objective, read exactly: p99 exceeds X if and only if
+        # more than 1% of decisions took longer than X, and X (2700 s) is one of the timer's buckets. A person's
+        # decision waits for an underwriter and is the review objective's, so only decision_maker="system" is held.
+        expr: (sum by (product) (rate(finapp_credit_decision_latency_seconds_count{decision_maker="system"}[30m])) - sum by (product) (rate(finapp_credit_decision_latency_seconds_bucket{decision_maker="system", le="2700.0"}[30m]))) / sum by (product) (rate(finapp_credit_decision_latency_seconds_count{decision_maker="system"}[30m])) > 0.01
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "Credit decisions for {{ $labels.product }} are slower than the objective"
+          description: "{{ $value | humanizePercentage }} of the platform's {{ $labels.product }} decisions in the last 30 minutes took longer than 45 minutes from submission - the collection window plus the platform's own steps. Check the progress sweep (finapp_credit_progress_sweeper_enabled) and finapp_credit_request_open_age_seconds by status."
+
+      - alert: CreditDataUnavailable
+        # The unavailability ratio: unavailable answers over answered ones (received or unavailable), per source kind.
+        # A request still decides on the policy's fallback (INV-CRD-10); this makes a failing provider loud.
+        expr: sum by (source_kind) (increase(finapp_credit_data_request_total{outcome="unavailable"}[15m])) / clamp_min(sum by (source_kind) (increase(finapp_credit_data_request_total{outcome=~"received|unavailable"}[15m])), 1) > 0.2
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "More than a fifth of {{ $labels.source_kind }} credit data answers are unavailable"
+          description: "{{ $value | humanizePercentage }} of {{ $labels.source_kind }} answers in the last 15 minutes were unavailable. Decisions fall back to each policy's unavailable rule. Read the sources report (/v1/operator/reports/credit/sources) for the provider."
+
+      - alert: CreditRequestOpenPastValidity
+        # A request still open longer than any product's request validity (seven days) means its expiry is not being
+        # taken. in_review is left out: a case an underwriter holds is never expired under them (ADR-0089) - the review
+        # age is that queue's alert.
+        expr: max by (status) (finapp_credit_request_open_age_seconds{status!="in_review"}) > 604800
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "A credit decision request in {{ $labels.status }} is open past its validity"
+          description: "The oldest {{ $labels.status }} request was submitted {{ $value | humanizeDuration }} ago, past every product's request validity. The progress sweep expires open requests on the database clock; check it is running."
+
+      - alert: CreditReviewAged
+        # The review objective: an OPEN review case - never taken, or released - waiting longer than a day.
+        expr: max(finapp_credit_review_age_seconds) > 86400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A credit review case has waited more than a day for an underwriter"
+          description: "The oldest open review case has waited {{ $value | humanizeDuration }}. A referral nobody works expires at the request's validity - a silent decline."
+
+      - alert: CreditDecisionDiverged
+        # INV-CRD-01: a decision that no longer replays from its sealed snapshot and pinned versions. Never repaired by
+        # an UPDATE - an incident; the CRITICAL log line names each decision.
+        expr: max(finapp_credit_replay{verdict="DIVERGED"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Credit decisions do not replay from their sealed inputs"
+          description: "{{ $value }} decisions replay DIVERGED. Replay each through POST /v1/operator/credit/decisions/{id}/replay to see what differs, by kind."
+
+      - alert: CreditPolicyMissing
+        # An offered product with no ACTIVE policy: no request for it can be decided until two officers activate one.
+        expr: min by (product) (finapp_credit_policy_active) == 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The credit product {{ $labels.product }} has no active policy"
+          description: "No {{ $labels.product }} request can be decided until a policy version is proposed and activated by a second officer (ADR-0086)."
+
+      - alert: CreditProgressSweeperOff
+        # Every instance runs the progress sweep, leaderless; it is off only in test contexts, which are never scraped.
+        expr: finapp_credit_progress_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the credit decision progress sweep"
+          description: "finapp.credit.progress.sweeper.enabled is false on a scraped instance. Requests still progress on the others; set it back to true."
+
+      - alert: CreditDataRetrySweeperOff
+        # The credit data retry sweep, the same rule.
+        expr: finapp_credit_data_retry_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the credit data retry sweep"
+          description: "finapp.credit.data.retry.sweeper.enabled is false on a scraped instance. Unanswered data requests are re-asked by the others; set it back to true."
+
+      - alert: CreditGaugesUnreadable
+        # NaN: a credit gauge whose database read failed - an unreadable proof or queue must stay visible, never read as 0.
+        expr: max(finapp_credit_replay != finapp_credit_replay) or max(finapp_credit_request_open_age_seconds != finapp_credit_request_open_age_seconds) or max(finapp_credit_review_age_seconds != finapp_credit_review_age_seconds) or max(finapp_credit_policy_active != finapp_credit_policy_active)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A credit gauge cannot be read"
+          description: "A credit gauge reads NaN - its database read failed. The replay proof, the open requests, the review queue or the active policies are not being watched until it reads again."

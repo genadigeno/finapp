@@ -143,7 +143,15 @@ public enum CreditAuditAction implements AuditableAction {
             "credit.ReviewSecondApprovalRefused",
             "A second holder of CREDIT_UNDERWRITE, never the first decider, refused a case's first decision with a reason"
                     + " (P10-TSK-018): the case returns to its first underwriter, the refused decision kept in its history.",
-            true);
+            true),
+
+    REPORT_READ(
+            "credit.ReportRead",
+            "A holder of CREDIT_INVESTIGATE was served a credit operations report - outcomes by pinned policy version,"
+                    + " the reason-code distribution or source availability (P10-TSK-020): counts and rates in one snapshot,"
+                    + " never an amount, a score, an attribute or a party; written in the read's own transaction, so no"
+                    + " report is served without its record. The summary names the report, the month and the row count.",
+            false);
 
     private final String code;
     private final String description;

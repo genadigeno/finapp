@@ -217,6 +217,39 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
         }
     }
 
+    @Override
+    public Optional<String> correlationOf(Connection unitOfWork, DecisionRequestId id) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT correlation_id FROM credit.decision_request WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(row.getString(1)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("reading a decision request's correlation", failure));
+        }
+    }
+
+    @Override
+    public java.util.Map<DecisionRequestStatus, Duration> oldestOpenAges(Connection unitOfWork) {
+        java.util.Map<DecisionRequestStatus, Duration> ages = new java.util.EnumMap<>(DecisionRequestStatus.class);
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT status, (extract(epoch FROM statement_timestamp() - min(submitted_at)) * 1000)::bigint"
+                        + " FROM credit.decision_request WHERE status = ANY (?) GROUP BY status")) {
+            select.setArray(1, unitOfWork.createArrayOf("text",
+                    DecisionRequestStatus.OPEN.stream().map(Enum::name).toArray()));
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    ages.put(DecisionRequestStatus.valueOf(rows.getString(1)),
+                            Duration.ofMillis(Math.max(0, rows.getLong(2))));
+                }
+            }
+            return ages;
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("reading the oldest open requests", failure));
+        }
+    }
+
     private static void history(
             Connection unitOfWork,
             DecisionRequestId id,

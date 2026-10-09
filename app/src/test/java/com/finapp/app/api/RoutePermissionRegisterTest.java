@@ -234,6 +234,10 @@ class RoutePermissionRegisterTest {
                     // P10-TSK-019: the replay - a decision re-derived from its sealed inputs, audited.
                     entry("POST /v1/operator/credit/decisions/{id}/replay", PermissionName.CREDIT_INVESTIGATE),
                     entry("POST /v1/operator/credit/records/{id}/evidence-read", PermissionName.CREDIT_INVESTIGATE),
+                    // P10-TSK-020: the three operations reports - counts and rates in one snapshot, each serving audited.
+                    entry("GET /v1/operator/reports/credit/outcomes", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/reports/credit/reasons", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/reports/credit/sources", PermissionName.CREDIT_INVESTIGATE),
                     // P10-TSK-018: the underwriter's doors - the review queue and the acts on a referral's case, held by
                     // UNDERWRITER alone (ADR-0089 point 8).
                     entry("GET /v1/operator/credit/review-cases", PermissionName.CREDIT_UNDERWRITE),

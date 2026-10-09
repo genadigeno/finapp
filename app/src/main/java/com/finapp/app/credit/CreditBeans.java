@@ -6,6 +6,7 @@ import com.finapp.consent.ConsentGate;
 import com.finapp.credit.CreditBureau;
 import com.finapp.credit.CreditConsentGate;
 import com.finapp.credit.CreditDataCollection;
+import com.finapp.credit.CreditDataSource;
 import com.finapp.credit.CreditDataRequestStore;
 import com.finapp.credit.CreditEvidenceCipher;
 import com.finapp.credit.CreditPolicyAdministration;
@@ -118,9 +119,13 @@ public class CreditBeans {
         return new UnconfiguredFinancialData();
     }
 
+    /** The data meters, published from startup for every source this instance declares (`P10-TSK-020`). */
     @Bean
-    CreditDataMetrics creditDataMetrics(MeterRegistry meterRegistry) {
-        return new CreditDataMetrics(meterRegistry);
+    CreditDataMetrics creditDataMetrics(
+            MeterRegistry meterRegistry,
+            CreditBureau creditBureau,
+            com.finapp.credit.FinancialDataProvider financialDataProvider) {
+        return new CreditDataMetrics(meterRegistry, java.util.List.of(creditBureau, financialDataProvider));
     }
 
     @Bean
@@ -144,15 +149,20 @@ public class CreditBeans {
             @Value("${finapp.credit.bureau.providers:}") String bureauProviders,
             @Value("${finapp.credit.bureau.disabled:}") String bureauDisabled,
             @Value("${finapp.credit.findata.providers:}") String findataProviders,
-            @Value("${finapp.credit.findata.disabled:}") String findataDisabled) {
+            @Value("${finapp.credit.findata.disabled:}") String findataDisabled,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        // Each source's pull inside its credit.data.collect span (P10-TSK-020).
+        CreditDataSource spannedBureau = new com.finapp.app.telemetry.SpannedCreditDataSource(creditBureau, domainSpans);
+        CreditDataSource spannedFindata =
+                new com.finapp.app.telemetry.SpannedCreditDataSource(financialDataProvider, domainSpans);
         return new CreditDataCollection(creditDataRequestStore,
                 CreditDataCollection.Sources.of(
-                        CreditSourceOrder.configured("finapp.credit.bureau", bureauProviders, bureauDisabled, creditBureau,
+                        CreditSourceOrder.configured("finapp.credit.bureau", bureauProviders, bureauDisabled, spannedBureau,
                                 new CreditDataCollection.Timing(retryCadence, collectionWindow),
                                 "a bureau pull needs the party's date of birth and residence, which the platform does not"
                                         + " yet hold (unresolved question #13)"),
                         CreditSourceOrder.configured("finapp.credit.findata", findataProviders, findataDisabled,
-                                financialDataProvider, new CreditDataCollection.Timing(findataRetryCadence, findataCollectionWindow),
+                                spannedFindata, new CreditDataCollection.Timing(findataRetryCadence, findataCollectionWindow),
                                 "a financial-data pull reads an account connection the platform does not yet hold"
                                         + " (unresolved question #14)")),
                 creditConsentGate, creditEvidenceCipher, creditDataMetrics, auditWriter, outboxWriter,
@@ -164,10 +174,11 @@ public class CreditBeans {
     @ConditionalOnProperty(name = "finapp.credit.data.retry.sweeper.enabled", havingValue = "true", matchIfMissing = true)
     CreditDataRetrySchedule creditDataRetrySchedule(
             CreditDataCollection creditDataCollection,
+            CreditFlowScope creditFlowScope,
             IdGenerator idGenerator,
             @Value("${finapp.credit.data.retry.poll:PT30S}") Duration pollInterval,
             @Value("${finapp.credit.data.retry.batch:20}") int batch) {
-        return new CreditDataRetrySchedule(creditDataCollection, idGenerator, pollInterval, batch);
+        return new CreditDataRetrySchedule(creditDataCollection, creditFlowScope, idGenerator, pollInterval, batch);
     }
 
     /** Whether this instance runs the retry sweep - eager either way (`P1-TSK-029`'s rule). */
@@ -334,7 +345,8 @@ public class CreditBeans {
             IdGenerator idGenerator,
             Clock clock,
             com.finapp.credit.DecisionMaking decisionMaking,
-            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore) {
+            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         return new com.finapp.credit.DecisionProgress(creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(),
                 creditPolicyStore, scorecardStore, new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
                 snapshotFreezer,
@@ -342,8 +354,16 @@ public class CreditBeans {
                         outboxWriter, idGenerator, clock),
                 new com.finapp.credit.PolicyEvaluations(new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore,
                         com.finapp.credit.EngineVersions.STANDARD, idGenerator, clock),
-                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock, decisionMaking,
-                underwritingCaseStore);
+                creditPartyStanding, creditConsentGate, outboxWriter, idGenerator, clock,
+                new com.finapp.app.telemetry.SpannedDecider(decisionMaking, domainSpans), underwritingCaseStore,
+                domainSpans);
+    }
+
+    /** What links a request's later legs' spans to its submission (`P10-TSK-020`). */
+    @Bean
+    CreditFlowScope creditFlowScope(TransactionRunner creditTransactionRunner, CreditDataRequestStore creditDataRequestStore) {
+        return new CreditFlowScope(
+                creditTransactionRunner, new com.finapp.credit.JdbcDecisionRequestStore(), creditDataRequestStore);
     }
 
     /** The progress sweep - every instance, no lease, off in test contexts. */
@@ -351,11 +371,13 @@ public class CreditBeans {
     @ConditionalOnProperty(name = "finapp.credit.progress.sweeper.enabled", havingValue = "true", matchIfMissing = true)
     CreditDecisionProgressSchedule creditDecisionProgressSchedule(
             com.finapp.credit.DecisionProgress decisionProgress,
+            CreditFlowScope creditFlowScope,
             IdGenerator idGenerator,
             @Value("${finapp.credit.progress.poll:PT5S}") Duration pollInterval,
             @Value("${finapp.credit.progress.batch:20}") int batch,
             @Value("${finapp.credit.progress.permit:PT30S}") Duration permit) {
-        return new CreditDecisionProgressSchedule(decisionProgress, idGenerator, pollInterval, batch, permit);
+        return new CreditDecisionProgressSchedule(decisionProgress, creditFlowScope, idGenerator, pollInterval, batch,
+                permit);
     }
 
     /** Whether this instance runs the progress sweep - eager either way (`P1-TSK-029`'s rule). */
@@ -458,5 +480,21 @@ public class CreditBeans {
             MeterRegistry meterRegistry) {
         return new com.finapp.app.telemetry.CreditReviewMetrics(
                 underwritingCaseStore, dataSource::getConnection, clock, meterRegistry);
+    }
+
+    /** {@code finapp.credit.request.open.age{status}}: the oldest open request per state, in seconds (`P10-TSK-020`). */
+    @Bean
+    com.finapp.app.telemetry.CreditRequestAgeMetrics creditRequestAgeMetrics(
+            DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.CreditRequestAgeMetrics(
+                new com.finapp.credit.JdbcDecisionRequestStore(), dataSource::getConnection, clock, meterRegistry);
+    }
+
+    /** The three operations reports (`P10-TSK-020`) - counts and rates, audited at every serving. */
+    @Bean
+    Phase10Reports phase10Reports(
+            TransactionRunner creditTransactionRunner, AuditWriter<Connection> auditWriter, IdGenerator idGenerator,
+            Clock clock) {
+        return new Phase10Reports(creditTransactionRunner, auditWriter, idGenerator, clock);
     }
 }
