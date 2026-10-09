@@ -71,6 +71,11 @@ public final class JdbcUnderwritingCaseStore implements UnderwritingCaseStore {
     }
 
     @Override
+    public Optional<UnderwritingCase> byRequest(Connection unitOfWork, DecisionRequestId request) {
+        return one(unitOfWork, SELECT + " WHERE c.decision_request_id = ?", request.value(), "reading a request's underwriting case");
+    }
+
+    @Override
     public Optional<UnderwritingCase> lockByRequest(Connection unitOfWork, DecisionRequestId request) {
         return one(unitOfWork, SELECT + " WHERE c.decision_request_id = ? FOR UPDATE OF c", request.value(),
                 "locking a request's underwriting case");

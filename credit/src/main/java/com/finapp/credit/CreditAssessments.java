@@ -70,6 +70,29 @@ public final class CreditAssessments {
         }
     }
 
+    /**
+     * The three figures of {@code snapshot} under {@code scorecard} and {@code terms} - pure, the one arithmetic both the
+     * assessment and its replay (`P10-TSK-019`) run, so the two can never drift apart ({@code INV-CRD-01}).
+     */
+    public static CreditAssessment figures(
+            CreditAssessmentId id, DecisionSnapshot snapshot, Scorecard scorecard, Terms terms, java.time.Instant at) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(scorecard, "scorecard");
+        Objects.requireNonNull(terms, "terms");
+        SnapshotContent content = snapshot.content();
+        return new CreditAssessment(
+                id,
+                snapshot.id(),
+                content.decisionRequest(),
+                snapshot.sha256(),
+                content.versions(),
+                content.product().currency(),
+                AffordabilityAssessment.assess(content, terms.affordability()),
+                ExposureAssessment.assess(content, terms.maximumExposure()),
+                scorecard.score(content),
+                at);
+    }
+
     /** The outcome: the stored assessment, and whether this call wrote it. */
     public record Assessed(CreditAssessment assessment, boolean replayed) {}
 
@@ -95,17 +118,7 @@ public final class CreditAssessments {
         if (model.effectiveFrom().isEmpty()) {
             throw new IllegalStateException("the snapshot pins a scorecard version that was never active");
         }
-        CreditAssessment computed = new CreditAssessment(
-                CreditAssessmentId.next(ids),
-                snapshot.id(),
-                content.decisionRequest(),
-                snapshot.sha256(),
-                versions,
-                content.product().currency(),
-                AffordabilityAssessment.assess(content, terms.affordability()),
-                ExposureAssessment.assess(content, terms.maximumExposure()),
-                model.scorecard().score(content),
-                clock.instant());
+        CreditAssessment computed = figures(CreditAssessmentId.next(ids), snapshot, model.scorecard(), terms, clock.instant());
         boolean written = assessments.insert(unitOfWork, computed);
         CreditAssessment stored = assessments.bySnapshot(unitOfWork, snapshot.id())
                 .orElseThrow(() -> new IllegalStateException("an assessment is readable once written"));

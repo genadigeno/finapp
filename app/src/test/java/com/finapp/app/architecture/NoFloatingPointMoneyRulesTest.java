@@ -298,6 +298,10 @@ class NoFloatingPointMoneyRulesTest {
                     // amount or a rate (ADR-0072).
                     "com.finapp.app.telemetry.CreditPolicyMetrics",
                     "com.finapp.app.telemetry.CreditPolicyMetrics$Cached",
+                    // P10-TSK-019. The SAME case again: the replay proof's verdicts - how many decisions
+                    // replay IDENTICAL and how many DIVERGED, COUNTS - through the ToDoubleFunction a Gauge
+                    // imposes, NaN the sentinel for unreadable. Verdict counts, never an amount or a score.
+                    "com.finapp.app.credit.CreditReplayMetrics",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

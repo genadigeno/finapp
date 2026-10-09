@@ -476,6 +476,8 @@ class CredentialReachesNoEmittedSinkTest {
                         // P10-TSK-017: the evidence read's reason - an investigator's free prose bound for the audit
                         // record's reason column, as every reasoned operator act. No secret.
                         "CreditEvidenceReadRequest",
+                        // P10-TSK-019: the replay request - a REASON alone; no secret.
+                        "CreditReplayRequest",
                         // P10-TSK-018: an underwriter's decision on a review case - an outcome, an amount as a decimal
                         // string, catalogued reason codes and a reason (free prose bound for the case history's and the
                         // audit record's reason columns); and a second approval's verdict and reason. No secret.

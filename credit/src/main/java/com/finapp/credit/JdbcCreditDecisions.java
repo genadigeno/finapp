@@ -108,6 +108,25 @@ public final class JdbcCreditDecisions implements CreditDecisions<Connection> {
         return one(unitOfWork, "SELECT " + COLUMNS + " FROM credit.credit_decision WHERE id = ?", id.value());
     }
 
+    /**
+     * Every decision's id, oldest first - the replay proof's reading (`P10-TSK-019`), on the caller's read-only snapshot.
+     * Not on the published {@link CreditDecisions} read, which Phase 11's lending consumes.
+     */
+    public List<CreditDecisionId> ids(Connection unitOfWork) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT id FROM credit.credit_decision ORDER BY decided_at, id");
+                ResultSet rows = select.executeQuery()) {
+            List<CreditDecisionId> ids = new ArrayList<>();
+            while (rows.next()) {
+                ids.add(CreditDecisionId.of(rows.getObject(1, UUID.class)));
+            }
+            return ids;
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe(
+                    "listing the credit decisions", failure));
+        }
+    }
+
     private static Optional<CreditDecision> one(Connection unitOfWork, String sql, UUID key) {
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             select.setObject(1, key);
