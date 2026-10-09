@@ -84,6 +84,9 @@ class DashboardQueriesResolveTest {
                     "purpose",
                     // P9-TSK-027: the FX row groups by pair, provider and the residual direction - labels.
                     "direction", "pair", "provider",
+                    // P10-TSK-020: the credit row groups by product, pinned policy version, decider kind, reason
+                    // code, source kind, open state and replay verdict - labels, not series.
+                    "product", "policy_version", "decision_maker", "reason_code", "source_kind", "status", "verdict",
                     // P7-TSK-015: the rail and dispute row groups by rail, judged type and
                     // dispute stage - labels, not series.
                     "rail", "type", "stage",
@@ -155,6 +158,36 @@ class DashboardQueriesResolveTest {
             }
         }
         assertThat(count).as("the FX and cross-border row's panels").isEqualTo(12);
+    }
+
+    @Test
+    @DisplayName("the credit row: nine panels reading every PHASE_10_PLAN section 15 series, each published on a fresh"
+            + " instance (P10-TSK-020)")
+    void theCreditRowResolves() throws Exception {
+        JsonNode panels = JsonMapper.builder().build().readTree(RepositoryPaths.read(DASHBOARD)).path("panels");
+        List<String> rowQueries = new java.util.ArrayList<>();
+        int count = -1;
+        for (JsonNode panel : panels) {
+            boolean row = "row".equals(panel.path("type").asString());
+            if (row && panel.path("title").asString().startsWith("Credit decisioning")) {
+                count = 0;
+            } else if (row && count >= 0) {
+                break;
+            } else if (count >= 0) {
+                count++;
+                panel.path("targets").valueStream().map(target -> target.path("expr").stringValue()).forEach(rowQueries::add);
+            }
+        }
+        assertThat(count).as("the credit row's panels").isEqualTo(9);
+        Set<String> queried = rowQueries.stream().flatMap(DashboardQueriesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(queried).containsExactlyInAnyOrder(
+                "finapp_credit_decision_total", "finapp_credit_decision_latency_seconds_bucket", "finapp_credit_reason_total",
+                "finapp_credit_data_request_total", "finapp_credit_data_latency_seconds_sum",
+                "finapp_credit_data_latency_seconds_count", "finapp_credit_request_open_age_seconds",
+                "finapp_credit_review_age_seconds", "finapp_credit_replay", "finapp_credit_policy_active",
+                "finapp_credit_progress_sweeper_enabled", "finapp_credit_data_retry_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
     }
 
     @Test

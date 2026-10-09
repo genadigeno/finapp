@@ -27,13 +27,16 @@ import org.springframework.context.SmartLifecycle;
 public final class CreditDataRetrySchedule implements SmartLifecycle {
 
     private final CreditDataCollection collection;
+    private final CreditFlowScope flows;
     private final IdGenerator ids;
     private final Duration pollInterval;
     private final int batch;
     private ScheduledExecutorService executor;
 
-    public CreditDataRetrySchedule(CreditDataCollection collection, IdGenerator ids, Duration pollInterval, int batch) {
+    public CreditDataRetrySchedule(
+            CreditDataCollection collection, CreditFlowScope flows, IdGenerator ids, Duration pollInterval, int batch) {
         this.collection = Objects.requireNonNull(collection, "collection");
+        this.flows = Objects.requireNonNull(flows, "flows");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -56,7 +59,9 @@ public final class CreditDataRetrySchedule implements SmartLifecycle {
             List<CreditDataRequestId> claimed = collection.claimDue(batch);
             for (CreditDataRequestId id : claimed) {
                 try {
-                    collection.retry(id, CorrelationId.generate(ids));
+                    // The re-ask's own correlation; its pull's span linked to the submission (P10-TSK-020).
+                    CorrelationId step = CorrelationId.generate(ids);
+                    flows.forDataRequest(id, step, () -> collection.retry(id, step));
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick asks again; the class name only.
                     log.warn("Credit data retry failed: {}", failure.getClass().getSimpleName());

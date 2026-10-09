@@ -26,15 +26,17 @@ import org.springframework.context.SmartLifecycle;
 public final class CreditDecisionProgressSchedule implements SmartLifecycle {
 
     private final DecisionProgress progress;
+    private final CreditFlowScope flows;
     private final IdGenerator ids;
     private final Duration pollInterval;
     private final int batch;
     private final Duration permit;
     private ScheduledExecutorService executor;
 
-    public CreditDecisionProgressSchedule(
-            DecisionProgress progress, IdGenerator ids, Duration pollInterval, int batch, Duration permit) {
+    public CreditDecisionProgressSchedule(DecisionProgress progress, CreditFlowScope flows, IdGenerator ids,
+            Duration pollInterval, int batch, Duration permit) {
         this.progress = Objects.requireNonNull(progress, "progress");
+        this.flows = Objects.requireNonNull(flows, "flows");
         this.permit = Objects.requireNonNull(permit, "permit");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
@@ -58,7 +60,9 @@ public final class CreditDecisionProgressSchedule implements SmartLifecycle {
             List<DecisionRequestId> claimed = progress.claimDue(batch, permit);
             for (DecisionRequestId id : claimed) {
                 try {
-                    progress.step(id, CorrelationId.generate(ids));
+                    // The step's own correlation for its records; its spans linked to the submission (P10-TSK-020).
+                    CorrelationId step = CorrelationId.generate(ids);
+                    flows.forRequest(id, step, () -> progress.step(id, step));
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick steps again; the class name only - never a party.
                     log.warn("Credit decision progress step failed: {}", failure.getClass().getSimpleName());

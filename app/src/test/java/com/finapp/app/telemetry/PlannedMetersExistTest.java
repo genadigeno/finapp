@@ -400,6 +400,57 @@ class PlannedMetersExistTest {
         assertThat(registry.find("finapp.fx.trade").tag("outcome", "reversed").counters()).isNotEmpty();
     }
 
+    /**
+     * `P10-TSK-020`'s acceptance, armed ahead of the flip: every meter Phase 10's plan §15 names is registered in this
+     * context - nothing configured, no reachable database, no bureau - exactly the "freshly started instance" the
+     * criterion names. Read from §15 alone and counted EXACTLY: ten rows; the sweeper row's second gauge is checked by
+     * name, and each counter and timer's eager series by its closed tags - the counters that once registered only at
+     * their first decision or answer are now published from startup.
+     */
+    @Test
+    @DisplayName("Phase 10's planned meters are already published, ahead of the phase flip")
+    void phase10PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        int rows = 0;
+        boolean inObservability = false;
+        for (String line : read(repositoryFile("docs/project/PHASE_10_PLAN.md"))) {
+            if (line.startsWith("## ")) {
+                inObservability = line.startsWith("## 15.");
+                continue;
+            }
+            if (!inObservability) {
+                continue;
+            }
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                rows++;
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(rows).as("the Phase 10 plan's section 15 table has exactly 10 meter rows").isEqualTo(10);
+        assertThat(planned).as("one series per row").hasSize(10)
+                .contains("finapp.credit.request.open.age", "finapp.credit.progress.sweeper.enabled");
+        planned.add("finapp.credit.data.retry.sweeper.enabled");
+        assertThat(registeredMeters()).containsAll(planned);
+        // Each series' closed tags, on a fresh instance.
+        assertThat(registry.find("finapp.credit.decision").tag("product", "personal_loan").tag("outcome", "approved")
+                .tag("decision_maker", "system").counters()).isNotEmpty();
+        assertThat(registry.find("finapp.credit.decision.latency").tag("product", "credit_line")
+                .tag("decision_maker", "system").timers()).isNotEmpty();
+        assertThat(registry.find("finapp.credit.reason").tag("product", "credit_line")
+                .tag("reason_code", "CRD-EXPOSURE-LIMIT").counters()).isNotEmpty();
+        assertThat(registry.find("finapp.credit.data.request").tag("source_kind", "bureau").tag("outcome", "unavailable")
+                .counters()).isNotEmpty();
+        assertThat(registry.find("finapp.credit.data.request").tag("source_kind", "financial_data")
+                .tag("outcome", "received").counters()).isNotEmpty();
+        assertThat(registry.find("finapp.credit.data.latency").tag("source_kind", "financial_data").timers()).isNotEmpty();
+        for (String status : List.of("submitted", "collecting", "ready", "evaluated", "in_review")) {
+            assertThat(registry.find("finapp.credit.request.open.age").tag("status", status).gauges())
+                    .as("the open age of %s", status).isNotEmpty();
+        }
+        assertThat(registry.find("finapp.credit.replay").tag("verdict", "DIVERGED").gauges()).isNotEmpty();
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

@@ -307,6 +307,11 @@ class NoFloatingPointMoneyRulesTest {
                     // unreadable. An age, never an amount.
                     "com.finapp.app.telemetry.CreditReviewMetrics",
                     "com.finapp.app.telemetry.CreditReviewMetrics$Cached",
+                    // P10-TSK-020. The SAME case again: per open state, the oldest decision request's age in
+                    // SECONDS since submission, published through the ToDoubleFunction a Gauge imposes, NaN the
+                    // sentinel for unreadable. Ages, never an amount.
+                    "com.finapp.app.telemetry.CreditRequestAgeMetrics",
+                    "com.finapp.app.telemetry.CreditRequestAgeMetrics$Cached",
                     // P8-TSK-024. The SAME case again: the open breaks per type and severity
                     // (counts) and the oldest open break's age in whole SECONDS per severity,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel

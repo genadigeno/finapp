@@ -698,6 +698,14 @@ class OwnershipIsScopedTest {
                                         + " the request (lock order element (1)): the request id comes only from the progress"
                                         + " step's claimed page, never a request value; the decision has no customer door.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.correlationOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-020. CreditFlowScope's read: the request id comes only from a sweeper's"
+                                        + " claimed page (claimDue) or the data request row a retry sweeper claimed, never"
+                                        + " a request value; it returns the request's own stored correlation, which is read"
+                                        + " by spans and logs only - no door, customer's or operator's, reaches it.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.pin",
                             new Entry(
                                     Scope.ADMINISTERED,

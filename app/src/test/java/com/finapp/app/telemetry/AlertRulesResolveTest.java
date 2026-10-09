@@ -65,6 +65,11 @@ class AlertRulesResolveTest {
 
     private static final String FX_GROUP = "fx";
 
+    /** The credit rules (P10-TSK-020), held to the same checks and to the objectives the code declares. */
+    private static final String CREDIT_RULES = "infra/prometheus/rules/credit.yml";
+
+    private static final String CREDIT_GROUP = "credit";
+
     /** A PromQL metric selector: an identifier not immediately followed by an opening bracket. */
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
@@ -89,7 +94,9 @@ class AlertRulesResolveTest {
                     // Set operators and modifiers.
                     "or", "and", "unless", "by", "without", "on", "ignoring", "bool", "offset",
                     // Label names the rules group or select by.
-                    "source", "outcome", "purpose", "currency", "severity", "type", "pair", "provider", "corridor");
+                    "source", "outcome", "purpose", "currency", "severity", "type", "pair", "provider", "corridor",
+                    // P10-TSK-020: the credit rules' labels - and le, the latency bucket's boundary.
+                    "product", "decision_maker", "le", "status", "verdict", "source_kind");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -190,6 +197,72 @@ class AlertRulesResolveTest {
     }
 
     @Test
+    @DisplayName("the credit rules: every section 15 alert present, every queried series published - the latency"
+            + " objective's bucket too - each threshold the objective the code declares, each rule well formed, the file"
+            + " loaded (P10-TSK-020)")
+    void theCreditRulesResolve() {
+        List<Map<String, Object>> credit = rules(CREDIT_RULES, CREDIT_GROUP);
+        Map<String, String> expressions = new TreeMap<>();
+        credit.forEach(rule -> expressions.put(String.valueOf(rule.get("alert")), String.valueOf(rule.get("expr")).strip()));
+        // PHASE_10_PLAN.md section 15's alerts, every one.
+        assertThat(expressions).containsOnlyKeys("CreditDecisionLatencyAboveObjective", "CreditDataUnavailable",
+                "CreditRequestOpenPastValidity", "CreditReviewAged", "CreditDecisionDiverged", "CreditPolicyMissing",
+                "CreditProgressSweeperOff", "CreditDataRetrySweeperOff", "CreditGaugesUnreadable");
+        Set<String> queried = credit.stream()
+                .map(rule -> String.valueOf(rule.get("expr")))
+                .flatMap(AlertRulesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(queried).contains("finapp_credit_decision_latency_seconds_count",
+                "finapp_credit_decision_latency_seconds_bucket", "finapp_credit_data_request_total",
+                "finapp_credit_request_open_age_seconds", "finapp_credit_review_age_seconds", "finapp_credit_replay",
+                "finapp_credit_policy_active", "finapp_credit_progress_sweeper_enabled",
+                "finapp_credit_data_retry_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+
+        // The thresholds are the objectives the code declares, not numbers typed twice; the label values the rules
+        // select are values the live scrape carries.
+        String scrape = scrape();
+        String objectiveBucket = Double.toString(CreditObjectives.DECISION_LATENCY_P99.toSeconds());
+        assertThat(expressions.get("CreditDecisionLatencyAboveObjective"))
+                .contains("le=\"" + objectiveBucket + "\"")
+                .contains("decision_maker=\"system\"")
+                .endsWith("> 0.01");
+        assertThat(scrape.lines())
+                .as("the objective's boundary is a bucket the timer publishes for the platform's decisions, on a fresh"
+                        + " instance")
+                .anySatisfy(line -> assertThat(line)
+                        .startsWith("finapp_credit_decision_latency_seconds_bucket{")
+                        .contains("decision_maker=\"system\"")
+                        .contains("le=\"" + objectiveBucket + "\""));
+        assertThat(threshold(expressions.get("CreditRequestOpenPastValidity")))
+                .isEqualTo(CreditObjectives.requestValidity().toSeconds());
+        assertThat(expressions.get("CreditRequestOpenPastValidity")).contains("status!=\"in_review\"");
+        assertThat(threshold(expressions.get("CreditReviewAged"))).isEqualTo(CreditObjectives.REVIEW_AGE.toSeconds());
+        assertThat(expressions.get("CreditDecisionDiverged")).contains("verdict=\"DIVERGED\"");
+        assertThat(scrape)
+                .contains("finapp_credit_replay{verdict=\"DIVERGED\"}")
+                .contains("finapp_credit_request_open_age_seconds{status=\"in_review\"}")
+                .containsPattern("finapp_credit_data_request_total\\{outcome=\"unavailable\",provider=\"[a-z-]+\","
+                        + "source_kind=\"bureau\"\\}");
+
+        assertThat(credit).allSatisfy(rule -> {
+            assertThat(String.valueOf(rule.get("for"))).matches("\\d+[smhd]");
+            assertThat(map(rule.get("labels")).get("severity")).isIn("page", "ticket");
+            assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
+        });
+        Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(CREDIT_RULES));
+        assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
+                .anySatisfy(pattern -> assertThat(
+                        FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());
+    }
+
+    private static long threshold(String expr) {
+        Matcher threshold = TRAILING_THRESHOLD.matcher(expr);
+        assertThat(threshold.find()).as("%s ends in a threshold", expr).isTrue();
+        return Long.parseLong(threshold.group(1));
+    }
+
+    @Test
     @DisplayName("the guard is not vacuous: every alerted series of section 15 is queried")
     void everyAlertedSeriesIsCovered() {
         assertThat(queriedSeriesNames()).containsAll(ALERTED_SERIES);
@@ -267,6 +340,11 @@ class AlertRulesResolveTest {
 
     /** Series names as Prometheus publishes them - the registry's own naming, never a translation. */
     private Set<String> publishedSeriesNames() {
+        return names(scrape());
+    }
+
+    /** The live scrape, as Prometheus reads it. */
+    private String scrape() {
         PrometheusMeterRegistry prometheus =
                 registry instanceof PrometheusMeterRegistry direct
                         ? direct
@@ -276,9 +354,12 @@ class AlertRulesResolveTest {
                                         .filter(PrometheusMeterRegistry.class::isInstance)
                                         .findFirst()
                                         .orElseThrow(() -> new AssertionError("no Prometheus registry"));
+        return prometheus.scrape();
+    }
 
+    private static Set<String> names(String scrape) {
         Set<String> names = new TreeSet<>();
-        for (String line : prometheus.scrape().lines().toList()) {
+        for (String line : scrape.lines().toList()) {
             if (line.isBlank() || line.startsWith("#")) {
                 continue;
             }
