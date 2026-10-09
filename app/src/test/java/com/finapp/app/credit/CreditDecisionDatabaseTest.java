@@ -14,13 +14,24 @@ import static com.finapp.app.credit.CreditWorld.step;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.credit.CreditAttributeCode;
+import com.finapp.credit.CreditPolicy;
+import com.finapp.credit.CreditPolicyAdministration;
 import com.finapp.credit.CreditProduct;
 import com.finapp.credit.CreditSourceKind;
 import com.finapp.credit.Decider;
 import com.finapp.credit.DecisionProgress;
 import com.finapp.credit.JdbcReservedExposure;
+import com.finapp.credit.PolicyEffect;
+import com.finapp.credit.PolicyFigure;
+import com.finapp.credit.PolicyOperator;
+import com.finapp.credit.ReasonCode;
 import com.finapp.credit.ScorecardModelVersionId;
+import com.finapp.credit.UnavailableFallback;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -30,7 +41,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -291,6 +304,42 @@ class CreditDecisionDatabaseTest {
         assertThat(sequenceOf(loan)).as("nothing reserved, nothing moved: the first snapshot decides").isEqualTo(1);
     }
 
+    // ------------------------------------------------------------------ the event
+
+    @Test
+    @DisplayName("a decision citing every adverse code records and publishes: credit.CreditDecisionRecorded version 2"
+            + " carries each code in a field of its own, in the decision's order - no reason list outgrows a payload value")
+    void aDecisionCitingEveryAdverseCodeRecordsAndPublishes() throws Exception {
+        UUID id;
+        try {
+            lineCitingEveryAdverseCode();
+            id = evaluated(UUID.randomUUID(), CreditProduct.CREDIT_LINE, eur(200_000), WEEK);
+        } finally {
+            // The request pinned its version at submission; every other case decides under the suite's own.
+            CreditWorld.inForce(CreditProduct.CREDIT_LINE, 900, false);
+        }
+        assertThat(decide(deciding(), id)).as("the long reason list never rolls the deciding transaction back")
+                .isEqualTo(Decider.Decided.DECIDED);
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = ?", id)).isEqualTo("DECIDED");
+        String decision = scalar("SELECT id::text FROM credit.credit_decision WHERE decision_request_id = ?", id);
+        assertThat(scalar("SELECT outcome FROM credit.credit_decision WHERE id = ?::uuid", decision)).isEqualTo("DECLINED");
+        List<String> codes = List.of(scalar("SELECT string_agg(reason_code, ',' ORDER BY ordinal)"
+                + " FROM credit.credit_decision_reason WHERE decision_id = ?::uuid", decision).split(","));
+        assertThat(codes).containsExactlyInAnyOrderElementsOf(Arrays.stream(ReasonCode.values())
+                .filter(ReasonCode::adverse).map(ReasonCode::code).toList());
+        assertThat(String.join("_", codes)).as("version 1's one joined value could not have held them").hasSizeGreaterThan(200);
+        assertThat(scalar("SELECT event_version::text FROM platform.outbox_event"
+                + " WHERE event_type = 'credit.CreditDecisionRecorded' AND aggregate_id = ?::uuid", decision)).isEqualTo("2");
+        String payload = scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event"
+                + " WHERE event_type = 'credit.CreditDecisionRecorded' AND aggregate_id = ?::uuid", decision);
+        assertThat(CreditTestClient.field(payload, "reasonCodeCount")).isEqualTo(Integer.toString(codes.size()));
+        for (int i = 0; i < codes.size(); i++) {
+            assertThat(CreditTestClient.field(payload, "reasonCode" + (i + 1))).as("code %d", i + 1).isEqualTo(codes.get(i));
+        }
+        assertThat(payload).doesNotContain("\"reasonCode" + (codes.size() + 1) + "\"").doesNotContain("\"reasonCodes\"")
+                .as("never an attribute").doesNotContain("740").doesNotContain("BUREAU_");
+    }
+
     // ------------------------------------------------------------------ the re-reads and the lock order
 
     @Test
@@ -352,6 +401,32 @@ class CreditDecisionDatabaseTest {
     }
 
     // ------------------------------------------------------------------ plumbing
+
+    /** CREDIT_LINE v1 without its score rules, then one always-triggering decline per adverse code - in force. */
+    private static void lineCitingEveryAdverseCode() {
+        CreditWorld.TRANSACTIONS.inTransaction(uow -> {
+            CreditPolicy v1 = CreditWorld.POLICIES.policy(uow, CreditWorld.LINE_SEED).orElseThrow().policy();
+            List<CreditPolicy.PolicyRule> rules = new ArrayList<>(v1.rules());
+            rules.removeIf(rule -> rule.subject() instanceof CreditPolicy.Subject.Figure figure
+                    && figure.figure() == PolicyFigure.SCORE);
+            for (ReasonCode reason : ReasonCode.values()) {
+                if (reason.adverse()) {
+                    rules.add(new CreditPolicy.PolicyRule("EVERY_" + reason.name(),
+                            new CreditPolicy.Subject.Attribute(CreditAttributeCode.BUREAU_ACTIVE_ACCOUNTS), PolicyOperator.GE,
+                            new CreditPolicy.Operand.IntegerOperand(0), PolicyEffect.DECLINE, Optional.empty(), reason));
+                }
+            }
+            CreditPolicy policy = new CreditPolicy(v1.product(), 900, v1.minimumDisposable(), v1.minimumPaymentRatioBps(),
+                    v1.maximumExposure(), v1.maximumDataAge(), UnavailableFallback.REFER, v1.autoApprovalCeiling(), rules);
+            CreditPolicyAdministration.Proposed proposed = CreditWorld.POLICY_ADMINISTRATION.propose(uow, policy,
+                    "every adverse code", new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE),
+                    CorrelationId.generate(CreditWorld.IDS));
+            CreditWorld.POLICY_ADMINISTRATION.approve(uow, proposed.id(),
+                    new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE), "activated",
+                    CorrelationId.generate(CreditWorld.IDS));
+            return null;
+        });
+    }
 
     private static int sequenceOf(UUID request) {
         return Integer.parseInt(scalar("SELECT s.sequence::text FROM credit.credit_decision d"

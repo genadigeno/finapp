@@ -23,7 +23,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -60,6 +59,8 @@ import lombok.RequiredArgsConstructor;
 public final class DecisionMaking implements Decider {
 
     static final String RECORDED_EVENT = "credit.CreditDecisionRecorded";
+    /** Version 2: {@code reasonCodeCount} and {@code reasonCode1}...{@code N} replace version 1's joined {@code reasonCodes}. */
+    static final int RECORDED_EVENT_VERSION = 2;
     static final String REVIEW_EVENT = "credit.ManualReviewRequired";
     static final String TARGET_TYPE = "credit_decision";
     static final String CASE_TYPE = "underwriting_case";
@@ -288,7 +289,10 @@ public final class DecisionMaking implements Decider {
                 .value()).value();
     }
 
-    /** {@code credit.CreditDecisionRecorded} - identifiers, the outcome, minor units; never an attribute or a score. */
+    /**
+     * {@code credit.CreditDecisionRecorded} version 2 - identifiers, the outcome, minor units and the reason codes one
+     * field each; never an attribute or a score.
+     */
     private void publish(Connection uow, CreditDecision decision, CorrelationId correlation) {
         EventPayload payload = EventPayload.of()
                 .with("decisionRequestId", decision.decisionRequest().toString())
@@ -306,17 +310,19 @@ public final class DecisionMaking implements Decider {
         if (decision.termMonths().isPresent()) {
             payload = payload.with("termMonths", decision.termMonths().get().toString());
         }
-        if (!decision.reasons().isEmpty()) {
-            // Catalogue codes hold hyphens and never an underscore, so the underscore separates them unambiguously.
-            payload = payload.with("reasonCodes",
-                    decision.reasons().stream().map(ReasonCode::code).collect(Collectors.joining("_")));
+        // One field per code, as ManualReviewRequired's: version 1 joined them into one value, which a decline citing
+        // eight or more codes outgrew - and the refused payload rolled the deciding transaction back, every time.
+        List<ReasonCode> reasons = decision.reasons();
+        payload = payload.with("reasonCodeCount", Integer.toString(reasons.size()));
+        for (int i = 0; i < reasons.size(); i++) {
+            payload = payload.with("reasonCode" + (i + 1), reasons.get(i).code());
         }
         outbox.write(
                 uow,
                 new EventEnvelope(
                         EventId.next(ids),
                         RECORDED_EVENT,
-                        1,
+                        RECORDED_EVENT_VERSION,
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         decision.id(),
                         TARGET_TYPE,
