@@ -34,6 +34,14 @@ public final class EngineVersions {
         this.engines = Map.copyOf(byVersion);
     }
 
+    /**
+     * The engines {@code engines} - how a build that adds engine 2 beside engine 1 declares them (`P10-TSK-019`: the
+     * replay suite proves old decisions replay under their own engine when a newer one is held).
+     */
+    public static EngineVersions of(List<PolicyEvaluator> engines) {
+        return new EngineVersions(engines);
+    }
+
     /** The engine of {@code version}; a version this build does not hold is a defect, never a fallback to another. */
     public PolicyEvaluator engine(int version) {
         PolicyEvaluator engine = engines.get(version);

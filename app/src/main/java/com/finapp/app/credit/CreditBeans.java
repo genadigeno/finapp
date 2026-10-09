@@ -377,12 +377,45 @@ public class CreditBeans {
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
-            TransactionRunner creditTransactionRunner) {
+            TransactionRunner creditTransactionRunner,
+            com.finapp.credit.DecisionReplayer decisionReplayer,
+            CreditReadingSnapshot creditReadingSnapshot) {
         return new CreditInvestigationDesk(new com.finapp.credit.CreditInvestigations(new com.finapp.credit.JdbcCreditDecisions(),
                 new com.finapp.credit.JdbcDecisionSnapshotStore(), new com.finapp.credit.JdbcCreditAssessmentStore(),
                 new com.finapp.credit.JdbcPolicyEvaluationStore(), creditPolicyStore, scorecardStore,
                 new com.finapp.credit.JdbcCreditReads(), creditEvidenceCipher, auditWriter, idGenerator, clock),
-                creditTransactionRunner);
+                creditTransactionRunner, decisionReplayer, creditReadingSnapshot);
+    }
+
+    // ------------------------------------------------------------------ the replay (P10-TSK-019)
+
+    /** One read-only REPEATABLE READ snapshot per reading - the replay route's and the proof's. */
+    @Bean
+    CreditReadingSnapshot creditReadingSnapshot(DataSource dataSource) {
+        return new CreditReadingSnapshot(dataSource::getConnection);
+    }
+
+    /** The replayer: only what each decision pinned, and the engines this build holds. */
+    @Bean
+    com.finapp.credit.DecisionReplayer decisionReplayer(
+            CreditPolicyStore creditPolicyStore,
+            ScorecardStore scorecardStore,
+            com.finapp.credit.UnderwritingCaseStore underwritingCaseStore) {
+        return new com.finapp.credit.DecisionReplayer(new com.finapp.credit.JdbcCreditDecisions(),
+                new com.finapp.credit.JdbcDecisionSnapshotStore(), creditPolicyStore, scorecardStore,
+                new com.finapp.credit.JdbcCreditAssessmentStore(), new com.finapp.credit.JdbcPolicyEvaluationStore(),
+                underwritingCaseStore, com.finapp.credit.EngineVersions.STANDARD);
+    }
+
+    /** {@code finapp.credit.replay{verdict}} - every decision replayed per reading, behind a refresh floor. */
+    @Bean
+    CreditReplayMetrics creditReplayMetrics(
+            com.finapp.credit.DecisionReplayer decisionReplayer,
+            CreditReadingSnapshot creditReadingSnapshot,
+            Clock clock,
+            MeterRegistry meterRegistry) {
+        return new CreditReplayMetrics(new com.finapp.credit.CreditReplayProof(decisionReplayer), creditReadingSnapshot,
+                clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the manual review (P10-TSK-018)

@@ -82,7 +82,7 @@ public final class CreditInvestigations {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         ReasonRequired() {
-            super("reading credit evidence requires a reason");
+            super("this investigator act requires a reason");
         }
     }
 
@@ -135,6 +135,34 @@ public final class CreditInvestigations {
                 Optional.of("explanation of decision " + id.value() + " for request " + decision.decisionRequest())));
         return Optional.of(new Explanation(decision, stored.sequence(), attributes, policy.row().version(), modelVersion,
                 assessment.score(), evaluation, rules));
+    }
+
+    /**
+     * Records a replay's serving (`P10-TSK-019`): {@code credit.DecisionReplayed}, with the investigator's reason and the
+     * verdict by kind, in {@code unitOfWork} - which commits before the verdict is answered.
+     *
+     * @throws ReasonRequired for a blank reason - nothing recorded, nothing served
+     */
+    public void recordReplay(
+            Connection unitOfWork, DecisionReplayer.Replay replay, String reason, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(replay, "replay");
+        Objects.requireNonNull(actor, "actor");
+        Objects.requireNonNull(correlation, "correlation");
+        if (reason == null || reason.isBlank()) {
+            throw new ReasonRequired();
+        }
+        audit.append(unitOfWork, new AuditRecord(
+                AuditId.next(ids),
+                actor,
+                clock.instant(),
+                CreditAuditAction.DECISION_REPLAYED,
+                DECISION_TARGET,
+                replay.decision().value().toString(),
+                Optional.of(reason),
+                AuditOutcome.SUCCEEDED,
+                correlation,
+                Optional.of("replay of decision " + replay.decision().value() + ": " + replay.verdict().name()
+                        + replay.divergences().stream().map(Enum::name).sorted().toList())));
     }
 
     /**

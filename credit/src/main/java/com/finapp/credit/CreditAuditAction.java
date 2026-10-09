@@ -93,6 +93,13 @@ public enum CreditAuditAction implements AuditableAction {
                     + " explanation is served without its record.",
             false),
 
+    DECISION_REPLAYED(
+            "credit.DecisionReplayed",
+            "A holder of CREDIT_INVESTIGATE replayed a decision from its sealed snapshot and pinned versions, with a"
+                    + " reason (P10-TSK-019, INV-CRD-01): the summary names the verdict and what differed, by kind - never"
+                    + " a value; written before the verdict is served.",
+            true),
+
     EVIDENCE_READ(
             "credit.EvidenceRead",
             "A holder of CREDIT_INVESTIGATE read a credit record's raw evidence through credit.read_evidence, with a"

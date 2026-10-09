@@ -9026,6 +9026,46 @@
         },
         "type": "object"
       },
+      "CreditReplayRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditReplayView": {
+        "properties": {
+          "decidedByPerson": {
+            "type": "boolean"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "differences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "engineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "modelVersionId": {
+            "type": "string"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreditSourceView": {
         "properties": {
           "retrievedAt": {
@@ -16886,6 +16926,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreditExplanationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/decisions/{id}/replay": {
+      "post": {
+        "operationId": "replay",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreditReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditReplayView"
                 }
               }
             },

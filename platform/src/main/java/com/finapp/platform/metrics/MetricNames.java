@@ -194,7 +194,12 @@ public final class MetricNames {
                     "decision_maker",
                     // Which catalogued reason (P10-TSK-016): the closed ReasonCode catalogue's code, a reviewed code
                     // change with its migration - finapp.credit.reason{product, reason_code}, the plan's series.
-                    "reason_code");
+                    "reason_code",
+                    // A proof's verdict (P10-TSK-019): IDENTICAL or DIVERGED, the closed DecisionReplayer.Verdict -
+                    // what a replay of the platform's own decisions concluded, never a request's value, a person or a
+                    // resource. The plan's own series carries it (PHASE_10_PLAN.md section 15:
+                    // finapp.credit.replay{verdict}, alerting on any DIVERGED), registered eagerly per verdict.
+                    "verdict");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

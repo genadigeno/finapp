@@ -614,6 +614,8 @@ class OpenApiContractTest {
                         // P10-TSK-017: the customer's credit profile, and the investigator's explanation and evidence.
                         ApiVersion.CURRENT_PREFIX + "/me/credit/profile",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/decisions/{id}/explanation",
+                        // P10-TSK-019: the replay (CREDIT_INVESTIGATE, a reason required, no key).
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/decisions/{id}/replay",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/records/{id}/evidence-read",
                         // P10-TSK-018: the underwriter's review queue and the acts on a case.
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases",

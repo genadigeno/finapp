@@ -83,6 +83,9 @@ public interface UnderwritingCaseStore {
     /** The case {@code FOR UPDATE} - lock-order element (3), taken after its request's row. */
     Optional<UnderwritingCase> lock(Connection unitOfWork, UnderwritingCaseId id);
 
+    /** The request's case, unlocked - the read-only replay's (`P10-TSK-019`); a read-only transaction takes no lock. */
+    Optional<UnderwritingCase> byRequest(Connection unitOfWork, DecisionRequestId request);
+
     /** The request's case {@code FOR UPDATE} - element (3), for the progress step that already holds the request. */
     Optional<UnderwritingCase> lockByRequest(Connection unitOfWork, DecisionRequestId request);
 

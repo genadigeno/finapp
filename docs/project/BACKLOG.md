@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (18 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5 and M10.6 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (20 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5 and M10.6 closed, M10.7 at 2 of 3); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15545,7 +15545,8 @@ assignment and an expiry serialise (`-018`).
   N/A), `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
 - **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-021` on the owner's instruction (2026-10-08). `credit V013` (`underwriting_case`, `underwriting_case_event`, the request's trigger redefined and its deferred "leaves `IN_REVIEW` with its case" trigger); `UnderwritingCase`, `UnderwritingCaseStatus`, `UnderwritingCaseStore`/`JdbcUnderwritingCaseStore`, `UnderwritingCases`; `DecisionMaking`'s referral and shared steps; `DecisionProgress`'s `IN_REVIEW` step; `app`'s `UnderwritingCaseController`, `UnderwritingCaseDesk`, `CreditReviewMetrics`. Corrections made by the design (ADR-0089 as built): the referral's ceiling for "the evaluation's approved amount" (a `REFER` approves none); the limit judged with the person's amount on the re-read deciding snapshot; a sixth audited act, `credit.ReviewCasesRead`, for the queue's basis; the first-decision `CHECK` in place of the planned reason-count deferred trigger; `P10-TSK-019`'s replay wording. Tests as named above, the raw-SQL edges as `#everyCaseEdgeIsHeldByTheDatabase`, the doors in `#anUnderwriterWorksACaseOverHttp` and `#theDoorsAreTheUnderwritersAlone`.
 
-**P10-TSK-019 — Decision replay and verification** — `READY` (marked by `P10-TSK-018`'s completion gate, 2026-10-08)
+**P10-TSK-019 — Decision replay and verification** — `COMPLETE` (2026-10-09; marked `READY` by the previous task's completion gate)
+- **As built** (2026-10-09): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). credit's `DecisionReplayer`, `CreditReplayProof`, `CreditAssessments.figures`, `UnderwritingCaseStore.byRequest`, `JdbcCreditDecisions.ids`, `EngineVersions.of` and `credit.DecisionReplayed`; `app`'s replay door, `CreditReadingSnapshot` and `CreditReplayMetrics`. The suites are `DecisionReplayDatabaseTest` and `CreditReplayMetricsTest`; the decisions taken in the building are in ADR-0087's Follow-up.
 - **Objective**: prove, on demand and continuously, that every decision re-derives identically from
   its stored snapshot and pinned versions.
 - **Bounded context**: Credit Decisioning; `app`.
@@ -15598,7 +15599,7 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`, `DOD-OBS` (the gauge). **Risk**: High.
   **Cx**: M.
 
-**P10-TSK-020 — Credit meters, spans, reports, alerts and the dashboard row** — `PLANNED`
+**P10-TSK-020 — Credit meters, spans, reports, alerts and the dashboard row** — `READY` (marked by `P10-TSK-019`'s completion gate, 2026-10-09)
 - **Objective**: operate Phase 10 by counts, ages, verdicts and audited reports — never by amounts,
   scores, attributes or parties.
 - **Bounded context**: Credit Decisioning; `app`.

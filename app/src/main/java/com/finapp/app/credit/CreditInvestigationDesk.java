@@ -7,6 +7,7 @@ import com.finapp.credit.CreditErrorCode;
 import com.finapp.credit.CreditInvestigations;
 import com.finapp.credit.CreditPolicy;
 import com.finapp.credit.CreditRecordId;
+import com.finapp.credit.DecisionReplayer;
 import com.finapp.credit.ReasonCode;
 import com.finapp.credit.TransactionRunner;
 import com.finapp.platform.api.ApiException;
@@ -25,13 +26,16 @@ import lombok.RequiredArgsConstructor;
  * alone, and a credit record's raw evidence with a reason. Each read runs in one transaction with its audit row, and
  * that transaction commits before the answer - so no serving goes unrecorded, and an unreadable evidence read is
  * recorded {@code FAILED} before its {@code 503}. Reads, so no idempotency key: a repeated read is a second serving,
- * recorded again.
+ * recorded again. A replay (`P10-TSK-019`) reads one read-only {@code REPEATABLE READ} snapshot, then records its audit
+ * row in a transaction of its own that commits before the verdict is answered.
  */
 @RequiredArgsConstructor
 public final class CreditInvestigationDesk {
 
     @NonNull private final CreditInvestigations investigations;
     @NonNull private final TransactionRunner transactions;
+    @NonNull private final DecisionReplayer replayer;
+    @NonNull private final CreditReadingSnapshot snapshots;
 
     /** A decision explained: the decision, the snapshot's attributes, the pinned versions, the rules and which fired. */
     public record CreditExplanationView(
@@ -70,6 +74,16 @@ public final class CreditInvestigationDesk {
             int ordinal, String ruleCode, String subject, String operator, String operand, String effect, String reasonCode,
             String state) {}
 
+    /** A replay's verdict: what differs, by kind alone - never a value - and the pinned versions it ran under. */
+    public record CreditReplayView(
+            String decisionId,
+            String verdict,
+            List<String> differences,
+            boolean decidedByPerson,
+            String policyVersionId,
+            String modelVersionId,
+            int engineVersion) {}
+
     /** A record's evidence, as its provider delivered it. */
     public record CreditEvidenceView(String recordId, String evidenceId, String contentBase64) {}
 
@@ -85,6 +99,39 @@ public final class CreditInvestigationDesk {
         return transactions.inTransaction(uow -> investigations.explain(uow, id, actor, correlation))
                 .map(CreditInvestigationDesk::view)
                 .orElseThrow(CreditInvestigationDesk::notFound);
+    }
+
+    /**
+     * Replays decision {@code rawId} with {@code reason}: a blank reason refused before anything is read, the replay on one
+     * read-only snapshot, then {@code credit.DecisionReplayed} committed - only then is the verdict answered.
+     */
+    public CreditReplayView replay(String rawId, String reason) {
+        CreditDecisionId id;
+        try {
+            id = CreditDecisionId.of(UUID.fromString(rawId));
+        } catch (IllegalArgumentException malformed) {
+            throw notFound();
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new ApiException(CreditErrorCode.REASON_REQUIRED, "A decision replay without a reason",
+                    "a reason is required.");
+        }
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        DecisionReplayer.Replay replay = snapshots.read(uow -> replayer.replay(uow, id))
+                .orElseThrow(CreditInvestigationDesk::notFound);
+        transactions.inTransaction(uow -> {
+            investigations.recordReplay(uow, replay, reason, actor, correlation);
+            return null;
+        });
+        return new CreditReplayView(
+                replay.decision().value().toString(),
+                replay.verdict().name(),
+                replay.divergences().stream().map(Enum::name).sorted().toList(),
+                replay.byPerson(),
+                replay.versions().policyVersion().toString(),
+                replay.versions().modelVersion().toString(),
+                replay.versions().engineVersion());
     }
 
     public CreditEvidenceView readEvidence(String rawId, String reason) {
