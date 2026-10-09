@@ -185,7 +185,8 @@ That sets the bar:
    `CreditDecisionRequested`, `CreditDataCollected`, `CreditDataUnavailable`,
    `CreditAssessmentCreated`, `ManualReviewRequired`, `CreditDecisionRecorded`,
    `CreditDecisionRequestClosed`, `CreditPolicyVersionActivated` /
-   `ScorecardModelVersionActivated`. None carries an attribute, a score or declared income.
+   `ScorecardModelVersionActivated` (`CreditDecisionRecorded` is version 2 since 2026-10-09, its
+   reason codes one field each - §Follow-up). None carries an attribute, a score or declared income.
    Evolution adds optional fields only; a breaking change is a new type. Credit consumes no event
    in Phase 10; Phase 11 will consume `CreditDecisionRecorded`.
    - **`CreditDecisionUpdated` is refused**: a decision is never updated (`INV-CRD-02`); an
@@ -341,5 +342,18 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   investigator's explanation reads the PINNED policy's frozen rules** beside the stored rule results, so it explains
   what decided, never what is in force now.
 - *As built by `P10-TSK-019` (2026-10-08), the replay.* Three decisions taken in the building, recorded here. (1) **The seal is checked before anything is re-run, and covers the pinned versions**: the SHA-256 recomputed over the stored canonical text must equal the snapshot row's digest and the decision's, and the snapshot's pinned versions the decision's; any disagreement - or text the strict parser refuses - is `HASH`, and the replay stops there, since inputs that are not the ones decided on prove nothing either way. (2) **A decision that cannot be re-run is a fifth kind, `UNREPLAYABLE`** - a pinned row missing, an engine version this build does not hold, a rule reading an attribute the snapshot never held - a verdict like the others rather than an exception that would hide every other decision's in the proof. (3) **The assessment's arithmetic is one function**: `CreditAssessments.figures`, run by the assessment and by its replay alike, so the two cannot drift; replay re-derives in memory and writes nothing. A person's decision (its request's case `DECIDED`) re-derives the evaluation it rested on - its snapshot's stored evaluation, the successor's when the reservation moved - and is verified equal to the case's recorded decision; a person's judgement is verified, never re-derived.
+- *Corrected 2026-10-09, outside the task loop: `CreditDecisionRecorded` is event version 2.* As built by `-016`,
+  version 1 joined every reason code into ONE payload value (`reasonCodes`, underscore-separated). `EventPayload`
+  bounds a value at 200 characters, so a decision citing eight or more codes (the longest eight; any ten) threw while
+  writing its outbox row and rolled back the deciding transaction - every retry the same, so such a request could
+  never be decided (and a person's decision on a referral failed likewise, nothing recorded). **Version 2 carries
+  `reasonCodeCount` and `reasonCode1`…`N`, one field per code in ordinal order** - the shape `ManualReviewRequired`
+  was born with (ADR-0089) - and the count is always present, `0` for a full approval. Point 9's rule, "a breaking
+  change is a new type", was weighed and not applied: the event means what it meant (a decision born, with its
+  reasons), so its type stands, and removing a field is exactly what the event VERSION exists to announce
+  (`EVENT_ARCHITECTURE.md` §The two versions) - a reader that knows only version 1 refuses version 2 rather than
+  reading an absent `reasonCodes` as "no reasons". No consumer of version 1 exists (Phase 11 is the first); outbox
+  rows already written as version 1 stay as written. Proven by
+  `CreditDecisionDatabaseTest#aDecisionCitingEveryAdverseCodeRecordsAndPublishes`, red first on version 1.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.
