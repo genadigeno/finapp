@@ -644,7 +644,7 @@ any `DIVERGED`).
 | Series | Type | Tags | Alert |
 |---|---|---|---|
 | `finapp.credit.decision` | counter | product, outcome, policy_version, decided_by (system/person) | — |
-| `finapp.credit.decision.latency` | timer | product | p99 above the declared objective |
+| `finapp.credit.decision.latency` | timer | product, decision_maker (`P10-TSK-020`: only the platform's decisions are held to the objective) | p99 of the platform's decisions above the declared objective (45 min) |
 | `finapp.credit.reason` | counter | product, reason_code | — |
 | `finapp.credit.data.request` | counter | source_kind, provider, outcome (received/unavailable/consent_withdrawn/duplicate) | unavailability ratio |
 | `finapp.credit.data.latency` | timer | source_kind, provider | — |
@@ -659,6 +659,19 @@ provider (one per reference); Phase 10 publishes no money cost series. No amount
 or party in any tag. Spans for submission, collection, freeze,
 evaluation and decision, linked by the request's correlation. A dashboard row and the alert rules
 resolved against a live scrape (`P10-TSK-020`).
+
+*As built by `P10-TSK-020` (2026-10-09).* The spans through the platform `Spans` port with no attribute at all
+(`credit.request.submit`, `credit.data.collect`, `credit.snapshot.freeze`, `credit.policy.evaluate`,
+`credit.decision.decide`) are `CreditSpans`; every later leg, taken by a sweeper on any instance, runs in a scope
+carrying the correlation the request stored at submission, its own step's correlation as the cause
+(`CreditFlowScope`) - so one value finds the whole flow. The objectives are declared once in `CreditObjectives`:
+the platform's decision latency p99 within 45 minutes (the default 30-minute collection window plus a quarter
+hour), the review objective one day, the request validity the longest product's (seven days; the open-age alert
+leaves `in_review` out - a taken case never expires under its underwriter). Every counter and timer above is
+published from startup (`finapp.credit.decision` at `policy_version="0"`, the active-policy gauge's word for none,
+never incremented); the data counter counts after commit. The alerts are `infra/prometheus/rules/credit.yml`;
+the reports `GET /v1/operator/reports/credit/{outcomes,reasons,sources}?month=` are counts and rates only
+(`Phase10Reports`), each one `REPEATABLE READ` snapshot audited `credit.ReportRead`.
 
 ## 16. Milestones
 

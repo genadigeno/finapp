@@ -3,6 +3,7 @@ package com.finapp.credit;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.telemetry.Spans;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import lombok.NonNull;
@@ -75,6 +77,30 @@ public final class DecisionProgress {
     @NonNull private final Clock clock;
     @NonNull private final Decider decider;
     @NonNull private final UnderwritingCaseStore cases;
+    /** Where the freeze and the evaluation record their spans (`P10-TSK-020`) - {@link Spans#NONE} untraced. */
+    @NonNull private final Spans spans;
+
+    /** The untraced progress - every caller before `P10-TSK-020`, and the suites. */
+    public DecisionProgress(
+            TransactionRunner transactions,
+            DecisionRequestStore requests,
+            CreditPolicyStore policies,
+            ScorecardStore scorecards,
+            DecisionSnapshotStore snapshots,
+            CreditDataCollection collection,
+            SnapshotFreezer freezer,
+            CreditAssessments assessments,
+            PolicyEvaluations evaluations,
+            CreditPartyStanding<Connection> standing,
+            CreditConsentGate<Connection> consents,
+            OutboxWriter<Connection> outbox,
+            IdGenerator ids,
+            Clock clock,
+            Decider decider,
+            UnderwritingCaseStore cases) {
+        this(transactions, requests, policies, scorecards, snapshots, collection, freezer, assessments, evaluations,
+                standing, consents, outbox, ids, clock, decider, cases, Spans.NONE);
+    }
 
     /** What one step did. */
     public enum Step {
@@ -261,15 +287,17 @@ public final class DecisionProgress {
                     platform, correlation);
         }
         DecisionRequest.Application application = request.application();
-        SnapshotFreezer.Freeze freeze = freezer.freeze(uow, new SnapshotFreezer.FreezeInput(request.id().value(),
-                request.party(), application.product(), application.requested(), application.termMonths(),
-                application.declaredMonthlyIncome(), application.declaredMonthlyExpenditure(), pinned,
-                policy.maximumDataAge(), 1), correlation);
+        SnapshotFreezer.Freeze freeze = spans.within(CreditSpans.FREEZE, Map.of(), () -> freezer.freeze(uow,
+                new SnapshotFreezer.FreezeInput(request.id().value(), request.party(), application.product(),
+                        application.requested(), application.termMonths(), application.declaredMonthlyIncome(),
+                        application.declaredMonthlyExpenditure(), pinned, policy.maximumDataAge(), 1), correlation));
         return switch (freeze) {
             case SnapshotFreezer.Freeze.Frozen frozen -> {
-                CreditAssessment assessment = assessments.assess(uow, frozen.snapshot(),
-                        CreditAssessments.Terms.of(policy), correlation).assessment();
-                evaluations.evaluate(uow, frozen.snapshot(), assessment);
+                spans.within(CreditSpans.EVALUATE, Map.of(), () -> {
+                    CreditAssessment assessment = assessments.assess(uow, frozen.snapshot(),
+                            CreditAssessments.Terms.of(policy), correlation).assessment();
+                    return evaluations.evaluate(uow, frozen.snapshot(), assessment);
+                });
                 move(uow, request, DecisionRequestStatus.READY, DecisionRequestStatus.EVALUATED, platform);
                 yield Step.EVALUATED;
             }

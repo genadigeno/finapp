@@ -71,4 +71,16 @@ public interface DecisionRequestStore {
 
     /** The request's party, read without a lock - the deciding transaction locks the party's profile first (element (1)). */
     Optional<UUID> partyOf(Connection unitOfWork, DecisionRequestId id);
+
+    /**
+     * The correlation the request stored at submission, read without a lock (`P10-TSK-020`) - what links its later legs'
+     * spans to the submission; frozen from submission by V010's trigger.
+     */
+    Optional<String> correlationOf(Connection unitOfWork, DecisionRequestId id);
+
+    /**
+     * How long the oldest request in each OPEN state has been open, since its submission, on the database's clock
+     * (`P10-TSK-020`, {@code finapp.credit.request.open.age{status}}); a state no request is in is absent.
+     */
+    java.util.Map<DecisionRequestStatus, Duration> oldestOpenAges(Connection unitOfWork);
 }

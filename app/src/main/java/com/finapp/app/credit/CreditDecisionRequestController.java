@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CreditDecisionRequestController {
 
     @NonNull private final CreditDecisionRequestDesk desk;
+    @NonNull private final com.finapp.platform.telemetry.Spans domainSpans;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresIdempotencyKey
@@ -45,7 +46,10 @@ public class CreditDecisionRequestController {
             @Valid @RequestBody CreditDecisionRequestBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.submit(current(request), idempotencyKey, body);
+        // The request's first leg (P10-TSK-020): in the request's own correlation scope, which the request stores -
+        // every later leg's span carries it (CreditFlowScope). No attribute: never the amount or the declared figures.
+        return domainSpans.within(com.finapp.credit.CreditSpans.SUBMIT, java.util.Map.of(),
+                () -> desk.submit(current(request), idempotencyKey, body));
     }
 
     @GetMapping("/{id}")

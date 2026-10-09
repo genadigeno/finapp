@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (20 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5 and M10.6 closed, M10.7 at 2 of 3); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (21 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15599,7 +15599,8 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`, `DOD-OBS` (the gauge). **Risk**: High.
   **Cx**: M.
 
-**P10-TSK-020 — Credit meters, spans, reports, alerts and the dashboard row** — `READY` (marked by `P10-TSK-019`'s completion gate, 2026-10-09)
+**P10-TSK-020 — Credit meters, spans, reports, alerts and the dashboard row** — `COMPLETE` (2026-10-09; marked `READY` by `P10-TSK-019`'s completion gate; run in parallel with `P10-TST-002` on the owner's instruction, 2026-10-09)
+- **As built** (2026-10-09): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). credit's `CreditSpans`, `DecisionProgress`'s freeze and evaluation spans, `DecisionRequestStore.correlationOf` and `.oldestOpenAges`, `credit.ReportRead`; `app`'s `CreditObjectives`, `CreditRequestAgeMetrics`, the eager `CreditDecisionMetrics` (latency tagged by decider) and `CreditDataMetrics` (after commit), `SpannedCreditDataSource`, `SpannedDecider`, `CreditFlowScope`, `Phase10Reports` and `Phase10ReportController`, `infra/prometheus/rules/credit.yml` and the dashboard row; `status` joins `MetricNames`. The suites are `PlannedMetersExistTest#phase10PlannedMetersAreAlreadyPublished`, `AlertRulesResolveTest#theCreditRulesResolve`, `DashboardQueriesResolveTest#theCreditRowResolves`, `Phase10ReportsDatabaseTest`, `Phase10SpansTest`, `Phase10SpansDatabaseTest`, `CreditTelemetryCarriesNoFigureTest`, `CreditDataMetricsTest` and `CreditRequestAgeMetricsTest`.
 - **Objective**: operate Phase 10 by counts, ages, verdicts and audited reports — never by amounts,
   scores, attributes or parties.
 - **Bounded context**: Credit Decisioning; `app`.
@@ -15690,7 +15691,7 @@ assignment and an expiry serialise (`-018`).
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-018` on the owner's instruction, marked `READY` out of turn and merged after it. Mid-request failover weighed and refused (ADR-0085 §10). Beyond the scope as written: normaliser version 2 of both `-sim-a` adapters (a present-but-unreadable field is malformed, never absent) and the 2 GiB heap for every tagged test tier (`ArchitectureTierHeapTest`). Tests as named, plus `SecondBureauCollectionDatabaseTest` (every `-006` case re-run with `b`), `SecondBureauNormalisationGoldenTest`, `SourceSelectionTest`, `CreditSourceOrderTest` and `BureauSelectionDatabaseTest#theProviderIsFixedAtBirthNeverSubstituted`, `#anAnswerNamingAnotherProviderIsNeverRecorded`, `#aRequestCollectedFromBDecidesExplainsAndReplaysAsOneFromA`.
 
-**P10-TST-001 — The credit decision storm** — `PLANNED`
+**P10-TST-001 — The credit decision storm** — `READY` (marked by `P10-TSK-020`'s completion gate, 2026-10-09: every `P10-TSK` is complete)
 - **Objective**: prove decision correctness under every provider fault, crash, duplication,
   activation and race, at once, on two skewed instances.
 - **Bounded context**: every Phase 10 context.

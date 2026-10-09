@@ -1717,6 +1717,205 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Credit decisioning — decisions, reasons, data, queues, proofs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 199 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit decisions by outcome",
+      "description": "finapp.credit.decision (P10-TSK-016) by product and outcome - counted after each decision commits. Per instance: sum(). A count, never an amount.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 200 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (product, outcome) (rate(finapp_credit_decision_total[5m]))", "legendFormat": "{{product}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Decisions by pinned policy version and decider",
+      "description": "finapp.credit.decision by the policy version each decision pinned and who decided - system or person, never the person. Whether a new version moved the approval rate is this panel (the outcomes report has the rates).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 200 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (policy_version, decision_maker, outcome) (increase(finapp_credit_decision_total[1h]))", "legendFormat": "v{{policy_version}} {{decision_maker}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Decision latency p99",
+      "description": "finapp.credit.decision.latency from submission to decision, p99 from the timer's buckets, by decider. The platform's is held to 45 minutes (alerted, CreditObjectives); a person's waits for an underwriter.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 200 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.99, sum by (le, decision_maker) (rate(finapp_credit_decision_latency_seconds_bucket[30m])))", "legendFormat": "p99 {{decision_maker}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Adverse-action reasons",
+      "description": "finapp.credit.reason by catalogued reason code - every decision's reasons, the platform's and a person's. The reasons report has the per-product distribution.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 207 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (reason_code) (increase(finapp_credit_reason_total[1h]))", "legendFormat": "{{reason_code}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit data answers",
+      "description": "finapp.credit.data.request by source kind, provider and outcome (received, unavailable, consent withdrawn, duplicate) - counted after commit; per provider it is also the bureau-cost proxy. The unavailability ratio is alerted.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 207 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (source_kind, provider, outcome) (rate(finapp_credit_data_request_total[5m]))", "legendFormat": "{{source_kind}} {{provider}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit data provider latency (mean)",
+      "description": "finapp.credit.data.latency per source kind and provider - the MEAN: the timer publishes no histogram, and this signal does not earn one.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 207 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (source_kind, provider) (rate(finapp_credit_data_latency_seconds_sum[5m])) / sum by (source_kind, provider) (rate(finapp_credit_data_latency_seconds_count[5m]))", "legendFormat": "{{source_kind}} {{provider}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Open requests and the review queue",
+      "description": "finapp.credit.request.open.age by open state (alerted past the request validity outside in_review) and finapp.credit.review.age, the oldest open review case (alerted past a day). Fleet-wide gauges: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 214 },
+      "targets": [
+        { "refId": "A", "expr": "max by (status) (finapp_credit_request_open_age_seconds)", "legendFormat": "oldest {{status}}" },
+        { "refId": "B", "expr": "max(finapp_credit_review_age_seconds)", "legendFormat": "oldest open review case" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Replay proof and active policies",
+      "description": "finapp.credit.replay by verdict - DIVERGED must be 0 (alerted, INV-CRD-01) - and finapp.credit.policy.active, each offered product's ACTIVE policy version, 0 for none (alerted). Fleet-wide gauges: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 214 },
+      "targets": [
+        { "refId": "A", "expr": "max by (verdict) (finapp_credit_replay)", "legendFormat": "replay {{verdict}}" },
+        { "refId": "B", "expr": "max by (product) (finapp_credit_policy_active)", "legendFormat": "active policy {{product}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit sweepers",
+      "description": "finapp.credit.progress.sweeper.enabled and finapp.credit.data.retry.sweeper.enabled - per instance, 1 when it runs the sweep; min() shows whether any scraped instance does not (alerted).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 214 },
+      "targets": [
+        { "refId": "A", "expr": "min(finapp_credit_progress_sweeper_enabled)", "legendFormat": "progress sweep (min)" },
+        { "refId": "B", "expr": "min(finapp_credit_data_retry_sweeper_enabled)", "legendFormat": "data retry sweep (min)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

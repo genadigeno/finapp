@@ -199,7 +199,15 @@ public final class MetricNames {
                     // what a replay of the platform's own decisions concluded, never a request's value, a person or a
                     // resource. The plan's own series carries it (PHASE_10_PLAN.md section 15:
                     // finapp.credit.replay{verdict}, alerting on any DIVERGED), registered eagerly per verdict.
-                    "verdict");
+                    "verdict",
+                    // Which open lifecycle state (P10-TSK-020): one of the closed DecisionRequestStatus.OPEN set
+                    // (submitted, collecting, ready, evaluated, in_review) - a state every request passes through, a
+                    // reviewed code change with its migration's CHECK, never a request's value, a person or a resource.
+                    // The plan's own series carries it (PHASE_10_PLAN.md section 15:
+                    // finapp.credit.request.open.age{status}), registered eagerly per open state; the alert above the
+                    // request validity must leave in_review out - a case an underwriter holds is never expired under
+                    // them - which a single untagged gauge could not.
+                    "status");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

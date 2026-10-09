@@ -617,6 +617,10 @@ class OpenApiContractTest {
                         // P10-TSK-019: the replay (CREDIT_INVESTIGATE, a reason required, no key).
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/decisions/{id}/replay",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/records/{id}/evidence-read",
+                        // P10-TSK-020: the operations reports (CREDIT_INVESTIGATE, audited per serving).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/credit/outcomes",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/credit/reasons",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/credit/sources",
                         // P10-TSK-018: the underwriter's review queue and the acts on a case.
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}/assignment",

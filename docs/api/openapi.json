@@ -11093,6 +11093,63 @@
         },
         "type": "object"
       },
+      "OutcomeRow": {
+        "properties": {
+          "approvalRate": {
+            "type": "string"
+          },
+          "approved": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "declined": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OutcomesReport": {
+        "properties": {
+          "decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "month": {
+            "type": "string"
+          },
+          "referrals": {
+            "items": {
+              "$ref": "#/components/schemas/ReferralRow"
+            },
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/OutcomeRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "OwnerDeclarationRequest": {
         "properties": {
           "controlRole": {
@@ -12276,6 +12333,46 @@
         },
         "type": "object"
       },
+      "ReasonRow": {
+        "properties": {
+          "asPrimary": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReasonsReport": {
+        "properties": {
+          "decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "month": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReasonRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "RecoveryCompletionRequest": {
         "properties": {
           "password": {
@@ -12303,6 +12400,22 @@
         "required": [
           "loginIdentifier"
         ],
+        "type": "object"
+      },
+      "ReferralRow": {
+        "properties": {
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "referred": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "RefundRequest": {
@@ -13939,6 +14052,48 @@
         },
         "type": "object"
       },
+      "SourceRow": {
+        "properties": {
+          "attempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "availability": {
+            "type": "string"
+          },
+          "awaiting": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "consentWithdrawn": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dataRequests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "received": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reportedOverdue": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "unavailable": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "SourceView": {
         "properties": {
           "active": {
@@ -13962,6 +14117,27 @@
           },
           "kind": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SourcesReport": {
+        "properties": {
+          "dataRequests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "month": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -20236,6 +20412,87 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChargebackRatioReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/credit/outcomes": {
+      "get": {
+        "operationId": "readCreditOutcomesReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomesReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/credit/reasons": {
+      "get": {
+        "operationId": "readCreditReasonsReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonsReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/credit/sources": {
+      "get": {
+        "operationId": "readCreditSourcesReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcesReport"
                 }
               }
             },
