@@ -355,5 +355,21 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   reading an absent `reasonCodes` as "no reasons". No consumer of version 1 exists (Phase 11 is the first); outbox
   rows already written as version 1 stay as written. Proven by
   `CreditDecisionDatabaseTest#aDecisionCitingEveryAdverseCodeRecordsAndPublishes`, red first on version 1.
+- *As built by `P10-TST-002` (2026-10-09), the reproducibility battery.* `DecisionReproducibilityBatteryTest`: 10,000
+  seeded applicants (seed `20261009`) through production's pipeline across both products, three policy epochs and
+  three scorecards, every decision replayed `IDENTICAL`. Four judgement calls, recorded here. (1) **Through the real
+  database, not in memory**: the perturbations the item names are of *stored* rows and the replayer reads the store,
+  so the battery drives production's progress, deciding transaction and review cases with doubles only at the ports
+  (`ReproducibilityWorld`). (2) **Each perturbation is judged by an exact prediction from the stored rows**, never by
+  "something diverged": one byte of every decided snapshot (a hex digit of the party's id - text the strict parser
+  still reads, so only the seal sees it, `P10-TSK-019`'s lesson) is `HASH` for every decision; each pinned version's
+  exposure rule - the only rule citing `CRD-EXPOSURE-LIMIT` in it - forced past its trigger diverges exactly the
+  decisions whose stored rule result says it did not trigger, and forced the other way exactly those it did.
+  (3) **"The engine version swapped" is read both ways**: the semantics swapped under version 1 (reasons in the other
+  order) diverge exactly the decisions with two or more reasons, by `REASONS`; the pinned number swapped in the
+  decision row, engine 2 held, is `HASH` - the seal covers the versions. (4) **The default charset needs a second
+  JVM**, since it is fixed at start-up: `ReplayInAnotherJvm` replays every decision under `UTF-16` (not
+  ASCII-compatible), `ar-EG` and `America/Adak` - and other identity hash codes, so an order a hash set lends a result
+  differs between the two JVMs; another locale and zone are also replayed in-process.
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
   accepting it.

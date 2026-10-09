@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (21 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (22 of 24 items complete, M10.1, M10.2, M10.3, M10.4, M10.5, M10.6 and M10.7 closed, M10.8 at 1 of 3); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -15740,7 +15740,8 @@ assignment and an expiry serialise (`-018`).
 - **Acceptance criteria**: every census exact every round; every decision `IDENTICAL` at rest.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN` (the exposure census). **Risk**: High. **Cx**: L.
 
-**P10-TST-002 — The decision reproducibility battery** — `PLANNED`
+**P10-TST-002 — The decision reproducibility battery** — `COMPLETE` (2026-10-09; marked `READY` out of turn on the owner's instruction, 2026-10-09, to run in parallel with `P10-TSK-020`)
+- **As built** (2026-10-09): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded); run in parallel with `P10-TSK-020` on the owner's instruction, marked `READY` out of turn. Test support only - no production change: `DecisionReproducibilityBatteryTest` (`own-container`, listed in `ownContainerSuites`), `ReproducibilityWorld`, `ReproducibilityApplicants` and `ReplayInAnotherJvm`; the seed `20261009` and the population's fingerprint are the suite's constants. Beyond the scope as written: the engine number swapped beside its semantics, and the population fingerprint. The judgement calls are in ADR-0087's Follow-up.
 - **Objective**: prove at scale that decisions are reproducible and that the proof is not vacuous.
 - **Bounded context**: Credit Decisioning.
 - **Dependencies**: `-019`.
