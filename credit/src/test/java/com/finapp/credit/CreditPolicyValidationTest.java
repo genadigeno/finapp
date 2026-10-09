@@ -36,6 +36,49 @@ class CreditPolicyValidationTest {
     }
 
     @Test
+    @DisplayName("INV-CRD-09 (P10-DOC-001): only a rule guaranteed to stop an approval past the limit bounds the exposure")
+    void onlyAGuaranteedRuleBoundsTheExposure() {
+        for (CreditProduct product : CreditProduct.values()) {
+            assertThat(CreditPolicyV1.policy(product).boundsExposure()).as(product + "'s seeded v1").isTrue();
+        }
+        List<CreditPolicy.PolicyRule> rules = CreditPolicyV1.rules(LOAN);
+        rules.removeIf(rule -> rule.ruleCode().equals("EXPOSURE_LIMIT"));
+        CreditPolicy unbounded = CreditPolicyV1.policy(LOAN, rules);
+        assertThat(unbounded.boundsExposure()).as("v1 without its exposure rule - constructible, refused at proposal")
+                .isFalse();
+        Money limit = unbounded.maximumExposure();
+        Money oneOver = limit.plus(Money.ofMinorUnits(1, limit.currency()));
+        Object[][] shapes = {
+                {PolicyFigure.EXPOSURE_HEADROOM, PolicyOperator.LT, eur(0), PolicyEffect.DECLINE, true},
+                {PolicyFigure.EXPOSURE_HEADROOM, PolicyOperator.LE, eur(0), PolicyEffect.HARD_DECLINE, true},
+                {PolicyFigure.EXPOSURE_HEADROOM, PolicyOperator.LT, eur(500_00), PolicyEffect.REFER, true},
+                {PolicyFigure.EXPOSURE_HEADROOM, PolicyOperator.LT, Money.ofMinorUnits(-1, limit.currency()),
+                        PolicyEffect.DECLINE, false},
+                {PolicyFigure.EXPOSURE_HEADROOM, PolicyOperator.GT, eur(0), PolicyEffect.DECLINE, false},
+                {PolicyFigure.EXPOSURE, PolicyOperator.GT, limit, PolicyEffect.DECLINE, true},
+                {PolicyFigure.EXPOSURE, PolicyOperator.GE, limit, PolicyEffect.REFER, true},
+                {PolicyFigure.EXPOSURE, PolicyOperator.GT, oneOver, PolicyEffect.DECLINE, false},
+                {PolicyFigure.EXPOSURE, PolicyOperator.LT, limit, PolicyEffect.DECLINE, false},
+                {PolicyFigure.DISPOSABLE_INCOME, PolicyOperator.LT, eur(0), PolicyEffect.DECLINE, false}};
+        for (Object[] shape : shapes) {
+            List<CreditPolicy.PolicyRule> with = CreditPolicyV1.rules(LOAN);
+            with.removeIf(rule -> rule.ruleCode().equals("EXPOSURE_LIMIT"));
+            with.add(rule("CANDIDATE", figure((PolicyFigure) shape[0]), (PolicyOperator) shape[1],
+                    new CreditPolicy.Operand.MoneyOperand((Money) shape[2]), (PolicyEffect) shape[3],
+                    ReasonCode.EXPOSURE_LIMIT));
+            assertThat(CreditPolicyV1.policy(LOAN, with).boundsExposure()).as(Arrays.toString(shape))
+                    .isEqualTo(shape[4]);
+        }
+        List<CreditPolicy.PolicyRule> capped = CreditPolicyV1.rules(LOAN);
+        capped.removeIf(rule -> rule.ruleCode().equals("EXPOSURE_LIMIT"));
+        capped.add(new CreditPolicy.PolicyRule("CAPPED", figure(PolicyFigure.EXPOSURE_HEADROOM), PolicyOperator.LT,
+                new CreditPolicy.Operand.MoneyOperand(eur(0)), PolicyEffect.CAP_AMOUNT, Optional.of(eur(100_00)),
+                ReasonCode.EXPOSURE_LIMIT));
+        assertThat(CreditPolicyV1.policy(LOAN, capped).boundsExposure()).as("a cap still approves past the limit")
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("a policy without a fallback for a source kind it reads is incomplete - whatever else it holds")
     void aPolicyWithoutAFallbackForASourceItReadsIsIncomplete() {
         List<CreditPolicy.PolicyRule> rules = CreditPolicyV1.rules(LOAN);

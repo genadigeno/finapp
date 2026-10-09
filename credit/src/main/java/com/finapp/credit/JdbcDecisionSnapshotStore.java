@@ -49,7 +49,11 @@ public final class JdbcDecisionSnapshotStore implements DecisionSnapshotStore {
             boolean fresh;
             try (PreparedStatement select = unitOfWork.prepareStatement(
                     "SELECT id, source_kind, provider_code, normaliser_version,"
-                            + " retrieved_at >= transaction_timestamp() - ? * interval '1 millisecond' AS fresh"
+                            // INV-CRD-08 (P10-DOC-001): the age runs from the EARLIER of the provider's stated
+                            // retrieval and our own recording - a provider clock ahead of ours, or a re-stamped file,
+                            // never keeps stale data fresh. Both judged on the database's clock.
+                            + " LEAST(retrieved_at, recorded_at) >= transaction_timestamp() - ? * interval '1 millisecond'"
+                            + " AS fresh"
                             + " FROM credit.credit_record WHERE data_request_id = ?")) {
                 select.setLong(1, maxAge.toMillis());
                 select.setObject(2, dataRequest.value());

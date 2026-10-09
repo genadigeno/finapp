@@ -70,7 +70,9 @@ BNPL Agreement
 
 Credit Data
 Credit Data Source
-Credit Bureau Record
+Credit Data Request
+Credit Record
+Credit Evidence
 Credit Attribute
 Decision Request
 Decision Snapshot
@@ -79,9 +81,13 @@ Affordability Assessment
 Credit Policy
 Policy Version
 Model Version
+Engine Version
+Policy Evaluation
 Reason Code
 Underwriting Case
 Credit Product
+Decision Consumption
+Decision Replay
 
 Money
 Currency
@@ -172,7 +178,12 @@ distinction Phase 10 could collapse, `CLAUDE.md`'s Credit Score / Risk Score / C
 Underwriting made physical. Nothing of Phase 10 is built: each is the planned design, defined in
 the glossary with the same guard, and the machines are in `CREDIT_DECISIONING_LIFECYCLES.md`. The
 same transition settled `Risk Score`'s owner as `risk` (Phase 13), credit consuming a risk
-signal through a seam — the glossary's §10.)*
+signal through a seam — the glossary's §10.)* *(The Phase 10 exit review, `P10-DOC-001`,
+2026-10-09: Phase 10 is built — `P10-TSK-001`…`-021`, `X-TSK-017` and `P10-TST-001` — and every
+credit entry was read against the code. Credit Bureau Record was renamed Credit Record, one
+`credit_record` table holding both source kinds, and six terms were added, each built as its own
+table or code concept that neither list named: Credit Data Request, Credit Evidence, Engine
+Version, Policy Evaluation, Decision Consumption and Decision Replay.)*
 
 ---
 

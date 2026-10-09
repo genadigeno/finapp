@@ -858,12 +858,16 @@ four-eyes (O7); the cut order — M9.8's second providers first, then the operat
 reversal, each recorded with Phase 15 as owner (O8); charge bearer `OUR` only (O9); no
 conversion fee, margin only (O10).
 
-### Credit decisioning (Phase 10, `Proposed` at the Phase 9 → 10 transition)
-Planned by the Phase 9 → 10 transition (2026-10-07) in `PHASE_10_PLAN.md`; nothing of it is built.
-The phase's tasks are `P10-TSK-001`…`P10-TSK-021`, `P10-TST-001`, `P10-TST-002` and
-`P10-DOC-001`, whose review reads each ADR against the code and corrects it before accepting
-any, the `P9-DOC-001` precedent. The invariants are `INV-CRD-01`…`12` (eight new). The phase's
-ADRs are ADR-0084…ADR-0089. Phase 10 moves no money.
+### Credit decisioning (Phase 10, `Proposed` at the Phase 9 → 10 transition; `Accepted` at the Phase 10 review, `P10-DOC-001`, each read against the code with its corrected passages marked in place)
+Planned by the Phase 9 → 10 transition (2026-10-07) in `PHASE_10_PLAN.md`; built by
+`P10-TSK-001`…`P10-TSK-021`, `X-TSK-017`, `P10-TST-001` and `P10-TST-002`, and read against the code
+and accepted by the Phase 10 review (`P10-DOC-001`, 2026-10-09), which also corrected the code where
+an ADR held and the build did not - the proposal door now refuses a policy whose rules do not bound
+its own maximum exposure, the retry sweep stops asking for a closed request, the evaluating step
+takes the data requests before the pinned versions, and a record is aged from the earlier of its
+provider's date and its own recording. *(This paragraph read "nothing of it is built" until that
+review.)* The invariants are `INV-CRD-01`…`12` (eight new). The phase's ADRs are
+ADR-0084…ADR-0089. Phase 10 moves no money.
 
 **Credit is one bounded context in one module, and it stops where lending begins.** `credit`
 holds credit data, the credit profile, the assessment, the versioned policy and model,
@@ -879,7 +883,7 @@ nothing; loan application, offer and servicing are Phase 11's. The risk score is
 in Phase 10 and is recorded, so a decision replays identically after Phase 13. Products are a
 closed `CreditProduct` enumeration. → [ADR-0084](../adr/ADR-0084-the-credit-bounded-context.md)
 
-**Credit data is collected through provider-neutral ports, under consent checked twice, and kept
+**Credit data is collected through provider-neutral ports, under consent checked at every step, and kept
 encrypted with a stored deadline.** `CreditBureau` and `FinancialDataProvider` adapters normalise
 every answer into the closed `CreditAttributeCode` vocabulary, each value with its provenance; a
 missing attribute is `ABSENT`, never a default, and an unknown, malformed or foreign-currency
@@ -927,8 +931,12 @@ rounding the engine's, the rates and limits the policy's, nothing ever converted
 bureau balance, the platform's outstanding credit (a port answering zero in Phase 10, recorded),
 the reserved exposure of the party's current approvals and the request; it is read under the
 party's `credit_profile` row lock in the deciding transaction, so concurrent approvals never
-together exceed the limit. Lapse ends a reservation in Phase 10; the consumption column is
-Phase 11's to write. → [ADR-0088](../adr/ADR-0088-affordability-and-exposure.md)
+together exceed the limit - and a policy is refused at proposal unless a rule bounds approvals by
+its maximum exposure, the evaluator judging exposure only through rules (`P10-DOC-001`). Lapse ends
+a reservation in Phase 10; a loan's consumption of an approval is a separate born-once
+`credit_decision_consumption` fact, created empty, Phase 11's to write. *(This read "the consumption
+column is Phase 11's to write" until the Phase 10 review - there is no column; the decision row is
+never updated, G1.)* → [ADR-0088](../adr/ADR-0088-affordability-and-exposure.md)
 
 **A referral meets a person, whose power is bounded.** A `REFER` opens one underwriting case; a
 person decides `APPROVED` or `DECLINED`, always with reason codes, never approves a request whose
@@ -1032,3 +1040,7 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | Merchant multi-currency settlement and cross-currency merchant fees | A merchant multi-currency phase of its own | `merchant.FeeCurrencyMismatch` and `PayoutCurrencyMismatch` stay; the corridor is a customer rail, and the merchant payout stays single-currency on its own provider (ADR-0050 annotated at the Phase 8 → 9 transition; ADR-0079 §9) |
 | Funds owed to a closed customer by a parked corridor return | Phase 15 | There is no `ACTIVE` wallet to credit; the value stays parked with its HIGH break, aged and escalated, beside ADR-0070 §4's residual and the closed merchant's return (ADR-0079) |
 | Cross-border KYC tiers, residence attributes, velocity limits, transaction monitoring and risk scoring | Phase 13 | The `CrossBorderLimitCheck` and `CrossBorderRiskDecision` seams are required parameters from birth with reserved refusal codes; screening validity and static corridor limits are Phase 9's only compliance controls (ADR-0081) |
+| Credit evidence purge and crypto-shredding | Phase 15 | `credit_evidence.retain_until` is stored (recorded-at plus the product's 25 months, the database's clock) and every role is refused `DELETE`; a purge is a privileged, audited deletion with its own definer path. The normalised attributes and the snapshot's canonical text, kept for replay, are the purge's scope question too (ADR-0085 §5, `CURRENT_STATE.md` §Known Architectural Debt) |
+| Real bureau and financial-data connectivity; a party's date of birth and residence | When unresolved questions #13 and #14 are answered (never in Phase 10) | Production composes the fail-safe sources (`bureau-none`, `findata-none`) and refuses any named provider at startup (`CreditSourceOrder`); the party facts answer `ABSENT`, so no Phase 10 production decision judges age or residency (ADR-0084, ADR-0085) |
+| The risk score and fraud rules credit consumes | Phase 13 | `CreditRiskSignal` answers `NOT_ASSESSED` with its seam version, recorded in every snapshot, so Phase 10 decisions replay identically after Phase 13 (ADR-0084 §5) |
+| Loan application, offer, acceptance, disbursement and the consumption writer | Phase 11 | Credit decides and reserves exposure; `credit_decision_consumption` exists empty and the `CreditDecisions` port has no consumer outside credit (ADR-0084 §4, ADR-0088) |

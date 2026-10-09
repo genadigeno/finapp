@@ -1035,6 +1035,18 @@ Nothing of Phase 10 is built at the transition:*
   `ERROR_CONTRACT.md` are current. **Owners**: `P10-DOC-001`, with each task writing its own
   documents as it lands.
 
+*Read at the exit review (`P10-DOC-001`, 2026-10-09), every clause against the code and its counted tests
+([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)). Three clauses are met in a form their words did not
+anticipate, each recorded rather than re-worded: **Credit data**'s `403 credit.ConsentRequired` is built as the
+platform's one consent refusal, `409 consent.ConsentRequired` naming the purpose (`P10-TSK-014`; ADR-0087's follow-up,
+`ERROR_CONTRACT.md` §3) - the clause's substance, every provider's pull count unchanged, is what
+`DecisionRequestDatabaseTest#consentAbsentIsRefusedBeforeAnyProviderIsAsked` proves; **Exposure**'s "raced ten ways" is
+two deciders per party over a hundred rounds (`CreditDecisionDatabaseTest#twoProductsAtTheExposureLimitSerialise`), a
+person beside the system over thirty (`UnderwritingCaseDatabaseTest#aManualApprovalAndASystemDecisionForOnePartySerialise`)
+and the storm's twelve parties on two skewed instances - one lock per party, so ten racers add nothing two do not; and
+**Decisioning**'s "≥ 200 requests" was one request and the storm's six until this review added
+`CreditDecisionDatabaseTest#expiryAndDecisionAtTheBoundaryOverTwoHundredRequests`.*
+
 ### Phase 11 — Lending
 - Accrual is idempotent per period: rerunning produces no additional accrual, proven under
   crash-and-restart.

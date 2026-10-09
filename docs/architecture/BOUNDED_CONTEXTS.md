@@ -47,9 +47,10 @@ payment and fx's `CrossBorderCompletionBooking`. Counterparty screening is kyc's
 Reconciliation's four-eyes `TRANSFER_TO_ACCOUNT` through its `ResolvedCorridorReturns` port, implemented
 in `app` (`CorridorReturnResolutions`) - Reconciliation still names no payments or crossborder type.
 
-**Credit (17)** was bounded by the Phase 9 → 10 transition (ADR-0084, `Proposed`, 2026-10-07;
-`PHASE_10_PLAN.md` §3) — *planned: nothing of it is built, and the task that builds each part
-corrects this paragraph to the code.* One context in one module, `credit`, with one consistency
+**Credit (17)** was bounded by the Phase 9 → 10 transition (ADR-0084, 2026-10-07;
+`PHASE_10_PLAN.md` §3) and built by `P10-TSK-001`…`-021` (credit `V001`…`V015`) — *as built,
+read against the code by the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which accepted
+ADR-0084; this read "`Proposed` … planned: nothing of it is built" until then.* One context in one module, `credit`, with one consistency
 boundary: the decision and the snapshot it was made from commit together, and the exposure an
 approval reserves is judged in the transaction that records it. Inside it credit data, the credit
 profile, the assessment (affordability, exposure, the scorecard's score), the versioned policy and
@@ -61,22 +62,41 @@ relationships, every one through a port `app` implements and none a build edge (
 `platform` and `sharedkernel` only):
 - **Consent (4)** — upstream, conformist: no credit data is retrieved without a recorded, current
   lawful basis (`INV-CRD-03`). Two new purposes, `CREDIT_BUREAU_ACCESS` and
-  `FINANCIAL_DATA_ACCESS`, each with its own consent text; the gate is read authoritatively in the
-  transaction that opens a data request and again in the one that records the answer.
-- **Party & Customer (1) and KYC/KYB (3)** — upstream: the applicant's standing (`ACTIVE`, KYC
-  `VERIFIED`) is read through kyc's existing customer-standing port, in the acting transaction.
-  Credit adds nothing to either context.
+  `FINANCIAL_DATA_ACCESS`, each with its own consent text; the gate (`ConsentBackedCreditConsentGate`
+  over consent's `ConsentGate`) is read authoritatively in the acting transaction at submission, at
+  a data request's opening, at every retry, at the recording of its answer, at the freeze and in the
+  deciding transaction. A submission without it is refused with consent's own
+  `409 consent.ConsentRequired`.
+- **Party & Customer (1) and KYC/KYB (3)** — upstream: the applicant's standing is Party's
+  customer status, read through credit's `CreditPartyStanding` port, implemented in `app` by
+  `PartyCreditStanding` over party's `PartyStore` — the live customer `ACTIVE`, the
+  `VerifiedAccountHolder` gate, which `INV-KYC-05` makes a projection of KYC's approval, so KYC is
+  never read directly — in the acting transaction, per decision. The party facts a snapshot
+  records (age, residence) are answered `ABSENT` until the platform holds them (unresolved question
+  #13). Credit adds nothing to either context. *(This read "(`ACTIVE`, KYC `VERIFIED`) … through
+  kyc's existing customer-standing port" until the Phase 10 exit review.)*
+- **Identity, Authentication & Authorization (2)** — upstream: the sessions every credit door
+  authenticates; the MFA enrolment the customer's submission and cancellation step up on (a
+  `MULTI_FACTOR` session only when a TOTP factor is enrolled, `identity.AssuranceRequired`
+  otherwise); and the three permissions `CREDIT_POLICY_ADMINISTER`, `CREDIT_INVESTIGATE` and
+  `CREDIT_UNDERWRITE` with the two roles `CREDIT_POLICY_OFFICER` and `UNDERWRITER`, declared in
+  identity's `PermissionName` and `RoleName` and admitted by identity `V020`. *(Added by the Phase
+  10 exit review, `P10-DOC-001`, 2026-10-09.)*
 - **Risk (20)** — upstream, through a seam: the **risk score is Risk's** (Phase 13), settled by the
   same transition (the glossary's §10). Credit declares the `CreditRiskSignal` port and records
   the answer it was given in the decision's snapshot; until Phase 13 the composition answers
   `NOT_ASSESSED` for every party, so a decision made before Risk exists replays identically after.
 - **Lending (18)** — downstream, from Phase 11: a Loan Application will reference a credit
-  decision through credit's published decision-read port and consume `CreditDecisionRecorded`; the
-  loan, its offer, disbursement and servicing are Lending's, and so is consuming the exposure an
-  approval reserves. **BNPL (19)** is a later downstream consumer of the same decision in Phase 12.
+  decision through credit's published decision-read port (`CreditDecisions`) and consume
+  `CreditDecisionRecorded`; the loan, its offer, disbursement and servicing are Lending's, and so is
+  consuming the exposure an approval reserves — by writing credit's born-once
+  `credit_decision_consumption` fact, created empty in Phase 10. **BNPL (19)** is a later downstream consumer of the same
+  decision in Phase 12.
 - **External credit bureaus and financial-data providers** — reached only through provider-neutral
   adapters (ADR-0008), their formats never leaking into the domain; the raw answer is kept as
-  encrypted evidence with a declared retention deadline.
+  encrypted evidence with a declared retention deadline. Only simulators exist (`bureau-sim-a`,
+  `bureau-sim-b`, `findata-sim-a`): production names no provider and selects each kind's fail-safe
+  until unresolved questions #13 and #14 are answered.
 
 1. Party & Customer
 2. Identity, Authentication & Authorization

@@ -62,27 +62,36 @@
 exit review. Earlier phases' capabilities were never annotated here — `CURRENT_STATE.md` and
 `history/` are their record.)*
 
-## Credit
-- Credit profile *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)*
-- Credit bureau integration *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* —
-  bureau and financial-data collection behind provider-neutral adapters, under recorded consent,
-  evidence encrypted with a declared retention
-- Affordability assessment *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)*
-- Exposure *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* — the party's
-  aggregate, the reserved exposure of current approvals serialised per party
-- Decisioning *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* — a versioned
-  scorecard and a versioned policy engine, immutable decisions with ordered reason codes, the
-  customer's adverse-action explanation, and replay of every past decision
-- Underwriting (manual review) *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* —
-  referrals decided by people under four-eyes
+## Credit *(Phase 10, delivered 2026-10-09 — `P10-DOC-001`)*
+- Credit profile — delivered: one born-once row per party, holding no figure, the row every
+  deciding transaction for the party serialises on
+- Credit bureau integration — delivered: bureau and financial-data collection behind
+  provider-neutral ports, under consent re-read at every step, raw evidence encrypted with a
+  stored retention (its purge Phase 15's); two simulated bureaus (`bureau-sim-a`, `bureau-sim-b`)
+  with source selection and a simulated financial-data provider, each through the port's contract
+  suite. **No real bureau is connected**: production composes the fail-safe sources and refuses a
+  named provider until unresolved questions #13 and #14 are answered
+- Affordability assessment — delivered: exact single-currency arithmetic (the annuity at scale
+  10, rounded once), a foreign-currency source partial data, never converted
+- Exposure — delivered: the party's bureau balance, the platform's outstanding credit (zero
+  until Phase 11), the reserved exposure of current approvals and the request, judged under the
+  party's profile lock; a policy that does not bound its own limit refused at proposal
+- Decisioning — delivered: a versioned scorecard and a versioned policy of rules as data, both
+  four-eyes, through a deterministic engine with its own version; a keyed asynchronous decision
+  request decided once from a sealed snapshot, immutable with ordered reason codes; the customer's
+  adverse-action explanation, the operator's audited explanation, evidence read and replay, and a
+  proof that replays every decision `IDENTICAL`
+- Underwriting (manual review) — delivered: a referral opens one case, taken by one underwriter,
+  decided with reasons, never overriding a hard decline, a second underwriter above the product's
+  threshold who may refuse it back, and a case that closes with its request
 - Loan servicing *(Phase 11)*
 - BNPL *(Phase 12)*
 - Delinquency / collections *(later phases — delinquency with Phase 11's lending; collections operations not yet scheduled)*
 
-*(The Credit section's Phase 10 capabilities were marked "planned" by the Phase 9 → 10
-transition, 2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, `Proposed`), and will be marked delivered
-by the Phase 10 exit review, `P10-DOC-001`. The risk score is the Risk section's, Phase 13: credit
-consumes a risk signal through a seam and computes none.)*
+*(The Credit section's Phase 10 capabilities were marked "planned" by the Phase 9 → 10 transition,
+2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, then `Proposed`), and marked delivered by the Phase
+10 exit review, `P10-DOC-001` (ADR-0084…0089 `Accepted`). The risk score is the Risk section's,
+Phase 13: credit consumes a risk signal through a seam and computes none.)*
 
 ## Risk
 - Fraud

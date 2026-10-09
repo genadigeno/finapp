@@ -244,3 +244,124 @@ own stored inputs. Both are the platform's defect.
 closed to free adjustment (`422 ledger.AdjustmentOnReconciledPosition`). Read the trade's provenance
 (`GET /v1/operator/fx/trades/{id}/provenance`, `FX_INVESTIGATE`) and the book's entries; open an incident; the
 only corrector of a booked conversion is the four-eyes trade reversal (`P9-TSK-025`).
+
+## 6. Credit policy, scorecard and review operations (Phase 10)
+
+*(Added by `P10-DOC-001`, 2026-10-09 - the entry ADR-0086 promised and `P10-TSK-011`/`-012` did not
+write; ADR-0086 §4, ADR-0089, decision D26. Every name and number below is read from the code.)*
+
+### 6.1 Bringing credit policy v1 and scorecard v1 into force - before the first decision
+
+**When.** Once, after a deployment carrying credit `V006` and `V008`, before credit is offered.
+Nothing is decided without an `ACTIVE` policy for the product **and** an `ACTIVE` `RETAIL_SCORECARD`:
+- with no `ACTIVE` policy, a submission (`POST /v1/me/credit/decision-requests`) is refused
+  `422 credit.ProductNotOffered`, and `finapp.credit.policy.active{product}` reads 0 - the
+  `CreditPolicyMissing` alert (`min by (product) (finapp_credit_policy_active) == 0` for 15 min,
+  ticket);
+- with a policy but no `ACTIVE` scorecard, a submission is admitted but its progress step waits at
+  `SUBMITTED` (nothing to pin), and the request expires `EXPIRED` at its 7-day validity. **No gauge
+  or alert reports a missing scorecard** - check it by its approval receipt (below).
+
+**Why.** No migration activates a credit policy or a scorecard (D26). The migrations seed v1 *as
+proposals* whose proposer is the reviewed migration itself - `RETAIL_SCORECARD` v1 by `credit V006`
+(`proposed_by = 'migration:V006'`), `PERSONAL_LOAN` v1 and `CREDIT_LINE` v1 by `credit V008`
+(`'migration:V008'`). The four-eyes `CHECK` compares the activator with the proposer, so **one
+person** holding `CREDIT_POLICY_ADMINISTER` activates each seed, named as its decider. The seeded
+ids are fixed:
+
+| Version | Id |
+|---|---|
+| `RETAIL_SCORECARD` v1 | `0190a1b2-5c0e-7000-8000-00000000c001` |
+| `PERSONAL_LOAN` policy v1 | `0190a1b2-5c0e-7000-8000-00000000d001` |
+| `CREDIT_LINE` policy v1 | `0190a1b2-5c0e-7000-8000-00000000d002` |
+
+v1's content is `V008`'s: both products EUR at scale 2, a 9% stress rate, EUR 100.00 minimum
+disposable income, both source kinds read at most 30 days old, the unavailable-source fallback
+`REFER`; `PERSONAL_LOAN` a 3% minimum payment ratio, EUR 40,000.00 maximum exposure and a
+EUR 10,000.00 auto-approval ceiling; `CREDIT_LINE` 5%, EUR 20,000.00 and EUR 2,500.00; eleven rules
+each (the outage fallback, insolvency, prior default, delinquency, the score floor and referral
+band, affordability, the exposure limit, unverified income, a foreign currency, a low-score cap).
+
+**Steps** - one person holding `CREDIT_POLICY_OFFICER` (which grants `CREDIT_POLICY_ADMINISTER` and
+`CREDIT_INVESTIGATE`), each act with its own `Idempotency-Key` and a body `{"reason": "…"}` naming
+this procedure:
+
+1. **The scorecard**: `POST /v1/operator/credit/scorecards/0190a1b2-5c0e-7000-8000-00000000c001/approval`.
+   The receipt shows `"status": "ACTIVE"`; audited `credit.ScorecardVersionActivated`,
+   `credit.ScorecardModelVersionActivated` published.
+2. **Each policy**: `POST /v1/operator/credit/policies/{d001 | d002 id}/approval`. Each receipt
+   shows `"status": "ACTIVE"`; audited `credit.PolicyVersionActivated`,
+   `credit.CreditPolicyVersionActivated` published.
+
+A missing reason is `422 credit.ReasonRequired`, a missing key `422 api.IdempotencyKeyRequired`, a
+second approval of a decided version `409 credit.PolicyStale`; an `UNDERWRITER` is `403`.
+
+**Verify.** `GET /v1/operator/credit/policies?product=PERSONAL_LOAN` (and `CREDIT_LINE`) answers the
+seeded id; `finapp.credit.policy.active{product}` reads 1 within 15 s and `CreditPolicyMissing`
+clears.
+
+**A later version** - always two people. Person A proposes the whole body,
+`POST /v1/operator/credit/policies` (or `/v1/operator/credit/scorecards`) with a key and a reason;
+person B, a **different** holder, approves at `…/{versionId}/approval` - the proposer is refused
+`403 credit.SelfApprovalRefused`, at the domain and by the `CHECK`. The activation retires the
+predecessor in the same transaction; requests already past `SUBMITTED` keep the versions they
+pinned, only new ones see the successor. One proposal waits per product (or family): a second is
+`409 credit.ProposalPending`. A policy without a fallback for every source kind it reads, with an
+approving fallback, or with no rule guaranteed to refuse an approval past its maximum exposure is
+`422 credit.PolicyIncomplete`; a malformed points table `422 credit.ScorecardInvalid`.
+
+**If a proposal is wrong.** Any holder - the proposer included, as a withdrawal - rejects it,
+`POST …/{versionId}/rejection` with a reason; then propose again. A version is never edited, and
+there is no route that edits or deletes one.
+
+### 6.2 The review queue - a referral nobody works is a silent decline
+
+**The objective** (`CreditObjectives.REVIEW_AGE`): no `OPEN` underwriting case waits longer than a
+day. `finapp.credit.review.age` is the oldest `OPEN` case's wait in seconds (database clock, cached
+15 s, 0 when none waits); `CreditReviewAged` fires when `max(finapp_credit_review_age_seconds)`
+exceeds 86400 for 30 min (ticket).
+
+**What a person does** - holders of `UNDERWRITER` (`CREDIT_UNDERWRITE`), every act keyed:
+1. Read the queue, oldest first: `GET /v1/operator/credit/review-cases` (optionally `?status=OPEN`).
+2. Take a case: `POST /v1/operator/credit/review-cases/{id}/assignment` - of two underwriters one
+   wins, the other `409 credit.CaseTaken`. Give it back with `…/release`.
+3. Decide it: `POST …/{id}/decision` with `outcome` (`APPROVED` or `DECLINED`), for an approval the
+   amount and currency, the catalogue's reason codes and a reason. A hard decline cannot be
+   approved (`422 credit.HardDeclineNotOverridable`); an approval above what the evaluation allows
+   or the party's exposure limit is `422 credit.ExposureLimitExceeded`.
+4. **Four eyes above the product's threshold.** An approval above `PERSONAL_LOAN`'s EUR 10,000.00 or
+   `CREDIT_LINE`'s EUR 2,500.00 (`CreditProduct.fourEyesThreshold`) is not recorded: the case moves
+   `AWAITING_SECOND`, and a **different** underwriter answers
+   `POST …/{id}/second-approval` with `{"decision": "APPROVE" | "REFUSE", "reason": …}` - the first
+   decider is refused `403 credit.SelfApprovalRefused`; a refusal sends the case back to the first.
+
+A case still `OPEN` when its request's 7-day validity ends closes with the request (`EXPIRED`); a
+case someone holds is never expired under them, so release what you will not decide.
+
+### 6.3 The other credit alerts (`infra/prometheus/rules/credit.yml`)
+
+- **`CreditDecisionLatencyAboveObjective`** (page) - more than 1% of the platform's own decisions
+  for a product took over 45 min from submission (`CreditObjectives.DECISION_LATENCY_P99`; a 30-min
+  rate, for 15 min); a person's decision is not held to it. Check `finapp_credit_progress_sweeper_enabled`
+  on every instance and `finapp_credit_request_open_age_seconds` by status for where requests stall.
+- **`CreditDataUnavailable`** (ticket) - over a fifth of a source kind's answers unavailable for
+  10 min. Decisions fall to each policy's fallback (`REFER`, so the review queue grows); read
+  `GET /v1/operator/reports/credit/sources` (`CREDIT_INVESTIGATE`) for the provider. **In Phase 10
+  this is expected on any traffic:** until unresolved questions #13 and #14 are answered no real
+  provider may be configured (`CreditSourceOrder` refuses one at startup), every data request names
+  the fail-safe (`bureau-none`, `findata-none`) and every answer is unavailable. Once providers can
+  be named, a failing one is disabled with `finapp.credit.<bureau|findata>.disabled` - new births
+  take the next in order, open requests keep the provider they were born naming (ADR-0085 §10).
+- **`CreditRequestOpenPastValidity`** (page) - a request outside `IN_REVIEW` open past 7 days: the
+  progress sweep is not expiring requests. Confirm it runs on some instance; the expiry is on the
+  database clock and needs no hand.
+- **`CreditDecisionDiverged`** (page) - a decision no longer replays from its sealed snapshot and
+  pinned versions (`INV-CRD-01`). An incident: replay each named decision through
+  `POST /v1/operator/credit/decisions/{id}/replay` (`CREDIT_INVESTIGATE`) to see what differs; never
+  repair a row.
+- **`CreditProgressSweeperOff`** / **`CreditDataRetrySweeperOff`** (ticket) - an instance runs with
+  `finapp.credit.progress.sweeper.enabled` / `finapp.credit.data.retry.sweeper.enabled` false. The
+  other instances carry the work; set it back to `true`.
+- **`CreditGaugesUnreadable`** (ticket) - a credit gauge reads NaN (its database read failed): the
+  replay proof, the open requests, the review queue or the active policies are unwatched until it
+  reads again. Check the instance's database connectivity.

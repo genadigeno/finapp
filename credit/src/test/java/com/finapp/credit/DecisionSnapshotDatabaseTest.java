@@ -79,6 +79,35 @@ class DecisionSnapshotDatabaseTest {
     }
 
     @Test
+    @DisplayName("a record the provider dates in the future is aged from our own recording - stale past the maximum age,"
+            + " re-collected (INV-CRD-08; P10-DOC-001)")
+    void aRecordDatedInTheFutureIsAgedFromItsRecording() throws Exception {
+        UUID party = IDS.next();
+        UUID decision = request(party);
+        inOneTransaction(uow -> seedBureau(uow, decision, party, databaseNow(uow).plus(MAX_AGE), cleanBureau()));
+        // Recorded long ago - planted by the owner, the record's birth trigger suspended for it.
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement ddl = owner.createStatement();
+                    PreparedStatement plant = owner.prepareStatement("UPDATE credit.credit_record SET recorded_at ="
+                            + " statement_timestamp() - ? * interval '1 millisecond' - interval '1 second'"
+                            + " WHERE data_request_id IN (SELECT id FROM credit.data_request WHERE decision_request_id = ?)")) {
+                ddl.execute("ALTER TABLE credit.credit_record DISABLE TRIGGER USER");
+                plant.setLong(1, MAX_AGE.toMillis());
+                plant.setObject(2, decision);
+                assertThat(plant.executeUpdate()).isEqualTo(1);
+                ddl.execute("ALTER TABLE credit.credit_record ENABLE TRIGGER USER");
+            }
+            owner.commit();
+        }
+        SnapshotFreezer.Freeze freeze = inOneTransaction(uow ->
+                freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation()));
+        assertThat(freeze).as("a provider's future date never keeps a record fresh")
+                .isInstanceOf(SnapshotFreezer.Freeze.Recollecting.class);
+        assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", decision)).isZero();
+    }
+
+    @Test
     @DisplayName("a re-collection on a database clock behind its stale record's birth is the latest data request - the"
             + " fresh record then freezes, never another re-collection (P10-TST-001's finding)")
     void aReCollectionOnAClockBehindItsStaleRecordIsTheLatest() throws Exception {

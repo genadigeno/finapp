@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 249 "Previously" blocks, newest first, from `X-TSK-017` back to project initiation. *(`X-TSK-017` is cross-cutting and completed after `P10-TST-002` and before `P10-TST-001`, so it stands between them.)* *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 250 "Previously" blocks, newest first, from `P10-TST-001` back to project initiation. *(`X-TSK-017` is cross-cutting and completed after `P10-TST-002` and before `P10-TST-001`, so it stands between them.)* *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,58 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P10-TST-001` — The credit decision storm** — `COMPLETE` (2026-10-09). M10.8 at 2 of 3. Decision correctness under every provider fault, crash, duplicate, activation and race at once, on two skewed instances: the ten-instance answer's capstone, `PASS` on its counts (every `Phase: 10` invariant; `DOD-TEST`, `DOD-FIN` by the exposure census). `CreditDecisionStormDatabaseTest` (`database`, `own-container`, listed in `ownContainerSuites`; one case, the storm about 245 s, about 4.6 minutes a run). **Two application contexts over one database**: A is the suite's own, its clock 5 s ahead of the server; B is a second `FinappApplication` in the same JVM, 5 s behind (`ServerSkewedClock`). Both pull from one simulated bureau (`bureau-sim-a`) and one simulated financial-data provider (`findata-sim-a`) through their real adapters, so the providers' counts span both instances. **The load** (at least 90 s, 15 rounds and 300 decisions; about 380 rounds, 530-740 decisions a run): four movers per instance submit at their own door for a pool of 72 parties across both products. The parties' figures are chosen through the simulators' own derivation - good, referral and bad profiles. The movers replay keys on the other instance, cancel, and send applicants without consent (refused `consent.ConsentRequired`). Each instance runs two progress sweepers and a retry sweeper. Two underwriters per instance take, release, decline, approve (above four eyes where a referral allows) and second-approve; a refused second approval goes back to its first underwriter. Two officers activate loan, line and scorecard versions mid-flight on both doors. A chaos actor arms every fault of both simulators: timeout, slow, malformed, partial, unknown status, unavailable, lost response, and a foreign-currency balance. It also withdraws consents - at random, and through the simulator's own hook between producing an answer and writing it - suspends standings, delivers answers twice (one data request asked from both instances at once) and files requests with a validity of seconds. **Every round, in ONE `REPEATABLE READ` snapshot, every census exact** (soft, so a failure names every reading):
+- **the exposure census**: order-free from decision rows and their snapshots. For each limit among a party's live approvals, the least bureau balance plus the approvals decided under a limit at most that one fit it.
+- exactly one decision per `DECIDED` request and none otherwise; every `ABANDONED` with its reason.
+- snapshot sequences 1..n, each assessed and evaluated once, each decision from its request's latest snapshot.
+- one open request per party and product.
+- one taker per case: takes less releases is 0 or 1, as the case's state says.
+- every `IN_REVIEW` request with one live case, and persons' decisions and `DECIDED` cases one-to-one.
+- received data requests and records one-to-one.
+- **the consent census**: a record whose every answer was written after its subject's withdrawal had committed is a breach. Ordered by one JVM sequence, never by clocks.
+
+**Then**:
+- **two-instance races**: the doors' refusals on both instances (another customer's request 404, a customer or an officer taking a case 403, an underwriter proposing a policy 403, no session 401); one key on both doors; two keys for one product (202 and 409); ten steppers (one edge per state); one case taken on both (200 and 409); a self second-approval refused; one second approval by two underwriters (200 and 409); one proposal approved by two officers (200 and 409); cancellation against evaluation (exactly one).
+- **the exposure races**: twelve parties' loan and line, each within its limit alone and not together, decided at one instant on A and B. The census runs FIRST; then one approval and one `CRD-EXPOSURE-LIMIT` decline per pair.
+- **the catalogue**: every fault of each simulator one at a time, one report per reference; an answer delivered twice (one record, one duplicate evidence, one pull); consent withdrawn mid-pull and after an answer; standing suspended before the freeze and in the deciding transaction; a source past its deadline (never asked again, the fallback refers); a stale record re-collected; a policy and a scorecard activated mid-decision (the pinned versions decide); six requests raced at their expiry (exactly one of `DECIDED`, `EXPIRED`); four open cases' expiry against their assignment.
+- **nine crash points**: the submission, the opening, the recording (a KILLED backend: `pg_terminate_backend` from a trigger), `READY`, the freeze, the decision (killed), its outbox event, the referral and a person's decision. The others are forced rollbacks. Nothing was doubled.
+
+**Drain, then at rest**:
+- **the simulators' counts exactly ours**: pulls equal produced references; every reference asked or produced is one of our data requests; references `RECEIVED` equal the recorded ones; a produced reference is received, withdrawn or past its deadline; nothing still asked; nothing asked for a party who never consented.
+- **every act counted**: audit rows equal their rows (decisions, data requests per kind, assignments, releases, refusals, persons' decisions and second approvals, cancellations, activations, the queue reads, the explanation and the replay); outbox events equal decisions and cases; both instances' decision and reason meters equal the rows.
+- **the replay census**: every decision `IDENTICAL` in this JVM, in a second JVM (`ReplayInAnotherJvm`, `UTF-16`, `ar-EG`, `America/Adak`, other identity hash codes) and by the rule-order oracle; the replay gauge clean.
+- the open-age and review-age gauges at zero on both instances.
+- **the needle walked**: a marker in every simulated answer, in no table but the evidence ciphertext, no log line, and no response the storm received (every response searched as it arrived).
+- the doors' latency recorded: submission p99 68-104 ms, a person's decision p99 about 110-145 ms.
+
+**Four judgement calls**, in ADR-0087's Follow-up: the order-free exposure census; the consent census's JVM sequence; a boundary race that leaves both conditionals refused, settled by the next step (observed, the design); crash points as forced rollbacks or killed backends.
+
+**Gate findings**:
+- **IMPORTANT, PRODUCTION DEFECT, FIXED**: a credit data request's birth stamp (`requested_at`, `statement_timestamp()`) is what the freeze and the `READY` step order "the latest data request of a kind" by, and the database clock steps back (`X-TSK-017`'s class). A re-collection born within a step read as older than the stale request it replaced, and was re-collected again until the clock passed it - four bureau data requests where one re-collection was due, in one storm run. These were redundant paid pulls, never a stale decision. `credit V015` stamps a birth `GREATEST(statement_timestamp(), the decision request's latest + 1 µs)`, serialised by the request's row lock. Red first: `DecisionSnapshotDatabaseTest#aReCollectionOnAClockBehindItsStaleRecordIsTheLatest`. Recorded in ADR-0063, ADR-0085 and `DISTRIBUTED_EXECUTION.md`.
+- **IMPORTANT, FIXED, a census defect**: the consent census as first written flagged every answer held mid-pull that was recorded. A reference asked twice at once had its repeat answered before the withdrawal committed, so the platform read in time; it went red on an unprobed run. Only the order rule was kept, and the probe was re-performed.
+- **IMPORTANT, FIXED**: a second approval refused `credit.ExposureLimitExceeded`, the party's reservations having moved, was not absorbed. A refused second approval came back to an underwriter the drain never served. Now handled, with every underwriter in the drain.
+- **IMPORTANT, FIXED**: four eyes under load was effectively absent (approvals above the threshold need an uncapped referral). The chaos now arms the foreign-currency balance more often, and underwriters approve above the threshold where they can. Still only 0-2 a run - the deterministic race carries it. Also fixed: the door refusals and the submission crash point were added.
+- **MINOR, FIXED**: `DecisionOrchestrationDatabaseTest#undueWorkNeverStarvesDueWork` (`P10-TSK-015`) failed once in the adjacent own-container run: claimed 0 of 5, the births' permits not yet due on a database clock just stepped back. It now waits for the database to say they are due.
+- **MINOR, recorded**: at the boundary, a deciding transaction that read "unexpired" under its lock can be refused by the trigger on a later statement's clock (`CreditStorageException`, rolled back). The request stays `EVALUATED` for the next step - the design ("the trigger re-judges both").
+- **MINOR, recorded**: the first green series' first run passed, but its results file was lost to a collision with an earlier stopped build. Every count reported is from a fresh results file.
+
+**PROBES**: THREE, ALL CAUGHT on their first runs by the census each was aimed at, and all re-performed on the final storm and caught again. Every restore byte-identical (sha256-verified).
+- The profile lock removed from the deciding transaction: caught by the exposure census in the round after the exposure races (the load's rounds stayed green - chance alone rarely puts one party's two products in the deciding step together).
+- The gate re-read removed from the recording transaction: caught by the consent census in load round 5, and in round 4 on the corrected census.
+- The evaluator iterating a hash set: caught by the replay census - this JVM all `IDENTICAL`, the second JVM 103 then 269 `DIVERGED` by `REASONS`.
+
+`MUTATION_TESTING.md` §2 +4 rows (three probes and the fix's red-first), §4 +1.
+
+**Multi-instance PASS**, on the storm's counts.
+
+**Financial**: proof only - the exposure census; credit moves no money.
+
+**NEXT TASK**: `P10-DOC-001` `READY`.
+
+**Verified** by fresh runs: the storm three consecutive runs green on the final code (243-247 s each). The adjacent database suites on the final tree: credit's database tier 69 across 8 suites; app's credit suites 46 across 6 in the shared JVM and 97 across 11 in their own containers - the storm a fourth time, the battery 12 of 12, `DecisionOrchestrationDatabaseTest` 12 of 12 - all 0 failures. The fleet `test architectureTest --continue` over the records: the hermetic tier 2539 across 436 suites in 18 modules and the architecture tier 210 across 50 - the document guards among them - 0 failures; `sharedkernel`'s two tasks were up to date (inputs unchanged, not re-executed). The fleet-wide database and kafka tiers are not run, on the owner's standing instruction (the backlog's recorded deviation).
 
 ### Previously
 

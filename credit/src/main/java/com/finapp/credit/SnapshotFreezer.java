@@ -120,6 +120,17 @@ public final class SnapshotFreezer {
         record ConsentWithdrawn(Set<CreditSourceKind> kinds) implements Freeze {}
     }
 
+    /**
+     * Locks {@code decisionRequest}'s data requests ({@code FOR UPDATE} by id - L4) in the caller's unit of work, so the
+     * evaluating step holds them BEFORE it shares the pinned versions (L5): the one credit lock order (ADR-0086 §7,
+     * {@code DISTRIBUTED_EXECUTION.md} §3; `P10-DOC-001`). The freeze's own lock then re-takes rows already held.
+     */
+    public void lockDataRequests(Connection uow, UUID decisionRequest) {
+        Objects.requireNonNull(uow, "uow");
+        Objects.requireNonNull(decisionRequest, "decisionRequest");
+        store.lockDataRequestsOf(uow, decisionRequest);
+    }
+
     /** Freezes {@code input} in the caller's unit of work. */
     public Freeze freeze(Connection uow, FreezeInput input, CorrelationId correlation) {
         Objects.requireNonNull(uow, "uow");

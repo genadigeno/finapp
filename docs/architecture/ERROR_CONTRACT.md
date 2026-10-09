@@ -933,7 +933,10 @@ The credit policy doors (`P10-TSK-012`, ADR-0086 §§4-6) answer the same codes 
 time: no fallback rule guaranteed to refer or decline with `CRD-SOURCE-UNAVAILABLE` for a source kind the policy reads
 (`INV-CRD-10`) - an approving fallback is unnameable - a subject or reason code outside the vocabulary, an operator
 and operand that disagree in type, an adverse effect carrying a non-adverse code (`INV-CRD-02`), an amount outside
-the product's currency, an unbounded parameter; the detail names the defect, never a threshold. `ProductNotOffered`
+the product's currency, an unbounded parameter, or no rule guaranteed to stop an approval past the policy's maximum
+exposure - `EXPOSURE_HEADROOM` below zero or `EXPOSURE` above the limit with a non-approving effect, since the
+evaluator judges exposure only through rules (`INV-CRD-09`; added at the Phase 10 exit review, `P10-DOC-001`,
+2026-10-09); the detail names the defect, never a threshold. `ProductNotOffered`
 answers a product the platform does not offer, on the proposal and on the read. The read
 (`GET /v1/operator/credit/policies?product=&at=`, `CREDIT_INVESTIGATE`) answers `NotFound` when no version was in
 force at the instant, and the platform's `api.ValidationFailed` for an `at` that is not an ISO-8601 instant.

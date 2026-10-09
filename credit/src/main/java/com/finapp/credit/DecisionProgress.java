@@ -276,6 +276,9 @@ public final class DecisionProgress {
         PinnedVersions pinned = request.pinned()
                 .orElseThrow(() -> new IllegalStateException("a READY request carries its pinned versions"));
         CreditPolicyVersionId policyId = CreditPolicyVersionId.of(pinned.policyVersion());
+        // L4 before L5 (P10-DOC-001): the data requests the freeze reads are locked before the pinned versions are
+        // shared - profile, request, case, data requests, versions is the only order a credit transaction takes.
+        freezer.lockDataRequests(uow, request.id().value());
         if (!policies.sharePinned(uow, policyId)
                 || !scorecards.sharePinned(uow, ScorecardModelVersionId.of(pinned.modelVersion()))) {
             throw new IllegalStateException("the request pins a version that does not exist");

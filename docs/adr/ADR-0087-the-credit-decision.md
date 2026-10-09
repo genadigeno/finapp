@@ -1,6 +1,6 @@
 # ADR-0087 — The credit decision: a keyed request, a sealed snapshot, born-once assessment, evaluation and decision, recorded immutably with ordered reason codes, explained and replayed
 
-Status: Proposed
+Status: Accepted (2026-10-09, `P10-DOC-001` — read against the code and corrected first)
 Date: 2026-10-07
 Phase: 10
 Context: Credit · Platform · Identity · Events
@@ -33,11 +33,14 @@ That sets the bar:
 ## Decision
 
 1. **The `DecisionRequest` is the input envelope, keyed at submission, with an explicit machine.**
-   - `POST /v1/me/credit/decision-requests` (MFA-assured session; the party's standing `ACTIVE`
-     and KYC `VERIFIED` checked in-transaction; consent present or `403 credit.ConsentRequired`)
+   - `POST /v1/me/credit/decision-requests` (a `MULTI_FACTOR` session when the identity has an
+     active TOTP factor, `403 identity.AssuranceRequired` otherwise — an identity without a factor
+     is not locked out; the party's standing `ACTIVE` and KYC `VERIFIED` checked in-transaction,
+     else `409 credit.ApplicantNotEligible`; consent present for every source kind, else
+     `409 consent.ConsentRequired` naming the purpose — §Follow-up, `P10-TSK-014` (1)–(3))
      takes product, requested amount, term and declared income and expenditure, under the
      idempotency claim `credit.decision:<actorType>:<actorId>`; ten same-key submissions make one
-     request and replay one response (`409 platform.IdempotencyInProgress` while in flight). It
+     request and replay one response (`409 api.IdempotencyInProgress` while in flight). It
      answers `202` with the request id; `CreditDecisionRequested` is emitted (never declared
      income). The request's `expires_at` is submission plus the product's declared request
      validity (7 days for both products, ADR-0084 §6), on the database clock. Submission is not
@@ -62,16 +65,23 @@ That sets the bar:
      `ABANDONED`. Refused: any edge out of a terminal state; `COLLECTING → EVALUATED`;
      `EVALUATED → COLLECTING` (a frozen snapshot is never re-collected — a stale one makes a new
      request); `IN_REVIEW → EXPIRED` once a person has taken the case (ADR-0089 §7). Held by a
-     generated `CHECK`, an every-writer edge trigger and the domain; history in
-     `decision_request_event`, append-only. `CreditDecisionRequestClosed` carries the reason on
-     cancellation, expiry or abandonment.
+     status `CHECK` (a hand-written list of the nine states, `credit V010`), an every-writer edge
+     trigger and the domain; history in `decision_request_event`, append-only.
+     `CreditDecisionRequestClosed` carries the closing status (`CANCELLED`, `EXPIRED` or
+     `ABANDONED`) and, for an abandonment, its reason (`STANDING_LOST` or `CONSENT_WITHDRAWN`) —
+     only `ABANDONED` carries one, by `CHECK`.
 
 2. **The snapshot is sealed: canonical JSON, SHA-256, sequenced per request** (`INV-CRD-07`).
    `decision_snapshot` is keyed `UNIQUE (decision_request_id, sequence)`, one snapshot per
    evaluation: sequence 1 is frozen in the step that leaves `READY`, and a successor exists only
    when the deciding transaction finds reserved exposure changed (point 5). The first is frozen
    by reading the data requests' records under the request's row lock (data requests by id, plan
-   §7) and judging their freshness on the database clock (ADR-0085 §8). Its body is the canonical
+   §7) and judging their freshness on the database clock (ADR-0085 §8). *(As built
+   (`P10-DOC-001`, 2026-10-09): a record's age runs from `LEAST(retrieved_at, recorded_at)` — the
+   earlier of the provider's stated retrieval and credit's own recording — judged against
+   `transaction_timestamp()` less the policy's maximum age (`INV-CRD-08`), so a provider clock
+   ahead of the database's never keeps stale data fresh; corrected by `P10-DOC-001`, which found
+   the freeze judging `retrieved_at` alone.)* Its body is the canonical
    JSON of every attribute, sorted by `CreditAttributeCode`, each value in a fixed textual form
    (money as minor units plus currency; no floating point; no locale), with its provenance; plus
    the requested product, amount and term and the pinned policy, model, engine and seam versions
@@ -99,12 +109,15 @@ That sets the bar:
    a referral), `valid_until`, the pinned versions, and the snapshot it was made from with that
    snapshot's hash. **No role may `UPDATE`
    or `DELETE` it** — privilege and trigger, the migrator included (failure scenario 25). An
-   adverse outcome with no reason code is refused by `CHECK` and by the domain. A later change of
+   adverse outcome with no reason code is refused by the domain and, at commit, by the deferred
+   constraint trigger `credit_decision_is_explained` (`credit V011`), which refuses a capped
+   approval (approved below its request) without its reasons too. A later change of
    mind is a new request, never an amended decision. The decision has **no consumption column**:
    the consumption Phase 11's loan will record is a separate born-once fact,
    `credit_decision_consumption` (`UNIQUE (decision_id)`), whose table this phase creates empty
    (ADR-0088 §4). Credit publishes the **`CreditDecisions`** port — the decision read Phase 11's
-   `lending` will use; nothing consumes it in Phase 10.
+   `lending` will use; no module outside `credit` consumes it in Phase 10 (within the context, the
+   customer desk and `CreditInvestigations` read through it).
 
 5. **The deciding transaction is profile-first, and re-reads exposure under the lock**
    (`INV-CRD-09`, plan §12.7).
@@ -131,10 +144,22 @@ That sets the bar:
      person and the case's reason codes, the system evaluation kept as the case's basis. A
      person's approval is bounded by the evaluation's approved amount and by the exposure limit
      re-read under the profile lock: beyond it `422 credit.ExposureLimitExceeded`, nothing
-     recorded, and the person decides again (ADR-0089 §6).
+     recorded, and the person decides again (ADR-0089 §6). *(As built (`P10-DOC-001`,
+     2026-10-09): a `REFER` evaluation approves no amount (`credit V009`), so "the evaluation's
+     approved amount" is the referral's ceiling — the case's `approvable_minor`, the request capped
+     by every `CAP_AMOUNT` rule the basis evaluation triggered, stamped at the case's birth
+     (`credit V013`) — and, when a successor is frozen under the person, the lesser of it and the
+     successor evaluation's ceiling; the auto-approval ceiling is not applied (ADR-0089
+     §Follow-up (1)).)*
    - The progress sweep, which starts from a request, **releases its claim transaction and opens
      the deciding one profile-first**, so no writer ever takes profile after request: profile →
      request → case → data requests → versions `FOR SHARE` is the only order (plan §7).
+     *(As built (`P10-DOC-001`, 2026-10-09): the review found the evaluating step
+     (`READY → EVALUATED`) sharing the pinned versions (5) before the freeze locked the data
+     requests (4). No cycle was possible — no writer holding a data request's lock waits on a
+     version's — but the stated order was not the code's; corrected by `P10-DOC-001`: the step
+     now locks its data requests (`SnapshotFreezer.lockDataRequests`) before it shares the pinned
+     versions, and the sentence above is true.)*
 
 6. **Progress is a leaderless sweep over database-stamped permits.**
    `CreditDecisionProgressSchedule` (every instance, off in test contexts, its
@@ -175,20 +200,27 @@ That sets the bar:
      edit flips the verdict (scenarios 23–24).
    - **The customer** (`GET /v1/me/credit/decision-requests/{id}`, owner-scoped — another party's
      id is `404`, never `403`) sees the status and, when decided, the outcome, approved amount and
-     term, the validity and the **customer texts of the adverse reasons in order**. Never a
+     term, the validity and the **customer texts of every reason in order** (a capped approval's
+     ceiling code included — not adverse, but the decision's reason all the same). Never a
      bureau's raw data, an internal score, a rule's threshold or a risk signal; a needle per
      figure proves it.
 
 9. **Events: nine types, two refused.** Through the transactional outbox, in the state change's
    transaction, with the platform envelope (event id, type, aggregate id, event version 1,
-   schema version, occurred-at from the database, producer `credit`, correlation, causation):
+   schema version, occurred-at, producer `credit`, correlation, causation):
    `CreditDecisionRequested`, `CreditDataCollected`, `CreditDataUnavailable`,
    `CreditAssessmentCreated`, `ManualReviewRequired`, `CreditDecisionRecorded`,
    `CreditDecisionRequestClosed`, `CreditPolicyVersionActivated` /
    `ScorecardModelVersionActivated` (`CreditDecisionRecorded` is version 2 since 2026-10-09, its
    reason codes one field each - §Follow-up). None carries an attribute, a score or declared income.
    Evolution adds optional fields only; a breaking change is a new type. Credit consumes no event
-   in Phase 10; Phase 11 will consume `CreditDecisionRecorded`.
+   in Phase 10; Phase 11 will consume `CreditDecisionRecorded`. *(As built (`P10-DOC-001`,
+   2026-10-09): the occurred-at is the producing instance's business timestamp
+   (`clock.instant()` / `Instant.now(clock)` in `DecisionRequests`, `CreditDataCollection`,
+   `CreditAssessments`, `DecisionMaking`, `RequestClosures` and the two administrations — the
+   outbox's `occurred_at` is application-supplied, platform `V006`), not the database's, as this
+   point first said. No credit window is judged from it: every expiry, permit, deadline,
+   freshness, validity, reservation and age is judged in SQL on the database clock (point 7).)*
    - **`CreditDecisionUpdated` is refused**: a decision is never updated (`INV-CRD-02`); an
      event announcing an update would advertise a mutation the schema forbids.
    - **`UnderwritingStarted` is refused**: a case's assignment is an internal workflow step,
@@ -256,14 +288,17 @@ Negative:
   `RESTRICTED-FINANCIAL`.
 - A changed mind costs the applicant a new request.
 
-Operational impact: `finapp.credit.decision{product, outcome, policy_version, decided_by}`,
-`finapp.credit.decision.latency{product}`, `finapp.credit.reason{product, reason_code}`,
+Operational impact: `finapp.credit.decision{product, outcome, policy_version, decision_maker}`,
+`finapp.credit.decision.latency{product, decision_maker}` (the plan's `decided_by` tag is
+`decision_maker`, `system` | `person` — §Follow-up, `P10-TSK-016` (4)), `finapp.credit.reason{product, reason_code}`,
 `finapp.credit.request.open.age{status}`, `finapp.credit.replay{verdict}`, the progress sweeper's
 enabled gauge; spans for submission, collection, freeze, evaluation and decision linked by the
 request's correlation.
 Security impact: customer routes owner-scoped in every query with uniform `404`s; customer
-responses carry no internal figure (needle-proven); explanation and replay audited with a
-reason; snapshot and decision rows `INSERT` only.
+responses carry no internal figure (needle-proven); the explanation audited per serving
+(`credit.ExplanationRead`, no reason required), replay and the evidence read audited with a
+reason (`credit.DecisionReplayed`, `credit.EvidenceRead`) — *corrected by `P10-DOC-001`, which
+found "explanation and replay audited with a reason"*; snapshot and decision rows `INSERT` only.
 Financial impact: none posted. An approval reserves exposure until it lapses or is consumed
 (ADR-0088); it is the fact Phase 11's loan application will reference.
 
@@ -278,14 +313,15 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
 
 ## Follow-up
 
-- `P10-TSK-008`: the snapshot, canonical form and hash, the freeze. `-014`: submission, the
-  customer doors, the open-request unique. `-015`: the progress schedule, the pin, expiry against
-  every earlier step, crash recovery. `-016`: the deciding transaction, the immutable decision,
-  the successor snapshot, the empty `credit_decision_consumption` table, the `CreditDecisions`
-  port, the expiry-against-decision boundary race and the crash between evaluation and
-  decision. `-017`: the customer explanation, the operator explanation and the evidence read.
-  `-019`: replay and `CreditReplayProof`.
-- `P10-TST-001` (the storm) and `P10-TST-002` (the reproducibility battery, ≥ 10,000 applicants).
+- **As built**: `P10-TSK-008` built the snapshot, canonical form and hash, and the freeze; `-014`
+  submission, the customer doors and the open-request unique; `-015` the progress schedule, the
+  pin, expiry against every earlier step and crash recovery; `-016` the deciding transaction, the
+  immutable decision, the successor snapshot, the empty `credit_decision_consumption` table, the
+  `CreditDecisions` port, the expiry-against-decision boundary race and the crash between
+  evaluation and decision; `-017` the customer explanation, the operator explanation and the
+  evidence read; `-019` replay and `CreditReplayProof` (each recorded below).
+- **As built**: `P10-TST-001` (the storm) and `P10-TST-002` (the reproducibility battery, 10,000
+  applicants), recorded below.
 - *As built by `P10-TSK-014` (2026-10-08), the submission and the customer doors.* `credit V010`:
   `decision_request` (the terms frozen, `submitted_at`/`expires_at`/the first permit stamped by the database, one
   open per party and product by partial unique, the pins nullable until `SUBMITTED -> COLLECTING` and written once,
@@ -312,7 +348,10 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   freeze**: a basis gone between submission and the first step abandons the request (`CONSENT_WITHDRAWN`) before any
   data request is opened, so no access is ever opened on a withdrawn basis. (3) **The providers are asked after the
   step's commit**, holding no connection; an ask that fails is the retry sweep's (`P10-TSK-006`), and the step reads
-  the rows the next time - so a crash at any point leaves rows another instance carries on from. (4) **Nothing is
+  the rows the next time - so a crash at any point leaves rows another instance carries on from. *(As built
+  (`P10-DOC-001`, 2026-10-09): the retry sweep's claim now skips a data request whose decision request is closed -
+  cancelled, expired, abandoned or decided - so no paid pull is asked for a request that needs no more data; corrected
+  by `P10-DOC-001`, which found the claim retrying them.)* (4) **Nothing is
   reserved before decisions exist**: the snapshot's reserved-exposure seam is `NothingReservedBeforeDecisions` (zero,
   version 1) until `P10-TSK-016` records decisions and replaces it with a new version; an `EVALUATED` request waits for
   that deciding step, and an `IN_REVIEW` request's expiry for its case (`-018`).
@@ -338,10 +377,12 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   decrypt is recorded `FAILED` and committed before the `503` - never a served read without a record, nor an attempt
   without one. (3) **The customer's words are the catalogue's**: a decision's reasons render as their customer texts
   in ordinal order (the ceiling's included, for a capped approval), and a closed request's status in a fixed plain
-  sentence per closure; codes, scores, thresholds and attribute values never reach a customer body. (4) **The
+  sentence per closure; codes, scores, thresholds and attribute values never reach a customer body. *(As built
+  (`P10-DOC-001`, 2026-10-09): the customer view also returns an abandoned request's `closureReason` -
+  `STANDING_LOST` or `CONSENT_WITHDRAWN`, the closure enum, not a catalogue reason code - beside its sentence.)* (4) **The
   investigator's explanation reads the PINNED policy's frozen rules** beside the stored rule results, so it explains
   what decided, never what is in force now.
-- *As built by `P10-TSK-019` (2026-10-08), the replay.* Three decisions taken in the building, recorded here. (1) **The seal is checked before anything is re-run, and covers the pinned versions**: the SHA-256 recomputed over the stored canonical text must equal the snapshot row's digest and the decision's, and the snapshot's pinned versions the decision's; any disagreement - or text the strict parser refuses - is `HASH`, and the replay stops there, since inputs that are not the ones decided on prove nothing either way. (2) **A decision that cannot be re-run is a fifth kind, `UNREPLAYABLE`** - a pinned row missing, an engine version this build does not hold, a rule reading an attribute the snapshot never held - a verdict like the others rather than an exception that would hide every other decision's in the proof. (3) **The assessment's arithmetic is one function**: `CreditAssessments.figures`, run by the assessment and by its replay alike, so the two cannot drift; replay re-derives in memory and writes nothing. A person's decision (its request's case `DECIDED`) re-derives the evaluation it rested on - its snapshot's stored evaluation, the successor's when the reservation moved - and is verified equal to the case's recorded decision; a person's judgement is verified, never re-derived.
+- *As built by `P10-TSK-019` (2026-10-08), the replay.* Three decisions taken in the building, recorded here. (1) **The seal is checked before anything is re-run, and covers the pinned versions**: the SHA-256 recomputed over the stored canonical text must equal the snapshot row's digest and the decision's, and the snapshot's pinned versions the decision's; any disagreement - or text the strict parser refuses - is `HASH`, and the replay stops there, since inputs that are not the ones decided on prove nothing either way. (2) **A decision that cannot be re-run is a fifth kind, `UNREPLAYABLE`** - a pinned row missing, an engine version this build does not hold, a rule reading an attribute the snapshot never held - a verdict like the others rather than an exception that would hide every other decision's in the proof. *(As built (`P10-DOC-001`, 2026-10-09): precisely, `UNREPLAYABLE` is a fifth `Divergence` kind beside `HASH`, `OUTCOME`, `AMOUNT` and `REASONS`; the verdict stays one of two, `IDENTICAL` or `DIVERGED`, and an unreplayable decision is `DIVERGED` naming it.)* (3) **The assessment's arithmetic is one function**: `CreditAssessments.figures`, run by the assessment and by its replay alike, so the two cannot drift; replay re-derives in memory and writes nothing. A person's decision (its request's case `DECIDED`) re-derives the evaluation it rested on - its snapshot's stored evaluation, the successor's when the reservation moved - and is verified equal to the case's recorded decision; a person's judgement is verified, never re-derived.
 - *Corrected 2026-10-09, outside the task loop: `CreditDecisionRecorded` is event version 2.* As built by `-016`,
   version 1 joined every reason code into ONE payload value (`reasonCodes`, underscore-separated). `EventPayload`
   bounds a value at 200 characters, so a decision citing eight or more codes (the longest eight; any ten) threw while
@@ -389,5 +430,6 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   rollbacks or killed backends**: a trigger raising beneath the step's write, or one calling
   `pg_terminate_backend(pg_backend_pid())` - the application role ending its own session mid-transaction - at the
   recording and deciding transactions.
-- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
-  accepting it.
+- **Acceptance.** **As built** (`P10-DOC-001`, 2026-10-09): the Phase 10 review read this ADR
+  against the code, corrected it in place above (and the code where the review found it wrong), and
+  accepted it.

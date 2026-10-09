@@ -315,6 +315,37 @@ class BureauCollectionDatabaseTest {
     }
 
     @Test
+    @DisplayName("the retry sweep stops asking for a closed request - an open one beside it is still re-asked (P10-DOC-001)")
+    void theRetrySweepStopsAskingForAClosedRequest() throws Exception {
+        CreditDataCollection collection = collection(adapter, CLOCK, TIMING);
+        engine.arm(SimulatedBureauEngine.Fault.SILENT);
+        CreditDataRequestId closed = opened(collection.open(opening(consentedParty()), correlation()));
+        engine.arm(SimulatedBureauEngine.Fault.SILENT);
+        CreditDataRequestId open = opened(collection.open(opening(consentedParty()), correlation()));
+        assertThat(status(closed)).isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        assertThat(status(open)).isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        migrator("UPDATE credit.decision_request SET status = 'CANCELLED' WHERE id = '"
+                + uuid("SELECT decision_request_id FROM credit.data_request WHERE id = ?", closed) + "'");
+        makeDue(closed);
+        makeDue(open);
+        long askedClosed = asked(closed);
+        long askedOpen = asked(open);
+
+        List<CreditDataRequestId> claimed = collection.claimDue(20);
+        assertThat(claimed).as("the closed request's data request is never claimed again").doesNotContain(closed);
+        assertThat(claimed).as("the open request's is").contains(open);
+        claimed.forEach(id -> collection.retry(id, correlation()));
+        assertThat(status(closed)).as("left as it was").isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        assertThat(status(open)).isEqualTo(CreditDataRequestStatus.RECEIVED);
+        assertThat(asked(closed)).as("the bureau never asked again for the closed request").isEqualTo(askedClosed);
+        assertThat(asked(open)).as("asked once more for the open one").isEqualTo(askedOpen + 1);
+    }
+
+    private long asked(CreditDataRequestId id) {
+        return engine.idempotencyKeys().stream().filter(reference(id)::equals).count();
+    }
+
+    @Test
     @DisplayName("a crash after the opening transaction is re-asked by the sweep")
     void aCrashAfterTheOpeningTransactionIsReasked() throws Exception {
         UUID party = consentedParty();
@@ -481,10 +512,15 @@ class BureauCollectionDatabaseTest {
         migrator("UPDATE credit.data_request SET status = 'CONSENT_WITHDRAWN' WHERE id = " + u);
         assertRefusedAsOwner("UPDATE credit.data_request SET status = 'REQUESTED' WHERE id = " + u);
         assertRefusedAsOwner("UPDATE credit.data_request SET status = 'RECEIVED' WHERE id = " + u);
+        assertRefusedAsOwner("UPDATE credit.data_request SET status = 'UNAVAILABLE' WHERE id = " + u); // P10-DOC-001
+        // UNAVAILABLE never jumps to RECEIVED: an answer is recorded only from REQUESTED (P10-DOC-001).
+        CreditDataRequestId unanswered = opened(collection.open(opening(party), correlation()));
+        assertRefusedAsOwner("UPDATE credit.data_request SET status = 'RECEIVED' WHERE id = '" + unanswered.value() + "'");
         // REQUESTED -> RECEIVED, then terminal.
         migrator("UPDATE credit.data_request SET status = 'RECEIVED' WHERE id = " + r);
         assertRefusedAsOwner("UPDATE credit.data_request SET status = 'UNAVAILABLE' WHERE id = " + r);
         assertRefusedAsOwner("UPDATE credit.data_request SET status = 'CONSENT_WITHDRAWN' WHERE id = " + r);
+        assertRefusedAsOwner("UPDATE credit.data_request SET status = 'REQUESTED' WHERE id = " + r); // P10-DOC-001
         // Frozen, monotone and undeletable.
         assertRefusedAsOwner("UPDATE credit.data_request SET request_reference = 'CDR-other' WHERE id = " + r);
         assertRefusedAsOwner("UPDATE credit.data_request SET deadline_at = deadline_at + interval '1 hour' WHERE id = " + r);

@@ -217,6 +217,101 @@ class CreditDecisionDatabaseTest {
     }
 
     @Test
+    @DisplayName("expiry and decision raced at the boundary over at least 200 requests, instances five seconds fast and"
+            + " slow: every request exactly one of DECIDED and EXPIRED, a decision exactly where DECIDED (P10-DOC-001)")
+    void expiryAndDecisionAtTheBoundaryOverTwoHundredRequests() throws Exception {
+        int born = 240;
+        ExecutorService builders = Executors.newFixedThreadPool(8);
+        List<UUID> ids = new ArrayList<>();
+        try {
+            List<Future<UUID>> pending = new ArrayList<>();
+            for (int i = 0; i < born; i++) {
+                pending.add(builders.submit(() -> evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000),
+                        Duration.ofSeconds(75))));
+            }
+            for (Future<UUID> request : pending) {
+                ids.add(request.get(5, TimeUnit.MINUTES));
+            }
+        } finally {
+            builders.shutdownNow();
+        }
+        java.util.concurrent.ScheduledExecutorService racers = Executors.newScheduledThreadPool(48);
+        java.util.concurrent.atomic.AtomicInteger atTheBoundary = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger refused = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            List<java.util.concurrent.ScheduledFuture<?>> races = new ArrayList<>();
+            int index = 0;
+            for (UUID id : ids) {
+                // Each request's two racers fire together at a different offset from ITS expiry - from 200 ms before
+                // it to 100 ms after (a lead of -100..200 ms), so the boundary is met from both sides. The Docker
+                // VM's clock drifts against the host's (X-TSK-017), so the offset is taken from the database a second
+                // before the race, never from a reading a minute old - the first version, timed once at the start,
+                // saw every request land on one side.
+                long lead = 10L * (index++ % 31) - 100;
+                long remaining = remainingMillis(id);
+                Runnable racer = () -> {
+                    Clock fast = Clock.offset(Clock.system(ZoneOffset.UTC), Duration.ofSeconds(5));
+                    Clock slow = Clock.offset(Clock.system(ZoneOffset.UTC), Duration.ofSeconds(-5));
+                    try {
+                        long close = remainingMillis(id);
+                        if (close > 0) {
+                            atTheBoundary.incrementAndGet();
+                        }
+                        Thread.sleep(Math.max(0, close - lead));
+                        race(2, List.<Callable<DecisionProgress.Step>>of(
+                                () -> boundaryStep(fast, id, refused), () -> boundaryStep(slow, id, refused)));
+                    } catch (Exception failure) {
+                        throw new IllegalStateException(failure);
+                    }
+                };
+                races.add(racers.schedule(racer, Math.max(0, remaining - 1_000), TimeUnit.MILLISECONDS));
+            }
+            for (java.util.concurrent.ScheduledFuture<?> race : races) {
+                race.get(5, TimeUnit.MINUTES);
+            }
+        } finally {
+            racers.shutdownNow();
+        }
+        assertThat(atTheBoundary.get()).as("raced at its own expiry, not after it").isGreaterThanOrEqualTo(200);
+        int decided = 0;
+        for (UUID id : ids) {
+            awaitDatabase("SELECT status <> 'EVALUATED' OR expires_at <= statement_timestamp() - interval '3 seconds'"
+                    + " FROM credit.decision_request WHERE id = ?", id);
+            if ("EVALUATED".equals(scalar("SELECT status FROM credit.decision_request WHERE id = ?", id))) {
+                step(CreditWorld.progress(CreditWorld.CLOCK, deciding()), id);
+            }
+            assertThat(count("SELECT count(*) FROM credit.decision_request_event WHERE decision_request_id = ?"
+                    + " AND from_status = 'EVALUATED'", id)).as("exactly one edge out of EVALUATED: " + id).isEqualTo(1);
+            String status = scalar("SELECT status FROM credit.decision_request WHERE id = ?", id);
+            assertThat(status).as(id.toString()).isIn("DECIDED", "EXPIRED");
+            assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", id))
+                    .as("a decision exactly where DECIDED: " + id).isEqualTo("DECIDED".equals(status) ? 1 : 0);
+            decided += "DECIDED".equals(status) ? 1 : 0;
+        }
+        System.out.printf("boundary races: %d requests, %d at the boundary, %d DECIDED, %d EXPIRED, %d refused steps%n",
+                ids.size(), atTheBoundary.get(), decided, ids.size() - decided, refused.get());
+        assertThat(decided).as("the boundary met from both sides - some decided before it").isPositive();
+        assertThat(ids.size() - decided).as("and some found it passed").isPositive();
+    }
+
+    private static long remainingMillis(UUID id) {
+        return Long.parseLong(scalar("SELECT (extract(epoch FROM expires_at - statement_timestamp()) * 1000)::bigint::text"
+                + " FROM credit.decision_request WHERE id = ?", id));
+    }
+
+    /** One racer's step at the boundary; a deciding transaction the trigger refuses on a later statement's clock rolls
+     * back whole and leaves the request EVALUATED for the next step - the recorded design, counted. */
+    private static DecisionProgress.Step boundaryStep(Clock clock, UUID id,
+            java.util.concurrent.atomic.AtomicInteger refused) {
+        try {
+            return step(CreditWorld.progress(clock, deciding(clock)), id);
+        } catch (RuntimeException boundary) {
+            refused.incrementAndGet();
+            return DecisionProgress.Step.NOTHING;
+        }
+    }
+
+    @Test
     @DisplayName("a skewed decider neither refuses early nor decides late: five seconds fast it decides a request still"
             + " valid; five seconds slow it decides nothing past the expiry - the database's clock, not its own")
     void aSkewedDeciderNeitherRefusesEarlyNorDecidesLate() throws Exception {
@@ -249,8 +344,35 @@ class CreditDecisionDatabaseTest {
                     + decision + "'", "42501");
             refused(app, "INSERT INTO credit.credit_decision_reason (decision_id, ordinal, reason_code) VALUES ('"
                     + decision + "', 9, 'CRD-INSOLVENCY')", "P0001");
+            // P10-DOC-001: the side tables, each rank alone - the reasons and the consumption fact.
+            refused(app, "DELETE FROM credit.credit_decision_reason WHERE decision_id = '" + decision + "'", "42501");
         }
+        // A consumption fact for this decision (Phase 11's to write; inserted here only to be refused changing).
+        CreditWorld.execute("INSERT INTO credit.credit_decision_consumption (id, decision_id, consumed_at)"
+                + " VALUES (gen_random_uuid(), ?::uuid, now())", decision);
+        try (Connection app = DatabaseRoles.application()) {
+            refused(app, "UPDATE credit.credit_decision_consumption SET consumed_at = now() WHERE decision_id = '"
+                    + decision + "'", "42501");
+            refused(app, "DELETE FROM credit.credit_decision_consumption WHERE decision_id = '" + decision + "'", "42501");
+        }
+        // A decline carries reason rows for the owner's refusals to bite on: 35,000.00 on the bureau beside 10,000.00
+        // requested is past the loan's 40,000.00 limit.
+        UUID declinedParty = UUID.randomUUID();
+        BALANCES.put(declinedParty, 3_500_000L);
+        UUID declinedRequest = evaluated(declinedParty, CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        decide(deciding(), declinedRequest);
+        String declined = scalar("SELECT id::text FROM credit.credit_decision WHERE decision_request_id = ?",
+                declinedRequest);
+        assertThat(count("SELECT count(*) FROM credit.credit_decision_reason WHERE decision_id = ?::uuid", declined))
+                .as("the decline's reasons exist to be refused").isPositive();
         try (Connection owner = DatabaseRoles.migrator()) {
+            refused(owner, "UPDATE credit.credit_decision_reason SET reason_code = 'CRD-INSOLVENCY' WHERE decision_id = '"
+                    + declined + "'", "P0001");
+            refused(owner, "DELETE FROM credit.credit_decision_reason WHERE decision_id = '" + declined + "'", "P0001");
+            refused(owner, "UPDATE credit.credit_decision_consumption SET consumed_at = now() WHERE decision_id = '"
+                    + decision + "'", "P0001");
+            refused(owner, "DELETE FROM credit.credit_decision_consumption WHERE decision_id = '" + decision + "'",
+                    "P0001");
             refused(owner, "UPDATE credit.credit_decision SET approved_minor = 1 WHERE id = '" + decision + "'", "P0001");
             refused(owner, "UPDATE credit.credit_decision SET valid_until = now() + interval '1 year' WHERE id = '"
                     + decision + "'", "P0001");
@@ -260,6 +382,41 @@ class CreditDecisionDatabaseTest {
         }
         assertThat(scalar("SELECT outcome FROM credit.credit_decision WHERE id = ?", UUID.fromString(decision)))
                 .isEqualTo("APPROVED");
+    }
+
+    @Test
+    @DisplayName("every edge a raw writer tries out of EVALUATED backwards, and out of DECIDED and EXPIRED at all, is"
+            + " refused by the trigger (P10-DOC-001)")
+    void everyEdgeOutOfEvaluatedDecidedAndExpiredIsRefused() throws Exception {
+        UUID evaluated = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        UUID decided = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        decide(deciding(), decided);
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = ?", decided)).isEqualTo("DECIDED");
+        UUID expiring = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), Duration.ofSeconds(3));
+        awaitDatabase("SELECT expires_at <= statement_timestamp() - interval '3 seconds' FROM credit.decision_request"
+                + " WHERE id = ?", expiring);
+        assertThat(step(CreditWorld.progress(CreditWorld.CLOCK, deciding()), expiring))
+                .isEqualTo(DecisionProgress.Step.EXPIRED);
+        try (Connection app = DatabaseRoles.application()) {
+            for (String target : List.of("SUBMITTED", "COLLECTING", "READY", "CANCELLED")) {
+                refused(app, "UPDATE credit.decision_request SET status = '" + target + "' WHERE id = '" + evaluated + "'",
+                        "P0001");
+            }
+            for (UUID terminal : List.of(decided, expiring)) {
+                for (String target : List.of("SUBMITTED", "COLLECTING", "READY", "EVALUATED", "IN_REVIEW", "DECIDED",
+                        "CANCELLED", "EXPIRED")) {
+                    if (target.equals(scalar("SELECT status FROM credit.decision_request WHERE id = ?", terminal))) {
+                        continue;
+                    }
+                    refused(app, "UPDATE credit.decision_request SET status = '" + target + "' WHERE id = '" + terminal
+                            + "'", "P0001");
+                }
+                refused(app, "UPDATE credit.decision_request SET status = 'ABANDONED', closure_reason = 'STANDING_LOST'"
+                        + " WHERE id = '" + terminal + "'", "P0001");
+            }
+        }
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = ?", evaluated)).isEqualTo("EVALUATED");
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = ?", expiring)).isEqualTo("EXPIRED");
     }
 
     @Test
@@ -337,7 +494,9 @@ class CreditDecisionDatabaseTest {
             assertThat(CreditTestClient.field(payload, "reasonCode" + (i + 1))).as("code %d", i + 1).isEqualTo(codes.get(i));
         }
         assertThat(payload).doesNotContain("\"reasonCode" + (codes.size() + 1) + "\"").doesNotContain("\"reasonCodes\"")
-                .as("never an attribute").doesNotContain("740").doesNotContain("BUREAU_");
+                // The bureau score (740) as a VALUE - not as three hex digits a UUIDv7 or a digest may carry by chance
+                // (this read doesNotContain("740") until the exit review, P10-DOC-001, saw a decision id 01a121cc-7402-...).
+                .as("never an attribute").doesNotContainPattern(":\\s*\"?740\"?[,}]").doesNotContain("BUREAU_");
     }
 
     // ------------------------------------------------------------------ the re-reads and the lock order

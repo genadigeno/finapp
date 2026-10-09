@@ -74,14 +74,15 @@ groups:
           description: "{{ $value }} decisions replay DIVERGED. Replay each through POST /v1/operator/credit/decisions/{id}/replay to see what differs, by kind."
 
       - alert: CreditPolicyMissing
-        # An offered product with no ACTIVE policy: no request for it can be decided until two officers activate one.
+        # A product with no ACTIVE policy: none of its requests is accepted (credit.ProductNotOffered) or decided until a
+        # person other than its proposer activates a version - the seeded v1, proposed by its migration, by one officer.
         expr: min by (product) (finapp_credit_policy_active) == 0
         for: 15m
         labels:
           severity: ticket
         annotations:
           summary: "The credit product {{ $labels.product }} has no active policy"
-          description: "No {{ $labels.product }} request can be decided until a policy version is proposed and activated by a second officer (ADR-0086)."
+          description: "No {{ $labels.product }} request is accepted or decided until a policy version is activated by a person other than its proposer - the seeded v1 by one officer (ADR-0086; OPERATIONS_RUNBOOK.md section 6)."
 
       - alert: CreditProgressSweeperOff
         # Every instance runs the progress sweep, leaderless; it is off only in test contexts, which are never scraped.

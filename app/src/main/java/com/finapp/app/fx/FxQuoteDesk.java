@@ -49,7 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * the commit, before any provider call; the wire ({@link QuoteIssuance#source}) holds no
  * connection; Tx2 runs {@link QuoteIssuance#issue} and completes the claim in the same
  * transaction. A replay answers the recorded outcome byte for byte; a flight in progress answers
- * {@code 409 platform.IdempotencyInProgress}, so ten same-key requests make one provider call.
+ * {@code 409 api.IdempotencyInProgress}, so ten same-key requests make one provider call.
  */
 public final class FxQuoteDesk {
 

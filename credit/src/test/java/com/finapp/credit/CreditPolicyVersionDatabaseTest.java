@@ -230,6 +230,55 @@ class CreditPolicyVersionDatabaseTest {
     }
 
     @Test
+    @DisplayName("over a GENERATED history of twelve activations, each switch instant and the microsecond before it are"
+            + " answered exactly (P10-DOC-001)")
+    void theVersionActiveAtAnyInstantOverAGeneratedHistory() throws Exception {
+        java.util.Random random = new java.util.Random(20_261_009L);
+        List<CreditPolicyVersionId> versions = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            versions.add(activate(LINE, 920 + i));
+            Thread.sleep(random.nextInt(15));
+        }
+        for (int i = 0; i < versions.size(); i++) {
+            Instant from = effective(versions.get(i), "effective_from");
+            assertThat(activeAt(from)).as("switch %d belongs to its successor", i).contains(versions.get(i));
+            if (i > 0) {
+                assertThat(effective(versions.get(i - 1), "effective_to")).as("switch %d: the periods meet", i)
+                        .isEqualTo(from);
+                assertThat(activeAt(from.minusNanos(1000))).as("the microsecond before switch %d", i)
+                        .contains(versions.get(i - 1));
+            }
+        }
+        assertThat(activeAt(effective(versions.get(11), "effective_from").plusSeconds(3600))).contains(versions.get(11));
+    }
+
+    @Test
+    @DisplayName("a proposal and a rejection are each audited once, by operation and target, with the reason; a refused"
+            + " approval and a stale rejection record nothing (P10-DOC-001)")
+    void aProposalAndARejectionAreEachAudited() throws Exception {
+        Actor proposer = employee();
+        CreditPolicyAdministration.Proposed proposed = propose(LOAN, 912, proposer);
+        String target = proposed.id().value().toString();
+        assertThat(count(audited("credit.PolicyVersionProposed", target))).as("the proposal").isEqualTo(1);
+        assertThatExceptionOfType(CreditPolicyAdministration.SelfApprovalRefused.class).isThrownBy(() -> inOneTransaction(
+                uow -> ADMINISTRATION.approve(uow, proposed.id(), proposer, "my own", correlation())));
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = '" + target + "'"
+                + " AND operation <> 'credit.PolicyVersionProposed'")).as("a refused approval records nothing").isZero();
+        inOneTransaction(uow -> ADMINISTRATION.reject(uow, proposed.id(), employee(), "withdrawn after review",
+                correlation()));
+        assertThat(count(audited("credit.PolicyVersionRejected", target))).as("the rejection").isEqualTo(1);
+        assertThatExceptionOfType(CreditPolicyAdministration.PolicyStale.class).isThrownBy(() -> inOneTransaction(
+                uow -> ADMINISTRATION.reject(uow, proposed.id(), employee(), "too late", correlation())));
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = '" + target + "'"))
+                .as("the stale rejection recorded nothing").isEqualTo(2);
+    }
+
+    private static String audited(String operation, String target) {
+        return "SELECT count(*) FROM platform.audit_record WHERE operation = '" + operation + "' AND target_id = '"
+                + target + "' AND reason IS NOT NULL AND outcome = 'SUCCEEDED'";
+    }
+
+    @Test
     @DisplayName("a retirement that commits alone is refused at commit - only beside its successor")
     void aRetirementNeverCommitsAlone() throws SQLException {
         CreditPolicyVersionId active = activate(LOAN, 910);

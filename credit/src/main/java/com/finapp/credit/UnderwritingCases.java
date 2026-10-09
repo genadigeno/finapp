@@ -248,7 +248,7 @@ public final class UnderwritingCases {
                 throw new HardDeclineNotOverridable();
             }
             if (judgement.approved().orElseThrow().compareTo(locked.approvable()) > 0) {
-                throw new ExposureLimitExceeded("the approval is above the evaluation's approved amount");
+                throw new ExposureLimitExceeded("the approval is above the referral's ceiling");
             }
             move(unitOfWork, locked, new UnderwritingCaseStore.Edge(UnderwritingCaseStatus.AWAITING_SECOND,
                     Optional.of(actor.id()), Optional.of(firstWrite(judgement, actor.id())), Optional.empty(),
@@ -349,7 +349,7 @@ public final class UnderwritingCases {
         }
         Money ceiling = lesser(locked.approvable(), ceiling(deciding, ready.policy().policy()));
         if (approved.compareTo(ceiling) > 0) {
-            throw new ExposureLimitExceeded("the approval is above the evaluation's approved amount");
+            throw new ExposureLimitExceeded("the approval is above the referral's ceiling");
         }
         if (exposure(ready.snapshot().content(), approved).compareTo(ready.policy().policy().maximumExposure()) > 0) {
             throw new ExposureLimitExceeded("the approval is beyond the party's exposure limit");

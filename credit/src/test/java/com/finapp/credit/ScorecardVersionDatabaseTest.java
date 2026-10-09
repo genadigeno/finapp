@@ -92,6 +92,32 @@ class ScorecardVersionDatabaseTest {
     }
 
     @Test
+    @DisplayName("a proposal and a rejection are each audited once, by operation and target, with the reason; a refused"
+            + " approval and a stale rejection record nothing (P10-DOC-001)")
+    void aProposalAndARejectionAreEachAudited() throws Exception {
+        Actor proposer = employee();
+        ScorecardAdministration.Proposed proposed = propose(614, proposer);
+        String target = proposed.id().value().toString();
+        assertThat(count(audited("credit.ScorecardVersionProposed", target))).as("the proposal").isEqualTo(1);
+        assertThatExceptionOfType(ScorecardAdministration.SelfApprovalRefused.class).isThrownBy(() -> inOneTransaction(
+                uow -> ADMINISTRATION.approve(uow, proposed.id(), proposer, "my own", correlation())));
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = '" + target + "'"
+                + " AND operation <> 'credit.ScorecardVersionProposed'")).as("a refused approval records nothing").isZero();
+        inOneTransaction(uow -> ADMINISTRATION.reject(uow, proposed.id(), employee(), "withdrawn after review",
+                correlation()));
+        assertThat(count(audited("credit.ScorecardVersionRejected", target))).as("the rejection").isEqualTo(1);
+        assertThatExceptionOfType(ScorecardAdministration.PolicyStale.class).isThrownBy(() -> inOneTransaction(
+                uow -> ADMINISTRATION.reject(uow, proposed.id(), employee(), "too late", correlation())));
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = '" + target + "'"))
+                .as("the stale rejection recorded nothing").isEqualTo(2);
+    }
+
+    private static String audited(String operation, String target) {
+        return "SELECT count(*) FROM platform.audit_record WHERE operation = '" + operation + "' AND target_id = '"
+                + target + "' AND reason IS NOT NULL AND outcome = 'SUCCEEDED'";
+    }
+
+    @Test
     @DisplayName("the proposer cannot approve - refused by the domain, and by the CHECK for a raw-SQL writer")
     void theProposerCannotApprove() throws SQLException {
         Actor proposer = employee();

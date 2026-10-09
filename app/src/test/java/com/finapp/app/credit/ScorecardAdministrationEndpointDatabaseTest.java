@@ -116,8 +116,16 @@ class ScorecardAdministrationEndpointDatabaseTest {
         HttpResponse<String> noReason = post(SCORECARDS + "/" + v3 + "/rejection", "{}", officer, someKey());
         assertThat(noReason.statusCode()).isEqualTo(422);
         assertThat(noReason.body()).contains("credit.ReasonRequired");
-        assertThat(post(SCORECARDS + "/" + v3 + "/rejection", decision("withdrawn"), officer, someKey()).statusCode())
-                .isEqualTo(200);
+        // The rejection is keyed: its replay under the same key is the same response, never a second act
+        // (P10-DOC-001 - PHASE_GATES' Idempotency clause names the rejection).
+        String rejectionKey = someKey();
+        HttpResponse<String> rejected = post(SCORECARDS + "/" + v3 + "/rejection", decision("withdrawn"), officer,
+                rejectionKey);
+        assertThat(rejected.statusCode()).isEqualTo(200);
+        HttpResponse<String> replayed = post(SCORECARDS + "/" + v3 + "/rejection", decision("withdrawn"), officer,
+                rejectionKey);
+        assertThat(replayed.statusCode()).isEqualTo(200);
+        assertThat(replayed.body()).as("replayed byte-identical").isEqualTo(rejected.body());
         HttpResponse<String> stale = post(SCORECARDS + "/" + v3 + "/approval", decision("late"), other, someKey());
         assertThat(stale.statusCode()).isEqualTo(409);
         assertThat(stale.body()).contains("credit.PolicyStale");

@@ -1,6 +1,6 @@
 # ADR-0088 — Affordability and exposure: exact decimal in one currency, rounded once at declared points, and the exposure an approval reserves judged under the party's profile lock
 
-Status: Proposed
+Status: Accepted (2026-10-09, `P10-DOC-001` — read against the code and corrected first)
 Date: 2026-10-07
 Phase: 10
 Context: Credit · Shared Kernel · Platform
@@ -54,14 +54,22 @@ traps:
    exposure = bureau total balance              -- external, from the snapshot
             + platform outstanding credit       -- PlatformCreditExposure port: zero in Phase 10, recorded
             + reserved exposure                 -- Σ approved amount of this party's decisions
-                                                --   APPROVED, valid_until > now (DB clock), with no
+                                                --   APPROVED, in the product's currency,
+                                                --   valid_until > now (DB clock), with no
                                                 --   credit_decision_consumption row
             + requested amount
    within   ⇔ exposure ≤ policy.max_exposure
    ```
 
    `EXPOSURE` and `EXPOSURE_HEADROOM` (`policy.max_exposure − exposure`) are the derived figures
-   rules read (ADR-0086 §1).
+   rules read (ADR-0086 §1). *(As built (`P10-DOC-001`, 2026-10-09): a required input absent from
+   the snapshot — declared income or expenditure or the bureau's monthly obligations for
+   affordability; the bureau's total balance, the outstanding credit or the reservation for
+   exposure — makes the figure `Unassessable`, naming what was absent, never a zero
+   (`AffordabilityAssessment`, `ExposureAssessment`). A rule reading an unassessable figure is
+   `UNASSESSED` and does not trigger, and an approval resting on an unassessed rule becomes the
+   policy's unavailable fallback (`REFER` or `DECLINE`, `PolicyEvaluatorV1`) — so the system
+   never approves on an exposure it could not compute.)*
 
 3. **Exact decimal, one currency, rounding declared and done once** (`INV-CRD-12`).
    - All amounts are `Money` (ADR-0003) in the product's single currency; a source in another
@@ -86,8 +94,9 @@ traps:
    (`UNIQUE (decision_id)`) — never a column on the decision, which no role ever updates
    (`INV-CRD-02`). Phase 10 builds the lapse (a comparison with the clock, not a state) and creates
    the consumption table empty; **Phase 11's loan writes it**, nothing writes it in Phase 10.
-   Reserved exposure is therefore exactly: `APPROVED`, `valid_until > statement_timestamp()`, and
-   no consumption row. A declined or referred decision reserves nothing; a referral reserves only
+   Reserved exposure is therefore exactly: `APPROVED`, in the product's currency (the read filters
+   `d.currency`, `JdbcReservedExposure`), `valid_until > statement_timestamp()`, and no
+   consumption row. A declined or referred decision reserves nothing; a referral reserves only
    when a person approves it.
 
 5. **Exposure is judged under the party's profile row lock** (`INV-CRD-09`). The reserved
@@ -101,7 +110,25 @@ traps:
    by the evaluation's approved amount and by the exposure limit, and beyond it the act is refused
    `422 credit.ExposureLimitExceeded`, nothing recorded, and the person decides again
    (ADR-0089 §6). The profile row holds no figures; it exists to be the lock target (`INSERT`
-   only).
+   only). *(As built (`P10-DOC-001`, 2026-10-09), four precisions.)* **(a) The system path is
+   bounded through a rule.** The evaluator (`PolicyEvaluatorV1`) judges exposure only through the
+   policy's rules, so a system approval honoured `max_exposure` only if some rule read `EXPOSURE`
+   or `EXPOSURE_HEADROOM`: a four-eyes-activated policy without one would have approved past its
+   own limit. The seeded v1 policies and every test policy carry `EXPOSURE_LIMIT`
+   (`EXPOSURE_HEADROOM LT 0`, `DECLINE`), so nothing had; corrected by `P10-DOC-001` — the
+   proposal door now refuses `422 credit.PolicyIncomplete` a policy with no rule guaranteed to
+   stop an approval past its maximum exposure (`CreditPolicy.boundsExposure`,
+   `PolicyRule.refusesExposurePast`: `EXPOSURE_HEADROOM` `LT`/`LE` x with x ≥ 0, or `EXPOSURE`
+   `GT`/`GE` x with x ≤ the limit; the effect `HARD_DECLINE`, `DECLINE` or `REFER`), judged at
+   proposal. **(b) A person's limit check** (`UnderwritingCases.exposure`) is, on the deciding
+   snapshot, the platform's outstanding credit plus the reserved exposure (re-read under the
+   profile lock) plus the person's approved amount, plus the bureau's total balance **only when
+   the snapshot holds it** — an absent bureau balance is the referral's question, which the person
+   answers (ADR-0089 §Follow-up (2)); the platform's own terms stay bound by the limit. **(c) The
+   bound's amount** for a referral is the case's ceiling, `approvable_minor` (ADR-0089 §2). **(d) The
+   profile's grants** are `SELECT, INSERT` plus a column grant `UPDATE (party_id)` that exists only
+   so `SELECT … FOR UPDATE` is legal; the trigger refuses every actual `UPDATE`, `DELETE` and
+   `TRUNCATE` for every role (`credit V003`).
 
 6. **The platform's outstanding credit arrives through a port that answers zero, recorded.**
    `PlatformCreditExposure`, declared in `credit` and implemented in `app`, answers zero for every
@@ -174,7 +201,13 @@ Positive:
 - Affordability and exposure are exact, reproducible across instances and JVMs, and replayable
   under the engine version that computed them.
 - No party's approved exposure can exceed its limit under any concurrency — the storm's exposure
-  census checks it (`P10-TST-001`).
+  census checks it (`P10-TST-001`). *(As built (`P10-DOC-001`, 2026-10-09): precisely, the exposure
+  the platform knows — outstanding credit plus reserved exposure plus the approval, with the
+  bureau's total balance wherever the snapshot read it. A system approval is bounded through the
+  policy's exposure rule, which the proposal door now requires (point 5 (a), corrected by
+  `P10-DOC-001`; before it, a policy without one would not have bounded system approvals, though
+  the seeded v1 and every test policy carry `EXPOSURE_LIMIT`); a person may approve a referral
+  whose bureau balance is absent, bounded by the platform's own terms (point 5 (b)).)*
 - Phase 11 plugs in outstanding credit and consumption without changing the formula.
 
 Negative:
@@ -199,10 +232,13 @@ ADR-0003, ADR-0039.
 
 ## Follow-up
 
-- `P10-TSK-009`: affordability, its property tests and worked cases. `-010`: exposure, the
-  reserved-exposure contract, the `PlatformCreditExposure` port. `-016`: the profile-first deciding
-  transaction, the successor snapshot (ADR-0087 §5), the JDBC reserved-exposure read and the empty
-  `credit_decision_consumption` table. `-018`: a person's approval bounded by the limit.
+- **As built**: `P10-TSK-009` built affordability, its property tests and worked cases; `-010`
+  exposure, the reserved-exposure contract and the `PlatformCreditExposure` port; `-016` the
+  profile-first deciding transaction, the successor snapshot (ADR-0087 §5), the JDBC
+  reserved-exposure read (`JdbcReservedExposure`, version 2) and the empty
+  `credit_decision_consumption` table (`credit V011`, `UNIQUE (decision_id)`, written by no Phase 10
+  code); `-018` a person's approval bounded by the limit (point 5 (b)).
 - Phase 11: the loan writes the consumption fact and the outstanding-credit composition.
-- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
-  accepting it.
+- **Acceptance.** **As built** (`P10-DOC-001`, 2026-10-09): the Phase 10 review read this ADR
+  against the code, corrected it in place above (and the proposal door, point 5 (a)), and accepted
+  it.

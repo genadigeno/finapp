@@ -1378,20 +1378,25 @@ See `PHASE_GATES.md` §Phase 10.
 ### 18. What must NOT be implemented yet
 Loan origination, disbursement, servicing, interest, collections, BNPL.
 
-*(**Elaborated by [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md)** and ADR-0084…0089 (`Proposed`) at the
-Phase 9 → 10 transition, 2026-10-07: twenty-four items across eight milestones in `BACKLOG.md`
+*(**Elaborated by [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md)** and ADR-0084…0089 (`Proposed` then;
+`Accepted` 2026-10-09, `P10-DOC-001`) at the Phase 9 → 10 transition, 2026-10-07: twenty-four items across eight milestones in `BACKLOG.md`
 (`P10-TSK-001`…`-021`, `P10-TST-001`…`-002`, `P10-DOC-001`), the machines in
 `CREDIT_DECISIONING_LIFECYCLES.md` and the invariants `INV-CRD-01`…`12` in
 `FINANCIAL_INVARIANTS.md`. The eighteen sections above are kept as written and made current here
 where they had fallen behind the decisions; where they disagree with this addendum or the plan,
-the addendum and the plan are right. §18 stands, and `PHASE_10_PLAN.md` §17 extends it. Until
-Phase 10's first task lands, nothing in this addendum is implemented.)*
+the addendum and the plan are right. §18 stands, and `PHASE_10_PLAN.md` §17 extends it. Every
+item of the addendum is built — `P10-TSK-001`…`-021`, `X-TSK-017`, `P10-TST-001` and
+`P10-TST-002` are complete, none cut — and the Phase 10 exit review (`P10-DOC-001`, 2026-10-09)
+corrected each statement below to the code as built; it read "Until Phase 10's first task lands,
+nothing in this addendum is implemented".)*
 
 - *§3 and §5 — **one new module, every seam a port** (ADR-0084). Credit (context 17) is one
   module, `credit`, depending on `platform` and `sharedkernel` alone (`CreditModuleIsolationTest`):
   consent, the party's standing and the risk signal are reached through ports `app` implements
-  (`CreditConsentGate`, `CreditPartyStanding`, `CreditRiskSignal`, `PlatformCreditExposure`, beside
-  the provider ports `CreditBureau` and `FinancialDataProvider`), with no edge to `consent`, `kyc`,
+  (`CreditConsentGate`, `CreditPartyStanding` — implemented by `PartyCreditStanding` over party's
+  store, the live customer `ACTIVE` — `CreditRiskSignal`, `PlatformCreditExposure`, beside the
+  provider-neutral `CreditDataSource` both provider ports implement, `CreditBureau` and
+  `FinancialDataProvider`), with no edge to `consent`, `kyc`,
   `party` or `ledger`, and no module depends on `credit` in Phase 10 (Phase 11's `lending` will,
   through the published decision-read port `CreditDecisions`). Collecting credit data as a
   second module was weighed and refused: its only consumer is credit's own snapshot. §5's
@@ -1414,8 +1419,9 @@ Phase 10's first task lands, nothing in this addendum is implemented.)*
 - *§6 — **the data model as decided** (ADR-0085…0089). "Credit Profile" becomes the party's credit
   identity — one row per party, holding no figures, the row every deciding transaction locks first.
   "Bureau Request/Response (evidence retained)" becomes the data request per source (bureau or
-  financial data) with its attempts, the born-once Credit Bureau Record (or financial-data record)
-  of normalised Credit Attributes, and the raw answer as encrypted evidence with a stored
+  financial data) with its attempts, the born-once **Credit Record** — one `credit_record` table for
+  both source kinds, `source_kind` `BUREAU` or `FINANCIAL_DATA` *(this read "the born-once Credit
+  Bureau Record (or financial-data record)" until the exit review)* — of normalised Credit Attributes, and the raw answer as encrypted evidence with a stored
   `retain_until` — the application role cannot read it, and no purge runs in Phase 10
   (crypto-shredding is Phase 15's). "Decision Input Snapshot" becomes the **Decision Snapshot** —
   the canonical attributes with provenance, sorted, its SHA-256 stored and re-verified, one per
@@ -1435,8 +1441,9 @@ Phase 10's first task lands, nothing in this addendum is implemented.)*
   approvals, re-read under the party's profile lock in the deciding transaction (`INV-CRD-09`).*
 - *§2, §5 and §12 — **affordability, exposure and underwriting added.** §2 named affordability
   without a method: it is exact decimal in the product's one currency — income (the lower of
-  verified and declared) less expenditure (the higher), bureau obligations and an annuity at the
-  policy's stress rate, against the policy's minimum disposable income; a source in another currency
+  verified and declared) less expenditure (the higher), bureau obligations and the repayment — an
+  annuity at the policy's stress rate for `PERSONAL_LOAN`, the limit times the policy's minimum
+  payment ratio for `CREDIT_LINE` — against the policy's minimum disposable income; a source in another currency
   is never converted (ADR-0088). Exposure gains its concurrency rule: decisions for one party
   serialise, so two approvals never together exceed the limit. And §5's "underwriting" gains its
   manual half: a `REFER` opens an **Underwriting Case** decided by a person with reason codes,
@@ -1444,9 +1451,13 @@ Phase 10's first task lands, nothing in this addendum is implemented.)*
   "documented fallback: decline, refer, or degraded policy" is decided: a source unavailable past
   its deadline leaves its attributes `ABSENT` and fires the policy's declared fallback, `REFER` or
   `DECLINE` — **no degraded policy**, never an approval (`INV-CRD-10`), and a policy without the
-  fallback for every source it reads is refused at proposal.*
+  fallback for every source it reads is refused at proposal — as, since the exit review
+  (`P10-DOC-001`, 2026-10-09), is one with no rule guaranteed to stop an approval past its maximum
+  exposure (`INV-CRD-09`), because the evaluator judges exposure only through rules.*
 - *§7 — **the API work as decided.** The customer submits for self (`POST
-  /v1/me/credit/decision-requests`, keyed, MFA-assured, `202` — the decision arrives later), reads
+  /v1/me/credit/decision-requests`, keyed, `202` — the decision arrives later — stepping up to a
+  `MULTI_FACTOR` session only when the identity has a TOTP factor enrolled, the `P4-TSK-007`
+  conditional; this read "MFA-assured" until the exit review), reads
   the request (owner-scoped; another party's is `404`) — when decided, the outcome and the adverse
   reasons' customer texts in order, which is §2's adverse action explanation, never a score,
   threshold, attribute or bureau datum — cancels before evaluation, and reads a profile summary.
@@ -1468,13 +1479,17 @@ Phase 10's first task lands, nothing in this addendum is implemented.)*
   updated; a change of mind is a new request). Payloads carry identifiers, versions, outcomes and
   reason codes, never an attribute, figure or payload; Phase 10 has no consumer outside `credit`.*
 - *§9 — **security as decided** (ADR-0085). Bureau access requires recorded consent — two new
-  purposes, `CREDIT_BUREAU_ACCESS` and `FINANCIAL_DATA_ACCESS`, the gate checked when a data
-  request opens, at every retry and again when its answer is recorded, and re-read at the freeze
-  and in the deciding transaction (`INV-CRD-03`) — and is itself audited.
+  purposes, `CREDIT_BUREAU_ACCESS` and `FINANCIAL_DATA_ACCESS`, the gate checked at submission
+  (refused with consent's own `409 consent.ConsentRequired`), when a data request opens, at every
+  retry and again when its answer is recorded, and re-read at the freeze and in the deciding
+  transaction (`INV-CRD-03`) — and is itself audited.
   "Strict retention limits" becomes a stored `retain_until` per evidence row (the product's declared
   retention, default 25 months), enforced by Phase 15's purge. Evidence is encrypted under its own
-  key purpose; bureau data and every attribute are `RESTRICTED-FINANCIAL`, absent from logs,
-  metrics, spans, events and exceptions. Three permissions and two roles — `CREDIT_POLICY_ADMINISTER`
+  key purpose (`finapp.credit.evidence.key`); bureau data is `RESTRICTED-FINANCIAL` — every
+  attribute's integer, money and boolean value and the evidence's ciphertext, an attribute's code
+  value, absence and currency `CONFIDENTIAL` (`DATA_CLASSIFICATION.md`; "every attribute
+  `RESTRICTED-FINANCIAL`" until the exit review) — absent from logs, metrics, spans, events and
+  exceptions. Three permissions and two roles — `CREDIT_POLICY_ADMINISTER`
   and `CREDIT_INVESTIGATE` under `CREDIT_POLICY_OFFICER`, `CREDIT_UNDERWRITE` under `UNDERWRITER`.*
 - *§10 — **counts, ages and verdicts, never a value** (ADR-0072, unchanged): the decision counter by
   product, outcome, policy version and decider, latency, reasons, data requests by source and
@@ -1494,7 +1509,8 @@ Phase 10's first task lands, nothing in this addendum is implemented.)*
   ADR-0085 (credit data collection, consent, evidence and retention), ADR-0086 (policy and model as
   versioned data — §14's "policy versioning"), ADR-0087 (the decision, its snapshot and replay —
   §14's "decision reproducibility"), ADR-0088 (affordability and exposure) and ADR-0089
-  (underwriting), each `Proposed` until the exit review reads it against the code. §14's "bureau
+  (underwriting), each read against the code and `Accepted` by the exit review (`P10-DOC-001`,
+  2026-10-09). §14's "bureau
   adapter and evidence retention" ADR is ADR-0085. `CREDIT_MODEL.md` is updated by the tasks that
   build what it describes.*
 - *§2 and §15 — **the milestone map.** The capabilities and the deliverables land across eight
@@ -1510,14 +1526,17 @@ Phase 10's first task lands, nothing in this addendum is implemented.)*
   - *M10.5 Decisioning — `-014`…`-017`: requests decided end to end across instances; decisions
     immutable, explained to the customer.*
   - *M10.6 Underwriting — `-018`: referrals decided by people under four-eyes.*
-  - *M10.7 Proof — `-019`…`-021`: every decision replayed; a second bureau (cut first); meters
-    and reports.*
+  - *M10.7 Proof — `-019`…`-021`: every decision replayed; a second bureau and source selection
+    (the first cut, and built); meters and reports.*
   - *M10.8 Exit — `P10-TST-001`, `P10-TST-002`, `P10-DOC-001`: the storm, the battery, the exit
     review against `PHASE_GATES.md` §Phase 10.*
 
   *If the phase must shrink, `P10-TSK-021` (a second bureau and source selection) is cut first,
   its deferral recorded with Phase 15 as owner, provider-neutrality then met by the port's contract
-  suite and the single adapter.*
+  suite and the single adapter. As built, nothing was cut: `P10-TSK-021` landed (2026-10-08) —
+  `bureau-sim-b` and a provider order per source kind, the provider stamped on each data request
+  at birth, no failover — and production selects only the fail-safes until unresolved questions
+  #13 and #14 are answered (`P10-DOC-001`, 2026-10-09).*
 - *§18 — **extended** (`PHASE_10_PLAN.md` §17): besides lending's origination, disbursement,
   servicing, interest, collections and BNPL, Phase 10 builds no loan application or offer, no
   counter-offer or credit pricing (Phase 11's offer), no ledger posting or hold, no risk score or

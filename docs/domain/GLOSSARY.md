@@ -17,16 +17,16 @@ automatically aggregates or tables". Nothing here declares a class, a table or a
 
 **Written before anything was implemented.** At `P0-DOC-011` no production class existed for any
 term below — Phase 0 delivered the financial and platform kernel and *zero* business capability.
-That is no longer so: Phases 1 to 9 built classes for many of them, Phase 6's merchant, checkout,
-fee and payout terms, Phase 8's settlement and reconciliation terms and Phase 9's FX and
-cross-border terms included. Entries still name
+That is no longer so: Phases 1 to 10 built classes for many of them, Phase 6's merchant, checkout,
+fee and payout terms, Phase 8's settlement and reconciliation terms, Phase 9's FX and
+cross-border terms and Phase 10's credit terms included. Entries still name
 no class, except where a class's name collides with a term (`MerchantSettlement`, §2 and §5). The
 owning module column names where each concept lives, or — for a later phase's term — **will**
 live, per [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) §4, which records the
 phase each module arrives in. *(Corrected at the Phase 6 review, `P6-DOC-001`: this said "Nothing
 here is implemented". "Phases 1 to 6" corrected to 1 to 8 at the Phase 8 exit review,
-`P8-DOC-001`, 2026-10-01, and to 1 to 9 at the Phase 9 exit review, `P9-DOC-001`,
-2026-10-07.)*
+`P8-DOC-001`, 2026-10-01, to 1 to 9 at the Phase 9 exit review, `P9-DOC-001`,
+2026-10-07, and to 1 to 10 at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09.)*
 
 ---
 
@@ -646,25 +646,33 @@ the Phase 9 → 10 transition, 2026-10-07 — ADR-0084…0089 (`Proposed`), `PHA
 planned, and the task that builds a concept corrects its entry to the code. The machines they
 name are in `CREDIT_DECISIONING_LIFECYCLES.md`.)*
 
+*(Built, and read against the code by the Phase 10 exit review, `P10-DOC-001`, 2026-10-09:
+`P10-TSK-001`…`-021`, `X-TSK-017` and `P10-TST-001` built every concept below, so the *planned*
+markers are gone and each entry states what was built. Credit Bureau Record is renamed Credit
+Record — one `credit_record` table holds both source kinds — and six terms are added
+alphabetically, each its own table or code concept that neither list named: Credit Data Request,
+Credit Evidence, Decision Consumption, Decision Replay, Engine Version and Policy Evaluation.
+Affordability Assessment, Credit Assessment, Credit Attribute, Credit Data, Credit Data Source,
+Credit Policy, Credit Product and Underwriting Case corrected to the code.)*
+
 ### Credit Profile
 **Is:** a Party's credit identity in this platform — one row per party, born once, holding no
 figures of its own — and the row every deciding transaction for that party locks first, so two
-decisions for one party serialise (*planned, Phase 10*).
+decisions for one party serialise.
 **Not:** the Credit Data, a Credit Score or a Credit Decision. The profile is the anchor; the data
 is evidence, the score one derived figure and the decision the outcome. *(This entry read "the
 assembled view of a Party's credit position — bureau data, internal history, exposure" until the
 Phase 9 → 10 transition, 2026-10-07: assembling those is the Decision Snapshot's job, per
 request, and a profile that stored them would be a second, drifting copy.)*
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Credit Score
 **Is:** one derived figure — the versioned scorecard Model Version's points over a Decision
-Snapshot, integer arithmetic only — answering *how likely is this Party to repay?* (*planned,
-Phase 10*).
+Snapshot, integer arithmetic only — answering *how likely is this Party to repay?*.
 **Not:** a Risk Score, and not a Credit Decision (see §2). Nor a bureau's own score, which is a
 Credit Attribute in the snapshot — evidence the scorecard may read, never our score. *(This entry
 read "ours or a bureau's" until the Phase 9 → 10 transition, 2026-10-07.)*
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Risk Score
 **Is:** a numeric assessment of the likelihood that an action is fraudulent or abusive.
@@ -680,21 +688,22 @@ ADR-0084, `MODULE_ARCHITECTURE.md` §4)*
 **Is:** the recorded, immutable outcome for one Decision Request — `APPROVED` or `DECLINED`, the
 approved amount and term, its validity, the ordered Reason Codes, who decided (the system or a
 person), the pinned Policy Version, Model Version and engine version, and its Decision Snapshot's
-hash — born once, never updated or deleted by any role (*planned, Phase 10*).
+hash — born once, never updated or deleted by any role.
 **Not:** a score, and not Underwriting (the assessment that produced it). Nor a loan, or a Loan
 Offer: Phase 11's Loan Application will reference a decision; the decision moves no money.
 `INV-CRD-01` requires it to be reproducible; `INV-CRD-02` requires reason codes sufficient for an
 adverse-action explanation. A change of mind is a new request, never an update; its consumption
-by a Phase 11 loan is a separate born-once fact, never a change to the decision.
-**Owned by:** `credit` (planned, Phase 10)
+by a Phase 11 loan is a separate born-once fact, the Decision Consumption, never a change to the
+decision.
+**Owned by:** `credit`
 
 ### Underwriting
 **Is:** the assessment weighing a Party's Credit Assessment against a versioned Credit Policy —
 the deterministic evaluator's run over a snapshot or, for a referral, a person's review in an
-Underwriting Case (*planned, Phase 10*).
+Underwriting Case.
 **Not:** the Credit Decision it produces. See §2. Nor the Underwriting Case, which is the record of
 one manual review; underwriting is the activity, automatic or manual.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Loan Application
 **Is:** a Party's request for credit, with its own lifecycle.
@@ -724,12 +733,12 @@ Phase 10 it is computed per request as bureau total balance + platform outstandi
 until Phase 11's loans, recorded) + the **reserved exposure** of the party's current approvals
 (approved, unexpired on the database clock, with no consumption fact) + the requested amount, and
 the reserved part is re-read under the party's Credit Profile lock in the deciding transaction, so
-concurrent approvals never together exceed the policy's limit (*planned, Phase 10*).
+concurrent approvals never together exceed the policy's limit.
 **Not:** the outstanding balance of one loan. Exposure is what a limit is checked against, and
 computing it per product is how a Party borrows the same limit several times. Nor a ledger
 balance: Phase 10 posts nothing, and an approval's reservation is a recorded fact that lapses or
 is consumed, never a hold.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Delinquency
 **Is:** the state arising from contractual payments being missed, with defined stages.
@@ -747,78 +756,143 @@ and a returned item adjusts the agreement — none of which a loan does.
 **Is:** the part of a Credit Assessment that asks whether the Party can carry the repayment: in
 the product's one currency, exact decimal, income (the lower of verified and declared) less
 expenditure (the higher of verified and declared), bureau obligations and the requested credit's
-repayment at the policy's stress rate, compared with the policy's minimum disposable income —
-rounded once, at declared points (*planned, Phase 10*).
+repayment — an annuity at the policy's stress rate for `PERSONAL_LOAN`, the limit times the
+policy's minimum payment ratio for `CREDIT_LINE` — compared with the policy's minimum disposable
+income, carried at scale 10 and rounded once to minor units (`INV-CRD-12`). A missing input
+makes it unassessable, naming the absent attribute codes — never a zero.
 **Not:** a Credit Score (likelihood of repaying, from history) and not Exposure (how much credit
 the Party already holds). A source in another currency is never converted: it is a recorded
 partial-data case.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Credit Assessment
-**Is:** the derived figures for one Decision Request — affordability, exposure and the Credit
-Score — computed once per frozen Decision Snapshot, each figure carrying references to the
-inputs it read (*planned, Phase 10*).
+**Is:** the derived figures for one Decision Snapshot — affordability, exposure and the Credit
+Score — computed once per snapshot (`UNIQUE (snapshot_id)`, `credit V007`) under its pinned
+versions, and referencing its inputs by the snapshot's id and SHA-256 and the pinned policy,
+model and engine versions; a figure that could not be computed is recorded unassessable with the
+attribute codes that were absent, never a default.
 **Not:** a Credit Decision, and not Underwriting. The assessment is arithmetic; underwriting weighs
-it against policy, and the decision records the outcome (`INV-CRD-04`). Nor `risk`'s Risk
-Assessment, which answers a fraud question.
-**Owned by:** `credit` (planned, Phase 10)
+it against policy, and the decision records the outcome (`INV-CRD-04`). Nor the Policy
+Evaluation, which is that weighing's result, and not `risk`'s Risk Assessment, which answers a
+fraud question.
+**Owned by:** `credit`
 
 ### Credit Attribute
 **Is:** one typed input the decision engine may read — a code from a closed vocabulary (e.g.
 `BUREAU_DELINQUENCIES_24M`, `DECLARED_MONTHLY_INCOME`, `PLATFORM_RESERVED_EXPOSURE`,
 `RISK_SIGNAL`), a value (integer, money as minor units with currency, boolean or code, or `ABSENT`)
-and its provenance (the Credit Bureau Record and source, `DECLARED`, or the port and its version)
-(*planned, Phase 10*).
+and its provenance (`AttributeProvenance`): the Credit Record it was read from, with its source
+kind, provider and normaliser version; an unavailable source's Credit Data Request; a source kind
+the policy does not read; the applicant's declaration; or a platform port and its version.
 **Not:** the raw evidence it was normalised from, and not a rule. A rule reading an attribute the
 snapshot lacks is an evaluation error, never a default; a missing optional attribute is the value
 `ABSENT`, which a policy must reason about explicitly.
-**Owned by:** `credit` (planned, Phase 10)
-
-### Credit Bureau Record
-**Is:** the normalised Credit Attributes of one answered bureau request — born once per data
-request — beside the raw answer kept as encrypted evidence with a declared retention deadline
-(*planned, Phase 10*).
-**Not:** the bureau's own state (`external`), and not the Credit Profile. A record is what one
-source said at one retrieval time; it can be stale, and stale data never decides. Its sibling is
-the financial-data record, from a financial-data provider rather than a bureau.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Credit Data
-**Is:** evidence about a Party's credit retrieved from a Credit Data Source — a bureau record or a
-financial-data record — retained as received (encrypted) and normalised to Credit Attributes, and
-retrieved only under a recorded, current lawful basis (`INV-CRD-03`) (*planned, Phase 10*).
+**Is:** evidence about a Party's credit retrieved from a Credit Data Source through a Credit Data
+Request — kept as received in Credit Evidence (encrypted) and normalised to a Credit Record's
+Credit Attributes — and retrieved only under a recorded, current lawful basis (`INV-CRD-03`).
 **Not:** the Credit Profile, and not a Credit Score. Data is evidence; a profile is an anchor and a
 score a derived figure. Bureau data is restricted financial PII: it never appears in a log, a
 metric, an event or a customer response.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
+
+### Credit Data Request
+**Is:** one ask of one source kind for one Decision Request (`credit.data_request`, `V004`) —
+born `REQUESTED` under its own reference (`CDR-<id>`), the provider selected once at birth and
+stamped on it, its deadline and retry cadence frozen from configuration — moving
+`REQUESTED → RECEIVED | UNAVAILABLE | CONSENT_WITHDRAWN`, `UNAVAILABLE → REQUESTED` (a retry,
+before the deadline only) and `UNAVAILABLE → CONSENT_WITHDRAWN`, every edge judged by a trigger
+for every writer and every window on the database clock; each ask is an attempt row, and the
+consent gate is re-read before each ask and at the recording (`INV-CRD-03`).
+**Not:** the Decision Request it serves, and not the Credit Record its answer makes. A lost
+response is re-asked under the same reference, so the provider counts one pull; there is no
+failover to another provider; and a record found stale at the freeze opens a new data request
+rather than re-using the old (`INV-CRD-08`).
+**Owned by:** `credit`
 
 ### Credit Data Source
-**Is:** the declared kind of a credit input — a credit bureau or a financial-data provider, each
-behind a provider-neutral port and its own consent purpose; plus the applicant's own declaration
-and the platform's own ports — and the provider answering for it (*planned, Phase 10*).
+**Is:** the declared kind of an external credit input — a credit bureau (`BUREAU`) or a
+financial-data provider (`FINANCIAL_DATA`), each behind the provider-neutral `CreditDataSource`
+port (`CreditBureau`, `FinancialDataProvider`) and its own consent purpose
+(`CREDIT_BUREAU_ACCESS`, `FINANCIAL_DATA_ACCESS`) — and the provider answering for it, selected
+per kind from a configured order and stamped on each Credit Data Request at its birth.
 **Not:** the provider itself, which is `external` and reached only through an adapter whose formats
-never leak into the domain (ADR-0008). A source unavailable past its deadline yields `ABSENT`
-attributes and the policy's declared fallback — never an approval.
-**Owned by:** `credit` (planned, Phase 10)
+never leak into the domain (ADR-0008). Nor the applicant's declaration or a platform port: those
+are other provenances of a Credit Attribute, never a source. A source unavailable past its
+deadline yields `ABSENT` attributes and the policy's declared fallback — never an approval
+(`INV-CRD-10`). Until unresolved questions #13 and #14 are answered production names no provider,
+and each kind's fail-safe answers unavailable.
+**Owned by:** `credit`
+
+### Credit Evidence
+**Is:** the raw bytes a provider delivered for one attempt of a Credit Data Request, kept as
+received (`credit_evidence`, `V004`) — AES-256-GCM under credit's own key
+(`finapp.credit.evidence.key`), the evidence id as associated data, with the plaintext's SHA-256
+and a `retain_until` from the product's retention — born once, never updated or deleted, and read
+by the application only through the reasoned, audited `credit.read_evidence` function.
+**Not:** the Credit Record. The record is the normalised attributes a decision reads; the evidence
+is what the provider actually said, kept so the normalisation can be checked and a dispute
+answered. A duplicate answer is evidence flagged `duplicate`, never a second record; an answer
+arriving after consent was withdrawn is flagged and its payload discarded unread.
+**Owned by:** `credit`
 
 ### Credit Policy
 **Is:** a credit product's rules as data — ordered rows over a closed vocabulary of operators,
 derived figures and effects (`HARD_DECLINE`, `DECLINE`, `REFER`, `CAP_AMOUNT`), each naming its
 Reason Code — plus the policy's parameters: stress rate, minimum disposable income, maximum
 exposure, maximum data age per source kind, the fallback for an unavailable source and the
-auto-approval ceiling (*planned, Phase 10*).
+auto-approval ceiling (and, for a revolving product, the minimum payment ratio) — judged whole
+when proposed: a fallback for every source kind it reads (`INV-CRD-10`) and a rule guaranteed to
+stop an approval past its maximum exposure (`INV-CRD-09`), else `credit.PolicyIncomplete`.
 **Not:** code. Policy as opaque, unversioned conditionals is forbidden (`CREDIT_MODEL.md`); a rule
 the vocabulary cannot express is a new operator in a new engine version, reviewed. Nor a Policy
 Version: the policy is the per-product line of versions.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Credit Product
 **Is:** a closed enumeration of what credit can be decided for — Phase 10's `PERSONAL_LOAN` and
-`CREDIT_LINE` — each declaring its currency, amount and term bounds, four-eyes threshold, decision
-validity and evidence retention (*planned, Phase 10*).
+`CREDIT_LINE` — each declaring its currency, amount and term bounds, four-eyes threshold, request
+validity (seven days, how long a Decision Request may stay open), decision validity (thirty days,
+how long an approval reserves exposure) and evidence retention.
 **Not:** a Loan or a Loan Offer, which are Phase 11's. A product is a reviewed code change with its
 migration, never a string a caller supplies.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
+
+### Credit Record
+**Is:** the normalised Credit Attributes of one answered Credit Data Request — born once per data
+request (`credit_record`, `UNIQUE (data_request_id)`, `V004`), from either source kind
+(`source_kind` `BUREAU` or `FINANCIAL_DATA`), stamped with its provider and normaliser version
+(`INV-CRD-07`) and with the provider's stated retrieval beside our own recording — beside the raw
+answer kept as Credit Evidence with a declared retention deadline.
+**Not:** the source's own state (`external`), and not the Credit Profile. A record is what one
+source said at one retrieval time; it can be stale, and stale data never decides — its age runs
+from the earlier of its retrieval and its recording (`INV-CRD-08`). *(Named Credit Bureau Record,
+with a financial-data record as its sibling, until the Phase 10 exit review, `P10-DOC-001`,
+2026-10-09: one table holds both kinds.)*
+**Owned by:** `credit`
+
+### Decision Consumption
+**Is:** the born-once fact that a Phase 11 loan has taken up one approved Credit Decision —
+`credit_decision_consumption`, `UNIQUE (decision_id)`, append-only by trigger (`V011`) — created
+empty in Phase 10, Phase 11 its only writer; an approval with a consumption row reserves no
+exposure.
+**Not:** a change to the decision, which is never updated (`INV-CRD-02`), and not a loan — it
+records only that one took the approval up. Nor a lapse: an approval past its validity stops
+reserving on the database clock, with no row.
+**Owned by:** `credit`
+
+### Decision Replay
+**Is:** the proof that a recorded Credit Decision is reproducible (`INV-CRD-01`) — the snapshot's
+SHA-256 recomputed over its stored canonical text, then the pinned policy, scorecard and engine
+re-run in memory over it — answering `IDENTICAL`, or `DIVERGED` naming what differed (`HASH`,
+`OUTCOME`, `AMOUNT`, `REASONS` or `UNREPLAYABLE`); a person's decision is verified against its
+Underwriting Case. Read-only, in one `REPEATABLE READ` snapshot; the operator's replay is audited.
+**Not:** a re-decision. A replay records, changes and supersedes nothing, and reads only the
+versions the decision pinned — never what is in force now. Nor the FX plan replay, which
+recomputes a Posting Plan.
+**Owned by:** `credit`
 
 ### Decision Request
 **Is:** the envelope of one application for a credit decision — party, Credit Product, requested
@@ -827,11 +901,11 @@ progressed `SUBMITTED → COLLECTING → READY → EVALUATED → DECIDED` (throu
 referral; `READY → COLLECTING` when a record is found stale at the freeze), or closed
 `CANCELLED` (by the applicant, before evaluation), `EXPIRED` (no decision within its validity) or
 `ABANDONED` (closed by the platform with a reason — `STANDING_LOST`, `CONSENT_WITHDRAWN`); at
-most one open per party and product (*planned, Phase 10*).
+most one open per party and product, decided at most once (`INV-CRD-06`).
 **Not:** a Loan Application. A decision request asks only for a decision; Phase 11's loan
 application is the lending aggregate that will reference the decision. Nor the Credit Decision:
 a request may close with none.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Decision Snapshot
 **Is:** the frozen, complete and sealed input of one evaluation — every Credit Attribute any rule,
@@ -840,54 +914,76 @@ the requested product, amount and term and the pinned versions — and the SHA-2
 form, stored and re-verified. One per evaluation, numbered per request: the first at the freeze,
 and a successor (the same records, the new exposure) only when the deciding transaction finds the
 party's reserved exposure changed; the decision names the snapshot it was made from, and the
-request keeps every one in history (*planned, Phase 10*).
+request keeps every one in history (`INV-CRD-07`).
 **Not:** the Credit Data it was built from, and not the Credit Profile. Records arriving after the
 freeze belong to no snapshot; a frozen snapshot is never re-collected (a new request is). Replaying
 the snapshot under its pinned versions must reproduce the decision (`INV-CRD-01`).
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
+
+### Engine Version
+**Is:** the version of credit's deterministic engine — the assessment arithmetic and the policy
+evaluator (`PolicyEvaluatorV1`), both version 1 in Phase 10 — pinned on the Decision Request with
+the policy and model versions and carried by its snapshot, assessment, Policy Evaluation and
+Credit Decision; `EngineVersions` holds every engine the build can replay and selects the one
+pinned, never the newest.
+**Not:** a Policy Version or a Model Version, which are data; the engine is code. A change to what
+the engine computes is a new engine version added beside the old, which stays for replay — never
+an edit of the old (`INV-CRD-01`).
+**Owned by:** `credit`
 
 ### Model Version
 **Is:** one immutable version of a scorecard model family (`RETAIL_SCORECARD`) — a points table as
 rows: per attribute, ordered bands each with integer points, plus a base and an absent band —
-proposed, then activated by a second person, at most one `ACTIVE` per family (*planned,
-Phase 10*).
+proposed, then activated by a second person, at most one `ACTIVE` per family.
 **Not:** a Policy Version (the model scores; the policy decides), and not a machine-learned model,
 which Phase 10 does not build. A request pins the version when collection begins, its decision is
 scored by that version, and an activation mid-request never changes it (`INV-HIST-04`).
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
+
+### Policy Evaluation
+**Is:** what the pinned Credit Policy concluded about one Credit Assessment under the pinned Engine
+Version — the outcome (`APPROVE`, `REFER`, `DECLINE` or `HARD_DECLINE`), the approved amount, the
+reason codes and whether the declared fallback applied, with every rule's triggered and assessed
+state — computed by a pure evaluator and born once per assessment (`policy_evaluation`,
+`UNIQUE (assessment_id)`, with `policy_evaluation_rule`, `V009`).
+**Not:** the Credit Decision (`INV-CRD-04`): the evaluation is the evaluator's word, and the
+deciding transaction records the decision — or, on `REFER`, opens an Underwriting Case where a
+person decides. Nor Underwriting, the activity that runs it.
+**Owned by:** `credit`
 
 ### Policy Version
 **Is:** one immutable version of a Credit Policy for one product — `PROPOSED → ACTIVE → RETIRED` or
 `PROPOSED → REJECTED`, activated only by a second person, at most one `ACTIVE` per product, its
 rules born with it and immutable for every writer from insert, and which version was active at any
-past instant answerable from the rows (*planned, Phase 10*).
+past instant answerable from the rows (`INV-CRD-05`).
 **Not:** fx's pricing-policy or crossborder's corridor-policy versions, which share the shape but
 not the state. A request pins the version when collection begins (`SUBMITTED → COLLECTING`), its
 evaluation and decision read exactly that version, and an activation mid-request never changes it
 (`INV-HIST-04`).
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Reason Code
 **Is:** an entry in a closed, migration-seeded catalogue — code, category, customer text and
 adverse flag — that a triggered rule names; a decision carries its reason codes in rule order,
-deduplicated, and every adverse decision carries at least one (*planned, Phase 10*).
+deduplicated, and every adverse decision carries at least one.
 **Not:** an error code (`ERROR_CONTRACT.md`) and not an internal figure. The customer receives the
 adverse reasons' customer texts in order — never a score, a threshold, an attribute or a bureau's
 data (`INV-CRD-02`).
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ### Underwriting Case
 **Is:** the record of one manual review of a referred Decision Request — born once per referral,
-`OPEN → ASSIGNED → DECIDED`, through `AWAITING_SECOND` when an approval is above the product's
-four-eyes threshold (a disagreeing second approver refusing it back to the first), or `CLOSED` when
-its request closes undecided — in which a person decides `APPROVED` or `DECLINED` with at least one
+`OPEN → ASSIGNED → DECIDED`, released `ASSIGNED → OPEN`, through `AWAITING_SECOND` when an
+approval is above the product's four-eyes threshold (a disagreeing second approver refusing it
+back to the first, `AWAITING_SECOND → ASSIGNED`, the first decision cleared), or `CLOSED` when its
+request closes undecided (`V013`) — in which a person decides `APPROVED` or `DECLINED` with at least one
 Reason Code, an approval bounded by the evaluation's approved amount and the exposure limit
-(*planned, Phase 10*).
+re-read under the profile lock (`INV-CRD-11`, `INV-CRD-09`).
 **Not:** Underwriting itself (the activity, usually automatic), and not `risk`'s Case or `kyc`'s
 Review Task. A person may never approve a request whose evaluation included a hard decline, and
 never be their own case's second approval (`INV-AUD-04`). The person's decision is *the* Credit
 Decision, recorded once.
-**Owned by:** `credit` (planned, Phase 10)
+**Owned by:** `credit`
 
 ---
 
@@ -1469,10 +1565,15 @@ majority spelling.
    Added during review, which found `Risk Score` attributed to `risk` while the register said
    `credit` — settled by the Phase 9 → 10 transition (2026-10-07, §10), which moved it to `risk`
    in the register itself, both documents changed together.
-7. **Every `INV-*` the glossary cites exists.** Sixty-one distinct invariants, cited one
-   hundred and forty-two times (recounted at the Phase 9 → 10 transition, 2026-10-07, after its
+7. **Every `INV-*` the glossary cites exists.** Sixty-nine distinct invariants, cited one
+   hundred and fifty-nine times (recounted at the Phase 10 exit review, `P10-DOC-001`,
+   2026-10-09, after its six new entries, the renamed Credit Record and twelve corrected ones,
+   which cite for the first time the eight Phase 10 credit invariants the transition catalogued;
+   the
+   Phase 9 → 10 transition, 2026-10-07, had counted sixty-one and one hundred and forty-two
+   after its
    fourteen new entries and six sharpened ones — which cite only invariants catalogued before
-   it; the eight new Phase 10 credit invariants the same transition catalogued are cited by a
+   it; the eight new Phase 10 credit invariants the same transition catalogued were to be cited by a
    term's entry when the task that builds it corrects that entry; the Phase 9 exit review, `P9-DOC-001`, 2026-10-07, had
    counted sixty-one and one hundred and thirty-four after its six new entries and four
    corrections; the Phase 8 → 9 transition,

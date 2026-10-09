@@ -1,6 +1,6 @@
 # ADR-0085 — Credit data collection: provider-neutral ports, a normalised attribute vocabulary, consent checked twice, encrypted evidence with a stored deadline, and freshness on the database clock
 
-Status: Proposed
+Status: Accepted (2026-10-09, `P10-DOC-001` — read against the code and corrected first)
 Date: 2026-10-07
 Phase: 10
 Context: Credit · Consent · Platform · Security
@@ -42,7 +42,14 @@ meets the outside world, and every hazard of the outside world applies:
    plus the provider's reference), `UNAVAILABLE` with a cause (timeout, refused, 5xx, unknown
    status, malformed), never an exception escaping into the domain. Each adapter maps the
    provider's world totally into the port's — an answer the adapter cannot classify is
-   `UNAVAILABLE`, never data (`INV-LIFE-03`). Adapters are simulated in Phase 10 (real bureau
+   `UNAVAILABLE`, never data (`INV-LIFE-03`). *(As built (`P10-TSK-007`, read by `P10-DOC-001`,
+   2026-10-09): both ports extend the source-neutral `CreditDataSource`; the sealed result is
+   `CreditDataAnswer` = `Received | Partial | Unavailable`. The adapter normalises, so `Received`
+   and `Partial` carry the provider code, the normaliser version, the provider-stated retrieval
+   time, the normalised attributes (`Partial` at least one `ABSENT`) and the bytes as evidence;
+   `Unavailable` carries a cause — `TIMEOUT`, `MALFORMED`, `UNKNOWN_STATUS` or `PROVIDER_ERROR`
+   (a refusal and a 5xx are `PROVIDER_ERROR`) — and any bytes that arrived, as evidence only.)*
+   Adapters are simulated in Phase 10 (real bureau
    connectivity is out of scope, plan §17); each passes the port's contract suite (normal,
    partial, malformed, timeout, duplicate, unknown status) with normalisation golden files per
    adapter. A second bureau and source selection (`P10-TSK-021`) was the phase's first cut
@@ -56,15 +63,22 @@ meets the outside world, and every hazard of the outside world applies:
      configuration, stamped on the row at its birth so a configuration change never moves an open
      request's deadline), checks consent (point 4) and audits the access as
      `credit.BureauDataRequested` / `credit.FinancialDataRequested` (`INV-AUD-01`: the access is
-     the act). The data request carries `decision_request_id NOT NULL`; its foreign key arrives
-     with the `decision_request` table (`P10-TSK-014`), which this table precedes.
+     the act). The data request carries `decision_request_id NOT NULL`; its foreign key arrived
+     with the `decision_request` table (credit `V010`, `P10-TSK-014`, on `(decision_request_id,
+     party_id)` — a data request serves a request of its own party). *(As found by `P10-TST-001`:
+     the birth's `requested_at` is stamped `GREATEST(statement_timestamp(), the decision request's
+     latest + 1 µs)` since credit `V015` — Follow-up.)*
    - **The wire**, holding no transaction: the adapter asks under our reference, with a bounded
      timeout. The provider dedupes by our reference, so a retry after a lost response asks again
      *under the same reference* and receives the first answer — one pull counted at the provider.
    - **Tx2** locks the data request, re-checks consent (point 4) and applies the outcome by a
      conditional transition: `REQUESTED → RECEIVED` with its `credit_record` born once
      (`UNIQUE (data_request_id)`), or `REQUESTED → UNAVAILABLE`, or
-     `REQUESTED → CONSENT_WITHDRAWN`. Each attempt is an append-only `data_request_attempt` row.
+     `REQUESTED → CONSENT_WITHDRAWN`. Each attempt is an append-only `data_request_attempt` row
+     *(as built (`P10-DOC-001`): append-only by grant — `SELECT, INSERT` to the application role —
+     and a `TRUNCATE` statement trigger; it has no row trigger and no actor column, `answered_at`
+     written `statement_timestamp()` by the insert; the primary key `(data_request_id, attempt)`
+     arbitrates two writers of one attempt)*.
 
 3. **The machine: `REQUESTED → RECEIVED | UNAVAILABLE | CONSENT_WITHDRAWN`;
    `UNAVAILABLE → REQUESTED`** (a retry — a new attempt under the same reference) until the
@@ -72,11 +86,19 @@ meets the outside world, and every hazard of the outside world applies:
    ask). `RECEIVED` is terminal and born-once-backed by its record; a duplicate answer (retry,
    duplicate delivery) finds the request already `RECEIVED`, and its evidence is kept *as a
    duplicate*, never a second record. A source still unavailable at its deadline stays
-   `UNAVAILABLE`; the retry sweep emits `CreditDataUnavailable` for it exactly once (a
+   `UNAVAILABLE`; the retry sweep emits `credit.CreditDataUnavailable` for it exactly once (a
    conditional flag), and the decision request proceeds with the source `ABSENT` under the
    policy's fallback (point 7). The three-layer discipline holds the machine for every writer: a
-   generated `CHECK`, an every-writer edge trigger, the domain. The full machine is in
-   `CREDIT_DECISIONING_LIFECYCLES.md`.
+   status `CHECK` (a hand-written `IN` list), an every-writer edge trigger — the control — and the
+   domain. The full machine is in `CREDIT_DECISIONING_LIFECYCLES.md`. *(As built (credit `V004`,
+   read by `P10-DOC-001`, 2026-10-09): the trigger also admits the self-edges
+   `REQUESTED → REQUESTED` (a permit renewal or a claim) and `UNAVAILABLE → UNAVAILABLE`
+   (re-stamped, reported). The retry is two steps: the sweep's claim itself moves
+   `UNAVAILABLE → REQUESTED` (only before the deadline and while not yet reported); the retry then
+   re-reads the gate under the row lock, and a closed gate moves `REQUESTED → CONSENT_WITHDRAWN`
+   with nothing asked. `UNAVAILABLE → CONSENT_WITHDRAWN` is admitted by the trigger but taken by no
+   writer. Since `P10-DOC-001` the claim skips data requests whose decision request is closed —
+   point 9.)*
 
 4. **Consent is checked at both ends of every pull, each time in the acting transaction**
    (`INV-CRD-03`), through the `CreditConsentGate` port. The source kind maps to its purpose —
@@ -92,27 +114,42 @@ meets the outside world, and every hazard of the outside world applies:
    frozen or decided (failure scenario 31). The platform neither decides on data it no longer has
    a basis to hold nor treats a withdrawal as an outage for the fallback to judge. A decision
    request whose consent is absent
-   at submission is refused `403 credit.ConsentRequired`, the purpose named, before any provider
-   is asked (plan §11, failure scenario 8). Consent never stands in for authorization
+   at submission is refused `409 consent.ConsentRequired`, the purpose named, before any provider
+   is asked (plan §11, failure scenario 8). *(Corrected by `P10-DOC-001`: this read
+   `403 credit.ConsentRequired`; as built (`P10-TSK-014`, ADR-0087's follow-up (1)) the desk throws
+   `ConsentNotGrantedException`, the platform's one consent refusal,
+   `ConsentErrorCode.CONSENT_REQUIRED`.)* Consent never stands in for authorization
    (`INV-IDN-04`).
 
 5. **Raw evidence is retained encrypted, unreadable by the application, with its deadline
    stored.**
    - `credit_evidence` holds the raw answer as received, encrypted with the platform's envelope
      encryption (ADR-0066's scheme: AES-256-GCM, a fresh nonce, the key version recorded, the
-     associated data binding the row to its data request and attempt) under its **own key
-     purpose `credit-evidence`** — never another module's key. `INSERT` only; `SELECT` revoked
-     from the application role; an operator reaches it only through a definer function the
-     evidence-read door calls (`POST /v1/operator/credit/records/{id}/evidence-read`,
-     `CREDIT_INVESTIGATE`), with a reason, audited `credit.EvidenceRead`.
-   - Every evidence row carries **`retain_until` = retrieval + the product's declared evidence
-     retention** (default 25 months — a configuration of the product, ADR-0084 §6, not of the
-     code). The normalised attributes inside a decision snapshot are retained for the decision's
-     explanation life (ADR-0087).
+     evidence row's own id — its sixteen bytes — as the associated data, so a ciphertext moved
+     onto another row refuses to decrypt (`CreditEvidenceCipher`; *corrected by `P10-DOC-001`*:
+     this read "binding the row to its data request and attempt")) under its **own key**,
+     configured as `finapp.credit.evidence.key` / `.key-version` (`FINAPP_CREDIT_EVIDENCE_KEY`;
+     `CreditEvidenceKey`, whose locally derived default carries the domain suffix
+     `/credit-evidence`) — never another module's key. `INSERT` only, and **no `SELECT` on the
+     content** for the application role — *as built (`P10-DOC-001`): credit `V012` grants it
+     column `SELECT` on `id`, `data_request_id`, `attempt`, `duplicate` and `consent_withdrawn`
+     only, so the investigator's door can name a row*; an operator reaches the content only through
+     the `SECURITY DEFINER` function `credit.read_evidence(evidence_id, reason)` the evidence-read
+     door calls (`POST /v1/operator/credit/records/{id}/evidence-read`, `CREDIT_INVESTIGATE`), with
+     a reason, audited `credit.EvidenceRead`.
+   - Every evidence row carries **`retain_until` = its database-stamped `recorded_at` + the
+     product's declared evidence retention** (25 months for both products, `CreditProduct` —
+     ADR-0084 §6), stamped by the evidence trigger from the row's `retention_months` (credit
+     `V004`). *(Corrected by `P10-DOC-001`: this read "retrieval + … a configuration of the
+     product, not of the code"; the retention is the product enumeration's code constant and the
+     clock is our recording, not the provider's retrieval.)* The normalised attributes inside a
+     decision snapshot are retained for the decision's explanation life (ADR-0087).
    - **No purge runs in Phase 10.** Crypto-shredding and purge are Phase 15's
      operational-readiness work, recorded as a debt row with that owner. Phase 10 makes the
      deadline a stored, queryable fact so the purge has something exact to act on.
-   - Classification: the payload and every attribute value are `RESTRICTED-FINANCIAL`; party
+   - Classification: the payload and every integer, money and boolean attribute value are
+     `RESTRICTED-FINANCIAL`, a code value (a marker's source kind, a residency, a risk answer)
+     `CONFIDENTIAL` *(corrected by `P10-DOC-001`: this read "every attribute value")*; party
      references `CONFIDENTIAL` (`DATA_CLASSIFICATION.md`, `ColumnClassificationTest`). No
      attribute or payload appears in a log line, metric tag, span, event or exception message.
 
@@ -124,8 +161,10 @@ meets the outside world, and every hazard of the outside world applies:
    `FINDATA_MONTHLY_INCOME`, `FINDATA_MONTHLY_COMMITTED_EXPENDITURE`, `DECLARED_MONTHLY_INCOME`,
    `DECLARED_MONTHLY_EXPENDITURE`, `PARTY_AGE_YEARS`, `PARTY_RESIDENCY_COUNTRY`,
    `PLATFORM_OUTSTANDING_CREDIT` - *added by `P10-TSK-010`, ADR-0088 §6* - `PLATFORM_RESERVED_EXPOSURE`,
-   `RISK_SIGNAL`), a typed value (integer, decimal-with-currency,
-   boolean, code) and a provenance (the `credit_record` id and source, `DECLARED`, or the port
+   `RISK_SIGNAL`, and the two markers `SOURCE_UNAVAILABLE` and `CURRENCY_NOT_SUPPORTED` - *added
+   by `P10-TSK-008`, read by `P10-DOC-001`*: code values naming the affected source kinds,
+   `SourceKindsMarker`), a typed value (integer, money - *as built, integer minor units with
+   their currency and scale, never a decimal* -, boolean, code) and a provenance (the `credit_record` id and source, `DECLARED`, or the port
    and its version). Provider vocabulary stops at the adapter. A new attribute is a reviewed
    code change to the vocabulary.
    - **Partial data** (failure scenario 2): an attribute the provider did not supply is
@@ -144,8 +183,13 @@ meets the outside world, and every hazard of the outside world applies:
 
 8. **Freshness is judged on the database clock, at the freeze** (`INV-CRD-08`). Every record a
    snapshot uses must have been retrieved within the policy's declared maximum age for its source
-   kind, judged on `statement_timestamp()` / `DatabaseTime.now` inside the freezing transaction —
-   never an instance's clock. A record one second past the maximum age is not frozen: the request
+   kind, judged on `transaction_timestamp()` of the freezing transaction (`JdbcDecisionSnapshotStore`)
+   — never an instance's clock. *(Corrected by `P10-DOC-001`, 2026-10-09: this read
+   "`statement_timestamp()` / `DatabaseTime.now`"; credit never uses `DatabaseTime`. And since
+   `P10-DOC-001`'s code correction the age runs from `LEAST(retrieved_at, recorded_at)` — the
+   earlier of the provider-stated retrieval and our own database-stamped recording — so a provider
+   clock ahead of ours can no longer keep a record fresh; before, the provider's `retrieved_at`
+   alone was judged.)* A record one second past the maximum age is not frozen: the request
    takes **`READY → COLLECTING`** — the machine's one backward edge, taken before any snapshot
    exists (scenario 9) — and the source is re-collected under a new data request (a `RECEIVED`
    one is terminal). The maximum age is the parameter of the policy version pinned on the request
@@ -160,7 +204,14 @@ meets the outside world, and every hazard of the outside world applies:
    `REQUESTED` past their permit, oldest permit first, in one
    `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` that stamps the new permit from
    `statement_timestamp()` at the data request's stamped cadence. A request that cannot act
-   re-stamps rather than holding the page (the P9-TST-001 starvation lesson).
+   re-stamps rather than holding the page (the P9-TST-001 starvation lesson). *(As built
+   (`JdbcCreditDataRequestStore.claimDue`, read by `P10-DOC-001`, 2026-10-09): the claim sets the
+   row `REQUESTED` — an `UNAVAILABLE` one only before its deadline and while unreported — and the
+   overdue report is a separate claim (`claimOverdue`) setting `unavailable_reported`. **Corrected
+   by `P10-DOC-001`:** the claim now takes only data requests whose decision request is open
+   (`SUBMITTED`, `COLLECTING`, `READY`, `EVALUATED`, `IN_REVIEW`), a plain read of the request row;
+   before, a cancelled, expired or abandoned request's data requests were re-asked — a paid pull of
+   the applicant's data for nothing — until answered or past their deadline.)*
 
 10. **Source selection: a configured order per source kind, the provider fixed at birth, no
     failover under a reference** (*added by `P10-TSK-021`, 2026-10-08*). Each kind has a
@@ -275,7 +326,7 @@ Operational impact: `finapp.credit.data.request{source_kind, provider, outcome}`
 `finapp.credit.data.latency{source_kind, provider}`, the retry sweeper's enabled gauge; no
 amount, attribute or party in any tag.
 Security impact: the payload is `RESTRICTED-FINANCIAL` ciphertext under a dedicated key, no
-application `SELECT`, read only through an audited definer function with a reason; the
+application `SELECT` on its content (the row's identity and flags only, `V012`), read only through an audited definer function with a reason; the
 `INV-RAIL-03` needle walk extends to credit's doors; records' `toString` names identifiers only.
 Financial impact: none posted. Provider pull costs are bounded by the reference dedupe.
 
@@ -305,5 +356,14 @@ ADR-0038, ADR-0046, ADR-0066, ADR-0081.
   the decision request's latest (`GREATEST(statement_timestamp(), latest + 1 µs)`, serialised by the request's row
   lock, ADR-0063 decision 2's permit form). Proven by
   `DecisionSnapshotDatabaseTest#aReCollectionOnAClockBehindItsStaleRecordIsTheLatest`, red first on `V004`'s stamp.
-- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
-  accepting it.
+- **As built** (2026-10-09, read against the code by `P10-DOC-001`): `P10-TSK-004` … `-008`,
+  `-015`, `-016`, `-017` and `-021` are built as listed above; the purge and crypto-shredding stay
+  Phase 15's debt. The review's two code corrections here: the retry claim skips closed decision
+  requests (point 9), and freshness runs from `LEAST(retrieved_at, recorded_at)` (point 8). Its
+  text corrections: the sealed answer (point 1), the attempt table's append-only means (point 2),
+  the machine's self-edges and the retry's two steps (point 3), `409 consent.ConsentRequired`
+  (point 4), the evidence's associated data, key configuration, column grant and retention clock
+  (point 5), the classification of code values (point 5), the two markers (point 6), and
+  `transaction_timestamp()` as the freeze's clock (point 8).
+- **Acceptance.** The Phase 10 review (`P10-DOC-001`) read this ADR against the code, corrected it
+  where it had drifted, and accepted it on 2026-10-09.

@@ -112,6 +112,16 @@ public record CreditPolicy(
         }
     }
 
+    /**
+     * Whether some rule keeps every system approval within {@link #maximumExposure} ({@link
+     * PolicyRule#refusesExposurePast}). The evaluator judges exposure only through rules, so a policy without one would
+     * approve past its own limit; the proposal door refuses it {@code credit.PolicyIncomplete}. Judged at proposal, not
+     * here at construction, so a stored version always reads back.
+     */
+    public boolean boundsExposure() {
+        return rules.stream().anyMatch(rule -> rule.refusesExposurePast(maximumExposure));
+    }
+
     /** The source kinds this policy reads - exactly those it declares a maximum data age for. */
     public Set<CreditSourceKind> sourceKinds() {
         return maximumDataAge.isEmpty() ? EnumSet.noneOf(CreditSourceKind.class) : EnumSet.copyOf(maximumDataAge.keySet());
@@ -242,6 +252,30 @@ public record CreditPolicy(
                         && codes.codes().containsAll(markerValuesNaming(kind));
             }
             return operator == PolicyOperator.IS_ABSENT && SnapshotFreezer.codesOf(kind).contains(attribute.code());
+        }
+
+        /**
+         * Whether this rule keeps the platform from approving ANY request whose exposure exceeds {@code limit} - decided
+         * from the rule alone ({@code INV-CRD-09}; `P10-DOC-001`). Headroom is the limit less the exposure, so exactly
+         * these shapes are guaranteed to trigger past the limit: {@code EXPOSURE_HEADROOM LT x} or {@code LE x} with
+         * {@code x >= 0}, and {@code EXPOSURE GT x} or {@code GE x} with {@code x <= limit}; each with an effect that
+         * never approves - {@code HARD_DECLINE}, {@code DECLINE} or {@code REFER} (a referral meets a person, whose
+         * approval is bounded by the limit re-read under the profile lock). An exposure the assessment could not
+         * compute leaves the rule unassessed, and an approval resting on it becomes the policy's fallback.
+         */
+        public boolean refusesExposurePast(Money limit) {
+            Objects.requireNonNull(limit, "limit");
+            if (effect == PolicyEffect.CAP_AMOUNT || !(subject instanceof Subject.Figure figure)
+                    || !(operand instanceof Operand.MoneyOperand money)) {
+                return false;
+            }
+            return switch (figure.figure()) {
+                case EXPOSURE_HEADROOM -> (operator == PolicyOperator.LT || operator == PolicyOperator.LE)
+                        && !money.value().isNegative();
+                case EXPOSURE -> (operator == PolicyOperator.GT || operator == PolicyOperator.GE)
+                        && money.value().compareTo(limit) <= 0;
+                default -> false;
+            };
         }
 
         /** Every {@code SOURCE_UNAVAILABLE} value that names {@code kind} - one per set of kinds holding it. */
