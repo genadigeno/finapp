@@ -629,10 +629,10 @@ any `DIVERGED`).
 | 20 | Underwriter tries to approve a hard decline | `422 HardDeclineNotOverridable` | `-018` |
 | 21 | Two underwriters take one case | one `ASSIGNED` | `-018` |
 | 22 | A person decides with no reason | `422 ReasonRequired` | `-018` |
-| 23 | A stored snapshot tampered | replay `DIVERGED` (hash) | `-019` |
-| 24 | A rule row tampered with (in any status) | refused by the rule-immutability trigger; replay `DIVERGED` if forced | `-012`, `-019` |
+| 23 | A stored snapshot tampered | replay `DIVERGED` (hash) | `-019`, `P10-TST-002` (one byte of every decided snapshot) |
+| 24 | A rule row tampered with (in any status) | refused by the rule-immutability trigger; replay `DIVERGED` if forced | `-012`, `-019`, `P10-TST-002` (every pinned version's exposure rule, both ways) |
 | 25 | A decision row updated by any role | refused (privilege and trigger) | `-016` |
-| 26 | Evaluator semantics changed | a new engine version; old decisions replay under theirs | `-013`, `-019` |
+| 26 | Evaluator semantics changed | a new engine version; old decisions replay under theirs | `-013`, `-019`, `P10-TST-002` (the semantics swapped under version 1, and the pinned number swapped) |
 | 27 | Applicant's standing suspended mid-request | the step (or the deciding transaction) refuses; the request `ABANDONED` (`STANDING_LOST`) | `-015`, `-016` |
 | 28 | A source in a currency other than the product's | partial data: the attribute `ABSENT` with the `CURRENCY_NOT_SUPPORTED` marker; never converted | `-005`, `-008` |
 | 29 | Provider slow beyond timeout | the call times out; the data request `UNAVAILABLE`, retried | `-006` |
