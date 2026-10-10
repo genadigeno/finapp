@@ -22,7 +22,10 @@ package com.finapp.identity;
  * from the queue's decider are settled before the first door so no task invents a grant on the
  * way. Each one's javadoc names the routes and audit actions its tasks land; the
  * {@code RoutePermissionRegisterTest} row and the {@code AUDITABLE_ACTIONS.md} row arrive with
- * each route.
+ * each route. <strong>Phase 11's five follow the same exception</strong> (`P11-TSK-002`): the lending
+ * actions are catalogued by {@code PHASE_11_PLAN.md} §11 and decided by ADR-0090...0100, and the
+ * three roles that separate pricing, capital and servicing are settled before the module's first
+ * door.
  *
  * <h2>There is deliberately no `sqlValueList()`</h2>
  *
@@ -444,5 +447,67 @@ public enum PermissionName {
      * <p><strong>Held by {@code UNDERWRITER} alone</strong>: the person deciding cases can neither
      * write the policy that referred them nor read the evidence outside the case.
      */
-    CREDIT_UNDERWRITE
+    CREDIT_UNDERWRITE,
+
+    /**
+     * Administer the loan products' terms (`P11-TSK-002`; ADR-0092, {@code PHASE_11_PLAN.md} §11): propose, approve
+     * or reject a loan product terms version - rate, fees, servicing parameters, allocation order, statement rules -
+     * four-eyes, the same permission and different persons, held at the domain and by {@code CHECK}, never one's own
+     * proposal. It names {@code lending.TermsVersionProposed}, {@code ...Activated} and {@code ...Rejected}; the routes
+     * are `P11-TSK-005`'s.
+     *
+     * <p><strong>Held by {@code LENDING_OFFICER}</strong>: pricing and servicing rules are the lending desk's policy -
+     * neither credit's decision policy ({@code CREDIT_POLICY_OFFICER}), nor the capital that funds the loans
+     * ({@code LENDING_TREASURY_OFFICER}), nor servicing one borrower's account ({@code LOAN_SERVICING_AGENT}).
+     */
+    LENDING_ADMINISTER,
+
+    /**
+     * Investigate loans (`P11-TSK-002`; {@code PHASE_11_PLAN.md} §§9, 11): a loan's full explanation (agreement version
+     * and hash, schedule, billings, accruals, allocations, journal entries), its replay, and the portfolio, delinquency,
+     * capital-headroom and drift reports - every read audited, nothing moved. It names {@code lending.ExplanationRead},
+     * {@code lending.LoanReplayed} and {@code lending.ReportRead}; the routes are their tasks'.
+     *
+     * <p><strong>Held by {@code LENDING_OFFICER}</strong>, beside {@link #LENDING_ADMINISTER}: whoever answers for the
+     * terms needs to see what they produced and why. Never by {@code LOAN_SERVICING_AGENT}, whose view is the account in
+     * hand ({@link #LOAN_SERVICE}).
+     */
+    LENDING_INVESTIGATE,
+
+    /**
+     * Administer lending capital (`P11-TSK-002`; ADR-0096, owner decision L1, {@code PHASE_11_PLAN.md} §12.9): propose,
+     * approve or reject a lending-capital contribution - four-eyes, different persons, at the domain and by
+     * {@code CHECK} - which opens the bank expectation it is recognised from; recognition itself is never a person's
+     * act ({@code INV-LND-13}). It names {@code lending.CapitalContributionProposed}, {@code ...Approved} and
+     * {@code ...Rejected}; the routes are `P11-TSK-004`'s.
+     *
+     * <p><strong>Held by {@code LENDING_TREASURY_OFFICER} alone</strong>: committing the platform's own money to lend is
+     * a treasury decision, separate from setting the price of a loan or servicing one.
+     */
+    LENDING_CAPITAL_ADMINISTER,
+
+    /**
+     * Service loans (`P11-TSK-002`; ADR-0099, {@code PHASE_11_PLAN.md} §11): read any loan, audited
+     * ({@code lending.LoanRead}), and propose a fee or interest waiver, a repayment reversal or an amendment - each
+     * reasoned, the reason screened for instrument shapes. Never originates, disburses, draws or reprices outside an
+     * amendment, and never on an account of one's own party ({@code lending.SelfDealingRefused}). The routes are
+     * `P11-TSK-020`'s, `-025`'s and `-027`'s.
+     *
+     * <p><strong>Held by {@code LOAN_SERVICING_AGENT}</strong>, beside {@link #LOAN_SERVICE_APPROVE}: four-eyes is
+     * inside the role - two distinct holders - never between roles.
+     */
+    LOAN_SERVICE,
+
+    /**
+     * Approve servicing proposals (`P11-TSK-002`; ADR-0099, {@code INV-LND-11}): approve or reject a waiver, a
+     * repayment reversal or an amendment another person proposed - <strong>never one's own</strong>, refused at the
+     * domain and by each proposal table's four-eyes {@code CHECK}, enforced by the task that builds each act. It names
+     * the {@code ...Approved} and {@code ...Rejected} actions of {@code lending.Waiver*},
+     * {@code lending.RepaymentReversal*} and {@code lending.Amendment*}.
+     *
+     * <p><strong>Held by {@code LOAN_SERVICING_AGENT}</strong>: the population that proposes corrections is the one
+     * qualified to check them, and the separation that matters - no person approves their own act - is between two
+     * holders, not two roles (the {@code UNDERWRITER} shape).
+     */
+    LOAN_SERVICE_APPROVE
 }

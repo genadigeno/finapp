@@ -53,6 +53,7 @@ class CreditModuleIsolationTest {
             "reconciliation",
             "fx",
             "crossborder",
+            "lending",
             "app");
 
     @Test

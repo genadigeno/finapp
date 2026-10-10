@@ -58,6 +58,7 @@ class MerchantModuleIsolationTest {
                         "fx",
                         "crossborder",
                         "credit",
+                        "lending",
                         "app")) {
             assertThat(classpathEntries())
                     .as("merchant must not depend on %s", forbidden)

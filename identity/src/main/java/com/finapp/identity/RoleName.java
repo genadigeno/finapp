@@ -219,7 +219,43 @@ public enum RoleName {
      * around it. Four-eyes on a large approval is inside the role (two distinct holders, at the
      * domain and by {@code CHECK}), never between roles.
      */
-    UNDERWRITER(EnumSet.of(PermissionName.CREDIT_UNDERWRITE));
+    UNDERWRITER(EnumSet.of(PermissionName.CREDIT_UNDERWRITE)),
+
+    /**
+     * Sets the loan products' terms and answers for what they produced (`P11-TSK-002`, ADR-0090, ADR-0092): holds
+     * {@link PermissionName#LENDING_ADMINISTER} - terms versions under four eyes - and
+     * {@link PermissionName#LENDING_INVESTIGATE} - explanation, replay, reports.
+     *
+     * <p><strong>A tenth role, because this IS a distinct trust decision</strong>: the rate, fees and servicing rules of
+     * a loan are the lending desk's pricing policy - not credit's decision policy ({@link #CREDIT_POLICY_OFFICER}),
+     * which decides who may borrow, and not the capital that funds the book. Holds none of the other populations'
+     * permissions and they hold none of these ({@code INV-AUD-03}). Origination is never a person's act in Phase 11, so
+     * no role here can offer, disburse or draw.
+     */
+    LENDING_OFFICER(EnumSet.of(PermissionName.LENDING_ADMINISTER, PermissionName.LENDING_INVESTIGATE)),
+
+    /**
+     * Commits the platform's own money to lend (`P11-TSK-002`, ADR-0096, L1): holds
+     * {@link PermissionName#LENDING_CAPITAL_ADMINISTER} - capital contributions under four eyes, recognised only from
+     * bank evidence.
+     *
+     * <p><strong>An eleventh role</strong>: funding the book is treasury's judgement, neither pricing a loan
+     * ({@link #LENDING_OFFICER}) nor servicing one ({@link #LOAN_SERVICING_AGENT}) nor operating the ledger
+     * ({@link #LEDGER_OPERATOR}). Holds nothing else.
+     */
+    LENDING_TREASURY_OFFICER(EnumSet.of(PermissionName.LENDING_CAPITAL_ADMINISTER)),
+
+    /**
+     * Services borrowers' accounts (`P11-TSK-002`, ADR-0099): holds {@link PermissionName#LOAN_SERVICE} - the audited
+     * loan read and the proposals of waivers, reversals and amendments - and {@link PermissionName#LOAN_SERVICE_APPROVE}
+     * - approving another holder's proposal.
+     *
+     * <p><strong>A twelfth role, with four-eyes inside it</strong> (the {@link #UNDERWRITER} shape): proposing and
+     * approving a correction are one population's work, and the separation that matters - no person approves their own
+     * act, and no employee services their own party's loan - is held between two holders at the domain and by
+     * {@code CHECK}, enforced by each act's task. Holds neither the terms nor the capital, and cannot originate.
+     */
+    LOAN_SERVICING_AGENT(EnumSet.of(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE));
 
     private final Set<PermissionName> permissions;
 

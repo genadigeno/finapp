@@ -53,6 +53,7 @@ class AccountsModuleIsolationTest {
                         "fx",
                         "crossborder",
                         "credit",
+                        "lending",
                         "app")) {
             assertThat(classpathEntries())
                     .as("accounts must not depend on %s", forbidden)

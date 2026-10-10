@@ -1,0 +1,131 @@
+package com.finapp.lending;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finapp.sharedkernel.id.IdGenerator;
+import java.security.SecureRandom;
+import java.time.Clock;
+import java.util.Arrays;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The closed vocabularies lending declares before any behaviour (P11-TSK-002), each pinned to exactly the members
+ * {@code LENDING_LIFECYCLES.md} and {@code PHASE_11_PLAN.md} name - so a member added, dropped or renamed is a
+ * reviewed change to this test as well as to the enum, never a silent widening of what a later task's {@code CHECK}
+ * or engine must accept.
+ */
+@DisplayName("lending's closed vocabularies (P11-TSK-002)")
+class LendingVocabulariesTest {
+
+    @Test
+    @DisplayName("only implemented conventions are nameable: the day count is ACT_365F alone, implemented by the"
+            + " accrual engine version 1 (INV-LND-09, A22)")
+    void onlyImplementedDayCountsAreNameable() {
+        assertThat(DayCountConvention.values())
+                .as("a convention no accrual engine implements must not be nameable on terms (INV-LND-09)")
+                .containsExactly(DayCountConvention.ACT_365F);
+        for (DayCountConvention convention : DayCountConvention.values()) {
+            assertThat(convention.implementedBy().engine())
+                    .as("%s is implemented by an accrual engine", convention)
+                    .isEqualTo(LendingEngine.ACCRUAL);
+            assertThat(EngineVersion.of(LendingEngine.ACCRUAL, convention.implementedBy().number()))
+                    .as("%s's implementing engine is held by this build", convention)
+                    .contains(convention.implementedBy());
+        }
+    }
+
+    @Test
+    @DisplayName("only implemented frequencies are nameable: MONTHLY alone")
+    void onlyMonthlyIsNameable() {
+        assertThat(RepaymentFrequency.values()).containsExactly(RepaymentFrequency.MONTHLY);
+    }
+
+    @Test
+    @DisplayName("the four engines each stand at version 1, which is the current one; an unheld version is empty,"
+            + " never a fallback")
+    void theFourEnginesStandAtVersionOne() {
+        assertThat(LendingEngine.values())
+                .containsExactly(
+                        LendingEngine.SCHEDULE, LendingEngine.ACCRUAL, LendingEngine.ALLOCATION, LendingEngine.STATEMENT);
+        assertThat(EngineVersion.values())
+                .containsExactly(
+                        EngineVersion.SCHEDULE_ENGINE_V1,
+                        EngineVersion.ACCRUAL_ENGINE_V1,
+                        EngineVersion.ALLOCATION_ENGINE_V1,
+                        EngineVersion.STATEMENT_ENGINE_V1);
+        for (LendingEngine engine : LendingEngine.values()) {
+            EngineVersion current = EngineVersion.current(engine);
+            assertThat(current.engine()).isEqualTo(engine);
+            assertThat(current.number()).as("%s's current version", engine).isEqualTo(1);
+            assertThat(current.name()).isEqualTo(engine.name() + "_ENGINE_V1");
+            assertThat(EngineVersion.of(engine, 1)).contains(current);
+            assertThat(EngineVersion.of(engine, 2)).as("version 2 of %s is not held", engine).isEmpty();
+            assertThat(EngineVersion.of(engine, 0)).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("the loan application machine has exactly LENDING_LIFECYCLES.md section 4.3's six states")
+    void theApplicationStates() {
+        assertThat(names(LoanApplicationStatus.values()))
+                .containsExactly("SUBMITTED", "AWAITING_DECISION", "OFFERED", "DECLINED", "CLOSED_UNDECIDED", "WITHDRAWN");
+    }
+
+    @Test
+    @DisplayName("the loan offer machine has exactly section 4.4's four states")
+    void theOfferStates() {
+        assertThat(names(LoanOfferStatus.values())).containsExactly("OFFERED", "ACCEPTED", "DECLINED", "EXPIRED");
+    }
+
+    @Test
+    @DisplayName("the loan machine has exactly section 4.5's five states - no condition is a state")
+    void theLoanStates() {
+        assertThat(names(LoanStatus.values()))
+                .containsExactly("PENDING_DISBURSEMENT", "ACTIVE", "CLOSING", "CLOSED", "CANCELLED")
+                .as("delinquency, default, draws suspended and awaiting payout are conditions, never states")
+                .doesNotContain("DELINQUENT", "DEFAULTED", "SUSPENDED", "AWAITING_PAYOUT", "RESTRUCTURED", "WRITTEN_OFF");
+    }
+
+    @Test
+    @DisplayName("the loan's terminal reasons: three for CLOSED, two for CANCELLED")
+    void theTerminalReasons() {
+        assertThat(names(ClosureReason.values())).containsExactly("REPAID", "PAID_OFF_EARLY", "CLOSED_BY_CUSTOMER");
+        assertThat(names(CancellationReason.values())).containsExactly("STANDING_LOST", "DISBURSEMENT_FAILED");
+    }
+
+    @Test
+    @DisplayName("two account kinds; four delinquency buckets in ascending order; L6's allocation components in their"
+            + " default order; two overpayment treatments")
+    void theRemainingVocabularies() {
+        assertThat(names(LoanKind.values())).containsExactly("INSTALMENT", "REVOLVING");
+        assertThat(names(DelinquencyBucket.values())).containsExactly("B1_1_29", "B2_30_59", "B3_60_89", "B4_90_PLUS");
+        assertThat(names(AllocationComponent.values())).containsExactly("FEES", "INTEREST", "PRINCIPAL");
+        assertThat(names(OverpaymentTreatment.values())).containsExactly("HOLD_AS_CREDIT", "PAY_DOWN_PRINCIPAL");
+    }
+
+    @Test
+    @DisplayName("each aggregate has its own typed identifier - UUIDv7 only, and never equal across kinds")
+    void theTypedIdentifiers() {
+        IdGenerator ids = new IdGenerator(Clock.systemUTC(), new SecureRandom());
+        UUID value = ids.next();
+        assertThat(LoanId.of(value).value()).isEqualTo(value);
+        assertThat(LoanId.of(value)).isEqualTo(LoanId.of(value));
+        assertThat((Object) LoanId.of(value))
+                .as("a loan and its agreement sharing a value are still two different things")
+                .isNotEqualTo(LoanAgreementId.of(value));
+        assertThat(LoanApplicationId.next(ids).value().version()).isEqualTo(7);
+        assertThat(LoanOfferId.next(ids)).isNotEqualTo(LoanOfferId.next(ids));
+        assertThat(LoanTermsVersionId.of(value).value()).isEqualTo(value);
+        assertThat(CapitalContributionId.of(value).value()).isEqualTo(value);
+        assertThatThrownBy(() -> LoanId.of(UUID.randomUUID()))
+                .as("a v4 value carries no creation instant (ADR-0013)")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static String[] names(Enum<?>[] values) {
+        return Arrays.stream(values).map(Enum::name).toArray(String[]::new);
+    }
+}

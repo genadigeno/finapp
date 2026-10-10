@@ -2523,6 +2523,8 @@ fact, created empty with Phase 11 its only writer, holds identifiers and a stamp
 | `credit_decision_consumption` | `id` | `INTERNAL` | Generated |
 | `credit_decision_consumption` | `decision_id` | `INTERNAL` | The approval consumed - once |
 | `credit_decision_consumption` | `consumed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_decision_consumption` | `consumer_kind` | `INTERNAL` | A closed code - `LOAN_AGREEMENT` (credit `V021`, `P11-TSK-001`; *classified by `P11-TSK-002`'s gate, which found the two consumer columns unregistered*) |
+| `credit_decision_consumption` | `consumer_ref` | `CONFIDENTIAL` | The consuming loan agreement's id - a loan reference (`PHASE_11_PLAN.md` §11) |
 
 ### `credit` - the underwriting case - *added by `P10-TSK-018`*
 

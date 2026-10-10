@@ -106,7 +106,9 @@ relationships, every one through a port `app` implements and none a build edge (
   until unresolved questions #13 and #14 are answered.
 
 **Lending (18)** was bounded by the Phase 10 → 11 transition (ADR-0090, `Proposed`, 2026-10-10;
-`PHASE_11_PLAN.md` §3) — *planned: nothing of it is built, and the task that builds each part
+`PHASE_11_PLAN.md` §3) — *built so far: the module's boundary, its schema floor and its closed
+vocabularies (`P11-TSK-002`, 2026-10-10 — the build edges below are now build-graph facts, pinned by
+`LendingModuleIsolationTest`); everything else is planned, and the task that builds each part
 corrects this paragraph to the code.* One context in one module, `lending`, serving two products —
 the amortising personal loan and the revolving credit line — on one account model. **It owns the
 contract and its servicing facts and none of the money**: the application, the versioned product

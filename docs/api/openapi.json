@@ -13268,7 +13268,10 @@
               "RECONCILIATION_CONTROLLER",
               "FX_CONTROLLER",
               "CREDIT_POLICY_OFFICER",
-              "UNDERWRITER"
+              "UNDERWRITER",
+              "LENDING_OFFICER",
+              "LENDING_TREASURY_OFFICER",
+              "LOAN_SERVICING_AGENT"
             ],
             "type": "string"
           }

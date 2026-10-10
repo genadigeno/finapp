@@ -187,6 +187,49 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("LENDING_OFFICER grants exactly LENDING_ADMINISTER and LENDING_INVESTIGATE - neither capital nor servicing")
+    void lendingOfficerGrantsExactlyTwo() {
+        // The tenth population (P11-TSK-002, ADR-0090, ADR-0092): whoever prices loans answers for what
+        // the terms produced, and neither funds the book nor services a borrower's account.
+        assertThat(RoleName.LENDING_OFFICER.permissions())
+                .as("setting and investigating loan terms is neither committing capital nor servicing")
+                .containsExactlyInAnyOrder(PermissionName.LENDING_ADMINISTER, PermissionName.LENDING_INVESTIGATE)
+                .doesNotContain(
+                        PermissionName.LENDING_CAPITAL_ADMINISTER,
+                        PermissionName.LOAN_SERVICE,
+                        PermissionName.LOAN_SERVICE_APPROVE,
+                        PermissionName.CREDIT_POLICY_ADMINISTER,
+                        PermissionName.CREDIT_UNDERWRITE);
+    }
+
+    @Test
+    @DisplayName("LENDING_TREASURY_OFFICER grants exactly LENDING_CAPITAL_ADMINISTER")
+    void lendingTreasuryOfficerGrantsExactlyOne() {
+        // The eleventh population (P11-TSK-002, ADR-0096, L1): committing the platform's own money to
+        // lend is treasury's judgement alone - not pricing, not servicing, not operating the ledger.
+        assertThat(RoleName.LENDING_TREASURY_OFFICER.permissions())
+                .as("funding the book is a decision of its own")
+                .containsExactlyInAnyOrder(PermissionName.LENDING_CAPITAL_ADMINISTER)
+                .doesNotContain(PermissionName.LENDING_ADMINISTER, PermissionName.LEDGER_POST, PermissionName.LEDGER_ADJUST);
+    }
+
+    @Test
+    @DisplayName("LOAN_SERVICING_AGENT grants exactly LOAN_SERVICE and LOAN_SERVICE_APPROVE - four-eyes inside the role")
+    void loanServicingAgentGrantsExactlyTwo() {
+        // The twelfth population (P11-TSK-002, ADR-0099): proposing and approving a correction are one
+        // population's work; that no person approves their own act - nor services their own party's
+        // loan - is held between two holders at the domain and by CHECK, by each act's task (the
+        // UNDERWRITER shape). The agent holds neither the terms nor the capital.
+        assertThat(RoleName.LOAN_SERVICING_AGENT.permissions())
+                .as("servicing an account is not pricing the product or funding the book")
+                .containsExactlyInAnyOrder(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE)
+                .doesNotContain(
+                        PermissionName.LENDING_ADMINISTER,
+                        PermissionName.LENDING_INVESTIGATE,
+                        PermissionName.LENDING_CAPITAL_ADMINISTER);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -246,6 +289,7 @@ class RoleNameTest {
                         "'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR',"
                                 + " 'MERCHANT_ADMINISTRATOR', 'RECONCILIATION_OPERATOR',"
                                 + " 'RECONCILIATION_CONTROLLER', 'FX_CONTROLLER',"
-                                + " 'CREDIT_POLICY_OFFICER', 'UNDERWRITER'");
+                                + " 'CREDIT_POLICY_OFFICER', 'UNDERWRITER',"
+                                + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT'");
     }
 }

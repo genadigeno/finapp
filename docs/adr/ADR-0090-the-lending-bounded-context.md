@@ -221,6 +221,18 @@ ADR-0001, ADR-0006, ADR-0084.
   `LoanPartyStanding` (`-010`), `LoanWallets` (`-014`), `LoanPayouts` and
   `LoanPayoutDestinations` (`-012`, `-015`). `BOUNDED_CONTEXTS.md` and `MODULE_ARCHITECTURE.md`
   carry the planned entries; each building task corrects them as built.
+  - *Built by `P11-TSK-002` (2026-10-10):* the module, `lending` `V001` (the migrator-owned floor,
+    `USAGE` alone to the application role, no default privileges, no tables), the edges of point 5 —
+    every sibling's isolation test refusing `lending`, and a `ledger → lending` edge refused by Gradle
+    as a cycle — `LendingSchemaHasNoMutableMoneyTest` (point 2's mechanical hold, judged against the
+    catalogue: every `*_minor` column `bigint` on a migrator-owned relation no other grantee may
+    `UPDATE`, `DELETE` or `TRUNCATE`, and no floating-point column anywhere in the schema), the closed
+    vocabularies and identity `V021`. Two refinements made in the building: `LoanProduct` declares no
+    amount or term bounds — the offer equals the decision (A20), so credit's bounds are the only ones
+    and `app`'s `LendingVocabularyTest` checks the *shape* they imply (an instalment product's credit
+    counterpart has a term, a revolving one none; the offer validity within the decision's); and the
+    backlog's `EngineVersions` is the enum `EngineVersion` beside `LendingEngine`, a member per
+    engine version, so a semantic change is a new member and the old one stays for replay.
 - The Phase 11 → 12 transition names refinance's owning phase.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); the Phase 11 review
   (`P11-DOC-001`) reads it against the code, corrects it in place with dated notes, and accepts it.

@@ -232,6 +232,34 @@ class IdentityAdministrationDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the three lending roles are assignable, and each is refused by both administrative endpoints (P11-TSK-002)")
+    void theLendingRolesAreAssignableAndRefusedAdministration() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        for (String role : java.util.List.of("LENDING_OFFICER", "LENDING_TREASURY_OFFICER", "LOAN_SERVICING_AGENT")) {
+            IdentityId holder = givenAnIdentity();
+
+            // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits
+            // the value at the boundary, V021's regenerated constraint admits the row, and the grant
+            // is audited like any other.
+            assertThat(post(rolesOf(holder), givenASessionFor(admin),
+                                    "{\"role\":\"" + role + "\",\"reason\":\"OPS-5102 lending desk\"}")
+                            .statusCode())
+                    .as(role).isEqualTo(204);
+            assertThat(auditOf("identity.RoleAssigned", holder, admin)).as(role).contains("OPS-5102");
+
+            String holderSession = givenASessionFor(holder);
+            IdentityId subject = givenAnIdentity();
+            assertThat(post(suspensionOf(subject), holderSession, REASON).statusCode())
+                    .as("%s: lending is not managing identities", role)
+                    .isEqualTo(403);
+            assertThat(post(rolesOf(subject), holderSession, adminRole()).statusCode())
+                    .as("%s: and certainly not granting roles", role)
+                    .isEqualTo(403);
+            assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+        }
+    }
+
     // -----------------------------------------------------------------
     // The inverted ownership rule
 

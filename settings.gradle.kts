@@ -146,4 +146,16 @@ include("crossborder")
 // CreditModuleIsolationTest and the sibling tests are the only controls.
 include("credit")
 
+// The Phase 11 lending module (P11-TSK-002). `lending` owns the loan contract and its servicing
+// facts and NONE of the money (ADR-0090): every principal, interest, fee and credit-balance figure
+// is a ledger balance, posted through the ledger's APIs and never written here (INV-LED-04,
+// INV-LND-01) - so it is declared after `ledger` for the same structural reason as every money
+// module before it: with lending -> ledger in the build graph, ledger -> lending is a Gradle
+// dependency cycle the build refuses outright. `lending -> credit` is deliberately ABSENT (A16,
+// the crossborder precedent): the decision, its consumption and the exposure lock are reached
+// through ports `app` composes over credit's published ones, as are the wallet (`accounts`), the
+// payout (`payments`) and the party's standing. No cycle backs any of those refusals -
+// LendingModuleIsolationTest is the only control - and nothing depends on `lending`.
+include("lending")
+
 include("app")
