@@ -2,6 +2,7 @@ package com.finapp.app.credit;
 
 import com.finapp.credit.AttributeProvenance;
 import com.finapp.credit.AttributeValue;
+import com.finapp.credit.CreditActingParty;
 import com.finapp.credit.CreditAssessments;
 import com.finapp.credit.CreditAttribute;
 import com.finapp.credit.CreditAttributeCode;
@@ -39,6 +40,7 @@ import com.finapp.credit.JdbcPolicyEvaluationStore;
 import com.finapp.credit.JdbcReservedExposure;
 import com.finapp.credit.JdbcScorecardStore;
 import com.finapp.credit.JdbcUnderwritingCaseStore;
+import com.finapp.credit.PlatformCreditExposure;
 import com.finapp.credit.PolicyEvaluations;
 import com.finapp.credit.PolicyFigure;
 import com.finapp.credit.ScorecardAdministration;
@@ -129,6 +131,41 @@ final class CreditWorld {
     static final Map<UUID, Set<CreditSourceKind>> WITHDRAWN = new ConcurrentHashMap<>();
     /** A party's bureau total balance, in minor units; 4,200.50 unless a case says otherwise. */
     static final Map<UUID, Long> BALANCES = new ConcurrentHashMap<>();
+    /**
+     * The parties whose bureau total balance is reported in a currency not the product's - frozen {@code ABSENT} with
+     * {@code CURRENCY_NOT_SUPPORTED}, never converted (INV-CRD-12) - the rest of the file present and in euros.
+     */
+    static final Set<UUID> NO_BALANCE = ConcurrentHashMap.newKeySet();
+    /** How long before its pull a party's bureau answer says it was retrieved; a minute unless a case says otherwise. */
+    static final Map<UUID, Duration> RETRIEVED_AGO = new ConcurrentHashMap<>();
+    /**
+     * A party's outstanding platform credit, in minor units, when a case gives one (the Phase 10 to 11 transition: a
+     * consumption's exposure moving between an evaluation and its decision); otherwise Phase 10's zero.
+     */
+    static final Map<UUID, Long> OUTSTANDING = new ConcurrentHashMap<>();
+    /** Each test actor's party - a fresh one per actor id unless a case seats an actor in a party of its own choosing. */
+    static final Map<String, UUID> ACTOR_PARTIES = new ConcurrentHashMap<>();
+
+    /** The acting person's party (the transition's self-dealing guard): {@link #ACTOR_PARTIES}, minted on first use. */
+    static final CreditActingParty<Connection> ACTING_PARTIES =
+            (uow, actor) -> Optional.of(ACTOR_PARTIES.computeIfAbsent(actor.id(), id -> UUID.randomUUID()));
+
+    /** Phase 10's zero - or {@link #OUTSTANDING}'s figure, read afresh on every call - under {@code NoLoansUntilPhase11}'s version. */
+    static final PlatformCreditExposure<Connection> PLATFORM_EXPOSURE = new PlatformCreditExposure<>() {
+        private final NoLoansUntilPhase11 phase10 = new NoLoansUntilPhase11();
+
+        @Override
+        public int version() {
+            return phase10.version();
+        }
+
+        @Override
+        public Money outstandingFor(Connection unitOfWork, UUID partyId, CurrencyCode currency) {
+            Long outstanding = OUTSTANDING.get(partyId);
+            return outstanding == null ? phase10.outstandingFor(unitOfWork, partyId, currency)
+                    : Money.ofMinorUnits(outstanding, currency);
+        }
+    };
 
     static final CreditConsentGate<Connection> GATE =
             (uow, party, kind) -> !WITHDRAWN.getOrDefault(party, Set.of()).contains(kind);
@@ -155,7 +192,7 @@ final class CreditWorld {
         public CreditDataAnswer pull(CreditDataPull request) {
             UUID party = UUID.fromString(request.subjectReference());
             AttributeProvenance provenance = new AttributeProvenance.Provider(CreditSourceKind.BUREAU, code(), 1);
-            return received(code(), List.of(
+            return received(code(), RETRIEVED_AGO.getOrDefault(party, Duration.ofSeconds(60)), List.of(
                     new CreditAttribute(CreditAttributeCode.BUREAU_EXTERNAL_SCORE, new AttributeValue.IntegerValue(740), provenance),
                     new CreditAttribute(CreditAttributeCode.BUREAU_ACTIVE_ACCOUNTS, new AttributeValue.IntegerValue(3), provenance),
                     new CreditAttribute(CreditAttributeCode.BUREAU_DELINQUENCIES_24M, new AttributeValue.IntegerValue(0), provenance),
@@ -163,8 +200,9 @@ final class CreditWorld {
                     new CreditAttribute(CreditAttributeCode.BUREAU_INSOLVENCY_FLAG, new AttributeValue.BooleanValue(false), provenance),
                     new CreditAttribute(CreditAttributeCode.BUREAU_MONTHLY_OBLIGATIONS,
                             new AttributeValue.MoneyValue(Money.ofMinorUnits(35_000, EUR)), provenance),
-                    new CreditAttribute(CreditAttributeCode.BUREAU_TOTAL_BALANCE,
-                            new AttributeValue.MoneyValue(Money.ofMinorUnits(BALANCES.getOrDefault(party, 420_050L), EUR)),
+                    new CreditAttribute(CreditAttributeCode.BUREAU_TOTAL_BALANCE, NO_BALANCE.contains(party)
+                            ? new AttributeValue.MoneyValue(Money.ofMinorUnits(420_050L, CurrencyCode.of("USD")))
+                            : new AttributeValue.MoneyValue(Money.ofMinorUnits(BALANCES.getOrDefault(party, 420_050L), EUR)),
                             provenance)));
         }
     };
@@ -189,7 +227,11 @@ final class CreditWorld {
     private CreditWorld() {}
 
     private static CreditDataAnswer received(String provider, List<CreditAttribute> attributes) {
-        return new CreditDataAnswer.Received(provider, 1, Instant.now().minusSeconds(60), attributes,
+        return received(provider, Duration.ofSeconds(60), attributes);
+    }
+
+    private static CreditDataAnswer received(String provider, Duration ago, List<CreditAttribute> attributes) {
+        return new CreditDataAnswer.Received(provider, 1, Instant.now().minus(ago), attributes,
                 new CreditEvidence("{\"answer\":\"test\"}".getBytes(StandardCharsets.UTF_8)));
     }
 
@@ -200,7 +242,7 @@ final class CreditWorld {
     /** The freezer over {@code collection} - a case's own sources (`P10-TSK-021`). */
     static SnapshotFreezer freezer(CreditDataCollection collection) {
         return new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection, STANDING, new NotAssessedUntilPhase13(),
-                new JdbcReservedExposure(), new NoLoansUntilPhase11(), IDS);
+                new JdbcReservedExposure(), PLATFORM_EXPOSURE, IDS);
     }
 
     static CreditDataCollection collection() {

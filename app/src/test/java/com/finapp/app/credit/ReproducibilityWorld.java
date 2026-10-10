@@ -280,7 +280,8 @@ final class ReproducibilityWorld {
     static UnderwritingCases reviewing(DecisionMaking deciding) {
         return new UnderwritingCases(new JdbcUnderwritingCaseStore(), CreditWorld.REQUESTS,
                 new JdbcCreditProfiles(CreditWorld.IDS), deciding, new JdbcDecisionSnapshotStore(),
-                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, new JdbcAuditWriter(), CreditWorld.IDS,
+                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, CreditWorld.ACTING_PARTIES,
+                new JdbcAuditWriter(), CreditWorld.IDS,
                 CreditWorld.CLOCK);
     }
 
@@ -460,7 +461,8 @@ final class ReproducibilityWorld {
                     acted = TRANSACTIONS.inTransaction(uow -> reviewing.decide(uow, id, new UnderwritingCases.Judgement(
                             DecisionOutcome.APPROVED, Optional.of(amount), reasons, "the battery's approval"), first,
                             correlation()));
-                } catch (UnderwritingCases.ExposureLimitExceeded | UnderwritingCases.JudgementInvalid outOfBounds) {
+                } catch (UnderwritingCases.ExposureLimitExceeded | UnderwritingCases.ExposureUnassessable
+                        | UnderwritingCases.JudgementInvalid outOfBounds) {
                     acted = null; // the bounds refused it, nothing recorded: the person declines instead
                 }
             }

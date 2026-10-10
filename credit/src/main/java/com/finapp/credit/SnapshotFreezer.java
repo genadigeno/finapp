@@ -209,26 +209,45 @@ public final class SnapshotFreezer {
 
     /**
      * The successor of {@code previous} (`P10-TSK-016`; PHASE_10_PLAN.md section 12.7): the same request, versions and
-     * records, with the party's reserved exposure as it now stands under the deciding transaction's profile lock -
+     * records, with the party's reserved exposure AND outstanding credit as they now stand under the deciding
+     * transaction's profile lock (the Phase 10 to 11 transition: a consumption moves both - reserved down, outstanding
+     * up - and a successor carrying the first freeze's outstanding figure would judge the limit on a stale exposure) -
      * frozen as the next sequence, born once ({@code UNIQUE (decision_request_id, sequence)}). Never a re-collection: the
-     * records are the ones the request was evaluated on; only the exposure moved.
+     * records are the ones the request was evaluated on; only the exposure moved - and only while those records are
+     * still fresh against {@code maxAgeByKind} ({@code INV-CRD-08}): a successor never copies a stale record
+     * ({@link RecordsStale}; the deciding transaction judges {@link #fresh} first, so this is its defence in depth).
      */
-    public Freeze.Frozen successor(Connection uow, DecisionSnapshot previous, Money reserved) {
+    public Freeze.Frozen successor(
+            Connection uow,
+            DecisionSnapshot previous,
+            Money reserved,
+            Money outstanding,
+            Map<CreditSourceKind, Duration> maxAgeByKind) {
         Objects.requireNonNull(uow, "uow");
         Objects.requireNonNull(previous, "previous");
         Objects.requireNonNull(reserved, "reserved");
+        Objects.requireNonNull(outstanding, "outstanding");
+        Objects.requireNonNull(maxAgeByKind, "maxAgeByKind");
         SnapshotContent prior = previous.content();
         int sequence = previous.sequence() + 1;
         Optional<DecisionSnapshotStore.StoredSnapshot> already = store.snapshotOf(uow, prior.decisionRequest(), sequence);
         if (already.isPresent()) {
             return new Freeze.Frozen(read(already.get()), true);
         }
+        if (!fresh(uow, previous, maxAgeByKind)) {
+            throw new RecordsStale();
+        }
         List<CreditAttribute> attributes = new ArrayList<>();
         for (CreditAttribute attribute : prior.attributes()) {
-            attributes.add(attribute.code() == CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE
-                    ? new CreditAttribute(attribute.code(), new AttributeValue.MoneyValue(reserved),
-                            new AttributeProvenance.Port("reserved-exposure", reservedExposure.version()))
-                    : attribute);
+            if (attribute.code() == CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE) {
+                attributes.add(new CreditAttribute(attribute.code(), new AttributeValue.MoneyValue(reserved),
+                        new AttributeProvenance.Port("reserved-exposure", reservedExposure.version())));
+            } else if (attribute.code() == CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT) {
+                attributes.add(new CreditAttribute(attribute.code(), new AttributeValue.MoneyValue(outstanding),
+                        new AttributeProvenance.Port("platform-exposure", platformExposure.version())));
+            } else {
+                attributes.add(attribute);
+            }
         }
         SnapshotContent content = new SnapshotContent(prior.decisionRequest(), prior.party(), prior.product(),
                 prior.requestedAmount(), prior.termMonths(), prior.versions(), attributes);
@@ -249,6 +268,45 @@ public final class SnapshotFreezer {
     /** The party's reserved exposure in {@code currency} as the freezer's seam reads it - the deciding step's re-read. */
     public Money reservedFor(Connection uow, UUID party, com.finapp.sharedkernel.money.CurrencyCode currency) {
         return reservedExposure.reservedFor(uow, party, currency);
+    }
+
+    /**
+     * The party's outstanding platform credit in {@code currency} as the freezer's seam reads it - the deciding step's
+     * re-read beside the reservation (the Phase 10 to 11 transition; ADR-0088 section 2).
+     */
+    public Money outstandingFor(Connection uow, UUID party, com.finapp.sharedkernel.money.CurrencyCode currency) {
+        return platformExposure.outstandingFor(uow, party, currency);
+    }
+
+    /**
+     * Whether every record {@code snapshot} froze is still fresh against {@code maxAgeByKind} now - judged on the
+     * database's clock ({@link DecisionSnapshotStore#staleRecords}; {@code INV-CRD-08}). A kind the policy no longer
+     * bounds (none: the pinned policy is the one the snapshot was frozen under) counts stale.
+     */
+    public boolean fresh(Connection uow, DecisionSnapshot snapshot, Map<CreditSourceKind, Duration> maxAgeByKind) {
+        Objects.requireNonNull(uow, "uow");
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(maxAgeByKind, "maxAgeByKind");
+        Map<CreditRecordId, Duration> ages = new java.util.HashMap<>();
+        for (CreditAttribute attribute : snapshot.content().attributes()) {
+            if (attribute.provenance() instanceof AttributeProvenance.Record record) {
+                Duration age = maxAgeByKind.get(record.kind());
+                if (age == null) {
+                    return false;
+                }
+                ages.put(record.record(), age);
+            }
+        }
+        return ages.isEmpty() || store.staleRecords(uow, ages).isEmpty();
+    }
+
+    /** A successor asked to copy records that are no longer fresh ({@code INV-CRD-08}): nothing frozen. */
+    public static final class RecordsStale extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        RecordsStale() {
+            super("a successor never copies a record past its maximum age");
+        }
     }
 
     private List<CreditAttribute> attributes(

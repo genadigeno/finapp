@@ -72,18 +72,43 @@ class DecisionRequestApiTest {
 
     @Test
     @DisplayName("an MFA-enrolled customer on a password-only session is 403 identity.AssuranceRequired - before any"
-            + " judgement, nothing written")
+            + " judgement, nothing written; the same customer stepped up is past the assurance check")
     void anEnrolledCustomerNeedsAStepUp() throws Exception {
         CreditTestClient client = new CreditTestClient(port);
-        CreditTestClient.Customer customer = client.consentingCustomer();
-        client.enrolAndConfirm(customer.token());
-        HttpResponse<String> refused = client.submit(customer, loan("10000.00", 36), key());
+        CreditTestClient.Customer assured = client.consentingCustomer();
+        // A fresh login after the enrolment: a PASSWORD session for an enrolled identity.
+        CreditTestClient.Customer password = new CreditTestClient.Customer(client.login(assured), assured.login(),
+                assured.party());
+        HttpResponse<String> refused = client.submit(password, loan("10000.00", 36), key());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
-        assertThat(refused.body()).contains("identity.AssuranceRequired");
+        assertThat(refused.body()).contains("identity.AssuranceRequired").contains("step up");
         // A well-formed (time-ordered) id, so the refusal is the step-up's - a malformed one is 404 before any check.
-        HttpResponse<String> cancel = client.cancel(customer, CreditTestClient.IDS.next().toString(), key());
+        HttpResponse<String> cancel = client.cancel(password, CreditTestClient.IDS.next().toString(), key());
         assertThat(cancel.statusCode()).as(cancel.body()).isEqualTo(403);
-        assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ?", customer.party())).isZero();
+        assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ?", assured.party())).isZero();
+        // The positive control: the assured session is past the assurance check (no policy is in force in this suite's
+        // shared database, so what it meets next is the domain's - never identity.AssuranceRequired).
+        HttpResponse<String> past = client.submit(assured, loan("10000.00", 36), key());
+        assertThat(past.statusCode()).as(past.body()).isNotEqualTo(403);
+        assertThat(past.body()).doesNotContain("identity.AssuranceRequired");
+    }
+
+    @Test
+    @DisplayName("a customer with no second factor is 403 identity.AssuranceRequired on submission - refused until they"
+            + " enrol (the owner's decision, the gate's wording restored); nothing written; cancelling is not held behind"
+            + " an enrolment")
+    void aCustomerWithoutAFactorIsRefusedUntilTheyEnrol() throws Exception {
+        CreditTestClient client = new CreditTestClient(port);
+        CreditTestClient.Customer unenrolled = client.passwordOnlyCustomer(true);
+        CreditTestClient.consent(unenrolled.party(), com.finapp.consent.ConsentPurpose.CREDIT_BUREAU_ACCESS);
+        CreditTestClient.consent(unenrolled.party(), com.finapp.consent.ConsentPurpose.FINANCIAL_DATA_ACCESS);
+        HttpResponse<String> refused = client.submit(unenrolled, loan("10000.00", 36), key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired").contains("enrol");
+        assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ?", unenrolled.party())).isZero();
+        HttpResponse<String> cancel = client.cancel(unenrolled, CreditTestClient.IDS.next().toString(), key());
+        assertThat(cancel.statusCode()).as("the conditional step-up admits an unenrolled cancel: " + cancel.body())
+                .isEqualTo(404);
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.finapp.credit.AttributeProvenance;
 import com.finapp.credit.AttributeValue;
 import com.finapp.credit.CreditDecisionId;
 import com.finapp.credit.CreditErrorCode;
+import com.finapp.credit.CreditReasons;
 import com.finapp.credit.CreditInvestigations;
 import com.finapp.credit.CreditPolicy;
 import com.finapp.credit.CreditRecordId;
@@ -116,6 +117,10 @@ public final class CreditInvestigationDesk {
             throw new ApiException(CreditErrorCode.REASON_REQUIRED, "A decision replay without a reason",
                     "a reason is required.");
         }
+        // Never a card-number or bank-account shape - it becomes the audit record's reason (CreditReasons).
+        CreditReasons.defect(reason).ifPresent(defect -> {
+            throw new ApiException(CreditErrorCode.REASON_REQUIRED, "A decision replay's reason was refused", defect + ".");
+        });
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         DecisionReplayer.Replay replay = snapshots.read(uow -> replayer.replay(uow, id))
@@ -146,9 +151,9 @@ public final class CreditInvestigationDesk {
         CreditInvestigations.EvidenceRead read;
         try {
             read = transactions.inTransaction(uow -> investigations.readEvidence(uow, id, reason, actor, correlation));
-        } catch (CreditInvestigations.ReasonRequired blank) {
-            throw new ApiException(CreditErrorCode.REASON_REQUIRED, "An evidence read without a reason",
-                    "a reason is required.");
+        } catch (CreditInvestigations.ReasonRequired refused) {
+            throw new ApiException(CreditErrorCode.REASON_REQUIRED, "An evidence read's reason was refused",
+                    refused.getMessage() + ".");
         }
         return switch (read) {
             case CreditInvestigations.EvidenceRead.Served served -> new CreditEvidenceView(rawId,

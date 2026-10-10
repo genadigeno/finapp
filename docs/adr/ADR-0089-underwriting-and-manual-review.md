@@ -63,6 +63,29 @@ person. That person is powerful, and the design must bound the power:
      (Phase 11's offer).
    - **May not change a decision once recorded.** The person's decision *is* the decision, recorded
      once; a later change of mind is a new request (ADR-0087 §4).
+   - **May not act on their own party's case** *(added at the Phase 10 to 11 transition, 2026-10-10)*. Every identity belongs to a
+     party, and a customer who is also an employee holds one party for both; an underwriter whose
+     party is the case's applicant is refused every act on it - take, decide, second-approve, refuse -
+     `403 credit.SelfDealingRefused`, judged before any lock on the actor's party read through
+     `CreditActingParty` (composed by `app` over the identity store; an actor in no party is refused
+     too - fail closed). Unlike the other refusals the attempt is recorded: `credit.ReviewOwnCaseRefused`
+     `FAILED`, in a transaction of its own after the act's rolled back.
+   - **May not approve an unassessable exposure** *(owner's decision, the Phase 10 to 11 transition, 2026-10-10)*. An absent bureau
+     total balance is not zero: a person's approval while it is absent is refused
+     `422 credit.ExposureUnassessable` - at the decision, and already at an above-threshold first
+     decision, since a successor copies the basis's records and the absence never heals - and the
+     person may only decline (`INV-CRD-09`, no exception). The recorded consequence: production,
+     which has only fail-safe sources, can approve nothing by a person until a real bureau is
+     connected.
+   - **May not decide on stale data** *(added at the Phase 10 to 11 transition, 2026-10-10)*. The deciding transaction re-judges
+     the deciding snapshot's records against the pinned policy's maximum data age on the database's
+     clock (`INV-CRD-08`) before writing anything; past it, approval and decline alike are refused
+     `422 credit.DataStale`, nothing recorded. A taken case never expires, so the person's way out is
+     to release it: `OPEN` again, it expires with its request, and the applicant applies afresh.
+   - **May not write an instrument into a reason** *(added at the Phase 10 to 11 transition, 2026-10-10)*. The free-text reason,
+     a refused second approval's reason and a second approval's optional reason are screened by
+     `CreditReasons` (a card number or an account identifier refused `422 credit.ReasonRequired`) and,
+     beneath, by credit `V016`'s `CHECK`s on `first_reason` and the case history's `reason`.
 
 3. **The case machine: `OPEN → ASSIGNED → DECIDED`, or `ASSIGNED → AWAITING_SECOND → DECIDED`;
    `ASSIGNED → OPEN` (released by its assignee); `AWAITING_SECOND → ASSIGNED` (the second
@@ -262,7 +285,10 @@ assignment).
   person's amount**: on the deciding snapshot (its reservation re-read under the profile lock), the platform's
   outstanding credit plus reserved exposure plus the approval, plus the bureau's total balance when it was read - an
   absent bureau balance is the referral's question, which the person answers, while the platform's own terms stay bound
-  by the limit. (3) **A person's decision names its deciding snapshot**: the basis, or the successor frozen under the
+  by the limit. *(Superseded at the Phase 10 to 11 transition, 2026-10-10, by the owner's decision: an absent bureau balance makes the exposure
+  unassessable, and a person's approval on it is refused `422 credit.ExposureUnassessable` - point 2; the platform's
+  outstanding credit is now re-read beside the reservation under the profile lock, and a successor replaces both -
+  ADR-0088 point 5.)* (3) **A person's decision names its deciding snapshot**: the basis, or the successor frozen under the
   person; a successor evaluation that hard-declines refuses an approval (`422 credit.HardDeclineNotOverridable`) as the
   basis would. `P10-TSK-019`'s replay re-derives the decision's snapshot to its STORED evaluation - the basis `REFER`,
   or that successor's - and verifies the decision against the case's recorded decision. (4) **Two kinds of reason**: the

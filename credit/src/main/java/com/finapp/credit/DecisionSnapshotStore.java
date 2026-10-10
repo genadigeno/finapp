@@ -64,4 +64,12 @@ public interface DecisionSnapshotStore {
 
     /** The snapshot {@code id} - the one a decision names (`P10-TSK-017`'s explanation). */
     Optional<StoredSnapshot> snapshotById(Connection unitOfWork, DecisionSnapshotId id);
+
+    /**
+     * Which of the records are stale now (the Phase 10 to 11 transition; {@code INV-CRD-08}): each judged against its
+     * maximum age exactly as {@link #recordOf} judges one - {@code LEAST(retrieved_at, recorded_at) >=
+     * transaction_timestamp() - maxAge}, the database's clock - and a record that cannot be found counted stale. The
+     * deciding transaction's re-judgement of the records a snapshot froze, before a person's decision or a successor.
+     */
+    java.util.Set<CreditRecordId> staleRecords(Connection unitOfWork, java.util.Map<CreditRecordId, Duration> maxAgeByRecord);
 }

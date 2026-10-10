@@ -122,6 +122,10 @@ public final class ScorecardAdministration {
         ReasonRequired() {
             super("a reason of 1 to " + REASON_BOUND + " characters is required");
         }
+
+        ReasonRequired(String detail) {
+            super(detail);
+        }
     }
 
     // ------------------------------------------------------------------ propose
@@ -268,6 +272,10 @@ public final class ScorecardAdministration {
     private static String reasoned(String reason) {
         if (reason == null || reason.isBlank() || reason.length() > REASON_BOUND) {
             throw new ReasonRequired();
+        }
+        // Never a card-number or bank-account shape (the Phase 10 to 11 transition; credit V016 beneath).
+        if (CreditReasons.holdsInstrument(reason)) {
+            throw new ReasonRequired("a reason must not hold a card-number or bank-account shape");
         }
         return reason;
     }

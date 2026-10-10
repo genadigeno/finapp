@@ -75,6 +75,12 @@ public record CreditPolicy(
         if (!maximumExposure.isPositive() || !autoApprovalCeiling.isPositive()) {
             throw new PolicyIncomplete("the maximum exposure and the auto-approval ceiling are positive");
         }
+        // The Phase 10 to 11 transition: an approval ceiling below the product's published minimum (ADR-0084 section 6)
+        // would cap an approval to an amount the product cannot offer - refused at construction, so no such version is
+        // ever proposed (none was: the seeds and every version in force sit at or above their product's minimum).
+        if (autoApprovalCeiling.compareTo(product.minimumAmount()) < 0) {
+            throw new PolicyIncomplete("the auto-approval ceiling is at least the product's minimum amount");
+        }
         Map<CreditSourceKind, Duration> ages = new EnumMap<>(CreditSourceKind.class);
         maximumDataAge.forEach((kind, age) -> {
             Objects.requireNonNull(kind, "kind");
@@ -98,7 +104,12 @@ public record CreditPolicy(
             if (rule.operand() instanceof Operand.MoneyOperand money) {
                 inProductCurrency(product, "rule " + rule.ruleCode() + "'s operand", money.value());
             }
-            rule.cap().ifPresent(cap -> inProductCurrency(product, "rule " + rule.ruleCode() + "'s cap", cap));
+            rule.cap().ifPresent(cap -> {
+                inProductCurrency(product, "rule " + rule.ruleCode() + "'s cap", cap);
+                if (cap.compareTo(product.minimumAmount()) < 0) {
+                    throw new PolicyIncomplete("rule " + rule.ruleCode() + "'s cap is at least the product's minimum amount");
+                }
+            });
         }
         for (CreditSourceKind kind : ages.keySet()) {
             boolean covered = rules.stream().anyMatch(rule -> rule.effect() == unavailableFallback.effect()

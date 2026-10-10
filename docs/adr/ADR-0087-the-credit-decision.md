@@ -213,7 +213,10 @@ That sets the bar:
    `CreditDecisionRequestClosed`, `CreditPolicyVersionActivated` /
    `ScorecardModelVersionActivated` (`CreditDecisionRecorded` is version 2 since 2026-10-09, its
    reason codes one field each - §Follow-up). None carries an attribute, a score or declared income.
-   Evolution adds optional fields only; a breaking change is a new type. Credit consumes no event
+   Evolution adds optional fields only; a breaking change is a new type *- or, where the event
+   still means what it meant, a new event VERSION (corrected at the Phase 10 to 11 transition, 2026-10-10: `CreditDecisionRecorded`
+   version 2 is that version bump, §Follow-up; Phase 11's consumer must refuse version 1 or handle it
+   explicitly, never read an absent `reasonCodeCount` as "no reasons")*. Credit consumes no event
    in Phase 10; Phase 11 will consume `CreditDecisionRecorded`. *(As built (`P10-DOC-001`,
    2026-10-09): the occurred-at is the producing instance's business timestamp
    (`clock.instant()` / `Instant.now(clock)` in `DecisionRequests`, `CreditDataCollection`,
@@ -383,6 +386,15 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   investigator's explanation reads the PINNED policy's frozen rules** beside the stored rule results, so it explains
   what decided, never what is in force now.
 - *As built by `P10-TSK-019` (2026-10-08), the replay.* Three decisions taken in the building, recorded here. (1) **The seal is checked before anything is re-run, and covers the pinned versions**: the SHA-256 recomputed over the stored canonical text must equal the snapshot row's digest and the decision's, and the snapshot's pinned versions the decision's; any disagreement - or text the strict parser refuses - is `HASH`, and the replay stops there, since inputs that are not the ones decided on prove nothing either way. (2) **A decision that cannot be re-run is a fifth kind, `UNREPLAYABLE`** - a pinned row missing, an engine version this build does not hold, a rule reading an attribute the snapshot never held - a verdict like the others rather than an exception that would hide every other decision's in the proof. *(As built (`P10-DOC-001`, 2026-10-09): precisely, `UNREPLAYABLE` is a fifth `Divergence` kind beside `HASH`, `OUTCOME`, `AMOUNT` and `REASONS`; the verdict stays one of two, `IDENTICAL` or `DIVERGED`, and an unreplayable decision is `DIVERGED` naming it.)* (3) **The assessment's arithmetic is one function**: `CreditAssessments.figures`, run by the assessment and by its replay alike, so the two cannot drift; replay re-derives in memory and writes nothing. A person's decision (its request's case `DECIDED`) re-derives the evaluation it rested on - its snapshot's stored evaluation, the successor's when the reservation moved - and is verified equal to the case's recorded decision; a person's judgement is verified, never re-derived.
+- *Corrected at the Phase 10 to 11 transition, 2026-10-10: a decision rests on its OWN request's snapshot, sealed to it.* `credit V017`:
+  composite keys `(snapshot_id, decision_request_id)` on the decision and the assessment,
+  `(assessment_id, decision_request_id)` on the evaluation and `(basis_evaluation_id, decision_request_id)` on the
+  review case; birth triggers sealing the assessment's hash and pins to its snapshot, the evaluation's policy and engine
+  to its assessment, and the decision's hash and pins to its request's LATEST snapshot and (once pinned) the request's
+  versions. The replay's seal (point (1) of `-019` above) now also checks the snapshot is the decision's own request's -
+  `HASH` otherwise. And the deciding transaction re-judges the deciding snapshot's records fresh (`INV-CRD-08`) before
+  it writes anything, the system deciding nothing and a person refused `credit.DataStale` on a stale basis (ADR-0089
+  point 2).
 - *Corrected 2026-10-09, outside the task loop: `CreditDecisionRecorded` is event version 2.* As built by `-016`,
   version 1 joined every reason code into ONE payload value (`reasonCodes`, underscore-separated). `EventPayload`
   bounds a value at 200 characters, so a decision citing eight or more codes (the longest eight; any ten) threw while

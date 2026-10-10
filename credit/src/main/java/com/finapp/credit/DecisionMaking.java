@@ -38,8 +38,11 @@ import lombok.RequiredArgsConstructor;
  *       clock (the expiry and the system decision are complementary conditionals; the trigger re-judges both);
  *   <li>the party's standing and the consent gate re-read - either lost abandons the request, nothing decided;
  *   <li>the pinned versions {@code FOR SHARE} (element (5)), whatever has been activated since;
- *   <li>the reserved exposure re-read under the profile lock - when it differs from the snapshot's, a successor snapshot
- *       (the same records, the new exposure; the next sequence), assessed and evaluated under the same pinned versions;
+ *   <li>the snapshot's records re-judged fresh against the pinned policy's maximum data age on the database's clock
+ *       ({@code INV-CRD-08}; the Phase 10 to 11 transition) - a stale basis writes nothing and decides nothing;
+ *   <li>the reserved exposure AND the outstanding platform credit re-read under the profile lock - when either differs
+ *       from the snapshot's, a successor snapshot (the same records, both new terms; the next sequence), assessed and
+ *       evaluated under the same pinned versions;
  *   <li>the evaluation's outcome: an approval or a decline is recorded - the decision and its reasons, the request
  *       {@code DECIDED}, {@code credit.CreditDecisionRecorded} and {@code credit.DecisionRecorded}; <strong>a referral
  *       opens the underwriting case</strong> (`P10-TSK-018`, ADR-0089 point 1) - born {@code OPEN} once per request with
@@ -86,10 +89,17 @@ public final class DecisionMaking implements Decider {
     @NonNull private final Clock clock;
 
     /** What the deciding transaction found under its locks, before it records anything. */
-    sealed interface Basis permits Basis.Abandoned, Basis.Ready {
+    sealed interface Basis permits Basis.Abandoned, Basis.Stale, Basis.Ready {
 
         /** The party's standing or a consent was lost: the request is closed {@code ABANDONED}, nothing decided. */
         record Abandoned(ClosureReason reason) implements Basis {}
+
+        /**
+         * A record the snapshot froze is past the pinned policy's maximum data age now ({@code INV-CRD-08}): nothing
+         * written - the system decides nothing (the request waits for its expiry), a person is refused
+         * {@code credit.DataStale}.
+         */
+        record Stale() implements Basis {}
 
         /** The pinned policy, the snapshot a decision is made from - a successor when the reservation moved - and its evaluation. */
         record Ready(CreditPolicyStore.PolicyVersion policy, DecisionSnapshot snapshot, PolicyEvaluation evaluation)
@@ -129,6 +139,10 @@ public final class DecisionMaking implements Decider {
         }
         DecisionRequest request = locked.get().request();
         Basis basis = basisWithin(uow, request, platform, correlation);
+        if (basis instanceof Basis.Stale) {
+            // Never a decision on stale data (INV-CRD-08): nothing written; the request waits for its expiry.
+            return Decided.NOTHING;
+        }
         if (!(basis instanceof Basis.Ready ready)) {
             return Decided.ABANDONED;
         }
@@ -177,16 +191,27 @@ public final class DecisionMaking implements Decider {
         }
         DecisionSnapshot snapshot = freezer.latest(uow, request.id().value())
                 .orElseThrow(() -> new IllegalStateException("an evaluated request has its snapshot"));
+        // INV-CRD-08 at the decision (the Phase 10 to 11 transition): the records the snapshot froze are re-judged
+        // against the pinned policy's maximum data age on the database's clock - before anything is written, so a stale
+        // basis records nothing, not even a successor.
+        if (!freezer.fresh(uow, snapshot, policy.maximumDataAge())) {
+            return new Basis.Stale();
+        }
+        // ADR-0088 section 2 under the profile lock: BOTH platform terms re-read - the reservation and the outstanding
+        // credit. A Phase 11 consumption moves the one down and the other up by the same amount; a check on the
+        // reservation alone would see it fall, reuse nothing, and still judge the limit on the first freeze's outstanding.
         Money reserved = freezer.reservedFor(uow, request.party(), request.application().product().currency());
+        Money outstanding = freezer.outstandingFor(uow, request.party(), request.application().product().currency());
         PolicyEvaluation evaluation;
-        if (reserved.equals(reservedIn(snapshot))) {
+        if (reserved.equals(moneyIn(snapshot, CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE))
+                && outstanding.equals(moneyIn(snapshot, CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT))) {
             CreditAssessment assessment = assessmentStore.bySnapshot(uow, snapshot.id())
                     .orElseThrow(() -> new IllegalStateException("an evaluated request's snapshot is assessed"));
             evaluation = evaluationStore.byAssessment(uow, assessment.id())
                     .orElseThrow(() -> new IllegalStateException("an evaluated request's assessment is evaluated"));
         } else {
-            // The reservation moved since the evaluation: a successor snapshot decides (section 12.7).
-            snapshot = freezer.successor(uow, snapshot, reserved).snapshot();
+            // The exposure moved since the evaluation: a successor snapshot decides (section 12.7).
+            snapshot = freezer.successor(uow, snapshot, reserved, outstanding, policy.maximumDataAge()).snapshot();
             CreditAssessment assessment = assessments.assess(uow, snapshot, CreditAssessments.Terms.of(policy), correlation)
                     .assessment();
             evaluation = evaluations.evaluate(uow, snapshot, assessment).evaluation();
@@ -284,9 +309,8 @@ public final class DecisionMaking implements Decider {
         return true;
     }
 
-    private static Money reservedIn(DecisionSnapshot snapshot) {
-        return ((AttributeValue.MoneyValue) snapshot.content().attribute(CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE)
-                .value()).value();
+    private static Money moneyIn(DecisionSnapshot snapshot, CreditAttributeCode code) {
+        return ((AttributeValue.MoneyValue) snapshot.content().attribute(code).value()).value();
     }
 
     /**
