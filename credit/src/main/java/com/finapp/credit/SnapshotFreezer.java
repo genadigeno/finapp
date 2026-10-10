@@ -34,7 +34,9 @@ import lombok.RequiredArgsConstructor;
  *   <li>its latest data request {@code RECEIVED}, the record fresh ({@code retrieved_at >= transaction_timestamp() -
  *       max_age}, the pinned policy's maximum age, handed in) - its attributes enter, each with its record's provenance;
  *   <li>the record stale - collection re-opens for that kind under a new reference in this same transaction (the
- *       lifecycle's one backward edge), and nothing is frozen: a stale record never decides;
+ *       lifecycle's one backward edge), and nothing is frozen: a stale record never decides. Bounded (the Phase 10 ->
+ *       11 transition): only a record fresh when recorded, and only the kind's first data request, re-collects; a
+ *       record already stale when recorded, or a second staleness, enters as the kind unavailable (below);
  *   <li>{@code UNAVAILABLE} past its deadline - its attributes enter {@code ABSENT}, and {@code SOURCE_UNAVAILABLE}
  *       names the kind ({@code INV-CRD-10});
  *   <li>still in flight - {@link Freeze.NotReady}; consent withdrawn - {@link Freeze.ConsentWithdrawn}, for the request
@@ -164,6 +166,12 @@ public final class SnapshotFreezer {
                             .orElseThrow(() -> new IllegalStateException("a RECEIVED data request without its record"));
                     if (record.fresh()) {
                         fresh.put(kind, record);
+                    } else if (record.staleWhenRecorded() || recollected(requests, kind)) {
+                        // Re-collection is bounded (the Phase 10 -> 11 transition, ADR-0085 section 11): a record the
+                        // provider dated past the age when it answered, or a second staleness of one kind, makes the
+                        // kind unavailable for this request - ABSENT, SOURCE_UNAVAILABLE, the policy's fallback - never
+                        // another paid pull, which a provider stamping every report stale would loop on forever.
+                        unavailable.put(kind, state.id());
                     } else {
                         stale.add(kind);
                     }
@@ -331,6 +339,14 @@ public final class SnapshotFreezer {
     private DecisionSnapshot read(DecisionSnapshotStore.StoredSnapshot stored) {
         return new DecisionSnapshot(stored.id(), stored.sequence(), stored.format(), stored.canonical(), stored.sha256(),
                 stored.frozenAt(), CanonicalSnapshot.parse(stored.canonical()));
+    }
+
+    /**
+     * Whether {@code kind} was already re-collected on this request - more than one of its data requests. Only the
+     * opening and a re-collection birth one, each under the decision request's row lock, so the count is exact.
+     */
+    private static boolean recollected(List<DecisionSnapshotStore.DataRequestState> requests, CreditSourceKind kind) {
+        return requests.stream().filter(request -> request.kind() == kind).count() > 1;
     }
 
     /** The attribute codes a source kind's answer normalises to. */

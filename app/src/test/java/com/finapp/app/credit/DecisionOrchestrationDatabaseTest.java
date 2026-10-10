@@ -140,7 +140,7 @@ class DecisionOrchestrationDatabaseTest {
     // ------------------------------------------------------------------ the world at the ports, steered per case
 
     /** How a party's source answers. */
-    private enum Answer { FRESH, STALE_ONCE, UNAVAILABLE, WITHDRAW_WHILE_ASKED, FAIL }
+    private enum Answer { FRESH, STALE_ALWAYS, UNAVAILABLE, WITHDRAW_WHILE_ASKED, FAIL }
 
     private static final Set<UUID> SUSPENDED = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, Set<CreditSourceKind>> WITHDRAWN = new ConcurrentHashMap<>();
@@ -171,7 +171,7 @@ class DecisionOrchestrationDatabaseTest {
         @Override
         public CreditDataAnswer pull(CreditDataPull request) {
             UUID party = UUID.fromString(request.subjectReference());
-            int pull = BUREAU_PULLS.computeIfAbsent(party, ignored -> new AtomicInteger()).incrementAndGet();
+            BUREAU_PULLS.computeIfAbsent(party, ignored -> new AtomicInteger()).incrementAndGet();
             Answer answer = BUREAU_ANSWERS.getOrDefault(party, Answer.FRESH);
             return switch (answer) {
                 case UNAVAILABLE -> new CreditDataAnswer.Unavailable(CreditDataAnswer.UnavailableCause.TIMEOUT, Optional.empty());
@@ -180,7 +180,7 @@ class DecisionOrchestrationDatabaseTest {
                     WITHDRAWN.computeIfAbsent(party, ignored -> ConcurrentHashMap.newKeySet()).add(CreditSourceKind.BUREAU);
                     yield received(Instant.now(), bureau());
                 }
-                case STALE_ONCE -> received(pull == 1 ? Instant.now().minus(Duration.ofDays(40)) : Instant.now(), bureau());
+                case STALE_ALWAYS -> received(Instant.now().minus(Duration.ofDays(40)), bureau());
                 case FRESH -> received(Instant.now(), bureau());
             };
         }
@@ -452,15 +452,16 @@ class DecisionOrchestrationDatabaseTest {
     }
 
     @Test
-    @DisplayName("a record stale at the freeze re-collects under a new reference - READY -> COLLECTING - and the fresh"
-            + " one decides")
+    @DisplayName("a record that aged stale before the freeze re-collects under a new reference - READY -> COLLECTING -"
+            + " and the fresh one decides")
     void aStaleRecordAtTheFreezeReCollects() throws Exception {
         UUID party = UUID.randomUUID();
         UUID id = request(party, CreditProduct.PERSONAL_LOAN.requestValidity());
-        BUREAU_ANSWERS.put(party, Answer.STALE_ONCE);
         DecisionProgress progress = instance();
         step(progress, id);
         assertThat(step(progress, id)).as(dump(id)).isEqualTo(DecisionProgress.Step.READY);
+        // Fresh when recorded; the request waited, and the record aged past the policy's maximum age.
+        ageRecords(id, Duration.ofDays(40));
         assertThat(step(progress, id)).isEqualTo(DecisionProgress.Step.RECOLLECTING);
         assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", id)).isZero();
         assertThat(step(progress, id)).as(dump(id)).isEqualTo(DecisionProgress.Step.READY);
@@ -469,6 +470,48 @@ class DecisionOrchestrationDatabaseTest {
                 id)).as("a new reference for the stale source").isEqualTo(2);
         assertThat(edges(id)).containsExactlyInAnyOrder("null->SUBMITTED", "SUBMITTED->COLLECTING", "COLLECTING->READY",
                 "READY->COLLECTING", "COLLECTING->READY", "READY->EVALUATED");
+    }
+
+    @Test
+    @DisplayName("a provider stamping every report older than the maximum age is never re-asked under a new reference -"
+            + " one paid pull, the bureau ABSENT with SOURCE_UNAVAILABLE, the policy's fallback decides (Phase 10 -> 11"
+            + " transition)")
+    void aProviderStampingEveryReportStaleIsUnavailableNotALoop() throws Exception {
+        UUID party = UUID.randomUUID();
+        UUID id = request(party, CreditProduct.PERSONAL_LOAN.requestValidity());
+        BUREAU_ANSWERS.put(party, Answer.STALE_ALWAYS);
+        DecisionProgress progress = instance();
+        step(progress, id);
+        assertThat(step(progress, id)).as(dump(id)).isEqualTo(DecisionProgress.Step.READY);
+        assertThat(step(progress, id)).as("never RECOLLECTING").isEqualTo(DecisionProgress.Step.EVALUATED);
+        assertThat(BUREAU_PULLS.get(party).get()).as("one pull at the bureau").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ? AND source_kind = 'BUREAU'",
+                id)).isEqualTo(1);
+        String canonical = scalar("SELECT canonical FROM credit.decision_snapshot WHERE decision_request_id = ?", id);
+        assertThat(com.finapp.credit.CanonicalSnapshot.parse(canonical).attribute(CreditAttributeCode.SOURCE_UNAVAILABLE)
+                .value()).isEqualTo(new AttributeValue.CodeValue("BUREAU"));
+        assertThat(scalar("SELECT array_to_string(reason_codes, ',') FROM credit.policy_evaluation"
+                + " WHERE decision_request_id = ?", id)).contains("CRD-SOURCE-UNAVAILABLE");
+    }
+
+    /** Ages every record of {@code request} by {@code ago} - retrieved and recorded alike, as the owner. */
+    private static void ageRecords(UUID request, Duration ago) throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (java.sql.Statement ddl = owner.createStatement();
+                    PreparedStatement plant = owner.prepareStatement("UPDATE credit.credit_record SET"
+                            + " retrieved_at = retrieved_at - ? * interval '1 millisecond',"
+                            + " recorded_at = recorded_at - ? * interval '1 millisecond' WHERE data_request_id IN"
+                            + " (SELECT id FROM credit.data_request WHERE decision_request_id = ?)")) {
+                ddl.execute("ALTER TABLE credit.credit_record DISABLE TRIGGER USER");
+                plant.setLong(1, ago.toMillis());
+                plant.setLong(2, ago.toMillis());
+                plant.setObject(3, request);
+                assertThat(plant.executeUpdate()).isPositive();
+                ddl.execute("ALTER TABLE credit.credit_record ENABLE TRIGGER USER");
+            }
+            owner.commit();
+        }
     }
 
     // ------------------------------------------------------------------ the clock and the standing

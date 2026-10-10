@@ -199,8 +199,11 @@ public final class JdbcCreditDataRequestStore implements CreditDataRequestStore 
                         // row another sweeper reported meanwhile against its OWN statement_timestamp() - READ
                         // COMMITTED's re-evaluation - so the deadline alone would still admit it, and the CHECK
                         // would refuse the whole batch. The flag is the committed fact the re-check can see.
-                        + " WHERE (status = 'REQUESTED' OR (status = 'UNAVAILABLE' AND deadline_at > statement_timestamp()"
-                        + " AND NOT unavailable_reported))"
+                        // The deadline bounds a REQUESTED request too (the Phase 10 -> 11 transition): an answer that
+                        // can never be recorded leaves its request REQUESTED, and without this bound it was re-asked
+                        // every cadence until its decision request expired. Past it, claimOverdue ends it.
+                        + " WHERE status IN ('REQUESTED', 'UNAVAILABLE') AND deadline_at > statement_timestamp()"
+                        + " AND NOT unavailable_reported"
                         + " AND next_attempt_at <= statement_timestamp()"
                         // The retry stops asking for a closed request (CREDIT_DECISIONING_LIFECYCLES.md section 3.1;
                         // P10-DOC-001): a cancelled, expired, abandoned or decided request needs no more data, and
@@ -230,12 +233,17 @@ public final class JdbcCreditDataRequestStore implements CreditDataRequestStore 
             throw new IllegalArgumentException("a claim takes at least one data request");
         }
         try (PreparedStatement claim = unitOfWork.prepareStatement(
-                "UPDATE " + TABLE + " SET unavailable_reported = true"
+                // A REQUESTED request past its deadline is ended here too (the Phase 10 -> 11 transition): moved to
+                // UNAVAILABLE as it is reported, so the freeze reads the kind ABSENT and the policy's fallback decides.
+                // A recorder holding its lock is skipped and the next sweep takes it if it is still REQUESTED; an answer
+                // arriving after this finds it no longer REQUESTED - duplicate evidence, never a record.
+                "UPDATE " + TABLE + " SET status = 'UNAVAILABLE', unavailable_reported = true"
                         + " WHERE id IN (SELECT id FROM " + TABLE
-                        + " WHERE status = 'UNAVAILABLE' AND NOT unavailable_reported"
+                        + " WHERE status IN ('REQUESTED', 'UNAVAILABLE') AND NOT unavailable_reported"
                         + " AND deadline_at <= statement_timestamp()"
                         + " ORDER BY deadline_at, id LIMIT ? FOR UPDATE SKIP LOCKED)"
-                        + " AND NOT unavailable_reported RETURNING id, source_kind, provider_code, attempts")) {
+                        + " AND status IN ('REQUESTED', 'UNAVAILABLE') AND NOT unavailable_reported"
+                        + " RETURNING id, source_kind, provider_code, attempts")) {
             claim.setInt(1, limit);
             List<Overdue> claimed = new ArrayList<>();
             try (ResultSet rows = claim.executeQuery()) {
@@ -250,6 +258,20 @@ public final class JdbcCreditDataRequestStore implements CreditDataRequestStore 
             return claimed;
         } catch (SQLException failure) {
             throw new CreditStorageException(DatabaseFailure.describe("claiming overdue credit data requests", failure));
+        }
+    }
+
+    @Override
+    public boolean decisionRequestOpen(Connection unitOfWork, UUID decisionRequestId) {
+        Objects.requireNonNull(decisionRequestId, "decisionRequestId");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT status FROM credit.decision_request WHERE id = ?")) {
+            select.setObject(1, decisionRequestId);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() && DecisionRequestStatus.valueOf(row.getString("status")).open();
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("reading a decision request's status", failure));
         }
     }
 

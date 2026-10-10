@@ -1497,7 +1497,9 @@ never recorded (`BureauSelectionDatabaseTest#theRecordNamesItsProvider`,
 ### INV-CRD-08 — Stale data never decides
 **Statement:** Every credit record a snapshot uses was retrieved within the pinned policy's
 declared maximum age for its source kind, judged on the database clock at the freeze. A record
-past it is re-collected, never used.
+past it is never used: re-collected once if it was fresh when recorded, else (already stale when
+recorded, or stale a second time on one request) its source kind is unavailable for the request
+and the policy's fallback decides (`INV-CRD-10`).
 **Why:** A decision on an out-of-date bureau file decides a different applicant from the one
 who applied; and an instance clock judging the age lets skew admit stale data or refuse fresh.
 **Enforce:** `DOMAIN` (judged against `DatabaseTime.now` in the freezing transaction). The age
@@ -1506,8 +1508,14 @@ runs from the earlier of the provider's stated retrieval and our own recording �
 (`JdbcDecisionSnapshotStore`), so a provider clock ahead of ours, or a re-stamped file, never
 keeps stale data fresh. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
 found the age judged on `retrieved_at` alone — the provider's word — and corrected it.)*
-**Verify:** A record one second past the maximum age re-collected; an instance skewed ±5 s
-neither accepting stale data nor refusing fresh.
+Re-collection is bounded (`SnapshotFreezer`, ADR-0085 §11): only a record with `retrieved_at >=
+recorded_at − max age`, and only the kind's first data request on the decision request, re-collects.
+*(Added at the Phase 10 → 11 transition, 2026-10-10, whose audit found a provider stamping every
+report past the age looping paid pulls until the request expired.)*
+**Verify:** A record that aged one second past the maximum age re-collected; a record stale when
+recorded, and a second staleness, frozen unavailable with no further data request
+(`DecisionSnapshotDatabaseTest`, `DecisionOrchestrationDatabaseTest#aProviderStampingEveryReportStaleIsUnavailableNotALoop`);
+an instance skewed ±5 s neither accepting stale data nor refusing fresh.
 **Phase:** 10
 
 ### INV-CRD-09 — Decisions for one party are serialised on its exposure
@@ -1537,7 +1545,12 @@ recorded, and the policy's declared fallback — refer or decline — decides, r
 **Why:** The fail-safe direction: an outage that approves extends credit on no evidence.
 **Enforce:** `DOMAIN` (every approving path requires the source's attributes present; a policy
 lacking the fallback rule for a source kind it reads refused at proposal,
-`credit.PolicyIncomplete`).
+`credit.PolicyIncomplete`). Every data request reaches an outcome the freeze can read: an answer
+Tx2 cannot record is `UNAVAILABLE` (attempt `UNRECORDED`, its bytes kept), and a `REQUESTED` request past
+its deadline is never re-asked and is reported `UNAVAILABLE` once (`CreditDataCollection`,
+`JdbcCreditDataRequestStore.claimDue`/`claimOverdue`); a provider body is malformed unless it is
+exactly one strict JSON object (`CreditProviderJson`). *(Added at the Phase 10 → 11 transition,
+2026-10-10.)*
 **Verify:** Every fault of the provider contract suite ending in refer or decline with
 `CRD-SOURCE-UNAVAILABLE`; an incomplete policy refused; the missing-data census
 (`MissingDataCensus`) — zero `SYSTEM` decisions `APPROVED`, and zero evaluations `APPROVE`, on a
@@ -1549,7 +1562,10 @@ the assessment, never from the evaluator's own record — in every storm round's
 (`CreditDecisionStormDatabaseTest`), and over the battery's ten thousand
 (`DecisionReproducibilityBatteryTest#missingDataNeverApproves`), where replay alone could not see
 it (it re-runs the same evaluator). *(The census was added at the Phase 10 → 11 transition: this
-line had claimed it before the storm had it.)*
+line had claimed it before the storm had it.)* An
+unrecordable answer and a `REQUESTED` request past its deadline each ending `UNAVAILABLE`, reported
+once (`BureauCollectionDatabaseTest`); concatenated, duplicate-key and trailing-token bodies
+`MALFORMED` in every adapter's golden files.
 **Phase:** 10
 
 ### INV-CRD-11 — A person's credit decision is bounded

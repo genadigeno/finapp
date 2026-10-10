@@ -63,6 +63,13 @@ import lombok.extern.slf4j.Slf4j;
  * under the SAME reference after re-reading the gate (absent: {@code CONSENT_WITHDRAWN}, nothing asked) - the provider
  * dedupes, so a lost response costs one pull. Past its deadline an unavailable request is never asked again, and
  * {@link #reportOverdue} emits {@code CreditDataUnavailable} for it exactly once, by a conditional flag.
+ *
+ * <h2>Every request ends (the Phase 10 -> 11 transition, ADR-0085 section 11)</h2>
+ *
+ * <p>The deadline bounds a {@code REQUESTED} request as it bounds an {@code UNAVAILABLE} one: never claimed past it,
+ * and reported - moved to {@code UNAVAILABLE} - by the same once-only claim. An answer Tx2 cannot record is
+ * {@code UNAVAILABLE} with an {@code UNRECORDED} attempt and its bytes kept, in a transaction of its own. And nothing is
+ * asked for a request whose decision request has closed.
  */
 @RequiredArgsConstructor
 @Slf4j
@@ -75,6 +82,11 @@ public final class CreditDataCollection {
     static final String PRODUCER = "credit";
     static final int EVENT_VERSION = 1;
     private static final String REFERENCE_PREFIX = "CDR-";
+    /**
+     * The attempt outcome of an answer that arrived and could not be recorded (credit {@code V020}): not the provider's
+     * {@code MALFORMED} - the cause may be ours, a connection lost mid-transaction.
+     */
+    static final String UNRECORDED = "UNRECORDED";
 
     @NonNull private final CreditDataRequestStore store;
     @NonNull private final Sources sources;
@@ -279,13 +291,26 @@ public final class CreditDataCollection {
 
     // ------------------------------------------------------------------ ask and record
 
-    /** Pulls the request under its reference, holding no connection, then records the answer (Tx2). */
+    /** The data request as the ask reads it, and whether its decision request is still open. */
+    private record Asking(CreditDataRequestStore.Row row, boolean open) {}
+
+    /**
+     * Pulls the request under its reference, holding no connection, then records the answer (Tx2). Nothing is asked for
+     * a request no longer {@code REQUESTED}, nor for one whose decision request has closed - a paid pull of the
+     * applicant's data for nothing. An answer Tx2 cannot record is {@code UNAVAILABLE}, in a transaction of its own
+     * ({@link #unrecordable}) - never a request left {@code REQUESTED} to be asked again every cadence.
+     */
     public CreditDataRequestStatus ask(CreditDataRequestId id, CorrelationId correlation) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(correlation, "correlation");
-        CreditDataRequestStore.Row row = transactions.inTransaction(uow -> store.find(uow, id))
+        Asking asking = transactions.inTransaction(uow -> store.find(uow, id)
+                .map(found -> new Asking(found, found.status() == CreditDataRequestStatus.REQUESTED
+                        && store.decisionRequestOpen(uow, found.decisionRequestId()))))
                 .orElseThrow(() -> new IllegalArgumentException("no credit data request has this identifier"));
-        if (row.status() != CreditDataRequestStatus.REQUESTED) {
+        CreditDataRequestStore.Row row = asking.row();
+        if (row.status() != CreditDataRequestStatus.REQUESTED || !asking.open()) {
+            // A closed decision request needs no data (the Phase 10 -> 11 transition): left as it is, never asked; the
+            // claim no longer takes it, and its deadline ends it.
             return row.status();
         }
         // Asked of the provider the request was born naming - never another under its reference (P10-TSK-021).
@@ -301,7 +326,65 @@ public final class CreditDataCollection {
             answer = provider.get().pull(new CreditDataPull(row.reference(), row.partyId().toString(), row.product()));
             observer.called(row.kind(), row.providerCode(), Duration.between(started, Instant.now(clock)));
         }
-        return transactions.inTransaction(uow -> record(uow, id, answer, correlation));
+        try {
+            return transactions.inTransaction(uow -> record(uow, id, answer, correlation));
+        } catch (RuntimeException refused) {
+            // Tx2 rolled back - an answer naming another provider, a value a CHECK refuses, an instant past the
+            // database's range, a lost connection. The class name only: the answer never reaches a log line.
+            log.warn("A credit data answer could not be recorded: {}", refused.getClass().getSimpleName());
+            return unrecordable(id, answer);
+        }
+    }
+
+    /**
+     * The outcome of an answer Tx2 could not record (the Phase 10 -> 11 transition): {@code REQUESTED -> UNAVAILABLE}
+     * with an {@code UNRECORDED} attempt and the bytes kept as evidence, in a transaction of its own - or, if the bytes
+     * themselves are refused, without them. Under the row lock and only from {@code REQUESTED}: a Tx2 that committed but
+     * whose answer was lost finds {@code RECEIVED} and nothing is done. {@code UNAVAILABLE} is retried at the cadence
+     * until the deadline, then reported once - so a transient failure costs a retry, a deterministic one reaches the
+     * policy's fallback. If this transaction fails too, the request stays {@code REQUESTED} and its deadline ends it.
+     */
+    private CreditDataRequestStatus unrecordable(CreditDataRequestId id, CreditDataAnswer answer) {
+        try {
+            return transactions.inTransaction(uow -> markUnrecordable(uow, id, answer, true));
+        } catch (RuntimeException evidenceRefused) {
+            log.warn("An unrecordable credit data answer's evidence could not be kept: {}",
+                    evidenceRefused.getClass().getSimpleName());
+            return transactions.inTransaction(uow -> markUnrecordable(uow, id, answer, false));
+        }
+    }
+
+    private CreditDataRequestStatus markUnrecordable(
+            Connection uow, CreditDataRequestId id, CreditDataAnswer answer, boolean keepBytes) {
+        CreditDataRequestStore.Row row = store.lock(uow, id)
+                .orElseThrow(() -> new IllegalArgumentException("no credit data request has this identifier"));
+        if (row.status() != CreditDataRequestStatus.REQUESTED) {
+            return row.status();
+        }
+        int attempt = row.attempts() + 1;
+        if (!gate.permits(uow, row.partyId(), row.kind())) {
+            return withdrawnInFlight(uow, row, attempt, answer);
+        }
+        requireMoved(store.markUnavailable(uow, id, attempt));
+        store.insertAttempt(uow, id, attempt, UNRECORDED);
+        if (keepBytes) {
+            evidenceOf(answer).ifPresent(bytes ->
+                    store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(bytes))));
+        }
+        observer.answered(row.kind(), row.providerCode(), CreditDataObserver.Outcome.UNAVAILABLE);
+        return CreditDataRequestStatus.UNAVAILABLE;
+    }
+
+    /** Withdrawn in flight: the payload is discarded unread - only the fact that a response arrived is kept. */
+    private CreditDataRequestStatus withdrawnInFlight(
+            Connection uow, CreditDataRequestStore.Row row, int attempt, CreditDataAnswer answer) {
+        requireMoved(store.withdraw(uow, row.id(), CreditDataRequestStatus.REQUESTED, attempt));
+        store.insertAttempt(uow, row.id(), attempt, "CONSENT_WITHDRAWN");
+        if (evidenceOf(answer).isPresent()) {
+            store.insertEvidence(uow, evidence(row, attempt, false, Optional.empty()));
+        }
+        observer.answered(row.kind(), row.providerCode(), CreditDataObserver.Outcome.CONSENT_WITHDRAWN);
+        return CreditDataRequestStatus.CONSENT_WITHDRAWN;
     }
 
     private CreditDataRequestStatus record(
@@ -318,14 +401,7 @@ public final class CreditDataCollection {
         }
         int attempt = row.attempts() + 1;
         if (!gate.permits(uow, row.partyId(), row.kind())) {
-            // Withdrawn in flight: the payload is discarded unread - only the fact that a response arrived is kept.
-            requireMoved(store.withdraw(uow, id, CreditDataRequestStatus.REQUESTED, attempt));
-            store.insertAttempt(uow, id, attempt, "CONSENT_WITHDRAWN");
-            if (evidenceOf(answer).isPresent()) {
-                store.insertEvidence(uow, evidence(row, attempt, false, Optional.empty()));
-            }
-            observer.answered(row.kind(), row.providerCode(), CreditDataObserver.Outcome.CONSENT_WITHDRAWN);
-            return CreditDataRequestStatus.CONSENT_WITHDRAWN;
+            return withdrawnInFlight(uow, row, attempt, answer);
         }
         return switch (answer) {
             case CreditDataAnswer.Received received -> collected(uow, row, attempt, received.providerCode(),
@@ -409,7 +485,10 @@ public final class CreditDataCollection {
         return gated == CreditDataRequestStatus.REQUESTED ? ask(id, correlation) : gated;
     }
 
-    /** Emits {@code CreditDataUnavailable} once for each unavailable request past its deadline; returns how many. */
+    /**
+     * Emits {@code CreditDataUnavailable} once for each request past its deadline - unavailable, or still requested and
+     * so moved to {@code UNAVAILABLE} by the claim; returns how many.
+     */
     public int reportOverdue(int limit, CorrelationId correlation) {
         Objects.requireNonNull(correlation, "correlation");
         return transactions.inTransaction(uow -> {
