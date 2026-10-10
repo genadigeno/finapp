@@ -86,6 +86,14 @@ public enum CreditAuditAction implements AuditableAction {
                     + " request, the decision and the outcome, never an amount (INV-AUD-02).",
             false),
 
+    DECISION_CONSUMED(
+            "credit.DecisionConsumed",
+            "An approved credit decision was taken up by its consumer through credit's consumption port (P11-TSK-001,"
+                    + " ADR-0091, INV-LND-06) - under the party's profile lock, in the consumer's own transaction; written"
+                    + " once, by the consuming call only (a replay by the same consumer writes none). The summary names the"
+                    + " decision and the consumer's kind and reference, never an amount (INV-AUD-02).",
+            false),
+
     EXPLANATION_READ(
             "credit.ExplanationRead",
             "A holder of CREDIT_INVESTIGATE read a decision's full explanation - the snapshot's attributes, the rules"

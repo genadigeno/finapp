@@ -204,6 +204,51 @@ class CreditMigrationTest {
         }
     }
 
+    @Test
+    @DisplayName("(since V021, P11-TSK-001) the consumption is written only through credit.consume_decision: the"
+            + " application holds SELECT and EXECUTE, no INSERT; the function is a SECURITY DEFINER of the migrator with"
+            + " its search_path pinned and no PUBLIC grant; the consumer columns NOT NULL beside their unique and the"
+            + " kind's CHECK")
+    void theConsumptionIsWrittenOnlyThroughItsDefinerFunction() throws SQLException {
+        assertThat(column("SELECT privilege_type FROM information_schema.role_table_grants WHERE grantee = 'finapp_app'"
+                        + " AND table_schema = 'credit' AND table_name = 'credit_decision_consumption'"))
+                .as("the reservation read, and nothing that writes").containsExactly("SELECT");
+        assertThat(column("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || array_to_string(proconfig,"
+                        + " ';') FROM pg_proc WHERE oid = 'credit.consume_decision(uuid,uuid,text,uuid)'::regprocedure"))
+                .containsExactly("true:finapp_migrator:search_path=pg_catalog, pg_temp");
+        assertThat(column("SELECT unnest(proacl)::text FROM pg_proc"
+                        + " WHERE oid = 'credit.consume_decision(uuid,uuid,text,uuid)'::regprocedure"))
+                .as("EXECUTE to the application, the owner's own - and no PUBLIC entry")
+                .containsExactlyInAnyOrder("finapp_migrator=X/finapp_migrator", "finapp_app=X/finapp_migrator");
+        assertThat(column("SELECT unnest(proacl)::text FROM pg_proc"
+                        + " WHERE oid = 'credit.decision_reserves(timestamptz,timestamptz)'::regprocedure"))
+                .containsExactlyInAnyOrder("finapp_migrator=X/finapp_migrator", "finapp_app=X/finapp_migrator");
+        assertThat(column("SELECT provolatile::text || ':' || prosecdef::text FROM pg_proc"
+                        + " WHERE oid = 'credit.decision_reserves(timestamptz,timestamptz)'::regprocedure"))
+                .as("immutable and invoker's rights - a pure predicate").containsExactly("i:false");
+        assertThat(column("SELECT column_name || ':' || is_nullable FROM information_schema.columns"
+                        + " WHERE table_schema = 'credit' AND table_name = 'credit_decision_consumption'"))
+                .containsExactlyInAnyOrder("id:NO", "decision_id:NO", "consumed_at:NO", "consumer_kind:NO",
+                        "consumer_ref:NO");
+        assertThat(column("SELECT conname || ':' || pg_get_constraintdef(oid) FROM pg_constraint"
+                        + " WHERE conrelid = 'credit.credit_decision_consumption'::regclass AND contype IN ('u', 'c')"))
+                .containsExactlyInAnyOrder("credit_decision_consumption_once:UNIQUE (decision_id)",
+                        "credit_decision_consumption_once_per_consumer:UNIQUE (consumer_kind, consumer_ref)",
+                        "credit_decision_consumption_kind_is_known:CHECK ((consumer_kind = 'LOAN_AGREEMENT'::text))");
+        assertThat(java.util.Arrays.stream(ConsumerKind.values()).map(Enum::name))
+                .as("the enum and the CHECK are one closed set - a new kind changes both in one migration")
+                .containsExactly("LOAN_AGREEMENT");
+        assertThat(column("SELECT tgname FROM pg_trigger WHERE tgrelid = 'credit.credit_decision_consumption'::regclass"
+                        + " AND NOT tgisinternal"))
+                .containsExactlyInAnyOrder("credit_decision_consumption_is_append_only",
+                        "credit_decision_consumption_is_never_truncated",
+                        "credit_decision_consumption_only_through_the_port");
+        // The statements, not the commentary: V021 asserts the table empty before it adds NOT NULL columns.
+        assertThat(statementsOf(migration("V021__the_decision_consumption_port.sql")))
+                .contains("IF EXISTS (SELECT 1 FROM credit.credit_decision_consumption) THEN")
+                .contains("REVOKE INSERT ON credit.credit_decision_consumption FROM finapp_app;");
+    }
+
     // -----------------------------------------------------------------
 
     private static void assertRefusedByPrivilege(String sql) throws SQLException {

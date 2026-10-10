@@ -59,6 +59,7 @@ class CreditTelemetryCarriesNoFigureTest {
     @Autowired private MeterRegistry registry;
     @Autowired private CreditDecisionMetrics decisions;
     @Autowired private CreditDataMetrics data;
+    @Autowired private CreditConsumptionMetrics consumptions;
 
     @Test
     @DisplayName("every credit series' tags are closed keys with closed values; no planted amount, party, decider or id"
@@ -71,6 +72,9 @@ class CreditTelemetryCarriesNoFigureTest {
         decisions.recorded(byPerson, 7, Duration.ofHours(30));
         data.answered(CreditSourceKind.BUREAU, UnconfiguredBureau.CODE, CreditDataObserver.Outcome.RECEIVED);
         data.called(CreditSourceKind.BUREAU, UnconfiguredBureau.CODE, Duration.ofMillis(310));
+        for (com.finapp.credit.ConsumptionObserver.Outcome outcome : com.finapp.credit.ConsumptionObserver.Outcome.values()) {
+            consumptions.answered(outcome);
+        }
 
         List<Meter> credit = registry.getMeters().stream()
                 .filter(meter -> meter.getId().getName().startsWith("finapp.credit."))
@@ -110,8 +114,11 @@ class CreditTelemetryCarriesNoFigureTest {
         return Map.of(
                 "product", oneOf(Arrays.stream(CreditProduct.values()).map(Enum::name)
                         .flatMap(name -> List.of(name, lower(name)).stream()).collect(Collectors.toSet())),
-                "outcome", oneOf(union(Arrays.stream(DecisionOutcome.values()).map(value -> lower(value.name())),
-                        Arrays.stream(CreditDataObserver.Outcome.values()).map(value -> lower(value.name())))),
+                "outcome", oneOf(union(union(Arrays.stream(DecisionOutcome.values()).map(value -> lower(value.name())),
+                        Arrays.stream(CreditDataObserver.Outcome.values()).map(value -> lower(value.name()))).stream(),
+                        // The consumption port's answers (P11-TSK-001): closed, never a decision, party or consumer.
+                        Arrays.stream(com.finapp.credit.ConsumptionObserver.Outcome.values())
+                                .map(value -> lower(value.name())))),
                 "decision_maker", oneOf(Set.of("system", "person")),
                 "reason_code", oneOf(Arrays.stream(ReasonCode.values()).map(ReasonCode::code).collect(Collectors.toSet())),
                 "source_kind", oneOf(Arrays.stream(CreditSourceKind.values()).map(value -> lower(value.name()))

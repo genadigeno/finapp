@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 251 "Previously" blocks, newest first, from `P10-DOC-001` back to project initiation. *(`X-TSK-017` is cross-cutting and completed after `P10-TST-002` and before `P10-TST-001`, so it stands between them.)* *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 252 "Previously" blocks, newest first, from the Phase 10 → 11 transition back to project initiation. *(`X-TSK-017` is cross-cutting and completed after `P10-TST-002` and before `P10-TST-001`, so it stands between them.)* *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,47 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**The Phase 10 → 11 transition** — `COMPLETE` (2026-10-10). **Phase 10 `COMPLETE`, confirmed after repair;
+Phase 11 `READY`** ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)). Six adversarial
+read-only audits over master `8927a1e7` (decision correctness and explainability; multi-instance, atomicity and
+idempotency; security and privacy; test adequacy; architecture, documentation and the gate's criteria; provider adapters
+and data collection), each finding proven from the code with a file, a line and a failure scenario, found **no CRITICAL**
+and **fifteen IMPORTANT** defects (R1–R15): an underwriter could decide their own party's application (now `403
+credit.SelfDealingRefused`, the attempt audited `FAILED`); person-written credit reasons were never screened for card or
+account numbers (`CreditReasons`, credit `V016` CHECKs); a `REQUESTED` data request had no deadline, so a poisoned answer
+retried forever (deadline-bound claims, an unrecordable answer `UNAVAILABLE` with its evidence kept - credit `V019`,
+`V020`); "malformed" was a regex, not a parse (`CreditProviderJson`, strict, fifteen golden files); re-collection was
+unbounded (a second staleness makes the kind unavailable); `INV-CRD-10`'s claimed scale check did not exist
+(`MissingDataCensus`); the pin's `FOR SHARE` had no failing test (four lock-wait tests); a race assertion could not fail;
+a decision's link to its own request's snapshot was not enforced (credit `V017` composite keys and triggers, replay
+reports `HASH`); a person could decide on records past their maximum age (`422 credit.DataStale`); an absent bureau
+balance counted as zero in a person's exposure check (**owner decision: refused**, `422 credit.ExposureUnassessable` -
+so production approves nothing until a real bureau is connected); exposure was blind to outstanding credit, latent until
+Phase 11 consumes a decision (reserved and outstanding re-read together under the profile lock, ADR-0088 amended: Phase
+11's loan writer must hold the party's `credit_profile` row `FOR UPDATE`); the consumption write had no owner (R13 -
+scheduled as `P11-TSK-001`, the first task, an entry condition for any loan); credit submission without MFA when no
+factor was enrolled (**owner decision: enforce**); universal criterion 7 graded `PASS` (re-graded `PARTIAL`; **owner
+decision: keep skipping** the fleet-wide database and kafka tiers, re-affirmed for Phase 11). Every Phase 10 one repaired
+on three repair branches (`repair-collection` `76147ebe`, `repair-decisioning` `f3e9ddc3`, `repair-tests` `8b95fb03`),
+merged and re-verified together, each broken on purpose and restored byte-identical (sha256-verified),
+`MUTATION_TESTING.md` §2 rows; ADR-0085/0087/0088/0089 and `INV-CRD-06`/`08`/`09`/`11` amended. **Phase 11
+initialised** (not built): `PHASE_11_PLAN.md` (the owner's decisions L1-L12 and the recorded assumptions A1-A30 folded
+in: funding from a platform lending-capital account recognised only from bank evidence; disbursement to the wallet and to
+an external bank account through payments' withdrawal machinery; the personal loan and the revolving credit line; a
+neutral EUR jurisdiction; ACT/365F simple daily interest rounded once per period; allocation oldest-due first, fees ->
+interest -> principal, excess held as credit; default at 90 days past due; no penalty interest, prepayment fee or APR
+display; credit migrations from `V021`; origination only against the simulators; the ten mandatory test scenarios),
+ADR-0090…0100 (`Proposed`), `LENDING_LIFECYCLES.md`, `INV-LND-01`…`14` (142 invariants), the gate's Phase 11 extension,
+thirty-three backlog items across M11.1–M11.9, the glossary and domain model (twenty-three lending terms), the module,
+context, distributed-execution, delivery-plan, capability and roadmap documents. **Multi-instance PASS** after repair.
+**NEXT**: `P11-TSK-001` `READY`. **Verified**: the merged repairs by fresh runs before this record (`f43c7f8c`: hermetic
+2768 across 461 suites and 19 modules, architecture 213 across 51, database 140 across 16, own-container 118 across 11 -
+the storm and the ten-thousand-decision battery among them - 0 failures); the documents of this initialisation by the
+`:app:test :app:architectureTest` run recorded in the transition review §10 - the fleet-wide database and kafka tiers
+skipped on the owner's instruction.
 
 ### Previously
 

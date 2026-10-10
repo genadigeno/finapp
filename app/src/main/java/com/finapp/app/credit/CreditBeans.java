@@ -332,6 +332,26 @@ public class CreditBeans {
         return new com.finapp.credit.JdbcCreditDecisions();
     }
 
+    /** The consumption's counter, published from startup and counted after each commit (`P11-TSK-001`). */
+    @Bean
+    CreditConsumptionMetrics creditConsumptionMetrics(MeterRegistry meterRegistry) {
+        return new CreditConsumptionMetrics(meterRegistry);
+    }
+
+    /**
+     * The published consumption port (`P11-TSK-001`, ADR-0091) - lending's, adapted for it by {@code -012}; no caller
+     * until then.
+     */
+    @Bean
+    com.finapp.credit.CreditDecisionConsumptions<Connection> creditDecisionConsumptions(
+            AuditWriter<Connection> auditWriter,
+            CreditConsumptionMetrics creditConsumptionMetrics,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.credit.JdbcCreditDecisionConsumptions(new com.finapp.credit.JdbcCreditProfiles(idGenerator),
+                new com.finapp.credit.JdbcCreditDecisions(), auditWriter, creditConsumptionMetrics, idGenerator, clock);
+    }
+
     @Bean
     com.finapp.credit.DecisionProgress decisionProgress(
             TransactionRunner creditTransactionRunner,

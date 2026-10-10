@@ -698,6 +698,26 @@ class OwnershipIsScopedTest {
                                         + " the request (lock order element (1)): the request id comes only from the progress"
                                         + " step's claimed page, never a request value; the decision has no customer door.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisionConsumptions.partyOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-001. The consumption port's first read, to lock the decision's party's profile"
+                                        + " (lock order element (1)) before anything is judged: the decision id is the"
+                                        + " caller's own record of the approval it is taking up (Phase 11: the offer lending's"
+                                        + " acceptance holds FOR UPDATE under its customer, P11-TSK-012), never a request"
+                                        + " value; no door, customer's or operator's, reaches the port.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisionConsumptions.consumeWithin",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-001. The consumption itself, through the SECURITY DEFINER"
+                                        + " credit.consume_decision, the table's only path: the decision id as partyOf's; what"
+                                        + " stands in for an owner predicate is credit's own judgement under the party's"
+                                        + " profile lock (APPROVED, unconsumed or the same consumer's, still valid on the"
+                                        + " database clock) and the consumer uniques - a decision is taken up once, by one"
+                                        + " consumer, whoever asks. Holding the decision to the consumer's own party and"
+                                        + " product is the caller's check, on the decision the answer returns.")),
+                    Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.correlationOf",
                             new Entry(
                                     Scope.ADMINISTERED,

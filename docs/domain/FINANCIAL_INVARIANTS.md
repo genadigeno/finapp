@@ -1804,6 +1804,13 @@ exposure read versus a committing disbursement never torn (`P11-TSK-013`); the `
 credit's reserved plus lending's committed and outstanding never above the limit the party's policy
 declared at the deciding instant — in every storm round (`P11-TST-001`), gauged
 `finapp.credit.exposure.census{verdict}`.
+*(The consumption half built by `P11-TSK-001`, 2026-10-10 — `CreditDecisionConsumptionDatabaseTest`,
+seven probes, each caught (`MUTATION_TESTING.md` §2). Two refinements of the wording above, both on the
+side of the invariant: the lapse is judged on the database clock read **after** the profile lock
+(`clock_timestamp()` inside `credit.consume_decision`, through `credit.decision_reserves`, the
+negation of the reservation's `valid_until > now`) — `statement_timestamp()` is the calling statement's
+start, from before any wait on the lock; and an existing consumption is judged before the lapse, so a
+consumer's retry after `valid_until` replays its own consumption rather than reading a lapse.)*
 **Phase:** 11
 
 ### INV-LND-07 — A loan is disbursed at most once, its receivable born exactly with the wallet credit, and no payout outcome creates, duplicates or undoes it

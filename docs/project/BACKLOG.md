@@ -15859,7 +15859,7 @@ assignment and an expiry serialise (`-018`).
 
 # Phase 11 — Lending Infrastructure
 
-Status: `READY` — entry gate passed 2026-10-10 by the Phase 10 → 11 transition
+Status: `IN_PROGRESS` — started 2026-10-10 with `P11-TSK-001` (1 of 33 items complete; M11.1 at 1 of 5); entry gate passed 2026-10-10 by the Phase 10 → 11 transition
 ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty-three items (`P11-TSK-001`…`-030`, `P11-TST-001`,
 `P11-TST-002`, `P11-DOC-001`) across nine milestones, with `P11-TSK-001` marked `READY`. The
@@ -15996,7 +15996,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 `-004`; `-023` after `-022` and `-018`; `-025` after `-024` and `-020`; `-028` after `-027`;
 `TST-002` after `-029`. `-012` and `-013` ship in the same release.
 
-**P11-TSK-001 — Credit decision consumption port** — `READY` *(marked by the Phase 10 → 11 transition)*
+**P11-TSK-001 — Credit decision consumption port** — `COMPLETE` (2026-10-10; marked `READY` by the Phase 10 → 11 transition)
+- **As built** (2026-10-10): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). credit's `CreditDecisionConsumptions` (the sealed `Consumption`), `JdbcCreditDecisionConsumptions`, `ConsumerRef`, `ConsumerKind { LOAN_AGREEMENT }`, `CreditDecisionConsumptionId`, the `ConsumptionObserver` seam and `credit.DecisionConsumed`; credit `V021` (the table asserted empty, the consumer columns with `UNIQUE (consumer_kind, consumer_ref)` and the kind's `CHECK`, `credit.decision_reserves`, the `SECURITY DEFINER` `credit.consume_decision`, the only-through-the-port trigger, `consumed_at` the judged instant, `INSERT` revoked from `finapp_app`); `app`'s `CreditConsumptionMetrics` (`finapp.credit.consumption{outcome}`, eager, after commit) and the port's bean. Four recorded refinements (ADR-0091 follow-up): the lapse on the database clock read after the lock (`clock_timestamp()`), the one predicate function, an existing consumption judged before the lapse (a retry after `valid_until` replays), `consumed_at` the judged instant. The suites are `CreditDecisionConsumptionDatabaseTest` (the backlog's nine named cases under their names, `#tenRetriesOfOneConsumerConsumeOnce`, `#oneConsumerTakesUpOneDecision` - the probe's sibling - `#aMissingDecisionIsNotFound`, `#aRolledBackCallerLeavesNothing`, `#aMissingScopeIsRefusedBeforeAnything`, `#anUnknownKindIsRefused`), `CreditMigrationTest#theConsumptionIsWrittenOnlyThroughItsDefinerFunction` and `CreditConsumptionMetricsTest`; seven probes, all caught (`MUTATION_TESTING.md` §2). The fleet `databaseTest` and `kafkaTest` tiers not run (the owner's standing instruction; the criterion-7 deviation).
 - **Objective**: give the born-once consumption fact its one owner and writer — credit — so an
   approved decision is taken up at most once, never after it lapses, and never beside a decision
   for the same party (R13, L10).
@@ -16078,7 +16079,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   no posting and no external event, asserted by `CreditModuleIsolationTest`; F8 N/A — credit moves no
   money), `DOD-DOMAIN`, `DOD-SEC`. **Risk**: High. **Cx**: S.
 
-**P11-TSK-002 — The lending module boundary and floors** — `PLANNED`
+**P11-TSK-002 — The lending module boundary and floors** — `READY` *(marked by `P11-TSK-001`'s completion gate, 2026-10-10)*
 - **Objective**: make `lending` a build-graph fact with a privilege floor, its closed vocabularies
   for both products and its permissions, before any behaviour (the `P5-/P6-/P8-/P9-/P10-TSK-001`
   precedent).

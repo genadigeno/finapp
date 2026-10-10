@@ -1082,6 +1082,10 @@ no rows, asserted), and a `SECURITY DEFINER` function `credit.consume_decision(.
 owner role — taking the profile lock and re-judging outcome and validity itself — becomes the only
 path to the table: `INSERT` revoked from the application role, a trigger refusing any insert not made
 inside the function. `JdbcReservedExposure` is unchanged (it already excludes consumed decisions).
+*As built by `P11-TSK-001` (2026-10-10), with ADR-0091's four recorded refinements: the lapse judged on
+`clock_timestamp()` read after the profile lock (never the calling statement's start), through the one
+predicate `credit.decision_reserves`; an existing consumption judged before the lapse, so a consumer's
+retry after `valid_until` replays; `consumed_at` the judged instant.*
 
 **`P11-TSK-013` — `PlatformCreditExposure` version 2** (`app`'s `LendingCreditExposure`), one SQL
 statement over lending's definer view and the ledger's journal lines (never `account_balance`),
