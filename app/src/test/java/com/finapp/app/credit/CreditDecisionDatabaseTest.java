@@ -86,8 +86,9 @@ class CreditDecisionDatabaseTest {
     // ------------------------------------------------------------------ the exposure, serialised on the profile
 
     @Test
-    @DisplayName("two products at the exposure limit, decided at once, a hundred rounds: serialised on the profile - the"
-            + " second always sees the first's reservation, never both approved beyond the line's limit")
+    @DisplayName("two products at the exposure limit, decided at once, a hundred rounds: both deciders provably in flight"
+            + " together - each seen waiting at the party's profile - then serialised on it: the second always sees the"
+            + " first's reservation, never both approved beyond the line's limit")
     void twoProductsAtTheExposureLimitSerialise() throws Exception {
         for (int round = 0; round < 100; round++) {
             UUID party = UUID.randomUUID();
@@ -96,7 +97,34 @@ class CreditDecisionDatabaseTest {
             BALANCES.put(party, 1_000_000L);
             UUID loan = evaluated(party, CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
             UUID line = evaluated(party, CreditProduct.CREDIT_LINE, eur(500_000), WEEK);
-            race(2, List.<Callable<Decider.Decided>>of(() -> decide(deciding(), loan), () -> decide(deciding(), line)));
+            // The race made provable: the party's profile held while both deciders start, released only once the
+            // database shows BOTH waiting on it - two deciding transactions open at one time, contending for the lock
+            // that must serialise them. Without the observation a "race" may be two deciders one after the other.
+            ExecutorService deciders = Executors.newFixedThreadPool(2);
+            try (Connection holder = DatabaseRoles.application()) {
+                holder.setAutoCommit(false);
+                int holderPid;
+                try (PreparedStatement hold = holder.prepareStatement("SELECT pg_backend_pid() FROM credit.credit_profile"
+                        + " WHERE party_id = ? FOR UPDATE")) {
+                    hold.setObject(1, party);
+                    try (ResultSet row = hold.executeQuery()) {
+                        assertThat(row.next()).isTrue();
+                        holderPid = row.getInt(1);
+                    }
+                }
+                Future<Decider.Decided> loanDecided = deciders.submit(() -> decide(deciding(), loan));
+                Future<Decider.Decided> lineDecided = deciders.submit(() -> decide(deciding(), line));
+                // The first waiter queues on the holder; the second on the first (PostgreSQL's tuple-lock queue) - so
+                // both are counted as waiting behind the holder, directly or through the other.
+                awaitDatabase("SELECT count(*) = 2 FROM pg_stat_activity w WHERE ? = ANY (pg_blocking_pids(w.pid))"
+                        + " OR EXISTS (SELECT 1 FROM pg_stat_activity f WHERE f.pid = ANY (pg_blocking_pids(w.pid))"
+                        + " AND ? = ANY (pg_blocking_pids(f.pid)))", holderPid, holderPid);
+                holder.rollback();
+                assertThat(List.of(loanDecided.get(1, TimeUnit.MINUTES), lineDecided.get(1, TimeUnit.MINUTES)))
+                        .as("round %d: both decided", round).containsOnly(Decider.Decided.DECIDED);
+            } finally {
+                deciders.shutdownNow();
+            }
             String loanOutcome = scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", loan);
             String lineOutcome = scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", line);
             int loanSequence = sequenceOf(loan);
@@ -299,16 +327,31 @@ class CreditDecisionDatabaseTest {
                 + " FROM credit.decision_request WHERE id = ?", id));
     }
 
-    /** One racer's step at the boundary; a deciding transaction the trigger refuses on a later statement's clock rolls
-     * back whole and leaves the request EVALUATED for the next step - the recorded design, counted. */
+    /**
+     * One racer's step at the boundary; a deciding transaction the trigger refuses on a later statement's clock rolls
+     * back whole and leaves the request EVALUATED for the next step - the recorded design, counted. ONLY that refusal:
+     * the decision request trigger raising ({@code P0001}) on the request's move - storage reports it as exactly
+     * "moving a decision request (SQLState P0001)", no cause and no trigger text by design (`P10-TSK-004`). Anything
+     * else - a deadlock, a serialization failure, a refusal elsewhere, a bug - fails the race instead of passing as a
+     * boundary.
+     */
     private static DecisionProgress.Step boundaryStep(Clock clock, UUID id,
             java.util.concurrent.atomic.AtomicInteger refused) {
         try {
             return step(CreditWorld.progress(clock, deciding(clock)), id);
         } catch (RuntimeException boundary) {
+            if (!isTheExpiryRefusal(boundary)) {
+                throw boundary;
+            }
             refused.incrementAndGet();
             return DecisionProgress.Step.NOTHING;
         }
+    }
+
+    /** The decision request trigger's refusal of the request's move - a decision or an expiry on the wrong side. */
+    private static boolean isTheExpiryRefusal(RuntimeException failure) {
+        return failure instanceof com.finapp.credit.CreditStorageException
+                && "moving a decision request (SQLState P0001)".equals(failure.getMessage());
     }
 
     @Test
@@ -556,6 +599,135 @@ class CreditDecisionDatabaseTest {
             assertThat(decided.get(1, TimeUnit.MINUTES)).isEqualTo(Decider.Decided.DECIDED);
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    // ------------------------------------------------------------------ the pin's share locks (element (5))
+
+    /*
+     * Each case holds a version row the way an activation's UPDATE does - FOR NO KEY UPDATE, the row lock an UPDATE of
+     * non-key columns takes - and runs the production step against it. NOT FOR UPDATE: the pin's own write (the request's
+     * pinned_policy_version_id, the decision's policy_version_id) checks its foreign key with FOR KEY SHARE, which FOR
+     * UPDATE blocks and FOR NO KEY UPDATE does not - so under FOR UPDATE the step would wait at its foreign key even with
+     * the FOR SHARE gone, and the case would prove nothing about the share. Each case asserts the step waits AT the share
+     * statement; without the FOR SHARE it finishes without waiting at all.
+     */
+
+    @Test
+    @DisplayName("SUBMITTED -> COLLECTING shares the ACTIVE policy row: an activation holding it, the pin waits at the share"
+            + " - and then pins that version")
+    void theCollectingStepSharesTheActivePolicy() throws Exception {
+        UUID id = CreditWorld.request(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        UUID active = UUID.fromString(scalar("SELECT id::text FROM credit.credit_policy_version WHERE product ="
+                + " 'PERSONAL_LOAN' AND status = 'ACTIVE'"));
+        DecisionProgress.Step step = whileHeld("credit.credit_policy_version", active,
+                () -> step(CreditWorld.progressToEvaluation(), id),
+                "FROM credit.credit_policy_version WHERE product = ");
+        assertThat(step).isEqualTo(DecisionProgress.Step.COLLECTING);
+        assertThat(scalar("SELECT pinned_policy_version_id::text FROM credit.decision_request WHERE id = ?", id))
+                .isEqualTo(active.toString());
+    }
+
+    @Test
+    @DisplayName("SUBMITTED -> COLLECTING shares the ACTIVE scorecard row: an activation holding it, the pin waits at the"
+            + " share - and then pins that version")
+    void theCollectingStepSharesTheActiveScorecard() throws Exception {
+        UUID id = CreditWorld.request(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        UUID active = UUID.fromString(scalar("SELECT id::text FROM credit.scorecard_model_version WHERE family ="
+                + " 'RETAIL_SCORECARD' AND status = 'ACTIVE'"));
+        DecisionProgress.Step step = whileHeld("credit.scorecard_model_version", active,
+                () -> step(CreditWorld.progressToEvaluation(), id),
+                "FROM credit.scorecard_model_version WHERE family = ");
+        assertThat(step).isEqualTo(DecisionProgress.Step.COLLECTING);
+        assertThat(scalar("SELECT pinned_model_version_id::text FROM credit.decision_request WHERE id = ?", id))
+                .isEqualTo(active.toString());
+    }
+
+    @Test
+    @DisplayName("the deciding transaction shares the PINNED policy row: an activation or retirement holding it, the decider"
+            + " waits at the share - and then decides under it")
+    void theDecidingTransactionSharesThePinnedPolicy() throws Exception {
+        UUID id = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        UUID pinned = UUID.fromString(scalar("SELECT pinned_policy_version_id::text FROM credit.decision_request"
+                + " WHERE id = ?", id));
+        Decider.Decided decided = whileHeld("credit.credit_policy_version", pinned, () -> decide(deciding(), id),
+                "FROM credit.credit_policy_version WHERE id = ");
+        assertThat(decided).isEqualTo(Decider.Decided.DECIDED);
+        assertThat(scalar("SELECT policy_version_id::text FROM credit.credit_decision WHERE decision_request_id = ?", id))
+                .isEqualTo(pinned.toString());
+    }
+
+    @Test
+    @DisplayName("the deciding transaction shares the PINNED scorecard row: an activation or retirement holding it, the"
+            + " decider waits at the share - and then decides under it")
+    void theDecidingTransactionSharesThePinnedScorecard() throws Exception {
+        UUID id = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(1_000_000), WEEK);
+        UUID pinned = UUID.fromString(scalar("SELECT pinned_model_version_id::text FROM credit.decision_request"
+                + " WHERE id = ?", id));
+        Decider.Decided decided = whileHeld("credit.scorecard_model_version", pinned, () -> decide(deciding(), id),
+                "FROM credit.scorecard_model_version WHERE id = ");
+        assertThat(decided).isEqualTo(Decider.Decided.DECIDED);
+        assertThat(scalar("SELECT model_version_id::text FROM credit.credit_decision WHERE decision_request_id = ?", id))
+                .isEqualTo(pinned.toString());
+    }
+
+    /**
+     * {@code work} run while another transaction holds {@code table}'s row {@code id} FOR NO KEY UPDATE: it must wait on
+     * that holder at a statement containing {@code statement} - finishing without waiting fails - and, released, its
+     * answer.
+     */
+    private static <T> T whileHeld(String table, UUID id, Callable<T> work, String statement) throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.migrator()) {
+            holder.setAutoCommit(false);
+            int holderPid;
+            try (PreparedStatement hold = holder.prepareStatement(
+                    "SELECT pg_backend_pid() FROM " + table + " WHERE id = ? FOR NO KEY UPDATE")) {
+                hold.setObject(1, id);
+                try (ResultSet row = hold.executeQuery()) {
+                    assertThat(row.next()).as("the held row exists").isTrue();
+                    holderPid = row.getInt(1);
+                }
+            }
+            Future<T> running = pool.submit(work);
+            List<String> waiting = waitingOn(holderPid, running);
+            assertThat(waiting).as("the step waits on the held version row at its share statement").singleElement()
+                    .satisfies(query -> assertThat(query).contains(statement));
+            holder.rollback();
+            return running.get(1, TimeUnit.MINUTES);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * The statements of the backends {@code holderPid} blocks, read on the application role (whose sessions' text it may
+     * see) once there is one; {@code running} finishing first is the failure - it took no lock the holder conflicts with.
+     */
+    private static List<String> waitingOn(int holderPid, Future<?> running) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        try (Connection observer = DatabaseRoles.application(); PreparedStatement read = observer.prepareStatement(
+                "SELECT query FROM pg_stat_activity WHERE ? = ANY (pg_blocking_pids(pid))")) {
+            read.setInt(1, holderPid);
+            while (true) {
+                List<String> queries = new ArrayList<>();
+                try (ResultSet row = read.executeQuery()) {
+                    while (row.next()) {
+                        queries.add(row.getString(1));
+                    }
+                }
+                if (!queries.isEmpty()) {
+                    return queries;
+                }
+                if (running.isDone()) {
+                    throw new AssertionError("the step finished without ever waiting on the held version row - it took"
+                            + " no share lock an activation conflicts with; it answered " + running.get());
+                }
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError("the step neither waited on the held version row nor finished");
+                }
+                Thread.sleep(20);
+            }
         }
     }
 

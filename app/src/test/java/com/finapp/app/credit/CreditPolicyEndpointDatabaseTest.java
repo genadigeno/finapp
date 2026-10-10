@@ -164,21 +164,25 @@ class CreditPolicyEndpointDatabaseTest {
 
     @Test
     @Order(3)
-    @DisplayName("every door is closed to an UNDERWRITER and to no session, every act to a missing key - nothing written")
+    @DisplayName("every door is closed to an UNDERWRITER, to a customer and to no session, every act to a missing key -"
+            + " nothing written")
     void theDoorsAreClosed() throws Exception {
         String underwriter = sessionWith(RoleName.UNDERWRITER);
+        String customer = new CreditTestClient(port).customer(true).token();
         String officer = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
         long versions = versions();
         String someVersion = "/" + LOAN_SEED;
         for (String path : new String[] {POLICIES, POLICIES + someVersion + "/approval", POLICIES + someVersion + "/rejection"}) {
             String body = path.equals(POLICIES) ? policy("PERSONAL_LOAN", 960, true, "REFER", "refused") : decision("refused");
             assertThat(post(path, body, underwriter, someKey()).statusCode()).as("UNDERWRITER " + path).isEqualTo(403);
+            assertThat(post(path, body, customer, someKey()).statusCode()).as("a customer " + path).isEqualTo(403);
             assertThat(post(path, body, null, someKey()).statusCode()).as("no session " + path).isEqualTo(401);
             HttpResponse<String> unkeyed = post(path, body, officer, null);
             assertThat(unkeyed.statusCode()).as("no key " + path).isEqualTo(422);
             assertThat(unkeyed.body()).contains("api.IdempotencyKeyRequired");
         }
         assertThat(get(POLICIES + "?product=PERSONAL_LOAN", underwriter).statusCode()).as("UNDERWRITER reads").isEqualTo(403);
+        assertThat(get(POLICIES + "?product=PERSONAL_LOAN", customer).statusCode()).as("a customer reads").isEqualTo(403);
         assertThat(get(POLICIES + "?product=PERSONAL_LOAN", null).statusCode()).as("no session reads").isEqualTo(401);
         assertThat(versions()).as("no refused caller wrote a version").isEqualTo(versions);
     }

@@ -233,6 +233,41 @@ class DecisionReproducibilityBatteryTest {
         }
     }
 
+    @Test
+    @DisplayName("missing data never approves (INV-CRD-10): no platform approval and no approving evaluation on a source"
+            + " unavailable or an attribute ABSENT that the pinned policy reads - recomputed from the snapshots, the pinned"
+            + " rules and the assessments, never from the evaluator's own record; replay cannot see it, this census can")
+    void missingDataNeverApproves() throws SQLException {
+        // Replay re-runs the same evaluator, so an evaluator approving on absent data replays IDENTICAL; the reason
+        // oracle starts from the stored outcome. Only a census over the inputs themselves catches it.
+        try (Connection app = DatabaseRoles.application()) {
+            List<String> subjects = MissingDataCensus.subjects(app);
+            long unavailable = one(app, MissingDataCensus.subjectsWhere(MissingDataCensus.SOURCE_UNAVAILABLE_READ));
+            long absent = one(app, MissingDataCensus.subjectsWhere(MissingDataCensus.ABSENT_COMPARED));
+            System.out.printf("P10-TST-002 MISSING DATA: evaluations on missing data by outcome %s - %d on a source the"
+                    + " policy reads unavailable, %d comparing an absent attribute or figure%n", subjects, unavailable, absent);
+            assertThat(MissingDataCensus.systemApprovals(app)).as("seed %d: platform approvals on missing data", SEED)
+                    .isEmpty();
+            assertThat(MissingDataCensus.approvingEvaluations(app)).as("seed %d: evaluations approving on missing data",
+                    SEED).isEmpty();
+            assertThat(unavailable).as("seed %d: the census's subjects - a source the pinned policy reads unavailable",
+                    SEED).isGreaterThanOrEqualTo(50);
+            assertThat(absent).as("seed %d: the census's subjects - an absent attribute or figure compared", SEED)
+                    .isGreaterThanOrEqualTo(50);
+            assertThat(subjects).as("seed %d: the subjects referred and declined, never approved", SEED)
+                    .anyMatch(outcome -> outcome.startsWith("REFER "))
+                    .anyMatch(outcome -> outcome.startsWith("DECLINE "))
+                    .noneMatch(outcome -> outcome.startsWith("APPROVE "));
+        }
+    }
+
+    private static long one(Connection connection, String sql) throws SQLException {
+        try (Statement read = connection.createStatement(); ResultSet row = read.executeQuery(sql)) {
+            row.next();
+            return row.getLong(1);
+        }
+    }
+
     // ------------------------------------------------------------------ IDENTICAL
 
     @Test

@@ -189,8 +189,18 @@ class DecisionSnapshotDatabaseTest {
     }
 
     @Test
-    @DisplayName("a skewed instance neither accepts stale nor refuses fresh - the judgement is the database's")
-    void aSkewedInstanceNeitherAcceptsStaleNorRefusesFresh() throws Exception {
+    @DisplayName("the freezer takes no clock, so no instance's skew can move its judgement: two seconds inside the maximum"
+            + " age is fresh and two seconds past it stale, on the database's clock alone")
+    void theFreezerTakesNoClockSoTheDatabaseAloneJudgesFreshness() throws Exception {
+        // What makes skew irrelevant, asserted rather than assumed: nothing in the freezer holds or is given a Clock.
+        assertThat(java.util.Arrays.stream(SnapshotFreezer.class.getDeclaredFields()).map(java.lang.reflect.Field::getType))
+                .as("the freezer holds no clock").noneMatch(java.time.Clock.class::isAssignableFrom);
+        assertThat(java.util.Arrays.stream(SnapshotFreezer.class.getDeclaredConstructors())
+                .flatMap(constructor -> java.util.Arrays.stream(constructor.getParameterTypes())))
+                .as("and is given none").noneMatch(java.time.Clock.class::isAssignableFrom);
+        assertThat(java.util.Arrays.stream(SnapshotFreezer.class.getDeclaredMethods())
+                .flatMap(method -> java.util.Arrays.stream(method.getParameterTypes())))
+                .as("by no method either").noneMatch(java.time.Clock.class::isAssignableFrom);
         UUID freshParty = IDS.next();
         UUID staleParty = IDS.next();
         UUID freshDecision = request(freshParty);
@@ -205,9 +215,9 @@ class DecisionSnapshotDatabaseTest {
             seedBureau(uow, staleDecision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(2), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(staleDecision, party, 1), correlation());
         });
-        assertThat(fresh).as("two seconds inside the age: fresh, whatever an instance's clock says")
+        assertThat(fresh).as("two seconds inside the age on the database's clock: fresh")
                 .isInstanceOf(SnapshotFreezer.Freeze.Frozen.class);
-        assertThat(stale).as("two seconds past it: stale, whatever an instance's clock says")
+        assertThat(stale).as("two seconds past it on the database's clock: stale")
                 .isInstanceOf(SnapshotFreezer.Freeze.Recollecting.class);
     }
 

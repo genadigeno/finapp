@@ -1450,7 +1450,12 @@ exemption) + `DOMAIN`.
 query over a generated history; an activation mid-decision leaving the pinned version deciding;
 an activation on a database clock behind its predecessor's start committing, the periods meeting
 (`CreditPolicyVersionDatabaseTest`, `ScorecardVersionDatabaseTest`
-`#anActivationSurvivesADatabaseClockBehindItsPredecessor`).
+`#anActivationSurvivesADatabaseClockBehindItsPredecessor`); the pin's share locks — an
+activation's row lock (`FOR NO KEY UPDATE`) on the `ACTIVE` policy or scorecard row makes the
+production `SUBMITTED -> COLLECTING` step wait at its share statement, and on the pinned rows the
+deciding transaction (`CreditDecisionDatabaseTest#theCollectingStepSharesTheActivePolicy`,
+`#theCollectingStepSharesTheActiveScorecard`, `#theDecidingTransactionSharesThePinnedPolicy`,
+`#theDecidingTransactionSharesThePinnedScorecard`).
 **Phase:** 10
 
 ### INV-CRD-06 — A decision request is decided once, on one basis
@@ -1519,8 +1524,10 @@ non-negative amount, or `EXPOSURE` `GT`/`GE` at most the limit, with a non-appro
 (`CreditPolicy.boundsExposure`, `PolicyRule.refusesExposurePast`), judged at proposal so a stored
 version always reads back. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
 found a policy without such a rule admitted, and so able to approve past its own limit.)*
-**Verify:** Two products for one party at the limit raced ten ways, the second seeing the first's
-reservation; the storm's exposure census, no party's reserved exposure above its limit at rest.
+**Verify:** Two products for one party at the limit raced a hundred rounds, both deciders observed
+waiting at the profile lock together in every round, the second seeing the first's reservation
+(`CreditDecisionDatabaseTest#twoProductsAtTheExposureLimitSerialise`); the storm's exposure census,
+no party's reserved exposure above its limit at rest.
 **Phase:** 10
 
 ### INV-CRD-10 — Missing data never approves
@@ -1532,7 +1539,17 @@ recorded, and the policy's declared fallback — refer or decline — decides, r
 lacking the fallback rule for a source kind it reads refused at proposal,
 `credit.PolicyIncomplete`).
 **Verify:** Every fault of the provider contract suite ending in refer or decline with
-`CRD-SOURCE-UNAVAILABLE`; an incomplete policy refused; no storm approval on an absent source.
+`CRD-SOURCE-UNAVAILABLE`; an incomplete policy refused; the missing-data census
+(`MissingDataCensus`) — zero `SYSTEM` decisions `APPROVED`, and zero evaluations `APPROVE`, on a
+snapshot whose `SOURCE_UNAVAILABLE` names a source kind the pinned policy reads, or on which a
+comparison rule of the pinned policy reads an attribute the snapshot holds `ABSENT` or a figure the
+assessment could not compute; recomputed from the snapshot's canonical text, the pinned rules and
+the assessment, never from the evaluator's own record — in every storm round's one
+`REPEATABLE READ` snapshot, with its subjects shown at rest
+(`CreditDecisionStormDatabaseTest`), and over the battery's ten thousand
+(`DecisionReproducibilityBatteryTest#missingDataNeverApproves`), where replay alone could not see
+it (it re-runs the same evaluator). *(The census was added at the Phase 10 → 11 transition: this
+line had claimed it before the storm had it.)*
 **Phase:** 10
 
 ### INV-CRD-11 — A person's credit decision is bounded

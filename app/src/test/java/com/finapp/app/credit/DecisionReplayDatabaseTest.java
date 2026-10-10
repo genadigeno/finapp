@@ -335,10 +335,11 @@ class DecisionReplayDatabaseTest {
 
     @Test
     @DisplayName("every replay is audited with its reason and verdict before it is served - and the door is CREDIT_INVESTIGATE's"
-            + " alone, naming differences by kind, never a value")
+            + " alone (an underwriter and a customer 403), naming differences by kind, never a value")
     void everyReplayIsAudited() throws Exception {
         String officer = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
         String underwriter = sessionWith(RoleName.UNDERWRITER);
+        String customer = client.customer(true).token();
         CreditDecisionId decision = decisionOf(systemDecided(UUID.randomUUID(), eur(200_000)));
         long before = replays(decision);
         HttpResponse<String> replayed = client.post(replayPath(decision.value().toString()),
@@ -352,6 +353,8 @@ class DecisionReplayDatabaseTest {
                 .startsWith("regulator query 42|").contains("IDENTICAL");
         assertThat(client.post(replayPath(decision.value().toString()), "{\"reason\":\"x\"}", underwriter, null).statusCode())
                 .as("an UNDERWRITER does not investigate").isEqualTo(403);
+        assertThat(client.post(replayPath(decision.value().toString()), "{\"reason\":\"x\"}", customer, null).statusCode())
+                .as("nor does a customer").isEqualTo(403);
         assertThat(client.post(replayPath(decision.value().toString()), "{\"reason\":\"x\"}", null, null).statusCode())
                 .isEqualTo(401);
         assertThat(replays(decision)).as("no refused caller is recorded").isEqualTo(before + 1);

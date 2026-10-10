@@ -137,9 +137,11 @@ class ScorecardAdministrationEndpointDatabaseTest {
 
     @Test
     @Order(3)
-    @DisplayName("every door is closed to an UNDERWRITER, to no session and to a missing key - nothing written")
+    @DisplayName("every door is closed to an UNDERWRITER, to a customer, to no session and to a missing key - nothing"
+            + " written")
     void theDoorsAreClosed() throws Exception {
         String underwriter = sessionWith(RoleName.UNDERWRITER);
+        String customer = new CreditTestClient(port).customer(true).token();
         String officer = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
         long versions = versions();
         String someVersion = "/" + SEED;
@@ -147,6 +149,7 @@ class ScorecardAdministrationEndpointDatabaseTest {
                 SCORECARDS + someVersion + "/rejection"}) {
             String body = path.equals(SCORECARDS) ? table(540, "refused") : decision("refused");
             assertThat(post(path, body, underwriter, someKey()).statusCode()).as("UNDERWRITER " + path).isEqualTo(403);
+            assertThat(post(path, body, customer, someKey()).statusCode()).as("a customer " + path).isEqualTo(403);
             assertThat(post(path, body, null, someKey()).statusCode()).as("no session " + path).isEqualTo(401);
             HttpResponse<String> unkeyed = post(path, body, officer, null);
             assertThat(unkeyed.statusCode()).as("no key " + path).isEqualTo(422);
