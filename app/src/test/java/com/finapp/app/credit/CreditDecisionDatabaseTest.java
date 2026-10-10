@@ -390,9 +390,10 @@ class CreditDecisionDatabaseTest {
             // P10-DOC-001: the side tables, each rank alone - the reasons and the consumption fact.
             refused(app, "DELETE FROM credit.credit_decision_reason WHERE decision_id = '" + decision + "'", "42501");
         }
-        // A consumption fact for this decision (Phase 11's to write; inserted here only to be refused changing).
-        CreditWorld.execute("INSERT INTO credit.credit_decision_consumption (id, decision_id, consumed_at)"
-                + " VALUES (gen_random_uuid(), ?::uuid, now())", decision);
+        // A consumption fact for this decision, through credit's definer function - the only path since credit V021
+        // (P11-TSK-001) - here only to be refused changing.
+        assertThat(scalar("SELECT answer FROM credit.consume_decision(?::uuid, gen_random_uuid(), 'LOAN_AGREEMENT',"
+                + " gen_random_uuid())", decision)).isEqualTo("CONSUMED");
         try (Connection app = DatabaseRoles.application()) {
             refused(app, "UPDATE credit.credit_decision_consumption SET consumed_at = now() WHERE decision_id = '"
                     + decision + "'", "42501");
@@ -497,8 +498,8 @@ class CreditDecisionDatabaseTest {
         UUID line = evaluated(party, CreditProduct.CREDIT_LINE, eur(200_000), WEEK);
         decide(deciding(), line);
         String decision = scalar("SELECT id::text FROM credit.credit_decision WHERE decision_request_id = ?", line);
-        CreditWorld.execute("INSERT INTO credit.credit_decision_consumption (id, decision_id, consumed_at)"
-                + " VALUES (gen_random_uuid(), ?::uuid, now())", decision);
+        assertThat(scalar("SELECT answer FROM credit.consume_decision(?::uuid, gen_random_uuid(), 'LOAN_AGREEMENT',"
+                + " gen_random_uuid())", decision)).isEqualTo("CONSUMED");
         assertThat(reserved(party)).isEqualTo(eur(0));
         assertThat(decide(deciding(), loan)).isEqualTo(Decider.Decided.DECIDED);
         assertThat(sequenceOf(loan)).as("nothing reserved, nothing moved: the first snapshot decides").isEqualTo(1);

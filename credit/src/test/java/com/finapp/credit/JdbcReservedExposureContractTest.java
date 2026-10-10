@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Tag;
  * {@code P10-TSK-010}'s reserved-exposure contract over the real {@code credit_decision} (`P10-TSK-016`;
  * {@code INV-CRD-09}): every case the in-memory fake answers, answered by {@link JdbcReservedExposure} from rows the
  * deciding transaction's own store writes - a decision per request, its validity on the database's clock, a consumption
- * row for a consumed approval.
+ * row for a consumed approval (written through {@code credit.consume_decision} since credit {@code V021}).
  */
 @Tag("database")
 @DisplayName("the reserved-exposure contract, over credit_decision (P10-TSK-016)")
@@ -78,11 +78,17 @@ class JdbcReservedExposureContractTest extends ReservedExposureContract<Connecti
                     List.of(approval ? ReasonCode.AUTO_APPROVAL_CEILING : ReasonCode.SCORE_INSUFFICIENT), validityFromNow,
                     "system", "SYSTEM"));
             if (consumed) {
-                try (PreparedStatement consume = uow.prepareStatement("INSERT INTO credit.credit_decision_consumption"
-                        + " (id, decision_id, consumed_at) VALUES (?, ?, statement_timestamp())")) {
-                    consume.setObject(1, IDS.next());
-                    consume.setObject(2, decision.value());
-                    consume.executeUpdate();
+                // Since credit V021 (P11-TSK-001) the definer function is the only path to the table.
+                try (PreparedStatement consume = uow.prepareStatement(
+                        "SELECT answer FROM credit.consume_decision(?, ?, 'LOAN_AGREEMENT', ?)")) {
+                    consume.setObject(1, decision.value());
+                    consume.setObject(2, IDS.next());
+                    consume.setObject(3, IDS.next());
+                    try (java.sql.ResultSet answer = consume.executeQuery()) {
+                        if (!answer.next() || !"CONSUMED".equals(answer.getString(1))) {
+                            throw new IllegalStateException("the fixture's approval was not consumed");
+                        }
+                    }
                 } catch (SQLException failure) {
                     throw new IllegalStateException(failure);
                 }

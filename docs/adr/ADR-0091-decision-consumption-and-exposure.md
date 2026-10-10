@@ -233,5 +233,25 @@ ADR-0087 §5, ADR-0088 §4, §6.
   statement for L0, the census). `BOUNDED_CONTEXTS.md` is corrected so that lending never writes
   credit's tables.
 - ADR-0087 and ADR-0088 carry a dated follow-up note pointing here; their decisions stand.
+- **Points 1-3 as built by `P11-TSK-001` (2026-10-10).** Credit `V021`, `CreditDecisionConsumptions`,
+  `JdbcCreditDecisionConsumptions`, `ConsumerRef`/`ConsumerKind`, `credit.DecisionConsumed` and
+  `finapp.credit.consumption{outcome}`, exactly as decided, with four refinements read against point 2's
+  wording - none weakens it: (1) the lapse is judged on the database clock read **after** the profile lock
+  (`clock_timestamp()` inside `credit.consume_decision`): `statement_timestamp()` is the calling statement's
+  start, and for a caller that waits on the lock inside the function that instant precedes the wait - a decider
+  holding the lock meanwhile could read the approval lapsed while the consumer judged it valid (probe P1 showed
+  exactly that torn state); through the port the lock is already held when the statement starts and the two
+  instants coincide. (2) The predicate is one function, `credit.decision_reserves(valid_until, at)` =
+  `valid_until > at`, the reservation's own inequality, the lapse its negation - so the boundary is provable at
+  the microsecond. (3) An existing consumption is judged **before** the lapse: a consumption committed while the
+  approval was valid is a fact, and its consumer's retry after `valid_until` replays it (`INV-IDEM-01`) rather
+  than reading `Lapsed`; another consumer then meets `AlreadyConsumed`. (4) `consumed_at` is the judged instant,
+  stamped by the function (V011's trigger re-stamped `statement_timestamp()`; it now only refuses `UPDATE`,
+  `DELETE` and `TRUNCATE`). The trigger's "inside the function" test reads the PL/pgSQL call stack
+  (`GET DIAGNOSTICS ... PG_CONTEXT`), which no caller can forge. Java judges `NotApproved` from the re-read
+  decision; the lapse is the database's judgement alone - no instance clock decides it. A consumer already bound
+  to another decision is a caller's defect, refused by the consumer unique (`23505`, a `CreditStorageException`),
+  not a sixth answer. The boundary's exactness rests on the database clock not stepping back across the lock's
+  handover (ADR-0063 point 4's bounded-skew premise); `P11-TSK-029`'s census is the continuous check.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

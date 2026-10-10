@@ -930,11 +930,13 @@ with a financial-data record as its sibling, until the Phase 10 exit review, `P1
 **Is:** the born-once fact that a Phase 11 loan has taken up one approved Credit Decision —
 `credit_decision_consumption`, `UNIQUE (decision_id)`, append-only by trigger (`V011`) — created
 empty in Phase 10; an approval with a consumption row reserves no exposure. **Credit is its only
-writer** (planned, `P11-TSK-001`, credit `V021`): the credit-owned port
+writer** (built by `P11-TSK-001`, credit `V021`, 2026-10-10): the credit-owned port
 `CreditDecisionConsumptions.consume` takes the party's Credit Profile lock, refuses a decision
 not `APPROVED`, lapsed or consumed by another, replays for the same consumer, and inserts through a
 `SECURITY DEFINER` function that is the table's only path (the application role's `INSERT`
-revoked). Lending's offer acceptance calls the port, in its own transaction.
+revoked). Lending's offer acceptance calls the port, in its own transaction. It names its consumer
+(`ConsumerRef`: `LOAN_AGREEMENT` and the agreement's id - one consumer takes up one decision) and is
+stamped with the database instant judged under the lock, always before the approval's `valid_until`.
 **Not:** a change to the decision, which is never updated (`INV-CRD-02`), and not a loan — it
 records only that one took the approval up. Nor a lending table: lending never writes credit's
 rows. Nor a lapse: an approval past its validity stops reserving on the database clock, with no

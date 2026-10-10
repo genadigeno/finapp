@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-10-10 (the Phase 10 → 11 transition — **Phase 10 `COMPLETE`, confirmed after repair; Phase 11 `READY`**, next `P11-TSK-001`) *(this line read "2026-10-01 (`P8-TSK-021` …)" through every gate from `P8-TSK-022` to `P10-DOC-001` until the Phase 10 → 11 transition found it — the stale-second-copy class, in the document's own dateline, again)*
+Last updated: 2026-10-10 (`P11-TSK-001` — the credit decision consumption port `COMPLETE`; **Phase 11 `IN_PROGRESS`**, next `P11-TSK-002`) *(this line read "2026-10-01 (`P8-TSK-021` …)" through every gate from `P8-TSK-022` to `P10-DOC-001` until the Phase 10 → 11 transition found it — the stale-second-copy class, in the document's own dateline, again)*
 
 ---
 
@@ -499,7 +499,7 @@ bureau and financial-data connectivity (#13, #14); the risk score (Phase 13); th
 Architectural Debt).
 
 **Phase 11 — Lending Infrastructure**
-Status: 🟡 **`READY`** (2026-10-10) — entry gate: all twelve criteria hold, by the Phase 10 → 11 transition ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md) §10).
+Status: 🟡 **`IN_PROGRESS`** (2026-10-10) — 1 of 33 items complete, M11.1 at 1 of 5 (`P11-TSK-001`, the credit decision consumption port); entry gate: all twelve criteria hold, by the Phase 10 → 11 transition ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md) §10).
 Planned in [`PHASE_11_PLAN.md`](PHASE_11_PLAN.md); decided in ADR-0090…0100 (`Proposed`); the machines in
 [`LENDING_LIFECYCLES.md`](../domain/LENDING_LIFECYCLES.md): lending owns the contract and its servicing facts and none
 of the money - every principal, interest, fee and credit-balance figure a balance of a per-loan ledger account, posted
@@ -512,7 +512,7 @@ simple daily interest born once per date and rounded once per period, billed fro
 explicit versioned order; delinquency and default derived conditions beside the lifecycle; every correction a
 reasoned, four-eyes posting. Production originates nothing until a real bureau is connected: origination is proven
 against the simulators. Fourteen new invariants take the platform to **142**. Thirty-three backlog items across nine
-milestones (M11.1–M11.9); `P11-TSK-001` `READY`. **No Phase 11 code exists.**
+milestones (M11.1–M11.9). **Built so far**: `P11-TSK-001` (credit's consumption port, credit `V021`); no `lending` code exists. Next: `P11-TSK-002` `READY`.
 
 ## Current Milestone
 
@@ -527,52 +527,17 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P11-TSK-001` — Credit decision consumption port** — `READY` (M11.1 at 0 of 5): marked by the Phase 10 → 11 transition (2026-10-10), which confirmed Phase 10 `COMPLETE` after repair and initialised Phase 11. The credit-owned command port that takes an approved decision up at most once, only while valid, under the party's `credit_profile` lock, behind a database guard (credit `V021`) - the transition's R13, an entry condition for any loan. **Not started.**
+**`P11-TSK-002` — The lending module boundary and floors** — `READY` (M11.1 at 1 of 5): marked by `P11-TSK-001`'s completion gate (2026-10-10). `lending` made a build-graph fact with a privilege floor, its closed vocabularies for both products and its permissions, before any behaviour. **Not started.**
 
 ### Just completed
 
-**The Phase 10 → 11 transition** — `COMPLETE` (2026-10-10). **Phase 10 `COMPLETE`, confirmed after repair;
-Phase 11 `READY`** ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)). Six adversarial
-read-only audits over master `8927a1e7` (decision correctness and explainability; multi-instance, atomicity and
-idempotency; security and privacy; test adequacy; architecture, documentation and the gate's criteria; provider adapters
-and data collection), each finding proven from the code with a file, a line and a failure scenario, found **no CRITICAL**
-and **fifteen IMPORTANT** defects (R1–R15): an underwriter could decide their own party's application (now `403
-credit.SelfDealingRefused`, the attempt audited `FAILED`); person-written credit reasons were never screened for card or
-account numbers (`CreditReasons`, credit `V016` CHECKs); a `REQUESTED` data request had no deadline, so a poisoned answer
-retried forever (deadline-bound claims, an unrecordable answer `UNAVAILABLE` with its evidence kept - credit `V019`,
-`V020`); "malformed" was a regex, not a parse (`CreditProviderJson`, strict, fifteen golden files); re-collection was
-unbounded (a second staleness makes the kind unavailable); `INV-CRD-10`'s claimed scale check did not exist
-(`MissingDataCensus`); the pin's `FOR SHARE` had no failing test (four lock-wait tests); a race assertion could not fail;
-a decision's link to its own request's snapshot was not enforced (credit `V017` composite keys and triggers, replay
-reports `HASH`); a person could decide on records past their maximum age (`422 credit.DataStale`); an absent bureau
-balance counted as zero in a person's exposure check (**owner decision: refused**, `422 credit.ExposureUnassessable` -
-so production approves nothing until a real bureau is connected); exposure was blind to outstanding credit, latent until
-Phase 11 consumes a decision (reserved and outstanding re-read together under the profile lock, ADR-0088 amended: Phase
-11's loan writer must hold the party's `credit_profile` row `FOR UPDATE`); the consumption write had no owner (R13 -
-scheduled as `P11-TSK-001`, the first task, an entry condition for any loan); credit submission without MFA when no
-factor was enrolled (**owner decision: enforce**); universal criterion 7 graded `PASS` (re-graded `PARTIAL`; **owner
-decision: keep skipping** the fleet-wide database and kafka tiers, re-affirmed for Phase 11). Every Phase 10 one repaired
-on three repair branches (`repair-collection` `76147ebe`, `repair-decisioning` `f3e9ddc3`, `repair-tests` `8b95fb03`),
-merged and re-verified together, each broken on purpose and restored byte-identical (sha256-verified),
-`MUTATION_TESTING.md` §2 rows; ADR-0085/0087/0088/0089 and `INV-CRD-06`/`08`/`09`/`11` amended. **Phase 11
-initialised** (not built): `PHASE_11_PLAN.md` (the owner's decisions L1-L12 and the recorded assumptions A1-A30 folded
-in: funding from a platform lending-capital account recognised only from bank evidence; disbursement to the wallet and to
-an external bank account through payments' withdrawal machinery; the personal loan and the revolving credit line; a
-neutral EUR jurisdiction; ACT/365F simple daily interest rounded once per period; allocation oldest-due first, fees ->
-interest -> principal, excess held as credit; default at 90 days past due; no penalty interest, prepayment fee or APR
-display; credit migrations from `V021`; origination only against the simulators; the ten mandatory test scenarios),
-ADR-0090…0100 (`Proposed`), `LENDING_LIFECYCLES.md`, `INV-LND-01`…`14` (142 invariants), the gate's Phase 11 extension,
-thirty-three backlog items across M11.1–M11.9, the glossary and domain model (twenty-three lending terms), the module,
-context, distributed-execution, delivery-plan, capability and roadmap documents. **Multi-instance PASS** after repair.
-**NEXT**: `P11-TSK-001` `READY`. **Verified**: the merged repairs by fresh runs before this record (`f43c7f8c`: hermetic
-2768 across 461 suites and 19 modules, architecture 213 across 51, database 140 across 16, own-container 118 across 11 -
-the storm and the ten-thousand-decision battery among them - 0 failures); the documents of this initialisation by the
-`:app:test :app:architectureTest` run recorded in the transition review §10 - the fleet-wide database and kafka tiers
-skipped on the owner's instruction.
+**`P11-TSK-001` — Credit decision consumption port** — `COMPLETE` (2026-10-10). **M11.1 at 1 of 5; Phase 11 `IN_PROGRESS`.** The transition's R13 closed: the born-once consumption fact has its one owner and writer - credit. **Design** (Credit Decisioning; the consumption a born-once entity beside the immutable decision, `ConsumerRef(ConsumerKind, UUID)` its value, `ConsumerKind { LOAN_AGREEMENT }` - BNPL named for Phase 12 in the javadoc, not a member): `CreditDecisionConsumptions<T>.consume(uow, decision, consumer)` runs in the caller's transaction - the decision's party read plain (absent: `NotFound`, nothing locked); the party's `credit_profile` `FOR UPDATE` through `CreditProfiles.lockForDecision` (Phase 10 element (1), Phase 11's L0 - always first, the only credit lock a lending transaction will hold); the decision re-read (not `APPROVED`: `NotApproved`, the domain's judgement); then credit `V021`'s `SECURITY DEFINER` `credit.consume_decision` (owned by the migrator, `search_path` pinned, `EXECUTE` to the application role only), which re-takes the lock (re-entrant), re-judges the outcome, finds an existing consumption (the same consumer's: `Consumed(replayed)`, the same id; another's: `AlreadyConsumed(by)`), judges the lapse on the database clock read **after** the lock through the one predicate `credit.decision_reserves(valid_until, at)` = `valid_until > at` (the reservation's own inequality, the lapse its negation: at any instant exactly one of *reserves* and *lapsed*, lapsed at `valid_until` itself), and only then inserts, stamping `consumed_at` with the judged instant. The winner alone audits `credit.DecisionConsumed` (decision, consumer kind and ref, never an amount); every answer reaches the `ConsumptionObserver`, `app`'s `CreditConsumptionMetrics` counting `finapp.credit.consumption{outcome}` after commit, every outcome registered at startup. **The database guard** (`V021`): the table asserted empty, then `consumer_kind`/`consumer_ref` `NOT NULL` with `UNIQUE (consumer_kind, consumer_ref)` beside `UNIQUE (decision_id)` and the kind's `CHECK`; `INSERT` revoked from `finapp_app` (it keeps `SELECT`, the reservation read); a trigger refusing any insert not made inside the function, for every role, read from the PL/pgSQL call stack (`PG_CONTEXT`), which no caller can forge; the row append-only for every role as before. No event (the consumer announces its own fact, `-012`), no endpoint, no permission; `CreditModuleIsolationTest` unchanged. The port wired as a bean in `app`; its caller (`LoanCreditDecisions.consume`) is `-012`'s. **Four refinements of the backlog's wording, each on the invariant's side** (ADR-0091 follow-up, `PHASE_11_PLAN.md` §12.10, `INV-LND-06` notes): the lapse on `clock_timestamp()` after the lock, because `statement_timestamp()` is the calling statement's start - for a caller that waits on the lock inside the function, an instant from before the wait (probe P1 produced exactly the torn state: a decider read the approval lapsed, the consumer then consumed it); the one predicate function, so the boundary is provable at the microsecond; an existing consumption judged before the lapse, so a consumer's retry after `valid_until` replays (`INV-IDEM-01`) instead of reading `Lapsed`; `consumed_at` the judged instant (V011's trigger re-stamped the statement's start; it now only refuses change). A consumer already bound to another decision is a caller's defect, refused by the consumer unique (`23505`, a `CreditStorageException`) - not a sixth answer. **Financial chain**: no money moves - the economic event is a commitment taking up an approval; the consumption ends the approval's reservation of credit exposure, which `-012`'s commitment replaces in the same transaction under L0; no journal entry, balance, settlement or reconciliation (the exposure census, `-029`, reads the rows); no reversal - a consumption is final. **Tests**: `CreditDecisionConsumptionDatabaseTest` (credit `database` tier, 15 cases): ten consumers of one decision provably in flight together (all seen waiting on the held profile) - one `Consumed`, nine `AlreadyConsumed` naming the winner, one row, one audit record; ten retries of one consumer - one consumption, nine replays; the same consumer replays, after the lapse too, another then `AlreadyConsumed`; one agreement raced across ten parties' decisions - one consumed, nine refused by the consumer unique; declined (`NotApproved`, and `NOT_APPROVED` from the function itself), missing (`NotFound`); the boundary at t-1 µs, t, t+1 µs beside the reservation's inequality, forty real-time approvals straddling their lapse under the lock (unreserved ⇒ `Lapsed`, `Consumed` ⇒ reserved), instance clocks ±5 s changing nothing; consume against a deciding transaction serialised in both orders and both paths (port, and the function with no lock taken first) - the decider that read the approval lapsed never sees it consumed, the one that read it reserved sees it consumed after, the decider after a consumer reads it consumed; the lock-wait test asserting the waiting statement (the port at the profile lock itself, the function at its call) and `consumed_at` after the release; a consumed decision reserves nothing; a caller's rollback leaves nothing; a missing actor or correlation refused before any lock; the application role's direct `INSERT` refused by privilege, the owner's by the trigger; no `UPDATE`, `DELETE` or `TRUNCATE` by any role; an unknown kind refused by the `CHECK`. `CreditMigrationTest` extended (grants, the function's definer, owner, pinned path and ACL without `PUBLIC`, the predicate immutable, the columns, constraints and triggers, the enum and the `CHECK` one closed set); `CreditConsumptionMetricsTest` (from startup, after commit); `CreditTelemetryCarriesNoFigureTest` drives the new counter; the fixtures of `JdbcReservedExposureContractTest` and `CreditDecisionDatabaseTest` consume through the function. **Seven probes, all caught**, each restored byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows): P1 the lapse judged before the lock (the serialisation case red through the function path - `CONSUMED` where `LAPSED` was due); P2 the consumer unique dropped (ten consumed for one agreement); P3 the application role's `INSERT` restored (refused by the trigger where the privilege was due); P4 the port's own lock skipped (it waited at the function's call, not the profile lock); P5 the trigger disabled (the owner's direct insert stored); P6 the lapse before the replay (the consumer's retry `Lapsed`); P7 the boundary moved to `>=` (consumable at `valid_until`). **Gate**: CRITICAL none; IMPORTANT one, fixed - the fleet run found `OwnershipIsScopedTest`'s register missing the port's two decision-id methods (`partyOf`, `consumeWithin`), now classified `ADMINISTERED` with the stand-in named (credit's judgement under the lock and the consumer uniques; the id from the caller's own owner-locked record, `-012`); MINOR recorded - the function called directly by the application role writes no audit record (the row itself is the durable evidence; the audit is the domain's, as `credit.read_evidence`'s is its door's); a storage failure is not counted by the meter (its tags are the decision's answers); `READ COMMITTED` required (under snapshot isolation a racing loser meets the unique, never a second consumption - documented on the port); the boundary's exactness rests on the database clock not stepping back across the lock's handover (ADR-0063 point 4), `-029`'s census the continuous check. **Multi-instance PASS** (every arbiter in PostgreSQL - the profile row lock, two uniques, the definer function, the revoked grant and the trigger; no instance clock decides anything; the counts of `CreditDecisionConsumptionDatabaseTest`). DoD `DOD-FIN` (F3, F6, F7 binding and met; F1, F2, F4, F5 vacuous - no posting, no external event; F8 `N/A`), `DOD-DOMAIN`, `DOD-SEC`. **NEXT TASK**: `P11-TSK-002` `READY`.
+
+**Verified** by fresh runs on the final tree: the fleet hermetic `test` tier 2770 across 462 suites and 19 modules and `architectureTest` 213 across 51; credit's database tier 96 across 10 (`CreditDecisionConsumptionDatabaseTest` 15 cases, `CreditMigrationTest`, `JdbcReservedExposureContractTest` among them); the adjacent own-container `CreditDecisionDatabaseTest` (its two fixture consumptions now through the definer function) 19 across 1; the document guards re-run after these records (`MutationDemonstrationTest`, `AuditableActionRegistryTest`, `OwnershipIsScopedTest`, `PlannedMetersExistTest`) 41 across 4, all 0 failures. **Not run**: the fleet-wide `databaseTest` and `kafkaTest` tiers - the owner's standing instruction (re-affirmed 2026-10-10 through Phase 11), recorded as the deviation against universal criterion 7.
 
 ### Previously
 
-The per-task completion records — 251 blocks, from `P10-DOC-001` back to project initiation
+The per-task completion records — 252 blocks, from the Phase 10 → 11 transition back to project initiation
 (`X-TSK-017` cross-cutting, standing between `P10-TST-001` and `P10-TST-002`; `X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1135,8 +1100,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P11-TSK-001` — Credit decision consumption port** — `READY`
-(the Current Task), marked by the Phase 10 → 11 transition - Phase 11 `READY`.
+**`P11-TSK-002` — The lending module boundary and floors** — `READY`
+(the Current Task), marked by `P11-TSK-001`'s completion gate - Phase 11 `IN_PROGRESS`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
