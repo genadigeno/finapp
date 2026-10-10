@@ -100,14 +100,16 @@ public final class UnderwritingCaseDesk {
         UnderwritingCaseId id = caseId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return keyed(actor, idempotencyKey, "assign|" + id.value(), uow -> cases.assign(uow, id, actor, correlation));
+        return keyed(actor, correlation, idempotencyKey, "assign|" + id.value(),
+                uow -> cases.assign(uow, id, actor, correlation));
     }
 
     public ReviewCaseReceipt release(String idempotencyKey, String rawId) {
         UnderwritingCaseId id = caseId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return keyed(actor, idempotencyKey, "release|" + id.value(), uow -> cases.release(uow, id, actor, correlation));
+        return keyed(actor, correlation, idempotencyKey, "release|" + id.value(),
+                uow -> cases.release(uow, id, actor, correlation));
     }
 
     public ReviewCaseReceipt decide(String idempotencyKey, String rawId, UnderwritingCaseController.ReviewDecisionBody body) {
@@ -119,7 +121,8 @@ public final class UnderwritingCaseDesk {
                 judgement.approved().map(amount -> amount.currency().code() + ":" + amount.minorUnits()).orElse("-"),
                 String.join(",", judgement.reasons().stream().map(ReasonCode::code).toList()),
                 String.valueOf(judgement.reason()));
-        return keyed(actor, idempotencyKey, fingerprinted, uow -> cases.decide(uow, id, judgement, actor, correlation));
+        return keyed(actor, correlation, idempotencyKey, fingerprinted,
+                uow -> cases.decide(uow, id, judgement, actor, correlation));
     }
 
     public ReviewCaseReceipt secondApproval(
@@ -134,7 +137,7 @@ public final class UnderwritingCaseDesk {
         CorrelationId correlation = correlation();
         String fingerprinted = String.join("|", "second", id.value().toString(), body.decision(),
                 String.valueOf(body.reason()));
-        return keyed(actor, idempotencyKey, fingerprinted, uow -> approve
+        return keyed(actor, correlation, idempotencyKey, fingerprinted, uow -> approve
                 ? cases.approveSecond(uow, id, Optional.ofNullable(body.reason()), actor, correlation)
                 : cases.refuseSecond(uow, id, body.reason(), actor, correlation));
     }
@@ -143,23 +146,39 @@ public final class UnderwritingCaseDesk {
 
     /**
      * One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing and rolls
-     * everything back. The decision's meters are told after the commit, once.
+     * everything back. The decision's meters are told after the commit, once. A self-dealing attempt (the Phase 10 to 11
+     * transition) is the one refusal recorded: {@code credit.ReviewOwnCaseRefused} {@code FAILED}, in a transaction of
+     * its own after the act's rolled back - so the attempt survives, and a retry is recorded as the attempt it is.
      */
     private ReviewCaseReceipt keyed(
-            Actor actor, String idempotencyKey, String fingerprinted, Function<Connection, UnderwritingCases.Acted> act) {
+            Actor actor,
+            CorrelationId correlation,
+            String idempotencyKey,
+            String fingerprinted,
+            Function<Connection, UnderwritingCases.Acted> act) {
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<UnderwritingCases.Acted> acted = new AtomicReference<>();
-        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transactions.inTransaction(
-                unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
-                    UnderwritingCases.Acted done = act.apply(uow);
-                    acted.set(done);
-                    UnderwritingCase reviewCase = done.reviewCase();
-                    String stored = String.join("|", reviewCase.id().value().toString(), reviewCase.status().name(),
-                            done.decision().map(decision -> decision.id().value().toString()).orElse(""),
-                            reviewCase.closureReason().orElse(""));
-                    return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
-                })));
+        IdempotentExecutor.ExecutionOutcome outcome;
+        try {
+            outcome = guarded(() -> transactions.inTransaction(
+                    unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
+                        UnderwritingCases.Acted done = act.apply(uow);
+                        acted.set(done);
+                        UnderwritingCase reviewCase = done.reviewCase();
+                        String stored = String.join("|", reviewCase.id().value().toString(), reviewCase.status().name(),
+                                done.decision().map(decision -> decision.id().value().toString()).orElse(""),
+                                reviewCase.closureReason().orElse(""));
+                        return CommandResult.succeeded(
+                                StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
+                    })));
+        } catch (UnderwritingCases.SelfDealingRefused selfDealing) {
+            transactions.inTransaction(uow -> {
+                cases.recordRefusal(uow, selfDealing, actor, correlation);
+                return null;
+            });
+            throw refused(CreditErrorCode.SELF_DEALING_REFUSED, selfDealing);
+        }
         if (acted.get() != null) {
             cases.observe(acted.get());
         }
@@ -261,6 +280,10 @@ public final class UnderwritingCaseDesk {
             throw refused(CreditErrorCode.HARD_DECLINE_NOT_OVERRIDABLE, hard);
         } catch (UnderwritingCases.ExposureLimitExceeded exceeded) {
             throw refused(CreditErrorCode.EXPOSURE_LIMIT_EXCEEDED, exceeded);
+        } catch (UnderwritingCases.ExposureUnassessable unassessable) {
+            throw refused(CreditErrorCode.EXPOSURE_UNASSESSABLE, unassessable);
+        } catch (UnderwritingCases.DataStale stale) {
+            throw refused(CreditErrorCode.DATA_STALE, stale);
         } catch (UnderwritingCases.ReasonRequired reason) {
             throw refused(CreditErrorCode.REASON_REQUIRED, reason);
         } catch (UnderwritingCases.JudgementInvalid invalid) {

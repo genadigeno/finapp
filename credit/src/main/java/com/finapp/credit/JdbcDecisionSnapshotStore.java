@@ -171,6 +171,30 @@ public final class JdbcDecisionSnapshotStore implements DecisionSnapshotStore {
         }
     }
 
+    @Override
+    public java.util.Set<CreditRecordId> staleRecords(
+            Connection unitOfWork, java.util.Map<CreditRecordId, Duration> maxAgeByRecord) {
+        java.util.Set<CreditRecordId> stale = new java.util.HashSet<>();
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                // INV-CRD-08, as recordOf judges it: the earlier of the provider's retrieval and our recording, on the
+                // database's clock - the transition's re-judgement at the decision (and before any successor).
+                "SELECT LEAST(retrieved_at, recorded_at) >= transaction_timestamp() - ? * interval '1 millisecond'"
+                        + " AS fresh FROM credit.credit_record WHERE id = ?")) {
+            for (java.util.Map.Entry<CreditRecordId, Duration> record : maxAgeByRecord.entrySet()) {
+                select.setLong(1, record.getValue().toMillis());
+                select.setObject(2, record.getKey().value());
+                try (ResultSet row = select.executeQuery()) {
+                    if (!row.next() || !row.getBoolean("fresh")) {
+                        stale.add(record.getKey());
+                    }
+                }
+            }
+            return stale;
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("judging a snapshot's records' age", failure));
+        }
+    }
+
     private static AttributeValue value(ResultSet row) throws SQLException {
         if (row.getBoolean("absent")) {
             return new AttributeValue.Absent();

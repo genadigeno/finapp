@@ -92,9 +92,12 @@ class DecisionReproducibilityBatteryTest {
      * What {@link #SEED} produces, every decision fingerprinted by what the seed fixes - its party, product, pinned version
      * numbers, snapshot sequence, decider kind, outcome, amount and ordered reasons - sorted and hashed: the same seed
      * reproduces the same ten thousand decisions, so a failure named by its seed can be run again. A change to the
-     * battery's world, the pipeline or the engine moves it, deliberately, in the same reviewed change.
+     * battery's world, the pipeline or the engine moves it, deliberately, in the same reviewed change. <em>Moved at the
+     * Phase 10 to 11 transition (2026-10-10, was {@code 2529d62c...}): a person may no longer approve while the bureau's
+     * total balance is absent ({@code credit.ExposureUnassessable}, the owner's decision), so those of the seed's person
+     * approvals decline instead - census then: 1631 by a person, 220 of them approvals.</em>
      */
-    static final String FINGERPRINT = "2529d62cd41ab6d9cd5bc83633949e8f419a73dc7d00752ea30d5dcdb5db5786";
+    static final String FINGERPRINT = "ff1f587aed743b552712013f27019506cab2c67326da194e709af1f9bfa4c52a";
 
     private static final long FORCED = 1_000_000_000_000L;
 

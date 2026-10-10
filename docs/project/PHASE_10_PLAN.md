@@ -363,9 +363,9 @@ All under `/v1`, closed request bodies (`@ClosedBody`), the platform's error con
 
 | Route | Who | Command | Idempotency | Async |
 |---|---|---|---|---|
-| `POST /v1/me/credit/decision-requests` | the customer (a `MULTI_FACTOR` session when a TOTP factor is enrolled — the conditional step-up, `identity.AssuranceRequired`) | submit for self: product, requested amount, term, declared income/expenditure | keyed (`credit.decision:CUSTOMER:<id>`) | `202` with the request id; the decision arrives later |
+| `POST /v1/me/credit/decision-requests` | the customer, on a `MULTI_FACTOR` session — enrolled or not; a customer with no factor refused until they enrol (`identity.AssuranceRequired`; restored by the owner's decision at the Phase 10 → 11 transition, 2026-10-10) | submit for self: product, requested amount, term, declared income/expenditure | keyed (`credit.decision:CUSTOMER:<id>`) | `202` with the request id; the decision arrives later |
 | `GET /v1/me/credit/decision-requests/{id}` | the customer, own requests only | status; when decided, the outcome and the **adverse-action reasons' customer texts** | read | — |
-| `POST /v1/me/credit/decision-requests/{id}/cancellation` | the customer (the same conditional step-up) | cancel before evaluation | keyed (`credit.decision-cancellation:CUSTOMER:<id>`) | sync |
+| `POST /v1/me/credit/decision-requests/{id}/cancellation` | the customer (the conditional step-up: `MULTI_FACTOR` when a TOTP factor is enrolled) | cancel before evaluation | keyed (`credit.decision-cancellation:CUSTOMER:<id>`) | sync |
 | `GET /v1/me/credit/profile` | the customer | the profile's summary: which sources are on file, their retrieval dates, current decisions | read | — |
 | `GET /v1/operator/credit/decisions/{id}/explanation` | `CREDIT_INVESTIGATE` | the full explanation: snapshot attributes with provenance, versions, triggered rules, reason codes (audited read) | read | — |
 | `POST /v1/operator/credit/decisions/{id}/replay` | `CREDIT_INVESTIGATE` | replay now: `IDENTICAL` or `DIVERGED` with what differs (audited, reason required) | none — no state | sync |
@@ -460,9 +460,13 @@ credit's doors.
 | `CREDIT_UNDERWRITE` | `UNDERWRITER` | the review queue: take, release, decide, second-approve or refuse the second approval (never one's own case's first decision) |
 
 Customer routes are owner-scoped in every query (a request id from another party is `404
-credit.NotFound`); submission and cancellation require a `MULTI_FACTOR` session from an identity
-with an active TOTP factor — the `P4-TSK-007` conditional step-up, not an unconditional MFA
-requirement *(corrected by `P10-DOC-001`: "require an MFA-assured session for submission")*; and the
+credit.NotFound`); **submission requires an MFA-assured session** — a `MULTI_FACTOR` session, enrolled
+or not, so a customer without an enrolled second factor is refused `identity.AssuranceRequired` until
+they enrol and step up *(the gate's wording restored by the owner's decision at the Phase 10 → 11
+transition, 2026-10-10: `P10-DOC-001` had reworded this sentence to the code's conditional step-up;
+the code now matches the gate)*; cancellation keeps the `P4-TSK-007` conditional step-up (a
+`MULTI_FACTOR` session from an identity with an active TOTP factor) — withdrawing an application moves
+no money and opens no exposure; and the
 party's standing — its live customer `ACTIVE`, `INV-KYC-05`'s projection of KYC's approval — is
 checked in-transaction (`409 credit.ApplicantNotEligible`). `RoutePermissionRegisterTest` and `RoleNameTest` carry every
 route and grant; every route has a negative test.

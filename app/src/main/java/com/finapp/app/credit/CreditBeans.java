@@ -454,13 +454,15 @@ public class CreditBeans {
             com.finapp.credit.UnderwritingCaseStore underwritingCaseStore,
             com.finapp.credit.DecisionMaking decisionMaking,
             CreditPolicyStore creditPolicyStore,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock) {
+        // The acting underwriter's party, so no one acts on their own referral (the Phase 10 to 11 transition).
         return new com.finapp.credit.UnderwritingCases(underwritingCaseStore, new com.finapp.credit.JdbcDecisionRequestStore(),
                 new com.finapp.credit.JdbcCreditProfiles(idGenerator), decisionMaking,
                 new com.finapp.credit.JdbcDecisionSnapshotStore(), new com.finapp.credit.JdbcPolicyEvaluationStore(),
-                creditPolicyStore, auditWriter, idGenerator, clock);
+                creditPolicyStore, new IdentityActingParty(identityStore), auditWriter, idGenerator, clock);
     }
 
     @Bean

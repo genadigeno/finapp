@@ -360,6 +360,32 @@ class DecisionReplayDatabaseTest {
         assertThat(replays(decision)).as("no refused caller is recorded").isEqualTo(before + 1);
     }
 
+    @Test
+    @DisplayName("a decision re-pointed at ANOTHER request's intact snapshot DIVERGES by hash - the seal is the decision's"
+            + " own request's, whatever that other snapshot re-derives (the Phase 10 to 11 transition, INV-CRD-06)")
+    void aDecisionOnAnotherRequestsSnapshotDivergesByHash() throws SQLException {
+        // Two twins: the same amount, the same default bureau answer - so the other request's snapshot re-derives exactly
+        // this decision's outcome, amount and reasons, and only the request check can tell.
+        UUID own = systemDecided(UUID.randomUUID(), eur(200_000));
+        UUID twin = systemDecided(UUID.randomUUID(), eur(200_000));
+        assertThat(scalar("SELECT outcome || '/' || coalesce(approved_minor::text, '-') FROM credit.credit_decision"
+                + " WHERE decision_request_id = ?", own)).isEqualTo(scalar("SELECT outcome || '/'"
+                + " || coalesce(approved_minor::text, '-') FROM credit.credit_decision WHERE decision_request_id = ?", twin));
+        CreditDecisionId decision = decisionOf(own);
+        String twinSnapshot = "(SELECT snapshot_id FROM credit.credit_decision WHERE decision_request_id = '" + twin + "')";
+        DecisionReplayer.Replay repointed = tamperedReplay(replayer(EngineVersions.STANDARD), decision,
+                "ALTER TABLE credit.credit_decision DISABLE TRIGGER USER",
+                // credit V017's composite key would refuse the re-pointing; the owner drops it inside the rolled-back plant
+                "ALTER TABLE credit.credit_decision DROP CONSTRAINT credit_decision_snapshot_of_its_request_fk",
+                "UPDATE credit.credit_decision SET snapshot_id = " + twinSnapshot + ", snapshot_sha256 = (SELECT"
+                        + " content_sha256 FROM credit.decision_snapshot WHERE id = " + twinSnapshot + ")"
+                        + " WHERE decision_request_id = '" + own + "'");
+        assertThat(repointed.verdict()).isEqualTo(Verdict.DIVERGED);
+        assertThat(repointed.divergences()).containsExactly(Divergence.HASH);
+        assertThat(read(uow -> replayer(EngineVersions.STANDARD).replay(uow, decision)).orElseThrow().verdict())
+                .as("the untampered decision replays identical").isEqualTo(Verdict.IDENTICAL);
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** A replayer over this suite's database, holding {@code engines} - each call an instance of its own. */
@@ -440,7 +466,8 @@ class DecisionReplayDatabaseTest {
     private static UnderwritingCases reviewing() {
         return new UnderwritingCases(new JdbcUnderwritingCaseStore(), CreditWorld.REQUESTS,
                 new JdbcCreditProfiles(CreditWorld.IDS), deciding(), new JdbcDecisionSnapshotStore(),
-                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, new JdbcAuditWriter(), CreditWorld.IDS,
+                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, CreditWorld.ACTING_PARTIES,
+                new JdbcAuditWriter(), CreditWorld.IDS,
                 CreditWorld.CLOCK);
     }
 

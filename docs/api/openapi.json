@@ -1032,6 +1032,41 @@
           }
         }
       },
+      "credit.DataStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.DataStale"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.DataStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The credit data the decision would rest on is past its maximum age; nothing can be decided on it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "credit.DecisionRequestOpen": {
         "content": {
           "application/problem+json": {
@@ -1128,6 +1163,41 @@
           }
         },
         "description": "[422] The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "credit.ExposureUnassessable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.ExposureUnassessable"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.ExposureUnassessable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The party's exposure cannot be assessed without a bureau balance; a person may decline, never approve.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1478,6 +1548,41 @@
           }
         },
         "description": "[403] A second approval is someone else's: a version's activation is not its proposer's, nor a case's second approval its first decider's.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "credit.SelfDealingRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "credit.SelfDealingRefused"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/credit.SelfDealingRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] An underwriter never acts on a review case whose applicant is their own party; another underwriter must.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"

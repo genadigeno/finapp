@@ -29,6 +29,11 @@ import java.util.regex.Pattern;
 /**
  * The credit customer suites' HTTP client (`P10-TSK-014`; the {@code FxTestClient} shape): a registered customer -
  * verified ({@code ACTIVE}) or not, consenting to the credit purposes or not - its session, and the doors.
+ *
+ * <p><strong>An MFA-assured session by default</strong> (the Phase 10 to 11 transition, the owner's decision of
+ * 2026-10-10): submitting a credit decision request requires a {@code MULTI_FACTOR} session, so {@link #customer} enrols a
+ * TOTP factor and steps up through {@code POST /v1/authentications/mfa}; {@link #passwordOnlyCustomer} is the session a
+ * login alone yields, for the refusals.
  */
 final class CreditTestClient {
 
@@ -36,8 +41,13 @@ final class CreditTestClient {
     static final String PASSWORD = "a-perfectly-fine-pw-7";
     static final String REQUESTS = "/v1/me/credit/decision-requests";
 
-    /** A customer: their session, login and party. */
-    record Customer(String token, String login, UUID party) {}
+    /** A customer: their session, login and party - and their factor's secret, when one is enrolled. */
+    record Customer(String token, String login, UUID party, Sensitive<String> secret) {
+
+        Customer(String token, String login, UUID party) {
+            this(token, login, party, null);
+        }
+    }
 
     private final int port;
 
@@ -53,8 +63,29 @@ final class CreditTestClient {
         return customer;
     }
 
-    /** A registered customer, {@code ACTIVE} when {@code verified}, otherwise still {@code PENDING}; no consent. */
+    /**
+     * A registered customer, {@code ACTIVE} when {@code verified}, otherwise still {@code PENDING}; no consent - on an
+     * MFA-assured session: a TOTP factor enrolled and confirmed, and the login's session stepped up with it.
+     */
     Customer customer(boolean verified) throws Exception {
+        Customer password = passwordOnlyCustomer(verified);
+        Sensitive<String> secret = Sensitive.of(newFactor(password.token()));
+        long confirmed = confirm(secret, password.token());
+        // The step after the one the confirmation consumed - a code the server's window still admits (see confirm).
+        HttpResponse<String> elevated = post("/v1/authentications/mfa", "{\"code\":\"" + codeAt(secret, confirmed + 1)
+                + "\"}", password.token(), null);
+        if (elevated.statusCode() == 401) {
+            // The server's step moved on between the two calls: the next one.
+            elevated = post("/v1/authentications/mfa", "{\"code\":\"" + codeAt(secret, confirmed + 2) + "\"}",
+                    password.token(), null);
+        }
+        assertThat(elevated.statusCode()).as("the step-up: %s", elevated.body()).isEqualTo(200);
+        assertThat(field(elevated.body(), "assurance")).isEqualTo("MULTI_FACTOR");
+        return new Customer(field(elevated.body(), "sessionToken"), password.login(), password.party(), secret);
+    }
+
+    /** A registered customer on the {@code PASSWORD} session a login alone yields - no factor enrolled. */
+    Customer passwordOnlyCustomer(boolean verified) throws Exception {
         String login = "crd." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
                 + "\"password\":\"" + PASSWORD + "\"}", null, key()).statusCode()).isEqualTo(201);
@@ -96,14 +127,44 @@ final class CreditTestClient {
 
     /** Enrols and confirms a TOTP factor on {@code sessionToken}'s identity - which then needs a step-up. */
     void enrolAndConfirm(String sessionToken) throws Exception {
+        confirm(Sensitive.of(newFactor(sessionToken)), sessionToken);
+    }
+
+    /** A new {@code PASSWORD} session for {@code customer}'s login - a login alone, whatever factor is enrolled. */
+    String login(Customer customer) throws Exception {
+        HttpResponse<String> session = post("/v1/authentications",
+                "{\"loginIdentifier\":\"" + customer.login() + "\",\"password\":\"" + PASSWORD + "\"}", null, key());
+        return field(session.body(), "sessionToken");
+    }
+
+    /** A new TOTP factor enrolled on {@code sessionToken}'s identity - its base32 secret. */
+    private String newFactor(String sessionToken) throws Exception {
         Matcher matcher = Pattern.compile("secret=([A-Z2-7]+)").matcher(post("/v1/me/mfa", null, sessionToken, null).body());
         assertThat(matcher.find()).as("the response must carry a base32 secret").isTrue();
-        Sensitive<String> secret = Sensitive.of(matcher.group(1));
+        return matcher.group(1);
+    }
+
+    /**
+     * Confirms the factor and answers the step the confirmation consumed. Confirmed with the PREVIOUS step's code (inside
+     * the window) so the current one is left for the step-up - and, should the server's clock run ahead of this JVM's
+     * (the storm skews its instances by up to five seconds) so that the previous step has left its window, with the
+     * current step's: one refused attempt at most, never near a lock.
+     */
+    private long confirm(Sensitive<String> secret, String sessionToken) throws Exception {
         long step = Instant.now().getEpochSecond() / TotpParameters.current().periodSeconds();
-        String confirming = Authenticator.codeAt(secret, TotpParameters.current(),
-                Instant.ofEpochSecond((step - 1) * TotpParameters.current().periodSeconds()));
-        assertThat(post("/v1/me/mfa/confirmation", "{\"code\":\"" + confirming + "\"}", sessionToken, null).statusCode())
-                .isEqualTo(204);
+        for (long candidate : new long[] {step - 1, step, step + 1}) {
+            int status = post("/v1/me/mfa/confirmation", "{\"code\":\"" + codeAt(secret, candidate) + "\"}",
+                    sessionToken, null).statusCode();
+            if (status == 204) {
+                return candidate;
+            }
+        }
+        throw new AssertionError("no step around this JVM's confirmed the factor");
+    }
+
+    private static String codeAt(Sensitive<String> secret, long step) {
+        return Authenticator.codeAt(secret, TotpParameters.current(),
+                Instant.ofEpochSecond(step * TotpParameters.current().periodSeconds()));
     }
 
     /** A loan request body: {@code amount} EUR over {@code term} months. */

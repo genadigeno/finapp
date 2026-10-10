@@ -36,6 +36,38 @@ class CreditPolicyValidationTest {
     }
 
     @Test
+    @DisplayName("a cap or the auto-approval ceiling below the product's minimum amount is refused at construction - an"
+            + " approval capped there is no offer the product can make (the Phase 10 to 11 transition); at the minimum is"
+            + " accepted")
+    void aCeilingBelowTheProductMinimumIsRefused() {
+        for (CreditProduct product : CreditProduct.values()) {
+            Money minimum = product.minimumAmount();
+            Money belowMinimum = minimum.minus(Money.ofMinorUnits(1, minimum.currency()));
+            List<CreditPolicy.PolicyRule> capped = CreditPolicyV1.rules(product);
+            capped.add(new CreditPolicy.PolicyRule("LOW_CAP", figure(PolicyFigure.EXPOSURE_HEADROOM), PolicyOperator.LT,
+                    new CreditPolicy.Operand.MoneyOperand(eur(0)), PolicyEffect.CAP_AMOUNT, Optional.of(belowMinimum),
+                    ReasonCode.EXPOSURE_LIMIT));
+            assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as(product + "'s cap")
+                    .isThrownBy(() -> CreditPolicyV1.policy(product, capped))
+                    .withMessageContaining("at least the product's minimum amount");
+            CreditPolicy v1 = CreditPolicyV1.policy(product);
+            assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as(product + "'s ceiling")
+                    .isThrownBy(() -> new CreditPolicy(product, v1.assessmentRateBps(), v1.minimumDisposable(),
+                            v1.minimumPaymentRatioBps(), v1.maximumExposure(), v1.maximumDataAge(), v1.unavailableFallback(),
+                            belowMinimum, v1.rules()))
+                    .withMessageContaining("at least the product's minimum amount");
+            List<CreditPolicy.PolicyRule> atTheMinimum = CreditPolicyV1.rules(product);
+            atTheMinimum.add(new CreditPolicy.PolicyRule("MIN_CAP", figure(PolicyFigure.EXPOSURE_HEADROOM),
+                    PolicyOperator.LT, new CreditPolicy.Operand.MoneyOperand(eur(0)), PolicyEffect.CAP_AMOUNT,
+                    Optional.of(minimum), ReasonCode.EXPOSURE_LIMIT));
+            assertThatCode(() -> CreditPolicyV1.policy(product, atTheMinimum)).doesNotThrowAnyException();
+            assertThatCode(() -> new CreditPolicy(product, v1.assessmentRateBps(), v1.minimumDisposable(),
+                    v1.minimumPaymentRatioBps(), v1.maximumExposure(), v1.maximumDataAge(), v1.unavailableFallback(),
+                    minimum, v1.rules())).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     @DisplayName("INV-CRD-09 (P10-DOC-001): only a rule guaranteed to stop an approval past the limit bounds the exposure")
     void onlyAGuaranteedRuleBoundsTheExposure() {
         for (CreditProduct product : CreditProduct.values()) {
@@ -72,7 +104,7 @@ class CreditPolicyValidationTest {
         List<CreditPolicy.PolicyRule> capped = CreditPolicyV1.rules(LOAN);
         capped.removeIf(rule -> rule.ruleCode().equals("EXPOSURE_LIMIT"));
         capped.add(new CreditPolicy.PolicyRule("CAPPED", figure(PolicyFigure.EXPOSURE_HEADROOM), PolicyOperator.LT,
-                new CreditPolicy.Operand.MoneyOperand(eur(0)), PolicyEffect.CAP_AMOUNT, Optional.of(eur(100_00)),
+                new CreditPolicy.Operand.MoneyOperand(eur(0)), PolicyEffect.CAP_AMOUNT, Optional.of(eur(1_000_00)),
                 ReasonCode.EXPOSURE_LIMIT));
         assertThat(CreditPolicyV1.policy(LOAN, capped).boundsExposure()).as("a cap still approves past the limit")
                 .isFalse();

@@ -47,9 +47,13 @@ import lombok.RequiredArgsConstructor;
  * the request, its history and its event commit together, so a retried key replays the recorded response and a refusal -
  * which writes nothing - rolls the claim back with it and is judged afresh.
  *
- * <p><strong>Step-up when a factor is enrolled</strong> (the `P4-TSK-007` conditional, the cross-border precedent): an
- * identity with an active TOTP factor submits and cancels from a {@code MULTI_FACTOR} session, refused
- * {@code identity.AssuranceRequired} before any write.
+ * <p><strong>Submission requires an MFA-assured session</strong> (PHASE_10_PLAN.md's gate wording, restored by the owner's
+ * decision of 2026-10-10 at the Phase 10 to 11 transition): applying for credit is a {@code MULTI_FACTOR} act, enrolled or
+ * not - a customer with no active second factor is refused {@code identity.AssuranceRequired} until they enrol one and
+ * step up, and an enrolled customer on a password-only session is refused until they step up; both before any write.
+ * <strong>Cancelling keeps the conditional step-up</strong> (the `P4-TSK-007` conditional, the cross-border precedent):
+ * an identity with an active TOTP factor cancels from a {@code MULTI_FACTOR} session - withdrawing an application moves
+ * no money and opens no exposure, so it is not held behind an enrolment.
  */
 @RequiredArgsConstructor
 public final class CreditDecisionRequestDesk {
@@ -105,7 +109,7 @@ public final class CreditDecisionRequestDesk {
         try {
             outcome = transactions.inTransaction(unitOfWork -> {
                 UUID party = partyOf(unitOfWork, current);
-                requireConditionalAssurance(unitOfWork, current);
+                requireAssurance(unitOfWork, current);
                 RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "credit.decision",
                                 party.toString(), terms.product().name(), Long.toString(terms.requested().minorUnits()),
                                 terms.requested().currency().code(), terms.termMonths().map(String::valueOf).orElse("-"),
@@ -217,6 +221,23 @@ public final class CreditDecisionRequestDesk {
 
     private static String minor(Optional<Money> amount) {
         return amount.map(money -> Long.toString(money.minorUnits())).orElse("-");
+    }
+
+    /**
+     * A submission's assurance (the owner's decision of 2026-10-10): a {@code MULTI_FACTOR} session, always. A customer
+     * with no active factor cannot hold one, so they are refused until they enrol - the same code, the detail telling
+     * them which step is theirs.
+     */
+    private void requireAssurance(Connection unitOfWork, Session current) {
+        if (current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
+            return;
+        }
+        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
+        throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
+                "A credit decision request requires a MULTI_FACTOR session",
+                hasFactor
+                        ? "applying for credit requires a second factor: step up with your enrolled factor and retry."
+                        : "applying for credit requires a second factor: enrol one, step up with it, and retry.");
     }
 
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {

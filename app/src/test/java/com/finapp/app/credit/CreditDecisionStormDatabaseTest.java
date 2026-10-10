@@ -511,7 +511,8 @@ class CreditDecisionStormDatabaseTest {
         tally("approve " + approved.statusCode());
         assertThat(approved.statusCode()).as(approved.body()).isIn(200, 422);
         if (approved.statusCode() == 422) {
-            assertThat(approved.body()).containsAnyOf("credit.ExposureLimitExceeded", "credit.HardDeclineNotOverridable");
+            assertThat(approved.body()).containsAnyOf("credit.ExposureLimitExceeded", "credit.HardDeclineNotOverridable",
+                    "credit.ExposureUnassessable");
             decline(on, session, base);
         }
     }
@@ -657,12 +658,20 @@ class CreditDecisionStormDatabaseTest {
 
         // ONE CASE taken on both instances; then ONE SECOND APPROVAL by two underwriters on both.
         Party referred = newParty(Profile.GOOD);
-        UUID request = submitted(referred, loanBody(1_200_000, 48));
-        BUREAU.arm(SimulatedBureauEngine.Fault.FOREIGN_CURRENCY); // the balance in USD: never converted - a referral
+        // A line of 3,000.00: above its four-eyes threshold (2,500.00) and, beside any GOOD party's bureau balance, within
+        // the line's limit - so a person may approve it (a loan above its threshold would exceed the loan's limit).
+        UUID request = submitted(referred, lineBody(300_000));
+        // The financial data unavailable past its deadline: the fallback refers, and the bureau's balance is present, so
+        // a person may approve it (the Phase 10 to 11 transition: an absent bureau balance - the USD fault this scenario
+        // used - makes the exposure unassessable, and a person may then only decline).
+        FINDATA.arm(SimulatedBureauEngine.Fault.UNAVAILABLE);
+        step(a.holding(), request);
+        ageDeadline(UUID.fromString(scalar("SELECT id::text FROM credit.data_request WHERE decision_request_id = ?"
+                + " AND source_kind = 'FINANCIAL_DATA'", request)));
         assertThat(drive(request, a.progress(), b.progress())).isEqualTo("IN_REVIEW");
         String caseId = scalar("SELECT id::text FROM credit.underwriting_case WHERE decision_request_id = ?", request);
         assertThat(scalar("SELECT approvable_minor::text FROM credit.underwriting_case WHERE id = ?::uuid", caseId))
-                .as("nothing capped the referral").isEqualTo("1200000");
+                .as("nothing capped the referral").isEqualTo("300000");
         String first = underwriterSessions.get(0);
         String secondA = underwriterSessions.get(1);
         String secondB = underwriterSessions.get(2);
@@ -675,8 +684,8 @@ class CreditDecisionStormDatabaseTest {
                 .as("a case is held by its underwriter's identity").isEqualTo(identities.get(holder));
         String other = holder.equals(first) ? secondA : first;
         HttpResponse<String> aboveThreshold = tracked(a.client().post(CASES + "/" + caseId + "/decision",
-                "{\"outcome\":\"APPROVED\",\"approvedAmount\":\"11000.00\",\"currency\":\"EUR\",\"reasonCodes\":"
-                        + "[\"CRD-CURRENCY-NOT-SUPPORTED\"],\"reason\":\"the balance verified in euros\"}", holder,
+                "{\"outcome\":\"APPROVED\",\"approvedAmount\":\"3000.00\",\"currency\":\"EUR\",\"reasonCodes\":"
+                        + "[\"CRD-SOURCE-UNAVAILABLE\"],\"reason\":\"the income verified by payslip\"}", holder,
                 CreditTestClient.key()));
         assertThat(aboveThreshold.statusCode()).as(aboveThreshold.body()).isEqualTo(200);
         assertThat(CreditTestClient.field(aboveThreshold.body(), "status")).isEqualTo("AWAITING_SECOND");

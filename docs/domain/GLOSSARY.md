@@ -977,8 +977,9 @@ data (`INV-CRD-02`).
 approval is above the product's four-eyes threshold (a disagreeing second approver refusing it
 back to the first, `AWAITING_SECOND → ASSIGNED`, the first decision cleared), or `CLOSED` when its
 request closes undecided (`V013`) — in which a person decides `APPROVED` or `DECLINED` with at least one
-Reason Code, an approval bounded by the evaluation's approved amount and the exposure limit
-re-read under the profile lock (`INV-CRD-11`, `INV-CRD-09`).
+Reason Code, an approval bounded by the referral's ceiling (`approvable_minor` - the request capped
+by every cap its evaluation triggered; a `REFER` approves no amount) and the exposure limit re-read
+under the profile lock, and never while that exposure is unassessable (`INV-CRD-11`, `INV-CRD-09`).
 **Not:** Underwriting itself (the activity, usually automatic), and not `risk`'s Case or `kyc`'s
 Review Task. A person may never approve a request whose evaluation included a hard decline, and
 never be their own case's second approval (`INV-AUD-04`). The person's decision is *the* Credit

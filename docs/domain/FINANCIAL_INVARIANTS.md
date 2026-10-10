@@ -1473,6 +1473,16 @@ snapshot; `UNIQUE (snapshot_id)` on the assessment; `UNIQUE (assessment_id)` on 
 **Verify:** Ten progress sweepers per request, and a crash after each step re-driven by another
 instance, each counted one; a successor snapshot only where the reserved exposure changed, and
 the decision naming it; a lock-bypass probe per arbiter.
+*Since the Phase 10 to 11 transition* (2026-10-10, which found "of the same request" enforced by
+nothing - the decision's, the assessment's and the evaluation's input keys on the input's id alone,
+their copied hash and pins unchecked): composite foreign keys `(snapshot_id, decision_request_id)`,
+`(assessment_id, decision_request_id)` and `(basis_evaluation_id, decision_request_id)` hold each row
+to its own request's input, and credit `V017`'s birth triggers seal the assessment's hash and pins to
+its snapshot, the evaluation's policy and engine to its assessment, and the decision's hash and pins
+to its request's LATEST snapshot and (once pinned) the request's versions; the replay's seal checks
+the snapshot is the decision's own request's (`Divergence.HASH`)
+(`UnderwritingCaseDatabaseTest#aDecisionRestsOnItsOwnRequestsSnapshot`,
+`DecisionReplayDatabaseTest#aDecisionOnAnotherRequestsSnapshotDivergesByHash`).
 **Phase:** 10
 
 ### INV-CRD-07 — A decision's snapshot is complete and sealed
@@ -1496,10 +1506,11 @@ never recorded (`BureauSelectionDatabaseTest#theRecordNamesItsProvider`,
 
 ### INV-CRD-08 — Stale data never decides
 **Statement:** Every credit record a snapshot uses was retrieved within the pinned policy's
-declared maximum age for its source kind, judged on the database clock at the freeze. A record
-past it is never used: re-collected once if it was fresh when recorded, else (already stale when
-recorded, or stale a second time on one request) its source kind is unavailable for the request
-and the policy's fallback decides (`INV-CRD-10`).
+declared maximum age for its source kind, judged on the database clock at the freeze **and again
+at the decision**. A record past it is never used: at the freeze it is re-collected once if it was
+fresh when recorded, else (already stale when recorded, or stale a second time on one request) its
+source kind is unavailable for the request and the policy's fallback decides (`INV-CRD-10`); past
+it at the decision, nothing is decided on it.
 **Why:** A decision on an out-of-date bureau file decides a different applicant from the one
 who applied; and an instance clock judging the age lets skew admit stale data or refuse fresh.
 **Enforce:** `DOMAIN` (judged against `DatabaseTime.now` in the freezing transaction). The age
@@ -1512,16 +1523,27 @@ Re-collection is bounded (`SnapshotFreezer`, ADR-0085 §11): only a record with 
 recorded_at − max age`, and only the kind's first data request on the decision request, re-collects.
 *(Added at the Phase 10 → 11 transition, 2026-10-10, whose audit found a provider stamping every
 report past the age looping paid pulls until the request expired.)*
+The re-judgement at the decision *(added at the Phase 10 to 11 transition, 2026-10-10, which
+found a taken case decidable on its basis's records however long it was held, and a successor
+snapshot copying them unjudged)*: the deciding transaction re-judges every record the deciding
+snapshot froze, on the same expression (`DecisionSnapshotStore.staleRecords`), before it writes
+anything - a person is refused `422 credit.DataStale` with nothing recorded (the case is released
+and expires with its request), the system decides nothing (the request waits for its expiry), and a
+successor refuses to copy a stale record (`SnapshotFreezer.RecordsStale`).
 **Verify:** A record that aged one second past the maximum age re-collected; a record stale when
 recorded, and a second staleness, frozen unavailable with no further data request
 (`DecisionSnapshotDatabaseTest`, `DecisionOrchestrationDatabaseTest#aProviderStampingEveryReportStaleIsUnavailableNotALoop`);
-an instance skewed ±5 s neither accepting stale data nor refusing fresh.
+an instance skewed ±5 s neither accepting stale data nor refusing fresh; a record aged past the
+maximum between a referral and its person's decision refusing approval and decline alike, and the
+system's decision, and a successor (`UnderwritingCaseDatabaseTest#nothingIsDecidedOnStaleData`).
 **Phase:** 10
 
 ### INV-CRD-09 — Decisions for one party are serialised on its exposure
 **Statement:** Every deciding transaction for a party holds that party's `credit_profile` row
-lock and re-reads the party's reserved exposure under it, so concurrent approvals — across
-products, and beside a person's approval — never together exceed the policy's exposure limit.
+lock and re-reads the party's reserved exposure **and outstanding platform credit** under it, so
+concurrent approvals — across products, and beside a person's approval — never together exceed the
+policy's exposure limit. An exposure that cannot be assessed — the bureau's total balance absent —
+is never approved, by the platform or by a person: **no exception**.
 **Why:** Exposure judged outside a lock is a limit two requests each pass alone and break
 together — `INV-CON-03`'s lesson pointed at credit.
 **Enforce:** `DOMAIN` (lock-then-look: the profile row `FOR UPDATE` first in every deciding
@@ -1532,10 +1554,28 @@ non-negative amount, or `EXPOSURE` `GT`/`GE` at most the limit, with a non-appro
 (`CreditPolicy.boundsExposure`, `PolicyRule.refusesExposurePast`), judged at proposal so a stored
 version always reads back. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
 found a policy without such a rule admitted, and so able to approve past its own limit.)*
+*(Amended at the Phase 10 to 11 transition, 2026-10-10.)* Three holes found and closed: (1) the
+deciding transaction re-read the reservation alone and a successor copied the first freeze's
+outstanding credit, so once Phase 11 consumes an approval into a loan - reserved down, outstanding up
+by the same amount - the decision would judge the limit on a stale outstanding figure; both terms are
+now re-read under the profile lock and a successor replaces both, and **Phase 11's loan /
+consumption writer must hold the party's `credit_profile` row `FOR UPDATE`** in the transaction that
+moves the exposure from reserved to outstanding. (2) A person's exposure check counted an absent
+bureau balance as zero; by the owner's decision of 2026-10-10 a person's approval on an
+unassessable exposure is refused `422 credit.ExposureUnassessable` - they may only decline. The
+recorded consequence: production, which has only fail-safe sources, can approve nothing until a
+real bureau is connected. (3) The person-versus-system race asserted a count that could not fail;
+it now asserts both orders occur, and a lock-wait test proves the person's deciding transactions
+wait on the profile lock.
 **Verify:** Two products for one party at the limit raced a hundred rounds, both deciders observed
 waiting at the profile lock together in every round, the second seeing the first's reservation
 (`CreditDecisionDatabaseTest#twoProductsAtTheExposureLimitSerialise`); the storm's exposure census,
-no party's reserved exposure above its limit at rest.
+no party's reserved exposure above its limit at rest; an outstanding figure moved between the
+evaluation and the decision seen by both deciders
+(`UnderwritingCaseDatabaseTest#theOutstandingCreditIsReReadAtTheDecision`); a person refused
+approval on an absent bureau balance (`#aPersonCannotApproveAnUnassessableExposure`); the
+person's deciding transactions blocked on a held profile lock
+(`#thePersonsDecidingTransactionWaitsOnTheProfile`).
 **Phase:** 10
 
 ### INV-CRD-10 — Missing data never approves
@@ -1570,8 +1610,9 @@ once (`BureauCollectionDatabaseTest`); concatenated, duplicate-key and trailing-
 
 ### INV-CRD-11 — A person's credit decision is bounded
 **Statement:** A person's decision on a referral is never the second approval of their own first
-decision, never approves a request whose evaluation included a hard decline, and always carries
-at least one reason code.
+decision, never approves a request whose evaluation included a hard decline, always carries
+at least one reason code, and is never made - taken, decided, second-approved or refused - by a
+person whose own party is the applicant.
 **Why:** One person approving their own exception, or overriding a hard decline, is the
 internal-fraud and regulatory exposure four-eyes exists for (`INV-AUD-04`); a human decision
 without a reason is no explanation.
@@ -1581,6 +1622,13 @@ one, each the catalogue's by the machine trigger - in place of the planned reaso
 trigger; *wording corrected by `P10-TSK-018`*).
 **Verify:** Self-approval refused at the domain and at the `CHECK`, each alone;
 `422 credit.HardDeclineNotOverridable`; `422 credit.ReasonRequired`; each by a raw-SQL writer too.
+*Since the Phase 10 to 11 transition* (2026-10-10, which found no comparison of the case's party with
+the actor's - an underwriter who is also a customer could take and approve their own referral below
+the four-eyes threshold): every act refused `403 credit.SelfDealingRefused` when the actor's party
+(`CreditActingParty`, composed over the identity store) is the case's, or cannot be resolved, and the
+attempt recorded `FAILED` `credit.ReviewOwnCaseRefused`
+(`UnderwritingCaseDatabaseTest#anUnderwriterNeverActsOnTheirOwnPartysCase`,
+`#aCustomerUnderwriterCannotTakeTheirOwnReferralOverHttp`).
 **Phase:** 10
 
 ### INV-CRD-12 — Credit arithmetic is exact
