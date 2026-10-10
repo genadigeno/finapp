@@ -445,3 +445,8 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
 - **Acceptance.** **As built** (`P10-DOC-001`, 2026-10-09): the Phase 10 review read this ADR
   against the code, corrected it in place above (and the code where the review found it wrong), and
   accepted it.
+- (2026-10-10, the Phase 10 → 11 transition) ADR-0091 (`Proposed`) designs the consumption port and
+  `PlatformCreditExposure` version 2 this ADR anticipated: every lending transaction that moves a
+  party's exposure takes the `credit_profile` row first — the lock point 5's deciding transaction
+  takes — so its re-read of reserved and outstanding credit never falls between a consumption's two
+  halves; this ADR's decisions stand.

@@ -947,6 +947,114 @@ so it is as immutable and exposure-safe as the system's. A case nobody takes exp
 with a recorded reason, and the review-age gauge alerts first. →
 [ADR-0089](../adr/ADR-0089-underwriting-and-manual-review.md)
 
+### Lending infrastructure (Phase 11, `Proposed` at the Phase 10 → 11 transition)
+Planned by the Phase 10 → 11 transition (2026-10-10) in `PHASE_11_PLAN.md`; nothing of it is built.
+The phase's tasks are `P11-TSK-001`…`P11-TSK-030`, `P11-TST-001`, `P11-TST-002` and `P11-DOC-001`,
+whose review reads each ADR against the code and corrects it before accepting any, the
+`P10-DOC-001` precedent. The invariants are `INV-LND-01`…`14` (fourteen new; the catalogue 128 →
+142). The phase's ADRs are ADR-0090…ADR-0100. Phase 11 moves money; production originates nothing
+until a real bureau is connected (L11).
+
+**Lending is one bounded context that owns the contract and its servicing facts, and none of the
+money.** `lending` holds the application, the terms versions, the offer, the versioned agreement,
+the loan account of both kinds and every servicing fact as born-once rows; the `loan` row has no
+amount, rate or balance column, every changing amount is a ledger balance, and no `*_minor` column
+sits on a mutable table. Two products — `PERSONAL_LOAN` and the revolving `CREDIT_LINE` — share one
+account model, one set of engines and one lock. `lending` depends on `ledger`, `platform` and
+`sharedkernel` only and reaches credit, standing, wallets and payments through five ports `app`
+implements; it never writes another module's table. Refinance (owner: the Phase 11 → 12
+transition), write-off and provisioning (Phase 14) and collections (Phase 13) are deferred with
+owners. → [ADR-0090](../adr/ADR-0090-the-lending-bounded-context.md)
+
+**A credit decision is taken up by credit's own port, under the party's lock, atomically with the
+acceptance.** `CreditDecisionConsumptions.consume` (credit `V021`) locks the party's `credit_profile`
+row, re-judges outcome and validity on the database clock and inserts through a `SECURITY DEFINER`
+function, the application role's `INSERT` revoked. `PlatformCreditExposure` version 2 is one SQL
+statement over lending's rows and the journal: committed and outstanding principal of loans, an
+open line's limit and a closing line's drawn principal — principal only, never the projection.
+Every exposure-raising lending transaction takes the profile lock first, so no instant sees neither
+the reservation nor the commitment. → [ADR-0091](../adr/ADR-0091-decision-consumption-and-exposure.md)
+
+**Loan terms are versioned data and the agreement is an immutable, sealed version.** Terms
+versions per product go `PROPOSED → ACTIVE → RETIRED` under four-eyes on advisory namespace `11`,
+never migration-activated; the offer pins the version active at the offering instant; agreement
+versions carry self-contained canonical terms, their SHA-256 (echoed by the customer at
+acceptance), the template and four engine versions; an amendment is version n+1 the customer
+accepts; every servicing row names its agreement version. The neutral EUR jurisdiction and the
+conventions L4–L8 are terms fields; the excluded features have no field at all. →
+[ADR-0092](../adr/ADR-0092-loan-terms-and-the-versioned-agreement.md)
+
+**The schedule is a deterministic projection, and billing is from actual accrual.**
+`SCHEDULE_ENGINE_V1`: due dates from the intended day with the month-end clamp, no business-day
+adjustment; a level annuity in exact `BigDecimal` rounded once `UP`; ACT/365F period interest
+rounded once; the final instalment absorbs the residue; principal conserved exactly; terms that
+cannot amortise refused. Generated at the accrual start; recalculated only as a new version. →
+[ADR-0093](../adr/ADR-0093-the-amortisation-schedule.md)
+
+**Interest accrues ACT/365F simple daily, once per account and date, rounded once per period.**
+`ACCRUAL_ENGINE_V1` on principal only (no compounding); cumulative rounding so a period's postings
+sum to its exact interest rounded once; born once per (account, date) under a unique, a ledger key
+and the account lock; a date accrues only when the database clock, read after the lock, says it
+has ended in the agreement's zone; no back-valuing, no penalty interest; the per-day event refused.
+→ [ADR-0094](../adr/ADR-0094-interest-accrual-and-day-count.md)
+
+**Repayments are allocated by an explicit, versioned order pinned by the agreement.**
+`ALLOCATION_ENGINE_V1`: oldest due first, fees → interest → principal; a loan's excess held as a
+credit balance, a line's paying down principal first; the split born with the repayment and
+conserving by a deferred constraint, derived under the account lock; a reversal negates rows and
+never re-cuts later allocations. → [ADR-0095](../adr/ADR-0095-repayment-allocation.md)
+
+**Loan accounting splits due from not-due, and every loan is funded from recognised lending
+capital.** `OwnerKind.LOAN` with six per-loan accounts and four operational ones, all closed to free
+adjustment; fifteen posting rules, each through `PostingService` or `ReversalService`; the ledger
+authoritative, lending's rows proven equal to it, the GL Phase 14's. `LENDING_CAPITAL` is an EQUITY
+account credited only by bank recognition of a four-eyes contribution's expectation (reconciliation
+`V022`); headroom — capital less committed and outstanding principal — is judged under its row lock
+at every acceptance and draw, so wallet money created by lending is always platform-funded and the
+safeguarding position stays exact. A platform "lending wallet", a four-line disbursement and a
+recorded funding debt were refused. → [ADR-0096](../adr/ADR-0096-loan-accounting-and-lending-capital.md)
+
+**Disbursement credits the wallet; the external leg is a payments withdrawal lending only reads.**
+The receivable is born with the wallet credit on both paths, once, with no provider. For an external
+account, a hold is placed in the same transaction and a system-actor withdrawal on the borrower's
+recorded instruction adopts it (payments `V032`); lending reads payments' outcome and never
+implements `OutboundCreditComposition`, so there is no lock cycle; interest starts at the payout's
+terminal outcome, the platform bearing the provider's ambiguity. →
+[ADR-0097](../adr/ADR-0097-disbursement-to-wallet-and-external-account.md)
+
+**Delinquency is derived, kept apart from the lifecycle, and stops at the collections boundary.**
+DPD from the oldest past-due item on the database clock; buckets and the 90-day default threshold as
+terms data; conditions appended only on change, never on a closed account; acceleration, penalty
+interest, notices and bureau reporting not built; collections (Phase 13) consumes lending's events.
+→ [ADR-0098](../adr/ADR-0098-delinquency-default-and-the-collections-boundary.md)
+
+**Servicing corrections are reasoned, four-eyes acts that post, never edits.** Fee waivers by
+`ReversalService`, paid fees refunded to the credit balance, interest waivers by explicit posting;
+repayment reversal exact, profile-lock first, refused for a closing repayment; restructuring by an
+amendment two people approve and the customer accepts, conditional on the agreement version; partial
+prepayment the first cut candidate; reasons screened; self-dealing refused; no operator originates,
+reprices, draws or disburses. → [ADR-0099](../adr/ADR-0099-servicing-corrections.md)
+
+**The revolving credit line draws against a limit derived under its lock and counts its whole limit
+in exposure.** Draws to the wallet only, refused past the available limit, while past due, or for
+capital; revolving accrual per statement cycle; `STATEMENT_ENGINE_V1`'s minimum payment (interest,
+fees and a principal part, the whole at least EUR 25.00 or the balance) due 25 days after the
+statement; closure through `CLOSING`. Exposure counts an open line's limit (`INV-CRD-09`); capital
+only its drawn principal. → [ADR-0100](../adr/ADR-0100-the-revolving-credit-line.md)
+
+**Owner decisions (L1–L12), settled at the transition and the owner's to revisit:** loans and
+draws funded from a `LENDING_CAPITAL` account recognised only from bank evidence, never
+over-deployed (L1); disbursement to the wallet and to an external bank account through payments'
+withdrawal machinery, with no lock-order cycle (L2); `PERSONAL_LOAN` and the revolving
+`CREDIT_LINE`, refinance, write-off and collections deferred with named owners (L3); a neutral EUR
+reference jurisdiction with no consumer-credit-law features (L4); ACT/365F simple daily interest,
+rounded once per period (L5); allocation oldest due first, fees → interest → principal, any excess
+held as a credit balance (L6); default at 90 days past due (L7); no penalty interest, no prepayment
+fee, no APR display (L8); credit's migrations continue at `V021`, `lending` owning its schema (L9);
+`P11-TSK-001`, the credit-owned consumption port, as the entry condition for any loan (L10);
+origination only against the simulators until a real bureau is connected (L11); the ten mandatory
+test scenarios, each a named test in a task and in the storm (L12).
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -1043,4 +1151,9 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | Credit evidence purge and crypto-shredding | Phase 15 | `credit_evidence.retain_until` is stored (recorded-at plus the product's 25 months, the database's clock) and every role is refused `DELETE`; a purge is a privileged, audited deletion with its own definer path. The normalised attributes and the snapshot's canonical text, kept for replay, are the purge's scope question too (ADR-0085 §5, `CURRENT_STATE.md` §Known Architectural Debt) |
 | Real bureau and financial-data connectivity; a party's date of birth and residence | When unresolved questions #13 and #14 are answered (never in Phase 10) | Production composes the fail-safe sources (`bureau-none`, `findata-none`) and refuses any named provider at startup (`CreditSourceOrder`); the party facts answer `ABSENT`, so no Phase 10 production decision judges age or residency (ADR-0084, ADR-0085) |
 | The risk score and fraud rules credit consumes | Phase 13 | `CreditRiskSignal` answers `NOT_ASSESSED` with its seam version, recorded in every snapshot, so Phase 10 decisions replay identically after Phase 13 (ADR-0084 §5) |
-| Loan application, offer, acceptance, disbursement and the consumption writer | Phase 11 | Credit decides and reserves exposure; `credit_decision_consumption` exists empty and the `CreditDecisions` port has no consumer outside credit (ADR-0084 §4, ADR-0088) |
+| Loan application, offer, acceptance, disbursement and the consumption writer | Phase 11 | Credit decides and reserves exposure; `credit_decision_consumption` exists empty and the `CreditDecisions` port has no consumer outside credit (ADR-0084 §4, ADR-0088). *(Planned by the Phase 10 → 11 transition (2026-10-10): the consumption writer is credit's own port, `P11-TSK-001` (ADR-0091, `Proposed`); application to disbursement are `P11-TSK-010`…`-015` (ADR-0090, ADR-0097).)* |
+| Refinance (a new loan repaying an old one) | The later lending phase the Phase 11 → 12 transition names | Needs a fresh credit decision and a two-account atomic payoff; Phase 11's payoff and consumption port are the parts it would compose (ADR-0090 §10, recorded by the Phase 10 → 11 transition) |
+| Loan write-off, charge-off, provisioning and IFRS 9 staging | Phase 14 | `LOAN_WRITE_OFF_EXPENSE` is seeded and posted by nothing, and posting rule 14 is designed, so the account plan does not change later; a defaulted loan in Phase 11 is a flag, never a loss (ADR-0096, ADR-0098) |
+| Collections case management and operations | Phase 13 | Lending owns the contractual facts and emits `LoanDelinquencyChanged`, `LoanDefaulted` and `LoanDefaultCleared`; contact strategy, promises to pay and placement are a collections context's, which never writes lending's rows (ADR-0098) |
+| Consumer-credit-law features — statutory APR, withdrawal rights, statutory notices and caps; penalty or default interest, prepayment fees, acceleration | When a real jurisdiction is chosen; never in Phase 11 | The neutral EUR reference jurisdiction (L4, L8); each feature would be a terms field in a new terms schema version and a reviewed engine version, and production activation of any product requires legal review first (ADR-0092, ADR-0098) |
+| Partial prepayment with recalculation | Phase 11 if not cut (`P11-TSK-028`, the phase's first cut candidate); if cut, the deferral is recorded with its owner by the cutting decision | Payoff and the credit line's principal paydown remain; prepayment is an agreement and schedule version n+1, refused while past due (ADR-0099 §6) |

@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `COMPLETE` (2026-10-09, `P10-DOC-001` - [`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)) — started 2026-10-07 with `P10-TSK-001` (24 of 24 items complete, M10.1 to M10.8 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `COMPLETE` (2026-10-09, `P10-DOC-001` - [`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)) — started 2026-10-07 with `P10-TSK-001` (24 of 24 items complete, M10.1 to M10.8 closed); **confirmed after repair by the Phase 10 → 11 transition** (2026-10-10, [`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md): fifteen IMPORTANT findings, every Phase 10 one repaired, tested and probed; R13 scheduled as `P11-TSK-001`); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14318,7 +14318,7 @@ see caught, each restore byte-identical, sha256-verified). A task's design (`tas
 correct its entry, and says so in the entry — the `P6-TSK-001` precedent. The ten-instance answer is
 `PASS` only on the counted tests the entry names; it is never claimed by construction. A task
 without them answers `UNKNOWN` and is not complete. Every keyed scope is per principal from birth.
-Migration numbers name the expected order (credit `V001`…`V013` - `V012` the evidence lookup `P10-TSK-017` found it needed, consent `V003`, identity `V020`);
+Migration numbers name the expected order (credit `V001`…`V013` - `V012` the evidence lookup `P10-TSK-017` found it needed, consent `V003`, identity `V020`; the transition's repairs added credit `V016`, `V017`, `V019`, `V020` (`V018` unused));
 the task that builds a migration may renumber within its module and says so.
 
 **Milestones**: M10.1 Foundations (`P10-TSK-001`…`-003`) · M10.2 Credit data (`P10-TSK-004`…`-007`)
@@ -15816,6 +15816,2206 @@ assignment and an expiry serialise (`-018`).
 - **Acceptance criteria**: the gate holds, counted.
 - **Definition of done**: `DOD-DOC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
+**The Phase 10 → 11 transition** — `COMPLETE` (2026-10-10; [`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md) - Phase 10 `COMPLETE` confirmed after repair; Phase 11 `READY`; marked `READY` by `P10-DOC-001`'s completion gate)
+- **As built** (2026-10-10): six adversarial read-only audits over master `8927a1e7` (decision
+  correctness; multi-instance, atomicity and idempotency; security and privacy; test adequacy;
+  architecture, documentation and the gate; provider adapters and data collection), each finding
+  proven from the code with a file, a line and a failure scenario. No CRITICAL; fifteen IMPORTANT
+  (R1–R15), every Phase 10 one repaired, tested and probed on three branches merged and re-verified
+  together: an underwriter never acts on their own party's case (`403 credit.SelfDealingRefused`,
+  audited `FAILED` as `credit.ReviewOwnCaseRefused`, R1); person-written reasons screened for card
+  and account numbers (`CreditReasons`, credit `V016` CHECKs and `credit.read_evidence`, R2); the
+  deadline-bound data request and the unrecorded answer (credit `V019`, `V020`, R3); the strict
+  provider parse (`CreditProviderJson`, fifteen golden files, R4); bounded re-collection (R5); the
+  `INV-CRD-10` census in every storm round and over the battery (R6); the pin's lock-wait tests (R7);
+  the provable race, both orders asserted and the person path's profile lock probed (R8); a decision
+  sealed to its own request's snapshot (credit `V017` composite keys and triggers, replay `HASH`,
+  R9); freshness re-judged at the decision and the successor (`422 credit.DataStale`, R10); no
+  person's approval on an absent bureau balance (`422 credit.ExposureUnassessable`, owner decision,
+  R11); outstanding credit re-read beside the reservation under the profile lock, a successor
+  replacing both (R12); MFA enforced on credit submission (owner decision, R14); universal criterion
+  7 re-graded `PARTIAL` and the skip of the fleet-wide `databaseTest` and `kafkaTest` tiers
+  re-affirmed for Phase 11 (owner decision, R15). R13 — the consumption write's owner — scheduled
+  as `P11-TSK-001`, Phase 11's first task, an entry condition for any loan. Every probe caught,
+  each restored byte-identical (sha256-verified), with its `MUTATION_TESTING.md` §2 row; ADR-0087,
+  ADR-0088 and ADR-0089 and `INV-CRD-06`, `-08`, `-09`, `-11` amended. Merged tree: hermetic 2768
+  across 461 suites and 19 modules, architecture 213 across 51, database 140 across 16, own-container
+  118 across 11, 0 failures. Phase 11 initialised as documents only:
+  [`PHASE_11_PLAN.md`](PHASE_11_PLAN.md), ADR-0090…ADR-0100 `Proposed`,
+  [`LENDING_LIFECYCLES.md`](../domain/LENDING_LIFECYCLES.md), `INV-LND-01`…`-14` (the catalogue 128 →
+  142 invariants), the gate's Phase 11 extension in `PHASE_GATES.md` §5, and thirty-three backlog
+  items across M11.1–M11.9 (the section below), with `P11-TSK-001` marked `READY`.
+- **Objective**: confirm Phase 10 against the code rather than its exit review's word, repair every
+  CRITICAL and IMPORTANT Phase 10 defect before the transition, and initialise Phase 11.
+- **Scope**: the ten transition parts (completion audit, decision correctness, the ten-instance
+  question, atomicity/consistency/idempotency, security and privacy, testing, architecture and debt,
+  blocking issues and repair, Phase 10 completion, Phase 11 initialisation); the repairs in code with
+  tests and probes; the owner decisions recorded (R11, R14, R15; L1–L12); the Phase 11 plan, ADRs,
+  lifecycles, invariants, gate extension and backlog.
+- **Out of scope**: Phase 11 code — no `lending` module, table, port, route or posting exists.
+- **Definition of done**: `DOD-DOC`, `DOD-TEST`.
+
+---
+
+# Phase 11 — Lending Infrastructure
+
+Status: `READY` — entry gate passed 2026-10-10 by the Phase 10 → 11 transition
+([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)), elaborated to task
+granularity by the same transition: thirty-three items (`P11-TSK-001`…`-030`, `P11-TST-001`,
+`P11-TST-002`, `P11-DOC-001`) across nine milestones, with `P11-TSK-001` marked `READY`. The
+engineering plan is [`PHASE_11_PLAN.md`](PHASE_11_PLAN.md); decisions are ADR-0090…ADR-0100
+(`Proposed` at the transition); the domain statement is
+[`LENDING_LIFECYCLES.md`](../domain/LENDING_LIFECYCLES.md), written before the first task (the
+`CREDIT_DECISIONING_LIFECYCLES.md` precedent). The in-scope invariants are whatever the catalogue
+marks `Phase: 11` — **fourteen at planning**, the transition's `INV-LND-01`…`-14` — **read from the
+catalogue at the gate, never from this file**. Until Phase 11's first task lands, nothing in this
+section is implemented; every statement is the decided design, corrected by the tasks that build it.
+
+**Phase 11 moves money.** Every loan and every draw is funded from the platform's lending capital
+(L1), credited to the borrower's wallet and — when the borrower chose it — paid out to their
+external bank account through payments' existing withdrawal machinery (L2); repayments move wallet
+money into the loan's receivables. Every lending money effect is one journal entry through
+`PostingService` or `ReversalService` in lending's own transaction (the ADR-0043 shape); lending
+holds no balance of its own and no mutable money column (`LendingSchemaHasNoMutableMoneyTest`). So
+every task that posts, holds, commits capital or judges credit exposure carries `DOD-FIN`, with the
+supplement F1–F8 read per task and stated in its entry: F1 the trial balance per currency over the
+task's postings; F2 every touched balance replayable from zero; F3 the idempotency guarantee at the
+financial boundary; F4 the reversal and compensation paths; F5 duplicate external delivery (a payout
+outcome, a bank statement line) producing no second effect; F6 a counted concurrency test per
+contended resource (L0, L3, L6, L7); F7 no floating point, statically verified over `lending`; F8
+the reconciliation implication implemented (capital recognition from bank evidence, the payout
+through payments' expectation, the subledger proof) or deferred with a named owner. An item a task
+cannot touch is answered vacuous with its reason, asserted rather than assumed; a pure engine binds
+F7 and answers the rest vacuous.
+
+**The production reality** (`PHASE_11_PLAN.md` §1.1, L11). Production composes only
+`UnconfiguredBureau` and `UnconfiguredFinancialData`; every production request reaches the policy's
+fallback, and since the transition a person may not approve while the bureau's total balance is
+absent (`422 credit.ExposureUnassessable`, R11). **No production credit decision can be `APPROVED`,
+so no production loan or credit line can be originated in Phase 11.** Origination is built and
+proven end to end against the simulators (`bureau-sim-a`, `bureau-sim-b`, `findata-sim-a`) in the
+database tests, the storm and the `local` profile; no test-only "seeded approval" exists in
+production code. Production ships closed: a product is offered only while an `ACTIVE` terms version
+exists for it — four-eyes activated, never migration-activated — and production activates none, so
+the application door answers `422 lending.ProductNotOffered`; `OPERATIONS_RUNBOOK.md` §7
+(`P11-TSK-030`) states what must hold before the first activation. Servicing is independent of
+origination's source and is exercised on accounts born through the real origination chain. The
+constraint is a recorded, accepted limitation with a debt row (owner: the phase that answers
+unresolved #13 and #14 — Phase 15 at the latest), not a deviation from a criterion.
+
+**Every task below states the gate's fields** — objective, bounded context, dependencies, scope, out
+of scope, domain changes, persistence, APIs, events, policy/model versioning, financial impact,
+invariants, distributed-system concerns (the ten-instance question answered), idempotency,
+consistency, atomicity, failure handling, security, audit, observability, reconciliation
+implications, tests, probe, acceptance criteria and definition of done, with the standing risk and
+complexity at its end — Phase 10's labels, kept unchanged. **Policy/model versioning** here means
+the lending terms version, the agreement version and the engine versions (`SCHEDULE_ENGINE_V1`,
+`ACCRUAL_ENGINE_V1`, `ALLOCATION_ENGINE_V1`, `STATEMENT_ENGINE_V1`) the task pins, produces or
+replays (`INV-LND-05`'s subject). **Probe** is the deliberate break its completion gate performs and
+must see caught, each restore byte-identical, sha256-verified, with its `MUTATION_TESTING.md` §2 row.
+A task's design (`task-design`) may correct its entry, and says so in the entry — the `P6-TSK-001`
+precedent. The ten-instance answer is `PASS` only on the counted tests the entry names; it is never
+claimed by construction, and a pure engine answers it by determinism across JVMs. A task without
+them answers `UNKNOWN` and is not complete. Every keyed scope is per principal from birth. **No
+register row is pre-filled by the transition:** each task catalogues its own audit acts in
+`AUDITABLE_ACTIONS.md`, its own errors in `ERROR_CONTRACT.md`, its columns in
+`DATA_CLASSIFICATION.md` and its lock and schedule rows in `DISTRIBUTED_EXECUTION.md` as it lands
+them.
+
+**Migration numbers name the expected order** (`PHASE_11_PLAN.md` §8): credit `V021` (`-001` —
+credit's run is `V001`…`V020`, `V018` unused); lending `V001` (`-002`), `V002` (`-005`), then
+`V003`…`V021` in task order (`-010`…`-028`, `V006` the exposure definer view of `-013`); ledger
+`V026` (`-003`); identity `V021` (`-002`); reconciliation `V022` (`-004`); payments `V032` (`-015`).
+`-004`'s `capital_contribution` table is unnumbered by the plan: it takes the next free lending
+number when it lands and the later lending numbers shift. The task that builds a migration may
+renumber within its module and says so.
+
+**Milestones** (acceptance per milestone in `PHASE_11_PLAN.md` §16): M11.1 Foundations
+(`P11-TSK-001`…`-005`) · M11.2 Engines (`P11-TSK-006`…`-009`) · M11.3 Origination
+(`P11-TSK-010`…`-013`) · M11.4 Disbursement (`P11-TSK-014`, `-015`) · M11.5 Loan servicing
+(`P11-TSK-016`…`-020`) · M11.6 Revolving credit line (`P11-TSK-021`…`-023`) · M11.7 Delinquency,
+fees and change (`P11-TSK-024`…`-028`) · M11.8 Proof and operations (`P11-TSK-029`, `-030`) · M11.9
+Exit (`P11-TST-001`, `P11-TST-002`, `P11-DOC-001`).
+
+**If the phase must shrink**, cut `P11-TSK-028` (partial prepayment) first, then the late-fee half of
+`P11-TSK-025` (the fee lifecycle stays exercised by the origination fee and the waivers); each
+deferral is recorded with its owner. **Never cut:** the consumption port, the exposure read, lending
+capital, both disbursement paths, the credit line, the accrual uniqueness, the allocation engine,
+the reversal, payoff, restructuring (scenario 8), the proofs, the storm, the battery.
+
+**The Phase 12 boundary** (`PHASE_11_PLAN.md` §17): no task below builds BNPL or a
+merchant-financed agreement (Phase 12); refinance (owner: the Phase 11 → 12 transition); write-off,
+charge-off, provisioning, IFRS 9 staging or the GL (Phase 14 — `LOAN_WRITE_OFF_EXPENSE` is seeded,
+unposted); collections operations or case management (Phase 13); real bureau connectivity
+(unresolved #13, #14); notifications; consumer-credit-law features — statutory APR, withdrawal
+rights, statutory notices, caps (L4); penalty or default interest, prepayment fees, acceleration,
+interest on interest (L8); variable rates; external inbound repayment rails (A11); capital return
+or income recycling (A29); the evidence and agreement purge (Phase 15). A reviewer finding any of it
+in a Phase 11 change refuses the change.
+
+**The owner decided at the transition** (2026-10-10, binding; each folded into
+`PHASE_11_PLAN.md` §2.3, `LENDING_LIFECYCLES.md` and ADR-0090…0100; a task's design may revisit one
+only by saying so, and `P11-DOC-001` reads each against the code): **L1** loans and draws are funded
+from a platform `LENDING_CAPITAL` ledger account (OPERATIONAL, EQUITY, per currency), recognised only
+from bank evidence and never over-deployed, so loan-funded wallet money is platform-funded and the
+safeguarding position stays exact (`-003`, `-004`, `INV-LND-13`); **L2** disbursement to the
+borrower's wallet **and** to an external bank account, the external leg through payments' withdrawal
+machinery with its ambiguity, return and reconciliation, and no lock-order cycle (`-014`, `-015`);
+**L3** the products are the amortising `PERSONAL_LOAN` and the revolving `CREDIT_LINE`, refinance,
+write-off and collections deferred with named owners (`-021`…`-023`); **L4** a neutral EUR
+reference jurisdiction with no consumer-credit-law features (A1); **L5** ACT/365F simple daily
+interest, rounded once per period (`-007`); **L6** allocation oldest-due first, fees → interest →
+principal, any excess held as a credit balance (`-008`); **L7** default at 90 days past due
+(`-024`); **L8** no penalty interest, no prepayment fee, no APR display; **L9** credit's run ends at
+`V020` (`V018` unused), Phase 11's credit changes start at credit `V021`, and `lending` owns its
+schema from `lending/V001`; **L10** `P11-TSK-001` is the credit-owned consumption port (R13), an
+entry condition for any loan; **L11** origination only against the simulators until a real bureau is
+connected; **L12** the ten mandatory test scenarios below, each a named test in a task and in the
+storm. Every convention L4–L8 is a field of the versioned terms row and is pinned on the agreement.
+**The recorded assumptions A1–A30** (`PHASE_11_PLAN.md` §2.4 — the servicing zone, the exposure and
+capital measures, the cost disclosure, the cure, the value-date rule, MFA per A19, auto-collection,
+the credit line's statement, minimum payment, draws and overpayment, the payout's interest start,
+and the rest) are the product defaults the tasks build on, each configurable on a versioned terms
+row; a task that departs from one says so in its entry.
+
+**The ten mandatory scenarios** (L12, `PHASE_11_PLAN.md` §13.2), each a named test: (1) the same
+disbursement on two instances — `-014`, with the payout's half in `-015`; (2) the same repayment
+received twice — `-018`, with the auto-collection half in `-019`; (3) two repayments concurrently on
+one instalment — `-018`; (4) the accrual job run twice — `-016`; (5) the provider succeeded but the
+response was lost — `-015`; (6) a repayment reversed after allocation — `-020`; (7) a payoff while a
+repayment is processing — `-026`; (8) a schedule changed under an approved contractual operation —
+`-027`; (9) a crash after posting, before event publication — `-014`, and the storm's crash points;
+(10) a payoff while the delinquency worker runs — `-026`. Every one is exercised again by
+`P11-TST-001`.
+
+**Dependency graph** (critical path in bold): **`-001` → `-002` → `-005` → `-007` → `-009` → `-011`
+→ `-012` → `-013` → `-014` → `-016` → `-017` → `-022` → `-024` → `-026` → `-027` → `-029` → `-030`
+→ `TST-001` → `DOC-001`**; `-003` → `-004` after `-002` (both needed by `-012`); `-006`, `-008`
+after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` (in parallel with
+`-022`, equal length into `-024`); `-019`, `-020` after `-018`; `-021` after `-013`, `-016` and
+`-004`; `-023` after `-022` and `-018`; `-025` after `-024` and `-020`; `-028` after `-027`;
+`TST-002` after `-029`. `-012` and `-013` ship in the same release.
+
+**P11-TSK-001 — Credit decision consumption port** — `READY` *(marked by the Phase 10 → 11 transition)*
+- **Objective**: give the born-once consumption fact its one owner and writer — credit — so an
+  approved decision is taken up at most once, never after it lapses, and never beside a decision
+  for the same party (R13, L10).
+- **Bounded context**: Credit Decisioning.
+- **Dependencies**: none (Phase 10 `COMPLETE`, confirmed after repair).
+- **Scope**: the published port `CreditDecisionConsumptions<T>.consume(uow, decision, consumerRef)`
+  (`PHASE_11_PLAN.md` §12.10) and `JdbcCreditDecisionConsumptions`, in the caller's transaction and
+  in this order: read the decision's party (plain); take the party's `credit_profile` row `FOR
+  UPDATE` through `CreditProfiles.lockForDecision` (Phase 10 lock element (1)); re-read the decision;
+  `DECLINED` → `NotApproved`; `valid_until <= statement_timestamp()` → `Lapsed` (the exact complement
+  of `JdbcReservedExposure`'s `valid_until > statement_timestamp()`, so at the boundary exactly one of
+  *reserves* and *consumable* holds); insert — the same `ConsumerRef` already present →
+  `Consumed(replayed = true)`, another → `AlreadyConsumed`, none → `Consumed`; absent →
+  `NotFound`. The sealed result `Consumed | NotApproved | Lapsed | AlreadyConsumed | NotFound`;
+  `ConsumerRef(ConsumerKind, UUID)` with `ConsumerKind { LOAN_AGREEMENT }` (BNPL reserved for Phase 12
+  in the javadoc, not a member). **The database guard**, credit `V021`: `consumer_kind`,
+  `consumer_ref`, `UNIQUE (consumer_kind, consumer_ref)` beside the existing `UNIQUE (decision_id)`, a
+  `CHECK` on the kind (the table holds no rows — asserted by the migration); a `SECURITY DEFINER`
+  function `credit.consume_decision(...)` owned by credit's owner role that takes the profile lock and
+  re-judges outcome and validity itself, the only path to the table; `INSERT` revoked from the
+  application role; a trigger refusing any insert not made inside the function. The audit act
+  `credit.DecisionConsumed`; the meter `finapp.credit.consumption{outcome}`.
+  `CreditModuleIsolationTest` unchanged (no new edge). `BOUNDED_CONTEXTS.md` was already corrected
+  by the transition (lending calls the port; it never writes credit's table).
+- **Out of scope**: any lending code; `app`'s adapter (`LoanCreditDecisions.consume`, `-012`);
+  `PlatformCreditExposure` version 2 (`-013`); a release of a consumption (none exists — a
+  consumption is final).
+- **Domain changes**: the consumption becomes a commanded, credit-owned fact with five typed
+  outcomes; `JdbcReservedExposure` unchanged (it already excludes consumed decisions).
+- **Persistence**: credit `V021` (the two columns and their unique, the kind `CHECK`, the definer
+  function, the `INSERT` revoke, the guard trigger); `credit_decision_consumption` stays append-only
+  (no `UPDATE`, no `DELETE` for any role).
+- **APIs**: none — an in-process published port; `app` adapts it for lending in `-012`.
+- **Events**: none — the consumer announces its own fact (`LoanAccepted`, `-012`); a credit event
+  nobody consumes is refused (Phase 10's `UnderwritingStarted` reasoning).
+- **Policy/model versioning**: none; the decision's pins and snapshot hash are untouched
+  (`INV-CRD-02`).
+- **Financial impact**: ends an approval's reservation of credit exposure (the consumer's
+  commitment replaces it in the same transaction from `-012`); moves no money.
+- **Invariants**: `INV-CRD-02` (no decision `UPDATE`), `INV-CRD-09` (consumption and decision
+  serialised on the profile), `INV-LND-06` (one decision funds at most one loan or line; no exposure
+  gap), `INV-IDEM-01`, `INV-HIST-01`.
+- **Distributed-system concerns**: ten consumers of one decision with ten different refs → one
+  `Consumed`, nine `AlreadyConsumed`; a retry with the winner's ref → `Consumed(replayed)`; consume
+  racing a deciding transaction for the same party → serialised on the profile row, the decision
+  seeing the reservation or its absence, never a torn state (both orders asserted, the R8 lesson); a
+  consumption at `valid_until` ± 1 µs on the database clock with the instances' clocks ±5 s apart →
+  exactly one of reserved and consumable. `PASS` on the counts of
+  `CreditDecisionConsumptionDatabaseTest`.
+- **Idempotency**: `UNIQUE (decision_id)` and `UNIQUE (consumer_kind, consumer_ref)`; the same
+  consumer replays its own consumption.
+- **Consistency**: outcome and lapse judged on the database clock read after the profile lock.
+- **Atomicity**: runs in the caller's transaction; a caller's rollback leaves no row and no audit.
+- **Failure handling**: a declined, lapsed, consumed or missing decision is a typed outcome, never an
+  exception the caller must parse; a crash before commit leaves nothing; a direct `INSERT` by the
+  application role fails with a privilege error, by any other path with the trigger's refusal.
+- **Security**: the definer function is the only path; `INSERT` revoked from `finapp_app`; the
+  function's `search_path` pinned; no new door, permission or role.
+- **Audit**: `credit.DecisionConsumed` (decision, consumer kind and ref; never an amount), written by
+  the winner only — catalogued in `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.credit.consumption{outcome}` counter, registered eagerly with its
+  closed tags, counted after commit.
+- **Reconciliation implications**: N/A — no money; the exposure census (`-013`, `P11-TST-001`)
+  reads the consumption rows.
+- **Tests**: `CreditDecisionConsumptionDatabaseTest` (`#tenConsumersOneConsumption`,
+  `#theSameConsumerReplays`, `#aDeclinedDecisionIsNotConsumable`,
+  `#aLapsedDecisionIsNotConsumableAtTheMicrosecond` (± 1 µs on the database clock, ±5 s instance
+  skew), `#consumptionAndADecisionForThePartySerialise` (both orders),
+  `#consumptionWaitsOnTheProfileLock` (a lock-wait test asserting the waiting statement, the R7
+  lesson), `#aConsumedDecisionReservesNothing`, `#theApplicationRoleCannotInsertDirectly`,
+  `#theConsumptionRowIsNeverUpdatedOrDeletedByAnyRole`); `CreditMigrationTest` extended.
+- **Probe**: judge `valid_until` before taking the profile lock →
+  `#consumptionAndADecisionForThePartySerialise` red; drop `UNIQUE (consumer_kind, consumer_ref)` →
+  a second decision consumed for one agreement, `#tenConsumersOneConsumption`'s sibling red; restore
+  the application role's `INSERT` → `#theApplicationRoleCannotInsertDirectly` red.
+- **Acceptance criteria**: an approved decision is consumed at most once, only while valid, only
+  under its party's profile lock, only through credit's port; a consumed decision reserves nothing.
+- **Definition of done**: `DOD-FIN` (credit exposure; F3, F6, F7 binding; F1, F2, F4, F5 vacuous —
+  no posting and no external event, asserted by `CreditModuleIsolationTest`; F8 N/A — credit moves no
+  money), `DOD-DOMAIN`, `DOD-SEC`. **Risk**: High. **Cx**: S.
+
+**P11-TSK-002 — The lending module boundary and floors** — `PLANNED`
+- **Objective**: make `lending` a build-graph fact with a privilege floor, its closed vocabularies
+  for both products and its permissions, before any behaviour (the `P5-/P6-/P8-/P9-/P10-TSK-001`
+  precedent).
+- **Bounded context**: Lending (scaffolding); Identity; `app` (guards).
+- **Dependencies**: `-001`.
+- **Scope**: `settings.gradle.kts` include and a build file from the sibling templates (per-schema
+  Flyway, `db/migration/lending`); edges `lending → ledger, platform, sharedkernel` only (the
+  `crossborder` precedent), pinned by `LendingModuleIsolationTest` with planted probes, every sibling
+  isolation test gaining `lending` (no module depends on it); `lending V001` (schema `lending`, owner
+  `finapp_migrator`, `REVOKE ALL FROM PUBLIC`, `USAGE` to `finapp_app`); the closed vocabularies:
+  `LoanProduct` (`PERSONAL_LOAN` ↔ credit's `CreditProduct.PERSONAL_LOAN`, `CREDIT_LINE` ↔
+  `CreditProduct.CREDIT_LINE` — each declaring currency, `LoanKind`, `MONTHLY` frequency, offer
+  validity default, disbursement deadline), `LoanKind` (`INSTALMENT`, `REVOLVING`),
+  `RepaymentFrequency`, `DayCountConvention` (`ACT_365F` only — the enum admits only implemented
+  members, A22), `LoanApplicationStatus`, `LoanOfferStatus`, `LoanStatus` (`PENDING_DISBURSEMENT`,
+  `ACTIVE`, `CLOSING`, `CLOSED`, `CANCELLED`), `ClosureReason`, `CancellationReason`,
+  `DelinquencyBucket`, `AllocationComponent` (`FEES`, `INTEREST`, `PRINCIPAL`),
+  `OverpaymentTreatment` (`HOLD_AS_CREDIT`, `PAY_DOWN_PRINCIPAL`), `EngineVersions` (the four engines'
+  current numbers, each 1); typed ids; identity `V021` (permissions `LENDING_ADMINISTER`,
+  `LENDING_INVESTIGATE`, `LENDING_CAPITAL_ADMINISTER`, `LOAN_SERVICE`, `LOAN_SERVICE_APPROVE`; roles
+  `LENDING_OFFICER` (administer, investigate), `LENDING_TREASURY_OFFICER` (capital),
+  `LOAN_SERVICING_AGENT` (service, approve — never one's own act, enforced per task));
+  `LendingSchemaHasNoMutableMoneyTest` (every `*_minor` column on an `INSERT`-only table);
+  `NoFloatingPointMoneyRulesTest`'s module guard over `lending`; `package-info` stating the module's
+  responsibility and its Phase 12 boundary; the `lombok.config` opt-in (records' `toString` names
+  identifiers only); `MODULE_ARCHITECTURE.md`'s lending entry rewritten as planned.
+- **Out of scope**: every table beyond the schema; every port, bean, route, event and schedule.
+- **Domain changes**: the closed vocabularies only.
+- **Persistence**: `lending V001`; identity `V021`.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: `EngineVersions` declares the four engines at version 1; a semantic
+  change to any engine is a new member, the old retained.
+- **Financial impact**: none; the schema guard forbids a mutable money column from the first table.
+- **Invariants**: `INV-MON-01`, `INV-LND-01` (the schema guard), `INV-LND-09` (only implemented
+  conventions are nameable).
+- **Distributed-system concerns**: none — no state, no writer; the ten-instance answer `PASS`
+  vacuously, recorded with its reason.
+- **Idempotency**: N/A — no command.
+- **Consistency**: N/A — no state.
+- **Atomicity**: N/A — no transaction.
+- **Failure handling**: N/A — a misconfigured vocabulary fails the build or the startup check.
+- **Security**: the five permissions and three roles admitted by migration, least privilege (no
+  role both proposes and approves its own act); `RoleNameTest` extended.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none.
+- **Tests**: `LendingModuleIsolationTest` (planted `credit`, `payments`, `accounts` imports refused),
+  `LendingMigrationTest`, `LendingVocabularyTest` (each `LoanProduct` agrees with its
+  `CreditProduct` — currency, kind, bounds — checked in `app`, the only place both are visible),
+  `RoleNameTest`, `LendingSchemaHasNoMutableMoneyTest` (with a planted mutable column refused).
+- **Probe**: add an import of `com.finapp.credit` in `lending` → `LendingModuleIsolationTest` red; add
+  an `UPDATE` grant on a `*_minor` column → the schema guard red.
+- **Acceptance criteria**: the module builds, is isolated, and declares every vocabulary and
+  permission the later tasks need; nothing depends on it.
+- **Definition of done**: `DOD-ARCH`, `DOD-SEC`, `DOD-BUILD`. **Risk**: Low. **Cx**: S.
+
+**P11-TSK-003 — The loan chart of accounts and the lending-capital account** — `PLANNED`
+- **Objective**: every loan figure and the platform's lending capital have a typed, guarded ledger
+  account before any loan exists.
+- **Bounded context**: Ledger; Lending.
+- **Dependencies**: `-002`.
+- **Scope**: ledger `V026`: `OwnerKind.LOAN` (`owner_ref` = the loan id, both kinds); the six
+  per-loan purposes `LOAN_PRINCIPAL`, `LOAN_PRINCIPAL_DUE`, `LOAN_INTEREST_ACCRUED`,
+  `LOAN_INTEREST_DUE`, `LOAN_FEES_DUE` (ASSET, debit-normal) and `LOAN_CREDIT_BALANCE` (LIABILITY,
+  credit-normal); the operational `LOAN_INTEREST_INCOME`, `LOAN_FEE_INCOME` (REVENUE),
+  `LOAN_WRITE_OFF_EXPENSE` (EXPENSE, seeded, posted by nothing in Phase 11) and `LENDING_CAPITAL`
+  (EQUITY, credit-normal) — `PHASE_11_PLAN.md` §12.8; `ledger_account_purpose_is_known` and
+  `owner_kind_matches_purpose` re-stated from `AccountPurpose.sqlValueList()` /
+  `sqlOwnerKindRule()`; the four operational accounts seeded per supported currency with hand-minted
+  UUIDv7 ids below the runtime ceiling; all ten purposes in
+  `AccountPurpose.closedToFreeAdjustments()` and the ledger's manual-correction trigger list;
+  `LENDING_CAPITAL` in `reconciledPositions()`'s single-poster discipline (only capital recognition
+  credits it); no `*_CLEARING` purpose (`INV-RAIL-04` — lending moves no money across a rail itself);
+  lending's `LoanAccounts.openFor(uow, loanId, currency)` over `LedgerAccountStore.createOrConverge`
+  (the six accounts in the account's currency only; unwired until `-012`);
+  `LendingBooksHaveOnePosterTest`'s skeleton (only lending's operations post to loan purposes; only
+  capital recognition to `LENDING_CAPITAL` — vacuous until the first poster, asserted then).
+- **Out of scope**: any posting; the capital contribution and its recognition (`-004`).
+- **Domain changes**: the account plan; `LoanAccounts`.
+- **Persistence**: ledger `V026`.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: N/A.
+- **Financial impact**: none yet; defines where every loan figure and the lending capital will live.
+- **Invariants**: `INV-LED-06` (declared type and normal balance), `INV-LND-01`, `INV-LND-13` (the
+  capital account's single poster), `INV-LED-04`.
+- **Distributed-system concerns**: ten openers of one loan's accounts → one set of six
+  (`createOrConverge` on the owned unique). `PASS` on the counts of `LoanChartDatabaseTest`.
+- **Idempotency**: convergence on the owned `(owner_kind, owner_ref, purpose, currency)` unique.
+- **Consistency**: the accounts are opened in the caller's transaction (acceptance, `-012`).
+- **Atomicity**: the six accounts commit with the caller or not at all.
+- **Failure handling**: a missing seed row fails `ChartOfAccounts.resolve` loudly (existing
+  behaviour); an unknown purpose is refused by the `CHECK`.
+- **Security**: a ledger `MANUAL_CORRECTION` touching any of the ten purposes refused at the domain
+  and by the trigger.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: `LENDING_CAPITAL` becomes a reconciled position posted only by
+  bank recognition (`-004`); the per-loan accounts are proven by the subledger proof (`-029`), not
+  against external evidence (no rail).
+- **Tests**: `LoanChartDatabaseTest` (`#everyPurposeIsTypedAndSeededPerCurrency`,
+  `#tenOpenersOneSet`, `#aManualAdjustmentCannotTouchALoanOrCapitalAccount`,
+  `#theOwnerKindMatchesThePurpose`), `everySeededIdSortsBeforeEveryRuntimeId` extended,
+  `AccountPurposeCheckGuardTest` extended.
+- **Probe**: leave `LOAN_CREDIT_BALANCE` out of the `CHECK` → `#tenOpenersOneSet` red; drop
+  `LENDING_CAPITAL` from `closedToFreeAdjustments()` →
+  `#aManualAdjustmentCannotTouchALoanOrCapitalAccount` red.
+- **Acceptance criteria**: the ten purposes exist, typed, guarded and openable; the operational
+  accounts are seeded for every supported currency.
+- **Definition of done**: `DOD-FIN` (F7 binding; F1, F2, F3, F4, F5 vacuous — no posting yet; F6
+  binding on the opener; F8: `LENDING_CAPITAL` reconciled by `-004`), `DOD-ARCH`. **Risk**: Medium.
+  **Cx**: S.
+
+**P11-TSK-004 — Lending capital: contribution, recognition, headroom and the capital proof** — `PLANNED`
+- **Objective**: fund lending from the platform's own money, recognised only from bank evidence and
+  never over-deployed, so the safeguarding position stays exact (L1, ADR-0096).
+- **Bounded context**: Lending (the administration); Settlement and Reconciliation (the
+  recognition); Ledger (the account).
+- **Dependencies**: `-003`.
+- **Scope**: lending's `capital_contribution` (+ `_event`) (currency, amount minor, reference,
+  proposer, approver, reason, expectation reference; the machine `PROPOSED → APPROVED | REJECTED`
+  only; four-eyes at the domain and by `CHECK (approver <> proposer)`; `UNIQUE (expectation_ref)`) in
+  a lending migration of the next free number (this section's header);
+  T-cap (`PHASE_11_PLAN.md` §7.1): claim `lending.capital:EMPLOYEE:<id>`, advisory namespace `11`
+  (`hashtext(currency)`, registered by whichever of `-004`/`-005` lands first), the proposal `FOR
+  UPDATE` conditional on `PROPOSED`, and the approval opening a `LENDING_CAPITAL_CONTRIBUTION`
+  expectation through reconciliation's opener in the same transaction; reconciliation `V022`: the
+  expectation kind and its recognition — when the platform's corporate transfer appears on the
+  settlement bank's statement, bank recognition (still the one poster of `CASH_AT_BANK`,
+  `INV-SET-06`) matches the line and posts rule 0 `DR CASH_AT_BANK / CR LENDING_CAPITAL` under its own
+  order and recognition key; **recognition is a derived condition, not a lending state** — lending
+  reads reconciliation's expectation and the ledger line through an `app` read port (reconciliation
+  never calls lending and writes nothing of lending's; no module depends on `lending`), deriving a
+  contribution's "recognised" or "lapsed" status from them — an approved contribution whose
+  expectation ages out unmatched is reported lapsed and never becomes capital; `LendingCapitalHeadroom.underLock
+  (uow, currency)` — the `LENDING_CAPITAL` row `FOR UPDATE` (L6), then `CR−DR(LENDING_CAPITAL) −
+  Σ committed principal of loans PENDING_DISBURSEMENT − Σ DR−CR(LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE)`
+  derived from journal lines — the `LENDING_CAPITAL` ledger balance, never a contribution's status
+  (the committed term reads `-012`'s tables and joins the read when they land); `LendingCapitalProof`
+  per currency in one `REPEATABLE READ` snapshot — (a) every journal
+  line on `LENDING_CAPITAL` is a recognised contribution's, (b) headroom ≥ 0 at rest, (c) the
+  published safeguarding adjustment `lending_funded(c) = Σ principal outstanding + committed`; the
+  doors `POST /v1/operator/lending/capital-contributions` (+ `/{id}/approval`, `/rejection`) and `GET
+  /v1/operator/lending/capital` (headroom per currency — an audited report, never a metric).
+- **Out of scope**: a capital return or withdrawal; income recycling (A29); capital tranches (Phase
+  16 if the storm's measurement demands); the headroom check at acceptance and draw (`-012`,
+  `-021`).
+- **Domain changes**: `LendingCapitalContribution` and its machine; the derived recognition read
+  (an `app` port over reconciliation); `LendingCapitalHeadroom`; `LendingCapitalProof`.
+- **Persistence**: the lending migration for `capital_contribution`; reconciliation `V022`.
+- **APIs**: the four routes above, keyed `lending.capital:EMPLOYEE:<id>`; errors
+  `lending.ProposalPending`, `lending.SelfApprovalRefused`, `lending.ReasonRequired`, `lending.NotFound`
+  and `lending.CapitalUnavailable` (used from `-012`) — catalogued in `ERROR_CONTRACT.md` by this
+  task.
+- **Events**: none from lending — the proposal, approval and rejection are audited acts, not events,
+  and recognition is reconciliation's fact (no `LendingCapitalRecognised` exists).
+- **Policy/model versioning**: N/A; the expectation's tolerance is reconciliation's versioned rule
+  (exact amount, no tolerance — named in the rule).
+- **Financial impact**: rule 0 — the platform's own cash enters the pool as lending capital, cash
+  recognised only from a statement line; headroom becomes the binding funding constraint.
+- **Invariants**: `INV-LND-13`, `INV-SET-06`, `INV-REC-06`, `INV-LED-01`, `INV-AUD-04`,
+  `INV-IDEM-01`.
+- **Distributed-system concerns**: ten approvers of one contribution → one approval, nine `409
+  lending.ProposalPending` (proposal row conditional, four-eyes `CHECK`); a statement line delivered
+  twice or re-imported → one recognition (reconciliation's line and expectation uniques); recognition
+  racing a lending transaction holding L6 → a one-way wait (§7.3(f)), never a cycle — a lock-wait test
+  asserting the waiting statement; two headroom readers in one currency → serialised on L6. `PASS` on
+  the counts of `LendingCapitalDatabaseTest`.
+- **Idempotency**: keyed per employee; the proposal's conditional edges; recognition born once per
+  statement line and per expectation.
+- **Consistency**: headroom derived from journal lines under L6, never from the projection
+  (`INV-BAL-05`).
+- **Atomicity**: approval and the expectation in one transaction; recognition's posting in
+  reconciliation's own transaction (lending writes nothing there).
+- **Failure handling**: a contribution whose money never arrives yields no capital (its expectation
+  ages out under reconciliation's rules; no lending edge is needed); an unmatched statement line is a
+  break like any other; a crash re-drives from rows.
+- **Security**: `LENDING_CAPITAL_ADMINISTER` (role `LENDING_TREASURY_OFFICER`); never approve one's
+  own proposal; every act reasoned, the reason screened for card and account numbers (the R2
+  precedent); `LENDING_INVESTIGATE` reads headroom.
+- **Audit**: `lending.CapitalContributionProposed`, `…Approved`, `…Rejected`; the headroom read as
+  `lending.ReportRead` — catalogued in `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.lending.capital.proof{verdict}` gauge (alert on any failure),
+  `finapp.lending.capital.headroom.low` gauge (currencies below the configured floor; alert above 0).
+- **Reconciliation implications**: capital is reconciled to the bank statement by construction —
+  recognition is the only poster; the capital proof's completeness arm proves it continuously.
+- **Tests**: `LendingCapitalDatabaseTest` (`#capitalIsRecognisedOnlyFromAStatementLine`,
+  `#tenApproversOneApproval`, `#selfApprovalRefusedAtBothRanks`, `#aDuplicateLineRecognisesOnce`,
+  `#anUnmatchedContributionYieldsNoCapital`, `#headroomReadsTheLedgerNotTheContributionStatus`,
+  `#headroomIsDerivedUnderTheCapitalLock` (lock-wait),
+  `#twoHeadroomConsumersNeverOverDeploy`,
+  `#theProofFindsAForeignPosting` (a raw-SQL line on `LENDING_CAPITAL` → proof red)),
+  `ReconciliationRecognitionDatabaseTest` extended for the new kind.
+- **Probe**: let the approval post `CR LENDING_CAPITAL` itself → `#capitalIsRecognisedOnlyFromAStatementLine`
+  red; read headroom without the L6 lock → `#twoHeadroomConsumersNeverOverDeploy` (two
+  transactions reserving the last capital through the read) red.
+- **Acceptance criteria**: capital exists only from bank evidence; headroom is derived under one lock
+  and never negative; the proof is green at rest and red on any foreign posting.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — no capital reversal in
+  Phase 11, a statement-line correction is reconciliation's; F5 binding on duplicate statement lines;
+  F8 implemented — the recognition), `DOD-SEC`, `DOD-API`. **Risk**: High. **Cx**: L.
+
+**P11-TSK-005 — Loan product terms as versioned data (both products)** — `PLANNED`
+- **Objective**: every rate, fee and servicing parameter of both products is a reviewed,
+  four-eyes-activated, immutable version, pinned by whatever uses it — and a product is offered only
+  while one is `ACTIVE`.
+- **Bounded context**: Lending; Identity.
+- **Dependencies**: `-002`.
+- **Scope**: `lending V002`: `loan_terms_version` (+ `loan_terms_event`): product, nominal annual
+  rate (decimal string, `FIXED` only), origination fee (amount or bps, `DEDUCTED`, default 0, A17),
+  late fee (amount, day, cap; A18), grace days, DPD bucket bounds, default threshold (90, L7),
+  allocation order (ordered steps, L6), overpayment treatment (loan `HOLD_AS_CREDIT`, line
+  `PAY_DOWN_PRINCIPAL`, A26), auto-collection and partial collection (A21), instalment rounding `UP`
+  and interest rounding `HALF_EVEN`, day count `ACT_365F`, `servicing_zone` (`UTC`, A2), allowed
+  repayment / statement days (1–28), `min_first_period_days` (15), offer validity (14 days), payoff
+  horizon (30 days), disbursement deadline (24 h), the line's minimum-payment floor, ratio and
+  payment-due days (A23, A24), the agreement template id and version; `PROPOSED → ACTIVE → RETIRED`,
+  `PROPOSED → REJECTED`; one `PROPOSED` and one `ACTIVE` per product by partial uniques; activation
+  locks the active row and retires it beside its successor; four-eyes at the domain and by `CHECK`;
+  immutable once proposed (trigger, every role); advisory namespace `11` (`hashtext(product)`,
+  registered by whichever of `-004`/`-005` lands first); effective periods clamped on a backward
+  database clock (credit `V014`'s lesson); validation refusing an unimplemented day count or rounding
+  mode, an allocation order omitting a component, and a value outside the product's declared bounds
+  (`422 lending.TermsInvalid`), and refusing terms that cannot amortise at the product's declared
+  amount and term bounds (`422 lending.TermsNotAmortising` — the refusal catalogued here, wired into
+  the door by `-006`, which owns the engine that decides it); never migration-activated (the credit policy's precedent); the doors
+  `POST /v1/operator/lending/terms` (+ `/{v}/approval`, `/rejection`) and `GET
+  /v1/operator/lending/terms?product=&at=`; the active-terms read (`FOR SHARE`) the application and
+  offer will pin.
+- **Out of scope**: using the terms (`-010`, `-011`); variable rates; production activation (an
+  operator act under `OPERATIONS_RUNBOOK.md` §7, `-030`).
+- **Domain changes**: `LoanTermsVersion` and its machine.
+- **Persistence**: `lending V002`.
+- **APIs**: the four routes above, keyed `lending.terms:EMPLOYEE:<id>`; errors `lending.TermsStale`,
+  `lending.ProposalPending`, `lending.SelfApprovalRefused`, `lending.ReasonRequired`,
+  `lending.TermsInvalid`, `lending.TermsNotAmortising` — catalogued in `ERROR_CONTRACT.md` by this
+  task.
+- **Events**: `LoanTermsVersionActivated` (version, product).
+- **Policy/model versioning**: this is the versioning — the active version at any instant is
+  answerable from rows; existing agreements keep theirs (`INV-HIST-04`); the engine versions are
+  named on the version and copied onto the agreement.
+- **Financial impact**: indirect — every future price and servicing convention.
+- **Invariants**: `INV-LND-05`, `INV-HIST-04`, `INV-AUD-04`, `INV-LND-09` (only implemented
+  conventions accepted).
+- **Distributed-system concerns**: ten proposers for one product → one proposal (namespace `11` and
+  the partial unique); ten approvers → one activation, nine `409 lending.TermsStale` (row lock and
+  conditional); an activation racing an offer being built (the offer reads the active version `FOR
+  SHARE` and pins it — a lock-wait test asserting the waiting statement); a backward clock between
+  two activations (the clamp). `PASS` on the counts of `LoanTermsDatabaseTest`.
+- **Idempotency**: keyed per employee; conditional edges on `PROPOSED`.
+- **Consistency**: one `ACTIVE` per product at every instant (partial unique); effective periods
+  contiguous.
+- **Atomicity**: retire and activate in one transaction (event, outbox and audit included).
+- **Failure handling**: a crash leaves both edges or neither; an invalid proposal is refused before
+  insert.
+- **Security**: `LENDING_ADMINISTER` (role `LENDING_OFFICER`); never approve one's own proposal (domain
+  and `CHECK`); every act reasoned and screened; reads `LENDING_INVESTIGATE` or `LENDING_ADMINISTER`;
+  `RoutePermissionRegisterTest` with negatives.
+- **Audit**: `lending.TermsVersionProposed`, `…Activated`, `…Rejected` — catalogued in
+  `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.lending.terms.active{product}` gauge (alert: none active for an offered
+  product, enabled per environment — production's expected state until §1.1's gate opens).
+- **Reconciliation implications**: none.
+- **Tests**: `LoanTermsDatabaseTest` (`#fourEyesAtBothRanks`, `#oneActivePerProduct`,
+  `#activeAtAnInstantOverAHistory`, `#immutableForEveryRole`, `#tenProposersOneProposal`,
+  `#tenApproversOneActivation`, `#anActivationWaitsOnAnOfferPinningTheTerms` (lock-wait),
+  `#aBackwardClockIsClamped`, `#anUnimplementedConventionIsRefused`); `LoanTermsApiTest` with the
+  route register's negatives.
+- **Probe**: drop the four-eyes `CHECK` → the raw-SQL self-activation accepted, `#fourEyesAtBothRanks`
+  red; drop the partial unique on `ACTIVE` → `#tenApproversOneActivation` red.
+- **Acceptance criteria**: no price or convention exists outside a four-eyes version; every version is
+  immutable; at every instant at most one version is active per product.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-006 — Schedule engine v1** — `PLANNED`
+- **Objective**: a deterministic, exact amortisation projection for the personal loan with zero
+  rounding leakage (ADR-0093).
+- **Bounded context**: Lending (pure domain).
+- **Dependencies**: `-005` (the term shape).
+- **Scope**: `ScheduleEngineV1` (`PHASE_11_PLAN.md` §12.2): due dates — `D1` the first date with
+  day-of-month `k` ≥ `d0 + min_first_period_days`, `Dj = D1 + (j−1)` months from the intended day,
+  clamped to the month's last day, no business-day adjustment (A6); the level instalment `A = P · i /
+  (1 − (1+i)^−n)` with `i = r / 12` at scale 20 `HALF_EVEN`, `(1+i)^n` by exact `BigDecimal.pow(n)`,
+  one division, `r = 0` → `A = P / n`, `A` rounded once to minor units `UP`; per period `interest_j =
+  round_HALF_EVEN(B(j−1) · r · days_j / 365)` (one product, one division, one rounding), `principal_j
+  = A − interest_j`, `principal_n = B(n−1)`; conservation asserted at construction of the `Schedule`
+  value (Σ `principal_j` = P exactly; Σ `amount_j` = P + Σ `interest_j`); a non-positive principal
+  portion refused (`TermsNotAmortising` — a typed result, never a negatively amortising schedule);
+  recalculation from a new principal, remaining term and next due date (§12.2 step 7, used by
+  `-027`, `-028`); terms naming a convention v1 does not implement refused; the amortisation check
+  wired into `-005`'s terms proposal door (terms that cannot amortise at the product's declared bounds
+  → `422 lending.TermsNotAmortising`); worked examples verified by hand in the task's design.
+- **Out of scope**: persistence of schedules (`-014`); billing from actual accrual (`-017`); the
+  accrual engine (`-007`).
+- **Domain changes**: the engine and the `Schedule` value.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: engine version 1, named on every schedule it produces; a semantic
+  change is version 2 with v1 retained in the code for replay.
+- **Financial impact**: defines contractual instalments; the projection is not the bill.
+- **Invariants**: `INV-LND-03`, `INV-LND-09`, `INV-MON-01`, `INV-MON-03`.
+- **Distributed-system concerns**: a pure function — no locale, no clock, no hash ordering, no
+  floating point; the ten-instance answer is determinism across JVMs: `PASS` on the counts of the
+  two-JVM byte comparison in `ScheduleEngineV1Properties` (re-run at scale by `P11-TST-002`).
+- **Idempotency**: N/A — pure.
+- **Consistency**: N/A — pure.
+- **Atomicity**: N/A — pure.
+- **Failure handling**: invalid or non-amortising terms → a typed refusal, never an exception from
+  arithmetic and never a negative principal.
+- **Security**: none.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none directly; the replay proof (`-029`) re-runs it.
+- **Tests**: `ScheduleEngineV1Test` (golden worked cases incl. `r = 0`, 6 and 60 months, disbursement
+  on 31 Jan and 29 Feb, repayment day 28 and the clamp from an intended 31), `ScheduleEngineV1Properties`
+  (conservation, monotone in rate, every term 6–60 × every repayment day 1–28 × disbursement on every
+  day of a leap and a non-leap year; two-JVM byte identity),
+  `LoanTermsDatabaseTest#termsThatCannotAmortiseAreRefusedAtProposal`.
+- **Probe**: round `interest_j` twice (to scale, then to minor) → a golden case red; compute the final
+  instalment as `A` → the conservation property red.
+- **Acceptance criteria**: Σ principal = P and Σ amount = P + Σ interest for every generated case; the
+  final instalment never exceeds a regular one.
+- **Definition of done**: `DOD-FIN` (F7 binding; F1–F6 and F8 vacuous — a pure engine posts
+  nothing), `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-007 — Accrual engine v1** — `PLANNED`
+- **Objective**: daily interest whose period sum is the period's exact interest rounded once
+  (ADR-0094, L5).
+- **Bounded context**: Lending (pure domain).
+- **Dependencies**: `-005`.
+- **Scope**: `AccrualEngineV1` (`PHASE_11_PLAN.md` §12.3): per day `base(d) · r / 365` at scale 20
+  (the division once per day, fixed by the engine version); cumulative rounding within a period —
+  `posted(d) = round_HALF_EVEN(cum_exact(d)) − round_HALF_EVEN(cum_exact(d−1))`; zero days (a row, no
+  entry, decided by the caller); the period reset (an instalment period or a statement cycle — both
+  products); 29 February accrues one day at /365; the base is supplied by the caller (principal
+  only, never interest or fees, A4); the payoff's projection of the accrual through `G − 1` on the
+  current base (used by `-026`); agreement with `ScheduleEngineV1` on on-time paths.
+- **Out of scope**: the sweep, the rows and the postings (`-016`); billing (`-017`).
+- **Domain changes**: the engine.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: engine version 1, named on every accrual row it produces.
+- **Financial impact**: defines interest income, day by day.
+- **Invariants**: `INV-LND-09`, `INV-LND-02` (its arithmetic half), `INV-MON-01`.
+- **Distributed-system concerns**: a pure function; determinism across JVMs: `PASS` on the counts of
+  the two-JVM comparison in `AccrualMatchesScheduleProperties`.
+- **Idempotency**: N/A — pure.
+- **Consistency**: N/A — pure.
+- **Atomicity**: N/A — pure.
+- **Failure handling**: a negative base or an unimplemented convention → a typed refusal.
+- **Security**: none.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none directly; the replay proof re-runs every accrual.
+- **Tests**: `AccrualEngineV1Test` (29 Feb, a varying base within a period, a zero rate, a zero base,
+  the period reset), `AccrualMatchesScheduleProperties` (on every on-time path Σ period accruals =
+  `interest_j`; cumulative rounding equals one rounding per period).
+- **Probe**: round each day independently → `AccrualMatchesScheduleProperties` red.
+- **Acceptance criteria**: every period's postings sum to one rounding of its exact interest.
+- **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
+  **Risk**: Medium. **Cx**: S.
+
+**P11-TSK-008 — Allocation engine v1 (both treatments)** — `PLANNED`
+- **Objective**: a pure, versioned, conserving allocation of money received, by the order the
+  agreement pins (ADR-0095, L6).
+- **Bounded context**: Lending (pure domain).
+- **Dependencies**: `-005` (the allocation order and overpayment treatment in terms).
+- **Scope**: `AllocationEngineV1.allocate(amount, dueState, rules) → lines` (`PHASE_11_PLAN.md`
+  §12.5): billed items — instalments or statements — oldest due date first, within each `FEES →
+  INTEREST → PRINCIPAL` (the pinned order); the remainder by the treatment: `HOLD_AS_CREDIT` (loan —
+  credit balance) or `PAY_DOWN_PRINCIPAL` (line — not-due principal, then any excess over every
+  receivable held as credit, A26); the credit-balance application at billing (rule 6) through the
+  same engine; Σ lines = amount exactly; no line above its component's due; a `PREPAYMENT` kind's
+  line to not-due principal (used by `-028` if built).
+- **Out of scope**: deriving `dueState` and posting (`-017`, `-018`).
+- **Domain changes**: the engine and its `AllocationLine` value.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: engine version 1; the order is data on the terms version, pinned on
+  the agreement.
+- **Financial impact**: decides what each payment pays.
+- **Invariants**: `INV-LND-04`, `INV-MON-01`.
+- **Distributed-system concerns**: a pure function; the caller supplies the due state derived under
+  the account lock (L3); determinism across JVMs: `PASS` on the counts of the two-JVM comparison in
+  `AllocationEngineV1Properties`.
+- **Idempotency**: N/A — pure.
+- **Consistency**: N/A — pure.
+- **Atomicity**: N/A — pure.
+- **Failure handling**: a negative amount or a malformed order → a typed refusal.
+- **Security**: none.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none directly; the subledger proof (`-029`) sums its rows.
+- **Tests**: `AllocationEngineV1Test` (every order the vocabulary admits; full, partial, over,
+  zero-due, early; both treatments), `AllocationEngineV1Properties` (conservation, no component above
+  due, oldest-first respected, two-JVM identity).
+- **Probe**: allocate principal before interest regardless of the pinned order →
+  `AllocationEngineV1Properties` red; let the remainder exceed due on a component → the never-above-due
+  property red.
+- **Acceptance criteria**: allocation conserves exactly under every order, amount and treatment.
+- **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
+  **Risk**: Medium. **Cx**: S.
+
+**P11-TSK-009 — Statement engine v1 (credit line minimum payment)** — `PLANNED`
+- **Objective**: a deterministic credit-line statement — what a cycle bills and the minimum payment —
+  from the pinned agreement (ADR-0100).
+- **Bounded context**: Lending (pure domain).
+- **Dependencies**: `-005`, `-007`.
+- **Scope**: `StatementEngineV1` (`PHASE_11_PLAN.md` §12.6): the cycle bounds from the agreement's
+  statement day (1–28, A23); the cycle's interest to bill = Σ the cycle's posted accruals (from
+  `-007`'s periods); assessed fees carried; the minimum payment's principal part `min(drawn principal
+  not yet due, max(round_UP(ratio × drawn principal), floor − interest − fees, 0))` with the A24
+  defaults (ratio 3 %, floor EUR 25.00); minimum payment = interest billed + fees billed + that
+  principal — so the whole minimum payment is at least the floor, or the whole balance when that is
+  less; due date
+  = statement date + payment-due days (25); opening and closing balances derived by the caller from
+  the ledger, never produced as stored figures.
+- **Out of scope**: persistence and the posting (`-022`); draws (`-021`).
+- **Domain changes**: the engine and its `Statement` value.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: engine version 1, named on every statement; the floor, ratio and
+  due-days are pinned agreement fields.
+- **Financial impact**: defines what a line's borrower must pay each cycle.
+- **Invariants**: `INV-LND-09`, `INV-MON-01`, `INV-LND-03` (the line's analogue: the billed principal
+  never exceeds the drawn principal).
+- **Distributed-system concerns**: a pure function; determinism across JVMs: `PASS` on the counts of
+  the two-JVM comparison in `StatementEngineV1Properties`.
+- **Idempotency**: N/A — pure.
+- **Consistency**: N/A — pure.
+- **Atomicity**: N/A — pure.
+- **Failure handling**: a cycle with nothing drawn and nothing accrued yields an empty statement
+  (minimum payment zero), never a negative figure.
+- **Security**: none.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none directly; the replay proof re-runs every statement.
+- **Tests**: `StatementEngineV1Test` (the floor dominating, the ratio dominating, interest and fees
+  above the floor, drawn principal below the floor — capped, an empty cycle, a statement day of 28
+  in February), `StatementEngineV1Properties` (minimum payment ≤ total due; minimum payment ≥ min(the
+  floor, total due); principal part ≤ drawn principal not yet due; two-JVM identity).
+- **Probe**: drop the cap at the drawn principal → `#drawnPrincipalBelowTheFloorIsCapped` red; round
+  the ratio `HALF_EVEN` instead of `UP` → a golden case red.
+- **Acceptance criteria**: every statement's minimum payment follows A24 exactly and never exceeds
+  what is owed.
+- **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
+  **Risk**: Medium. **Cx**: S.
+
+**P11-TSK-010 — The loan application (both products)** — `PLANNED`
+- **Objective**: one customer act asks for a personal loan or a credit line and opens credit's
+  decision request in the same transaction.
+- **Bounded context**: Lending; Credit Decisioning (through `app`).
+- **Dependencies**: `-005`.
+- **Scope**: `lending V003`: `loan_application` (+ `loan_application_event`) with `UNIQUE
+  (decision_request_id)` and its machine (`SUBMITTED → AWAITING_DECISION → OFFERED | DECLINED |
+  CLOSED_UNDECIDED | WITHDRAWN`, `SUBMITTED` transient and kept in the history) at three ranks — the
+  domain's conditional from-set under the row lock, the every-writer trigger
+  `loan_application_permits_only_machine_edges`, the status `CHECK`; the terms version active at
+  submission recorded on the application (read `FOR SHARE`) — informational only: the offer pins the
+  version active at the offering instant (`-011`); T-app (`PHASE_11_PLAN.md` §7.1): claim
+  `lending.application:CUSTOMER:<id>`, standing through `LoanPartyStanding`, the active terms,
+  `LoanCreditDecisions.open` implemented in `app` over `DecisionRequests.submit` (credit's arbiters;
+  MFA-assured since R14) with the customer as actor, the application `AWAITING_DECISION`, events; the
+  doors `POST /v1/me/loan-applications` (`MULTI_FACTOR`; product, amount or limit, term for a loan,
+  repayment or statement day, declared income and expenditure passed to credit, repayment method, an
+  optional payout destination preference verified only at acceptance), `GET
+  /v1/me/loan-applications/{id}` (status; when declined, credit's reason texts through credit's read)
+  and `POST /v1/me/loan-applications/{id}/withdrawal` (step-up; `DecisionRequests.cancel` through the
+  adapter, only while credit's request is cancellable); credit's refusals passed through unchanged
+  where they are the cause (`409 credit.ApplicantNotEligible`, `409 consent.ConsentRequired`), credit's
+  open request for the party and product mapped to `409 lending.ApplicationOpen`; no `ACTIVE` terms
+  for the product → `422 lending.ProductNotOffered`; an amount, limit or term outside the product's
+  bounds → `422 lending.AmountOutOfRange`.
+- **Out of scope**: the offer and the transitions out of `AWAITING_DECISION` other than withdrawal
+  (`-011`); acceptance (`-012`).
+- **Domain changes**: `LoanApplication` and its machine; the `app` ports `LoanCreditDecisions.open` /
+  `cancel` and `LoanPartyStanding`.
+- **Persistence**: `lending V003`.
+- **APIs**: the three routes above, keyed `lending.application:CUSTOMER:<id>` and
+  `lending.application-withdrawal:CUSTOMER:<id>`; errors `lending.ApplicationOpen`,
+  `lending.ApplicationNotWithdrawable`, `lending.ProductNotOffered`, `lending.AmountOutOfRange`,
+  `lending.NotFound` — catalogued in `ERROR_CONTRACT.md` by this task.
+- **Events**: `LoanApplicationSubmitted` (ids, product, credit request id), `LoanApplicationClosed`
+  (withdrawn, with its reason).
+- **Policy/model versioning**: the application records the terms version active at submission
+  (informational; the offer pins); credit pins its own policy and scorecard on its request.
+- **Financial impact**: none — no exposure until credit decides.
+- **Invariants**: `INV-IDEM-01`, `INV-IDEM-03`, `INV-LIFE-01`, `INV-LIFE-02`, `INV-CNS-01` (credit's
+  consent gate, unchanged).
+- **Distributed-system concerns**: ten submissions under one key → one application, the same answer
+  replayed, `409` while in progress; two keys for one party and product → one application, `409
+  lending.ApplicationOpen` (credit's partial unique over open requests); a withdrawal racing credit's
+  evaluation → exactly one of `WITHDRAWN` and evaluated (credit's request row lock). `PASS` on the
+  counts of `LoanApplicationDatabaseTest`.
+- **Idempotency**: the executor's claim per customer; credit's request born in the same transaction
+  under credit's key discipline.
+- **Consistency**: the application and credit's request commit together or not at all — an
+  application exists iff its credit request exists.
+- **Atomicity**: one transaction: the application, its history, credit's request, both modules'
+  events and outbox rows.
+- **Failure handling**: a credit refusal rolls back the application; a crash before commit leaves
+  neither; a withdrawal after credit's evaluation is `409 lending.ApplicationNotWithdrawable` (the
+  decision will arrive and the customer may decline the offer).
+- **Security**: owner-scoped (another party's id → `404 lending.NotFound`); `MULTI_FACTOR` for the
+  submission (A19), step-up for the withdrawal; standing in-transaction; declared figures passed to
+  credit, never logged; `RoutePermissionRegisterTest` with negatives.
+- **Audit**: none of lending's own (a customer's own request is its row; credit audits its accesses).
+- **Observability**: `finapp.lending.application{product, outcome}`.
+- **Reconciliation implications**: none.
+- **Tests**: `LoanApplicationDatabaseTest` (`#oneActOpensBoth`, `#tenSubmissionsOneKey`,
+  `#twoKeysOnePartyAndProductOneApplication`, `#creditRefusalLeavesNoApplication`,
+  `#aCrashBetweenLeavesNeither`, `#withdrawalCancelsTheCreditRequest`,
+  `#withdrawalAfterEvaluationRefused`, `#noActiveTermsRefusesTheProduct`,
+  `#rawSqlCannotSkipAnEdgeForAnyRole`); `LoanApplicationApiTest` (MFA required, the uniform 404, the
+  route register's negatives).
+- **Probe**: open credit's request in a second transaction → `#aCrashBetweenLeavesNeither` red; drop
+  the every-writer trigger → `#rawSqlCannotSkipAnEdgeForAnyRole` red.
+- **Acceptance criteria**: an application exists iff its credit request exists; one open application
+  per party and product; no application for an unoffered product.
+- **Definition of done**: `DOD-API`, `DOD-DOMAIN`, `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-011 — The offer** — `PLANNED`
+- **Objective**: turn an approved decision into explicit, expiring terms pinned to the terms version
+  active at the offering instant — once, whatever the events do.
+- **Bounded context**: Lending; Credit Decisioning (read, through `app`).
+- **Dependencies**: `-010`, `-006`, `-009`.
+- **Scope**: `lending V004`: `loan_offer` (+ `loan_offer_event`), `UNIQUE (application_id)`, the
+  canonical offer terms and `terms_sha256`, the machine `OFFERED → ACCEPTED | DECLINED | EXPIRED` at
+  three ranks (`ACCEPTED` is `-012`'s edge); `LoanOriginationSchedule` (leaderless `SmartLifecycle`,
+  off in test contexts): claims `AWAITING_DECISION` applications and offers past `expires_at` in one
+  `UPDATE … FOR UPDATE SKIP LOCKED` statement stamping `next_step_at` from `statement_timestamp()`,
+  re-stamped when nothing is to do (the starvation lesson); T-off: (L1) the application `FOR UPDATE`
+  conditional on `AWAITING_DECISION`, the decision read authoritatively through
+  `LoanCreditDecisions.decisionFor` (`app` over `CreditDecisions`), the product's terms version
+  `ACTIVE` at the offering instant read `FOR SHARE` and pinned (the application's recorded version is
+  informational; no active version → the application closes `CLOSED_UNDECIDED`, the product no longer
+  offered), the offer born; principal (loan) or limit (line) and term exactly the approved ones (A20); `expires_at =
+  LEAST(decision.valid_until, offered_at + offer_validity)` on the database clock; the loan's
+  illustrative schedule (`-006`, `d0` = today, labelled as such, total interest and total payable,
+  A5) or the line's rate and minimum-payment rule (`-009`); the offer document (template id and
+  version, the SHA-256 of the bytes shown); `DECLINED` → application `DECLINED`; credit's request
+  `CANCELLED`, `EXPIRED` or `ABANDONED` → `CLOSED_UNDECIDED`; a specific offer that still yields a
+  non-positive principal portion (the terms door, `-005`/`-006`, refuses terms that cannot amortise at
+  their declared bounds) → no offer, the application `CLOSED_UNDECIDED` with reason
+  `TERMS_NOT_AMORTISING`; expiry by the complement of acceptance's condition
+  (`expires_at <= statement_timestamp()`); `GET /v1/me/loan-offers/{id}` and `POST
+  /v1/me/loan-offers/{id}/decline`; an `InboxEventHandler` for `credit.CreditDecisionRecorded` v2 and
+  `credit.CreditDecisionRequestClosed` as hints only (v1 refused or handled, ADR-0087 as amended);
+  `LEASE_PROTECTED_SCHEDULERS` twenty-two → twenty-three.
+- **Out of scope**: acceptance (`-012`); a counter-offer (none exists, A20).
+- **Domain changes**: `LoanOffer` and its machine; the origination step.
+- **Persistence**: `lending V004`.
+- **APIs**: the offer read and the decline, keyed `lending.offer-decline:CUSTOMER:<id>`; no new error
+  (a non-amortising offer is an application closure reason, not an answer to a request).
+- **Events**: `LoanOffered` (offer id, decision id, principal or limit, currency, term, rate, expiry,
+  terms version), `LoanOfferClosed` (declined, expired), `LoanApplicationClosed` (declined,
+  undecided).
+- **Policy/model versioning**: the offer pins the terms version and the four engine versions in its
+  canonical terms; the hash covers them.
+- **Financial impact**: none — the decision still reserves the exposure.
+- **Invariants**: `INV-LND-05`, `INV-HIST-04`, `INV-EVT-04`, `INV-LIFE-01`.
+- **Distributed-system concerns**: ten origination sweepers on one application → one offer (skip
+  locked, the conditional edge, `UNIQUE (application_id)`); `CreditDecisionRecorded` delivered twice,
+  late or never → one offer within one sweep interval (the event is a hint; the read decides); a
+  terms activation while an offer is built → serialised on the active row (`FOR SHARE` against the
+  activation's `FOR UPDATE`), the offer pinning exactly one version; a decline racing expiry →
+  exactly one. `PASS` on the counts of `LoanOriginationDatabaseTest`.
+- **Idempotency**: born once per application; conditional edges; the decline keyed per customer.
+- **Consistency**: the decision read in the offering transaction; expiry judged on the database clock.
+- **Atomicity**: the application edge, the offer, its history and the events in one transaction.
+- **Failure handling**: a crash after credit decides → the sweep offers once; a closed credit request
+  → `CLOSED_UNDECIDED`; a failing application re-stamps its permit and does not hold the page.
+- **Security**: owner-scoped reads; the offer never shows a score, attribute or reason the customer
+  may not see; the decline step-up per the platform's conditional rule.
+- **Audit**: none (a system step and a customer's own decline are their rows).
+- **Observability**: `finapp.lending.offer{product, outcome}`,
+  `finapp.lending.origination.sweeper.enabled` (alert 0 in a non-test profile).
+- **Reconciliation implications**: none.
+- **Tests**: `LoanOriginationDatabaseTest` (`#tenSweepersOneOffer`, `#aDecisionEventTwiceOffersOnce`,
+  `#noEventStillOffers`, `#aForgedOrLateEventChangesNothing`, `#aDeclineClosesTheApplication`,
+  `#aClosedCreditRequestClosesUndecided`, `#theOfferPinsTheVersionActiveAtTheOfferingInstant`,
+  `#anActivationWaitsOnAnOfferBeingBuilt` (lock-wait asserting the waiting statement),
+  `#theOfferExpiresAtTheEarlierOfValidityAndDecision`, `#declineAndExpiryAtTheBoundaryLeaveExactlyOne`,
+  `#aNonAmortisingOfferClosesTheApplicationUndecided`, `#aStarvedPageRestampsItsPermit`);
+  `NoSingleInstanceAssumptionRulesTest` (+1).
+- **Probe**: build the offer from the event's payload instead of the read →
+  `#aForgedOrLateEventChangesNothing` red; drop `UNIQUE (application_id)` → `#tenSweepersOneOffer` red.
+- **Acceptance criteria**: every approved application yields exactly one offer with pinned terms and
+  an expiry no later than the decision's validity.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-012 — Acceptance: the agreement, the loan account, consumption, commitment and capital** — `PLANNED`
+- **Objective**: the customer's acceptance commits the immutable contract, consumes the decision,
+  commits the exposure and (for a loan) the capital, and opens the account — atomically, under the
+  party's profile lock first.
+- **Bounded context**: Lending; Credit Decisioning (the port, through `app`); Ledger (accounts);
+  Payments (the destination's verification, through `app`).
+- **Dependencies**: `-001`, `-003`, `-004`, `-011`. Ships with `-013` in the same release — until
+  `-013` lands credit's `NoLoansUntilPhase11` answers zero, so no build may carry acceptance without
+  the exposure read (the gate's integration check).
+- **Scope**: `lending V005`: `loan` (identity, kind, status, permits — no amount, rate or balance
+  column; `UNIQUE (offer_id)`; machine at three ranks) and its `loan_event` history (`INSERT` only,
+  one row per lifecycle edge with actor, reason and correlation), `loan_agreement` (`INSERT`-only for every
+  role; `UNIQUE (loan_id, version)`; version 1 here; offer or amendment id, decision id, terms version
+  id, template id and version, engines, `canonical_terms jsonb`, `terms_sha256`, `effective_from`),
+  `loan_acceptance` (the evidence of A13: offer id, agreement version, `terms_sha256`, template id and
+  version, the SHA-256 of the document bytes shown, identity, session, assurance level, `accepted_at`
+  on the database clock, channel, client IP and user agent `CONFIDENTIAL`), `loan_disbursement`
+  (`UNIQUE (loan_id)`, `PENDING`, the verified opaque payout destination reference — present iff path
+  X); T-acc (`PHASE_11_PLAN.md` §7.1): claim `lending.offer-acceptance:CUSTOMER:<id>`; **(L0)** the
+  profile through `LoanCreditDecisions.lockExposure`; **(L2)** the offer `FOR UPDATE` conditional on
+  `OFFERED` and `expires_at > statement_timestamp()`; standing re-read; `LoanCreditDecisions.consume`
+  (`app` over `-001`'s port, `ConsumerRef(LOAN_AGREEMENT, agreement id)`) — `NotApproved` or
+  `Lapsed` → `409 lending.OfferNotAcceptable` (a lapse also expires the offer); **(L6)** the
+  `LENDING_CAPITAL` row and headroom ≥ principal through `LendingCapitalHeadroom` (loan only — a line
+  consumes capital only by draws, A28), else `422 lending.CapitalUnavailable`; the loan born
+  (`PENDING_DISBURSEMENT`, or a line `ACTIVE`); agreement v1; evidence; the disbursement `PENDING`
+  (loan); the payout destination verified through `LoanPayoutDestinations` (the customer's own payment
+  method, the ADR-0056 shape, an opaque reference — `INV-RAIL-03`); the six ledger accounts through
+  `LoanAccounts.openFor`; the offer `ACCEPTED`; events; audit; the echoed `terms_sha256` compared
+  (`409 lending.TermsChanged`); the door `POST /v1/me/loan-offers/{id}/acceptance` (`MULTI_FACTOR` →
+  `201` with the account id) and `GET /v1/me/loans`, `/{id}` (state, kind, derived balances, the
+  line's limit); `LendingCapitalHeadroom`'s committed term joined over `loan` and `loan_agreement`;
+  the lending lock order (L0–L8) written to `DISTRIBUTED_EXECUTION.md` §3 as built.
+- **Out of scope**: disbursement (`-014`) — a loan carrying a payout destination is not disbursed
+  before `-015` adds path X (the sweep skips it; production activates no terms, so no customer can
+  reach it); the exposure read (`-013`); draws (`-021`).
+- **Domain changes**: `Loan`, `LoanAgreement`, `AcceptanceEvidence`; the `app` adapters
+  `LoanCreditDecisions.consume` / `lockExposure` and `LoanPayoutDestinations`.
+- **Persistence**: `lending V005`.
+- **APIs**: the acceptance and the two account reads; errors `lending.OfferNotAcceptable`,
+  `lending.TermsChanged`, `lending.CapitalUnavailable` (first raised here) — catalogued in
+  `ERROR_CONTRACT.md` by this task.
+- **Events**: `LoanAccepted` (account id, kind, agreement id and hash, decision id, offer id).
+- **Policy/model versioning**: agreement v1 pins the terms version, the four engines and the template
+  version; `terms_sha256` over the canonical terms, re-verified by replay (`-029`).
+- **Financial impact**: credit exposure moves from reserved to committed; for a loan, capital
+  headroom is committed; no posting yet.
+- **Invariants**: `INV-LND-05`, `INV-LND-06`, `INV-LND-13`, `INV-CRD-09`, `INV-IDEM-01`,
+  `INV-IDN-04` (acceptance is not consent — no consent purpose created).
+- **Distributed-system concerns**: ten acceptances under one key and under ten keys → one account,
+  `409 lending.OfferNotAcceptable` for the rest; acceptance against expiry at the boundary under ±5 s
+  instance skew → exactly one of `ACCEPTED`, `EXPIRED`; acceptance and a credit decision for the same
+  party → serialised on L0; acceptances racing for the last capital in a currency → one admitted, `422
+  lending.CapitalUnavailable` (L6); the decision lapsing between the offer read and the accept →
+  refused. `PASS` on the counts of `LoanAcceptanceDatabaseTest`.
+- **Idempotency**: the claim per customer; the offer's conditional edge; the consumption's two
+  uniques; `UNIQUE (offer_id)`.
+- **Consistency**: the commitment and the consumption commit together under L0 — no instant sees
+  neither the reservation nor the commitment; headroom judged under L6.
+- **Atomicity**: the offer edge, the consumption, the loan, the agreement, the evidence, the
+  disbursement row, the six accounts, the event, the outbox row and the audit row in one transaction
+  (failure injected after each insert leaves nothing).
+- **Failure handling**: `Lapsed` → `409` and the offer `EXPIRED`; a mismatched hash → `409
+  lending.TermsChanged`, nothing written; an unverifiable destination → refused before any write; a
+  crash → the retry re-accepts under the same key; standing lost → refused.
+- **Security**: owner-scoped; `MULTI_FACTOR` (A19); standing in-transaction; the evidence's session
+  and IP `CONFIDENTIAL`; no account identifier enters lending.
+- **Audit**: `lending.OfferAccepted` (offer, account, agreement version; never an amount) —
+  catalogued in `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.lending.acceptance{product, outcome}`.
+- **Reconciliation implications**: none — no money moves; the capital proof's committed term and
+  the exposure census read the rows born here.
+- **Tests**: `LoanAcceptanceDatabaseTest` (`#tenAcceptancesOneLoan` (one key and ten keys),
+  `#expiryAndAcceptanceLeaveExactlyOne` (±5 s skew), `#aLapsedDecisionRefusesAcceptance`,
+  `#acceptanceTakesTheProfileFirst` (lock-wait asserting the waiting statement),
+  `#acceptancesRacingForTheLastCapitalAdmitOne` (lock-wait on L6), `#aLineCommitsNoCapital`,
+  `#theAgreementIsNeverUpdatedByAnyRole`, `#aMismatchedHashRefuses`,
+  `#aCrashAfterEachInsertLeavesNothing`, `#standingLostRefuses`, `#anUnverifiedDestinationRefuses`,
+  `#theSixAccountsAreOpenedInTheAccountsCurrency`); `LoanAcceptanceApiTest` (MFA, the uniform 404,
+  negatives).
+- **Probe**: consume before taking L0 (the offer first) → `#acceptanceTakesTheProfileFirst` red;
+  skip the L6 lock → `#acceptancesRacingForTheLastCapitalAdmitOne` red (capital over-deployed).
+- **Acceptance criteria**: one decision → at most one account; acceptance, consumption and the
+  commitment inseparable; capital never over-committed.
+- **Definition of done**: `DOD-FIN` (exposure and capital; F3, F6, F7 binding; F1, F2, F4, F5
+  vacuous — no posting and no external event; F8: the capital proof's committed term), `DOD-API`,
+  `DOD-EVENT`, `DOD-SEC`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
+
+**P11-TSK-013 — Platform credit exposure version 2** — `PLANNED`
+- **Objective**: credit's exposure judgement sees every unit of principal the platform has committed,
+  lent or promised on an open line, in one untorn read (R12, ADR-0091).
+- **Bounded context**: Credit Decisioning; Lending; `app`.
+- **Dependencies**: `-012` (shipped in the same release).
+- **Scope**: `app`'s `LendingCreditExposure` — `PlatformCreditExposure` **version 2**, replacing
+  `NoLoansUntilPhase11` in `CreditBeans` — one SQL statement over lending's definer view and the
+  ledger's journal lines (never `account_balance`), answering for (party, currency): loans' committed
+  (Σ agreement principal of loans `PENDING_DISBURSEMENT`) and outstanding (Σ `DR−CR(LOAN_PRINCIPAL +
+  LOAN_PRINCIPAL_DUE)` of loans not `CANCELLED`), each `ACTIVE` line's `GREATEST(agreement limit,
+  drawn principal)` (drawn = `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE`; drawn exceeds the limit only after a
+  paydown reversed past a re-draw, `-020`/`-023`) and each `CLOSING` line's drawn principal;
+  principal only (A3); `lending V006`: the definer view `lending.party_principal_exposure` (no table
+  grant across schemas); credit's deciding transaction unchanged — it already re-reads outstanding
+  beside reserved under the profile lock and freezes a successor on a change (R12); the version
+  recorded as provenance; `ExposureCensus` — per party, credit's reserved + lending's committed +
+  outstanding never exceeds the limit its policy declared at the deciding instant, in one `REPEATABLE
+  READ` snapshot, gauged.
+- **Out of scope**: arrears, interest or fees in exposure (A3); the lending proofs (`-029`).
+- **Domain changes**: the exposure seam's second version; `ExposureCensus`.
+- **Persistence**: `lending V006` (the definer view).
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: `PlatformCreditExposure` version 2 recorded on every snapshot frozen
+  after it; decisions made under v1 replay identically (their snapshots carry zero with v1).
+- **Financial impact**: credit exposure correctness across both products and every loan's life.
+- **Invariants**: `INV-CRD-09`, `INV-CRD-01` (replay unaffected), `INV-BAL-05`, `INV-LND-06`.
+- **Distributed-system concerns**: an acceptance and a credit decision for the same party → serialised
+  on L0, the decision seeing the reservation or the commitment, never neither (both orders asserted);
+  a disbursement committing during the exposure read → never torn (one statement); two products for
+  one party at the limit with a line open → the limit counted. `PASS` on the counts of
+  `LendingCreditExposureDatabaseTest`.
+- **Idempotency**: N/A — a read inside credit's existing conditional decision.
+- **Consistency**: one statement, read under L0 in the deciding transaction.
+- **Atomicity**: the deciding transaction unchanged.
+- **Failure handling**: a lending read failure fails the deciding transaction (re-driven by credit's
+  sweep), never answers zero.
+- **Security**: the definer view exposes only principal sums per (party, currency); least privilege;
+  no figure in a log, tag or span.
+- **Audit**: none new.
+- **Observability**: `finapp.credit.exposure.census{verdict}` gauge (alert on any failure).
+- **Reconciliation implications**: exposure is explained from decision, consumption, agreement and
+  journal rows — the census.
+- **Tests**: `LendingCreditExposureDatabaseTest` (`#acceptanceAndADecisionForThePartySerialise` (both
+  orders), `#aDisbursementDuringTheReadIsNeverMissed`, `#anOpenLinesLimitIsCounted`,
+  `#anOpenLineDrawnBeyondItsLimitCountsTheDrawnPrincipal`,
+  `#aClosingLineCountsItsDrawnPrincipal`, `#aCancelledLoanCountsNothing`,
+  `#principalRepaidStopsCounting`, `#interestAndFeesAreNotExposure`,
+  `#replayOfV1DecisionsStaysIdentical`, `#theCensusFindsAnOverLimitParty`) — the outstanding arms
+  built on owner-role journal fixtures here and re-asserted through the real paths by `-014`, `-018`,
+  `-023` and the storm.
+- **Probe**: count an `ACTIVE` line's drawn principal instead of the greater of limit and drawn →
+  `#anOpenLinesLimitIsCounted` red (and the limit alone → the beyond-limit test red); split the read into two statements →
+  `#aDisbursementDuringTheReadIsNeverMissed` red.
+- **Acceptance criteria**: at every instant, for every party, reserved + committed + outstanding is
+  what every deciding transaction sees, and the census is green.
+- **Definition of done**: `DOD-FIN` (credit exposure; F2, F6, F7 binding; F1, F3, F4, F5 vacuous — a
+  read; F8: the census), `DOD-DOMAIN`, `DOD-ARCH`. **Risk**: High. **Cx**: M.
+
+**P11-TSK-014 — Disbursement to the borrower's wallet (path W)** — `PLANNED`
+- **Objective**: the loan is born financially — once, unambiguously, in one local transaction, with
+  its schedule — and the receivable exists exactly when the wallet is credited (L2, ADR-0097).
+- **Bounded context**: Lending; Ledger; Accounts (through `app`).
+- **Dependencies**: `-013`, `-006`.
+- **Scope**: `lending V007`: `repayment_schedule` (`UNIQUE (loan_id, schedule_version)`, the agreement
+  version and schedule engine version), `loan_instalment` (immutable projection rows, `UNIQUE
+  (schedule_id, sequence)`), `accrual_start` (`UNIQUE (loan_id)`); `LoanDisbursementSchedule`
+  (leaderless, `next_attempt_at` permit; claims disbursements `PENDING` without a payout destination
+  until `-015`); T-dis (`PHASE_11_PLAN.md` §7.1): **(L0)** the profile (exposure moves from committed
+  to outstanding); **(L3)** the loan `FOR UPDATE` conditional on `PENDING_DISBURSEMENT`; **(L5)** the
+  disbursement conditional on `PENDING`; standing re-read; the wallet resolved through `app`'s
+  `LoanWallets` (the borrower's `CUSTOMER_WALLET` in the currency, opened through `AccountOpening` if
+  absent); posting rule 1 — `DR LOAN_PRINCIPAL P / CR CUSTOMER_WALLET P − f; CR LOAN_FEE_INCOME f`
+  (the origination fee `DEDUCTED`, default 0, A17), key `lending.disbursement:<loan>`, `posting_date =
+  value_date` = the business date of the database clock read under L3 (A10, the rule every later
+  lending posting follows); path W: the accrual start = the entry's value date and schedule v1
+  generated (`-006`) in the same transaction; the loan `ACTIVE`, the disbursement `POSTED`; a savepoint
+  around the posting on `LedgerAccountNotPostableException`, retried until `disbursement_deadline`
+  (24 h), then `CANCELLED (DISBURSEMENT_FAILED)`; standing lost → `CANCELLED (STANDING_LOST)`, the
+  commitment released under L0 and capital headroom restored, the decision staying consumed;
+  `GET /v1/me/loans/{id}/schedule?version=`; `LEASE_PROTECTED_SCHEDULERS` → twenty-four; scenario 1
+  and scenario 9.
+- **Out of scope**: the external payout and its hold (`-015`); accrual (`-016`); a line's draw
+  (`-021`).
+- **Domain changes**: `Disbursement`, `RepaymentSchedule`, `LoanInstalment`, `AccrualStart`; the
+  `LoanWallets` port.
+- **Persistence**: `lending V007`.
+- **APIs**: the schedule read.
+- **Events**: `LoanDisbursed` (entry id, value date, principal, currency, path), `LoanCancelled`
+  (reason).
+- **Policy/model versioning**: schedule v1 names the agreement version and the schedule engine
+  version.
+- **Financial impact**: **the first lending posting** — rule 1; wallet money created only against
+  committed, recognised capital (`INV-LND-13`).
+- **Invariants**: `INV-LND-07`, `INV-LND-01`, `INV-LND-03`, `INV-LND-13`, `INV-LED-01`,
+  `INV-IDEM-01`, `INV-EVT-01` (the outbox in the posting's transaction), `INV-LIFE-04`.
+- **Distributed-system concerns**: **scenario 1** — the same disbursement on two instances → one entry,
+  one `ACTIVE` edge, the wallet credited once; ten disbursers → one; a crash after acceptance → the
+  sweep disburses once; duplicate schedule generation → one (`UNIQUE (loan_id, schedule_version)`); a
+  suspended wallet → retried, then cancelled; standing lost → cancelled with the commitment released
+  under L0; **scenario 9** — a crash after the posting and before publication → both or neither, the
+  relay publishing once after a restart. `PASS` on the counts of `LoanDisbursementDatabaseTest` and
+  `LendingOutboxAtomicityDatabaseTest`.
+- **Idempotency**: `UNIQUE (loan_id)` on the disbursement, the conditional `PENDING_DISBURSEMENT →
+  ACTIVE`, the ledger key `lending.disbursement:<loan>`.
+- **Consistency**: committed → outstanding in one commit under L0; the value date from the database
+  clock under L3.
+- **Atomicity**: the posting, the schedule, the accrual start, the loan and disbursement edges, the
+  event, the outbox row and the audit row in one transaction.
+- **Failure handling**: a failed disbursement posts nothing (rule 11 — whole commit or savepoint
+  rollback); a cancellation releases the commitment and the headroom; a crash re-drives from rows.
+- **Security**: a system act with no door; no operator can disburse; no wallet id in an event.
+- **Audit**: `lending.LoanDisbursed` (system actor; loan and entry, never an amount) — catalogued in
+  `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.lending.disbursement{path, outcome}`,
+  `finapp.lending.disbursement.pending.age` (alert above the deadline),
+  `finapp.lending.disbursement.sweeper.enabled`.
+- **Reconciliation implications**: internal (wallet ↔ loan, no external evidence); the subledger proof
+  starts here (`-029`); F1's trial balance per currency holds with the new accounts.
+- **Tests**: `LoanDisbursementDatabaseTest` (`#theSameDisbursementOnTwoInstancesPostsOnce` (scenario
+  1), `#tenDisbursersPostOnce`, `#theScheduleIsGeneratedOnce`, `#aSuspendedWalletRetriesThenCancels`,
+  `#standingLostCancelsAndReleasesTheCommitment`, `#theEntryBalancesAndNamesTheLoan`,
+  `#aCrashAfterAcceptanceDisbursesOnce`, `#theOriginationFeeIsDeducted`,
+  `#disbursementTakesTheProfileThenTheLoan` (lock-wait), `#exposureMovesFromCommittedToOutstanding`),
+  `LendingOutboxAtomicityDatabaseTest#aCrashBetweenPostingAndPublicationLosesNothing` (scenario 9);
+  `NoSingleInstanceAssumptionRulesTest` (+1).
+- **Probe**: drop the conditional `PENDING_DISBURSEMENT → ACTIVE` →
+  `#theSameDisbursementOnTwoInstancesPostsOnce` red (the ledger key saves the money, not the second
+  schedule); write the event after the commit → scenario 9 red.
+- **Acceptance criteria**: one disbursement entry per loan; schedule v1 conserves; the loan is
+  `ACTIVE` iff the entry exists; no event without its posting and no posting without its event.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 binding — a failure posts
+  nothing, tested; F5 vacuous — no external event on path W; F8: internal, the subledger proof),
+  `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
+
+**P11-TSK-015 — Disbursement to an external bank account (path X)** — `PLANNED`
+- **Objective**: when the borrower chose it at acceptance, the disbursed funds continue to their
+  verified external account through payments' ambiguity-safe withdrawal machinery, the loan's birth
+  never depending on a provider and the platform — not the borrower — bearing the ambiguity (L2,
+  A30).
+- **Bounded context**: Lending; Payments (through `app`).
+- **Dependencies**: `-014`.
+- **Scope**: `lending V008`: `loan_payout` (`UNIQUE (loan_id)`; payments' withdrawal reference; the
+  machine `PENDING → DISPATCHING → DISPATCHED → PAID_OUT | FAILED | RETURNED` and `DISPATCHING →
+  NOT_DISPATCHED` (payments refuses or cannot route; the hold released) at three ranks — payments'
+  withdrawal machine has no `RETURNED` state, so `RETURNED` is mapped from payments' return record; `next_attempt_at`, `last_observed_at`); T-dis extended for path X:
+  **(L7)** the wallet `FOR UPDATE` and a ledger hold of P − f through `HoldService`, the payout born
+  `PENDING`, no schedule and no accrual yet (the awaiting-payout condition); T-pyo: (a) claim `PENDING
+  → DISPATCHING` with a permit and commit, (b) `LoanPayouts.dispatch` in `app` over payments'
+  system-actor withdrawal entry — payments' own Tx1, wire call and Tx2, keyed
+  `payments.withdrawal:lending:<loanId>`, adopting the hold — (c) (L3) the loan, (L5) the payout →
+  `DISPATCHED` with payments' reference; a crash anywhere re-drives under the same key (payments
+  replays) — payments refusing or unable to route answers at (b), and (c) records `DISPATCHING →
+  NOT_DISPATCHED`; T-pyr: (L3), (L5), payments' outcome **read** plainly through `app`
+  (`LoanPayouts.outcome` — the withdrawal's terminal state, and its return record for `RETURNED`), a
+  terminal outcome recorded, the accrual start set at payments' conclusion instant in the pinned zone
+  and schedule v1 generated; payments `V032`: `ActorType.SYSTEM` with the instruction reference in
+  the request fingerprint and an optional hold to adopt under the wallet lock — the person's
+  withdrawal door, `merchant` and `crossborder` unchanged; `LoanPayoutSchedule` (claims `PENDING`,
+  `DISPATCHING` past its permit, and `DISPATCHED` awaiting an outcome, rotated by
+  `last_observed_at`); `-014`'s sweep stops skipping loans with a destination;
+  `LEASE_PROTECTED_SCHEDULERS` → twenty-five; scenario 5.
+- **Out of scope**: a direct loan-to-rail credit (refused — it would make lending a second
+  `OutboundCreditComposition` implementer and a lock-order cycle, `PHASE_11_PLAN.md` §7.3); a draw's
+  external leg (the borrower's own withdrawal, A25); re-routing after an ambiguous dispatch
+  (`INV-RAIL-02`).
+- **Domain changes**: `LoanPayout` and its machine; the awaiting-payout condition; the `LoanPayouts`
+  port; payments' system-actor entry.
+- **Persistence**: `lending V008`; payments `V032`.
+- **APIs**: none new (the destination arrives on `-012`'s acceptance body); the loan read shows the
+  payout status.
+- **Events**: `LoanPayoutConcluded` (outcome `PAID_OUT` | `FAILED` | `RETURNED` | `NOT_DISPATCHED`,
+  payments' reference); payments' own withdrawal events unchanged.
+- **Policy/model versioning**: rail routing pinned by payments (ADR-0060); schedule v1 generated at
+  the terminal outcome names its versions as in `-014`.
+- **Financial impact**: posting rule 12 is payments' (`DR CUSTOMER_WALLET / CR INSTANT_CLEARING`, its
+  reversal on failure, its return); the hold protects the funds between the disbursement and the
+  payout; the receivable is untouched by any payout outcome.
+- **Invariants**: `INV-LND-07`, `INV-RAIL-02`, `INV-RAIL-03`, `INV-PAY-01`, `INV-PAY-04`,
+  `INV-SET-02`, `INV-LIFE-03`, `INV-LND-10`.
+- **Distributed-system concerns**: **scenario 1's payout half** — ten dispatchers → one withdrawal at
+  the provider (the payout's conditional claim plus payments' key); **scenario 5** — the provider
+  succeeded and the response was lost → the payout `DISPATCHED` while payments is `UNKNOWN`, no
+  re-dispatch, concluded only by payments' authenticated inquiry, accrual from the conclusion; a crash
+  between the claim and the dispatch → re-driven under the same key; a return after `PAID_OUT` → the
+  wallet credited by payments, the loan unaffected; no lending transaction holds a lending lock while
+  waiting on a payments row. `PASS` on the counts of `LoanPayoutDatabaseTest`.
+- **Idempotency**: `UNIQUE (loan_id)`; the conditional claim; payments' key and end-to-end reference.
+- **Consistency**: the loan never waits on the rail; the outcome read is payments' authority.
+- **Atomicity**: the hold born in T-dis with the posting; the dispatch in its own transactions (no
+  transaction spans a provider call, ADR-0046); the outcome and the schedule in one transaction.
+- **Failure handling**: unroutable or refused by payments → `NOT_DISPATCHED`, the hold released,
+  interest starts; `FAILED` → the funds back in the wallet by payments' reversal, interest starts;
+  `UNKNOWN` → held, no interest, until payments' inquiry concludes; `RETURNED` → payments' return
+  path, the loan unaffected.
+- **Security**: the destination verified at acceptance (`-012`), an opaque payments reference — no
+  account identifier enters lending (`INV-RAIL-03`); payments' system entry refuses a person's actor
+  and an unrecorded instruction.
+- **Audit**: none of lending's own; payments records its withdrawal under the system actor as for any
+  withdrawal.
+- **Observability**: `finapp.lending.payout{outcome}`, `finapp.lending.payout.dispatched.age` (alert
+  above payments' outcome objective), `finapp.lending.payout.sweeper.enabled`.
+- **Reconciliation implications**: the withdrawal's settlement expectation opened by payments
+  (ADR-0067) and matched by Phase 8's machinery; a break is payments' and Phase 8's resolution —
+  the loan is unaffected.
+- **Tests**: `LoanPayoutDatabaseTest` (`#tenDispatchersOneWithdrawal` (scenario 1),
+  `#aLostResponseIsHeldThenConcludedByInquiryAndNeverResent` (scenario 5),
+  `#disbursementPostedButPayoutFailsLeavesTheLoanActive`, `#aReturnLandsInTheWalletAndTheLoanIsUnaffected`,
+  `#anUnroutablePayoutReleasesTheHold`, `#theHoldIsAdoptedNotDuplicated`,
+  `#theFundsCannotBeSpentBeforeThePayout`, `#interestStartsAtTheTerminalOutcome`,
+  `#aCrashBetweenClaimAndDispatchReDrivesUnderTheSameKey`); payments' `SystemWithdrawalDatabaseTest`
+  (`#aSystemWithdrawalAdoptsTheHold`, `#aPersonCannotUseTheSystemEntry`); `NoSingleInstanceAssumptionRulesTest` (+1).
+- **Probe**: re-dispatch a payout on payments' `UNKNOWN` →
+  `#aLostResponseIsHeldThenConcludedByInquiryAndNeverResent` red; place no hold in T-dis →
+  `#theFundsCannotBeSpentBeforeThePayout` red.
+- **Acceptance criteria**: the loan's financial birth never depends on a provider; one withdrawal per
+  payout; interest never starts before the payout's terminal outcome.
+- **Definition of done**: `DOD-FIN` (F3, F5, F6, F7, F8 binding — F5 on payments' duplicate outcomes,
+  F8 the withdrawal's expectation; F1, F2 on the hold and the wallet; F4 binding — payments' reversal
+  and return paths exercised), `DOD-SEC`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
+
+**P11-TSK-016 — Daily interest accrual and the servicing schedule** — `PLANNED`
+- **Objective**: interest earned every day, exactly once per account and date, on the database clock,
+  caught up after any outage — for both products (L5, ADR-0094).
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-014`, `-007`.
+- **Scope**: `lending V009`: `interest_accrual` (`UNIQUE (loan_id, accrual_date)`; base, cumulative
+  exact, `posted_minor`, period start, agreement version, accrual engine version, entry id — null for
+  a zero day) and the `loan.next_servicing_at` permit; `LoanServicingSchedule` (leaderless; claims
+  `ACTIVE` and `CLOSING` accounts whose `next_servicing_at <= statement_timestamp()` in one skip-locked
+  statement, the permit re-stamped to the start of the next business date in the pinned zone, or a
+  retry cadence for a failing account); T-svc's skeleton and its accrual step (`PHASE_11_PLAN.md`
+  §12.3): **(L3)** the loan `FOR UPDATE`, the database clock read after it; each elapsed date `d`
+  (the clock past the end of `d` in the pinned zone — never an instance clock) accrued oldest-first
+  from the accrual start while principal outstanding at the end of `d` > 0; the base `LOAN_PRINCIPAL +
+  LOAN_PRINCIPAL_DUE` over journal lines with `value_date ≤ d` (never interest or fees, A4; never the
+  projection); `-007`'s cumulative rounding within the period (an instalment period, or a line's
+  statement cycle); posting rule 2 `DR LOAN_INTEREST_ACCRUED / CR LOAN_INTEREST_INCOME`, key
+  `lending.accrual:<loan>:<date>`, value date the accrual date; a zero day writes the row and no
+  entry; an account awaiting its payout (path X) or without an accrual start accrues nothing; the
+  accrual-correction key `lending.accrual-correction:<loan>:<date>:<engine>` reserved, nothing posted
+  under it; `LEASE_PROTECTED_SCHEDULERS` → twenty-six; scenario 4.
+- **Out of scope**: billing (`-017`) and statements (`-022`); the condition step (`-024`); an accrual
+  correction run (none is needed in Phase 11).
+- **Domain changes**: `InterestAccrual`; the servicing step's skeleton (accrue, then the steps later
+  tasks add, in a fixed order under L3).
+- **Persistence**: `lending V009`.
+- **APIs**: none.
+- **Events**: none — a per-day `InterestAccrued` is refused (`PHASE_11_PLAN.md` §10); the billing or
+  statement event carries what became due.
+- **Policy/model versioning**: each accrual row names the agreement version and the accrual engine
+  version it was computed under.
+- **Financial impact**: rule 2, daily — interest income recognised as earned.
+- **Invariants**: `INV-LND-02`, `INV-LND-09`, `INV-LND-10`, `INV-IDEM-02`, `INV-BAL-05`.
+- **Distributed-system concerns**: **scenario 4** — the accrual run twice, by ten sweepers, and
+  restarted mid-run → one row and one entry per (account, date); a crash between dates or between the
+  row and the posting (one transaction — neither or both); midnight under ±5 s instance skew → a date
+  accrued once and never early; a scheduler down for three days → caught up oldest-first. `PASS` on
+  the counts of `InterestAccrualDatabaseTest`.
+- **Idempotency**: the born-once row plus the ledger key `lending.accrual:<loan>:<date>`.
+- **Consistency**: the base derived from journal lines under L3; the date judged on the database clock
+  after the lock.
+- **Atomicity**: one date per transaction step — the row and its entry together.
+- **Failure handling**: a failing account re-stamps its permit with the retry cadence and does not
+  hold the page (the starvation lesson); a missed day is caught up, never skipped.
+- **Security**: a system act with no door.
+- **Audit**: none — a scheduled process's rows and entries are its trail (not a privileged act).
+- **Observability**: `finapp.lending.accrual{outcome}`, `finapp.lending.accrual.lag` (seconds since the
+  oldest unaccrued elapsed date; alert above one day), `finapp.lending.servicing.sweeper.enabled`, a
+  span per step linked by the account's correlation.
+- **Reconciliation implications**: `LOAN_INTEREST_ACCRUED` explained by Σ accruals − Σ billed — the
+  subledger proof's arm (`-029`).
+- **Tests**: `InterestAccrualDatabaseTest` (`#theAccrualRunTwiceAccruesOnce` (scenario 4, with ten
+  sweepers and a crash mid-run), `#skewNeverAccruesEarlyOrTwice`, `#threeMissedDaysAreCaughtUpOldestFirst`,
+  `#theBaseIsDerivedFromPostingsNotTheProjection`, `#leapDayAccruesOneDay`,
+  `#zeroDaysWriteARowAndNoEntry`, `#anAwaitingPayoutLoanAccruesNothing`,
+  `#aLinesAccrualFollowsItsDrawnPrincipal` (an owner-role journal fixture, re-asserted through real
+  draws by `-021`), `#aFailingAccountDoesNotHoldThePage`, `#servicingTakesTheLoanLock` (lock-wait));
+  `NoSingleInstanceAssumptionRulesTest` (+1).
+- **Probe**: drop `UNIQUE (loan_id, accrual_date)` and the key's date part →
+  `#theAccrualRunTwiceAccruesOnce` red; judge the accrual boundary on the instance clock →
+  `#skewNeverAccruesEarlyOrTwice` red.
+- **Acceptance criteria**: every elapsed date of every accruing account accrued exactly once, never
+  early, on a principal-only base.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — a correction run is
+  reserved, not built, recorded; F5 vacuous — no external event; F8: the subledger proof), `DOD-OBS`.
+  **Risk**: High. **Cx**: L.
+
+**P11-TSK-017 — Instalment billing and credit-balance application** — `PLANNED`
+- **Objective**: on each due date exactly what is due becomes due — interest actually accrued, not
+  the projection — and money already held pays it.
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-016`, `-006`.
+- **Scope**: `lending V010`: `instalment_billing` (`UNIQUE (instalment_id)`; interest due, principal
+  due, agreement and schedule versions, entry id), `credit_balance_application` (`UNIQUE
+  (billing_id)`, with its allocation rows); T-svc's billing step (`PHASE_11_PLAN.md` §12.3) — only
+  after every accrual through `Dj − 1` exists (checked under L3; the step accrues first): interest due
+  = Σ the period's `posted_minor`; principal due = `max(0, A − interest due)`, the final instalment all
+  remaining principal; posting rule 3 (`DR LOAN_INTEREST_DUE / CR LOAN_INTEREST_ACCRUED`, `DR
+  LOAN_PRINCIPAL_DUE / CR LOAN_PRINCIPAL`), key `lending.billing:<instalment>`; then any credit balance
+  applied through `-008`'s engine — rule 6 `DR LOAN_CREDIT_BALANCE / CR <due accounts>`, key
+  `lending.credit-application:<billing>`; `InstalmentBilled`; the schedule read extended with billed
+  and paid status. The credit balance can be non-zero only once `-018` lands; the application step is
+  built here and tested with an owner-role credit-balance fixture.
+- **Out of scope**: auto-collection (`-019`); line statements (`-022`); late fees (`-025`).
+- **Domain changes**: `InstalmentBilling`, `CreditBalanceApplication`; the billing step in T-svc.
+- **Persistence**: `lending V010`.
+- **APIs**: the schedule read extended.
+- **Events**: `InstalmentBilled` (due date, interest, principal and fees due).
+- **Policy/model versioning**: each billing names the agreement, schedule and engine versions.
+- **Financial impact**: rules 3 and 6 — re-classification of the same claim into due (DPD readable
+  from the ledger) and settlement of what became due from money already held.
+- **Invariants**: `INV-LND-01`, `INV-LND-03`, `INV-LND-04`, `INV-IDEM-02`, `INV-LND-10`.
+- **Distributed-system concerns**: billing run twice or by ten sweepers → one billing (the unique,
+  the ledger key, L3); billing racing a repayment on the due date → serialised on L3; the final
+  instalment taking all remaining principal after an irregular history. `PASS` on the counts of
+  `InstalmentBillingDatabaseTest`.
+- **Idempotency**: born once per instalment plus `lending.billing:<instalment>`; the application born
+  once per billing.
+- **Consistency**: billing only after the period's accruals exist, judged under L3.
+- **Atomicity**: the billing, its entry, the credit-balance application, its entry and the event in
+  one transaction.
+- **Failure handling**: a missing accrual blocks the billing (the same step accrues first); a crash
+  re-drives from rows.
+- **Security**: a system act with no door.
+- **Audit**: none.
+- **Observability**: `finapp.lending.billing{kind = instalment, outcome}`.
+- **Reconciliation implications**: `LOAN_PRINCIPAL_DUE` and `LOAN_INTEREST_DUE` explained by billings
+  less allocations — the subledger proof's arms.
+- **Tests**: `InstalmentBillingDatabaseTest` (`#billedOnTheDueDateOnce`, `#tenSweepersBillOnce`,
+  `#onTimeBillingEqualsTheProjection`, `#lateRepaymentRaisesTheNextInterestDue` (an owner-role fixture,
+  re-asserted through real repayments by `-018`), `#theFinalInstalmentClearsPrincipal`,
+  `#billingWaitsForEveryAccrualOfThePeriod`, `#aCreditBalancePaysTheBill`,
+  `#billingAtTheMonthEndClamp`).
+- **Probe**: bill the projection's interest instead of the accrued sum →
+  `#lateRepaymentRaisesTheNextInterestDue` red; drop `UNIQUE (instalment_id)` → `#tenSweepersBillOnce`
+  red.
+- **Acceptance criteria**: Σ billed principal over a loan's life = its principal; billed interest =
+  accrued interest; on an on-time path the bills equal the projection to the minor unit.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4, F5 vacuous — no reversal of a
+  billing exists and no external event; F8: the subledger proof), `DOD-EVENT`. **Risk**: High.
+  **Cx**: M.
+
+**P11-TSK-018 — Customer repayment from the wallet** — `PLANNED`
+- **Objective**: the borrower repays any amount from their wallet; it is allocated exactly by the
+  pinned order, once, and the loan closes exactly when every receivable is zero.
+- **Bounded context**: Lending; Ledger; Accounts (through `app`).
+- **Dependencies**: `-017`, `-008`.
+- **Scope**: `lending V011`: `repayment` (kind `CUSTOMER` | `AUTO_COLLECTION` | `PAYOFF`; amount;
+  entry; agreement version; allocation engine version; `INSERT` only — born only once its money
+  moved; its `REVERSED` status derived from an approved reversal, `-020`), `repayment_allocation`
+  (ordinal, due item nullable, component, amount; `INSERT` only; a deferred constraint trigger refusing
+  a commit where Σ allocation ≠ amount); T-rep (`PHASE_11_PLAN.md` §7.1): claim
+  `lending.repayment:CUSTOMER:<id>`; **(L3)** the loan conditional on `ACTIVE` or `CLOSING`; **(L7)**
+  the wallet `FOR UPDATE` and `AvailableBalance.underLock` ≥ amount; the due state derived from
+  postings and rows under L3; `-008`'s allocation; `lockBalancesInOrder` when more than one entry;
+  posting rule 5 (`DR CUSTOMER_WALLET A / CR <due accounts …> / CR LOAN_CREDIT_BALANCE rest`, lines
+  aggregated per account, the per-item split in `repayment_allocation`), key
+  `lending.repayment:<repaymentId>`; closure when every receivable is zero — the credit balance refunded
+  to the wallet and `CLOSED (REPAID)` in the same transaction; the doors `POST
+  /v1/me/loans/{id}/repayments` (step-up) and `GET /v1/me/loans/{id}/repayments`; no standing check (a
+  suspended customer may still repay); a `REVOLVING` account's repayment is `-023`'s (until it lands the
+  door answers `409 lending.LoanNotRepayable` for a line); scenarios 2 and 3.
+- **Out of scope**: auto-collection (`-019`); reversal (`-020`); payoff (`-026`); prepayment (`-028`);
+  a line's paydown (`-023`); external inbound repayment (A11).
+- **Domain changes**: `Repayment`, `RepaymentAllocation`; closure as a consequence of the zeroing
+  transaction.
+- **Persistence**: `lending V011`.
+- **APIs**: the two routes, keyed `lending.repayment:CUSTOMER:<id>`; errors
+  `lending.LoanNotRepayable`, `lending.InsufficientFunds` — catalogued in `ERROR_CONTRACT.md` by this
+  task.
+- **Events**: `RepaymentReceived` (amount, allocation summary per component, entry id), `LoanClosed`
+  (reason).
+- **Policy/model versioning**: the allocation order and treatment from the pinned agreement; the
+  engine version on the row.
+- **Financial impact**: rule 5 — the borrower's funds settle the claim, any excess owed back; at
+  closure the credit balance returned to the wallet.
+- **Invariants**: `INV-LND-04`, `INV-LND-08`, `INV-LND-01`, `INV-IDEM-01`, `INV-CON-01`,
+  `INV-BAL-04`, `INV-BAL-05`, `INV-LIFE-04`.
+- **Distributed-system concerns**: **scenario 2** — the same repayment received twice → one
+  repayment, one entry, the same answer replayed; **scenario 3** — two repayments concurrently on one
+  instalment → serialised on L3, each allocating against what it finds, Σ allocations = Σ amounts, no
+  due account negative, never over-allocated; ten keys on one loan → serialised and conserved; a
+  repayment racing billing on the due date; a repayment to a loan closed a moment earlier → `409`,
+  nothing posted. `PASS` on the counts of `RepaymentDatabaseTest`.
+- **Idempotency**: the claim per customer plus the ledger key `lending.repayment:<repaymentId>`.
+- **Consistency**: the due state under L3, then the available balance under L7 — the wallet always
+  after the loan.
+- **Atomicity**: the repayment, its allocations, the entry, the closure, the refund and the events in
+  one transaction.
+- **Failure handling**: insufficient funds refused before posting (`422 lending.InsufficientFunds`,
+  nothing written); a closed or cancelled loan refused (`409 lending.LoanNotRepayable`); a wallet not
+  postable → refused, nothing written.
+- **Security**: owner-scoped; step-up per the platform's conditional rule (A19); no amount in a log
+  line or tag.
+- **Audit**: none — a customer's own repayment is its row and its entry.
+- **Observability**: `finapp.lending.repayment{kind, outcome}`, `finapp.lending.allocation.anomaly`
+  (any refused conservation; alert above 0).
+- **Reconciliation implications**: internal; the due accounts explained by billings − allocations and
+  the credit balance by overpayments − applications − refunds (the subledger proof).
+- **Tests**: `RepaymentDatabaseTest` (`#theSameRepaymentTwiceRepaysOnce` (scenario 2),
+  `#twoRepaymentsOnOneInstalmentSerialiseAndConserve` (scenario 3), `#tenKeysOneLoanConserve`,
+  `#partialLeavesTheRemainderDue`, `#overGoesToTheCreditBalance`, `#earlyRepaymentIsHeldThenApplied`,
+  `#aLateRepaymentRaisesTheNextInterestDue`, `#aClosedLoanRefuses`, `#theLastRepaymentClosesAndRefunds`,
+  `#insufficientFundsPostsNothing`, `#aSuspendedCustomerMayStillRepay`,
+  `#repaymentTakesTheLoanThenTheWallet` (lock-wait)); `RepaymentApiTest` (ownership, step-up).
+- **Probe**: take the wallet lock before the loan lock → `40P01` in
+  `#twoRepaymentsOnOneInstalmentSerialiseAndConserve`; derive the due state from the projection under a
+  planted projection drift → the same test over-allocates, red.
+- **Acceptance criteria**: every repayment allocates exactly; no due account ever negative; closure
+  iff every receivable is zero, and nothing is owed back after it.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 by `-020`, recorded; F5 vacuous —
+  wallet repayments are internal and final; F8: the subledger proof), `DOD-API`, `DOD-EVENT`,
+  `DOD-SEC`. **Risk**: High. **Cx**: L.
+
+**P11-TSK-019 — Scheduled auto-collection** — `PLANNED`
+- **Objective**: when the agreement says so, what is due is collected from the wallet on the due date
+  — once per item per day, partially if allowed, retried daily while past due (A21).
+- **Bounded context**: Lending; Accounts (through `app`).
+- **Dependencies**: `-018`.
+- **Scope**: `lending V012`: `collection_attempt` (`UNIQUE (due_item_id, attempt_date)`; outcome
+  `COLLECTED` | `PARTIAL` | `INSUFFICIENT_FUNDS` | `WALLET_NOT_POSTABLE` | `NOTHING_DUE`; the repayment
+  id when money moved); T-svc's collection step after billing: (L3), then (L7) the wallet and
+  `AvailableBalance.underLock`; a repayment of kind `AUTO_COLLECTION` through `-018`'s allocation and
+  posting; partial collection per the pinned terms; retried on each later business date while the item
+  is past due; `CollectionFailed` when nothing could be collected; instalments here — a line's
+  statement minimum payment joins the step with `-022`; scenario 2's sweeper half.
+- **Out of scope**: external direct debit (A11); a line's statements (`-022`).
+- **Domain changes**: `CollectionAttempt`; the collection step in T-svc.
+- **Persistence**: `lending V012`.
+- **APIs**: none.
+- **Events**: `RepaymentReceived` (kind `AUTO_COLLECTION`), `CollectionFailed` (due item, outcome).
+- **Policy/model versioning**: auto-collection on/off and partial collection from the pinned
+  agreement.
+- **Financial impact**: as `-018` — rule 5 from the wallet.
+- **Invariants**: `INV-IDEM-02`, `INV-LND-04`, `INV-BAL-04`.
+- **Distributed-system concerns**: two sweepers on one due date → one collection (**scenario 2**'s
+  sweeper half); auto-collection racing a customer repayment and the credit-balance application on the
+  due date → serialised on L3, never more than due collected; ten sweepers. `PASS` on the counts of
+  `AutoCollectionDatabaseTest`.
+- **Idempotency**: the attempt born once per (item, date); the repayment's ledger key.
+- **Consistency**: the due state under L3 and the available balance under L7, re-derived per attempt.
+- **Atomicity**: the attempt, any repayment, its allocations, the entry and the events in one
+  transaction.
+- **Failure handling**: insufficient funds or a wallet not postable records the attempt and posts
+  nothing; tomorrow's attempt is a new row.
+- **Security**: the authority is the agreement's repayment method, accepted with the agreement — no
+  door, no operator act.
+- **Audit**: none.
+- **Observability**: `finapp.lending.collection{outcome}`.
+- **Reconciliation implications**: internal; as `-018`.
+- **Tests**: `AutoCollectionDatabaseTest` (`#twoSweepersCollectOnce` (scenario 2),
+  `#theDueDateCollectsOnceWhateverRaces`, `#partialCollectionWhenAllowed`, `#allOrNothingWhenNot`,
+  `#insufficientFundsRecordsAndRetriesTomorrow`, `#neverMoreThanDue`,
+  `#anAgreementWithoutAutoCollectionIsNotCollected`).
+- **Probe**: drop `UNIQUE (due_item_id, attempt_date)` → `#twoSweepersCollectOnce` red.
+- **Acceptance criteria**: at most one collection per due item per day, never more than due.
+- **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F1, F2 as `-018`; F4, F5 vacuous — an
+  attempt that moves nothing posts nothing, and no external event; F8: internal), `DOD-EVENT`.
+  **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-020 — Repayment reversal (four-eyes)** — `PLANNED`
+- **Objective**: an operator's mistake in applying money is undone by an exact reversal, reasoned
+  and four-eyes, never an edit (ADR-0099).
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-018`.
+- **Scope**: `lending V013`: `repayment_reversal` (proposal, approval, rejection; four-eyes `CHECK`;
+  one live proposal per repayment — partial `UNIQUE (repayment_id) WHERE status IN ('PROPOSED',
+  'APPROVED')`; the reason), `repayment_allocation_reversal` (negating rows, never a delete); the
+  repayment row stays `INSERT`-only, its `REVERSED` status derived from the approved reversal; T-rev
+  (`PHASE_11_PLAN.md` §7.1): claim `lending.servicing:EMPLOYEE:<id>`; **(L0)** the profile (outstanding
+  rises); **(L3)** the loan; **(L5)** the proposal `FOR UPDATE` conditional on `PROPOSED`; **(L6)** the
+  `LENDING_CAPITAL` row when the reversal re-instates principal, headroom re-checked — a shortfall
+  refuses `422 lending.CapitalUnavailable`, nothing posted, the proposal staying `PROPOSED`
+  (`INV-LND-13`); `ReversalService` of rule 5's entry (rule 10, the exact swap, key
+  `lending.repayment-reversal:<reversal>`, bounded by the original — `INV-REV-02`, namespace 2); the
+  negating allocation rows; later allocations not re-cut — the reversed amount simply becomes due
+  again; a credit line's paydown reversed after a re-draw is admitted (drawn principal may then exceed
+  the limit — the available limit is zero until repaid below it; exposure counts the greater, `-013`);
+  refused for a repayment that closed its loan (A12, `409 lending.LoanClosed`) or a wallet that cannot
+  be credited; the doors `POST /v1/operator/loans/{id}/repayments/{rid}/reversal` (+
+  `/approval`, `/rejection`) under `LOAN_SERVICE` / `LOAN_SERVICE_APPROVE`; the operator's account read
+  `GET /v1/operator/loans/{id}` (`LOAN_SERVICE`, audited); an employee never services their own party's
+  loan (`403 lending.SelfDealingRefused`, audited `FAILED` — the R1 lesson; the error absent from
+  `PHASE_11_PLAN.md` §9's list and catalogued here); scenario 6.
+- **Out of scope**: reversal of external repayments (none exist, A11); reversal of a payoff's closing
+  repayment (A12); fee and interest waivers (`-025`).
+- **Domain changes**: `RepaymentReversal` and its proposal machine (`PROPOSED → APPROVED (posted) |
+  REJECTED`); the derived `REVERSED` status.
+- **Persistence**: `lending V013`.
+- **APIs**: propose, approve, reject and the operator read, keyed `lending.servicing:EMPLOYEE:<id>`;
+  errors `lending.LoanClosed`, `lending.SelfDealingRefused` and the reuse of
+  `lending.SelfApprovalRefused`, `lending.ReasonRequired`, `lending.ProposalPending`,
+  `lending.CapitalUnavailable` — catalogued in
+  `ERROR_CONTRACT.md` by this task.
+- **Events**: `RepaymentReversed` (amount, allocation summary, entry id).
+- **Policy/model versioning**: the reversal names the original's agreement version; nothing is
+  recomputed.
+- **Financial impact**: rule 10 — the original's credits debited back, the wallet credited, exactly.
+- **Invariants**: `INV-LND-11`, `INV-REV-01`, `INV-REV-02`, `INV-REV-04`, `INV-AUD-04`,
+  `INV-HIST-01`, `INV-CRD-09` (outstanding rises under L0), `INV-LND-13` (re-instated principal
+  re-checked against capital under L6).
+- **Distributed-system concerns**: **scenario 6** — a reversal after allocation (and after later
+  repayments and billings) reopens exactly what it paid, later allocations untouched; ten approvers →
+  one reversal; two proposals for one repayment → one live (the partial unique); an approval racing a
+  new repayment → serialised on L3; a double reversal → refused by the bound; reversals racing
+  acceptances and draws for the last capital in a currency → serialised on L6, never over-deployed.
+  `PASS` on the counts of `RepaymentReversalDatabaseTest`.
+- **Idempotency**: keyed per employee; the proposal's conditional edges; the ledger reversal key and
+  the reversal bound.
+- **Consistency**: L0 first (outstanding rises), then L3, L5 and L6; the due state re-derived under
+  L3 and headroom under L6.
+- **Atomicity**: the approval, the reversal entry, the negating rows, the event, the outbox row and
+  the audit row in one transaction.
+- **Failure handling**: a wallet not postable → the approval refused, nothing posted, the proposal
+  still `PROPOSED`; a capital shortfall → `422 lending.CapitalUnavailable`, nothing posted, the
+  proposal still `PROPOSED`; a reversal of a closing repayment refused at the proposal.
+- **Security**: `LOAN_SERVICE` proposes, `LOAN_SERVICE_APPROVE` approves — never one's own (domain and
+  `CHECK`); never one's own party's loan; reason required and screened for card and account numbers;
+  `RoutePermissionRegisterTest` with negatives.
+- **Audit**: `lending.RepaymentReversalProposed`, `…Approved`, `…Rejected`, `lending.LoanRead`,
+  `lending.SelfDealingRefused` (`FAILED`) — catalogued in `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.lending.reversal{outcome}`.
+- **Reconciliation implications**: the subledger proof includes reversals (allocated minus reversed);
+  the original entry byte-identical after.
+- **Tests**: `RepaymentReversalDatabaseTest` (`#aReversalAfterAllocationReopensWhatItPaid` (scenario
+  6), `#tenApproversOneReversal`, `#oneLiveProposalPerRepayment`, `#selfApprovalRefusedAtBothRanks`,
+  `#anEmployeeNeverServicesTheirOwnPartysLoan`, `#aClosingRepaymentIsNotReversible`,
+  `#theOriginalIsByteIdenticalAfter`, `#theReversalIsBoundedByTheOriginal`,
+  `#reversalTakesTheProfileFirst` (lock-wait), `#exposureRisesByThePrincipalReopened`,
+  `#aReversalNeverOverDeploysCapital` (reversals racing an acceptance for the last capital,
+  counted)) — the line-paydown case is tested by `-023`, which builds the paydown;
+  `RepaymentReversalApiTest` (the route register's negatives).
+- **Probe**: drop the four-eyes `CHECK` → the raw-SQL self-approval accepted,
+  `#selfApprovalRefusedAtBothRanks` red; re-cut later allocations instead of reopening the reversed
+  amount → `#aReversalAfterAllocationReopensWhatItPaid` red; skip the L6 capital lock →
+  `#aReversalNeverOverDeploysCapital` red (a reversal over-deploys capital).
+- **Acceptance criteria**: every reversal exact, four-eyes and reasoned; history untouched; the
+  subledger proof zero after it.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F4, F6, F7 binding; F5 vacuous — no external event;
+  F8: the subledger proof), `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-021 — Credit line draws and the available limit** — `PLANNED`
+- **Objective**: the borrower draws against their line to their wallet, never beyond the available
+  limit and never beyond the platform's lending capital (L3, ADR-0100).
+- **Bounded context**: Lending; Ledger; Accounts (through `app`).
+- **Dependencies**: `-013`, `-016`, `-004`.
+- **Scope**: `lending V014`: `credit_line_draw` (`UNIQUE (loan_id, draw_key)`; amount, entry id,
+  agreement version); T-drw (`PHASE_11_PLAN.md` §7.1): claim `lending.draw:CUSTOMER:<id>`; **(L3)** the
+  line `FOR UPDATE` conditional on `ACTIVE`, draws not suspended; standing in-transaction; **(L5)** the
+  draw born; **(L6)** capital headroom ≥ amount (A28) through `LendingCapitalHeadroom`; the available
+  limit `L − (LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE)` derived from journal lines under L3 — never a stored
+  number, zero when drawn principal is at or above the limit; posting rule 1 (`Draw`: `DR
+  LOAN_PRINCIPAL / CR CUSTOMER_WALLET`), key `lending.draw:<drawId>`; the wallet resolved through
+  `LoanWallets` — draws go to the wallet only (A25); the draw accrues from its value date through
+  `-016`'s step; the door `POST /v1/me/loans/{id}/draws` (`MULTI_FACTOR`); the suspension check (any
+  amount past due, or the default flag — A25) built here over the derived condition: nothing can be past
+  due before statements exist (`-022`), so `-024` makes it bite and tests it.
+- **Out of scope**: an external leg (the borrower's own withdrawal, A25); statements (`-022`); the
+  line's repayment and closure (`-023`); a limit change (a new application and decision).
+- **Domain changes**: `CreditLineDraw`; `AvailableLimit` (derived).
+- **Persistence**: `lending V014`.
+- **APIs**: the draw, keyed `lending.draw:CUSTOMER:<id>`; the loan read shows the available limit;
+  errors `lending.LimitExceeded`, `lending.DrawsSuspended` and the reuse of
+  `lending.CapitalUnavailable` — catalogued in `ERROR_CONTRACT.md` by this task.
+- **Events**: `CreditLineDrawn` (draw id, amount, entry id).
+- **Policy/model versioning**: the draw names the agreement version whose limit it was judged
+  against.
+- **Financial impact**: rule 1 per draw — wallet money created only against recognised capital still
+  undeployed (`INV-LND-13`); exposure unchanged (an `ACTIVE` line already counts its limit, `-013`).
+- **Invariants**: `INV-LND-14`, `INV-LND-13`, `INV-LND-01`, `INV-IDEM-01`, `INV-BAL-05`.
+- **Distributed-system concerns**: two draws racing for the available limit → one admitted, `422
+  lending.LimitExceeded` (L3); ten draws under one key → one; draws racing an acceptance for the last
+  capital in a currency → one admitted, `422 lending.CapitalUnavailable` (L6); a draw racing the
+  servicing step → serialised on L3. `PASS` on the counts of `CreditLineDrawDatabaseTest`.
+- **Idempotency**: the claim per customer, `UNIQUE (loan_id, draw_key)`, the ledger key
+  `lending.draw:<drawId>`.
+- **Consistency**: the available limit derived under L3 and headroom under L6 in one transaction.
+- **Atomicity**: the draw, its entry, the event and the outbox row in one transaction.
+- **Failure handling**: a limit, suspension or capital refusal writes nothing; a wallet not postable
+  refuses the draw; a crash replays under the key.
+- **Security**: owner-scoped; `MULTI_FACTOR` (A19); standing in-transaction; no operator can draw.
+- **Audit**: none — a customer's own draw is its row and its entry.
+- **Observability**: `finapp.lending.draw{outcome}`.
+- **Reconciliation implications**: internal; `LOAN_PRINCIPAL` explained by Σ drawn − Σ billed − Σ paid
+  down (the subledger proof).
+- **Tests**: `CreditLineDrawDatabaseTest` (`#twoDrawsRacingForTheLimitAdmitOne`, `#tenDrawsOneKey`,
+  `#aDrawBeyondTheAvailableLimitIsRefused`, `#interestAndFeesNeverConsumeTheLimit`,
+  `#drawsRacingForTheLastCapitalAdmitOne` (lock-wait on L6), `#aClosingLineRefusesDraws`,
+  `#standingLostRefuses`, `#aDrawAccruesFromItsValueDate`, `#drawingTakesTheLineThenTheCapital`
+  (lock-wait)); `CreditLineDrawApiTest` (MFA, ownership).
+- **Probe**: derive the available limit from the projection outside L3 →
+  `#twoDrawsRacingForTheLimitAdmitOne` red; skip the L6 lock → `#drawsRacingForTheLastCapitalAdmitOne`
+  red.
+- **Acceptance criteria**: no draw ever exceeds the available limit or the capital headroom; the
+  limit is never a stored number.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — a draw is not reversed,
+  it is repaid; F5 vacuous — internal; F8: the subledger proof and the capital proof), `DOD-API`,
+  `DOD-EVENT`, `DOD-SEC`. **Risk**: High. **Cx**: M.
+
+**P11-TSK-022 — Credit line statements and the minimum payment** — `PLANNED`
+- **Objective**: once per cycle the line states exactly what became due and the minimum payment, and
+  what is due is collected on its due date (A23, A24).
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-021`, `-009`, `-017`.
+- **Scope**: `lending V015`: `credit_line_statement` (`UNIQUE (loan_id, cycle_end)`; cycle bounds,
+  interest billed, fees carried, principal billed, minimum payment, due date, agreement and engine
+  versions, entry id — only what it billed; opening and closing balances derived from the ledger,
+  never stored); T-svc's statement step after every accrual of the cycle exists (under L3):
+  `-009`'s engine; posting rule 3 (`Statement`: `DR LOAN_INTEREST_DUE / CR LOAN_INTEREST_ACCRUED`; `DR
+  LOAN_PRINCIPAL_DUE / CR LOAN_PRINCIPAL` for the minimum payment's principal part), key
+  `lending.statement:<statement>`; the credit balance applied at the statement (rule 6, through
+  `-017`'s application step, born once per statement); `-019`'s auto-collection extended to the
+  statement's minimum payment on its due date (the due item a statement); fees carried are zero until
+  `-025` assesses any; `CreditLineStatementIssued`; `GET /v1/me/loans/{id}/statements`.
+- **Out of scope**: late fees (`-025`); the line's paydown and closure (`-023`); delinquency
+  (`-024`).
+- **Domain changes**: `CreditLineStatement`; the statement step in T-svc.
+- **Persistence**: `lending V015`.
+- **APIs**: the statements read.
+- **Events**: `CreditLineStatementIssued` (cycle end, interest, principal and fees due, minimum
+  payment, due date).
+- **Policy/model versioning**: each statement names the agreement version and `STATEMENT_ENGINE_V1`.
+- **Financial impact**: rule 3 for the line — the cycle's interest and the minimum payment's principal
+  become due; rule 6 at the statement.
+- **Invariants**: `INV-LND-01`, `INV-LND-09`, `INV-LND-10`, `INV-IDEM-02`, `INV-LND-04`.
+- **Distributed-system concerns**: the statement produced twice or by ten sweepers → one (the unique,
+  the ledger key, L3); a statement racing a draw or a payment at the cycle end → serialised on L3, the
+  cycle boundary judged on the database clock in the pinned zone; two sweepers auto-collecting the
+  minimum payment → one. `PASS` on the counts of `CreditLineStatementDatabaseTest`.
+- **Idempotency**: born once per (line, cycle end) plus `lending.statement:<statement>`.
+- **Consistency**: the statement only after the cycle's accruals exist, judged under L3.
+- **Atomicity**: the statement, its entry, the credit-balance application and the event in one
+  transaction.
+- **Failure handling**: a missing accrual blocks the statement (the step accrues first); an empty cycle
+  yields a statement with nothing due; a crash re-drives from rows.
+- **Security**: a system act; the statements read owner-scoped.
+- **Audit**: none.
+- **Observability**: `finapp.lending.billing{kind = statement, outcome}`.
+- **Reconciliation implications**: the line's due accounts explained by statements − allocations (the
+  subledger proof).
+- **Tests**: `CreditLineStatementDatabaseTest` (`#producedOnceAtTheCycleEnd`, `#tenSweepersOneStatement`,
+  `#theStatementBillsTheCyclesAccruedInterest`, `#theMinimumPaymentFollowsTheRule`,
+  `#theMinimumPaymentIsAutoCollectedOnItsDueDate`, `#aCreditBalancePaysTheStatement`,
+  `#statementWaitsForEveryAccrualOfTheCycle`, `#balancesAreDerivedNotStored`,
+  `#statementDay28InFebruary`, `#aStatementRacingADrawAtTheCycleEndSerialises`).
+- **Probe**: drop `UNIQUE (loan_id, cycle_end)` → `#tenSweepersOneStatement` red; bill the minimum on the
+  limit instead of the drawn principal → `#theMinimumPaymentFollowsTheRule` red.
+- **Acceptance criteria**: one statement per line per cycle; it bills exactly the cycle's accrued
+  interest and the A24 principal part; the minimum payment is collected once on its due date when the
+  agreement says so.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4, F5 vacuous — no statement reversal
+  exists and no external event; F8: the subledger proof), `DOD-EVENT`, `DOD-API`. **Risk**: High.
+  **Cx**: M.
+
+**P11-TSK-023 — Credit line repayment and closure** — `PLANNED`
+- **Objective**: the borrower repays their line — beyond what is due paying down principal and
+  restoring the limit — and closes it, the line ending exactly when nothing is owed (A26, ADR-0100).
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-022`, `-018`.
+- **Scope**: `lending V016`: `line_closure_request` (`UNIQUE (loan_id)`; requested at, the closure's
+  outcome); `-018`'s repayment door admits `REVOLVING` accounts with the `PAY_DOWN_PRINCIPAL` treatment
+  through `-008`'s engine — billed statements oldest first (`FEES → INTEREST → PRINCIPAL`), then
+  not-due principal (`CR LOAN_PRINCIPAL`, restoring the available limit at commit), and only what
+  exceeds every receivable held as a credit balance; the closure door `POST /v1/me/loans/{id}/closure`
+  (`MULTI_FACTOR`): `ACTIVE → CLOSING` (no further draws), or `ACTIVE → CLOSED (CLOSED_BY_CUSTOMER)` at
+  the request when nothing is outstanding; `CLOSING → CLOSED` in the transaction that zeroes the last
+  receivable (a repayment, a credit-balance application or a waiver), the credit balance refunded to
+  the wallet; never `CLOSING → ACTIVE` (a new application); a paydown reversed (`-020`) after a re-draw
+  admitted — drawn principal may exceed the limit, the available limit zero until repaid below it,
+  exposure counting the greater (`-013`); exposure falls at `CLOSING` (drawn principal instead of
+  the greater of limit and drawn) — L0 not taken, the census asserting it.
+- **Out of scope**: a line's payoff (`-026`); a limit review (A27); a line's amendment.
+- **Domain changes**: the paydown treatment in the repayment path; `LineClosureRequest`; the
+  `CLOSING` edge.
+- **Persistence**: `lending V016`.
+- **APIs**: the closure, keyed `lending.closure:CUSTOMER:<id>`; the repayment door now serving lines;
+  error `lending.LoanClosed` for a closed line — catalogued in `ERROR_CONTRACT.md` by this task if not
+  already.
+- **Events**: `RepaymentReceived` (with the paydown component), `LoanClosed` (`CLOSED_BY_CUSTOMER`).
+- **Policy/model versioning**: the treatment from the pinned agreement; the engine version on each
+  repayment.
+- **Financial impact**: rule 5 with `CR LOAN_PRINCIPAL` for the paydown; the refund at closure; capital
+  headroom restored by repaid principal at commit.
+- **Invariants**: `INV-LND-04`, `INV-LND-08`, `INV-LND-14`, `INV-LIFE-04`, `INV-IDEM-01`.
+- **Distributed-system concerns**: a closure racing a draw → serialised on L3, exactly one order (the
+  draw admitted before `CLOSING`, or refused after); ten closure requests → one (`UNIQUE (loan_id)`
+  and the claim); the last payment and a statement on the same date → serialised on L3; a paydown
+  racing a draw for the restored limit → serialised, never beyond the limit. `PASS` on the counts of
+  `CreditLineRepaymentDatabaseTest`.
+- **Idempotency**: the claims per customer; the closure request born once; the repayment's ledger key.
+- **Consistency**: the available limit and every receivable derived under L3.
+- **Atomicity**: the repayment, its allocations, the entry, any closure and refund, and the events in
+  one transaction; the closure request and its edge in one.
+- **Failure handling**: a closure request on a closed line → `409 lending.LoanClosed`; a payment to a
+  closed line → `409 lending.LoanNotRepayable`.
+- **Security**: owner-scoped; `MULTI_FACTOR` for the closure (A19), step-up for repayment.
+- **Audit**: none — the customer's own acts are their rows.
+- **Observability**: `finapp.lending.repayment{kind, outcome}` (the paydown component counted),
+  `finapp.lending.loans{product, status}` gauge.
+- **Reconciliation implications**: `LOAN_PRINCIPAL` explained by Σ drawn − Σ billed − Σ paid down; a
+  closed line's six balances zero (the subledger proof).
+- **Tests**: `CreditLineRepaymentDatabaseTest` (`#aPaymentBeyondWhatIsDuePaysDownPrincipal`,
+  `#aPaydownRestoresTheAvailableLimit`, `#onlyTheExcessOverEveryReceivableIsHeld`,
+  `#aLinePaydownReversedAfterARedrawIsAdmitted` (drawn above the limit, available zero, exposure the
+  drawn principal), `#closureStopsDraws`, `#aLineWithNothingOutstandingClosesAtTheRequest`,
+  `#theLastPaymentClosesAClosingLine`, `#aClosingLineIsNeverReopened` (raw SQL, every role),
+  `#closureRacingADrawSerialises`, `#tenClosureRequestsOneRequest`).
+- **Probe**: send a line's remainder to the credit balance → `#aPaydownRestoresTheAvailableLimit` red;
+  admit `CLOSING → ACTIVE` in the trigger → `#aClosingLineIsNeverReopened` red.
+- **Acceptance criteria**: a line's payment pays what is due, then principal, and holds only a true
+  excess; a closing line takes no draw and closes exactly when nothing is owed.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 by `-020`'s reversal, tested here
+  for the paydown; F5 vacuous — internal; F8: the subledger proof), `DOD-API`, `DOD-EVENT`, `DOD-SEC`.
+  **Risk**: High. **Cx**: M.
+
+**P11-TSK-024 — Delinquency and default conditions (both products)** — `PLANNED`
+- **Objective**: days past due, buckets, cure and default derived honestly from the rows on the
+  database clock and recorded as an append-only history of changes (L7, ADR-0098).
+- **Bounded context**: Lending.
+- **Dependencies**: `-017`, `-018`, `-022`.
+- **Scope**: `lending V017`: `loan_condition_event` (`UNIQUE (loan_id, business_date, kind)`; kind
+  `DELINQUENCY` | `DEFAULT`; old and new bucket, DPD, the default flag, agreement version; `INSERT`
+  only); T-svc's condition step under L3, after billing and collection (`PHASE_11_PLAN.md` §12.7): a due
+  item — an instalment billing or a statement's minimum payment — past due when billed and unpaid at
+  the end of its due date; DPD = the days between the oldest past-due item's due date and the current
+  business date (database clock, pinned zone), 0 when nothing is past due — derived, never a stored
+  counter; the bucket from the pinned bounds (`B1_1_29`, `B2_30_59`, `B3_60_89`, `B4_90_PLUS`); a row
+  appended only on a change; default at DPD ≥ 90 (`LoanDefaulted`, the flag set) and cleared at cure
+  (A8, `LoanDefaultCleared`); grace delays only the late fee, never DPD; a terminal account skipped; the
+  line's draw suspension (A25, `-021`) now biting on a past-due item or the default flag; the
+  customer's and operator's reads show the condition. **Not built** (each recorded with its default):
+  acceleration, default or penalty interest, interest on interest, arrears notifications, bureau
+  reporting, statutory contact limits, insolvency handling, servicing holds (A9 — the slot designed).
+- **Out of scope**: late fees (`-025`); collections operations and case management (Phase 13 —
+  lending emits the facts); write-off (Phase 14).
+- **Domain changes**: `DelinquencyState` (derived), `LoanConditionEvent`; the condition step in T-svc.
+- **Persistence**: `lending V017`.
+- **APIs**: the customer and operator loan reads extended with the condition.
+- **Events**: `LoanDelinquencyChanged` (old and new bucket, DPD), `LoanDefaulted`,
+  `LoanDefaultCleared`.
+- **Policy/model versioning**: the buckets, default threshold and grace from the pinned agreement; each
+  condition row names its agreement version.
+- **Financial impact**: none directly — no posting; it gates late fees and draws.
+- **Invariants**: `INV-LND-12`, `INV-LND-10`, `INV-LND-08` (no condition after closure),
+  `INV-HIST-01`.
+- **Distributed-system concerns**: re-running a day or ten sweepers → one row per change (the unique
+  and L3); a repayment curing between sweeps → the next step records the cure, never a stale
+  "delinquent" after it (derived under L3); a missed day → computed from the dates; midnight under ±5 s
+  skew → the database clock decides the business date. `PASS` on the counts of
+  `DelinquencyDatabaseTest`.
+- **Idempotency**: born once per (account, business date, kind), written only on a change.
+- **Consistency**: DPD, bucket and default derived under L3 from billings, statements and allocations.
+- **Atomicity**: the condition row and its event in T-svc's transaction step.
+- **Failure handling**: a missed day computes from current state (DPD is a difference of dates); a crash
+  re-drives; a closed account is skipped.
+- **Security**: reads owner-scoped or `LOAN_SERVICE`; DPD never in a log line, tag or span.
+- **Audit**: none — a derived condition's history is its trail.
+- **Observability**: `finapp.lending.delinquency{product, bucket}` and `finapp.lending.default{product}`
+  gauges (account counts, never amounts).
+- **Reconciliation implications**: none directly; the delinquency report's sums are ledger-derived
+  (`-030`).
+- **Tests**: `DelinquencyDatabaseTest` (`#currentToEachBucketAndCure`, `#defaultAtNinetyClearedAtCure`,
+  `#reRunningADayWritesNothing`, `#tenSweepersOneConditionChange`,
+  `#aCureBetweenSweepsIsRecordedNotOverwritten`, `#aMissedDayComputesFromTheDates`,
+  `#aClosedAccountIsSkipped`, `#aPastDueLineRefusesDraws`, `#aDefaultedLineRefusesDraws`,
+  `#graceDelaysOnlyTheLateFeeNeverDpd`, `#theHistoryIsAppendOnlyForEveryRole`) — long histories built by
+  owner-role fixtures (A15).
+- **Probe**: store DPD as a counter incremented per sweep → `#aMissedDayComputesFromTheDates` red; write
+  the condition every day instead of on a change → `#reRunningADayWritesNothing` red.
+- **Acceptance criteria**: every condition change recorded exactly once; DPD always equals the date
+  difference to the oldest unpaid due date; no condition on a terminal account.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-EVENT`, `DOD-OBS`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-025 — Late fees and waivers** — `PLANNED`
+- **Objective**: a configured late fee is assessed once per due item; fees and interest are waived only
+  by reasoned, four-eyes acts that post, never by an edit (A14, A18, ADR-0099).
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-024`, `-020`.
+- **Scope**: `lending V018`: `fee_assessment` (`UNIQUE (due_item_id, kind)`; amount, agreement version,
+  entry id; the per-account cap enforced under L3), `waiver` (kind `FEE` | `FEE_REFUND` | `INTEREST`;
+  target, amount, reason; `PROPOSED → APPROVED (posted) | REJECTED`; four-eyes `CHECK`, always — A14);
+  the late fee in T-svc after the condition step: once per due item on the day DPD reaches the pinned
+  `late_fee_day` (> grace), capped per account — posting rule 4 `DR LOAN_FEES_DUE / CR LOAN_FEE_INCOME`,
+  key `lending.fee:<assessment>`; T-wvr: claim `lending.servicing:EMPLOYEE:<id>`, (L3) the loan, (L5) the
+  proposal conditional on `PROPOSED`; a fee waiver reverses the assessment's entry through
+  `ReversalService` for the unpaid remainder only (rule 8, bounded — `INV-REV-02`); a paid fee refunded to
+  the credit balance (rule 8a `DR LOAN_FEE_INCOME / CR LOAN_CREDIT_BALANCE`, key
+  `lending.waiver:<waiver>`); an interest waiver an explicit posting (rule 9 `DR LOAN_INTEREST_INCOME /
+  CR LOAN_INTEREST_DUE` or `…ACCRUED`, key `lending.waiver:<waiver>`); bounded by what is due now under
+  L3; a waiver zeroing the last receivable closes the account; statements carry assessed fees
+  (`-022`); the doors `POST /v1/operator/loans/{id}/waivers` (+ `/{wid}/approval`, `/rejection`); an
+  employee never acts on their own party's loan. **Cut order:** the late-fee half is the phase's second
+  cut — the waiver half stays.
+- **Out of scope**: penalty or default interest, a prepayment fee (L8); fee amortisation (Phase 14);
+  servicing holds suspending fees (A9).
+- **Domain changes**: `FeeAssessment`, `Waiver` and its proposal machine; the fee step in T-svc.
+- **Persistence**: `lending V018`.
+- **APIs**: waiver propose, approve and reject, keyed `lending.servicing:EMPLOYEE:<id>`; error
+  `lending.WaiverExceedsDue` and the reuse of `lending.SelfApprovalRefused`, `lending.SelfDealingRefused`,
+  `lending.ReasonRequired`, `lending.ProposalPending` — catalogued in `ERROR_CONTRACT.md` by this task.
+- **Events**: `LoanFeeAssessed`, `LoanFeeWaived`, `LoanInterestWaived` (ids, amount).
+- **Policy/model versioning**: the fee amount, day, cap and grace from the pinned agreement; each
+  assessment names its agreement version.
+- **Financial impact**: rule 4 (fee income), rules 8, 8a and 9 (income forgone, claim released or
+  refunded).
+- **Invariants**: `INV-LND-11`, `INV-IDEM-02`, `INV-REV-02`, `INV-REV-04`, `INV-AUD-04`,
+  `INV-LND-08`.
+- **Distributed-system concerns**: the fee assessed twice or by ten sweepers → one (the unique, L3);
+  ten approvers of a waiver → one; a waiver racing a repayment of the fee → `422
+  lending.WaiverExceedsDue`, derived under L3, or a refund when the fee was paid first; a waiver of the
+  last receivable racing a repayment → exactly one closes. `PASS` on the counts of
+  `FeeAndWaiverDatabaseTest`.
+- **Idempotency**: the born-once assessment and its ledger key; the waiver keyed per employee, its
+  conditional edges and the reversal bound.
+- **Consistency**: every waiver bounded by what is due now, under L3.
+- **Atomicity**: the approval, its entry, any closure, the event, the outbox row and the audit row in
+  one transaction.
+- **Failure handling**: a waiver exceeding what is due refused, nothing posted, the proposal still
+  `PROPOSED`; a cap reached assesses nothing.
+- **Security**: `LOAN_SERVICE` proposes, `LOAN_SERVICE_APPROVE` approves — never one's own; never one's
+  own party's loan; reason required and screened.
+- **Audit**: `lending.WaiverProposed`, `…Approved`, `…Rejected` — catalogued in `AUDITABLE_ACTIONS.md`
+  by this task.
+- **Observability**: `finapp.lending.fee{kind, outcome}`, `finapp.lending.waiver{kind, outcome}`.
+- **Reconciliation implications**: `LOAN_FEES_DUE` explained by Σ assessed − allocated − waived;
+  interest waivers in the interest arms (the subledger proof).
+- **Tests**: `FeeAndWaiverDatabaseTest` (`#assessedOnceAtTheLateFeeDay`, `#tenSweepersAssessOnce`,
+  `#theCapHolds`, `#graceDelaysTheFee`, `#aFeeWaiverReversesOnlyTheUnpaidRemainder`,
+  `#aWaiverOfAPaidFeeRefundsToTheCreditBalance`, `#anInterestWaiverPostsExplicitly`,
+  `#tenApproversOneWaiver`, `#selfApprovalRefusedAtBothRanks`, `#waiverRacingARepaymentOfTheFee`,
+  `#aWaiverOfTheLastReceivableCloses`, `#anEmployeeNeverWaivesOnTheirOwnPartysLoan`).
+- **Probe**: drop `UNIQUE (due_item_id, kind)` → `#tenSweepersAssessOnce` red; drop the bound by what is
+  due → `#waiverRacingARepaymentOfTheFee` red.
+- **Acceptance criteria**: one fee per due item per kind, capped; every waiver four-eyes, reasoned,
+  bounded and posted.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F4, F6, F7 binding; F5 vacuous — no external event; F8:
+  the subledger proof), `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P11-TSK-026 — Payoff quote, execution and closure (both products)** — `PLANNED`
+- **Objective**: the borrower can know, and pay, exactly what ends the loan or line on a given day —
+  never a wrong payoff, whatever races it (ADR-0095).
+- **Bounded context**: Lending; Ledger; Accounts (through `app`).
+- **Dependencies**: `-018`, `-016`, `-024`.
+- **Scope**: `lending V019`: `payoff_quote` (immutable with its inputs: good-through date `G`, the
+  derived outstanding, the projected accrual through `G − 1` on the current base, agreement and engine
+  versions, amount), `payoff_execution` (`UNIQUE (quote_id)`); the quote — `G` today up to the pinned
+  payoff horizon (30 days), amount = derived outstanding + `-007`'s projection; T-pay (`PHASE_11_PLAN.md`
+  §12.5) — the execution names the quote and runs on `G` only: (L3) the loan, (L5) the quote; missing
+  dates accrued under `-016`'s uniques and everything unbilled billed; the amount recomputed — ≠ the
+  quote → `409 lending.PayoffQuoteStale`, nothing posted; else (L7) the wallet and the available balance;
+  one repayment of kind `PAYOFF` allocated to every component, the credit balance refunded (rule 7,
+  key `lending.payoff:<quote>` with the rule keys); `CLOSED (PAID_OFF_EARLY)`, or a line `CLOSED
+  (CLOSED_BY_CUSTOMER)`; `payoff_execution` born; permitted in any condition; no rebate arithmetic
+  exists (daily accrual makes the "early settlement rebate" zero by construction, tested); the doors
+  `POST /v1/me/loans/{id}/payoff-quotes` and `POST /v1/me/loans/{id}/payoff` (`MULTI_FACTOR`); the
+  servicing sweep skips terminal accounts; scenarios 7 and 10.
+- **Out of scope**: partial prepayment (`-028`); refinance (owner: the Phase 11 → 12 transition).
+- **Domain changes**: `PayoffQuote`, `PayoffExecution`.
+- **Persistence**: `lending V019`.
+- **APIs**: quote and execute, keyed `lending.payoff-quote:CUSTOMER:<id>` and
+  `lending.payoff:CUSTOMER:<id>`; error `lending.PayoffQuoteStale` and the reuse of
+  `lending.InsufficientFunds`, `lending.LoanNotRepayable` — catalogued in `ERROR_CONTRACT.md` by this
+  task.
+- **Events**: `RepaymentReceived` (kind `PAYOFF`), `LoanClosed` (reason).
+- **Policy/model versioning**: the quote names the agreement and engine versions; the execution's
+  recomputation uses the same pinned versions.
+- **Financial impact**: rules 2, 3 and 5 in one transaction, then the refund — every receivable to
+  zero, nothing owed back.
+- **Invariants**: `INV-LND-08`, `INV-LND-02`, `INV-LND-04`, `INV-IDEM-01`, `INV-LIFE-04`.
+- **Distributed-system concerns**: **scenario 7** — a payoff while a repayment is processing → a
+  repayment that committed first makes the quote stale (`409`), one that waits on L3 sees `CLOSED` —
+  exactly one outcome in both orders, never a wrong payoff; **scenario 10** — a payoff while the
+  delinquency worker runs → serialised on L3, no condition written after `CLOSED`, DPD never computed
+  on a closed account; the servicing sweep and the payoff accruing the same date → once; ten executions
+  of one quote → one closure. `PASS` on the counts of `PayoffDatabaseTest`.
+- **Idempotency**: the claims per customer; `UNIQUE (quote_id)`; the ledger keys.
+- **Consistency**: the amount recomputed under L3; a mismatch refused rather than adjusted.
+- **Atomicity**: catch-up accrual, billing, the repayment, its allocations, the refund, the closure,
+  the execution row and the events in one transaction.
+- **Failure handling**: `PayoffQuoteStale`; insufficient funds refused before posting; a quote executed
+  off its date refused.
+- **Security**: owner-scoped; `MULTI_FACTOR` for the execution (A19), the quote per the platform's
+  conditional step-up.
+- **Audit**: none — the customer's own act is its rows and entries.
+- **Observability**: `finapp.lending.payoff{outcome}`.
+- **Reconciliation implications**: a closed account's six balances zero — the subledger proof asserts
+  it.
+- **Tests**: `PayoffDatabaseTest` (`#payoffDuringARepaymentIsStaleOrClosedNeverWrong` (scenario 7),
+  `#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure` (scenario 10),
+  `#payoffZeroesEveryBalance`, `#theSweepAndThePayoffAccrueTheSameDateOnce`, `#noRebateArithmeticExists`,
+  `#tenExecutionsOneClosure`, `#aQuoteIsExecutableOnlyOnItsDate`, `#aLinesPayoffClosesIt`,
+  `#insufficientFundsPostsNothing`, `#payoffIsPermittedInAnyCondition`).
+- **Probe**: skip the catch-up accrual → `#payoffZeroesEveryBalance` red (an account closed with interest
+  owed); execute the stored amount without recomputing under L3 →
+  `#payoffDuringARepaymentIsStaleOrClosedNeverWrong` red.
+- **Acceptance criteria**: after a payoff every account balance is zero and the account `CLOSED`; a
+  stale quote never posts.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — a closing repayment is not
+  reversible, A12; F5 vacuous — internal; F8: the subledger proof), `DOD-API`, `DOD-EVENT`.
+  **Risk**: High. **Cx**: M.
+
+**P11-TSK-027 — Restructuring by agreement amendment** — `PLANNED`
+- **Objective**: a person proposes, a second approves and the customer accepts a term extension, a rate
+  reduction or a re-scheduling of arrears — agreement and schedule version n+1, once, fully audited;
+  never cut (scenario 8, ADR-0099).
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-024`, `-026`.
+- **Scope**: `lending V020`: `loan_amendment` (the agreement version it amends, the proposed terms —
+  longer term, lower rate, arrears re-scheduled; reason; four-eyes `CHECK`; `PROPOSED → APPROVED →
+  ACCEPTED | LAPSED`, `PROPOSED → REJECTED`; an offer expiry; the customer's acceptance evidence as
+  `-012`'s); `INSTALMENT` accounts only (a line has no schedule to restructure); **an amendment never
+  raises principal outstanding or a line's limit** — more credit is a new application and decision
+  (refused `422 lending.TermsInvalid`); overdue interest never capitalised; T-amd for the operator acts:
+  claim `lending.servicing:EMPLOYEE:<id>`, (L3), (L5) the proposal conditional; the customer's acceptance
+  (keyed, `MULTI_FACTOR`): (L3) the loan, (L5) the amendment conditional on `APPROVED`, unexpired and on
+  the agreement version it names — a moved agreement (a prepayment, another amendment) or a closed
+  account lapses it (`409 lending.AmendmentLapsed`); agreement v n+1 (canonical terms, hash,
+  `effective_from`); schedule v n+1 from the principal outstanding derived from postings at
+  `effective_from` (`-006`'s recalculation), billed instalments kept, unbilled superseded (`UNIQUE
+  (loan_id, schedule_version)`, nothing updated); arrears re-scheduled by rule 13 `DR LOAN_PRINCIPAL / CR
+  LOAN_PRINCIPAL_DUE`, key `lending.amendment:<amendment>`; L0 not taken — the exposure measure
+  (`LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE`) is unchanged by rule 13 and never raised; the doors `POST
+  /v1/operator/loans/{id}/amendments` (+ approval, rejection) and `GET /v1/me/loans/{id}/amendments/{aid}`,
+  `POST …/acceptance`.
+- **Out of scope**: capitalising arrears or interest; a higher rate or more principal (a new decision);
+  refinance (the Phase 11 → 12 transition); a line's amendment.
+- **Domain changes**: `LoanAmendment` and its machine; agreement and schedule version n+1.
+- **Persistence**: `lending V020`.
+- **APIs**: operator propose, approve, reject (`lending.servicing:EMPLOYEE:<id>`); customer read and
+  accept (`lending.amendment-acceptance:CUSTOMER:<id>`); error `lending.AmendmentLapsed` and the reuse
+  of `lending.SelfApprovalRefused`, `lending.SelfDealingRefused`, `lending.ReasonRequired`,
+  `lending.ProposalPending`, `lending.TermsInvalid` — catalogued in `ERROR_CONTRACT.md` by this task.
+- **Events**: `LoanAmended` (agreement version n+1, schedule version).
+- **Policy/model versioning**: agreement v n+1 pins the terms version the amendment was made under and
+  the engines; the old version and its schedule are kept for replay.
+- **Financial impact**: rule 13 — overdue principal re-classified as not due; future interest changes
+  through the new rate or term.
+- **Invariants**: `INV-LND-05`, `INV-LND-11`, `INV-LND-03`, `INV-AUD-04`, `INV-HIST-04`.
+- **Distributed-system concerns**: **scenario 8** — a schedule changed under an approved contractual
+  operation → agreement and schedule v n+1 exactly once, billed instalments kept, principal conserved;
+  ten acceptances → one version; an acceptance after the agreement moved → lapsed; an amendment racing
+  a payoff → serialised on L3, the amendment lapsing on `CLOSED`; ten approvers → one. `PASS` on the
+  counts of `AmendmentDatabaseTest`.
+- **Idempotency**: keyed acts per principal; the agreement-version conditional; `UNIQUE (loan_id,
+  version)` and `UNIQUE (loan_id, schedule_version)`.
+- **Consistency**: L3 for every act; the principal outstanding derived from postings under it.
+- **Atomicity**: the acceptance, the evidence, agreement and schedule v n+1, the rule 13 entry, the
+  events and the audit row in one transaction.
+- **Failure handling**: an amendment lapses rather than applies to a moved agreement or a closed
+  account; an expired approval lapses unaccepted.
+- **Security**: `LOAN_SERVICE` / `LOAN_SERVICE_APPROVE` — never one's own, never one's own party's loan;
+  the customer's acceptance `MULTI_FACTOR`; reasons screened.
+- **Audit**: `lending.AmendmentProposed`, `…Approved`, `…Rejected`, `lending.AmendmentAccepted` —
+  catalogued in `AUDITABLE_ACTIONS.md` by this task.
+- **Observability**: `finapp.lending.amendment{outcome}`.
+- **Reconciliation implications**: rule 13 enters the subledger proof's principal arms; replay re-runs
+  both schedule versions.
+- **Tests**: `AmendmentDatabaseTest` (`#anApprovedAmendmentChangesTheScheduleOnce` (scenario 8),
+  `#fourEyesAtBothRanks`, `#aMovedAgreementLapsesTheAmendment`, `#aPayoffLapsesTheAmendment`,
+  `#arrearsRescheduledConservePrincipal`, `#billedInstalmentsAreKept`,
+  `#anAmendmentNeverRaisesPrincipalOrLimit`, `#tenAcceptancesOneVersion`,
+  `#overdueInterestIsNeverCapitalised`, `#theAmendmentExpiresUnaccepted`,
+  `#anEmployeeNeverAmendsTheirOwnPartysLoan`).
+- **Probe**: drop the agreement-version conditional on acceptance → `#aMovedAgreementLapsesTheAmendment`
+  red; generate schedule n+1 from the original principal → `#arrearsRescheduledConservePrincipal` red.
+- **Acceptance criteria**: no amendment without four-eyes and the customer's acceptance; principal
+  conserved across versions; never more credit than decided.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 binding — the amendment is the
+  correction path, never an edit; F5 vacuous — internal; F8: the subledger proof), `DOD-SEC`, `DOD-API`,
+  `DOD-EVENT`. **Risk**: High. **Cx**: L.
+
+**P11-TSK-028 — Partial prepayment with recalculation** — `PLANNED` *(cut candidate, first)*
+- **Objective**: the borrower prepays principal and the term shortens with the instalment unchanged —
+  agreement and schedule version n+1 in the same transaction.
+- **Bounded context**: Lending; Ledger.
+- **Dependencies**: `-027`.
+- **Scope**: `lending V021`: the repayment kind `PREPAYMENT` admitted (the kind `CHECK` extended) —
+  `CR LOAN_PRINCIPAL` through `-008`'s prepayment line; agreement v n+1 (same rate, recalculated shorter
+  term) and schedule v n+1 from the remaining principal (`-006`'s recalculation) in the same
+  transaction; refused while anything is past due (`409 lending.ArrearsFirst`); a pending approved
+  amendment lapses (the agreement moved); `INSTALMENT` accounts only (a line's excess already pays down
+  principal, `-023`); the door `POST /v1/me/loans/{id}/prepayments` (step-up). If cut, the deferral is
+  recorded with its owner (the Phase 11 → 12 transition names the later lending phase).
+- **Out of scope**: the reduce-instalment option (the vocabulary admits it later); a prepayment fee
+  (L8).
+- **Domain changes**: the `PREPAYMENT` repayment kind; the prepayment recalculation.
+- **Persistence**: `lending V021`.
+- **APIs**: the prepayment, keyed `lending.prepayment:CUSTOMER:<id>`; error `lending.ArrearsFirst` —
+  catalogued in `ERROR_CONTRACT.md` by this task.
+- **Events**: `RepaymentReceived` (kind `PREPAYMENT`), `LoanAmended`.
+- **Policy/model versioning**: agreement v n+1 under the same terms version; schedule engine v1's
+  recalculation.
+- **Financial impact**: principal reduced at once; future interest reduced by daily accrual on the
+  lower base.
+- **Invariants**: `INV-LND-03`, `INV-LND-05`, `INV-LND-04`, `INV-IDEM-01`.
+- **Distributed-system concerns**: a prepayment and billing on the same date → serialised on L3 (the
+  billing first by the step order); ten prepayments under one key → one; a prepayment racing an
+  amendment's acceptance → one agreement version n+1, the other lapsed or stale. `PASS` on the counts
+  of `PrepaymentDatabaseTest`.
+- **Idempotency**: the claim per customer; the ledger key; `UNIQUE (loan_id, version)`.
+- **Consistency**: the remaining principal derived under L3.
+- **Atomicity**: the repayment, its entry, agreement and schedule v n+1 and the events in one
+  transaction.
+- **Failure handling**: past due → `409 lending.ArrearsFirst`, nothing written; insufficient funds
+  refused before posting.
+- **Security**: owner-scoped; step-up (A19).
+- **Audit**: none — the customer's own act.
+- **Observability**: `finapp.lending.repayment{kind = PREPAYMENT, outcome}` (`PHASE_11_PLAN.md` §15 names
+  no separate prepayment series).
+- **Reconciliation implications**: as `-018` — the subledger proof's principal arm.
+- **Tests**: `PrepaymentDatabaseTest` (`#prepaymentShortensTheTermAndConserves`, `#scheduleVersionOnce`,
+  `#refusedWhilePastDue`, `#tenPrepaymentsOneKey`, `#aPrepaymentLapsesAPendingAmendment`,
+  `#prepaymentAndBillingOnTheSameDateSerialise`).
+- **Probe**: generate the new schedule from the original principal →
+  `#prepaymentShortensTheTermAndConserves` red.
+- **Acceptance criteria**: the new schedule conserves the remaining principal with the instalment
+  unchanged; no prepayment over arrears.
+- **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 recorded — a prepayment moved the
+  agreement, so `-020` refuses to reverse it and a correction is an amendment, settled by this task's
+  design; F5 vacuous — internal; F8: the subledger proof), `DOD-API`, `DOD-EVENT`. **Risk**: Medium.
+  **Cx**: M.
+
+**P11-TSK-029 — The lending proofs and the explanation door** — `PLANNED`
+- **Objective**: every account's figures are continuously proven against the ledger and re-derivable
+  from its pinned agreement and engines — and explainable from rows alone (`INV-LND-01`, the
+  owner brief's economic-event chain).
+- **Bounded context**: Lending; `app`.
+- **Dependencies**: `-026`, `-023`, `-027` (and every built servicing task).
+- **Scope**: `LoanSubledgerProof` per account (`PHASE_11_PLAN.md` §13.1): `LOAN_INTEREST_ACCRUED` = Σ
+  accruals − Σ billed interest − waived from accrued; `LOAN_INTEREST_DUE` = Σ billed − allocated −
+  waived; `LOAN_PRINCIPAL_DUE` = Σ billed − allocated (± reversals, re-schedules); `LOAN_PRINCIPAL` = Σ
+  disbursed or drawn − Σ billed − Σ paid down (± re-schedules, prepayments); `LOAN_FEES_DUE` = Σ assessed
+  − allocated − waived; `LOAN_CREDIT_BALANCE` = Σ overpayments − applications − refunds; no due account
+  negative; a `CLOSED` account's six balances zero; `LoanReplayProof` for both kinds — re-runs the
+  pinned engines over each agreement version and the ledger's history (schedule rows, every accrual's
+  `posted_minor`, every billing and statement, every allocation), `IDENTICAL` or `DIVERGED`, and
+  re-verifies `terms_sha256`; each reading in one `REPEATABLE READ` read-only snapshot; the gauges;
+  `LendingBooksHaveOnePosterTest` now asserting non-vacuously; `GET
+  /v1/operator/loans/{id}/explanation` (`LENDING_INVESTIGATE`, audited): agreement versions and hashes,
+  schedule versions, accruals, billings, statements, draws, allocations, fees, waivers, reversals,
+  amendments, conditions, the payout and every journal entry — from rows alone; `POST
+  /v1/operator/loans/{id}/replay` (`LENDING_INVESTIGATE`, audited) answering `IDENTICAL` or `DIVERGED`.
+- **Out of scope**: reports and alert rules (`-030`); the exposure census (`-013`) and the capital
+  proof (`-004`), already built; any self-correction (none exists).
+- **Domain changes**: `LoanReplayer` (the pinned engines by version); the two proofs.
+- **Persistence**: none.
+- **APIs**: the explanation and the replay; no new error.
+- **Events**: none.
+- **Policy/model versioning**: every row replayed under its own pinned agreement and engine versions;
+  an engine version absent from the code is `DIVERGED`, never skipped.
+- **Financial impact**: detection only; nothing is repaired automatically.
+- **Invariants**: `INV-LND-01`, `INV-LND-03`, `INV-LND-04`, `INV-LND-05`, `INV-LND-09`, `INV-BAL-02`,
+  `INV-ACC-01`, `INV-LED-04`.
+- **Distributed-system concerns**: every instance computes the same verdict in its snapshot, whatever
+  commits concurrently (a proof reading during the servicing sweep and a draw, counted over rounds);
+  the gauges per instance from rows. `PASS` on the counts of `LendingProofDatabaseTest`.
+- **Idempotency**: N/A — read-only.
+- **Consistency**: one `REPEATABLE READ` snapshot per reading.
+- **Atomicity**: N/A — read-only.
+- **Failure handling**: a `DIVERGED` or non-zero proof alerts; nothing is repaired; the explanation of an
+  unknown account is `404 lending.NotFound`.
+- **Security**: `LENDING_INVESTIGATE`; audited reads; the explanation carries amounts and is never
+  logged; an investigator never reads their own party's account through it (the self-dealing refusal).
+- **Audit**: `lending.ExplanationRead`, `lending.LoanReplayed` — catalogued in `AUDITABLE_ACTIONS.md` by
+  this task.
+- **Observability**: `finapp.lending.subledger.proof{verdict}`, `finapp.lending.replay{verdict}` gauges
+  (alert on any failure or `DIVERGED`).
+- **Reconciliation implications**: this is lending's reconciliation — its internal flows have no
+  external evidence; the payout's is payments' and capital's is reconciliation's.
+- **Tests**: `LendingProofDatabaseTest` (a byte flipped in an accrual, a billing, a statement, an
+  allocation or an agreement → `DIVERGED`; a raw-SQL posting to a loan account without a lending row →
+  the subledger proof red; a raw projection edit → the proof still green (it reads journal lines);
+  `#aProofDuringServicingIsStable`; `#theExplanationIsCompleteFromRows`; `#everyClosedAccountIsZero`);
+  `LendingBooksHaveOnePosterTest`; `LendingProofApiTest` (permissions, audit).
+- **Probe**: read the projection in the subledger proof → the raw projection edit hides a ledger break,
+  red; skip the `terms_sha256` re-verification → the agreement byte-flip test red.
+- **Acceptance criteria**: every account proven zero-difference and replayed `IDENTICAL` at rest; every
+  figure explainable from rows.
+- **Definition of done**: `DOD-FIN` (F2 binding; F1 asserted per currency; F3–F6 vacuous — read-only; F7
+  binding; F8: this is the internal reconciliation), `DOD-OBS`, `DOD-SEC`, `DOD-API`. **Risk**: Medium.
+  **Cx**: M.
+
+**P11-TSK-030 — Operating lending: meters, reports, alerts, runbook** — `PLANNED`
+- **Objective**: lending is operable without reading code, and production's closed state and its
+  activation gate are written down (`PHASE_11_PLAN.md` §1.1, §15).
+- **Bounded context**: `app`; Lending.
+- **Dependencies**: `-029`.
+- **Scope**: `PHASE_11_PLAN.md` §15's series resolved against a live scrape (every series registered
+  eagerly at startup with closed tags; counts, ages and verdicts only — ADR-0072); `finapp.lending.loans
+  {product, status}`; `infra/prometheus/rules/lending.yml` and a dashboard row; the reports `GET
+  /v1/operator/reports/lending/{portfolio,delinquency,accrual,capital}?date=` (`LENDING_INVESTIGATE`,
+  one `REPEATABLE READ` snapshot, audited; amounts only here — portfolio outstanding, delinquency sums,
+  accrual totals, capital headroom); spans for every step linked by the account's correlation (the
+  `CreditFlowScope` precedent); `OPERATIONS_RUNBOOK.md` §7 — **the production activation gate**:
+  unresolved #13 and #14 answered, a real bureau adapter contract-tested, a credit policy version
+  reading it, legal review of the terms (A1), lending capital recognised, then a four-eyes terms
+  activation; and the procedures for accrual lag, a failing proof (subledger, replay, capital, census),
+  a stuck disbursement or payout, and low capital headroom.
+- **Out of scope**: GL reporting (Phase 14); a notification channel; activating terms in production.
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: the four report routes; no new error.
+- **Events**: none.
+- **Policy/model versioning**: N/A.
+- **Financial impact**: none.
+- **Invariants**: `INV-AUD-02`, `INV-AUD-01`.
+- **Distributed-system concerns**: gauges computed per instance from rows (any instance's reading is
+  correct); reports in one snapshot, identical across instances at one instant. `PASS` on the counts of
+  `LendingReportsDatabaseTest` (two instances reading one instant).
+- **Idempotency**: N/A — read-only.
+- **Consistency**: one snapshot per report.
+- **Atomicity**: N/A — read-only.
+- **Failure handling**: a report over an unknown date answers empty, never an error leaking a
+  figure; a gauge whose query fails reports its last value and the failure counter.
+- **Security**: audited reads; `LENDING_INVESTIGATE`; no amount, rate, balance, limit, DPD, party or
+  loan id in any tag, span attribute or log line (the needle walk extended to lending's doors).
+- **Audit**: `lending.ReportRead` — catalogued in `AUDITABLE_ACTIONS.md` by this task if not already
+  by `-004`.
+- **Observability**: this task.
+- **Reconciliation implications**: the portfolio report ties to the trial balance per currency and to
+  the subledger proof.
+- **Tests**: `LendingMetersTest` (registration at startup with closed tags), `LendingAlertRulesTest`
+  (the rules parse, each alert fires in a test that breaks its condition), `LendingReportsDatabaseTest`
+  (report sums equal ledger derivations), the needle walk over lending's doors.
+- **Probe**: tag a counter with an amount → the needle walk red; rename a series without its rule →
+  `LendingAlertRulesTest` red.
+- **Acceptance criteria**: every alert of §15 fires in a test that breaks its condition; the runbook
+  states the production gate and every lending procedure.
+- **Definition of done**: `DOD-OBS`, `DOD-API`, `DOD-SEC`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
+
+**P11-TST-001 — The lending storm** — `PLANNED`
+- **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
+  end to end from application to closure, for both products — every mandatory scenario exercised.
+- **Bounded context**: all of the phase.
+- **Dependencies**: `-030` (every built task).
+- **Scope**: `PHASE_11_PLAN.md` §13.3: two application instances, clocks ±5 s, shared parties across
+  both products; applications through credit's simulators; acceptances racing decisions for the other
+  product; capital headroom contested; disbursements on both paths with payout faults (lost responses,
+  failures, returns); draws, repayments, auto-collections, reversals, waivers, amendments, payoffs,
+  statements (and prepayments if built); the servicing sweep across ≥ 3 real business-date boundaries
+  (fixed-offset zones per cohort, A15); a terms activation mid-storm; **every one of the ten scenarios**;
+  crash points incl. two killed backends. At rest, every round, one `REPEATABLE READ` snapshot: the
+  subledger proof zero for every account, replay `IDENTICAL` for every account, the exposure census,
+  the capital proof, the trial balance zero per currency, every accrual date present exactly once, one
+  disbursement per non-cancelled loan, Σ allocations = Σ repayments, every act counted, gauges zero.
+- **Out of scope**: production volume (the gate's criteria are correctness, §1.1); the fleet-wide
+  `databaseTest` and `kafkaTest` tiers (the owner's recorded deviation, R15).
+- **Domain changes**: none — tests.
+- **Persistence**: none.
+- **APIs**: exercised, none added.
+- **Events**: exercised (the outbox census: every state change's event exactly once).
+- **Policy/model versioning**: a terms activation mid-storm — the pinned versions decide; replay
+  `IDENTICAL` across it.
+- **Financial impact**: proof only.
+- **Invariants**: every `INV-LND-*`, `INV-CRD-09`, `INV-IDEM-02`, `INV-SET-06`, `INV-LED-01`.
+- **Distributed-system concerns**: the purpose — `PASS` = every census exact every round, three
+  consecutive green runs, and its probes caught.
+- **Idempotency**: exercised (duplicate keys, duplicate ticks, duplicate outcomes).
+- **Consistency**: exercised (every census in one snapshot).
+- **Atomicity**: exercised (the crash points).
+- **Failure handling**: exercised (payout faults, killed backends, restarts).
+- **Security**: the storm's actors hold only their roles; no figure in its logs.
+- **Audit**: every act counted against its audit rows.
+- **Observability**: every gauge zero at rest; the sweepers' enabled gauges asserted.
+- **Reconciliation implications**: the censuses are the reconciliation.
+- **Tests**: `LendingStormDatabaseTest`.
+- **Probe**: the plan's §13.4 set, each caught by its census and recorded in `MUTATION_TESTING.md` §2 —
+  drop the accrual unique; consume without the profile lock; skip the capital lock; re-dispatch a payout
+  on `UNKNOWN`; read the projection for allocation; judge the accrual boundary on the instance clock;
+  take the wallet before the loan.
+- **Acceptance criteria**: three consecutive green runs; every probe caught; every scenario exercised.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN` (F1–F8 binding over the storm's postings). **Risk**:
+  High. **Cx**: XL.
+
+**P11-TST-002 — The amortisation, accrual and statement battery** — `PLANNED`
+- **Objective**: exactness and replay over a large generated portfolio of both products, in two JVMs.
+- **Bounded context**: Lending.
+- **Dependencies**: `-029`.
+- **Scope**: `PHASE_11_PLAN.md` §13.3: ≥ 10,000 generated loans and ≥ 2,000 generated lines (amounts,
+  rates incl. 0, terms, repayment and statement days, start dates across leap and non-leap years and
+  month ends; draw and payment behaviour on a simulated calendar) through the pure engines and the
+  replayer; every figure replayed `IDENTICAL` in two JVMs; a perturbed accrual, billing, statement,
+  allocation or agreement byte flips the verdict; an engine version swapped under a stored number
+  `DIVERGED`.
+- **Out of scope**: concurrency (the storm's).
+- **Domain changes**: none — tests.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: every engine replayed at its pinned version; a swap detected.
+- **Financial impact**: proof only.
+- **Invariants**: `INV-LND-03`, `INV-LND-04`, `INV-LND-09`, `INV-LND-05`.
+- **Distributed-system concerns**: determinism across two JVMs — byte-identical outputs. `PASS` on the
+  counts of the two-JVM comparison.
+- **Idempotency**: N/A — pure.
+- **Consistency**: N/A — pure.
+- **Atomicity**: N/A — pure.
+- **Failure handling**: every reason for divergence exercised by perturbation.
+- **Security**: none.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: zero rounding residual by construction, asserted per loan and line.
+- **Tests**: `AmortisationBatteryTest`.
+- **Probe**: double rounding in the accrual engine → thousands of divergences; drop the minimum
+  payment's cap → the line cohort diverges.
+- **Acceptance criteria**: every account `IDENTICAL`; every perturbation flips the verdict.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN` (F2, F7 binding; the rest vacuous — pure). **Risk**:
+  Medium. **Cx**: L.
+
+**P11-DOC-001 — The Phase 11 exit review** — `PLANNED`
+- **Objective**: close Phase 11 against its gate, with the documents made true against the code.
+- **Bounded context**: all.
+- **Dependencies**: `P11-TST-001`, `P11-TST-002`.
+- **Scope**: the review areas; the twelve universal criteria (criterion 7 under the owner's recorded
+  deviation, R15), F1–F8 as this section reads them, and the `PHASE_GATES.md` §5 Phase 11 criteria as
+  extended by the transition; ADR-0090…0100 read against the code and accepted or amended;
+  `PHASE_11_PLAN.md`, `LENDING_LIFECYCLES.md`, `MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md`,
+  `GLOSSARY.md`, `DOMAIN_MODEL.md`, `LEDGER_MODEL.md` (lending), `DISTRIBUTED_EXECUTION.md` §3,
+  `DATA_CLASSIFICATION.md`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `FINANCIAL_INVARIANTS.md`,
+  `OPERATIONS_RUNBOOK.md`, `CAPABILITY_MAP.md`, `ROADMAP.md`, `DECISIONS.md` and the ADR index made
+  true; L1–L12 and A1–A30 read against the code; the Phase 12 boundary verified (no BNPL, merchant
+  financing, write-off, collections, real bureau or notification code); the production limitation of
+  §1.1 recorded as accepted; the debt rows present — the production origination gate (owner: the phase
+  that answers #13 and #14, Phase 15 at the latest), effective-interest fee amortisation and write-off
+  and provisioning (Phase 14), the evidence and agreement purge (Phase 15), capital return and income
+  recycling, refinance (owner: the Phase 11 → 12 transition), collections operations (Phase 13), capital
+  tranches (Phase 16 if the storm's measurement demands); the mutation register for every `Phase: 11`
+  invariant; the flip, proven non-vacuous.
+- **Out of scope**: Phase 12.
+- **Domain changes**: corrections only.
+- **Persistence**: corrections only.
+- **APIs**: n/a.
+- **Events**: n/a.
+- **Policy/model versioning**: re-audited.
+- **Financial impact**: none.
+- **Invariants**: all `Phase: 11` invariants.
+- **Distributed-system concerns**: every task's answer re-checked against its counted tests.
+- **Idempotency**: n/a.
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: CRITICAL and IMPORTANT findings corrected and probed before the flip.
+- **Security**: re-audited.
+- **Audit**: re-audited.
+- **Observability**: re-audited.
+- **Reconciliation implications**: re-audited — capital recognition, the payout's expectation, the
+  subledger proof.
+- **Tests**: fresh targeted tiers; the document guards.
+- **Probe**: the flip — a `Phase: 11` invariant's register rows withheld → `MutationDemonstrationTest`
+  red naming exactly it, restored byte-identical.
+- **Acceptance criteria**: the gate holds, counted.
+- **Definition of done**: `DOD-DOC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+
 ---
 
 # Cross-cutting work
@@ -16628,11 +18828,15 @@ thirty items above. The Phase 10 row went the same way at the Phase 9 → 10 tra
 policy engine, decision recording and immutability, reason codes and adverse action, decision
 reproducibility and exposure tracking are Phase 10's twenty-four items above — and its "risk
 scoring" epic was settled as `risk`'s (Phase 13; ADR-0084), Phase 10 building only the
-`CreditRiskSignal` seam and the versioned credit scorecard.)*
+`CreditRiskSignal` seam and the versioned credit scorecard. The Phase 11 row went the same way at
+the Phase 10 → 11 transition, 2026-10-10: loan application, offer and expiry, underwriting
+integration (the credit-owned consumption port), disbursement (to the wallet and an external
+account), repayment schedule and amortisation, interest accrual, repayment allocation, early
+settlement (payoff), delinquency, restructuring and loan accounting are Phase 11's thirty-three
+items above — with the revolving credit line and lending capital added by the owner's decisions.)*
 
 | Phase | Epics |
 |-------|-------|
-| 11 Lending | Loan application; offer and expiry; underwriting integration; disbursement; repayment schedule and amortisation; interest accrual; repayment allocation; early settlement; delinquency; restructuring; loan accounting |
 | 12 BNPL | Eligibility at checkout; instalment plan; agreement lifecycle; merchant financing; merchant settlement; customer obligation; refund and return adjustment; late fees; BNPL accounting and reconciliation |
 | 13 Risk, Fraud, AML | Signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls |
 | 14 Accounting and Reporting | GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility |

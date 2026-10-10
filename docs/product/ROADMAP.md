@@ -27,14 +27,14 @@ Gate definitions and the phase status model live in
 | 8 | Settlement and Reconciliation | Settlement ingestion, matching, breaks, suspense, investigation |
 | 9 | FX and Cross-Border Payments | Quotes, rate locks, multi-currency conversion, cross-border workflow |
 | 10 | Credit Decisioning | Credit profile, bureau adapters, versioned policy, explainable decisions |
-| 11 | Lending | Applications, offers, disbursement, schedules, repayment, delinquency |
+| 11 | Lending | Applications, offers, disbursement (to the wallet and external accounts), schedules, accrual, repayment, revolving credit lines, delinquency, lending capital |
 | 12 | BNPL | Merchant-financed instalments, merchant settlement, refund interaction |
 | 13 | Risk, Fraud and AML | Signals, rules, decisions, cases, ongoing monitoring |
 | 14 | Accounting and Financial Reporting | GL mapping, trial balance, period close, reporting abstraction |
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-10-09).** **Phases 0 through 10 are `COMPLETE`.** Phase 10 closed on its
+**Current position (2026-10-10).** **Phases 0 through 10 are `COMPLETE`; Phase 11 — Lending Infrastructure — is `READY`.** Phase 10 closed on its
 exit review (`P10-DOC-001`, 2026-10-09 — `PHASE_10_PLAN.md` and `CREDIT_DECISIONING_LIFECYCLES.md`
 read against the code and made true, inline where a statement was wrong and in the plan's errata
 for the rest; ADR-0084…0089 read against the code and accepted). Among what the review found and
@@ -49,8 +49,20 @@ referral decided by people under four-eyes, and every decision replayed `IDENTIC
 twenty-four items `COMPLETE`, the credit decision storm (`P10-TST-001`) answering the ten-instances
 question on two instances five seconds either side of the database, the battery (`P10-TST-002`)
 replaying ten thousand generated applicants in two JVMs. The fleet-wide database and kafka tiers
-were skipped on the owner's standing instruction. **Phase 11 — Lending — is next**, behind the
-Phase 10 → 11 transition.
+were skipped on the owner's standing instruction. **The Phase 10 → 11 transition** (2026-10-10)
+confirmed Phase 10 only after repair: its six audits found no critical defect but fifteen important
+ones — an underwriter able to decide their own application, free-text reasons never screened for
+card or account numbers, a decision not sealed to its own request's snapshot, a person able to
+decide on data past its maximum age or on an absent bureau balance counted as zero, exposure blind
+to outstanding credit (latent until loans existed), an answer that could retry forever, and gaps in
+the tests that claimed to prove them — every Phase 10 one repaired, tested and broken on purpose;
+the owner enforced MFA on credit submission and refused a person's approval on an absent bureau
+balance, so **production approves no credit until a real bureau is connected**. **Phase 11 —
+Lending Infrastructure — is `READY`**: the personal loan and the revolving credit line serviced
+from authoritative records, every figure a ledger balance, every loan funded from recognised
+lending capital and disbursed to the wallet or an external account; `P11-TSK-001` — the
+credit-owned consumption port, the transition's one deferred finding — is the first task; and
+origination is proven against the simulators until production can approve.
 
 **Phase 9** closed on its
 exit review (`P9-DOC-001`, 2026-10-07 — `PHASE_9_PLAN.md` and

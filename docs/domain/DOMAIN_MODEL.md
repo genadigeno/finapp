@@ -89,6 +89,30 @@ Credit Product
 Decision Consumption
 Decision Replay
 
+Loan Agreement
+Loan Product Terms Version
+Repayment Schedule
+Instalment Billing
+Interest Accrual
+Repayment
+Repayment Allocation
+Loan Credit Balance
+Days Past Due
+Default
+Payoff
+Disbursement
+Loan Payout
+Credit Line
+Credit Line Draw
+Credit Line Statement
+Minimum Payment
+Available Limit
+Restructuring
+Refinance
+Write-off
+Collections
+Lending Capital
+
 Money
 Currency
 Minor unit
@@ -183,7 +207,18 @@ signal through a seam — the glossary's §10.)* *(The Phase 10 exit review, `P1
 credit entry was read against the code. Credit Bureau Record was renamed Credit Record, one
 `credit_record` table holding both source kinds, and six terms were added, each built as its own
 table or code concept that neither list named: Credit Data Request, Credit Evidence, Engine
-Version, Policy Evaluation, Decision Consumption and Decision Replay.)*
+Version, Policy Evaluation, Decision Consumption and Decision Replay.)* *(The Phase 10 → 11
+transition, 2026-10-10 — ADR-0090…0100 (`Proposed`), `PHASE_11_PLAN.md` §3 and §12 — added the
+twenty-three Phase 11 terms in the lending block after Decision Replay: the contract (Loan
+Agreement, Loan Product Terms Version), the projection and what actually became due (Repayment
+Schedule, Instalment Billing, Interest Accrual), money received and its split (Repayment,
+Repayment Allocation, Loan Credit Balance), arrears (Days Past Due, Default), the money's way in
+and out (Payoff, Disbursement, Loan Payout, Lending Capital), the revolving product (Credit Line,
+Credit Line Draw, Credit Line Statement, Minimum Payment, Available Limit), contractual change
+(Restructuring, Refinance) and the deferred ends (Write-off, Collections) — each keeping a
+distinction Phase 11 could collapse. Nothing of Phase 11 is built: each is the planned design,
+defined in the glossary's §7a with the same guard, and the machines are in
+[`LENDING_LIFECYCLES.md`](LENDING_LIFECYCLES.md).)*
 
 ---
 

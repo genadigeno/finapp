@@ -173,11 +173,75 @@ crypto-shredding (Phase 15); real bureau and financial-data connectivity (unreso
 
 ## 10. Phase 11 initialisation
 
-Recorded in `docs/project/PHASE_11_PLAN.md`, ADR-0090 onward, the `INV-LND-*` invariants, the Phase 11
-backlog and `CURRENT_STATE.md`. **Owner decisions (2026-10-10):** loans are funded from a platform
-lending-capital account, so the safeguarding proof stays exact; disbursement to the borrower's wallet **and**
-to an external bank account; Phase 11 services the **personal loan and the revolving credit line**; the
-servicing conventions recorded in the plan are accepted as the product assumptions (a neutral EUR reference
-jurisdiction without consumer-credit-law features; ACT/365F simple daily interest rounded once per period;
-allocation oldest-due first, fees then interest then principal, any excess held as a credit; default at 90
-days past due; no penalty interest, prepayment fee or APR display) — each configurable and versioned.
+**Objective.** Originate and service credit whose every figure the platform can explain from
+authoritative records years later — economic event → lending operation (pinned agreement and engine
+versions) → journal entry → per-loan ledger lines → derived balances → settlement → reconciliation —
+for the amortising **personal loan** and the revolving **credit line**. Lending owns the contract
+and its servicing facts and none of the money: every principal, interest, fee and credit-balance
+figure is a balance of a per-loan ledger account. Planned in [`PHASE_11_PLAN.md`](../PHASE_11_PLAN.md);
+decided in ADR-0090…0100 (`Proposed`); the machines in
+[`LENDING_LIFECYCLES.md`](../../domain/LENDING_LIFECYCLES.md); the invariants `INV-LND-01`…`14`
+(**142 invariants** platform-wide); the exit criteria in `PHASE_GATES.md` §5 Phase 11, extended by
+this transition; thirty-three backlog items across nine milestones (M11.1–M11.9). The design was
+drafted by a research pass, corrected against the owner's decisions below, written as the plan, and
+then spread to the ADRs, the invariants and gate, the lifecycles and glossary, and the backlog by
+four writers in parallel; a consistency pass reconciled every inconsistency they reported (the
+payout's refusal edge, capital recognition as a derived read rather than an edge, one live reversal
+proposal per repayment, a reversal that re-instates principal re-checking capital headroom, an open
+line's exposure at the greater of its limit and its drawn principal, the minimum payment's floor, the
+terms an offer pins) in the plan and every document at once.
+
+**Owner decisions (2026-10-10), binding** — L1–L12 (`PHASE_11_PLAN.md` §2.3):
+
+| # | Decision | Where it landed |
+|---|---|---|
+| L1 | Loans and draws funded from a platform **`LENDING_CAPITAL`** account (EQUITY, per currency), recognised only from bank evidence through a four-eyes contribution expectation, headroom judged under its row lock at every acceptance, draw and principal-re-instating reversal, so loan-funded wallet money is platform-funded and the safeguarding position stays exact (the capital proof publishes the adjustment term) | §12.9, ADR-0096, `P11-TSK-003`, `-004`, `INV-LND-13` |
+| L2 | Disbursement to the wallet **and** to an external bank account: the receivable is born with the wallet credit in both paths; the external leg is a system-initiated payments withdrawal adopting a hold placed at disbursement; lending **reads** payments' outcome and is never called by it — no lock-order cycle, lending never implements `OutboundCreditComposition`; interest on an externally paid-out loan starts at the payout's terminal outcome | §7.3, §12.4, ADR-0097, `P11-TSK-014`, `-015` |
+| L3 | The personal loan **and** the revolving credit line (draws, revolving accrual, statement and minimum payment, the available limit recomputed from postings; exposure counts the committed limit — justified against `INV-CRD-09`); refinance (the Phase 11 → 12 transition), write-off (Phase 14) and collections (Phase 13) deferred with owners | §12.6, ADR-0100, `P11-TSK-021`…`-023` |
+| L4–L8 | A neutral EUR reference jurisdiction, no consumer-credit-law features; ACT/365F simple daily interest rounded once per period; allocation oldest-due first, fees → interest → principal, excess held as credit; default at 90 days past due; no penalty interest, prepayment fee or APR display — each a versioned terms field pinned on the agreement | §12.1–§12.7, ADR-0092…0095, ADR-0098 |
+| L9 | Credit's migrations run to `V020` (`V018` unused); Phase 11's credit changes start at **credit `V021`**; `lending` owns its schema from `lending/V001` | §8 |
+| L10 | **`P11-TSK-001` is the credit-owned consumption port** (R13): `consume` under the party's profile lock, refusing non-approved, lapsed or consumed decisions, idempotent per consumer, a `SECURITY DEFINER` function the only path with the application role's `INSERT` revoked; `BOUNDED_CONTEXTS.md` corrected; `PlatformCreditExposure` version 2 (`P11-TSK-013`) | §12.10, ADR-0091 |
+| L11 | Origination only against the simulators until a real bureau is connected (#13/#14): production activates no terms version; the runbook's §7 names the activation gate (`P11-TSK-030`); every exit criterion proven by the test tiers and the storm, recorded as an accepted limitation, not a deviation; a debt row | §1.1 |
+| L12 | The ten mandatory scenarios, each a named test in its task and in the storm | §13.2 |
+
+The draft's other recommended defaults are kept as the recorded assumptions A1–A30
+(`PHASE_11_PLAN.md` §2.4). The transition's standing decisions carry over: MFA enforced on credit
+submission (and on lending's credit-creating acts, A19); universal criterion 7's skip re-affirmed for
+Phase 11 and asked again at the Phase 11 → 12 transition.
+
+**Entry gate** (`PHASE_GATES.md` §2):
+
+| # | Criterion | Holds |
+|---|---|---|
+| 1 | Hard dependency phases `COMPLETE` | Yes — Phases 3 and 4 (ledger, money movement), 7 and 8 (the withdrawal and reconciliation an external payout reuses) and 10 (decisioning, confirmed here, §9) |
+| 2 | `DELIVERY_PLAN.md` §Phase 11 current and specific | Yes — the Phase 11 addendum reconciles the original section with the plan (two products, lending capital, both disbursement paths, exposure as credit's, events renamed and refused, the production reality) |
+| 3 | Bounded contexts and aggregates identified | Yes — `PHASE_11_PLAN.md` §3–§4: one new module, `lending`; credit, ledger, payments, reconciliation and identity changed by named tasks |
+| 4 | Invariants identified by ID | Yes — `INV-LND-01`…`14`, read from the catalogue; restated ones named in §6 |
+| 5 | Lifecycles drafted | Yes — terms version, capital contribution, application, offer, loan (both kinds), disbursement, payout, repayment, the proposals, payoff, and the conditions |
+| 6 | Transaction and consistency boundaries stated | Yes — §7.1's transactions, §7.2's lock order L0–L8 with §7.3's no-cycle argument, §7.4's contention table; each task |
+| 7 | Idempotency stated for every money-moving command | Yes — acceptance, disbursement, payout, draw, repayment, auto-collection, payoff, prepayment, reversal, waiver: keys, born-once arbiters and ledger keys (§7.4, §9, each task) |
+| 8 | External dependencies and failure modes listed | Yes — §12.4's payout failures, §14's fourteen scenarios, the ten mandatory scenarios |
+| 9 | Security, audit and reconciliation implications stated | Yes — §11; §12.8's three outstanding numbers and the subledger proof; the payout through payments' expectation; capital through bank recognition |
+| 10 | Backlog at task granularity with acceptance criteria | Yes — `P11-TSK-001`…`030`, `P11-TST-001`…`002`, `P11-DOC-001`, every field |
+| 11 | Required decisions have ADRs at least `Proposed` | Yes — ADR-0090…0100 |
+| 12 | `CURRENT_STATE.md` names the phase active | Yes — Phase 11 `READY`, `P11-TSK-001` the current task |
+
+**What Phase 10 handed over, disposed:** R13 — `P11-TSK-001`, first; R12's outstanding re-read — fed by
+`PlatformCreditExposure` version 2 (`P11-TSK-013`), every exposure-raising lending writer holding the
+profile lock first; R11's production consequence — §1.1, the activation gate and a debt row; the
+MINOR items of §§5 and 7 — a Phase 15 debt row in `CURRENT_STATE.md`; the unresolved-questions
+register — #12 ruled resolved as built by `P10-TSK-017` (the customer's read lists every cited reason,
+the non-adverse ceiling's included), #13's deadline corrected to the first real bureau and so the
+first production approval.
+
+**Exit criteria:** `PHASE_GATES.md` §5 Phase 11 — the five original criteria kept and made
+measurable, seventeen per-area blocks added (loan lifecycle, offer and contract, disbursement,
+schedule, interest and fees, allocation, payoff, delinquency, ledger, credit line, capital and
+exposure, multi-instance, idempotency, failure recovery, security and audit, observability,
+documentation and testing), each naming its owning tasks and evidence.
+
+**First task: `P11-TSK-001`** — the credit decision consumption port — `READY`, not started. No
+Phase 11 code exists.
+
+**Verified** (this initialisation wrote documents only): `./gradlew.bat :app:test :app:architectureTest
+--continue --rerun` on the final documents, fresh results: the app hermetic tier **845 tests across 164 suites** and the architecture tier **171 across 32** (the document guards among them - `AdrRegistersAreReconciledTest`, `DomainGlossaryTest`, `MutationDemonstrationTest`, `PlannedMetersExistTest`, `TestTaxonomyTest`, `ErrorCodeRegistryTest`, `AuditableActionRegistryTest`), **0 failures**; the document guards re-run after this line was written. The other eighteen modules' tiers were not run - no code changed - and the fleet-wide database and kafka tiers stay skipped on the owner's instruction.

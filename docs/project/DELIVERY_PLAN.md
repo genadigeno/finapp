@@ -1397,8 +1397,10 @@ nothing in this addendum is implemented".)*
   store, the live customer `ACTIVE` — `CreditRiskSignal`, `PlatformCreditExposure`, beside the
   provider-neutral `CreditDataSource` both provider ports implement, `CreditBureau` and
   `FinancialDataProvider`), with no edge to `consent`, `kyc`,
-  `party` or `ledger`, and no module depends on `credit` in Phase 10 (Phase 11's `lending` will,
-  through the published decision-read port `CreditDecisions`). Collecting credit data as a
+  `party` or `ledger`, and no module depends on `credit` in Phase 10 (Phase 11's `lending` uses
+  the published decision-read port `CreditDecisions` and the consumption port through `app`, with no
+  build edge — settled by the Phase 10 → 11 transition, ADR-0090; this read "Phase 11's `lending`
+  will, through the published decision-read port" until then). Collecting credit data as a
   second module was weighed and refused: its only consumer is credit's own snapshot. §5's
   separation is kept and made physical — credit data, credit profile, assessment, underwriting and
   decision are distinct aggregates and tables — with two sharpenings: §5's "risk assessment" is
@@ -1622,6 +1624,87 @@ See `PHASE_GATES.md` §Phase 11.
 
 ### 18. What must NOT be implemented yet
 BNPL, collections operations, securitisation, provisioning models, IFRS 9 staging.
+
+*(**Elaborated by [`PHASE_11_PLAN.md`](PHASE_11_PLAN.md)** and ADR-0090…0100 (`Proposed`) at the
+Phase 10 → 11 transition, 2026-10-10: thirty-three items across nine milestones in `BACKLOG.md`
+(`P11-TSK-001`…`-030`, `P11-TST-001`…`-002`, `P11-DOC-001`), the machines in
+`LENDING_LIFECYCLES.md` and the invariants `INV-LND-01`…`14` in `FINANCIAL_INVARIANTS.md`. The
+eighteen sections above are kept as written and made current here where they had fallen behind the
+decisions; where they disagree with this addendum or the plan, the addendum and the plan are right.
+§18 stands, and `PHASE_11_PLAN.md` §17 extends it. Until Phase 11's first task lands, nothing in this
+addendum is implemented; every statement is the decided design, corrected by the tasks that build
+it.)*
+
+- *§1 and §2 — **two products, owner decisions L1–L12** (`PHASE_11_PLAN.md` §2.3): the amortising
+  `PERSONAL_LOAN` and the revolving `CREDIT_LINE` (draws against the approved limit, revolving
+  interest, a monthly statement and minimum payment, the available limit recomputed from postings);
+  a neutral EUR reference jurisdiction with no consumer-credit-law features; ACT/365F simple daily
+  interest rounded once per period; allocation oldest-due first, fees → interest → principal, any
+  excess held as a credit balance; default at 90 days past due; no penalty interest, prepayment fee
+  or APR display — each a field of a versioned terms row pinned on the agreement.*
+- *§3 and §5 — **one new module, every seam a port** (ADR-0090). Lending (context 18) is one module,
+  `lending`, depending on `ledger`, `platform` and `sharedkernel` alone (`LendingModuleIsolationTest`):
+  credit, party standing, the wallet and payments are reached through ports `app` implements. **It
+  does not depend on `credit`** (the crossborder precedent; this plan's earlier "Phase 11's `lending`
+  will depend on `credit`" in the Phase 10 addendum is settled the other way). Transfers (context 8)
+  is not involved: `TransferExecution` posts wallet to wallet only, so a repayment is lending's own
+  posting.*
+- *§5 and §6 — **exposure is credit's, not lending's.** §6 listed "Exposure" in lending's data
+  model; exposure is Credit's judgement (`INV-CRD-09`) over facts Lending supplies —
+  `PlatformCreditExposure` version 2 (`P11-TSK-013`): committed and outstanding principal of loans
+  and an open credit line's limit, in one statement, every exposure-raising lending transaction
+  holding the party's credit profile lock first. Taking up an approval is credit's write through its
+  own port (`P11-TSK-001`, the transition's R13), never lending's. The data model as decided: Loan
+  Application, Loan Product Terms Version, Loan Offer (with expiry), Loan Agreement (immutable,
+  versioned) and its Acceptance Evidence, Loan (identity, kind and state — no amount, rate or
+  balance), Repayment Schedule and Loan Instalment, Instalment Billing, Credit Line Draw and
+  Statement, Interest Accrual (born once per account and date), Fee Assessment, Disbursement, Loan
+  Payout, Repayment and Allocation, Collection Attempt, the delinquency condition's append-only
+  history, Payoff Quote, Loan Amendment, Lending Capital Contribution.*
+- *§5 — **loan accounting** (ADR-0096): `OwnerKind.LOAN` with six per-loan accounts (principal,
+  principal due, interest accrued, interest due, fees due, credit balance), interest and fee income,
+  a seeded write-off expense posted by nothing, and **`LENDING_CAPITAL`** — the platform's own funds,
+  recognised only from bank evidence, from which every loan and draw is funded and which no
+  acceptance or draw may over-deploy (owner decision L1), so loan-funded wallet money is
+  platform-funded and the safeguarding position stays exact. "Provision" is Phase 14's.*
+- *§5 and §12 — **disbursement to the wallet and to an external bank account** (owner decision L2,
+  ADR-0097): the receivable is born with the wallet credit in both paths; the external leg is a
+  system-initiated withdrawal of the borrower's funds through payments' machinery, adopting a hold
+  placed at disbursement, its outcome read by lending (payments never calls lending — no lock-order
+  cycle); interest on an externally paid-out loan starts at the payout's terminal outcome. §12's
+  "disbursement posted but transfer fails has a compensating path" becomes: a failed or returned
+  payout leaves the funds in the borrower's wallet and the loan unaffected; nothing is compensated
+  because nothing was wrongly booked.*
+- *§7 — **API**, as decided (`PHASE_11_PLAN.md` §9): adds draw, closure, payoff quote and execution,
+  amendment acceptance, and the operator's four-eyes waivers, reversals, amendments, terms versions
+  and capital contributions; every financial command keyed per principal, the credit-creating acts
+  on a `MULTI_FACTOR` session.*
+- *§8 — **events**, as decided (`PHASE_11_PLAN.md` §10): `InterestAccrued` per day is **refused**
+  (an internal process nobody consumes; the billing and statement events carry what became due);
+  `LoanDelinquent` is renamed `LoanDelinquencyChanged` (it announces cure too); added
+  `LoanApplicationClosed`, `LoanOfferClosed`, `LoanCancelled`, `LoanPayoutConcluded`,
+  `InstalmentBilled`, `CreditLineStatementIssued`, `CreditLineDrawn`, `RepaymentReversed`,
+  `CollectionFailed`, `LoanFeeAssessed`, `LoanFeeWaived`, `LoanInterestWaived`, `LoanDefaulted`,
+  `LoanDefaultCleared`, `LoanAmended`, `LoanTermsVersionActivated` (a capital recognition is reconciliation's fact, announced by no lending event).*
+- *§10 — portfolio outstanding and schedule-vs-actual drift are **audited reports**, not series
+  (ADR-0072); the series are counts, ages and verdicts (`PHASE_11_PLAN.md` §15).*
+- *§11 and §12 — the **ten mandatory test scenarios** (owner decision L12, `PHASE_11_PLAN.md`
+  §13.2), each a named test and in the storm; the "early settlement rebate" is zero by construction
+  (daily accrual) and tested as such.*
+- *§13 — reconciliation: loan balances reconcile to postings and interest receivable to accruals
+  by the subledger proof (internal flows have no external evidence); an external payout reconciles
+  through payments' expectation; lending capital reconciles to the bank statement it was recognised
+  from. "Repayments must reconcile to incoming transfers" applies to the deferred external inbound
+  repayment (via wallet top-ups, payments' reconciliation).*
+- ***The production reality** (owner decision L11): production has only fail-safe credit sources
+  and a person may not approve on an absent bureau balance (the transition's R11), so Phase 11
+  originates only against the simulators until a real bureau is connected (unresolved #13/#14); no
+  lending terms version is activated in production, and the runbook names the activation gate.*
+- *§18 — **extended** (`PHASE_11_PLAN.md` §17): besides BNPL, collections operations,
+  securitisation, provisioning and IFRS 9 staging, Phase 11 builds no refinance (owner: the Phase 11
+  → 12 transition), write-off or GL (Phase 14), consumer-credit-law feature, penalty interest,
+  prepayment fee, acceleration, variable rate, external inbound repayment rail, capital return or
+  real bureau connectivity.*
 
 ---
 

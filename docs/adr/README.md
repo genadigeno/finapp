@@ -22,7 +22,9 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   before accepting any; ADR-0074…0083 were written `Proposed` at the Phase 8 → 9 transition and
   accepted by the Phase 9 review (`P9-DOC-001`, 2026-10-07) in the same way; ADR-0084…0089 were
   written `Proposed` at the Phase 9 → 10 transition and accepted by the Phase 10 review
-  (`P10-DOC-001`, 2026-10-09) in the same way. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
+  (`P10-DOC-001`, 2026-10-09) in the same way; ADR-0090…0100 were written `Proposed` at the
+  Phase 10 → 11 transition (2026-10-10), to be read against the code and accepted by the Phase 11
+  review (`P11-DOC-001`). *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
 
@@ -119,6 +121,17 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0087](ADR-0087-the-credit-decision.md) | The credit decision: a keyed request, a sealed snapshot, born-once assessment, evaluation and decision, recorded immutably with ordered reason codes, explained and replayed | Accepted | 10 | Credit · Platform · Identity · Events |
 | [0088](ADR-0088-affordability-and-exposure.md) | Affordability and exposure: exact decimal in one currency, rounded once at declared points, and the exposure an approval reserves judged under the party's profile lock | Accepted | 10 | Credit · Shared Kernel · Platform |
 | [0089](ADR-0089-underwriting-and-manual-review.md) | Underwriting and manual review: a referral opens a case, a person decides with reasons, never overrides a hard decline, never second-approves their own decision, and an unworked case expires with a recorded reason | Accepted | 10 | Credit · Identity · Audit |
+| [0090](ADR-0090-the-lending-bounded-context.md) | The lending bounded context: the contract and its servicing facts, none of the money; two products, one account model | Proposed | 11 | Lending · Credit · Ledger · Accounts · Payments · Reconciliation · Platform |
+| [0091](ADR-0091-decision-consumption-and-exposure.md) | Taking up a credit decision: a credit-owned consumption under the party's profile lock, and exposure that counts committed principal, outstanding principal and open credit lines' limits | Proposed | 11 | Credit · Lending · Ledger · App |
+| [0092](ADR-0092-loan-terms-and-the-versioned-agreement.md) | Loan terms as versioned data and the immutable, versioned agreement | Proposed | 11 | Lending · Identity · Platform · Audit |
+| [0093](ADR-0093-the-amortisation-schedule.md) | The amortisation schedule: a deterministic projection of the agreement, billed from actual accrual | Proposed | 11 | Lending · Shared Kernel |
+| [0094](ADR-0094-interest-accrual-and-day-count.md) | Interest accrual and day count: ACT/365F simple daily interest, born once per account and date, rounded once per period, on the database clock in a declared zone | Proposed | 11 | Lending · Ledger · Platform |
+| [0095](ADR-0095-repayment-allocation.md) | Repayment allocation: an explicit, versioned order pinned by the agreement, born with the repayment and conserving by constraint | Proposed | 11 | Lending · Ledger · Accounts |
+| [0096](ADR-0096-loan-accounting-and-lending-capital.md) | Loan accounting and lending capital: per-loan ledger accounts with due split from not-due, the posting rules, and a lending-capital equity account recognised from bank evidence that funds every loan | Proposed | 11 | Lending · Ledger · Reconciliation · Settlement · Identity |
+| [0097](ADR-0097-disbursement-to-wallet-and-external-account.md) | Disbursement to the borrower's wallet and to an external bank account: the receivable is born with the wallet credit, and the external leg is a payments withdrawal lending only reads | Proposed | 11 | Lending · Payments · Ledger · Accounts · Payment Methods · Settlement · Reconciliation |
+| [0098](ADR-0098-delinquency-default-and-the-collections-boundary.md) | Delinquency, default and the collections boundary: days past due derived from dates, conditions apart from the lifecycle, recorded append-only on change, and nothing legally sensitive built | Proposed | 11 | Lending · Risk · Ledger · Events |
+| [0099](ADR-0099-servicing-corrections.md) | Servicing corrections: waivers, reversals and restructuring as reasoned, four-eyes acts that post, never edits | Proposed | 11 | Lending · Ledger · Identity · Audit · Credit |
+| [0100](ADR-0100-the-revolving-credit-line.md) | The revolving credit line: draws against an available limit derived under the line's lock, monthly statements with a minimum payment, closure through `CLOSING`, and exposure that counts the committed limit | Proposed | 11 | Lending · Credit · Ledger · Accounts |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -141,8 +154,6 @@ Recorded so the decisions are not made implicitly. Each is written at its phase'
 | 5 | Payment intent vs attempt modelling |
 | 5 | Unknown-state handling and reconciliation-by-query sweeper |
 | 5 | Webhook ingestion, signature verification and deduplication |
-| 11 | Interest accrual and day-count convention |
-| 11 | Repayment allocation order |
 | 12 | BNPL refund and instalment adjustment policy |
 | 13 | Synchronous risk evaluation and fail-safe policy |
 | 13 | Risk rules versioning; case management model |
@@ -165,3 +176,10 @@ data, the deterministic evaluator and its engine version) and ADR-0087 (the seal
 immutable decision and its replay), and the bureau adapter and credit-data retention as ADR-0085
 (provider-neutral ports, encrypted evidence with a stored `retain_until`, its purge deferred to
 Phase 15 by that ADR's own decision).)*
+
+*(The two Phase 11 rows left it at the Phase 10 → 11 transition (2026-10-10): interest accrual and
+the day-count convention was written as ADR-0094 (ACT/365F simple daily interest, born once per
+account and date, rounded once per period, on the database clock in a declared zone) and
+repayment allocation order as ADR-0095 (oldest due first, fees before interest before principal,
+the order versioned terms data pinned by the agreement) — and loan accounting, which
+`DELIVERY_PLAN.md` §14 also anticipated, as ADR-0096.)*

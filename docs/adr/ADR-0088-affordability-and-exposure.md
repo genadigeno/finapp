@@ -255,3 +255,8 @@ ADR-0003, ADR-0039.
 - **Acceptance.** **As built** (`P10-DOC-001`, 2026-10-09): the Phase 10 review read this ADR
   against the code, corrected it in place above (and the proposal door, point 5 (a)), and accepted
   it.
+- (2026-10-10, the Phase 10 → 11 transition) ADR-0091 (`Proposed`) designs the consumption port and
+  `PlatformCreditExposure` version 2 this ADR anticipated (points 4 and 6): credit's own
+  `CreditDecisionConsumptions`, the only path to `credit_decision_consumption` (credit `V021`, a
+  `SECURITY DEFINER` function, the application role's `INSERT` revoked), and version 2 counting
+  committed and outstanding loan principal and an open credit line's limit; this ADR's decisions stand.
