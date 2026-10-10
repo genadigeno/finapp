@@ -47,16 +47,21 @@ public final class JdbcDecisionSnapshotStore implements DecisionSnapshotStore {
             String provider;
             int normaliser;
             boolean fresh;
+            boolean staleWhenRecorded;
             try (PreparedStatement select = unitOfWork.prepareStatement(
                     "SELECT id, source_kind, provider_code, normaliser_version,"
                             // INV-CRD-08 (P10-DOC-001): the age runs from the EARLIER of the provider's stated
                             // retrieval and our own recording - a provider clock ahead of ours, or a re-stamped file,
                             // never keeps stale data fresh. Both judged on the database's clock.
                             + " LEAST(retrieved_at, recorded_at) >= transaction_timestamp() - ? * interval '1 millisecond'"
-                            + " AS fresh"
+                            + " AS fresh,"
+                            // The Phase 10 -> 11 transition: stale already when recorded - re-asking that provider is
+                            // a paid pull for the same stale file, so the freeze reads the kind unavailable instead.
+                            + " retrieved_at < recorded_at - ? * interval '1 millisecond' AS stale_when_recorded"
                             + " FROM credit.credit_record WHERE data_request_id = ?")) {
                 select.setLong(1, maxAge.toMillis());
-                select.setObject(2, dataRequest.value());
+                select.setLong(2, maxAge.toMillis());
+                select.setObject(3, dataRequest.value());
                 try (ResultSet row = select.executeQuery()) {
                     if (!row.next()) {
                         return Optional.empty();
@@ -66,6 +71,7 @@ public final class JdbcDecisionSnapshotStore implements DecisionSnapshotStore {
                     provider = row.getString("provider_code");
                     normaliser = row.getInt("normaliser_version");
                     fresh = row.getBoolean("fresh");
+                    staleWhenRecorded = row.getBoolean("stale_when_recorded");
                 }
             }
             List<StoredAttribute> attributes = new ArrayList<>();
@@ -79,7 +85,7 @@ public final class JdbcDecisionSnapshotStore implements DecisionSnapshotStore {
                     }
                 }
             }
-            return Optional.of(new StoredRecord(id, kind, provider, normaliser, fresh, attributes));
+            return Optional.of(new StoredRecord(id, kind, provider, normaliser, fresh, attributes, staleWhenRecorded));
         } catch (SQLException failure) {
             throw new CreditStorageException(DatabaseFailure.describe("reading a credit record", failure));
         }

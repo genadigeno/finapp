@@ -170,7 +170,8 @@ class BureauSelectionDatabaseTest {
         CreditDataRequestId id = opened(collection.open(opening(party), correlation()));
         assertThat(status(id)).isEqualTo(CreditDataRequestStatus.RECEIVED);
         assertThat(count("SELECT count(*) FROM credit.credit_record WHERE data_request_id = ? AND provider_code ="
-                + " 'bureau-sim-b' AND normaliser_version = 1 AND source_kind = 'BUREAU'", id.value())).isEqualTo(1);
+                + " 'bureau-sim-b' AND normaliser_version = " + SimulatedSecondBureauAdapter.NORMALISER_VERSION
+                + " AND source_kind = 'BUREAU'", id.value())).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM credit.credit_record_attribute a JOIN credit.credit_record r"
                 + " ON a.record_id = r.id WHERE r.data_request_id = ?", id.value())).isEqualTo(CreditBureau.ATTRIBUTES.size());
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = '"
@@ -188,7 +189,8 @@ class BureauSelectionDatabaseTest {
     }
 
     @Test
-    @DisplayName("an answer naming another provider than the request's is never recorded - nothing born, still REQUESTED")
+    @DisplayName("an answer naming another provider than the request's is never recorded - UNAVAILABLE, its attempt"
+            + " UNRECORDED and its bytes kept, never REQUESTED forever (Phase 10 -> 11 transition)")
     void anAnswerNamingAnotherProviderIsNeverRecorded() {
         // Registered as b, answering as a: a misrouted or mislabelled adapter - the record must not name a provider the
         // request was not born naming (INV-CRD-07).
@@ -206,11 +208,15 @@ class BureauSelectionDatabaseTest {
         CreditDataCollection collection = collection(order(Set.of(), mislabelled));
         CreditDataRequestId id = opened(TRANSACTIONS.inTransaction(
                 uow -> collection.openWithin(uow, opening(UUID.randomUUID()), correlation())));
-        org.assertj.core.api.Assertions.assertThatIllegalStateException()
-                .isThrownBy(() -> collection.ask(id, correlation()))
-                .withMessageContaining("bureau-sim-a").withMessageContaining("bureau-sim-b");
-        assertThat(status(id)).isEqualTo(CreditDataRequestStatus.REQUESTED);
+        // The record transaction refuses (and rolls back); the outcome is then explicit, in a transaction of its own -
+        // never a request left REQUESTED to be re-asked every cadence until its decision request expires.
+        assertThat(collection.ask(id, correlation())).isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        assertThat(status(id)).isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        assertThat(scalar("SELECT string_agg(outcome, ',' ORDER BY attempt) FROM credit.data_request_attempt"
+                + " WHERE data_request_id = ?::uuid", id.value().toString())).isEqualTo("UNRECORDED");
         assertThat(count("SELECT count(*) FROM credit.credit_record WHERE data_request_id = ?", id.value())).isZero();
+        assertThat(count("SELECT count(*) FROM credit.credit_evidence WHERE data_request_id = ? AND NOT duplicate"
+                + " AND content_ciphertext IS NOT NULL", id.value())).as("the bytes kept, for a person to read").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?", id.value())).isZero();
     }
 

@@ -27,14 +27,19 @@ public interface DecisionSnapshotStore {
     /** One stored attribute, as read back. */
     record StoredAttribute(CreditAttributeCode code, AttributeValue value) {}
 
-    /** A data request's record, judged against a maximum age. */
+    /**
+     * A data request's record, judged against a maximum age: {@code fresh} at the freeze, and whether it was already
+     * stale when we recorded it ({@code retrieved_at < recorded_at - maxAge} - the provider dated its own report past
+     * the age; the Phase 10 -> 11 transition: such a record is never re-collected).
+     */
     record StoredRecord(
             CreditRecordId id,
             CreditSourceKind kind,
             String providerCode,
             int normaliserVersion,
             boolean fresh,
-            List<StoredAttribute> attributes) {}
+            List<StoredAttribute> attributes,
+            boolean staleWhenRecorded) {}
 
     /** A stored snapshot's columns. */
     record StoredSnapshot(

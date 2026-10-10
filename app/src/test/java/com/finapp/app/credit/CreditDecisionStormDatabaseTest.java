@@ -872,16 +872,13 @@ class CreditDecisionStormDatabaseTest {
         assertThat(scalar("SELECT status FROM credit.data_request WHERE id = ?::uuid", unavailable)).isEqualTo("UNAVAILABLE");
         census("a source past its deadline");
 
-        // A STALE RECORD: re-collected under a new reference, never decided stale.
+        // A STALE RECORD: re-collected under a new reference, never decided stale. Fresh when recorded, it aged past the
+        // policy's maximum age while the request waited - the record a re-collection is for (a record already stale when
+        // recorded is the kind's unavailability, never another pull: ADR-0085 section 11, the Phase 10 -> 11 transition).
         Party stale = newParty(Profile.GOOD);
         UUID staleRequest = submitted(stale, lineBody(100_000));
-        Instant now = databaseNow();
-        BUREAU.retrievedAt(now.minus(Duration.ofDays(40)));
-        try {
-            step(a.holding(), staleRequest);
-        } finally {
-            BUREAU.retrievedAt(now.minus(Duration.ofHours(1)));
-        }
+        step(a.holding(), staleRequest);
+        ageBureauRecord(staleRequest, Duration.ofDays(40));
         assertThat(drive(staleRequest, b.progress(), a.progress())).isEqualTo("DECIDED");
         assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ? AND source_kind = 'BUREAU'",
                 staleRequest)).as("the stale record re-collected under a new reference: %s", rows("SELECT d.source_kind,"
@@ -995,8 +992,10 @@ class CreditDecisionStormDatabaseTest {
         assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ?", collect)).isEqualTo(2);
         census("a crash opening the collection");
 
-        // THE RECORDING TRANSACTION KILLED after both providers answered: retried under the same references, one
-        // report each at the providers.
+        // THE RECORDING TRANSACTION KILLED after both providers answered: each answer recorded UNAVAILABLE in a
+        // transaction of its own, its attempt UNRECORDED and its bytes kept (the Phase 10 -> 11 transition, ADR-0085
+        // section 11 - never left REQUESTED to be re-asked to the decision request's expiry); retried under the same
+        // references, one report each at the providers.
         Party recording = newParty(Profile.GOOD);
         UUID record = submitted(recording, lineBody(100_000));
         int bureauPulls = BUREAU.pulls();
@@ -1005,8 +1004,9 @@ class CreditDecisionStormDatabaseTest {
                 + " credit.data_request WHERE decision_request_id = '" + record + "'::uuid)", true)) {
             step(a.progress(), record);
         }
-        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ? AND status = 'REQUESTED'",
-                record)).as("both recordings died").isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM credit.data_request d WHERE d.decision_request_id = ? AND d.status ="
+                + " 'UNAVAILABLE' AND EXISTS (SELECT 1 FROM credit.data_request_attempt t WHERE t.data_request_id = d.id"
+                + " AND t.outcome = 'UNRECORDED')", record)).as("both recordings died, each an explicit outcome").isEqualTo(2);
         assertThat(drive(record, b.progress())).isEqualTo("DECIDED");
         assertThat(BUREAU.pulls() - bureauPulls).as("the bureau's one report").isEqualTo(1);
         assertThat(FINDATA.pulls() - findataPulls).as("the provider's one summary").isEqualTo(1);
@@ -1941,6 +1941,26 @@ class CreditDecisionStormDatabaseTest {
     }
 
     /** Ages a data request's deadline past - the owner's act, the machine's trigger suspended for it. */
+    /** Ages {@code request}'s bureau record by {@code ago} - retrieved and recorded alike - as the owner. */
+    private static void ageBureauRecord(UUID request, Duration ago) throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement ddl = owner.createStatement();
+                    PreparedStatement age = owner.prepareStatement("UPDATE credit.credit_record SET"
+                            + " retrieved_at = retrieved_at - ? * interval '1 millisecond',"
+                            + " recorded_at = recorded_at - ? * interval '1 millisecond' WHERE data_request_id IN"
+                            + " (SELECT id FROM credit.data_request WHERE decision_request_id = ? AND source_kind = 'BUREAU')")) {
+                ddl.execute("ALTER TABLE credit.credit_record DISABLE TRIGGER USER");
+                age.setLong(1, ago.toMillis());
+                age.setLong(2, ago.toMillis());
+                age.setObject(3, request);
+                assertThat(age.executeUpdate()).isEqualTo(1);
+                ddl.execute("ALTER TABLE credit.credit_record ENABLE TRIGGER USER");
+            }
+            owner.commit();
+        }
+    }
+
     private static void ageDeadline(UUID dataRequest) throws SQLException {
         try (Connection owner = DatabaseRoles.migrator()) {
             owner.setAutoCommit(false);

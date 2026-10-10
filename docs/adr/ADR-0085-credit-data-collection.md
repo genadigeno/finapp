@@ -98,7 +98,8 @@ meets the outside world, and every hazard of the outside world applies:
    re-reads the gate under the row lock, and a closed gate moves `REQUESTED → CONSENT_WITHDRAWN`
    with nothing asked. `UNAVAILABLE → CONSENT_WITHDRAWN` is admitted by the trigger but taken by no
    writer. Since `P10-DOC-001` the claim skips data requests whose decision request is closed —
-   point 9.)*
+   point 9. Since the Phase 10 → 11 transition (point 11) a `REQUESTED` request is claimed only
+   before its deadline too, and the overdue report moves one past it `REQUESTED → UNAVAILABLE`.)*
 
 4. **Consent is checked at both ends of every pull, each time in the acting transaction**
    (`INV-CRD-03`), through the `CreditConsentGate` port. The source kind maps to its purpose —
@@ -189,7 +190,9 @@ meets the outside world, and every hazard of the outside world applies:
    `P10-DOC-001`'s code correction the age runs from `LEAST(retrieved_at, recorded_at)` — the
    earlier of the provider-stated retrieval and our own database-stamped recording — so a provider
    clock ahead of ours can no longer keep a record fresh; before, the provider's `retrieved_at`
-   alone was judged.)* A record one second past the maximum age is not frozen: the request
+   alone was judged.)* *(Bounded at the Phase 10 → 11 transition, point 11: only a record fresh
+   when recorded is re-collected, and only once per kind per decision request; otherwise the kind
+   is unavailable for the request.)* A record one second past the maximum age is not frozen: the request
    takes **`READY → COLLECTING`** — the machine's one backward edge, taken before any snapshot
    exists (scenario 9) — and the source is re-collected under a new data request (a `RECEIVED`
    one is terminal). The maximum age is the parameter of the policy version pinned on the request
@@ -228,7 +231,9 @@ meets the outside world, and every hazard of the outside world applies:
       asking instance no longer configures (a redeploy, a rolling deploy with diverging
       configuration) is `UNAVAILABLE(PROVIDER_ERROR)` **without a call** — never a substitute
       under the same reference. Tx2 refuses an answer naming another provider than the request's
-      (`INV-CRD-07`: the record names the provider its request was born naming).
+      (`INV-CRD-07`: the record names the provider its request was born naming) — *since the
+      Phase 10 → 11 transition (point 11), the refusal ends as `UNAVAILABLE` with an `UNRECORDED`
+      attempt and the bytes kept, never a request left `REQUESTED`*.
     - **Mid-request failover is refused** (Alternatives). An unavailable source reaches its
       deadline and the policy's fallback (point 7); both providers disabled, or the selected one
       unavailable, is `UNAVAILABLE` and never data. A stale record re-collected at the freeze
@@ -242,6 +247,59 @@ meets the outside world, and every hazard of the outside world applies:
       normalises one person to the same attribute codes and values; each adapter's vocabulary is
       confined to its own file (`CreditProviderVocabularyIsConfinedTest`). Replay reads stored
       attributes, so the provider never matters to a past decision.
+
+11. **Collection is bounded: every data request ends, and a source is re-collected at most
+    once per decision request** (*added at the Phase 10 → 11 transition, 2026-10-10*, from its
+    adversarial audits). Three rules close the three ways the machine above could ask forever.
+    - **The deadline bounds a `REQUESTED` request too.** The retry claim takes a data request only
+      before its deadline, whatever its state (`JdbcCreditDataRequestStore.claimDue`:
+      `status IN ('REQUESTED','UNAVAILABLE') AND deadline_at > statement_timestamp() AND NOT
+      unavailable_reported`). The overdue report (`claimOverdue`) takes a `REQUESTED` request past
+      its deadline as well as an `UNAVAILABLE` one, and moves it to `UNAVAILABLE` as it sets
+      `unavailable_reported` — one conditional statement, `FOR UPDATE SKIP LOCKED`, so
+      `CreditDataUnavailable` is still emitted exactly once and the freeze then reads the kind
+      `ABSENT` with `SOURCE_UNAVAILABLE` (point 7). Before, a `REQUESTED` request carried no deadline
+      bound: an answer that could never be recorded was re-asked every cadence until the decision
+      request expired — never `UNAVAILABLE`, never the fallback. An answer that arrives after the
+      report finds the request no longer `REQUESTED` and is kept as duplicate evidence. Credit
+      `V019` indexes the report's claim.
+    - **A failure to record is an explicit outcome, in a transaction of its own.** When Tx2
+      fails — an answer naming another provider (`INV-CRD-07`, point 10), a `CHECK` refusing a
+      value, a retrieval instant outside the database's range (a provider's
+      `"+300000-01-01T00:00:00Z"` is a valid `Instant`) — it rolls back, and
+      `CreditDataCollection.ask` records `REQUESTED → UNAVAILABLE` with the attempt `UNRECORDED`
+      (credit `V020` adds the outcome: not the provider's `MALFORMED`, since the cause may be ours —
+      the storm kills the recording connection itself) and the bytes kept as evidence (or, if the
+      bytes themselves are refused, without them), the
+      gate re-read first exactly as Tx2 reads it (absent: `CONSENT_WITHDRAWN`, nothing kept). Under
+      the row lock and only from `REQUESTED`, so a Tx2 whose commit succeeded but whose answer was
+      lost finds `RECEIVED` and does nothing. `UNAVAILABLE` is retried at the cadence until the
+      deadline, so a transient failure (a dropped connection) costs a retry; a deterministic one
+      reaches the deadline and the fallback. A pull that throws is not caught — no answer exists
+      to record — and the deadline bound above ends it.
+    - **Re-collection is for data that aged, once.** At the freeze, a `RECEIVED` record past the
+      maximum age is re-collected (point 8) **only** if it was fresh when we recorded it
+      (`retrieved_at >= recorded_at - max age`) and it is the kind's first data request on the
+      decision request. A record already stale when recorded — the provider dated its own report
+      past the age — or a second staleness for one kind makes that kind **unavailable for the
+      request**: its attributes `ABSENT` with the `Unavailable` provenance naming the stale data
+      request, `SOURCE_UNAVAILABLE` recorded, the pinned policy's fallback deciding (point 7) —
+      never another paid pull. Before, a provider stamping every report older than the maximum age
+      looped `RECEIVED → READY → stale → new reference → new pull` until the request expired. The
+      judgement reads rows only (the record's two instants, the count of the kind's data requests
+      under the request's row lock), so every freezer reaches the same verdict and the snapshot is
+      born once as before.
+    - **The pull is made only for an open decision request.** `ask` reads the decision request's
+      status (a plain read — lock-order element (2) is never taken after (4)) in the transaction
+      that reads the data request, and asks nothing for a closed one; with the claim's `EXISTS`
+      (point 9) this leaves only the milliseconds between that read and the call.
+    - **A provider body is parsed, not matched** (`CreditProviderJson`). The three adapters read
+      a body with a strict JSON parser — duplicate keys refused at any depth, a token after the
+      object refused, anything but one object refused — and read top-level fields only. Before,
+      a regular expression accepted `{A}{B}` (two reports, A's fields winning), a duplicate key
+      (the first winning), trailing garbage and a field nested inside another object as a
+      `Received` answer. Each case is a golden file for every adapter; the normaliser versions
+      moved (`bureau-sim-a` 3, `findata-sim-a` 3, `bureau-sim-b` 2).
 
 ## Alternatives Considered
 
@@ -367,3 +425,17 @@ ADR-0038, ADR-0046, ADR-0066, ADR-0081.
   `transaction_timestamp()` as the freeze's clock (point 8).
 - **Acceptance.** The Phase 10 review (`P10-DOC-001`) read this ADR against the code, corrected it
   where it had drifted, and accepted it on 2026-10-09.
+- **Phase 10 → 11 transition** (2026-10-10, its adversarial audits' IMPORTANT findings): point 11.
+  Proven red first by `BureauCollectionDatabaseTest#anUnrecordableAnswerIsUnavailableAndReachesItsDeadline`,
+  `#aRequestedRequestPastItsDeadlineIsReportedNotReasked` and `#aDataRequestOfAClosedRequestIsNeverAsked`
+  (each re-run against `bureau-sim-b`), `BureauSelectionDatabaseTest#anAnswerNamingAnotherProviderIsNeverRecorded`,
+  `DecisionSnapshotDatabaseTest#aRecordStaleWhenRecordedIsUnavailableNeverReCollected` and
+  `#aSecondStalenessIsUnavailableNeverAnotherPull`,
+  `DecisionOrchestrationDatabaseTest#aProviderStampingEveryReportStaleIsUnavailableNotALoop`, and the
+  concatenated, duplicate-key, trailing-token and nested-field golden files of all three adapters.
+  Recorded, not fixed (the transition's debt list): a provider answer echoing no reference or
+  subject, so a misrouted answer for another person is not detectable by the adapter; the
+  vocabulary guard's gaps; a late duplicate after a withdrawal keeping its payload; an attribute
+  missing from a `Received`-shaped answer silently `ABSENT`; the evidence key ring (one key version
+  read); the over-64 KiB body read whole before the bound, and a body that stalls after its
+  headers.
