@@ -47,7 +47,9 @@ class OperationalChartMigrationTest {
                     // P9-TSK-009: the conversion's spread revenue, with its one poster.
                     "db/migration/ledger/V020__fx_spread_revenue_joins_the_chart.sql",
                     // P9-TSK-012: FX_REALISED_GAINS and FX_REALISED_LOSSES in five currencies.
-                    "db/migration/ledger/V023__fx_realised_results_join_the_chart.sql");
+                    "db/migration/ledger/V023__fx_realised_results_join_the_chart.sql",
+                    // P11-TSK-003: the loan P&L purposes and LENDING_CAPITAL in five currencies.
+                    "db/migration/ledger/V026__the_loan_book_and_lending_capital_join_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -99,6 +101,17 @@ class OperationalChartMigrationTest {
                     // outbound credit credits (P9-TSK-019).
                     Map.entry(AccountPurpose.CORRIDOR_CLEARING, AccountType.LIABILITY),
                     Map.entry(AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE),
+                    // ADR-0096 section 1 (P11-TSK-003, V026): a loan's earned interest and fees -
+                    // income, growing on the credit side an accrual and an assessment credit.
+                    Map.entry(AccountPurpose.LOAN_INTEREST_INCOME, AccountType.REVENUE),
+                    Map.entry(AccountPurpose.LOAN_FEE_INCOME, AccountType.REVENUE),
+                    // ADR-0096 rule 14: the deferred write-off's loss (Phase 14) - an expense,
+                    // seeded now so the account plan never changes, posted by nothing in Phase 11.
+                    Map.entry(AccountPurpose.LOAN_WRITE_OFF_EXPENSE, AccountType.EXPENSE),
+                    // ADR-0096 section 4 / PHASE_11_PLAN.md section 12.9: the platform's own funds
+                    // committed to lending - EQUITY, a source of funds, never a platform-owned
+                    // LIABILITY (the platform cannot owe itself), credited only by bank recognition.
+                    Map.entry(AccountPurpose.LENDING_CAPITAL, AccountType.EQUITY),
                     Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));
 
     private static final Pattern ROW =

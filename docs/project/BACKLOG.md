@@ -16138,7 +16138,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   permission the later tasks need; nothing depends on it.
 - **Definition of done**: `DOD-ARCH`, `DOD-SEC`, `DOD-BUILD`. **Risk**: Low. **Cx**: S.
 
-**P11-TSK-003 — The loan chart of accounts and the lending-capital account** — `READY` *(marked by `P11-TSK-002`'s completion gate, 2026-10-10)*
+**P11-TSK-003 — The loan chart of accounts and the lending-capital account** — `COMPLETE` (2026-10-11; marked `READY` by `P11-TSK-002`'s completion gate)
+- **As built** (2026-10-11): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is ledger `V026` (`OwnerKind.LOAN`; the ten purposes; the four enum-fed `CHECK`s recreated; the four operational accounts seeded in all five supported currencies, ids `01a0e2bc-8200-7026-…` below the ceiling; the binding trigger restated), `OwnerKind`, `AccountPurpose` (the members; `LENDING_CAPITAL` in `reconciledPositions()`, the other nine in `closedToFreeAdjustments()`), lending's `LoanAccounts` and `LoanLedgerAccounts`; the suites are `LoanChartDatabaseTest` (six cases), ledger's `LoanBookPurposesTest`, lending's `LoanAccountsTest`, `app`'s `LendingBooksHaveOnePosterTest`, with `LedgerAccountMigrationTest`, `AdjustmentProposalMigrationTest` and `OperationalChartMigrationTest` (`everySeededIdSortsBeforeEveryRuntimeId` among its cases) re-pointed at and extended over `V026`. **Refinements** (recorded in ADR-0096's Follow-up): there is no `AccountPurposeCheckGuardTest` - the guard holding the `CHECK`s to `AccountPurpose.sqlValueList()` / `sqlOwnerKindRule()` is `LedgerAccountMigrationTest`, and the binding list's `AdjustmentProposalMigrationTest`, both now reading `V026`; the convergence identity is `V002`'s partial unique index `(owner_ref, purpose, currency)`, the owner kind deriving from the purpose; `openFor` returns a typed `LoanLedgerAccounts`, refuses an unsupported currency and refuses (never adopts) a converged account of another type, normal balance, currency or owner (`INV-LED-06` at the opener); `LENDING_CAPITAL` is closed to free adjustments through `reconciledPositions()` and no loan purpose is a reconciled position; `LoanChartDatabaseTest` lives in lending's database tier and gained `#theAccountsCommitWithTheCallerOrNotAtAll` and `#aConvergedAccountOfTheWrongTypeIsRefused`; `LendingBooksHaveOnePosterTest` sits in `app`'s hermetic tier beside `FxBooksHaveOnePosterTest`. A consequence recorded: `finapp.reconciliation.line.unattributed` gains a `purpose=LENDING_CAPITAL` series (must read 0). No column is added, so nothing to classify; no `AUDITABLE_ACTIONS.md` or `ERROR_CONTRACT.md` row is this task's; `DISTRIBUTED_EXECUTION.md`'s `ledger.ledger_account` row names the opener.
 - **Objective**: every loan figure and the platform's lending capital have a typed, guarded ledger
   account before any loan exists.
 - **Bounded context**: Ledger; Lending.
@@ -16195,7 +16196,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   binding on the opener; F8: `LENDING_CAPITAL` reconciled by `-004`), `DOD-ARCH`. **Risk**: Medium.
   **Cx**: S.
 
-**P11-TSK-004 — Lending capital: contribution, recognition, headroom and the capital proof** — `PLANNED`
+**P11-TSK-004 — Lending capital: contribution, recognition, headroom and the capital proof** — `READY` *(marked by `P11-TSK-003`'s completion gate, 2026-10-11)*
 - **Objective**: fund lending from the platform's own money, recognised only from bank evidence and
   never over-deployed, so the safeguarding position stays exact (L1, ADR-0096).
 - **Bounded context**: Lending (the administration); Settlement and Reconciliation (the

@@ -217,3 +217,38 @@ dates from stored rows.
 correct by the projection's row lock; a transaction posting more than one entry locks the union of
 their projection rows in order first (`PostingService.lockBalancesInOrder`, ADR-0076 §9). No
 revaluation (ADR-0076): the position is closed by covers, never marked to market.
+
+## 10. Lending — *as built by Phase 11*
+
+**The account plan** (ledger `V026`, `P11-TSK-003`; ADR-0096 §1, `PHASE_11_PLAN.md` §12.8–§12.9).
+`OwnerKind.LOAN` - `owner_ref` names the loan or credit line by value, opaque, no foreign key into
+lending's schema (the `CUSTOMER` reasoning) - owns six accounts per loan, opened together in the
+loan's one currency by lending's `LoanAccounts.openFor` over `LedgerAccountStore.createOrConverge`
+(the partial unique index on `(owner_ref, purpose, currency)` arbitrates ten openers into one set):
+
+| Purpose | Owner | Type / normal | Holds |
+|---|---|---|---|
+| `LOAN_PRINCIPAL` | LOAN | ASSET / DEBIT | principal outstanding, not yet due (a line: drawn, not billed) |
+| `LOAN_PRINCIPAL_DUE` | LOAN | ASSET / DEBIT | billed principal unpaid |
+| `LOAN_INTEREST_ACCRUED` | LOAN | ASSET / DEBIT | interest earned, not yet due |
+| `LOAN_INTEREST_DUE` | LOAN | ASSET / DEBIT | billed interest unpaid |
+| `LOAN_FEES_DUE` | LOAN | ASSET / DEBIT | assessed fees unpaid |
+| `LOAN_CREDIT_BALANCE` | LOAN | LIABILITY / CREDIT | money received beyond every receivable, owed back |
+| `LOAN_INTEREST_INCOME` | OPERATIONAL | REVENUE / CREDIT | seeded per supported currency |
+| `LOAN_FEE_INCOME` | OPERATIONAL | REVENUE / CREDIT | seeded per supported currency |
+| `LOAN_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE / DEBIT | seeded; posted by nothing in Phase 11 |
+| `LENDING_CAPITAL` | OPERATIONAL | EQUITY / CREDIT | the platform's own funds committed to lending, credited only by bank recognition (rule 0, `P11-TSK-004`) |
+
+The per-loan type is declared once, by the opener (`LoanAccounts.declaredTypeOf`), and a converged
+account of any other type, currency or owner is refused, never adopted (`INV-LED-06`). The four
+operational accounts are seeded with UUIDv7 literals below the id ceiling.
+
+**Guarded.** All ten are closed to free adjustments (`AccountPurpose.closedToFreeAdjustments()`, the
+`V015` binding trigger restated by `V026`): a `MANUAL` line on any of them is refused at the domain
+and by the trigger. `LENDING_CAPITAL` is also a reconciled position, so completeness reports any line
+on it no recognition explains; the loan book is not - it opens no expectations - and is proven by the
+subledger proof (`P11-TSK-029`). Statically, `LendingBooksHaveOnePosterTest` lets only lending name a
+`LOAN_*` purpose and only the declaration (and, from `P11-TSK-004`, capital recognition and its
+readers) name `LENDING_CAPITAL`. No `*_CLEARING` purpose arrived (`INV-RAIL-04`): lending moves no
+money across a rail itself. Nothing posts to any of the ten yet; the posting rules are ADR-0096 §2's,
+each built by the task that posts it.

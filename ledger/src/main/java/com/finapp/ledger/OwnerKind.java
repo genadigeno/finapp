@@ -56,11 +56,24 @@ public enum OwnerKind {
      * and an account shared by the purpose is exactly where they would meet - so the account
      * itself says who owes.
      */
-    COUNTERPARTY;
+    COUNTERPARTY,
+
+    /**
+     * Owned by one loan or credit line - the platform's claims on a borrower and what it owes the
+     * borrower back under that agreement (`P11-TSK-003`, ADR-0096 section 1; {@code INV-LND-01}).
+     * {@code owner_ref} names the loan, by value and opaque, exactly as {@code CUSTOMER} names
+     * the customer account: the ledger does not know what a Loan is, and no foreign key reaches
+     * lending's schema (ADR-0029). Deliberately not {@code CUSTOMER}: a loan's receivables are
+     * the <em>platform's</em> assets on a contract, not money held for a person who spends it -
+     * folding the two together is how a principal outstanding would read as a wallet balance and
+     * the borrower's debt as the borrower's money. One kind for both products (an instalment loan
+     * and a revolving line): the product is the contract's, not the account's.
+     */
+    LOAN;
 
     /** True when an account of this kind names the owner it belongs to. */
     public boolean requiresOwnerRef() {
-        return this == CUSTOMER || this == MERCHANT || this == COUNTERPARTY;
+        return this == CUSTOMER || this == MERCHANT || this == COUNTERPARTY || this == LOAN;
     }
 
     /** The kinds as a SQL literal list, for the {@code CHECK} constraint. */
