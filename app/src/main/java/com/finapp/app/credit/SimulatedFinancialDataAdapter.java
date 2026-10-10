@@ -29,8 +29,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The simulated financial-data provider {@code findata-sim-a} (`P10-TSK-007`; ADR-0085 section 2, ADR-0008's adapter
@@ -45,7 +44,9 @@ import java.util.regex.Pattern;
  *
  * <h2>Normalisation is total, as the bureau's</h2>
  *
- * <p>A complete summary with any unreadable field is {@code MALFORMED} - its surviving fields never become data; a
+ * <p>The body is parsed as strict JSON ({@link CreditProviderJson}, version 3): anything but exactly one object - two
+ * concatenated summaries, a duplicate key, a token after the object - is {@code MALFORMED}, and only top-level fields
+ * are read. A complete summary with any unreadable field is {@code MALFORMED} - its surviving fields never become data; a
  * partial summary's missing field is {@link AttributeValue.Absent}; money in a currency other than the product's is
  * {@code Absent} with the {@code CURRENCY_NOT_SUPPORTED} marker naming {@code FINANCIAL_DATA}, never converted; any
  * other status is {@code UNKNOWN_STATUS}; a non-200 or a broken transport {@code PROVIDER_ERROR}; the wait expiring
@@ -62,9 +63,12 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
     /**
      * The version of this adapter's normalisation - bump it when the mapping changes. Version 2 (`P10-TSK-021`): a
      * field present in any form but a readable string - a bare number, {@code null}, an object - is malformed, never
-     * absent; version 1 read such a field of a partial answer as absent.
+     * absent; version 1 read such a field of a partial answer as absent. Version 3 (the Phase 10 -> 11 transition): the
+     * body is parsed as strict JSON ({@link CreditProviderJson}) - two concatenated summaries, a duplicate key, a token
+     * after the object are malformed, and only top-level fields are read; version 2 matched patterns, so it took the
+     * first summary's fields, the first of two keys, and a field nested inside another object.
      */
-    public static final int NORMALISER_VERSION = 2;
+    public static final int NORMALISER_VERSION = 3;
 
     /** The summary path. */
     public static final String SUMMARIES_PATH = "/findata/summaries";
@@ -78,9 +82,8 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
     private static final String COMPLETE = "summary_complete";
     private static final String PARTIAL = "summary_partial";
 
-    private static final Pattern OBJECT = Pattern.compile("(?s)^\\s*\\{.*\\}\\s*$");
-    private static final Pattern STATUS = field("status");
-    private static final Pattern RETRIEVED_AT = field("retrievedAt");
+    private static final String STATUS = "status";
+    private static final String RETRIEVED_AT = "retrievedAt";
 
     /** Each financial-data attribute's wire field, and its currency field. */
     private enum Field {
@@ -89,15 +92,13 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
                 "committedMonthlyExpenditureCurrency");
 
         private final CreditAttributeCode code;
-        private final Pattern value;
-        private final Pattern key;
-        private final Pattern currency;
+        private final String name;
+        private final String currency;
 
         Field(CreditAttributeCode code, String name, String currencyName) {
             this.code = code;
-            this.value = field(name);
-            this.key = Pattern.compile("\"" + name + "\"\\s*:");
-            this.currency = currencyName == null ? null : field(currencyName);
+            this.name = name;
+            this.currency = currencyName;
         }
     }
 
@@ -178,11 +179,13 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
      * @param productCurrency the currency every money attribute must be in
      */
     static CreditDataAnswer normalise(byte[] received, CurrencyCode productCurrency) {
-        String text = new String(received, StandardCharsets.UTF_8);
-        if (!OBJECT.matcher(text).matches()) {
+        Optional<JsonNode> parsed = CreditProviderJson.object(received);
+        if (parsed.isEmpty()) {
+            // Not exactly one well-formed JSON object - wholly malformed, nothing of it read (version 3).
             return unavailable(UnavailableCause.MALFORMED, received);
         }
-        Optional<String> status = find(STATUS, text);
+        JsonNode summary = parsed.get();
+        Optional<String> status = CreditProviderJson.text(summary, STATUS);
         if (status.isEmpty()) {
             return unavailable(UnavailableCause.MALFORMED, received);
         }
@@ -192,23 +195,23 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
         }
         Instant retrievedAt;
         try {
-            retrievedAt = Instant.parse(find(RETRIEVED_AT, text).orElse(""));
+            retrievedAt = Instant.parse(CreditProviderJson.text(summary, RETRIEVED_AT).orElse(""));
         } catch (DateTimeParseException unreadable) {
             return unavailable(UnavailableCause.MALFORMED, received);
         }
         List<CreditAttribute> attributes = new ArrayList<>();
         boolean foreignCurrency = false;
         for (Field field : Field.values()) {
-            Optional<String> raw = find(field.value, text);
+            Optional<String> raw = CreditProviderJson.text(summary, field.name);
             if (raw.isEmpty()) {
                 // Absent means the field is not there at all; there in an unreadable form, it is malformed (version 2).
-                if (complete || field.key.matcher(text).find()) {
+                if (complete || CreditProviderJson.has(summary, field.name)) {
                     return unavailable(UnavailableCause.MALFORMED, received);
                 }
                 attributes.add(attribute(field.code, new AttributeValue.Absent()));
                 continue;
             }
-            Optional<AttributeValue> value = parse(field, raw.get(), text, productCurrency);
+            Optional<AttributeValue> value = parse(field, raw.get(), summary, productCurrency);
             if (value.isEmpty()) {
                 // Present but unreadable: the whole answer is malformed - never a partial parse.
                 return unavailable(UnavailableCause.MALFORMED, received);
@@ -230,7 +233,7 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
     }
 
     /** A present field's value, {@code Absent} for money in a foreign currency, or empty if unreadable. */
-    private static Optional<AttributeValue> parse(Field field, String raw, String text, CurrencyCode productCurrency) {
+    private static Optional<AttributeValue> parse(Field field, String raw, JsonNode summary, CurrencyCode productCurrency) {
         switch (field.code.valueType()) {
             case INTEGER:
                 if (!raw.matches("[0-9]{1,9}")) {
@@ -243,7 +246,7 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
                 }
                 return Optional.empty();
             case MONEY:
-                Optional<String> currencyText = find(field.currency, text);
+                Optional<String> currencyText = CreditProviderJson.text(summary, field.currency);
                 if (currencyText.isEmpty() || !DecimalText.plain(raw)) {
                     return Optional.empty();
                 }
@@ -274,15 +277,6 @@ public final class SimulatedFinancialDataAdapter implements FinancialDataProvide
     private static CreditDataAnswer unavailable(UnavailableCause cause, byte[] received) {
         return new CreditDataAnswer.Unavailable(
                 cause, received == null ? Optional.empty() : Optional.of(new CreditEvidence(received)));
-    }
-
-    private static Pattern field(String name) {
-        return Pattern.compile("\"" + name + "\"\\s*:\\s*\"([^\"\\\\]*)\"");
-    }
-
-    private static Optional<String> find(Pattern field, String text) {
-        Matcher matcher = field.matcher(text);
-        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
     }
 
     private static String escape(String value) {

@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -39,12 +40,17 @@ import lombok.RequiredArgsConstructor;
  *       underwriter, the refused decision kept in the case's history).
  * </ul>
  *
- * <p><strong>What a person may not do</strong>: decide without a reason code and a reason; approve a request whose
+ * <p><strong>What a person may not do</strong>: decide without a reason code and a reason, or with a reason holding a
+ * card-number or bank-account shape ({@link CreditReasons}); act at all on a case whose applicant is their own party
+ * ({@link SelfDealingRefused}, recorded {@code FAILED} by the caller in a transaction of its own); approve a request whose
  * evaluation triggered a hard decline; approve more than the evaluation allows - the referral's {@link #ceiling} - or
  * beyond the party's exposure limit re-read under the profile lock ({@link ExposureLimitExceeded}: nothing recorded, the
- * case unchanged, the person decides again); second-approve their own decision. A party whose standing or consent was
- * lost is found in the deciding transaction: the request is {@code ABANDONED} and the case {@code CLOSED} with it,
- * nothing decided.
+ * case unchanged, the person decides again); approve while the exposure cannot be assessed - the bureau's total balance
+ * absent ({@link ExposureUnassessable}: a person may decline, never approve - {@code INV-CRD-09} with no exception);
+ * decide on records past the pinned policy's maximum data age ({@link DataStale}, {@code INV-CRD-08}: nothing recorded -
+ * the person releases the case, which then expires with its request); second-approve their own decision. A party whose
+ * standing or consent was lost is found in the deciding transaction: the request is {@code ABANDONED} and the case
+ * {@code CLOSED} with it, nothing decided.
  */
 @RequiredArgsConstructor
 public final class UnderwritingCases {
@@ -66,6 +72,7 @@ public final class UnderwritingCases {
     @NonNull private final DecisionSnapshotStore snapshots;
     @NonNull private final PolicyEvaluationStore evaluations;
     @NonNull private final CreditPolicyStore policies;
+    @NonNull private final CreditActingParty<Connection> actingParties;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -149,6 +156,57 @@ public final class UnderwritingCases {
         }
     }
 
+    /**
+     * The acting person's own party is the case's applicant (the Phase 10 to 11 transition; {@code INV-CRD-11},
+     * {@code INV-AUD-04}): an underwriter who is also a customer never takes, decides or second-approves their own
+     * referral. Nothing changed; the caller records the attempt with {@link #recordRefusal}.
+     */
+    public static final class SelfDealingRefused extends RuntimeException {
+        @Serial private static final long serialVersionUID = 1L;
+
+        private final transient UnderwritingCaseId reviewCase;
+        private final String act;
+
+        SelfDealingRefused(UnderwritingCaseId reviewCase, String act) {
+            super("an underwriter never acts on a review case whose applicant is their own party");
+            this.reviewCase = reviewCase;
+            this.act = act;
+        }
+
+        public UnderwritingCaseId reviewCase() {
+            return reviewCase;
+        }
+
+        public String act() {
+            return act;
+        }
+    }
+
+    /**
+     * A person's approval while the exposure cannot be assessed - the bureau's total balance absent (the Phase 10 to 11
+     * transition; owner decision 2026-10-10, {@code INV-CRD-09}): nothing recorded; a decline is still allowed.
+     */
+    public static final class ExposureUnassessable extends RuntimeException {
+        @Serial private static final long serialVersionUID = 1L;
+
+        ExposureUnassessable() {
+            super("the party's exposure cannot be assessed - the bureau's total balance is absent: decline, or wait for a"
+                    + " bureau answer on a new application");
+        }
+    }
+
+    /**
+     * A record the deciding snapshot froze is past the pinned policy's maximum data age now (the Phase 10 to 11
+     * transition; {@code INV-CRD-08}): nothing recorded. Release the case; it expires with its request.
+     */
+    public static final class DataStale extends RuntimeException {
+        @Serial private static final long serialVersionUID = 1L;
+
+        DataStale() {
+            super("the credit data this case rests on is past the policy's maximum age: nothing can be decided on it");
+        }
+    }
+
     /** A decision or a refusal without its reason code or its reason ({@code INV-CRD-11}). */
     public static final class ReasonRequired extends RuntimeException {
         @Serial private static final long serialVersionUID = 1L;
@@ -201,6 +259,7 @@ public final class UnderwritingCases {
     /** {@code OPEN -> ASSIGNED} to {@code actor}, under the request then the case. */
     public Acted assign(Connection unitOfWork, UnderwritingCaseId id, Actor actor, CorrelationId correlation) {
         UnderwritingCase found = find(unitOfWork, id);
+        notOwnCase(unitOfWork, found, actor, "assign");
         DecisionRequest request = lockRequest(unitOfWork, found);
         UnderwritingCase locked = lockCase(unitOfWork, id);
         if (locked.status() != UnderwritingCaseStatus.OPEN || request.status() != DecisionRequestStatus.IN_REVIEW) {
@@ -238,6 +297,7 @@ public final class UnderwritingCases {
             Connection unitOfWork, UnderwritingCaseId id, Judgement judgement, Actor actor, CorrelationId correlation) {
         reasoned(judgement.reasons(), judgement.reason());
         UnderwritingCase found = find(unitOfWork, id);
+        notOwnCase(unitOfWork, found, actor, "decide");
         wellFormed(judgement, found);
         boolean fourEyes = judgement.outcome() == DecisionOutcome.APPROVED
                 && judgement.approved().orElseThrow().compareTo(found.fourEyesThreshold()) > 0;
@@ -249,6 +309,11 @@ public final class UnderwritingCases {
             }
             if (judgement.approved().orElseThrow().compareTo(locked.approvable()) > 0) {
                 throw new ExposureLimitExceeded("the approval is above the referral's ceiling");
+            }
+            // Early, for the person's sake: a successor copies the basis's records, so an absent bureau balance stays
+            // absent and the second approval would be refused anyway (INV-CRD-09).
+            if (bureauBalanceAbsent(basisSnapshotOf(unitOfWork, locked))) {
+                throw new ExposureUnassessable();
             }
             move(unitOfWork, locked, new UnderwritingCaseStore.Edge(UnderwritingCaseStatus.AWAITING_SECOND,
                     Optional.of(actor.id()), Optional.of(firstWrite(judgement, actor.id())), Optional.empty(),
@@ -270,13 +335,18 @@ public final class UnderwritingCases {
     /** A different underwriter approves the first decision: the deciding transaction records it. */
     public Acted approveSecond(
             Connection unitOfWork, UnderwritingCaseId id, Optional<String> reason, Actor actor, CorrelationId correlation) {
+        Optional<String> given = reason.filter(text -> !text.isBlank());
+        given.ifPresent(text -> CreditReasons.defect(text).ifPresent(defect -> {
+            throw new ReasonRequired(defect);
+        }));
         UnderwritingCase found = find(unitOfWork, id);
+        notOwnCase(unitOfWork, found, actor, "approveSecond");
         lockProfile(unitOfWork, found);
         DecisionRequest request = lockRequest(unitOfWork, found);
         UnderwritingCase locked = awaitingSecond(lockCase(unitOfWork, id), request, actor);
         UnderwritingCase.FirstDecision first = locked.first().orElseThrow();
         return decideWithin(unitOfWork, request, locked, UnderwritingCaseStore.FirstWrite.of(first), true, actor,
-                correlation, CreditAuditAction.REVIEW_SECOND_APPROVAL, reason.filter(text -> !text.isBlank()));
+                correlation, CreditAuditAction.REVIEW_SECOND_APPROVAL, given);
     }
 
     /** A different underwriter refuses the first decision, with a reason: back to the first underwriter. */
@@ -285,7 +355,11 @@ public final class UnderwritingCases {
         if (reason == null || reason.isBlank()) {
             throw new ReasonRequired("refusing a second approval requires a reason");
         }
+        CreditReasons.defect(reason).ifPresent(defect -> {
+            throw new ReasonRequired(defect);
+        });
         UnderwritingCase found = find(unitOfWork, id);
+        notOwnCase(unitOfWork, found, actor, "refuseSecond");
         DecisionRequest request = lockRequest(unitOfWork, found);
         UnderwritingCase locked = awaitingSecond(lockCase(unitOfWork, id), request, actor);
         move(unitOfWork, locked, new UnderwritingCaseStore.Edge(UnderwritingCaseStatus.ASSIGNED, locked.assignee(),
@@ -322,6 +396,10 @@ public final class UnderwritingCases {
                             + abandoned.reason().name() + ") and the case closed");
             return new Acted(find(unitOfWork, locked.id()), Optional.empty(), Optional.empty());
         }
+        if (basis instanceof DecisionMaking.Basis.Stale) {
+            // INV-CRD-08: nothing written before this point, and the throw rolls the act back whole.
+            throw new DataStale();
+        }
         DecisionMaking.Basis.Ready ready = (DecisionMaking.Basis.Ready) basis;
         if (first.outcome() == DecisionOutcome.APPROVED) {
             bounded(unitOfWork, locked, ready, first.approved().orElseThrow());
@@ -351,23 +429,31 @@ public final class UnderwritingCases {
         if (approved.compareTo(ceiling) > 0) {
             throw new ExposureLimitExceeded("the approval is above the referral's ceiling");
         }
-        if (exposure(ready.snapshot().content(), approved).compareTo(ready.policy().policy().maximumExposure()) > 0) {
+        Optional<Money> exposure = exposure(ready.snapshot().content(), approved);
+        if (exposure.isEmpty()) {
+            throw new ExposureUnassessable();
+        }
+        if (exposure.get().compareTo(ready.policy().policy().maximumExposure()) > 0) {
             throw new ExposureLimitExceeded("the approval is beyond the party's exposure limit");
         }
     }
 
     /**
      * The exposure a person's approval of {@code approved} would make (ADR-0088 section 2 with the person's amount): the
-     * platform's outstanding credit and reserved exposure - always present - plus the bureau's total balance when it was
-     * read. An absent bureau balance is the referral's question, which the person answers; the platform's own terms are
-     * still bound by the limit.
+     * bureau's total balance, the platform's outstanding credit and reserved exposure - both re-read under the profile
+     * lock into the deciding snapshot - and the amount. EMPTY when the bureau's total balance is absent (the Phase 10 to
+     * 11 transition; owner decision 2026-10-10): an absent balance is not zero, so the exposure is unassessable and no
+     * person may approve on it ({@code INV-CRD-09}, no exception) - a decline needs no exposure.
      */
-    static Money exposure(SnapshotContent snapshot, Money approved) {
-        Money exposure = money(snapshot, CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT).orElseThrow()
-                .plus(money(snapshot, CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE).orElseThrow())
-                .plus(approved);
+    static Optional<Money> exposure(SnapshotContent snapshot, Money approved) {
         Optional<Money> bureau = money(snapshot, CreditAttributeCode.BUREAU_TOTAL_BALANCE);
-        return bureau.isPresent() ? exposure.plus(bureau.get()) : exposure;
+        if (bureau.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(bureau.get()
+                .plus(money(snapshot, CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT).orElseThrow())
+                .plus(money(snapshot, CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE).orElseThrow())
+                .plus(approved));
     }
 
     /**
@@ -412,6 +498,9 @@ public final class UnderwritingCases {
         if (reason == null || reason.isBlank()) {
             throw new ReasonRequired("a person's decision carries a reason");
         }
+        CreditReasons.defect(reason).ifPresent(defect -> {
+            throw new ReasonRequired(defect);
+        });
         if (new HashSet<>(reasons).size() != reasons.size()) {
             throw new ReasonRequired("a reason code is given once");
         }
@@ -461,6 +550,39 @@ public final class UnderwritingCases {
             throw new SelfApprovalRefused();
         }
         return locked;
+    }
+
+    /**
+     * Refuses an act by the case's own applicant (the Phase 10 to 11 transition): the actor's party read on the act's
+     * unit of work, before any lock. A case's party is frozen from its birth (credit {@code V013}), so the comparison
+     * needs no lock; an actor the platform cannot place in a party is refused too - fail closed.
+     */
+    private void notOwnCase(Connection unitOfWork, UnderwritingCase reviewCase, Actor actor, String act) {
+        Optional<UUID> party = actingParties.partyOf(unitOfWork, actor);
+        if (party.isEmpty() || party.get().equals(reviewCase.party())) {
+            throw new SelfDealingRefused(reviewCase.id(), act);
+        }
+    }
+
+    /**
+     * Records a refused self-dealing attempt {@code FAILED} ({@link CreditAuditAction#REVIEW_OWN_CASE_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act's rolled back, so the attempt is kept.
+     */
+    public void recordRefusal(Connection unitOfWork, SelfDealingRefused refused, Actor actor, CorrelationId correlation) {
+        record(unitOfWork, actor, CreditAuditAction.REVIEW_OWN_CASE_REFUSED, CASE_TARGET,
+                refused.reviewCase().value().toString(), Optional.empty(), AuditOutcome.FAILED, correlation,
+                "review case " + refused.reviewCase().value() + ": " + refused.act()
+                        + " refused - the applicant is the acting underwriter's own party");
+    }
+
+    private SnapshotContent basisSnapshotOf(Connection unitOfWork, UnderwritingCase reviewCase) {
+        return CanonicalSnapshot.parse(snapshots.snapshotById(unitOfWork, reviewCase.basisSnapshot())
+                .orElseThrow(() -> new IllegalStateException("a case's basis names a snapshot that exists"))
+                .canonical());
+    }
+
+    private static boolean bureauBalanceAbsent(SnapshotContent snapshot) {
+        return money(snapshot, CreditAttributeCode.BUREAU_TOTAL_BALANCE).isEmpty();
     }
 
     private UnderwritingCase find(Connection unitOfWork, UnderwritingCaseId id) {

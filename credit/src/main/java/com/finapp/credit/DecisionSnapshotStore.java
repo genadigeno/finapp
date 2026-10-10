@@ -27,14 +27,19 @@ public interface DecisionSnapshotStore {
     /** One stored attribute, as read back. */
     record StoredAttribute(CreditAttributeCode code, AttributeValue value) {}
 
-    /** A data request's record, judged against a maximum age. */
+    /**
+     * A data request's record, judged against a maximum age: {@code fresh} at the freeze, and whether it was already
+     * stale when we recorded it ({@code retrieved_at < recorded_at - maxAge} - the provider dated its own report past
+     * the age; the Phase 10 -> 11 transition: such a record is never re-collected).
+     */
     record StoredRecord(
             CreditRecordId id,
             CreditSourceKind kind,
             String providerCode,
             int normaliserVersion,
             boolean fresh,
-            List<StoredAttribute> attributes) {}
+            List<StoredAttribute> attributes,
+            boolean staleWhenRecorded) {}
 
     /** A stored snapshot's columns. */
     record StoredSnapshot(
@@ -64,4 +69,12 @@ public interface DecisionSnapshotStore {
 
     /** The snapshot {@code id} - the one a decision names (`P10-TSK-017`'s explanation). */
     Optional<StoredSnapshot> snapshotById(Connection unitOfWork, DecisionSnapshotId id);
+
+    /**
+     * Which of the records are stale now (the Phase 10 to 11 transition; {@code INV-CRD-08}): each judged against its
+     * maximum age exactly as {@link #recordOf} judges one - {@code LEAST(retrieved_at, recorded_at) >=
+     * transaction_timestamp() - maxAge}, the database's clock - and a record that cannot be found counted stale. The
+     * deciding transaction's re-judgement of the records a snapshot froze, before a person's decision or a successor.
+     */
+    java.util.Set<CreditRecordId> staleRecords(Connection unitOfWork, java.util.Map<CreditRecordId, Duration> maxAgeByRecord);
 }

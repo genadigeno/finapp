@@ -602,6 +602,7 @@ repudiation's with `P8-TSK-023`.
 | `credit.ReviewDecided` | **Yes** | The underwriter holding a review case decided it with catalogued reason codes and a reason (`P10-TSK-018`, `INV-CRD-11`): recorded as the decision by the deciding transaction (beside `credit.DecisionRecorded`), or - an approval above the product's four-eyes threshold - recorded on the case, awaiting a second underwriter. Recorded `FAILED` when the deciding transaction found the party's standing or consent lost and closed the request and the case, nothing decided. Never names an amount. |
 | `credit.ReviewSecondApproval` | No | A second holder of `CREDIT_UNDERWRITE`, never the first decider (`INV-AUD-04`; `credit V013`'s `CHECK`), approved a case's first decision: the decision recorded in the same transaction with the first decision's content. `FAILED` as `credit.ReviewDecided` when the request was abandoned instead. |
 | `credit.ReviewSecondApprovalRefused` | **Yes** | A second holder of `CREDIT_UNDERWRITE`, never the first decider, refused a case's first decision with a reason (`P10-TSK-018`): the case back with its first underwriter, the refused decision kept in the case's history. |
+| `credit.ReviewOwnCaseRefused` | No | A holder of `CREDIT_UNDERWRITE` attempted an act - taking, deciding, second-approving or refusing - on a review case whose applicant is their own party (the Phase 10 to 11 transition; `INV-CRD-11`, `INV-AUD-04`): refused `credit.SelfDealingRefused`, nothing changed, and recorded `FAILED` in a transaction of its own after the act's rolled back, so the attempt survives; a retry is recorded as the attempt it is. Its target the case, its detail the act attempted. |
 | `credit.ReportRead` | No | A holder of `CREDIT_INVESTIGATE` was served a credit operations report (`P10-TSK-020`): a month's outcomes by pinned policy version with its referrals, its reason-code distribution, or its sources' availability - counts and rates read in one `REPEATABLE READ` snapshot, never an amount, a score, an attribute or a party. One record per serving, committed in the reading's own transaction, its target the report's name and its detail `report=<name>, month=<YYYY-MM>, rows=N`; a refused month or caller writes none. |
 
 `credit.BureauDataRequested` joined at `P10-TSK-006`, `credit.FinancialDataRequested` at `P10-TSK-007`, the three
@@ -609,7 +610,8 @@ scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`, `credit
 `P10-TSK-014`, `credit.DecisionRecorded` at `P10-TSK-016`, `credit.ExplanationRead` and
 `credit.EvidenceRead` at `P10-TSK-017`, and the six review acts (`credit.ReviewCasesRead`, `credit.ReviewCaseAssigned`,
 `credit.ReviewCaseReleased`, `credit.ReviewDecided`, `credit.ReviewSecondApproval`, `credit.ReviewSecondApprovalRefused`)
-at `P10-TSK-018`, `credit.DecisionReplayed` at `P10-TSK-019`, and `credit.ReportRead` at `P10-TSK-020`.
+at `P10-TSK-018`, `credit.DecisionReplayed` at `P10-TSK-019`, `credit.ReportRead` at `P10-TSK-020`, and
+`credit.ReviewOwnCaseRefused` at the Phase 10 to 11 transition.
 
 ### What is emitted, and what is declared not to be
 

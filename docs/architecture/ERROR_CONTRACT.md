@@ -905,6 +905,9 @@ proposal machine's own states.
 | `credit.CaseTaken` | 409 | The review case is held by another underwriter or has moved on. |
 | `credit.HardDeclineNotOverridable` | 422 | A hard decline cannot be approved by a person; it may be declined. |
 | `credit.ExposureLimitExceeded` | 422 | The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less. |
+| `credit.SelfDealingRefused` | 403 | An underwriter never acts on a review case whose applicant is their own party; another underwriter must. |
+| `credit.ExposureUnassessable` | 422 | The party's exposure cannot be assessed without a bureau balance; a person may decline, never approve. |
+| `credit.DataStale` | 422 | The credit data the decision would rest on is past its maximum age; nothing can be decided on it. |
 
 The scorecard doors (`P10-TSK-011`, ADR-0086 §3), every route behind `CREDIT_POLICY_ADMINISTER` and every act
 keyed per principal (`credit.scorecard:<type>:<id>`), so a lost response replays its receipt and a refusal stores
@@ -927,6 +930,21 @@ request capped by the caps the evaluation triggered) or beyond the party's expos
 (G7): nothing recorded - not even the successor snapshot - the case unchanged, and the person decides again.
 `ReasonRequired` answers a decision without a catalogued reason code about the applicant or without a reason, and a
 refused second approval without a reason. A malformed outcome, amount or status filter is `api.ValidationFailed`.
+
+Added at the Phase 10 to 11 transition. `SelfDealingRefused` is a `403`: an underwriter whose own party is the case's
+applicant (a customer who is also an employee holds one party for both) is refused every act on the case - taking,
+deciding, second-approving or refusing - before any lock, nothing changed; unlike every other refusal on these doors
+the attempt is recorded, `credit.ReviewOwnCaseRefused` `FAILED`, in a transaction of its own after the act's rolled
+back (`INV-CRD-11`, `INV-AUD-04`). `ExposureUnassessable` answers a person's approval while the bureau's total balance
+is absent - an absent balance is not zero, so the exposure cannot be judged against the limit (`INV-CRD-09`, the
+owner's decision of 2026-10-10): nothing recorded, the case unchanged; a decline stands. It is met at the decision, or
+already at an above-threshold first decision (a successor copies the basis's records, so the absence never heals).
+`DataStale` answers a person's decision - approval or decline - whose deciding snapshot holds a record past the pinned
+policy's maximum data age, re-judged on the database's clock in the deciding transaction (`INV-CRD-08`): nothing
+recorded, not even a successor; the person releases the case, which then expires with its request. `ReasonRequired`
+also answers, on every credit door, a reason holding a card-number or bank-account shape (`CreditReasons`; credit
+`V016` beneath) - a policy or scorecard proposal or decision, an underwriter's decision or second-approval reason, an
+investigator's replay or evidence-read reason.
 
 The credit policy doors (`P10-TSK-012`, ADR-0086 §§4-6) answer the same codes on the same terms, keyed
 `credit.policy:<type>:<id>`, plus two of their own. `PolicyIncomplete` refuses a policy at PROPOSAL, never at decision

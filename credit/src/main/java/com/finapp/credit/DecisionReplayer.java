@@ -22,7 +22,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <ol>
  *   <li><strong>The seal</strong> ({@link Divergence#HASH}): the SHA-256 recomputed over the stored canonical text must
- *       equal the snapshot row's digest and the decision's, and the snapshot's pinned versions the decision's. A broken
+ *       equal the snapshot row's digest and the decision's, the snapshot's pinned versions the decision's, and the
+ *       snapshot's request the decision's own (the Phase 10 to 11 transition; credit {@code V017} beneath). A broken
  *       seal stops the replay - inputs that are not the ones decided on prove nothing either way.
  *   <li><strong>The re-run</strong>: the assessment's arithmetic ({@link CreditAssessments#figures}, the same function
  *       production runs) and the pinned engine over the pinned policy, in memory.
@@ -116,6 +117,11 @@ public final class DecisionReplayer {
         }
         PinnedVersions pinned = snapshot.content().versions();
         if (!pinned.equals(decision.versions())) {
+            return verdict(decision, byPerson, EnumSet.of(Divergence.HASH));
+        }
+        // INV-CRD-06 (the Phase 10 to 11 transition): the sealed inputs are the decision's own request's - a decision
+        // naming another request's snapshot, however intact that seal, proves nothing about this decision.
+        if (!snapshot.content().decisionRequest().equals(decision.decisionRequest())) {
             return verdict(decision, byPerson, EnumSet.of(Divergence.HASH));
         }
 

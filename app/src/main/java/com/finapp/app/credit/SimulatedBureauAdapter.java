@@ -29,8 +29,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The simulated credit bureau {@code bureau-sim-a} (`P10-TSK-005`; ADR-0085 section 2, ADR-0008's
@@ -47,6 +46,9 @@ import java.util.regex.Pattern;
  * <h2>Normalisation is total, and only a clean report is data</h2>
  *
  * <ul>
+ *   <li>The body is parsed as strict JSON ({@link CreditProviderJson}, version 3): anything but exactly one object - two
+ *       concatenated reports, a duplicate key, a token after the object - is {@code MALFORMED}, and only the object's
+ *       top-level fields are read.
  *   <li>{@code report_complete}: every field must be present and valid, or the whole answer is
  *       {@code MALFORMED} - a surviving field of a broken report is never parsed into an attribute.
  *   <li>{@code report_partial}: the fields present must be valid (else {@code MALFORMED}); a field
@@ -76,9 +78,12 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     /**
      * The version of this adapter's normalisation - bump it when the mapping changes. Version 2 (`P10-TSK-021`): a
      * field present in any form but a readable string - a bare number, {@code null}, an object - is malformed, never
-     * absent; version 1 read such a field of a partial answer as absent.
+     * absent; version 1 read such a field of a partial answer as absent. Version 3 (the Phase 10 -> 11 transition): the
+     * body is parsed as strict JSON ({@link CreditProviderJson}) - two concatenated reports, a duplicate key, a token
+     * after the object are malformed, and only top-level fields are read; version 2 matched patterns, so it took the
+     * first report's fields, the first of two keys, and a field nested inside another object.
      */
-    public static final int NORMALISER_VERSION = 2;
+    public static final int NORMALISER_VERSION = 3;
 
     /** The report path. */
     public static final String REPORTS_PATH = "/bureau/reports";
@@ -92,9 +97,8 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     private static final String COMPLETE = "report_complete";
     private static final String PARTIAL = "report_partial";
 
-    private static final Pattern OBJECT = Pattern.compile("(?s)^\\s*\\{.*\\}\\s*$");
-    private static final Pattern STATUS = field("status");
-    private static final Pattern RETRIEVED_AT = field("retrievedAt");
+    private static final String STATUS = "status";
+    private static final String RETRIEVED_AT = "retrievedAt";
 
     /** Each bureau attribute's wire field, and the currency field of the money ones. */
     private enum Field {
@@ -107,15 +111,13 @@ public final class SimulatedBureauAdapter implements CreditBureau {
         BALANCE(CreditAttributeCode.BUREAU_TOTAL_BALANCE, "totalBalance", "totalBalanceCurrency");
 
         private final CreditAttributeCode code;
-        private final Pattern value;
-        private final Pattern key;
-        private final Pattern currency;
+        private final String name;
+        private final String currency;
 
         Field(CreditAttributeCode code, String name, String currencyName) {
             this.code = code;
-            this.value = field(name);
-            this.key = Pattern.compile("\"" + name + "\"\\s*:");
-            this.currency = currencyName == null ? null : field(currencyName);
+            this.name = name;
+            this.currency = currencyName;
         }
     }
 
@@ -196,11 +198,13 @@ public final class SimulatedBureauAdapter implements CreditBureau {
      * @param productCurrency the currency every money attribute must be in
      */
     static CreditDataAnswer normalise(byte[] received, CurrencyCode productCurrency) {
-        String text = new String(received, StandardCharsets.UTF_8);
-        if (!OBJECT.matcher(text).matches()) {
+        Optional<JsonNode> parsed = CreditProviderJson.object(received);
+        if (parsed.isEmpty()) {
+            // Not exactly one well-formed JSON object - wholly malformed, nothing of it read (version 3).
             return unavailable(UnavailableCause.MALFORMED, received);
         }
-        Optional<String> status = find(STATUS, text);
+        JsonNode report = parsed.get();
+        Optional<String> status = CreditProviderJson.text(report, STATUS);
         if (status.isEmpty()) {
             return unavailable(UnavailableCause.MALFORMED, received);
         }
@@ -210,23 +214,23 @@ public final class SimulatedBureauAdapter implements CreditBureau {
         }
         Instant retrievedAt;
         try {
-            retrievedAt = Instant.parse(find(RETRIEVED_AT, text).orElse(""));
+            retrievedAt = Instant.parse(CreditProviderJson.text(report, RETRIEVED_AT).orElse(""));
         } catch (DateTimeParseException unreadable) {
             return unavailable(UnavailableCause.MALFORMED, received);
         }
         List<CreditAttribute> attributes = new ArrayList<>();
         boolean foreignCurrency = false;
         for (Field field : Field.values()) {
-            Optional<String> raw = find(field.value, text);
+            Optional<String> raw = CreditProviderJson.text(report, field.name);
             if (raw.isEmpty()) {
                 // Absent means the field is not there at all; there in an unreadable form, it is malformed (version 2).
-                if (complete || field.key.matcher(text).find()) {
+                if (complete || CreditProviderJson.has(report, field.name)) {
                     return unavailable(UnavailableCause.MALFORMED, received);
                 }
                 attributes.add(attribute(field.code, new AttributeValue.Absent()));
                 continue;
             }
-            Optional<AttributeValue> value = parse(field, raw.get(), text, productCurrency);
+            Optional<AttributeValue> value = parse(field, raw.get(), report, productCurrency);
             if (value.isEmpty()) {
                 // Present but unreadable: the whole answer is malformed - never a partial parse.
                 return unavailable(UnavailableCause.MALFORMED, received);
@@ -248,7 +252,7 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     }
 
     /** A present field's value, {@code Absent} for money in a foreign currency, or empty if unreadable. */
-    private static Optional<AttributeValue> parse(Field field, String raw, String text, CurrencyCode productCurrency) {
+    private static Optional<AttributeValue> parse(Field field, String raw, JsonNode report, CurrencyCode productCurrency) {
         switch (field.code.valueType()) {
             case INTEGER:
                 if (!raw.matches("[0-9]{1,9}")) {
@@ -261,7 +265,7 @@ public final class SimulatedBureauAdapter implements CreditBureau {
                 }
                 return Optional.empty();
             case MONEY:
-                Optional<String> currencyText = find(field.currency, text);
+                Optional<String> currencyText = CreditProviderJson.text(report, field.currency);
                 if (currencyText.isEmpty() || !DecimalText.plain(raw)) {
                     return Optional.empty();
                 }
@@ -292,15 +296,6 @@ public final class SimulatedBureauAdapter implements CreditBureau {
     private static CreditDataAnswer unavailable(UnavailableCause cause, byte[] received) {
         return new CreditDataAnswer.Unavailable(
                 cause, received == null ? Optional.empty() : Optional.of(new CreditEvidence(received)));
-    }
-
-    private static Pattern field(String name) {
-        return Pattern.compile("\"" + name + "\"\\s*:\\s*\"([^\"\\\\]*)\"");
-    }
-
-    private static Optional<String> find(Pattern field, String text) {
-        Matcher matcher = field.matcher(text);
-        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
     }
 
     private static String escape(String value) {

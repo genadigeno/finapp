@@ -101,6 +101,10 @@ class UnderwritingCaseDatabaseTest {
     private static final Money BIG_LOAN = eur(2_100_000);
     private static final Money LINE = eur(300_000);
     private static final List<ReasonCode> REASONS = List.of(ReasonCode.RISK_REFERRAL);
+    /** The race's alternating head start - small enough that the two transactions still overlap. */
+    private static final long HEAD_START_MILLIS = 25;
+    /** How fresh a staleness case's bureau record is at its freeze. */
+    private static final Duration STALE_MARGIN = Duration.ofSeconds(8);
 
     private enum Loan { REFERRING, HARD_EXPOSURE }
 
@@ -346,7 +350,8 @@ class UnderwritingCaseDatabaseTest {
 
     @Test
     @DisplayName("a manual approval and a system decision for one party, at the exposure limit, thirty rounds: serialised"
-            + " on the profile - never both approved; the person after the system is refused credit.ExposureLimitExceeded")
+            + " on the profile - never both approved; the person after the system is refused credit.ExposureLimitExceeded;"
+            + " both orders occur (each side given a head start in turn)")
     void aManualApprovalAndASystemDecisionForOnePartySerialise() throws Exception {
         int manualFirst = 0;
         int systemFirst = 0;
@@ -360,9 +365,19 @@ class UnderwritingCaseDatabaseTest {
             act(uow -> reviewing().decide(uow, id, approve(BIG_LOAN), person, correlation()));
             UUID line = evaluated(party, CreditProduct.CREDIT_LINE, LINE, WEEK);
             Actor second = underwriter();
+            // A head start of a few milliseconds, alternating: the transactions still overlap, and each order is met
+            // (P10 to P11 transition - the count below could not fail while it summed two sides of one coin).
+            long personDelay = round % 2 == 0 ? 0 : HEAD_START_MILLIS;
+            long systemDelay = round % 2 == 0 ? HEAD_START_MILLIS : 0;
             List<Object> outcomes = race(List.of(
-                    () -> act(uow -> reviewing().approveSecond(uow, id, Optional.empty(), second, correlation())),
-                    () -> decide(deciding(), line)));
+                    () -> {
+                        Thread.sleep(personDelay);
+                        return act(uow -> reviewing().approveSecond(uow, id, Optional.empty(), second, correlation()));
+                    },
+                    () -> {
+                        Thread.sleep(systemDelay);
+                        return decide(deciding(), line);
+                    }));
             String loanOutcome = scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", loan);
             String lineOutcome = scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", line);
             boolean loanApproved = "APPROVED".equals(loanOutcome);
@@ -382,7 +397,371 @@ class UnderwritingCaseDatabaseTest {
                         .as("round %d: nothing recorded - not even the successor", round).isEqualTo(1);
             }
         }
-        assertThat(manualFirst + systemFirst).isEqualTo(30);
+        assertThat(manualFirst).as("the person won the profile in some round").isPositive();
+        assertThat(systemFirst).as("the system won the profile in some round").isPositive();
+    }
+
+    @Test
+    @DisplayName("the person's deciding transactions take the profile first: held elsewhere, a second approval and a"
+            + " below-threshold decision each wait on it holding nothing - the request still free to lock - then decide"
+            + " (the Phase 10 to 11 transition)")
+    void thePersonsDecidingTransactionWaitsOnTheProfile() throws Exception {
+        UUID party = UUID.randomUUID();
+        UUID big = referred(party, eur(1_200_000), WEEK);
+        UnderwritingCaseId bigCase = caseOf(big);
+        Actor person = underwriter();
+        act(uow -> reviewing().assign(uow, bigCase, person, correlation()));
+        act(uow -> reviewing().decide(uow, bigCase, approve(eur(1_200_000)), person, correlation()));
+        Actor second = underwriter();
+        assertWaitsOnTheProfile(party, big,
+                () -> act(uow -> reviewing().approveSecond(uow, bigCase, Optional.empty(), second, correlation())));
+
+        UUID otherParty = UUID.randomUUID();
+        UUID small = referred(otherParty, eur(500_000), WEEK);
+        UnderwritingCaseId smallCase = caseOf(small);
+        act(uow -> reviewing().assign(uow, smallCase, person, correlation()));
+        assertWaitsOnTheProfile(otherParty, small,
+                () -> act(uow -> reviewing().decide(uow, smallCase, approve(eur(500_000)), person, correlation())));
+    }
+
+    /** Holds {@code party}'s profile; {@code act} must block on it - and only on it - then decide once it is released. */
+    private static void assertWaitsOnTheProfile(UUID party, UUID request, Callable<UnderwritingCases.Acted> act)
+            throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            int holderPid;
+            try (Statement statement = holder.createStatement()) {
+                statement.executeQuery("SELECT id FROM credit.credit_profile WHERE party_id = '" + party + "' FOR UPDATE")
+                        .close();
+                try (ResultSet pid = statement.executeQuery("SELECT pg_backend_pid()")) {
+                    pid.next();
+                    holderPid = pid.getInt(1);
+                }
+            }
+            Future<UnderwritingCases.Acted> acted = pool.submit(act);
+            awaitDatabase("SELECT count(*) > 0 FROM pg_stat_activity WHERE ? = ANY (pg_blocking_pids(pid))", holderPid);
+            try (Connection other = DatabaseRoles.application()) {
+                other.setAutoCommit(false);
+                try (PreparedStatement lock = other.prepareStatement(
+                        "SELECT status FROM credit.decision_request WHERE id = ? FOR UPDATE NOWAIT")) {
+                    lock.setObject(1, request);
+                    try (ResultSet row = lock.executeQuery()) {
+                        assertThat(row.next()).as("the waiting person holds no lock on the request").isTrue();
+                    }
+                }
+                other.rollback();
+            }
+            holder.rollback();
+            assertThat(acted.get(1, TimeUnit.MINUTES).reviewCase().status()).isEqualTo(UnderwritingCaseStatus.DECIDED);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    // ------------------------------------------------------------------ the Phase 10 to 11 transition
+
+    @Test
+    @DisplayName("an underwriter who is the applicant's own party is refused every act on the case -"
+            + " credit.SelfDealingRefused, nothing changed - below the threshold and at the second approval alike")
+    void anUnderwriterNeverActsOnTheirOwnPartysCase() throws Exception {
+        UUID party = UUID.randomUUID();
+        UnderwritingCaseId small = caseOf(referred(party, eur(500_000), WEEK));
+        Actor insider = underwriter();
+        CreditWorld.ACTOR_PARTIES.put(insider.id(), party);
+        assertThatThrownBy(() -> act(uow -> reviewing().assign(uow, small, insider, correlation())))
+                .isInstanceOf(UnderwritingCases.SelfDealingRefused.class);
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", small.value())).isEqualTo("OPEN");
+        Actor colleague = underwriter();
+        act(uow -> reviewing().assign(uow, small, colleague, correlation()));
+        assertThatThrownBy(() -> act(uow -> reviewing().decide(uow, small, approve(eur(500_000)), insider, correlation())))
+                .as("the self-dealing refusal, before the holder's").isInstanceOf(UnderwritingCases.SelfDealingRefused.class);
+        // The colleague declines it - the party's one open loan request closed, so it may apply again.
+        act(uow -> reviewing().decide(uow, small, decline(), colleague, correlation()));
+
+        UUID bigRequest = referred(party, eur(1_200_000), WEEK);
+        UnderwritingCaseId big = caseOf(bigRequest);
+        act(uow -> reviewing().assign(uow, big, colleague, correlation()));
+        act(uow -> reviewing().decide(uow, big, approve(eur(1_200_000)), colleague, correlation()));
+        assertThatThrownBy(() -> act(uow -> reviewing().approveSecond(uow, big, Optional.empty(), insider, correlation())))
+                .isInstanceOf(UnderwritingCases.SelfDealingRefused.class);
+        assertThatThrownBy(() -> act(uow -> reviewing().refuseSecond(uow, big, "disagree", insider, correlation())))
+                .isInstanceOf(UnderwritingCases.SelfDealingRefused.class);
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", big.value()))
+                .isEqualTo("AWAITING_SECOND");
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", bigRequest)).isZero();
+        // An actor the platform cannot place in a party is refused too - fail closed.
+        UnderwritingCases nowhere = new UnderwritingCases(new JdbcUnderwritingCaseStore(), CreditWorld.REQUESTS,
+                new JdbcCreditProfiles(CreditWorld.IDS), deciding(), new JdbcDecisionSnapshotStore(),
+                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, (uow, actor) -> Optional.empty(),
+                new JdbcAuditWriter(), CreditWorld.IDS, CreditWorld.CLOCK);
+        UnderwritingCaseId open = caseOf(referred(UUID.randomUUID(), eur(500_000), WEEK));
+        assertThatThrownBy(() -> act(uow -> nowhere.assign(uow, open, underwriter(), correlation())))
+                .isInstanceOf(UnderwritingCases.SelfDealingRefused.class);
+    }
+
+    @Test
+    @DisplayName("over HTTP, a customer who is also an underwriter cannot take their own referral - 403"
+            + " credit.SelfDealingRefused, the case OPEN, and the attempt recorded FAILED credit.ReviewOwnCaseRefused")
+    void aCustomerUnderwriterCannotTakeTheirOwnReferralOverHttp() throws Exception {
+        CreditTestClient.Customer customer = client.consentingCustomer();
+        grant(customer.login(), RoleName.UNDERWRITER);
+        String insider = client.login(customer);
+        UnderwritingCaseId id = caseOf(referred(customer.party(), eur(500_000), WEEK));
+        String base = "/v1/operator/credit/review-cases/" + id.value();
+        HttpResponse<String> refused = client.post(base + "/assignment", null, insider, CreditTestClient.key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("credit.SelfDealingRefused");
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", id.value())).isEqualTo("OPEN");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewOwnCaseRefused'"
+                + " AND target_id = ? AND outcome = 'FAILED'", id.value().toString())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewCaseAssigned'"
+                + " AND target_id = ?", id.value().toString())).isZero();
+        // The positive control: another underwriter takes it.
+        HttpResponse<String> taken = client.post(base + "/assignment", null, sessionWith(RoleName.UNDERWRITER),
+                CreditTestClient.key());
+        assertThat(taken.statusCode()).as(taken.body()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("a person's reasons hold no card-number or bank-account shape - refused credit.ReasonRequired at the"
+            + " domain, nothing changed; and by the reason columns' CHECKs for a raw writer")
+    void aPersonsReasonsHoldNoInstrumentShape() throws Exception {
+        String pan = "verified card 4111 1111 1111 1111 by phone";
+        String iban = "pays from GB82 WEST 1234 5698 7654 32 monthly";
+        UnderwritingCaseId small = caseOf(referred(UUID.randomUUID(), eur(500_000), WEEK));
+        Actor person = underwriter();
+        act(uow -> reviewing().assign(uow, small, person, correlation()));
+        for (String reason : List.of(pan, iban)) {
+            assertThatThrownBy(() -> act(uow -> reviewing().decide(uow, small, new UnderwritingCases.Judgement(
+                    DecisionOutcome.DECLINED, Optional.empty(), REASONS, reason), person, correlation())))
+                    .as(reason).isInstanceOf(UnderwritingCases.ReasonRequired.class)
+                    .hasMessageContaining("card-number or bank-account");
+        }
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", small.value())).isEqualTo("ASSIGNED");
+        UnderwritingCaseId big = caseOf(referred(UUID.randomUUID(), eur(1_200_000), WEEK));
+        act(uow -> reviewing().assign(uow, big, person, correlation()));
+        act(uow -> reviewing().decide(uow, big, approve(eur(1_200_000)), person, correlation()));
+        Actor second = underwriter();
+        assertThatThrownBy(() -> act(uow -> reviewing().refuseSecond(uow, big, iban, second, correlation())))
+                .isInstanceOf(UnderwritingCases.ReasonRequired.class);
+        assertThatThrownBy(() -> act(uow -> reviewing().approveSecond(uow, big, Optional.of(pan), second, correlation())))
+                .isInstanceOf(UnderwritingCases.ReasonRequired.class);
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", big.value()))
+                .isEqualTo("AWAITING_SECOND");
+        // A raw writer taking every other legal step of ASSIGNED -> AWAITING_SECOND, only the reason carrying the shape.
+        UnderwritingCaseId assigned = caseOf(referred(UUID.randomUUID(), eur(1_200_000), WEEK));
+        act(uow -> reviewing().assign(uow, assigned, person, correlation()));
+        try (Connection app = DatabaseRoles.application()) {
+            for (String reason : List.of(pan, iban)) {
+                assertRefusedBy(app, "UPDATE credit.underwriting_case SET status = 'AWAITING_SECOND',"
+                        + " first_outcome = 'APPROVED', first_approved_minor = 1200000,"
+                        + " first_reason_codes = '{CRD-RISK-REFERRAL}', first_reason = '" + reason + "',"
+                        + " first_decided_by = assignee, first_decided_at = now() WHERE id = '" + assigned.value() + "'",
+                        "underwriting_case_first_reason_no_instrument_shape");
+                assertRefusedBy(app, "INSERT INTO credit.underwriting_case_event (id, case_id, from_status, to_status,"
+                        + " actor_id, actor_type, reason, first_decided_by, occurred_at) VALUES (gen_random_uuid(), '"
+                        + big.value() + "', 'AWAITING_SECOND', 'ASSIGNED', 'q', 'EMPLOYEE', '" + reason + "', 'p', now())",
+                        "underwriting_case_event_reason_no_instrument_shape");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a person cannot approve while the exposure is unassessable - the bureau's total balance absent:"
+            + " credit.ExposureUnassessable below the threshold and at the four-eyes first decision, nothing recorded;"
+            + " a decline stands (INV-CRD-09, the owner's decision)")
+    void aPersonCannotApproveAnUnassessableExposure() throws Exception {
+        UUID party = UUID.randomUUID();
+        CreditWorld.NO_BALANCE.add(party);
+        UUID request = referred(party, eur(500_000), WEEK);
+        UnderwritingCaseId id = caseOf(request);
+        Actor person = underwriter();
+        act(uow -> reviewing().assign(uow, id, person, correlation()));
+        assertThatThrownBy(() -> act(uow -> reviewing().decide(uow, id, approve(eur(500_000)), person, correlation())))
+                .isInstanceOf(UnderwritingCases.ExposureUnassessable.class);
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", id.value())).isEqualTo("ASSIGNED");
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", request)).isZero();
+
+        UUID bigParty = UUID.randomUUID();
+        CreditWorld.NO_BALANCE.add(bigParty);
+        UnderwritingCaseId big = caseOf(referred(bigParty, eur(1_200_000), WEEK));
+        act(uow -> reviewing().assign(uow, big, person, correlation()));
+        assertThatThrownBy(() -> act(uow -> reviewing().decide(uow, big, approve(eur(1_200_000)), person, correlation())))
+                .isInstanceOf(UnderwritingCases.ExposureUnassessable.class);
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", big.value())).isEqualTo("ASSIGNED");
+
+        assertThat(act(uow -> reviewing().decide(uow, id, decline(), person, correlation())).reviewCase().status())
+                .isEqualTo(UnderwritingCaseStatus.DECIDED);
+        assertThat(scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", request))
+                .isEqualTo("DECLINED");
+    }
+
+    @Test
+    @DisplayName("a person cannot decide on records past the policy's maximum data age - re-judged on the database's"
+            + " clock in the deciding transaction: credit.DataStale, nothing recorded (not even a successor), the case"
+            + " released to expire; the system decides nothing on them either; and a successor refuses to copy them")
+    void nothingIsDecidedOnStaleData() throws Exception {
+        Duration bureauAge = CreditWorld.TRANSACTIONS.inTransaction(uow -> CreditWorld.POLICIES
+                .policy(uow, CreditWorld.LOAN_SEED).orElseThrow().policy().maximumDataAge().get(CreditSourceKind.BUREAU));
+        UUID party = UUID.randomUUID();
+        // Fresh at the freeze by STALE_MARGIN, stale soon after.
+        CreditWorld.RETRIEVED_AGO.put(party, bureauAge.minus(STALE_MARGIN));
+        UUID request = referred(party, eur(500_000), WEEK);
+        UnderwritingCaseId id = caseOf(request);
+        Actor person = underwriter();
+        act(uow -> reviewing().assign(uow, id, person, correlation()));
+        awaitBureauStale(request, bureauAge);
+        for (UnderwritingCases.Judgement judgement : List.of(approve(eur(500_000)), decline())) {
+            assertThatThrownBy(() -> act(uow -> reviewing().decide(uow, id, judgement, person, correlation())))
+                    .as(judgement.toString()).isInstanceOf(UnderwritingCases.DataStale.class);
+        }
+        assertThat(scalar("SELECT status FROM credit.underwriting_case WHERE id = ?", id.value())).isEqualTo("ASSIGNED");
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", request)).isZero();
+        assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", request))
+                .isEqualTo(1);
+        // The way out: released, the case is OPEN again - and expires with its request.
+        assertThat(act(uow -> reviewing().release(uow, id, person, correlation())).reviewCase().status())
+                .isEqualTo(UnderwritingCaseStatus.OPEN);
+
+        // A successor never copies a stale record, whoever asks.
+        assertThatThrownBy(() -> CreditWorld.TRANSACTIONS.inTransaction(uow -> CreditWorld.freezer().successor(uow,
+                CreditWorld.freezer().latest(uow, request).orElseThrow(), eur(0), eur(0),
+                java.util.Map.of(CreditSourceKind.BUREAU, bureauAge, CreditSourceKind.FINANCIAL_DATA, bureauAge))))
+                .isInstanceOf(com.finapp.credit.SnapshotFreezer.RecordsStale.class);
+
+        // The system: an evaluated request whose bureau record ages out before its decision decides nothing.
+        UUID systemParty = UUID.randomUUID();
+        CreditWorld.RETRIEVED_AGO.put(systemParty, bureauAge.minus(STALE_MARGIN));
+        UUID evaluated = evaluated(systemParty, CreditProduct.PERSONAL_LOAN, eur(500_000), WEEK);
+        awaitBureauStale(evaluated, bureauAge);
+        assertThat(decide(deciding(), evaluated)).isEqualTo(Decider.Decided.NOTHING);
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = ?", evaluated)).isEqualTo("EVALUATED");
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", evaluated)).isZero();
+        assertThat(count("SELECT count(*) FROM credit.underwriting_case WHERE decision_request_id = ?", evaluated)).isZero();
+    }
+
+    @Test
+    @DisplayName("the outstanding credit is re-read beside the reservation under the profile lock - a consumption landing"
+            + " between the evaluation and the decision (reserved unchanged, outstanding up) refuses the person's"
+            + " approval past the limit and declines the system's, each on a successor carrying the new outstanding"
+            + " (INV-CRD-09, ADR-0088)")
+    void theOutstandingCreditIsReReadAtTheDecision() throws Exception {
+        UUID party = UUID.randomUUID();
+        BALANCES.put(party, LIMIT_BALANCE);
+        UUID loan = referred(party, eur(500_000), WEEK);
+        UnderwritingCaseId id = caseOf(loan);
+        Actor person = underwriter();
+        act(uow -> reviewing().assign(uow, id, person, correlation()));
+        // 17,000.00 on the bureau + 20,000.00 now outstanding + 5,000.00 = 42,000.00 > 40,000.00.
+        CreditWorld.OUTSTANDING.put(party, 2_000_000L);
+        assertThatThrownBy(() -> act(uow -> reviewing().decide(uow, id, approve(eur(500_000)), person, correlation())))
+                .isInstanceOf(UnderwritingCases.ExposureLimitExceeded.class);
+        assertThat(count("SELECT count(*) FROM credit.credit_decision WHERE decision_request_id = ?", loan)).isZero();
+        assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", loan)).isEqualTo(1);
+        // 10,000.00 outstanding: 32,000.00 - within the limit, decided on the successor that carries it.
+        CreditWorld.OUTSTANDING.put(party, 1_000_000L);
+        assertThat(act(uow -> reviewing().decide(uow, id, approve(eur(500_000)), person, correlation())).reviewCase()
+                .status()).isEqualTo(UnderwritingCaseStatus.DECIDED);
+        assertThat(outstandingInDecisionSnapshot(loan)).isEqualTo(eur(1_000_000));
+        assertThat(scalar("SELECT s.sequence::text FROM credit.credit_decision d JOIN credit.decision_snapshot s"
+                + " ON s.id = d.snapshot_id WHERE d.decision_request_id = ?", loan)).isEqualTo("2");
+
+        UUID lineParty = UUID.randomUUID();
+        BALANCES.put(lineParty, LIMIT_BALANCE);
+        UUID line = evaluated(lineParty, CreditProduct.CREDIT_LINE, LINE, WEEK);
+        assertThat(scalar("SELECT outcome FROM credit.policy_evaluation WHERE decision_request_id = ?", line))
+                .as("approvable at its evaluation").isEqualTo("APPROVE");
+        CreditWorld.OUTSTANDING.put(lineParty, 2_200_000L);
+        assertThat(decide(deciding(), line)).isEqualTo(Decider.Decided.DECIDED);
+        assertThat(scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", line))
+                .as("the consumption's exposure seen at the decision").isEqualTo("DECLINED");
+        assertThat(outstandingInDecisionSnapshot(line)).isEqualTo(eur(2_200_000));
+    }
+
+    @Test
+    @DisplayName("a decision, its assessment and its evaluation rest on their own request's snapshot, sealed to it -"
+            + " by composite key and by trigger, for a raw writer (INV-CRD-06)")
+    void aDecisionRestsOnItsOwnRequestsSnapshot() throws Exception {
+        UUID own = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(500_000), WEEK);
+        UUID other = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(500_000), WEEK);
+        String insert = "INSERT INTO credit.credit_decision (id, decision_request_id, party_id, profile_id, product,"
+                + " snapshot_id, snapshot_sha256, outcome, currency, requested_minor, approved_minor, term_months,"
+                + " decision_validity, decided_at, valid_until, decided_by, decided_by_type, policy_version_id,"
+                + " model_version_id, engine_version) SELECT gen_random_uuid(), r.id, r.party_id, r.profile_id, r.product,"
+                + " s.id, %s, 'APPROVED', r.currency, r.requested_minor, r.requested_minor, r.term_months,"
+                + " interval '30 days', now(), now(), 'raw', 'EMPLOYEE', r.pinned_policy_version_id,"
+                + " r.pinned_model_version_id, r.pinned_engine_version FROM credit.decision_request r"
+                + " JOIN credit.decision_snapshot s ON s.decision_request_id = '%s' WHERE r.id = '" + own + "'";
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            assertRefusedBy(app, String.format(insert, "s.content_sha256", other), "own request's snapshot");
+            assertRefusedBy(app, String.format(insert, "sha256('not the snapshot'::bytea)", own), "own request's snapshot");
+            // A successor (sequence 2) born for the request: a decision on the superseded first is refused...
+            update(app, "INSERT INTO credit.decision_snapshot (id, decision_request_id, sequence, snapshot_format,"
+                    + " canonical, content_sha256, policy_version_id, model_version_id, engine_version, frozen_at)"
+                    + " SELECT gen_random_uuid(), decision_request_id, 2, snapshot_format, canonical, content_sha256,"
+                    + " policy_version_id, model_version_id, engine_version, now() FROM credit.decision_snapshot"
+                    + " WHERE decision_request_id = ? AND sequence = 1", own);
+            assertRefusedBy(app, String.format(insert, "s.content_sha256", own) + " AND s.sequence = 1", "latest snapshot");
+            // ...an assessment of the successor whose hash or pins are not its snapshot's is refused...
+            String assessment = "INSERT INTO credit.credit_assessment SELECT (jsonb_populate_record(NULL::"
+                    + "credit.credit_assessment, to_jsonb(a) || jsonb_build_object('id', gen_random_uuid(), 'snapshot_id',"
+                    + " (SELECT id FROM credit.decision_snapshot WHERE decision_request_id = '" + own
+                    + "' AND sequence = 2)) || %s)).* FROM credit.credit_assessment a WHERE a.decision_request_id = '"
+                    + own + "'";
+            assertRefusedBy(app, String.format(assessment,
+                    "jsonb_build_object('snapshot_sha256', '\\x' || encode(sha256('x'::bytea), 'hex'))"), "own request's snapshot");
+            assertRefusedBy(app, String.format(assessment, "jsonb_build_object('policy_version_id', '"
+                    + CreditWorld.LINE_SEED.value() + "')"), "own request's snapshot");
+            // ...and the positive controls: the successor's own assessment, and the decision on the latest snapshot.
+            assertThat(update(app, String.format(assessment, "'{}'::jsonb"))).isEqualTo(1);
+            assertThat(update(app, String.format(insert, "s.content_sha256", own) + " AND s.sequence = 2")).isEqualTo(1);
+            app.rollback();
+        }
+        // The composite key alone, the seal trigger off: another request's snapshot is still refused (23503).
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("ALTER TABLE credit.credit_decision DISABLE TRIGGER credit_decision_is_sealed_to_its_snapshot");
+            }
+            assertRefused(owner, String.format(insert, "s.content_sha256", other), "23503");
+            owner.rollback();
+        }
+    }
+
+    private static Money outstandingInDecisionSnapshot(UUID request) {
+        String canonical = scalar("SELECT s.canonical FROM credit.credit_decision d JOIN credit.decision_snapshot s"
+                + " ON s.id = d.snapshot_id WHERE d.decision_request_id = ?", request);
+        return ((com.finapp.credit.AttributeValue.MoneyValue) com.finapp.credit.CanonicalSnapshot.parse(canonical)
+                .attribute(CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT).value()).value();
+    }
+
+    private static void awaitBureauStale(UUID request, Duration bureauAge) throws Exception {
+        awaitDatabase("SELECT bool_and(LEAST(r.retrieved_at, r.recorded_at) < statement_timestamp() - ? * interval"
+                + " '1 millisecond') FROM credit.credit_record r JOIN credit.data_request d ON d.id = r.data_request_id"
+                + " WHERE d.decision_request_id = ? AND r.source_kind = 'BUREAU'", bureauAge.toMillis(), request);
+    }
+
+    /** Runs {@code sql} expecting a refusal whose message names {@code fragment} - a CHECK's name or a trigger's words. */
+    private static void assertRefusedBy(Connection connection, String sql, String fragment) throws SQLException {
+        boolean manual = !connection.getAutoCommit();
+        if (manual) {
+            try (Statement savepoint = connection.createStatement()) {
+                savepoint.execute("SAVEPOINT refused");
+            }
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+            throw new AssertionError("expected a refusal naming " + fragment + ": " + sql);
+        } catch (SQLException refused) {
+            assertThat(refused.getMessage()).as(sql).contains(fragment);
+        }
+        if (manual) {
+            try (Statement back = connection.createStatement()) {
+                back.execute("ROLLBACK TO SAVEPOINT refused");
+            }
+        }
     }
 
     @Test
@@ -920,7 +1299,8 @@ class UnderwritingCaseDatabaseTest {
     private static UnderwritingCases reviewing() {
         return new UnderwritingCases(new JdbcUnderwritingCaseStore(), CreditWorld.REQUESTS,
                 new JdbcCreditProfiles(CreditWorld.IDS), deciding(), new JdbcDecisionSnapshotStore(),
-                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, new JdbcAuditWriter(), CreditWorld.IDS,
+                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, CreditWorld.ACTING_PARTIES,
+                new JdbcAuditWriter(), CreditWorld.IDS,
                 CreditWorld.CLOCK);
     }
 
@@ -1072,6 +1452,15 @@ class UnderwritingCaseDatabaseTest {
         assertThat(client.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
                 + "\"password\":\"" + CreditTestClient.PASSWORD + "\"}", null, CreditTestClient.key()).statusCode())
                 .isEqualTo(201);
+        grant(login, role);
+        HttpResponse<String> session = client.post("/v1/authentications",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + CreditTestClient.PASSWORD + "\"}", null,
+                CreditTestClient.key());
+        return CreditTestClient.field(session.body(), "sessionToken");
+    }
+
+    /** Grants {@code role} to the identity registered as {@code login}. */
+    private void grant(String login, RoleName role) throws Exception {
         UUID identity;
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read = app.prepareStatement("SELECT id FROM identity.identity WHERE login_identifier = ?")) {
@@ -1089,9 +1478,5 @@ class UnderwritingCaseDatabaseTest {
             authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        HttpResponse<String> session = client.post("/v1/authentications",
-                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + CreditTestClient.PASSWORD + "\"}", null,
-                CreditTestClient.key());
-        return CreditTestClient.field(session.body(), "sessionToken");
     }
 }

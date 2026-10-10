@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 250 "Previously" blocks, newest first, from `P10-TST-001` back to project initiation. *(`X-TSK-017` is cross-cutting and completed after `P10-TST-002` and before `P10-TST-001`, so it stands between them.)* *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 251 "Previously" blocks, newest first, from `P10-DOC-001` back to project initiation. *(`X-TSK-017` is cross-cutting and completed after `P10-TST-002` and before `P10-TST-001`, so it stands between them.)* *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,43 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P10-DOC-001` — The Phase 10 exit review** — `COMPLETE` (2026-10-09). **Phase 10 `COMPLETE`; M10.8 closed at
+3 of 3.** The review ([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)): 8 review areas, 12 universal criteria,
+F1–F8 re-assessed (F1, F2, F4, F5 vacuous - credit posts nothing; F8 `N/A`) and 24 phase-specific criteria `PASS` -
+criterion 7 and the Testing bullet with their recorded deviation; G1–G11 and the two further decisions read against the
+code (all hold; G7's "evaluation's approved amount" built as the referral's ceiling, G11's retry edge as the claim's
+`UNAVAILABLE → REQUESTED`, documents corrected); the Phase 11 boundary verified clean; the Phase 15 evidence-purge row
+present, its scope widened. Six read-only audits, then four document passes. **Found and fixed in code:** (1) **a policy
+could approve past its own maximum exposure** (`INV-CRD-09`) - the evaluator judges exposure only through rules and the
+proposal door demanded none: it now refuses `422 credit.PolicyIncomplete` (`CreditPolicy.boundsExposure`,
+`PolicyRule.refusesExposurePast`; `CreditPolicyValidationTest#onlyAGuaranteedRuleBoundsTheExposure`,
+`CreditPolicyEndpointDatabaseTest#theRefusals`); (2) the retry sweep kept asking providers for closed requests - the
+claim now admits only open ones (`BureauCollectionDatabaseTest#theRetrySweepStopsAskingForAClosedRequest`); (3) the
+evaluating step took the pinned versions (L5) before the data requests (L4), against the one lock order - now L4 first
+(`DecisionOrchestrationDatabaseTest#theEvaluatingStepLocksItsDataRequestsBeforeThePinnedVersions`); (4) a record's age
+ran from the provider's own date (`INV-CRD-08`) - now `LEAST(retrieved_at, recorded_at)`
+(`DecisionSnapshotDatabaseTest#aRecordDatedInTheFutureIsAgedFromItsRecording`). **Found and filled in tests:** four
+audited acts never asserted (the policy's and scorecard's proposal and rejection); the expiry-against-decision boundary
+over 240 requests where the gate says ≥ 200 (`CreditDecisionDatabaseTest#expiryAndDecisionAtTheBoundaryOverTwoHundredRequests`
+- its first version, timed once a minute early, saw every request on one side of the boundary: re-timed from the
+database a second before each race, 51 DECIDED, 189 EXPIRED, sixteen deciding transactions refused by the trigger and settled by the next step); every born-once arbiter refusing a copy with every trigger off
+(`UnderwritingCaseDatabaseTest#everyBornOnceArbiterRefusesACopyWithEveryTriggerOff`); the case's domain refusals and
+raw-SQL edges out of every terminal state in all three machines; the decision's side tables per role; five keyed acts
+replayed; a generated twelve-activation history; three `401`s; and a pre-existing flaky assertion
+(`#aDecisionCitingEveryAdverseCodeRecordsAndPublishes` refused "740" anywhere in a payload whose decision id can carry it).
+**Documents:** ADR-0084…0089 read against the code, corrected and `Accepted`; `PHASE_10_PLAN.md` (§20 errata),
+`CREDIT_DECISIONING_LIFECYCLES.md`, `CREDIT_MODEL.md`, `MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md`, the glossary
+(six terms; Credit Record) and `DOMAIN_MODEL.md`, `DISTRIBUTED_EXECUTION.md` §3, `DATA_CLASSIFICATION.md`,
+`AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `FINANCIAL_INVARIANTS.md`, the `DELIVERY_PLAN.md` addendum,
+`OPERATIONS_RUNBOOK.md` §6 (new), `CAPABILITY_MAP.md`, `ROADMAP.md`, `DECISIONS.md`, the ADR index, a dated read note
+under the gate's Phase 10 criteria, and eight code comments and texts made true - among them the consent refusal the gate
+itself named (`403 credit.ConsentRequired`; built `409 consent.ConsentRequired`). **PROBES**: SEVEN, SEVEN CAUGHT (one
+first attempt void - the dropped unique was production's `ON CONFLICT` target - and re-performed on another), every
+restore byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +7 rows. **The flip**, proven non-vacuous: without
+`INV-CRD-11`'s two rows the guard failed `(currently 10)` naming exactly `["INV-CRD-11"]`; restored byte-identical
+(sha256 `fec35ec6…`). **Multi-instance PASS.** **NEXT**: the Phase 10 → 11 transition `READY`. **Verified** by fresh runs
+on the final code - credit's database tier 73 across 8 suites; app's credit suites 48 across 6 in the shared JVM and 103 across 11 in their own containers (the storm among them, green); the fleet `test architectureTest --continue` after the flip and the records: the hermetic tier 2765 tests across 460 suites in 19 modules (credit's and app's executed fresh, 955 across 181; the other seventeen modules' tasks up to date - inputs unchanged since their last execution, not re-executed) and the architecture tier 213 across 51 (174 across 33 executed fresh) - the document guards among them; the document guards re-run after the last record edits (app's architecture tier 171 across 32 and its nine document-reading hermetic suites, 83 tests) - ALL 0 FAILURES; the fleet-wide database and kafka tiers skipped on the owner's instruction.
 
 **`P10-TST-001` — The credit decision storm** — `COMPLETE` (2026-10-09). M10.8 at 2 of 3. Decision correctness under every provider fault, crash, duplicate, activation and race at once, on two skewed instances: the ten-instance answer's capstone, `PASS` on its counts (every `Phase: 10` invariant; `DOD-TEST`, `DOD-FIN` by the exposure census). `CreditDecisionStormDatabaseTest` (`database`, `own-container`, listed in `ownContainerSuites`; one case, the storm about 245 s, about 4.6 minutes a run). **Two application contexts over one database**: A is the suite's own, its clock 5 s ahead of the server; B is a second `FinappApplication` in the same JVM, 5 s behind (`ServerSkewedClock`). Both pull from one simulated bureau (`bureau-sim-a`) and one simulated financial-data provider (`findata-sim-a`) through their real adapters, so the providers' counts span both instances. **The load** (at least 90 s, 15 rounds and 300 decisions; about 380 rounds, 530-740 decisions a run): four movers per instance submit at their own door for a pool of 72 parties across both products. The parties' figures are chosen through the simulators' own derivation - good, referral and bad profiles. The movers replay keys on the other instance, cancel, and send applicants without consent (refused `consent.ConsentRequired`). Each instance runs two progress sweepers and a retry sweeper. Two underwriters per instance take, release, decline, approve (above four eyes where a referral allows) and second-approve; a refused second approval goes back to its first underwriter. Two officers activate loan, line and scorecard versions mid-flight on both doors. A chaos actor arms every fault of both simulators: timeout, slow, malformed, partial, unknown status, unavailable, lost response, and a foreign-currency balance. It also withdraws consents - at random, and through the simulator's own hook between producing an answer and writing it - suspends standings, delivers answers twice (one data request asked from both instances at once) and files requests with a validity of seconds. **Every round, in ONE `REPEATABLE READ` snapshot, every census exact** (soft, so a failure names every reading):
 - **the exposure census**: order-free from decision rows and their snapshots. For each limit among a party's live approvals, the least bureau balance plus the approvals decided under a limit at most that one fit it.

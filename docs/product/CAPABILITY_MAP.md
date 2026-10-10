@@ -84,14 +84,47 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
 - Underwriting (manual review) — delivered: a referral opens one case, taken by one underwriter,
   decided with reasons, never overriding a hard decline, a second underwriter above the product's
   threshold who may refuse it back, and a case that closes with its request
-- Loan servicing *(Phase 11)*
+- **Production constraint** *(the Phase 10 → 11 transition, 2026-10-10)* — confirmed after repair:
+  every submission requires a `MULTI_FACTOR` session, an underwriter never decides their own
+  party's case, a decision rests on its own request's snapshot, nothing is decided on stale data,
+  and **a person may not approve on an absent bureau balance** — so, with production composing only
+  the fail-safe sources, **production approves no credit until a real bureau is connected**
+  (unresolved #13, #14)
 - BNPL *(Phase 12)*
-- Delinquency / collections *(later phases — delinquency with Phase 11's lending; collections operations not yet scheduled)*
 
 *(The Credit section's Phase 10 capabilities were marked "planned" by the Phase 9 → 10 transition,
-2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, then `Proposed`), and marked delivered by the Phase
-10 exit review, `P10-DOC-001` (ADR-0084…0089 `Accepted`). The risk score is the Risk section's,
+2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, then `Proposed`), marked delivered by the Phase
+10 exit review, `P10-DOC-001` (ADR-0084…0089 `Accepted`), and confirmed after repair by the Phase
+10 → 11 transition, 2026-10-10 (`reviews/PHASE_10_TO_11_TRANSITION.md`), which also moved loan
+servicing and delinquency to the Lending section below. The risk score is the Risk section's,
 Phase 13: credit consumes a risk signal through a seam and computes none.)*
+
+## Lending *(Phase 11, planned — the Phase 10 → 11 transition, 2026-10-10)*
+- Loan application, offer and acceptance *(planned)* — one customer act opens credit's decision
+  request; an approved decision becomes an expiring offer pinned to a four-eyes terms version; the
+  acceptance commits an immutable, versioned agreement, takes the approval up through credit's
+  consumption port and commits the exposure, atomically under the party's profile lock
+- Personal loan servicing *(planned)* — a deterministic amortisation schedule, ACT/365F simple daily
+  interest accrued once per date and billed from actual accrual, repayment from the wallet and
+  scheduled auto-collection, allocation oldest-due first (fees, interest, principal; any excess held
+  as a credit balance), payoff quote and execution
+- Revolving credit line *(planned)* — draws against the approved limit, revolving interest, a monthly
+  statement and minimum payment, the available limit recomputed from postings, closure; exposure
+  counts the committed limit
+- Disbursement *(planned)* — to the borrower's wallet, or on to an external bank account through
+  payments' withdrawal machinery with its ambiguity, return and reconciliation
+- Lending capital *(planned)* — every loan and draw funded from the platform's own capital, recognised
+  only from bank evidence and never over-deployed, so loan-funded wallet money is platform-funded
+- Delinquency and default *(planned)* — days past due derived, buckets, default at 90 days past due,
+  late fees as configured, waivers and reversals four-eyes, restructuring by amendment
+- Loan accounting *(planned)* — per-loan ledger accounts, due split from not-due, every figure a
+  ledger balance, proven by the subledger and replay proofs
+- Collections operations *(later phases — Phase 13's case management consumes lending's facts)*;
+  refinance *(the Phase 11 → 12 transition decides)*; write-off and provisioning *(Phase 14)*
+
+*(Marked "planned" by the Phase 10 → 11 transition, 2026-10-10 (`PHASE_11_PLAN.md`; ADR-0090…0100,
+`Proposed`), to be marked delivered by the Phase 11 exit review, `P11-DOC-001`. Production originates
+nothing until a real bureau is connected: Phase 11 proves origination against the simulators.)*
 
 ## Risk
 - Fraud

@@ -1450,7 +1450,12 @@ exemption) + `DOMAIN`.
 query over a generated history; an activation mid-decision leaving the pinned version deciding;
 an activation on a database clock behind its predecessor's start committing, the periods meeting
 (`CreditPolicyVersionDatabaseTest`, `ScorecardVersionDatabaseTest`
-`#anActivationSurvivesADatabaseClockBehindItsPredecessor`).
+`#anActivationSurvivesADatabaseClockBehindItsPredecessor`); the pin's share locks — an
+activation's row lock (`FOR NO KEY UPDATE`) on the `ACTIVE` policy or scorecard row makes the
+production `SUBMITTED -> COLLECTING` step wait at its share statement, and on the pinned rows the
+deciding transaction (`CreditDecisionDatabaseTest#theCollectingStepSharesTheActivePolicy`,
+`#theCollectingStepSharesTheActiveScorecard`, `#theDecidingTransactionSharesThePinnedPolicy`,
+`#theDecidingTransactionSharesThePinnedScorecard`).
 **Phase:** 10
 
 ### INV-CRD-06 — A decision request is decided once, on one basis
@@ -1468,6 +1473,16 @@ snapshot; `UNIQUE (snapshot_id)` on the assessment; `UNIQUE (assessment_id)` on 
 **Verify:** Ten progress sweepers per request, and a crash after each step re-driven by another
 instance, each counted one; a successor snapshot only where the reserved exposure changed, and
 the decision naming it; a lock-bypass probe per arbiter.
+*Since the Phase 10 to 11 transition* (2026-10-10, which found "of the same request" enforced by
+nothing - the decision's, the assessment's and the evaluation's input keys on the input's id alone,
+their copied hash and pins unchecked): composite foreign keys `(snapshot_id, decision_request_id)`,
+`(assessment_id, decision_request_id)` and `(basis_evaluation_id, decision_request_id)` hold each row
+to its own request's input, and credit `V017`'s birth triggers seal the assessment's hash and pins to
+its snapshot, the evaluation's policy and engine to its assessment, and the decision's hash and pins
+to its request's LATEST snapshot and (once pinned) the request's versions; the replay's seal checks
+the snapshot is the decision's own request's (`Divergence.HASH`)
+(`UnderwritingCaseDatabaseTest#aDecisionRestsOnItsOwnRequestsSnapshot`,
+`DecisionReplayDatabaseTest#aDecisionOnAnotherRequestsSnapshotDivergesByHash`).
 **Phase:** 10
 
 ### INV-CRD-07 — A decision's snapshot is complete and sealed
@@ -1491,8 +1506,11 @@ never recorded (`BureauSelectionDatabaseTest#theRecordNamesItsProvider`,
 
 ### INV-CRD-08 — Stale data never decides
 **Statement:** Every credit record a snapshot uses was retrieved within the pinned policy's
-declared maximum age for its source kind, judged on the database clock at the freeze. A record
-past it is re-collected, never used.
+declared maximum age for its source kind, judged on the database clock at the freeze **and again
+at the decision**. A record past it is never used: at the freeze it is re-collected once if it was
+fresh when recorded, else (already stale when recorded, or stale a second time on one request) its
+source kind is unavailable for the request and the policy's fallback decides (`INV-CRD-10`); past
+it at the decision, nothing is decided on it.
 **Why:** A decision on an out-of-date bureau file decides a different applicant from the one
 who applied; and an instance clock judging the age lets skew admit stale data or refuse fresh.
 **Enforce:** `DOMAIN` (judged against `DatabaseTime.now` in the freezing transaction). The age
@@ -1501,14 +1519,31 @@ runs from the earlier of the provider's stated retrieval and our own recording �
 (`JdbcDecisionSnapshotStore`), so a provider clock ahead of ours, or a re-stamped file, never
 keeps stale data fresh. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
 found the age judged on `retrieved_at` alone — the provider's word — and corrected it.)*
-**Verify:** A record one second past the maximum age re-collected; an instance skewed ±5 s
-neither accepting stale data nor refusing fresh.
+Re-collection is bounded (`SnapshotFreezer`, ADR-0085 §11): only a record with `retrieved_at >=
+recorded_at − max age`, and only the kind's first data request on the decision request, re-collects.
+*(Added at the Phase 10 → 11 transition, 2026-10-10, whose audit found a provider stamping every
+report past the age looping paid pulls until the request expired.)*
+The re-judgement at the decision *(added at the Phase 10 to 11 transition, 2026-10-10, which
+found a taken case decidable on its basis's records however long it was held, and a successor
+snapshot copying them unjudged)*: the deciding transaction re-judges every record the deciding
+snapshot froze, on the same expression (`DecisionSnapshotStore.staleRecords`), before it writes
+anything - a person is refused `422 credit.DataStale` with nothing recorded (the case is released
+and expires with its request), the system decides nothing (the request waits for its expiry), and a
+successor refuses to copy a stale record (`SnapshotFreezer.RecordsStale`).
+**Verify:** A record that aged one second past the maximum age re-collected; a record stale when
+recorded, and a second staleness, frozen unavailable with no further data request
+(`DecisionSnapshotDatabaseTest`, `DecisionOrchestrationDatabaseTest#aProviderStampingEveryReportStaleIsUnavailableNotALoop`);
+an instance skewed ±5 s neither accepting stale data nor refusing fresh; a record aged past the
+maximum between a referral and its person's decision refusing approval and decline alike, and the
+system's decision, and a successor (`UnderwritingCaseDatabaseTest#nothingIsDecidedOnStaleData`).
 **Phase:** 10
 
 ### INV-CRD-09 — Decisions for one party are serialised on its exposure
 **Statement:** Every deciding transaction for a party holds that party's `credit_profile` row
-lock and re-reads the party's reserved exposure under it, so concurrent approvals — across
-products, and beside a person's approval — never together exceed the policy's exposure limit.
+lock and re-reads the party's reserved exposure **and outstanding platform credit** under it, so
+concurrent approvals — across products, and beside a person's approval — never together exceed the
+policy's exposure limit. An exposure that cannot be assessed — the bureau's total balance absent —
+is never approved, by the platform or by a person: **no exception**.
 **Why:** Exposure judged outside a lock is a limit two requests each pass alone and break
 together — `INV-CON-03`'s lesson pointed at credit.
 **Enforce:** `DOMAIN` (lock-then-look: the profile row `FOR UPDATE` first in every deciding
@@ -1519,8 +1554,28 @@ non-negative amount, or `EXPOSURE` `GT`/`GE` at most the limit, with a non-appro
 (`CreditPolicy.boundsExposure`, `PolicyRule.refusesExposurePast`), judged at proposal so a stored
 version always reads back. *(Added at the Phase 10 exit review, `P10-DOC-001`, 2026-10-09, which
 found a policy without such a rule admitted, and so able to approve past its own limit.)*
-**Verify:** Two products for one party at the limit raced ten ways, the second seeing the first's
-reservation; the storm's exposure census, no party's reserved exposure above its limit at rest.
+*(Amended at the Phase 10 to 11 transition, 2026-10-10.)* Three holes found and closed: (1) the
+deciding transaction re-read the reservation alone and a successor copied the first freeze's
+outstanding credit, so once Phase 11 consumes an approval into a loan - reserved down, outstanding up
+by the same amount - the decision would judge the limit on a stale outstanding figure; both terms are
+now re-read under the profile lock and a successor replaces both, and **Phase 11's loan /
+consumption writer must hold the party's `credit_profile` row `FOR UPDATE`** in the transaction that
+moves the exposure from reserved to outstanding. (2) A person's exposure check counted an absent
+bureau balance as zero; by the owner's decision of 2026-10-10 a person's approval on an
+unassessable exposure is refused `422 credit.ExposureUnassessable` - they may only decline. The
+recorded consequence: production, which has only fail-safe sources, can approve nothing until a
+real bureau is connected. (3) The person-versus-system race asserted a count that could not fail;
+it now asserts both orders occur, and a lock-wait test proves the person's deciding transactions
+wait on the profile lock.
+**Verify:** Two products for one party at the limit raced a hundred rounds, both deciders observed
+waiting at the profile lock together in every round, the second seeing the first's reservation
+(`CreditDecisionDatabaseTest#twoProductsAtTheExposureLimitSerialise`); the storm's exposure census,
+no party's reserved exposure above its limit at rest; an outstanding figure moved between the
+evaluation and the decision seen by both deciders
+(`UnderwritingCaseDatabaseTest#theOutstandingCreditIsReReadAtTheDecision`); a person refused
+approval on an absent bureau balance (`#aPersonCannotApproveAnUnassessableExposure`); the
+person's deciding transactions blocked on a held profile lock
+(`#thePersonsDecidingTransactionWaitsOnTheProfile`).
 **Phase:** 10
 
 ### INV-CRD-10 — Missing data never approves
@@ -1530,15 +1585,34 @@ recorded, and the policy's declared fallback — refer or decline — decides, r
 **Why:** The fail-safe direction: an outage that approves extends credit on no evidence.
 **Enforce:** `DOMAIN` (every approving path requires the source's attributes present; a policy
 lacking the fallback rule for a source kind it reads refused at proposal,
-`credit.PolicyIncomplete`).
+`credit.PolicyIncomplete`). Every data request reaches an outcome the freeze can read: an answer
+Tx2 cannot record is `UNAVAILABLE` (attempt `UNRECORDED`, its bytes kept), and a `REQUESTED` request past
+its deadline is never re-asked and is reported `UNAVAILABLE` once (`CreditDataCollection`,
+`JdbcCreditDataRequestStore.claimDue`/`claimOverdue`); a provider body is malformed unless it is
+exactly one strict JSON object (`CreditProviderJson`). *(Added at the Phase 10 → 11 transition,
+2026-10-10.)*
 **Verify:** Every fault of the provider contract suite ending in refer or decline with
-`CRD-SOURCE-UNAVAILABLE`; an incomplete policy refused; no storm approval on an absent source.
+`CRD-SOURCE-UNAVAILABLE`; an incomplete policy refused; the missing-data census
+(`MissingDataCensus`) — zero `SYSTEM` decisions `APPROVED`, and zero evaluations `APPROVE`, on a
+snapshot whose `SOURCE_UNAVAILABLE` names a source kind the pinned policy reads, or on which a
+comparison rule of the pinned policy reads an attribute the snapshot holds `ABSENT` or a figure the
+assessment could not compute; recomputed from the snapshot's canonical text, the pinned rules and
+the assessment, never from the evaluator's own record — in every storm round's one
+`REPEATABLE READ` snapshot, with its subjects shown at rest
+(`CreditDecisionStormDatabaseTest`), and over the battery's ten thousand
+(`DecisionReproducibilityBatteryTest#missingDataNeverApproves`), where replay alone could not see
+it (it re-runs the same evaluator). *(The census was added at the Phase 10 → 11 transition: this
+line had claimed it before the storm had it.)* An
+unrecordable answer and a `REQUESTED` request past its deadline each ending `UNAVAILABLE`, reported
+once (`BureauCollectionDatabaseTest`); concatenated, duplicate-key and trailing-token bodies
+`MALFORMED` in every adapter's golden files.
 **Phase:** 10
 
 ### INV-CRD-11 — A person's credit decision is bounded
 **Statement:** A person's decision on a referral is never the second approval of their own first
-decision, never approves a request whose evaluation included a hard decline, and always carries
-at least one reason code.
+decision, never approves a request whose evaluation included a hard decline, always carries
+at least one reason code, and is never made - taken, decided, second-approved or refused - by a
+person whose own party is the applicant.
 **Why:** One person approving their own exception, or overriding a hard decline, is the
 internal-fraud and regulatory exposure four-eyes exists for (`INV-AUD-04`); a human decision
 without a reason is no explanation.
@@ -1548,6 +1622,13 @@ one, each the catalogue's by the machine trigger - in place of the planned reaso
 trigger; *wording corrected by `P10-TSK-018`*).
 **Verify:** Self-approval refused at the domain and at the `CHECK`, each alone;
 `422 credit.HardDeclineNotOverridable`; `422 credit.ReasonRequired`; each by a raw-SQL writer too.
+*Since the Phase 10 to 11 transition* (2026-10-10, which found no comparison of the case's party with
+the actor's - an underwriter who is also a customer could take and approve their own referral below
+the four-eyes threshold): every act refused `403 credit.SelfDealingRefused` when the actor's party
+(`CreditActingParty`, composed over the identity store) is the case's, or cannot be resolved, and the
+attempt recorded `FAILED` `credit.ReviewOwnCaseRefused`
+(`UnderwritingCaseDatabaseTest#anUnderwriterNeverActsOnTheirOwnPartysCase`,
+`#aCustomerUnderwriterCannotTakeTheirOwnReferralOverHttp`).
 **Phase:** 10
 
 ### INV-CRD-12 — Credit arithmetic is exact
@@ -1578,6 +1659,340 @@ tasks that build it.*
 `P10-TST-001` and `P10-TST-002`; each carries its `MUTATION_TESTING.md` §2 rows, read at the Phase
 10 exit review (`P10-DOC-001`), which recorded Phase 10 `COMPLETE` and so made the register guard
 demand them. The tasks' wording corrections stand in the entries where they were made.)*
+
+---
+
+# Lending — `INV-LND`
+
+### INV-LND-01 — A loan's figures are ledger balances
+**Statement:** Every principal, drawn principal, interest, fee and credit-balance figure of a loan
+or credit line is a balance of one of its six per-account ledger accounts (`LOAN_PRINCIPAL`,
+`LOAN_PRINCIPAL_DUE`, `LOAN_INTEREST_ACCRUED`, `LOAN_INTEREST_DUE`, `LOAN_FEES_DUE`,
+`LOAN_CREDIT_BALANCE`), derived from journal lines. No lending table holds a mutable monetary
+value; every operational amount (billed, drawn, allocated, accrued, assessed) is an immutable,
+born-once row whose sum equals the ledger, and a difference is an alert, never self-corrected.
+**Why:** A stored loan balance is a second financial truth that drifts from the ledger — `INV-BAL-01`
+and `INV-LED-04` pointed at lending. A figure the borrower is charged must be explainable from
+journal lines, not from a column someone updated.
+**Enforce:** `DB-PRIVILEGE` (the application role holds `SELECT, INSERT` on lending's fact tables and
+conditional `UPDATE` only of status and permit columns on the machine tables — never `UPDATE` of a
+money column, never `DELETE`) + `STATIC` (`LendingSchemaHasNoMutableMoneyTest`: every `*_minor`
+column on an `INSERT`-only table; `LendingBooksHaveOnePosterTest`: only lending's operations post to
+the loan purposes) + `DOMAIN` (every decision — allocation, accrual base, payoff, available limit —
+derives from journal lines through `BalanceDerivation` under the account's lock, never from the
+display-only projection, `INV-BAL-05`; lending posts only through `PostingService` /
+`ReversalService`; every loan purpose joins `AccountPurpose.closedToFreeAdjustments()`).
+**Verify:** `LendingSchemaHasNoMutableMoneyTest` with a planted mutable money column
+(`P11-TSK-002`); the adjustment guard refusing every loan purpose (`P11-TSK-003`);
+`LoanSubledgerProof` zero for every account — each of the six balances equal to its rows' sums, no
+due account negative — gauged `finapp.lending.subledger.proof{verdict}` and alerting on any failure
+(`P11-TSK-029`); the storm's at-rest subledger proof for every account in every round
+(`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-02 — Interest accrues once per account per date
+**Statement:** For each loan or credit line and each accrual date at most one accrual row exists and
+at most one journal entry records it, whatever reruns, instances, crashes, restarts or clock skew
+occur; every elapsed accruable date of an account in servicing is accrued exactly once, oldest
+first, a zero-interest day writing its row and no entry.
+**Why:** A double accrual is interest the borrower never owed — money created by a scheduler
+(`INV-IDEM-02` pointed at lending); a missed date is income silently forgone and a schedule that no
+longer explains the bill.
+**Enforce:** `DB-CONSTRAINT` (`interest_accrual UNIQUE (loan_id, accrual_date)`; the ledger's
+idempotency key `lending.accrual:<loan>:<date>`) + `DOMAIN` (each servicing step under the account's
+`loan` row lock, L3, conditional on the date's absence; a payoff accrues missing dates itself under
+the same uniques).
+**Verify:** Scenario 4 —
+`P11-TSK-016`'s `InterestAccrualDatabaseTest#theAccrualRunTwiceAccruesOnce`, with ten sweepers and a
+crash mid-run, one row and one entry per (account, date); the unique dropped as the task's probe
+turns scenario 4 red (`MUTATION_TESTING.md` §2); the storm's completeness census — every accrual date
+of every account present exactly once at rest (`P11-TST-001`); `finapp.lending.accrual.lag` alerting
+past one day.
+**Phase:** 11
+
+### INV-LND-03 — A schedule conserves principal exactly
+**Statement:** Every repayment schedule version's principal portions sum to its principal exactly,
+and its instalment amounts to that principal plus the sum of its period interest, every rounding at a
+declared point of a declared schedule engine version; terms that would amortise negatively are
+refused at the offer, never scheduled.
+**Why:** Rounding leakage of one minor unit per loan is, at portfolio scale, money created or
+destroyed with no economic event behind it; a negatively amortising schedule is a different product
+from the one offered.
+**Enforce:** `DOMAIN` (`SCHEDULE_ENGINE_V1`: the level instalment rounded once `UP`, period interest
+rounded once `HALF_EVEN`, the final principal portion the remaining balance, conservation asserted at
+construction; a non-positive principal portion refused `422 lending.TermsNotAmortising`) +
+`DB-CONSTRAINT` (`repayment_schedule UNIQUE (loan_id, schedule_version)`, the rows `INSERT`-only — a
+recalculation is a new version, never an edit).
+**Verify:** The schedule engine's property tests — Σ principal = P and Σ amount = P + Σ interest for
+every term 6–60, every repayment day 1–28 with the month-end clamp, rates including 0, disbursement on
+every day of a leap and a non-leap year — and golden worked examples checked by hand
+(`P11-TSK-006`…`009`, the engine tasks); the battery's ≥ 10,000 generated loans each conserving
+exactly and replayed `IDENTICAL` (`P11-TST-002`); `LoanReplayProof` re-running the pinned engine over
+every schedule version (`P11-TSK-029`).
+**Phase:** 11
+
+### INV-LND-04 — Allocation conserves and never over-pays a component
+**Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
+component (fee, interest or principal of one due item) had due when the repayment was allocated; no
+due account's balance ever becomes negative; anything beyond what is due goes, by the agreement's
+pinned overpayment treatment, to principal paydown (line) or to the credit balance, never to a due
+account.
+**Why:** An allocation that over-pays a component leaves a negative due balance — an unexplained
+credit to the borrower and a broken subledger; one that under-allocates loses the borrower's money.
+**Enforce:** `DB-CONSTRAINT` (a deferred trigger on `repayment` / `repayment_allocation`: Σ allocation
+= amount at commit) + `DOMAIN` (`ALLOCATION_ENGINE_V1` is pure, `allocate(amount, dueState, rules)`,
+with `dueState` derived from postings and rows under the account's `loan` row lock, L3, never from the
+projection; concurrent repayments serialise on L3 and each allocates against what it finds).
+**Verify:** Scenario 3 —
+`RepaymentDatabaseTest#twoRepaymentsOnOneInstalmentSerialiseAndConserve` (`P11-TSK-018`): Σ
+allocations = Σ amounts, no due account negative, never over-allocated; the allocation engine's
+properties — conservation, order, never above due, both overpayment treatments (`P11-TSK-006`…`009`);
+the task's probe — reading the projection for allocation turns scenario 3 red under a racing reversal
+(`MUTATION_TESTING.md` §2); the subledger proof's non-negativity arm (`P11-TSK-029`); the storm's Σ
+allocations = Σ repayments at rest (`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-05 — Terms are pinned and immutable
+**Statement:** A loan agreement version never changes once written; it carries the full,
+self-contained canonical term set, its SHA-256 and the agreement template and engine versions; every
+servicing row names the agreement version it was computed under; a change of contractual terms is a
+new agreement version, approved four-eyes and accepted by the customer; a terms version is immutable
+once proposed, and an agreement keeps the terms version it was pinned to whatever later becomes
+active.
+**Why:** A figure must be explainable years later, after any product change (`INV-HIST-04` pointed at
+lending): "why is this instalment this amount?" is answered from agreement vN (hash) → schedule vN →
+billing → allocations → journal entries, or not at all.
+**Enforce:** `DB-PRIVILEGE` (`loan_agreement` and `loan_acceptance` `INSERT`-only for every role;
+`loan_terms_version` immutable once proposed) + `DB-CONSTRAINT` (`loan_agreement UNIQUE (loan_id,
+version)`; foreign keys from servicing rows to the agreement version; one `PROPOSED` and one `ACTIVE`
+terms version per product by partial uniques) + `DOMAIN` (the acceptance echoes the offer's
+`terms_sha256`, a mismatch refused `409 lending.TermsChanged`; an amendment's acceptance conditional on
+the agreement version it was proposed against).
+**Verify:** Raw-SQL `UPDATE` and `DELETE` on the agreement, acceptance and terms tables refused for
+every role (`P11-TSK-005`, `P11-TSK-012`); a changed offer refused at acceptance (`P11-TSK-012`);
+`LoanReplayProof` re-verifying every agreement version's `terms_sha256`, a perturbed agreement byte
+flipping the verdict to `DIVERGED` (`P11-TSK-029`, `P11-TST-002`); scenario 8 —
+`AmendmentDatabaseTest#anApprovedAmendmentChangesTheScheduleOnce` (`P11-TSK-027`), the agreement and
+schedule version n+1 written once and a moved agreement lapsing the amendment.
+**Phase:** 11
+
+### INV-LND-06 — One decision funds at most one loan or line, and exposure has no gap
+**Statement:** A credit decision is consumed at most once — only while `APPROVED` and before its
+`valid_until`, only through credit's consumption port — in the same transaction and under the same
+party `credit_profile` row lock that commits the agreement whose principal or limit replaces the
+decision's reservation in the party's exposure. The exposure lending supplies counts the committed
+principal of loans awaiting disbursement, the outstanding principal of loans, and the **limit** of
+every open credit line; every lending transaction that raises a party's exposure or moves it between
+reserved, committed and outstanding takes the party's profile lock first; and no instant sees neither
+the reservation nor the commitment.
+**Why:** A gap between reservation and commitment, or an undrawn limit assumed away, lets a party
+borrow its limit twice — `INV-CRD-09` broken from the lending side. A consumption written outside
+credit's ownership is a second writer of credit's state.
+**Enforce:** `DB-CONSTRAINT` (`credit_decision_consumption UNIQUE (decision_id)` and `UNIQUE
+(consumer_kind, consumer_ref)`; a trigger refusing any insert not made inside the definer function;
+`loan UNIQUE (offer_id)`) + `DB-PRIVILEGE` (the `SECURITY DEFINER` `credit.consume_decision`, owned by
+credit's owner role, the only path to the table; the application role's `INSERT` revoked) + `DOMAIN`
+(the profile lock, L0, first in acceptance, disbursement and repayment reversal;
+`PlatformCreditExposure` version 2 one SQL statement over journal lines, never `account_balance`;
+lapse judged `valid_until <= statement_timestamp()`, the complement of the reservation's predicate).
+**Verify:** `P11-TSK-001`'s counted races — ten consumers of one decision, one consumed; consume
+versus decide for one party serialised; the `valid_until` boundary under ±5 s skew, exactly one of
+*reserves* and *consumable*; a direct `INSERT` by the application role refused; the probe consuming
+without the profile lock turning the serialisation test red; ten acceptances of one offer, one
+account (`P11-TSK-012`); acceptance versus a credit decision for the same party serialised, and the
+exposure read versus a committing disbursement never torn (`P11-TSK-013`); the `ExposureCensus` —
+credit's reserved plus lending's committed and outstanding never above the limit the party's policy
+declared at the deciding instant — in every storm round (`P11-TST-001`), gauged
+`finapp.credit.exposure.census{verdict}`.
+**Phase:** 11
+
+### INV-LND-07 — A loan is disbursed at most once, its receivable born exactly with the wallet credit, and no payout outcome creates, duplicates or undoes it
+**Statement:** A loan has at most one disbursement and at most one disbursement journal entry; its
+receivable (`LOAN_PRINCIPAL`) is debited in the very entry that credits the borrower's wallet, on
+both disbursement paths, and the loan is `ACTIVE` exactly when that entry exists; a failed
+disbursement posts nothing. On the external path the payout is dispatched at most once, through
+payments' withdrawal under one key, and is never re-dispatched by lending; no payout outcome —
+`PAID_OUT`, `FAILED`, `RETURNED`, `NOT_DISPATCHED`, or payments' `UNKNOWN` — creates, duplicates or
+reverses the disbursement or the receivable: it changes only when interest starts.
+**Why:** A double disbursement is a direct loss; a receivable without a disbursement is a phantom
+asset; a loan whose birth depends on a provider's ambiguous answer cannot say whether it exists. The
+wallet as transit account keeps the receivable's birth internal and final, and puts the external
+leg's ambiguity on machinery already proven for it (`INV-RAIL-02`).
+**Enforce:** `DB-CONSTRAINT` (`loan_disbursement UNIQUE (loan_id)`; `loan_payout UNIQUE (loan_id)`; the
+ledger key `lending.disbursement:<loan>`; the loan's machine trigger refusing
+`ACTIVE → PENDING_DISBURSEMENT` and `ACTIVE → CANCELLED`) + `DOMAIN` (the conditional
+`PENDING_DISBURSEMENT → ACTIVE` under the `loan` row lock in the posting's transaction; the payout's
+conditional claim committed before payments is called, payments keyed
+`payments.withdrawal:lending:<loanId>` so a re-drive replays; lending reads payments' outcome and
+never calls payments again on `UNKNOWN`; the hold placed at disbursement adopted, not duplicated, by
+payments' withdrawal).
+**Verify:** Scenario 1 —
+`LoanDisbursementDatabaseTest#theSameDisbursementOnTwoInstancesPostsOnce` (`P11-TSK-014`), one entry,
+one `ACTIVE` edge, the wallet credited once, and `LoanPayoutDatabaseTest#tenDispatchersOneWithdrawal`
+(`P11-TSK-015`); scenario 5 —
+`LoanPayoutDatabaseTest#aLostResponseIsHeldThenConcludedByInquiryAndNeverResent` (`P11-TSK-015`), the
+payout `DISPATCHED` while payments is `UNKNOWN`, no re-dispatch, accrual from the conclusion, one
+withdrawal at the provider; scenario 9 —
+`LendingOutboxAtomicityDatabaseTest#aCrashBetweenPostingAndPublicationLosesNothing` (`P11-TSK-014`);
+a returned or failed payout leaving the receivable and the disbursement entry unchanged
+(`P11-TSK-015`); the probe re-dispatching a payout on `UNKNOWN` turning scenario 5 red
+(`MUTATION_TESTING.md` §2); the storm's one disbursement per non-cancelled loan at rest
+(`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-08 — Closed is closed, and closed means settled
+**Statement:** A loan or line reaches `CLOSED` only in the transaction that brings its last
+receivable to zero and refunds any credit balance — closure is a consequence, never a command — so a
+`CLOSED` account has all six per-account balances at zero. A `CLOSED` or `CANCELLED` account accepts
+no repayment, accrual, billing, statement, fee, draw, amendment or condition change, and never leaves
+its terminal state.
+**Why:** Money taken for a closed loan has nowhere honest to go; a condition or accrual written after
+closure tells the borrower and the collections owner something false; a closed loan with a residual
+balance is either a hidden debt or a hidden refund.
+**Enforce:** `DB-CONSTRAINT` (the loan's every-writer machine trigger and status `CHECK` refusing any
+edge out of `CLOSED` or `CANCELLED`, `INV-LIFE-04`) + `DOMAIN` (closure only inside the transaction
+that zeroes the last receivable, under the `loan` row lock; repayment on a terminal account refused
+`409 lending.LoanNotRepayable` with nothing posted; the servicing sweep skipping terminal accounts and
+re-deriving the condition under L3).
+**Verify:** Raw-SQL edges out of `CLOSED` and `CANCELLED` refused for every role (`P11-TSK-012`); a
+repayment for a closed loan answering `409 lending.LoanNotRepayable` with nothing posted
+(`P11-TSK-018`); scenario 7 — `PayoffDatabaseTest#payoffDuringARepaymentIsStaleOrClosedNeverWrong`,
+and scenario 10 —
+`PayoffDatabaseTest#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure` (`P11-TSK-026`);
+the subledger proof's closure arm — every `CLOSED` account's six balances zero (`P11-TSK-029`,
+`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-09 — Interest arithmetic is exact and its conventions declared
+**Statement:** Interest is computed in exact decimal under the day count, servicing zone and rounding
+modes the agreement version declares (`ACT_365F`, simple daily interest on principal outstanding,
+never on interest or fees), by the accrual engine version the agreement pins; a period's posted
+accruals sum to the period's exact interest rounded once; terms naming a convention no engine version
+implements are refused.
+**Why:** An undeclared convention is unreproducible; rounding per day leaks a minor unit per period
+per account; floating point makes the same loan bill differently on two machines (`INV-MON-01`,
+`INV-MON-03` pointed at lending).
+**Enforce:** `STATIC` (`NoFloatingPointMoneyRulesTest` extended to `lending`) + `DOMAIN`
+(`ACCRUAL_ENGINE_V1`: the cumulative rounding — `posted(d) = round_HALF_EVEN(cum_exact(d)) −
+round_HALF_EVEN(cum_exact(d−1))` within a period, `BigDecimal` at scale 20 only inside the engine,
+the division once per day; the engine and conventions pinned on the agreement; an engine change a new
+engine version, the old one kept for replay).
+**Verify:** The accrual engine's hermetic tests — cumulative rounding equal to one rounding per
+period, 29 February accruing one day, zero days writing no entry (`P11-TSK-006`…`009`); billed
+amounts equal to the projection to the minor unit on an on-time path, property-tested (`P11-TSK-017`);
+the build rule with a planted `double` in `lending`; the battery's every accrual, billing and
+statement replayed `IDENTICAL` in two JVMs, a perturbed accrual flipping the verdict (`P11-TST-002`).
+**Phase:** 11
+
+### INV-LND-10 — Servicing time is the database's
+**Statement:** Every business date or instant that decides an accrual, a billing, a statement, a
+delinquency condition, a fee, an offer's expiry, an acceptance window or a posting's value date is
+read from the database clock after the relevant row lock, in the servicing zone the agreement
+declares; no instance clock decides any of them.
+**Why:** An instance clock accrues early, late or twice across a midnight; two instances skewed by
+seconds disagree about whether an offer has expired or a payment is late.
+**Enforce:** `DOMAIN` (`statement_timestamp()` read after the `loan` row lock; offer acceptance
+conditional on `expires_at > statement_timestamp()` and expiry on `<=`, exactly one at the boundary;
+every lending posting's `posting_date = value_date =` the business date of the database clock under
+the lock; no back-valued postings).
+**Verify:** Accrual across midnight under ±5 s skew — a date accrued once and never early
+(`P11-TSK-016`); acceptance versus expiry at the boundary, exactly one of `ACCEPTED` and `EXPIRED`
+(`P11-TSK-012`); the probe judging the accrual boundary on the instance clock turning the skew test
+red (`MUTATION_TESTING.md` §2); the storm's two instances with clocks ±5 s across at least three real
+business-date boundaries (`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
+**Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
+carry a reason, are proposed by one person and approved by another — never the proposer, never an
+employee whose own party holds the loan — and change figures only by new journal entries, a reversal
+or fee waiver bounded by the entry it corrects; an amendment also takes the customer's acceptance.
+No person edits a computed figure, adjusts a loan account freely, creates a loan, reprices outside an
+amendment, draws or disburses.
+**Why:** One person forgiving debt or reversing a repayment is the classic insider loss
+(`INV-AUD-04`); a correction that edits a figure erases the history the borrower was billed on.
+**Enforce:** `DB-CONSTRAINT` (the four-eyes `CHECK` on every proposal table; `repayment_reversal UNIQUE
+(repayment_id)`; the reversal bound, `INV-REV-02`) + `DB-PRIVILEGE` (the proposal and correction rows
+`INSERT`-only, status columns conditionally updatable only) + `DOMAIN` (the proposal row's conditional
+`PROPOSED` edge under its lock; `422 lending.ReasonRequired`, the reasons screened for card and account
+numbers; `403 lending.SelfApprovalRefused`; `lending.SelfDealingRefused` audited `FAILED`; every loan
+purpose closed to free adjustments; a repayment that closed a loan not reversible).
+**Verify:** Self-approval refused at the domain and at the `CHECK`, each alone, by a raw-SQL writer
+too; ten approvers of one proposal, one decision (`P11-TSK-020`, `P11-TSK-025`, `P11-TSK-027`);
+scenario 6 — `RepaymentReversalDatabaseTest#aReversalAfterAllocationReopensWhatItPaid`
+(`P11-TSK-020`), the entry swapped exactly, allocations negated by rows, later allocations untouched;
+a waiver above what is due refused `422 lending.WaiverExceedsDue` (`P11-TSK-025`); scenario 8
+(`P11-TSK-027`); the adjustment guard refusing every loan purpose (`P11-TSK-003`).
+**Phase:** 11
+
+### INV-LND-12 — Delinquency is derived and its history append-only
+**Statement:** Days past due is the number of days between the oldest past-due item's due date and
+the current business date (the database clock, the agreement's zone), zero when nothing is past due —
+never a stored counter; the bucket and the default flag (DPD ≥ the agreement's threshold, 90 by
+default) follow from it; each condition change is recorded once, only on a change, and never
+rewritten or deleted.
+**Why:** A counter drifts with every missed or repeated run; a rewritten condition history hides what
+the borrower and the collections owner were told and when.
+**Enforce:** `DB-CONSTRAINT` (`loan_condition_event UNIQUE (loan_id, business_date, kind)`) +
+`DB-PRIVILEGE` (`loan_condition_event` `INSERT`-only for every role) + `DOMAIN` (the condition derived
+daily under the `loan` row lock from billed and allocated rows; re-running a day writes nothing; a
+terminal account skipped).
+**Verify:** Delinquency transitions current → each bucket → cure → default → cure, a missed day caught
+up and a re-run day writing nothing (`P11-TSK-024`); raw-SQL `UPDATE` and `DELETE` on the condition
+table refused for every role; scenario 10 (`P11-TSK-026`); the storm's DPD equal to the date difference
+for every account at rest (`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-13 — Lending capital is recognised only from bank evidence and never over-deployed
+**Statement:** The `LENDING_CAPITAL` account of a currency is credited only by bank recognition of a
+statement line matched to a four-eyes capital contribution's expectation; and at every commit, for
+every currency, recognised capital less the committed principal of loans awaiting disbursement less
+the principal outstanding of every loan and line is at least zero, judged under the capital
+account's row lock at every loan acceptance, every draw and every repayment reversal that re-instates principal.
+**Why:** A disbursement or draw raises the platform's wallet liabilities without cash entering;
+unless recognised platform money backs it, customers' safeguarded money silently funds loans and the
+safeguarding position becomes false. Capital posted by a person, or adjusted to fit, is not capital.
+**Enforce:** `DB-CONSTRAINT` (the contribution's four-eyes `CHECK`; `capital_contribution UNIQUE
+(expectation_ref)`) + `STATIC` (`LendingBooksHaveOnePosterTest`: only capital recognition posts to
+`LENDING_CAPITAL`) + `DOMAIN` (`LENDING_CAPITAL` in `closedToFreeAdjustments()` and in
+`reconciledPositions()`'s single-poster discipline; bank recognition the one poster of `CASH_AT_BANK`,
+`INV-SET-06`; headroom derived from journal lines under the capital row lock, L6, a shortfall refused
+`422 lending.CapitalUnavailable`; interest and fee income never counted as capital).
+**Verify:** `LendingCapitalProof` (`P11-TSK-004`) per currency in one `REPEATABLE READ` snapshot —
+every capital journal line a recognised contribution's, headroom ≥ 0 at rest, the safeguarding
+adjustment `lending_funded(c)` published — gauged `finapp.lending.capital.proof{verdict}` and alerting
+on any failure; acceptances racing for the last capital, one admitted (`P11-TSK-004`, `P11-TSK-012`);
+draws racing for the last capital (`P11-TSK-021`); the probe skipping the capital lock letting two
+acceptances over-deploy (`MUTATION_TESTING.md` §2); the capital proof in every storm round with
+headroom contested (`P11-TST-001`).
+**Phase:** 11
+
+### INV-LND-14 — A draw never exceeds the available limit
+**Statement:** A credit line draw is admitted only if its amount is at most the line's available
+limit — the agreement's limit less drawn principal (`LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE`), derived
+from journal lines under the line's row lock — and only while the line is `ACTIVE` with draws not
+suspended; the available limit is never a stored number; interest and fees never consume it and a
+principal repayment restores it at commit.
+**Why:** A draw past the limit is credit no decision approved; a stored available limit drifts from
+the ledger and lets two concurrent draws each pass alone.
+**Enforce:** `DB-CONSTRAINT` (`credit_line_draw UNIQUE (loan_id, draw_key)`; the ledger key
+`lending.draw:<drawId>`) + `DOMAIN` (the available limit derived under the `loan` row lock, L3, in the
+draw's transaction; `422 lending.LimitExceeded`; `409 lending.DrawsSuspended` while past due or
+defaulted).
+**Verify:** Two draws racing for the available limit, one admitted and the other `422
+lending.LimitExceeded`; ten draws under one key, one entry; a suspended line refusing a draw
+(`P11-TSK-021`); the battery's ≥ 2,000 generated lines replayed `IDENTICAL` (`P11-TST-002`); the
+storm's no line's drawn principal above its limit at rest (`P11-TST-001`).
+**Phase:** 11
+
+*`INV-LND-01`…`INV-LND-14` catalogued by the Phase 10 → 11 transition (2026-10-10), the `INV-CRD`
+precedent: Phase 11's gate properties given stable IDs before any lending code exists, so the
+register can demand their demonstrations by identifier rather than by prose. Decisions in
+ADR-0090…0100; the machines in `LENDING_LIFECYCLES.md`; the design in `PHASE_11_PLAN.md` (§6 names
+these entries, §7.4 their contention rows, §13.2 the ten scenarios they cite). Task and test names
+are the plan's; the building task may rename a test and says so. Until Phase 11's first task lands,
+nothing these entries name is implemented; every statement is the decided design, corrected by the
+tasks that build it.*
 
 ---
 
@@ -2390,6 +2805,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-ACC` | 01–05 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
 | `INV-CRD` | 01–12 | Credit decisioning |
+| `INV-LND` | 01–14 | Lending |
 | `INV-IDN` | 01–08 | Identity, credentials and sessions |
 | `INV-KYC` | 01–06 | Verification and case management |
 | `INV-CNS` | 01–04 | Consent |
@@ -2398,8 +2814,9 @@ documents after resolution refused with nothing written or sent.*
 | `INV-RAIL` | 01–04 | Payment rails and routing |
 | `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**128 invariants.** Every one must be enforced and verified before the phase that owns it can
+**142 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate. *(The count moved from 110 to 120 at the Phase 8 → 9 transition,
 2026-10-02: `INV-FX-04`…`INV-FX-09` and `INV-XB-01`…`INV-XB-04` catalogued, and thirteen
 entries restated, each with its dated provenance.)* *(The count moved from 120 to 128 at the
-Phase 9 → 10 transition, 2026-10-07: `INV-CRD-05`…`12` catalogued.)*
+Phase 9 → 10 transition, 2026-10-07: `INV-CRD-05`…`12` catalogued.)* *(The count moved from 128
+to 142 at the Phase 10 → 11 transition, 2026-10-10: `INV-LND-01`…`14` catalogued, a new group.)*

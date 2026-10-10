@@ -84,6 +84,10 @@ public final class CreditInvestigations {
         ReasonRequired() {
             super("this investigator act requires a reason");
         }
+
+        ReasonRequired(String detail) {
+            super(detail);
+        }
     }
 
     /** Decision {@code id} explained, and the read recorded in {@code unitOfWork} - empty when no such decision. */
@@ -148,9 +152,7 @@ public final class CreditInvestigations {
         Objects.requireNonNull(replay, "replay");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        if (reason == null || reason.isBlank()) {
-            throw new ReasonRequired();
-        }
+        screened(reason);
         audit.append(unitOfWork, new AuditRecord(
                 AuditId.next(ids),
                 actor,
@@ -173,9 +175,7 @@ public final class CreditInvestigations {
             Connection unitOfWork, CreditRecordId record, String reason, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        if (reason == null || reason.isBlank()) {
-            throw new ReasonRequired();
-        }
+        screened(reason);
         Optional<CreditEvidenceId> evidence = reads.evidenceOf(unitOfWork, record);
         Optional<CreditEvidenceCipher.Encrypted> encrypted = evidence.flatMap(id -> reads.readEvidence(unitOfWork, id, reason));
         if (encrypted.isEmpty()) {
@@ -203,5 +203,18 @@ public final class CreditInvestigations {
                 Optional.of("evidence " + evidence.get().value() + " of record " + record.value()
                         + (content == null ? " - could not be decrypted" : ""))));
         return content == null ? new EvidenceRead.Unreadable() : new EvidenceRead.Served(evidence.get(), content);
+    }
+
+    /**
+     * An investigator's reason: present, and never a card-number or bank-account shape - it becomes the audit record's
+     * reason (the Phase 10 to 11 transition; {@code INV-AUD-02}).
+     */
+    private static void screened(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new ReasonRequired();
+        }
+        CreditReasons.defect(reason).ifPresent(defect -> {
+            throw new ReasonRequired(defect);
+        });
     }
 }

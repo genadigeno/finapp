@@ -104,16 +104,29 @@ class Phase10ReportsDatabaseTest {
     @DisplayName("the three reports equal what the month's rows say - the platform's approvals and decline by pinned"
             + " version, the referral, the reasons, the sources - each audited at every serving, never an amount")
     void theReportsCountTheMonthAndAreAudited() throws Exception {
-        systemDecided(UUID.randomUUID());
-        systemDecided(UUID.randomUUID());
+        List<UUID> ours = new ArrayList<>();
+        ours.add(systemDecided(UUID.randomUUID()));
+        ours.add(systemDecided(UUID.randomUUID()));
         UUID declinedParty = UUID.randomUUID();
         BALANCES.put(declinedParty, 3_000_000L);
-        systemDecided(declinedParty);
+        ours.add(systemDecided(declinedParty));
         UUID referred = evaluated(UUID.randomUUID(), CreditProduct.PERSONAL_LOAN, eur(500_000), WEEK);
         assertThat(decide(deciding(), referred)).isEqualTo(Decider.Decided.REFERRED);
         String officer = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
-        String month = YearMonth.now(ZoneOffset.UTC).toString();
-        String[] range = {month + "-01", YearMonth.parse(month).plusMonths(1) + "-01"};
+        // The month is the database's - the month our decisions were stamped in on its clock - never the JVM's: the
+        // reports bucket decided_at, which the database stamps.
+        List<String> months = new ArrayList<>();
+        for (UUID request : ours) {
+            months.add(CreditWorld.scalar("SELECT to_char(decided_at AT TIME ZONE 'UTC', 'YYYY-MM') FROM"
+                    + " credit.credit_decision WHERE decision_request_id = ?", request));
+        }
+        months.add(CreditWorld.scalar("SELECT to_char(c.opened_at AT TIME ZONE 'UTC', 'YYYY-MM') FROM"
+                + " credit.underwriting_case c WHERE c.decision_request_id = ?", referred));
+        assertThat(months.stream().distinct()).as("the case's decisions and referral fell in one month on the database's"
+                + " clock").hasSize(1);
+        String month = months.get(0);
+        // The month's bounds as UTC instants, whatever the session's time zone.
+        String[] range = {month + "-01T00:00:00Z", YearMonth.parse(month).plusMonths(1) + "-01T00:00:00Z"};
         long audits = reportReads();
 
         JsonNode outcomes = read("outcomes?month=" + month, officer);
@@ -131,8 +144,18 @@ class Phase10ReportsDatabaseTest {
                 + " WHERE product = 'CREDIT_LINE' AND status = 'ACTIVE'"));
         JsonNode line = row(outcomes.path("rows"), Map.of("product", "credit_line", "decidedBy", "system"),
                 lineVersion);
-        assertThat(line.path("declined").asLong()).isGreaterThanOrEqualTo(1);
-        assertThat(line.path("approved").asLong()).isGreaterThanOrEqualTo(2);
+        // Exactly what the month's rows say for the line's platform decisions under this version (another case of the
+        // suite may have added its own), and at least ours: two approvals and the decline.
+        String lineRows = "SELECT count(*) FROM credit.credit_decision d JOIN credit.credit_policy_version p"
+                + " ON p.id = d.policy_version_id WHERE d.product = 'CREDIT_LINE' AND d.decided_by_type = 'SYSTEM'"
+                + " AND p.version = ? AND d.outcome = ? AND d.decided_at >= ?::timestamptz AND d.decided_at < ?::timestamptz";
+        long declinedRows = count(lineRows, lineVersion, "DECLINED", range[0], range[1]);
+        long approvedRows = count(lineRows, lineVersion, "APPROVED", range[0], range[1]);
+        assertThat(line.path("declined").asLong()).isEqualTo(declinedRows);
+        assertThat(line.path("approved").asLong()).isEqualTo(approvedRows);
+        assertThat(line.path("decisions").asLong()).isEqualTo(declinedRows + approvedRows);
+        assertThat(declinedRows).as("our decline among them").isGreaterThanOrEqualTo(1);
+        assertThat(approvedRows).as("our two approvals among them").isGreaterThanOrEqualTo(2);
         assertThat(line.path("approvalRate").asString())
                 .isEqualTo(Phase10Reports.rate(line.path("approved").asLong(), line.path("decisions").asLong()));
         assertThat(outcomes.path("referrals")).anySatisfy(referral -> {
@@ -210,12 +233,15 @@ class Phase10ReportsDatabaseTest {
     }
 
     @Test
-    @DisplayName("the reports are CREDIT_INVESTIGATE's: an underwriter is refused 403, no session 401, neither recorded")
+    @DisplayName("the reports are CREDIT_INVESTIGATE's: an underwriter and a customer are refused 403, no session 401,"
+            + " none recorded")
     void onlyAnInvestigatorReads() throws Exception {
         String underwriter = sessionWith(RoleName.UNDERWRITER);
+        String customer = client.customer(true).token();
         long audits = reportReads();
         for (String report : List.of("outcomes", "reasons", "sources")) {
             assertThat(client.get(REPORTS + report, underwriter).statusCode()).isEqualTo(403);
+            assertThat(client.get(REPORTS + report, customer).statusCode()).as("a customer's token").isEqualTo(403);
             assertThat(client.get(REPORTS + report, null).statusCode()).isEqualTo(401);
         }
         assertThat(reportReads()).isEqualTo(audits);
@@ -308,11 +334,12 @@ class Phase10ReportsDatabaseTest {
         return count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReportRead'");
     }
 
-    /** A line request decided by the platform. */
-    private static void systemDecided(UUID party) {
+    /** A line request decided by the platform - its id. */
+    private static UUID systemDecided(UUID party) {
         Money amount = eur(200_000);
         UUID request = evaluated(party, CreditProduct.CREDIT_LINE, amount, WEEK);
         assertThat(decide(deciding(), request)).isEqualTo(Decider.Decided.DECIDED);
+        return request;
     }
 
     /** PERSONAL_LOAN v1 without its score rules, plus a rule that refers every loan to a person. */

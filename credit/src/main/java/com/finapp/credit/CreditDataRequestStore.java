@@ -117,12 +117,23 @@ public interface CreditDataRequestStore {
     void insertEvidence(Connection unitOfWork, NewEvidence evidence);
 
     /**
-     * Claims at most {@code limit} due requests - {@code REQUESTED} past its permit, or {@code UNAVAILABLE} past its
-     * permit and before its deadline - oldest permit first, in ONE statement that moves each to {@code REQUESTED} and
-     * re-stamps its permit; rows another claimer holds are skipped.
+     * Claims at most {@code limit} due requests - {@code REQUESTED} or {@code UNAVAILABLE}, past its permit and before
+     * its deadline (the Phase 10 -> 11 transition: a {@code REQUESTED} one too), of an open decision request - oldest
+     * permit first, in ONE statement that moves each to {@code REQUESTED} and re-stamps its permit; rows another
+     * claimer holds are skipped.
      */
     List<CreditDataRequestId> claimDue(Connection unitOfWork, int limit);
 
-    /** Claims at most {@code limit} unavailable requests past their deadline and not yet reported, marking them reported. */
+    /**
+     * Claims at most {@code limit} requests past their deadline and not yet reported - {@code UNAVAILABLE}, or still
+     * {@code REQUESTED} (never answered, or never recordable) - moving each to {@code UNAVAILABLE} and marking it
+     * reported, in ONE conditional statement.
+     */
     List<Overdue> claimOverdue(Connection unitOfWork, int limit);
+
+    /**
+     * Whether the decision request {@code decisionRequestId} is still open - a plain read, never its lock (lock-order
+     * element (2) is never taken after a data request's (4)). The last gate before a paid pull.
+     */
+    boolean decisionRequestOpen(Connection unitOfWork, UUID decisionRequestId);
 }

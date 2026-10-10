@@ -276,6 +276,92 @@ class BureauCollectionDatabaseTest {
     }
 
     @Test
+    @DisplayName("an answer that cannot be recorded is UNAVAILABLE, its attempt UNRECORDED and its bytes kept - never"
+            + " REQUESTED forever: the deadline ends it and CreditDataUnavailable is emitted once (Phase 10 -> 11 transition)")
+    void anUnrecordableAnswerIsUnavailableAndReachesItsDeadline() throws Exception {
+        UUID party = consentedParty();
+        // A clean answer dated past the database's range (bureau-sim-a's "+300000-01-01T00:00:00Z" is a valid Instant):
+        // the record's INSERT fails, deterministically, on every attempt.
+        CreditBureau poisoned = new Wrapped(adapter, request -> datedOutOfRange(adapter.pull(request)));
+        CreditDataCollection collection = collection(poisoned, CLOCK,
+                new CreditDataCollection.Timing(Duration.ofMillis(200), Duration.ofMillis(900)));
+        CreditDataRequestId id = opened(collection.open(opening(party), correlation()));
+
+        assertThat(status(id)).as("an explicit outcome, in a transaction of its own").isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        assertThat(attempts(id)).containsExactly("UNRECORDED");
+        assertThat(count("SELECT count(*) FROM credit.credit_record WHERE data_request_id = ?", id)).as("never data").isZero();
+        assertThat(count("SELECT count(*) FROM credit.credit_evidence WHERE data_request_id = ? AND NOT duplicate"
+                + " AND content_ciphertext IS NOT NULL", id)).as("the bytes that arrived are kept").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = '"
+                + CreditDataCollection.COLLECTED_EVENT + "'", id)).isZero();
+
+        awaitDatabasePast("SELECT deadline_at FROM credit.data_request WHERE id = ?", id);
+        assertThat(collection.claimDue(10)).as("past its deadline, never asked again").doesNotContain(id);
+        for (int i = 0; i < 3; i++) {
+            collection.reportOverdue(10, correlation());
+        }
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = '"
+                + CreditDataCollection.UNAVAILABLE_EVENT + "'", id)).as("exactly once").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a REQUESTED request past its deadline is never claimed again - it is reported UNAVAILABLE exactly once"
+            + " (Phase 10 -> 11 transition)")
+    void aRequestedRequestPastItsDeadlineIsReportedNotReasked() throws Exception {
+        UUID party = consentedParty();
+        // A pull that throws every time (an unresolvable subject): the request is never answered, never recorded.
+        CreditBureau throwing = new Wrapped(adapter, request -> {
+            throw new IllegalStateException("the bureau pull names no resolvable subject");
+        });
+        CreditDataCollection collection = collection(throwing, CLOCK,
+                new CreditDataCollection.Timing(Duration.ofMillis(200), Duration.ofMillis(900)));
+        CreditDataRequestId id = openOnly(collection, party);
+        assertThatExceptionOfType(IllegalStateException.class).isThrownBy(() -> collection.ask(id, correlation()));
+        assertThat(status(id)).isEqualTo(CreditDataRequestStatus.REQUESTED);
+
+        awaitDatabasePast("SELECT deadline_at FROM credit.data_request WHERE id = ?", id);
+        assertThat(collection.claimDue(10)).as("past its deadline, a REQUESTED request is never claimed again")
+                .doesNotContain(id);
+        for (int i = 0; i < 3; i++) {
+            collection.reportOverdue(10, correlation());
+        }
+        assertThat(status(id)).as("the deadline's outcome, for the freeze and the policy's fallback")
+                .isEqualTo(CreditDataRequestStatus.UNAVAILABLE);
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE id = ? AND unavailable_reported", id)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = '"
+                + CreditDataCollection.UNAVAILABLE_EVENT + "'", id)).as("exactly once").isEqualTo(1);
+        assertThat(engine.pulls()).as("nothing reached the bureau").isZero();
+    }
+
+    @Test
+    @DisplayName("a data request whose decision request has closed is never asked - no paid pull for a closed request"
+            + " (Phase 10 -> 11 transition)")
+    void aDataRequestOfAClosedRequestIsNeverAsked() throws Exception {
+        UUID party = consentedParty();
+        CreditDataCollection collection = collection(adapter, CLOCK, TIMING);
+        CreditDataRequestId id = openOnly(collection, party);
+        migrator("UPDATE credit.decision_request SET status = 'CANCELLED' WHERE id = '"
+                + uuid("SELECT decision_request_id FROM credit.data_request WHERE id = ?", id) + "'");
+
+        assertThat(collection.ask(id, correlation())).isEqualTo(CreditDataRequestStatus.REQUESTED);
+        assertThat(collection.retry(id, correlation())).isEqualTo(CreditDataRequestStatus.REQUESTED);
+        assertThat(engine.idempotencyKeys()).as("nothing asked of the bureau").isEmpty();
+        assertThat(attempts(id)).isEmpty();
+    }
+
+    /** {@code answer} with its retrieval dated in the year 300000 - a valid instant, past PostgreSQL's range. */
+    private static CreditDataAnswer datedOutOfRange(CreditDataAnswer answer) {
+        Instant far = Instant.parse("+300000-01-01T00:00:00Z");
+        return switch (answer) {
+            case CreditDataAnswer.Received r ->
+                    new CreditDataAnswer.Received(r.providerCode(), r.normaliserVersion(), far, r.attributes(), r.evidence());
+            case CreditDataAnswer.Partial p ->
+                    new CreditDataAnswer.Partial(p.providerCode(), p.normaliserVersion(), far, p.attributes(), p.evidence());
+            case CreditDataAnswer.Unavailable u -> throw new AssertionError("the bureau was meant to answer: " + u.cause());
+        };
+    }
+
+    @Test
     @DisplayName("a skewed sweeper neither retries early nor gives up early - every window is the database's")
     void aSkewedSweeperNeitherRetriesEarlyNorGivesUpEarly() throws Exception {
         CreditDataCollection.Timing timing = new CreditDataCollection.Timing(Duration.ofSeconds(30), Duration.ofSeconds(60));

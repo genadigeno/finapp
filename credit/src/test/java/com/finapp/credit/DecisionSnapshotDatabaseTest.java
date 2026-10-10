@@ -62,20 +62,103 @@ class DecisionSnapshotDatabaseTest {
     // ------------------------------------------------------------------ freshness on the database's clock
 
     @Test
-    @DisplayName("a record one second past the maximum age re-collects - a new data request, no snapshot")
+    @DisplayName("a record fresh when recorded that aged one second past the maximum age re-collects - a new data"
+            + " request, no snapshot")
     void aRecordOneSecondPastMaxAgeReCollects() throws Exception {
         UUID party = IDS.next();
         UUID decision = request(party);
-        SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
-            seedBureau(uow, decision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(1), cleanBureau());
-            return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
-        });
+        CreditRecordId record = inOneTransaction(uow -> seedBureau(uow, decision, party, databaseNow(uow), cleanBureau()));
+        age(record, MAX_AGE.plusSeconds(1));
+        SnapshotFreezer.Freeze freeze = inOneTransaction(uow ->
+                freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation()));
         assertThat(freeze).isInstanceOf(SnapshotFreezer.Freeze.Recollecting.class);
         assertThat(((SnapshotFreezer.Freeze.Recollecting) freeze).reopened().get(CreditSourceKind.BUREAU))
                 .isInstanceOf(CreditDataCollection.Opened.Requested.class);
         assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ?", decision))
                 .as("the stale one and the new one").isEqualTo(2);
         assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", decision)).isZero();
+    }
+
+    @Test
+    @DisplayName("a record already stale when recorded never re-collects - the kind enters ABSENT with SOURCE_UNAVAILABLE"
+            + " and the policy's fallback decides; no second paid pull (Phase 10 -> 11 transition)")
+    void aRecordStaleWhenRecordedIsUnavailableNeverReCollected() throws Exception {
+        UUID party = IDS.next();
+        UUID decision = request(party);
+        SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
+            seedBureau(uow, decision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(1), cleanBureau());
+            return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
+        });
+        assertThat(freeze).as("the provider dated its report past the age at retrieval: asking it again is a pull for"
+                + " the same stale file").isInstanceOf(SnapshotFreezer.Freeze.Frozen.class);
+        assertBureauUnavailable(((SnapshotFreezer.Freeze.Frozen) freeze).snapshot().content());
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ?", decision))
+                .as("never re-collected").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a second staleness of one kind on one decision request is unavailable - one re-collection, never a"
+            + " loop of paid pulls (Phase 10 -> 11 transition)")
+    void aSecondStalenessIsUnavailableNeverAnotherPull() throws Exception {
+        UUID party = IDS.next();
+        UUID decision = request(party);
+        age(inOneTransaction(uow -> seedBureau(uow, decision, party, databaseNow(uow), cleanBureau())),
+                MAX_AGE.plusSeconds(1));
+        SnapshotFreezer.Freeze first = inOneTransaction(uow ->
+                freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation()));
+        assertThat(first).isInstanceOf(SnapshotFreezer.Freeze.Recollecting.class);
+        CreditDataRequestId reopened = ((CreditDataCollection.Opened.Requested)
+                ((SnapshotFreezer.Freeze.Recollecting) first).reopened().get(CreditSourceKind.BUREAU)).id();
+        // The re-collection answers fresh, and ages past the maximum age too before the freeze reaches it.
+        CreditRecordId second = inOneTransaction(uow -> {
+            requests.receive(uow, reopened, 1);
+            CreditRecordId id = CreditRecordId.next(IDS);
+            requests.insertRecord(uow, id, requests.find(uow, reopened).orElseThrow(), "bureau-test", 1, true,
+                    databaseNow(uow), cleanBureau());
+            return id;
+        });
+        age(second, MAX_AGE.plusSeconds(1));
+        SnapshotFreezer.Freeze frozen = inOneTransaction(uow ->
+                freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation()));
+        assertThat(frozen).isInstanceOf(SnapshotFreezer.Freeze.Frozen.class);
+        SnapshotContent content = ((SnapshotFreezer.Freeze.Frozen) frozen).snapshot().content();
+        assertBureauUnavailable(content);
+        assertThat(content.attribute(CreditAttributeCode.BUREAU_EXTERNAL_SCORE).provenance())
+                .isEqualTo(new AttributeProvenance.Unavailable(CreditSourceKind.BUREAU, reopened));
+        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ?", decision))
+                .as("one re-collection, never a second").isEqualTo(2);
+    }
+
+    private static void assertBureauUnavailable(SnapshotContent content) {
+        for (CreditAttributeCode code : CreditBureau.ATTRIBUTES) {
+            assertThat(content.attribute(code).absent()).as(code.name()).isTrue();
+            assertThat(content.attribute(code).provenance()).as(code.name())
+                    .isInstanceOf(AttributeProvenance.Unavailable.class);
+        }
+        assertThat(content.attribute(CreditAttributeCode.SOURCE_UNAVAILABLE).value())
+                .isEqualTo(new AttributeValue.CodeValue("BUREAU"));
+    }
+
+    /**
+     * Ages {@code record}: retrieved and recorded {@code ago} before now, in one statement - fresh when it was recorded,
+     * aged since. Planted by the owner, the record's birth trigger suspended for it.
+     */
+    private static void age(CreditRecordId record, Duration ago) throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement ddl = owner.createStatement();
+                    PreparedStatement plant = owner.prepareStatement("UPDATE credit.credit_record SET"
+                            + " retrieved_at = statement_timestamp() - ? * interval '1 millisecond',"
+                            + " recorded_at = statement_timestamp() - ? * interval '1 millisecond' WHERE id = ?")) {
+                ddl.execute("ALTER TABLE credit.credit_record DISABLE TRIGGER USER");
+                plant.setLong(1, ago.toMillis());
+                plant.setLong(2, ago.toMillis());
+                plant.setObject(3, record.value());
+                assertThat(plant.executeUpdate()).isEqualTo(1);
+                ddl.execute("ALTER TABLE credit.credit_record ENABLE TRIGGER USER");
+            }
+            owner.commit();
+        }
     }
 
     @Test
@@ -113,8 +196,9 @@ class DecisionSnapshotDatabaseTest {
     void aReCollectionOnAClockBehindItsStaleRecordIsTheLatest() throws Exception {
         UUID party = IDS.next();
         UUID decision = request(party);
-        inOneTransaction(uow -> seedBureau(uow, decision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(1),
-                cleanBureau()));
+        // Fresh when recorded, aged past the maximum age since - the record a re-collection is for.
+        age(inOneTransaction(uow -> seedBureau(uow, decision, party, databaseNow(uow), cleanBureau())),
+                MAX_AGE.plusSeconds(1));
         // The stale request was born while the database clock stood an hour ahead of where it stands now - the clock
         // steps back (X-TSK-017) - planted by the owner, the machine's trigger suspended for it.
         try (Connection owner = DatabaseRoles.migrator()) {
@@ -189,8 +273,18 @@ class DecisionSnapshotDatabaseTest {
     }
 
     @Test
-    @DisplayName("a skewed instance neither accepts stale nor refuses fresh - the judgement is the database's")
-    void aSkewedInstanceNeitherAcceptsStaleNorRefusesFresh() throws Exception {
+    @DisplayName("the freezer takes no clock, so no instance's skew can move its judgement: two seconds inside the maximum"
+            + " age is fresh and two seconds past it stale, on the database's clock alone")
+    void theFreezerTakesNoClockSoTheDatabaseAloneJudgesFreshness() throws Exception {
+        // What makes skew irrelevant, asserted rather than assumed: nothing in the freezer holds or is given a Clock.
+        assertThat(java.util.Arrays.stream(SnapshotFreezer.class.getDeclaredFields()).map(java.lang.reflect.Field::getType))
+                .as("the freezer holds no clock").noneMatch(java.time.Clock.class::isAssignableFrom);
+        assertThat(java.util.Arrays.stream(SnapshotFreezer.class.getDeclaredConstructors())
+                .flatMap(constructor -> java.util.Arrays.stream(constructor.getParameterTypes())))
+                .as("and is given none").noneMatch(java.time.Clock.class::isAssignableFrom);
+        assertThat(java.util.Arrays.stream(SnapshotFreezer.class.getDeclaredMethods())
+                .flatMap(method -> java.util.Arrays.stream(method.getParameterTypes())))
+                .as("by no method either").noneMatch(java.time.Clock.class::isAssignableFrom);
         UUID freshParty = IDS.next();
         UUID staleParty = IDS.next();
         UUID freshDecision = request(freshParty);
@@ -205,10 +299,12 @@ class DecisionSnapshotDatabaseTest {
             seedBureau(uow, staleDecision, party, databaseNow(uow).minus(MAX_AGE).minusSeconds(2), cleanBureau());
             return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(staleDecision, party, 1), correlation());
         });
-        assertThat(fresh).as("two seconds inside the age: fresh, whatever an instance's clock says")
+        assertThat(fresh).as("two seconds inside the age on the database's clock: fresh")
                 .isInstanceOf(SnapshotFreezer.Freeze.Frozen.class);
+        // Stale already when recorded: never data - the kind enters unavailable (Phase 10 -> 11 transition).
         assertThat(stale).as("two seconds past it: stale, whatever an instance's clock says")
-                .isInstanceOf(SnapshotFreezer.Freeze.Recollecting.class);
+                .isInstanceOf(SnapshotFreezer.Freeze.Frozen.class);
+        assertBureauUnavailable(((SnapshotFreezer.Freeze.Frozen) stale).snapshot().content());
     }
 
     // ------------------------------------------------------------------ born once

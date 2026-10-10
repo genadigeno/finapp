@@ -290,6 +290,7 @@ class CreditDecisionStormDatabaseTest {
         needleWalk();
         drain();
         census("at rest");
+        assertTheMissingDataCensusHadSubjects();
         assertTheSimulatorsCountExactly();
         assertEveryActIsCounted();
         replayCensus();
@@ -510,7 +511,8 @@ class CreditDecisionStormDatabaseTest {
         tally("approve " + approved.statusCode());
         assertThat(approved.statusCode()).as(approved.body()).isIn(200, 422);
         if (approved.statusCode() == 422) {
-            assertThat(approved.body()).containsAnyOf("credit.ExposureLimitExceeded", "credit.HardDeclineNotOverridable");
+            assertThat(approved.body()).containsAnyOf("credit.ExposureLimitExceeded", "credit.HardDeclineNotOverridable",
+                    "credit.ExposureUnassessable");
             decline(on, session, base);
         }
     }
@@ -656,12 +658,20 @@ class CreditDecisionStormDatabaseTest {
 
         // ONE CASE taken on both instances; then ONE SECOND APPROVAL by two underwriters on both.
         Party referred = newParty(Profile.GOOD);
-        UUID request = submitted(referred, loanBody(1_200_000, 48));
-        BUREAU.arm(SimulatedBureauEngine.Fault.FOREIGN_CURRENCY); // the balance in USD: never converted - a referral
+        // A line of 3,000.00: above its four-eyes threshold (2,500.00) and, beside any GOOD party's bureau balance, within
+        // the line's limit - so a person may approve it (a loan above its threshold would exceed the loan's limit).
+        UUID request = submitted(referred, lineBody(300_000));
+        // The financial data unavailable past its deadline: the fallback refers, and the bureau's balance is present, so
+        // a person may approve it (the Phase 10 to 11 transition: an absent bureau balance - the USD fault this scenario
+        // used - makes the exposure unassessable, and a person may then only decline).
+        FINDATA.arm(SimulatedBureauEngine.Fault.UNAVAILABLE);
+        step(a.holding(), request);
+        ageDeadline(UUID.fromString(scalar("SELECT id::text FROM credit.data_request WHERE decision_request_id = ?"
+                + " AND source_kind = 'FINANCIAL_DATA'", request)));
         assertThat(drive(request, a.progress(), b.progress())).isEqualTo("IN_REVIEW");
         String caseId = scalar("SELECT id::text FROM credit.underwriting_case WHERE decision_request_id = ?", request);
         assertThat(scalar("SELECT approvable_minor::text FROM credit.underwriting_case WHERE id = ?::uuid", caseId))
-                .as("nothing capped the referral").isEqualTo("1200000");
+                .as("nothing capped the referral").isEqualTo("300000");
         String first = underwriterSessions.get(0);
         String secondA = underwriterSessions.get(1);
         String secondB = underwriterSessions.get(2);
@@ -674,8 +684,8 @@ class CreditDecisionStormDatabaseTest {
                 .as("a case is held by its underwriter's identity").isEqualTo(identities.get(holder));
         String other = holder.equals(first) ? secondA : first;
         HttpResponse<String> aboveThreshold = tracked(a.client().post(CASES + "/" + caseId + "/decision",
-                "{\"outcome\":\"APPROVED\",\"approvedAmount\":\"11000.00\",\"currency\":\"EUR\",\"reasonCodes\":"
-                        + "[\"CRD-CURRENCY-NOT-SUPPORTED\"],\"reason\":\"the balance verified in euros\"}", holder,
+                "{\"outcome\":\"APPROVED\",\"approvedAmount\":\"3000.00\",\"currency\":\"EUR\",\"reasonCodes\":"
+                        + "[\"CRD-SOURCE-UNAVAILABLE\"],\"reason\":\"the income verified by payslip\"}", holder,
                 CreditTestClient.key()));
         assertThat(aboveThreshold.statusCode()).as(aboveThreshold.body()).isEqualTo(200);
         assertThat(CreditTestClient.field(aboveThreshold.body(), "status")).isEqualTo("AWAITING_SECOND");
@@ -872,16 +882,13 @@ class CreditDecisionStormDatabaseTest {
         assertThat(scalar("SELECT status FROM credit.data_request WHERE id = ?::uuid", unavailable)).isEqualTo("UNAVAILABLE");
         census("a source past its deadline");
 
-        // A STALE RECORD: re-collected under a new reference, never decided stale.
+        // A STALE RECORD: re-collected under a new reference, never decided stale. Fresh when recorded, it aged past the
+        // policy's maximum age while the request waited - the record a re-collection is for (a record already stale when
+        // recorded is the kind's unavailability, never another pull: ADR-0085 section 11, the Phase 10 -> 11 transition).
         Party stale = newParty(Profile.GOOD);
         UUID staleRequest = submitted(stale, lineBody(100_000));
-        Instant now = databaseNow();
-        BUREAU.retrievedAt(now.minus(Duration.ofDays(40)));
-        try {
-            step(a.holding(), staleRequest);
-        } finally {
-            BUREAU.retrievedAt(now.minus(Duration.ofHours(1)));
-        }
+        step(a.holding(), staleRequest);
+        ageBureauRecord(staleRequest, Duration.ofDays(40));
         assertThat(drive(staleRequest, b.progress(), a.progress())).isEqualTo("DECIDED");
         assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ? AND source_kind = 'BUREAU'",
                 staleRequest)).as("the stale record re-collected under a new reference: %s", rows("SELECT d.source_kind,"
@@ -995,8 +1002,10 @@ class CreditDecisionStormDatabaseTest {
         assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ?", collect)).isEqualTo(2);
         census("a crash opening the collection");
 
-        // THE RECORDING TRANSACTION KILLED after both providers answered: retried under the same references, one
-        // report each at the providers.
+        // THE RECORDING TRANSACTION KILLED after both providers answered: each answer recorded UNAVAILABLE in a
+        // transaction of its own, its attempt UNRECORDED and its bytes kept (the Phase 10 -> 11 transition, ADR-0085
+        // section 11 - never left REQUESTED to be re-asked to the decision request's expiry); retried under the same
+        // references, one report each at the providers.
         Party recording = newParty(Profile.GOOD);
         UUID record = submitted(recording, lineBody(100_000));
         int bureauPulls = BUREAU.pulls();
@@ -1005,8 +1014,9 @@ class CreditDecisionStormDatabaseTest {
                 + " credit.data_request WHERE decision_request_id = '" + record + "'::uuid)", true)) {
             step(a.progress(), record);
         }
-        assertThat(count("SELECT count(*) FROM credit.data_request WHERE decision_request_id = ? AND status = 'REQUESTED'",
-                record)).as("both recordings died").isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM credit.data_request d WHERE d.decision_request_id = ? AND d.status ="
+                + " 'UNAVAILABLE' AND EXISTS (SELECT 1 FROM credit.data_request_attempt t WHERE t.data_request_id = d.id"
+                + " AND t.outcome = 'UNRECORDED')", record)).as("both recordings died, each an explicit outcome").isEqualTo(2);
         assertThat(drive(record, b.progress())).isEqualTo("DECIDED");
         assertThat(BUREAU.pulls() - bureauPulls).as("the bureau's one report").isEqualTo(1);
         assertThat(FINDATA.pulls() - findataPulls).as("the provider's one summary").isEqualTo(1);
@@ -1149,7 +1159,7 @@ class CreditDecisionStormDatabaseTest {
     /**
      * ONE REPEATABLE READ snapshot, every census soft so a failure names every reading that caught it: the exposure
      * census, the decision census, the snapshot sequences, one open request per party and product, one taker per case,
-     * the records and the consent census.
+     * the records, the consent census and the missing-data census.
      */
     private void census(String when) throws SQLException {
         rounds.incrementAndGet();
@@ -1162,6 +1172,7 @@ class CreditDecisionStormDatabaseTest {
                 exposureCensus(snapshot, when, softly);
                 decisionCensus(snapshot, when, softly);
                 consentCensus(snapshot, when, softly);
+                missingDataCensus(snapshot, when, softly);
             } finally {
                 snapshot.rollback();
             }
@@ -1178,14 +1189,14 @@ class CreditDecisionStormDatabaseTest {
     private static void exposureCensus(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
         Map<UUID, List<long[]>> byParty = new HashMap<>();
         try (Statement read = snapshot.createStatement(); ResultSet row = read.executeQuery("SELECT d.party_id,"
-                + " d.approved_minor, p.maximum_exposure_minor, s.canonical FROM credit.credit_decision d"
+                + " d.approved_minor, p.maximum_exposure_minor, s.canonical, d.currency FROM credit.credit_decision d"
                 + " JOIN credit.credit_policy_version p ON p.id = d.policy_version_id"
                 + " JOIN credit.decision_snapshot s ON s.id = d.snapshot_id WHERE d.outcome = 'APPROVED'"
                 + " AND d.valid_until > statement_timestamp() AND NOT EXISTS (SELECT 1 FROM"
                 + " credit.credit_decision_consumption c WHERE c.decision_id = d.id)")) {
             while (row.next()) {
                 byParty.computeIfAbsent(row.getObject(1, UUID.class), key -> new ArrayList<>())
-                        .add(new long[] {row.getLong(2), row.getLong(3), bureauBalance(row.getString(4))});
+                        .add(new long[] {row.getLong(2), row.getLong(3), bureauBalance(row.getString(4), row.getString(5))});
             }
         }
         List<String> exceeded = new ArrayList<>();
@@ -1208,13 +1219,39 @@ class CreditDecisionStormDatabaseTest {
                 + " (INV-CRD-09)", when).isEmpty();
     }
 
-    private static long bureauBalance(String canonical) {
-        try {
-            return CanonicalSnapshot.parse(canonical).attribute(CreditAttributeCode.BUREAU_TOTAL_BALANCE).value()
-                    instanceof AttributeValue.MoneyValue money ? money.value().minorUnits() : 0;
-        } catch (RuntimeException absent) {
+    /**
+     * The bureau balance the snapshot read, in the decision's currency: {@code ABSENT} is zero (an unavailable source, or a
+     * foreign-currency balance the freezer kept out - the policy's fallback decided those); anything else that is not money
+     * in the decision's own currency is not something the census may guess at - a snapshot that does not parse, a balance
+     * of another type, or one in another currency fails the census rather than reading as zero.
+     */
+    private static long bureauBalance(String canonical, String currency) {
+        AttributeValue value = CanonicalSnapshot.parse(canonical).attribute(CreditAttributeCode.BUREAU_TOTAL_BALANCE).value();
+        if (value instanceof AttributeValue.Absent) {
             return 0;
         }
+        if (!(value instanceof AttributeValue.MoneyValue money)) {
+            throw new AssertionError("the exposure census: a bureau balance that is not money - " + value);
+        }
+        if (!money.value().currency().code().equals(currency)) {
+            throw new AssertionError("the exposure census: a bureau balance in " + money.value().currency().code()
+                    + " beside a decision in " + currency + " - never converted, never summed");
+        }
+        return money.value().minorUnits();
+    }
+
+    /**
+     * THE MISSING-DATA CENSUS ({@code INV-CRD-10}, {@link MissingDataCensus}): no {@code SYSTEM} decision {@code APPROVED},
+     * and no evaluation {@code APPROVE}, on a snapshot whose pinned policy reads a source the snapshot records
+     * {@code SOURCE_UNAVAILABLE}, or compares an attribute or figure the snapshot or its assessment holds {@code ABSENT} -
+     * recomputed from the snapshot's canonical text, the pinned rules and the assessment, never from the evaluator's own
+     * record of what it assessed.
+     */
+    private static void missingDataCensus(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
+        softly.assertThat(MissingDataCensus.systemApprovals(snapshot)).as("%s: the missing-data census - no SYSTEM approval"
+                + " on a source unavailable or an attribute ABSENT that its pinned policy reads (INV-CRD-10)", when).isEmpty();
+        softly.assertThat(MissingDataCensus.approvingEvaluations(snapshot)).as("%s: the missing-data census - no evaluation"
+                + " approving on missing data (INV-CRD-10)", when).isEmpty();
     }
 
     private static void decisionCensus(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
@@ -1310,6 +1347,20 @@ class CreditDecisionStormDatabaseTest {
     }
 
     // ================================================================== 5. at rest
+
+    /**
+     * The missing-data census was not vacuous: the storm's faults, its source past its deadline and its foreign-currency
+     * balances left evaluations on missing data - every one of them referred or declined, none approved.
+     */
+    private static void assertTheMissingDataCensusHadSubjects() throws SQLException {
+        List<String> subjects;
+        try (Connection app = DatabaseRoles.application()) {
+            subjects = MissingDataCensus.subjects(app);
+        }
+        System.out.println("P10-TST-001 MISSING DATA: evaluations on missing data by outcome " + subjects);
+        assertThat(subjects).as("the missing-data census had subjects - evaluations on missing data").isNotEmpty();
+        assertThat(subjects).as("and none of them approved").noneMatch(outcome -> outcome.startsWith("APPROVE "));
+    }
 
     private void assertTheSimulatorsCountExactly() throws Exception {
         SoftAssertions softly = new SoftAssertions();
@@ -1941,6 +1992,26 @@ class CreditDecisionStormDatabaseTest {
     }
 
     /** Ages a data request's deadline past - the owner's act, the machine's trigger suspended for it. */
+    /** Ages {@code request}'s bureau record by {@code ago} - retrieved and recorded alike - as the owner. */
+    private static void ageBureauRecord(UUID request, Duration ago) throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement ddl = owner.createStatement();
+                    PreparedStatement age = owner.prepareStatement("UPDATE credit.credit_record SET"
+                            + " retrieved_at = retrieved_at - ? * interval '1 millisecond',"
+                            + " recorded_at = recorded_at - ? * interval '1 millisecond' WHERE data_request_id IN"
+                            + " (SELECT id FROM credit.data_request WHERE decision_request_id = ? AND source_kind = 'BUREAU')")) {
+                ddl.execute("ALTER TABLE credit.credit_record DISABLE TRIGGER USER");
+                age.setLong(1, ago.toMillis());
+                age.setLong(2, ago.toMillis());
+                age.setObject(3, request);
+                assertThat(age.executeUpdate()).isEqualTo(1);
+                ddl.execute("ALTER TABLE credit.credit_record ENABLE TRIGGER USER");
+            }
+            owner.commit();
+        }
+    }
+
     private static void ageDeadline(UUID dataRequest) throws SQLException {
         try (Connection owner = DatabaseRoles.migrator()) {
             owner.setAutoCommit(false);

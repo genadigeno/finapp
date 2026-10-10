@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-10-01 (`P8-TSK-021` — pull acquisition; **M8.7 at 1 of 4**, next `P8-TSK-022`) *(this line read `P8-TSK-002` from that gate until `P8-TSK-013`'s record found it — the stale-second-copy class, in the document's own dateline)*
+Last updated: 2026-10-10 (the Phase 10 → 11 transition — **Phase 10 `COMPLETE`, confirmed after repair; Phase 11 `READY`**, next `P11-TSK-001`) *(this line read "2026-10-01 (`P8-TSK-021` …)" through every gate from `P8-TSK-022` to `P10-DOC-001` until the Phase 10 → 11 transition found it — the stale-second-copy class, in the document's own dateline, again)*
 
 ---
 
@@ -460,7 +460,9 @@ the Phase 9 → 10 transition (2026-10-07), which confirmed the phase after repa
 Status: ✅ **`COMPLETE`** (2026-10-09) — **all twelve universal criteria, all eight F1–F8
 supplement criteria re-assessed at the gate (F1, F2, F4 and F5 vacuous - credit posts nothing - and F8 `N/A`), and all
 twenty-four phase-specific criteria hold**, ruled by the exit review
-([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md), `P10-DOC-001`) - criterion 7 and the Testing bullet with
+([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md), `P10-DOC-001`) and **confirmed after repair by the Phase 10 → 11
+transition** ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md): no CRITICAL and fifteen IMPORTANT
+defects found by its six audits, every Phase 10 one repaired and probed; R13 scheduled as `P11-TSK-001`) - criterion 7 and the Testing bullet with
 their recorded deviation (no fleet-wide database or kafka count, on the owner's standing instruction). Entered
 `IN_PROGRESS` 2026-10-07 (`P10-TSK-001`) — entry gate: all twelve criteria hold, by the Phase 9 → 10
 transition ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md) §9).
@@ -477,8 +479,40 @@ milestones (M10.1–M10.8). **24 of 24 items complete** (M10.1 to M10.8 closed):
 could approve past its own maximum exposure, stopped the retry sweep asking for closed requests, put the evaluating
 step's locks in the one order, aged a record from the earlier of its provider's date and its recording, asserted four
 audited acts, raced the expiry boundary over 240 requests, probed every born-once arbiter with its triggers off, made
-every Phase 10 document true and accepted ADR-0084…0089; next **the Phase 10 → 11 transition** — `READY`
-([§Current Task](#current-task) is kept current).
+every Phase 10 document true and accepted ADR-0084…0089; then the Phase 10 → 11 transition (2026-10-10), which
+confirmed the phase after repair and initialised Phase 11.
+
+**What Phase 10 delivered** (the transition's §9): the credit profile; consented bureau and financial-data collection
+behind provider-neutral ports, with simulated providers and a fail-safe production composition; the sealed decision
+snapshot; affordability, exposure and the versioned scorecard; the four-eyes credit policy and the deterministic,
+versioned evaluator; the decision request, orchestration, the immutable decision with ordered reason codes, the
+customer's adverse-action view and the investigator's explanation; four-eyes manual underwriting; replay and the
+reproducibility battery; credit's meters, reports and alerts; the storm. **Major decisions**: credit moves no money and
+stops where lending begins (ADR-0084); decisions are immutable facts reproducible from a sealed snapshot by pinned
+versions (ADR-0086, ADR-0087); decisions for one party serialise on its profile, reserved and outstanding exposure
+re-read under that lock (ADR-0088 as amended); a person never decides their own party's case, never overrides a hard
+decline, and never approves on an absent bureau balance (ADR-0089 as amended); every submission is MFA-assured.
+**The production constraint**: production composes only the fail-safe sources and a person may not approve on an absent
+bureau balance, so **production approves no credit — and Phase 11 originates no loan — until a real bureau is connected**
+(unresolved #13, #14). **Non-blocking debt carried forward**: the evidence purge and crypto-shredding (Phase 15); real
+bureau and financial-data connectivity (#13, #14); the risk score (Phase 13); the transition's MINOR items (§Known
+Architectural Debt).
+
+**Phase 11 — Lending Infrastructure**
+Status: 🟡 **`READY`** (2026-10-10) — entry gate: all twelve criteria hold, by the Phase 10 → 11 transition ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md) §10).
+Planned in [`PHASE_11_PLAN.md`](PHASE_11_PLAN.md); decided in ADR-0090…0100 (`Proposed`); the machines in
+[`LENDING_LIFECYCLES.md`](../domain/LENDING_LIFECYCLES.md): lending owns the contract and its servicing facts and none
+of the money - every principal, interest, fee and credit-balance figure a balance of a per-loan ledger account, posted
+through the ledger's services in lending's own transaction; two products, the amortising personal loan and the
+revolving credit line, on one account model; a credit decision taken up only through credit's own consumption port
+under the party's profile lock, exposure counting committed and outstanding principal and an open line's limit; every
+loan and draw funded from lending capital recognised from bank evidence and never over-deployed; disbursement to the
+wallet, or on to an external bank account through payments' withdrawal machinery whose outcome lending reads; ACT/365F
+simple daily interest born once per date and rounded once per period, billed from actual accrual; allocation an
+explicit versioned order; delinquency and default derived conditions beside the lifecycle; every correction a
+reasoned, four-eyes posting. Production originates nothing until a real bureau is connected: origination is proven
+against the simulators. Fourteen new invariants take the platform to **142**. Thirty-three backlog items across nine
+milestones (M11.1–M11.9); `P11-TSK-001` `READY`. **No Phase 11 code exists.**
 
 ## Current Milestone
 
@@ -493,50 +527,52 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**The Phase 10 → 11 transition** — `READY`: Phase 10 is `COMPLETE` (`P10-DOC-001`, 2026-10-09); the transition plans Phase 11 (lending) against what Phase 10 left - a decision it will reference and a reservation it will consume, through `CreditDecisions` and `credit_decision_consumption`, and the debt rows owned by Phases 13, 15 and 16. **Not started.**
+**`P11-TSK-001` — Credit decision consumption port** — `READY` (M11.1 at 0 of 5): marked by the Phase 10 → 11 transition (2026-10-10), which confirmed Phase 10 `COMPLETE` after repair and initialised Phase 11. The credit-owned command port that takes an approved decision up at most once, only while valid, under the party's `credit_profile` lock, behind a database guard (credit `V021`) - the transition's R13, an entry condition for any loan. **Not started.**
 
 ### Just completed
 
-**`P10-DOC-001` — The Phase 10 exit review** — `COMPLETE` (2026-10-09). **Phase 10 `COMPLETE`; M10.8 closed at
-3 of 3.** The review ([`reviews/PHASE_10_REVIEW.md`](reviews/PHASE_10_REVIEW.md)): 8 review areas, 12 universal criteria,
-F1–F8 re-assessed (F1, F2, F4, F5 vacuous - credit posts nothing; F8 `N/A`) and 24 phase-specific criteria `PASS` -
-criterion 7 and the Testing bullet with their recorded deviation; G1–G11 and the two further decisions read against the
-code (all hold; G7's "evaluation's approved amount" built as the referral's ceiling, G11's retry edge as the claim's
-`UNAVAILABLE → REQUESTED`, documents corrected); the Phase 11 boundary verified clean; the Phase 15 evidence-purge row
-present, its scope widened. Six read-only audits, then four document passes. **Found and fixed in code:** (1) **a policy
-could approve past its own maximum exposure** (`INV-CRD-09`) - the evaluator judges exposure only through rules and the
-proposal door demanded none: it now refuses `422 credit.PolicyIncomplete` (`CreditPolicy.boundsExposure`,
-`PolicyRule.refusesExposurePast`; `CreditPolicyValidationTest#onlyAGuaranteedRuleBoundsTheExposure`,
-`CreditPolicyEndpointDatabaseTest#theRefusals`); (2) the retry sweep kept asking providers for closed requests - the
-claim now admits only open ones (`BureauCollectionDatabaseTest#theRetrySweepStopsAskingForAClosedRequest`); (3) the
-evaluating step took the pinned versions (L5) before the data requests (L4), against the one lock order - now L4 first
-(`DecisionOrchestrationDatabaseTest#theEvaluatingStepLocksItsDataRequestsBeforeThePinnedVersions`); (4) a record's age
-ran from the provider's own date (`INV-CRD-08`) - now `LEAST(retrieved_at, recorded_at)`
-(`DecisionSnapshotDatabaseTest#aRecordDatedInTheFutureIsAgedFromItsRecording`). **Found and filled in tests:** four
-audited acts never asserted (the policy's and scorecard's proposal and rejection); the expiry-against-decision boundary
-over 240 requests where the gate says ≥ 200 (`CreditDecisionDatabaseTest#expiryAndDecisionAtTheBoundaryOverTwoHundredRequests`
-- its first version, timed once a minute early, saw every request on one side of the boundary: re-timed from the
-database a second before each race, 51 DECIDED, 189 EXPIRED, sixteen deciding transactions refused by the trigger and settled by the next step); every born-once arbiter refusing a copy with every trigger off
-(`UnderwritingCaseDatabaseTest#everyBornOnceArbiterRefusesACopyWithEveryTriggerOff`); the case's domain refusals and
-raw-SQL edges out of every terminal state in all three machines; the decision's side tables per role; five keyed acts
-replayed; a generated twelve-activation history; three `401`s; and a pre-existing flaky assertion
-(`#aDecisionCitingEveryAdverseCodeRecordsAndPublishes` refused "740" anywhere in a payload whose decision id can carry it).
-**Documents:** ADR-0084…0089 read against the code, corrected and `Accepted`; `PHASE_10_PLAN.md` (§20 errata),
-`CREDIT_DECISIONING_LIFECYCLES.md`, `CREDIT_MODEL.md`, `MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md`, the glossary
-(six terms; Credit Record) and `DOMAIN_MODEL.md`, `DISTRIBUTED_EXECUTION.md` §3, `DATA_CLASSIFICATION.md`,
-`AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `FINANCIAL_INVARIANTS.md`, the `DELIVERY_PLAN.md` addendum,
-`OPERATIONS_RUNBOOK.md` §6 (new), `CAPABILITY_MAP.md`, `ROADMAP.md`, `DECISIONS.md`, the ADR index, a dated read note
-under the gate's Phase 10 criteria, and eight code comments and texts made true - among them the consent refusal the gate
-itself named (`403 credit.ConsentRequired`; built `409 consent.ConsentRequired`). **PROBES**: SEVEN, SEVEN CAUGHT (one
-first attempt void - the dropped unique was production's `ON CONFLICT` target - and re-performed on another), every
-restore byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +7 rows. **The flip**, proven non-vacuous: without
-`INV-CRD-11`'s two rows the guard failed `(currently 10)` naming exactly `["INV-CRD-11"]`; restored byte-identical
-(sha256 `fec35ec6…`). **Multi-instance PASS.** **NEXT**: the Phase 10 → 11 transition `READY`. **Verified** by fresh runs
-on the final code - credit's database tier 73 across 8 suites; app's credit suites 48 across 6 in the shared JVM and 103 across 11 in their own containers (the storm among them, green); the fleet `test architectureTest --continue` after the flip and the records: the hermetic tier 2765 tests across 460 suites in 19 modules (credit's and app's executed fresh, 955 across 181; the other seventeen modules' tasks up to date - inputs unchanged since their last execution, not re-executed) and the architecture tier 213 across 51 (174 across 33 executed fresh) - the document guards among them; the document guards re-run after the last record edits (app's architecture tier 171 across 32 and its nine document-reading hermetic suites, 83 tests) - ALL 0 FAILURES; the fleet-wide database and kafka tiers skipped on the owner's instruction.
+**The Phase 10 → 11 transition** — `COMPLETE` (2026-10-10). **Phase 10 `COMPLETE`, confirmed after repair;
+Phase 11 `READY`** ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)). Six adversarial
+read-only audits over master `8927a1e7` (decision correctness and explainability; multi-instance, atomicity and
+idempotency; security and privacy; test adequacy; architecture, documentation and the gate's criteria; provider adapters
+and data collection), each finding proven from the code with a file, a line and a failure scenario, found **no CRITICAL**
+and **fifteen IMPORTANT** defects (R1–R15): an underwriter could decide their own party's application (now `403
+credit.SelfDealingRefused`, the attempt audited `FAILED`); person-written credit reasons were never screened for card or
+account numbers (`CreditReasons`, credit `V016` CHECKs); a `REQUESTED` data request had no deadline, so a poisoned answer
+retried forever (deadline-bound claims, an unrecordable answer `UNAVAILABLE` with its evidence kept - credit `V019`,
+`V020`); "malformed" was a regex, not a parse (`CreditProviderJson`, strict, fifteen golden files); re-collection was
+unbounded (a second staleness makes the kind unavailable); `INV-CRD-10`'s claimed scale check did not exist
+(`MissingDataCensus`); the pin's `FOR SHARE` had no failing test (four lock-wait tests); a race assertion could not fail;
+a decision's link to its own request's snapshot was not enforced (credit `V017` composite keys and triggers, replay
+reports `HASH`); a person could decide on records past their maximum age (`422 credit.DataStale`); an absent bureau
+balance counted as zero in a person's exposure check (**owner decision: refused**, `422 credit.ExposureUnassessable` -
+so production approves nothing until a real bureau is connected); exposure was blind to outstanding credit, latent until
+Phase 11 consumes a decision (reserved and outstanding re-read together under the profile lock, ADR-0088 amended: Phase
+11's loan writer must hold the party's `credit_profile` row `FOR UPDATE`); the consumption write had no owner (R13 -
+scheduled as `P11-TSK-001`, the first task, an entry condition for any loan); credit submission without MFA when no
+factor was enrolled (**owner decision: enforce**); universal criterion 7 graded `PASS` (re-graded `PARTIAL`; **owner
+decision: keep skipping** the fleet-wide database and kafka tiers, re-affirmed for Phase 11). Every Phase 10 one repaired
+on three repair branches (`repair-collection` `76147ebe`, `repair-decisioning` `f3e9ddc3`, `repair-tests` `8b95fb03`),
+merged and re-verified together, each broken on purpose and restored byte-identical (sha256-verified),
+`MUTATION_TESTING.md` §2 rows; ADR-0085/0087/0088/0089 and `INV-CRD-06`/`08`/`09`/`11` amended. **Phase 11
+initialised** (not built): `PHASE_11_PLAN.md` (the owner's decisions L1-L12 and the recorded assumptions A1-A30 folded
+in: funding from a platform lending-capital account recognised only from bank evidence; disbursement to the wallet and to
+an external bank account through payments' withdrawal machinery; the personal loan and the revolving credit line; a
+neutral EUR jurisdiction; ACT/365F simple daily interest rounded once per period; allocation oldest-due first, fees ->
+interest -> principal, excess held as credit; default at 90 days past due; no penalty interest, prepayment fee or APR
+display; credit migrations from `V021`; origination only against the simulators; the ten mandatory test scenarios),
+ADR-0090…0100 (`Proposed`), `LENDING_LIFECYCLES.md`, `INV-LND-01`…`14` (142 invariants), the gate's Phase 11 extension,
+thirty-three backlog items across M11.1–M11.9, the glossary and domain model (twenty-three lending terms), the module,
+context, distributed-execution, delivery-plan, capability and roadmap documents. **Multi-instance PASS** after repair.
+**NEXT**: `P11-TSK-001` `READY`. **Verified**: the merged repairs by fresh runs before this record (`f43c7f8c`: hermetic
+2768 across 461 suites and 19 modules, architecture 213 across 51, database 140 across 16, own-container 118 across 11 -
+the storm and the ten-thousand-decision battery among them - 0 failures); the documents of this initialisation by the
+`:app:test :app:architectureTest` run recorded in the transition review §10 - the fleet-wide database and kafka tiers
+skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 250 blocks, from `P10-TST-001` back to project initiation
+The per-task completion records — 251 blocks, from `P10-DOC-001` back to project initiation
 (`X-TSK-017` cross-cutting, standing between `P10-TST-001` and `P10-TST-002`; `X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1011,6 +1047,8 @@ carries, what triggers paying it down, and the owning phase.
 | **Credit evidence purge** (recorded by `P10-TSK-006` (2026-10-07)): `credit_evidence.retain_until` is stored for every row (recorded-at plus the product's evidence retention, on the database's clock) but nothing deletes past it - the table refuses `DELETE` for every role by trigger | A purge is a privileged, audited deletion of evidence with its own definer path and its own review, out of `-006`'s scope by the backlog. *(Scope, read by the Phase 10 exit review, `P10-DOC-001`: the purge is a deletion or a crypto-shred of the ciphertext - `MODULE_ARCHITECTURE.md` and `DELIVERY_PLAN.md` §18 name both; the normalised attributes (`credit_record_attribute`) and each snapshot's canonical text, `RESTRICTED-FINANCIAL` and kept for replay, have no stated retention of their own - Phase 15 decides whether the purge reaches them, and how a purged decision then explains.)* | Evidence kept longer than its declared retention | The first credit evidence older than 25 months | **Phase 15** |
 | **No alert names a missing `ACTIVE` scorecard** (recorded by the Phase 10 exit review, `P10-DOC-001` (2026-10-09)): a product without an `ACTIVE` policy is refused at submission (`credit.ProductNotOffered`) and alerted (`CreditPolicyMissing`), but with no `ACTIVE` `RETAIL_SCORECARD` requests are admitted and wait at `SUBMITTED` until they expire - `CreditRequestOpenPastValidity` fires only after the seven-day validity | A new series and alert is a task's, not a review's; the seeded v1 is activated with the policies (`OPERATIONS_RUNBOOK.md` §6), and a scorecard is never retired without its successor, so the gap opens only before v1's first activation | Applicants waiting a week for a decision nothing can make | A deployment that admits requests before its scorecard v1 is activated | **Phase 15** (operational readiness) |
 | **History order rests on the database clock** (recorded by `P10-TSK-015` (2026-10-08)): every history table in the platform - `decision_request_event`, the policy and scorecard events, and their precedents - orders its rows by an `occurred_at` stamped from the database's clock, with no monotonic position. A clock stepped backwards (seen in the Docker Desktop VM the suites run on, which lags the host and is corrected in steps) misorders rows written by separate transactions; `DecisionOrchestrationDatabaseTest` met it and asserts its edges as a multiset - the trigger already forces their order. | A position column per history table is a migration across every module, out of one task's scope; production hosts slew their clocks rather than step them | A reader ordering history by time alone may show an edge before its predecessor after a clock step; no transition is affected - the machines are judged on the rows' status, never on their history's order | The first consumer that must read a history in order (an operator timeline, a replay of edges), or a production clock step | Cross-cutting |
+| **Phase 10 residues the transition ruled MINOR** (recorded by the Phase 10 → 11 transition (2026-10-10), its §§5 and 7): the credit policy-at-an-instant read is not audited; the review queue's audit record does not name the cases served; not-found operator reads leave no record; the evidence key ring holds one version; a reason of one character is accepted for an evidence read; replay compares outcome, amount and reasons but not the assessment's figures or each rule's state; the assessment arithmetic is not dispatched by engine version; `Phase10Reports` sits in `app` against its charter; an evaluation error loops to the request's expiry rather than ending it | Each is outside a decision's correctness or already held by a database rank; the transition repaired every IMPORTANT finding | An investigator's trail thinner than it could be; a future engine change needing the dispatch it does not yet have | Phase 15's security and operational-readiness pass, or the first change to those paths | **Phase 15** |
+| **Lending cannot originate in production** (recorded by the Phase 10 → 11 transition (2026-10-10), `PHASE_11_PLAN.md` §1.1): production composes only the fail-safe credit sources and a person may not approve on an absent bureau balance (R11), so no production decision is `APPROVED`; Phase 11 builds and proves origination against the simulators and activates no lending terms version in production | Real bureau connectivity waits on unresolved questions #13 and #14; weakening credit to originate would breach `INV-CRD-09`/`-10` | No production loan until then - by design, not by defect | #13 and #14 answered, a real bureau adapter contract-tested, a credit policy version reading it, legal review of the terms, lending capital recognised (`OPERATIONS_RUNBOOK.md` §7, `P11-TSK-030`) | **Phase 15** (or the phase that answers #13/#14) |
 
 None of these is financial-correctness debt.
 
@@ -1031,11 +1069,16 @@ it begins.
 | # | Question | Must resolve by | Risk if unresolved |
 |---|----------|-----------------|--------------------|
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
-| 12 | Does a reduced approval's customer read name the reason it was reduced - the non-adverse `CRD-AUTO-APPROVAL-CEILING` included (a counteroffer notice)? Raised by `P10-TSK-001`, which seeded the ceiling as non-adverse | `P10-TSK-017` | Medium — an approval below the request with no reason given to the applicant |
-| 13 | Where do a party's date of birth and country of residence come from? The bureau matches a person by them (`P10-TSK-005`'s `BureauSubject`), and `-008`'s snapshot records `PARTY_AGE_YEARS` and `PARTY_RESIDENCY_COUNTRY` - but `party` holds a kind and a name only, and no module holds either fact. Raised by `P10-TSK-006`, whose production bureau is fail-safe (`UnconfiguredBureau`) and whose configured bureau refuses startup until this is answered - as does any bureau named in `P10-TSK-021`'s provider order (`finapp.credit.bureau.providers`), so production's order is empty and every birth names the fail-safe; `P10-TSK-008` records both facts `ABSENT` with the party-facts port's version (`PartyFactsNotHeld`, `PartyCreditStanding` since `P10-TSK-014`), so every snapshot is honest and the policy must reason about their absence | Before `P10-TSK-012`'s v1 policy (it must decide what an absent age means) | High — no real bureau pull and no age or residency attribute is possible until the facts exist |
-| 14 | What connection does a financial-data pull read? A provider reads the applicant's accounts through a consented account link (open banking's shape); the platform models no such link, so `P10-TSK-007`'s production provider is fail-safe (`UnconfiguredFinancialData`) and a configured provider refuses startup | Before real financial-data connectivity (never in Phase 10, §17) | Medium — verified income is always `ABSENT` until then, so affordability rests on declared figures and the policy's fallback |
+| 13 | Where do a party's date of birth and country of residence come from? The bureau matches a person by them (`P10-TSK-005`'s `BureauSubject`), and `-008`'s snapshot records `PARTY_AGE_YEARS` and `PARTY_RESIDENCY_COUNTRY` - but `party` holds a kind and a name only, and no module holds either fact. Raised by `P10-TSK-006`, whose production bureau is fail-safe (`UnconfiguredBureau`) and whose configured bureau refuses startup until this is answered - as does any bureau named in `P10-TSK-021`'s provider order (`finapp.credit.bureau.providers`), so production's order is empty and every birth names the fail-safe; `P10-TSK-008` records both facts `ABSENT` with the party-facts port's version (`PartyFactsNotHeld`, `PartyCreditStanding` since `P10-TSK-014`), so every snapshot is honest and the policy must reason about their absence | Before a real bureau is configured — and so before any production credit approval or loan origination: Phase 11 originates only against the simulators until it is answered *(this column read "Before `P10-TSK-012`'s v1 policy (it must decide what an absent age means)" until the Phase 10 → 11 transition; the v1 policy was built reasoning about the facts' absence, and the question's real deadline is production approval)* | High — no real bureau pull and no age or residency attribute is possible until the facts exist; since the transition's R11, no production approval at all |
+| 14 | What connection does a financial-data pull read? A provider reads the applicant's accounts through a consented account link (open banking's shape); the platform models no such link, so `P10-TSK-007`'s production provider is fail-safe (`UnconfiguredFinancialData`) and a configured provider refuses startup | Before real financial-data connectivity (never in Phase 10, §17; not in Phase 11 either - `PHASE_11_PLAN.md` §17) | Medium — verified income is always `ABSENT` until then, so affordability rests on declared figures and the policy's fallback |
 
 Resolved since:
+- ~~12. Does a reduced approval's customer read name the reason it was reduced - the non-adverse
+  `CRD-AUTO-APPROVAL-CEILING` included?~~ → **answered as built by `P10-TSK-017`** and found still
+  open, past its "must resolve by `P10-TSK-017`", by the Phase 10 → 11 transition (2026-10-10): the
+  customer's read lists the customer text of every reason the decision cites, in order, adverse or
+  not, so a capped approval names `AUTO_APPROVAL_CEILING`'s text (`CreditDecisionRequestDesk.view`;
+  `DecisionExplanationDatabaseTest`). Ruled resolved with this provenance rather than silently deleted
 - ~~8. Fee model: who pays, when recognised, gross vs net settlement~~ →
   [ADR-0050](../adr/ADR-0050-fee-model-gross-capture-net-payable.md) (Phase 5 → 6
   transition, 2026-09-21). The merchant pays; revenue recognised at capture; **gross to
@@ -1092,8 +1135,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**The Phase 10 → 11 transition** — `READY`
-(the Current Task), marked by `P10-DOC-001`'s completion gate - Phase 10 `COMPLETE`.
+**`P11-TSK-001` — Credit decision consumption port** — `READY`
+(the Current Task), marked by the Phase 10 → 11 transition - Phase 11 `READY`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

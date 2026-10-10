@@ -335,10 +335,11 @@ class DecisionReplayDatabaseTest {
 
     @Test
     @DisplayName("every replay is audited with its reason and verdict before it is served - and the door is CREDIT_INVESTIGATE's"
-            + " alone, naming differences by kind, never a value")
+            + " alone (an underwriter and a customer 403), naming differences by kind, never a value")
     void everyReplayIsAudited() throws Exception {
         String officer = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
         String underwriter = sessionWith(RoleName.UNDERWRITER);
+        String customer = client.customer(true).token();
         CreditDecisionId decision = decisionOf(systemDecided(UUID.randomUUID(), eur(200_000)));
         long before = replays(decision);
         HttpResponse<String> replayed = client.post(replayPath(decision.value().toString()),
@@ -352,9 +353,37 @@ class DecisionReplayDatabaseTest {
                 .startsWith("regulator query 42|").contains("IDENTICAL");
         assertThat(client.post(replayPath(decision.value().toString()), "{\"reason\":\"x\"}", underwriter, null).statusCode())
                 .as("an UNDERWRITER does not investigate").isEqualTo(403);
+        assertThat(client.post(replayPath(decision.value().toString()), "{\"reason\":\"x\"}", customer, null).statusCode())
+                .as("nor does a customer").isEqualTo(403);
         assertThat(client.post(replayPath(decision.value().toString()), "{\"reason\":\"x\"}", null, null).statusCode())
                 .isEqualTo(401);
         assertThat(replays(decision)).as("no refused caller is recorded").isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("a decision re-pointed at ANOTHER request's intact snapshot DIVERGES by hash - the seal is the decision's"
+            + " own request's, whatever that other snapshot re-derives (the Phase 10 to 11 transition, INV-CRD-06)")
+    void aDecisionOnAnotherRequestsSnapshotDivergesByHash() throws SQLException {
+        // Two twins: the same amount, the same default bureau answer - so the other request's snapshot re-derives exactly
+        // this decision's outcome, amount and reasons, and only the request check can tell.
+        UUID own = systemDecided(UUID.randomUUID(), eur(200_000));
+        UUID twin = systemDecided(UUID.randomUUID(), eur(200_000));
+        assertThat(scalar("SELECT outcome || '/' || coalesce(approved_minor::text, '-') FROM credit.credit_decision"
+                + " WHERE decision_request_id = ?", own)).isEqualTo(scalar("SELECT outcome || '/'"
+                + " || coalesce(approved_minor::text, '-') FROM credit.credit_decision WHERE decision_request_id = ?", twin));
+        CreditDecisionId decision = decisionOf(own);
+        String twinSnapshot = "(SELECT snapshot_id FROM credit.credit_decision WHERE decision_request_id = '" + twin + "')";
+        DecisionReplayer.Replay repointed = tamperedReplay(replayer(EngineVersions.STANDARD), decision,
+                "ALTER TABLE credit.credit_decision DISABLE TRIGGER USER",
+                // credit V017's composite key would refuse the re-pointing; the owner drops it inside the rolled-back plant
+                "ALTER TABLE credit.credit_decision DROP CONSTRAINT credit_decision_snapshot_of_its_request_fk",
+                "UPDATE credit.credit_decision SET snapshot_id = " + twinSnapshot + ", snapshot_sha256 = (SELECT"
+                        + " content_sha256 FROM credit.decision_snapshot WHERE id = " + twinSnapshot + ")"
+                        + " WHERE decision_request_id = '" + own + "'");
+        assertThat(repointed.verdict()).isEqualTo(Verdict.DIVERGED);
+        assertThat(repointed.divergences()).containsExactly(Divergence.HASH);
+        assertThat(read(uow -> replayer(EngineVersions.STANDARD).replay(uow, decision)).orElseThrow().verdict())
+                .as("the untampered decision replays identical").isEqualTo(Verdict.IDENTICAL);
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -437,7 +466,8 @@ class DecisionReplayDatabaseTest {
     private static UnderwritingCases reviewing() {
         return new UnderwritingCases(new JdbcUnderwritingCaseStore(), CreditWorld.REQUESTS,
                 new JdbcCreditProfiles(CreditWorld.IDS), deciding(), new JdbcDecisionSnapshotStore(),
-                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, new JdbcAuditWriter(), CreditWorld.IDS,
+                new JdbcPolicyEvaluationStore(), CreditWorld.POLICIES, CreditWorld.ACTING_PARTIES,
+                new JdbcAuditWriter(), CreditWorld.IDS,
                 CreditWorld.CLOCK);
     }
 

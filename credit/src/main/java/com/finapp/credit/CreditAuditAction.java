@@ -145,6 +145,14 @@ public enum CreditAuditAction implements AuditableAction {
                     + " (P10-TSK-018): the case returns to its first underwriter, the refused decision kept in its history.",
             true),
 
+    REVIEW_OWN_CASE_REFUSED(
+            "credit.ReviewOwnCaseRefused",
+            "A holder of CREDIT_UNDERWRITE attempted an act - taking, deciding, or second-approving or refusing - on a"
+                    + " review case whose applicant is their own party (the Phase 10 to 11 transition; INV-CRD-11,"
+                    + " INV-AUD-04): refused, nothing changed, and recorded FAILED in a transaction of its own so the"
+                    + " attempt survives the act's rollback. The summary names the case and the act attempted.",
+            false),
+
     REPORT_READ(
             "credit.ReportRead",
             "A holder of CREDIT_INVESTIGATE was served a credit operations report - outcomes by pinned policy version,"

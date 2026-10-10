@@ -92,9 +92,12 @@ class DecisionReproducibilityBatteryTest {
      * What {@link #SEED} produces, every decision fingerprinted by what the seed fixes - its party, product, pinned version
      * numbers, snapshot sequence, decider kind, outcome, amount and ordered reasons - sorted and hashed: the same seed
      * reproduces the same ten thousand decisions, so a failure named by its seed can be run again. A change to the
-     * battery's world, the pipeline or the engine moves it, deliberately, in the same reviewed change.
+     * battery's world, the pipeline or the engine moves it, deliberately, in the same reviewed change. <em>Moved at the
+     * Phase 10 to 11 transition (2026-10-10, was {@code 2529d62c...}): a person may no longer approve while the bureau's
+     * total balance is absent ({@code credit.ExposureUnassessable}, the owner's decision), so those of the seed's person
+     * approvals decline instead - census then: 1631 by a person, 220 of them approvals.</em>
      */
-    static final String FINGERPRINT = "2529d62cd41ab6d9cd5bc83633949e8f419a73dc7d00752ea30d5dcdb5db5786";
+    static final String FINGERPRINT = "ff1f587aed743b552712013f27019506cab2c67326da194e709af1f9bfa4c52a";
 
     private static final long FORCED = 1_000_000_000_000L;
 
@@ -230,6 +233,41 @@ class DecisionReproducibilityBatteryTest {
             assertThat(count("SELECT count(*) FROM credit.decision_snapshot s JOIN credit.credit_decision d"
                     + " ON d.snapshot_id = s.id WHERE position(? IN s.canonical) > 0", frozen))
                     .as("decided snapshots holding " + frozen).isPositive();
+        }
+    }
+
+    @Test
+    @DisplayName("missing data never approves (INV-CRD-10): no platform approval and no approving evaluation on a source"
+            + " unavailable or an attribute ABSENT that the pinned policy reads - recomputed from the snapshots, the pinned"
+            + " rules and the assessments, never from the evaluator's own record; replay cannot see it, this census can")
+    void missingDataNeverApproves() throws SQLException {
+        // Replay re-runs the same evaluator, so an evaluator approving on absent data replays IDENTICAL; the reason
+        // oracle starts from the stored outcome. Only a census over the inputs themselves catches it.
+        try (Connection app = DatabaseRoles.application()) {
+            List<String> subjects = MissingDataCensus.subjects(app);
+            long unavailable = one(app, MissingDataCensus.subjectsWhere(MissingDataCensus.SOURCE_UNAVAILABLE_READ));
+            long absent = one(app, MissingDataCensus.subjectsWhere(MissingDataCensus.ABSENT_COMPARED));
+            System.out.printf("P10-TST-002 MISSING DATA: evaluations on missing data by outcome %s - %d on a source the"
+                    + " policy reads unavailable, %d comparing an absent attribute or figure%n", subjects, unavailable, absent);
+            assertThat(MissingDataCensus.systemApprovals(app)).as("seed %d: platform approvals on missing data", SEED)
+                    .isEmpty();
+            assertThat(MissingDataCensus.approvingEvaluations(app)).as("seed %d: evaluations approving on missing data",
+                    SEED).isEmpty();
+            assertThat(unavailable).as("seed %d: the census's subjects - a source the pinned policy reads unavailable",
+                    SEED).isGreaterThanOrEqualTo(50);
+            assertThat(absent).as("seed %d: the census's subjects - an absent attribute or figure compared", SEED)
+                    .isGreaterThanOrEqualTo(50);
+            assertThat(subjects).as("seed %d: the subjects referred and declined, never approved", SEED)
+                    .anyMatch(outcome -> outcome.startsWith("REFER "))
+                    .anyMatch(outcome -> outcome.startsWith("DECLINE "))
+                    .noneMatch(outcome -> outcome.startsWith("APPROVE "));
+        }
+    }
+
+    private static long one(Connection connection, String sql) throws SQLException {
+        try (Statement read = connection.createStatement(); ResultSet row = read.executeQuery(sql)) {
+            row.next();
+            return row.getLong(1);
         }
     }
 

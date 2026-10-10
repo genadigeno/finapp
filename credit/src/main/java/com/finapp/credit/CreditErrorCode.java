@@ -98,7 +98,37 @@ public enum CreditErrorCode implements ErrorCode {
     EXPOSURE_LIMIT_EXCEEDED(
             "credit.ExposureLimitExceeded",
             422,
-            "The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less.");
+            "The approval exceeds what the evaluation allows or the party's exposure limit; decline, or approve less."),
+
+    /**
+     * An underwriter's act on a review case whose applicant is their own party (the Phase 10 to 11 transition;
+     * {@code INV-CRD-11}, {@code INV-AUD-04}): a {@code 403} - not a state the caller can change; another underwriter
+     * takes the case. Nothing changed; the attempt is recorded {@code FAILED}.
+     */
+    SELF_DEALING_REFUSED(
+            "credit.SelfDealingRefused",
+            403,
+            "An underwriter never acts on a review case whose applicant is their own party; another underwriter must."),
+
+    /**
+     * A person's approval while the party's exposure cannot be assessed - the bureau's total balance absent (the Phase
+     * 10 to 11 transition; owner decision 2026-10-10, {@code INV-CRD-09}): nothing recorded, the case unchanged. A
+     * {@code 422}: decline instead - a decline needs no exposure.
+     */
+    EXPOSURE_UNASSESSABLE(
+            "credit.ExposureUnassessable",
+            422,
+            "The party's exposure cannot be assessed without a bureau balance; a person may decline, never approve."),
+
+    /**
+     * A person's decision on credit data past the pinned policy's maximum data age, re-judged on the database's clock
+     * in the deciding transaction (the Phase 10 to 11 transition; {@code INV-CRD-08}): nothing recorded. A {@code 422}:
+     * release the case - it expires with its request, and the applicant may apply again on fresh data.
+     */
+    DATA_STALE(
+            "credit.DataStale",
+            422,
+            "The credit data the decision would rest on is past its maximum age; nothing can be decided on it.");
 
     private final String code;
     private final int status;

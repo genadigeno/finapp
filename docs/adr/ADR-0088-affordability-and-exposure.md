@@ -208,7 +208,19 @@ Positive:
   `P10-DOC-001`; before it, a policy without one would not have bounded system approvals, though
   the seeded v1 and every test policy carry `EXPOSURE_LIMIT`); a person may approve a referral
   whose bureau balance is absent, bounded by the platform's own terms (point 5 (b)).)*
-- Phase 11 plugs in outstanding credit and consumption without changing the formula.
+- Phase 11 plugs in outstanding credit and consumption without changing the formula - *corrected at
+  the Phase 10 to 11 transition, 2026-10-10: the formula stands, but the deciding transaction did not.* As built it re-read the
+  reservation alone under the profile lock and a successor copied the first freeze's
+  `PLATFORM_OUTSTANDING_CREDIT`, so once Phase 11 consumes an approval into a loan (reserved down,
+  outstanding up by the same amount) a decision would judge the limit on a stale outstanding figure,
+  and could approve past it. Now **both platform terms are re-read under the profile lock** in the
+  system's and the person's deciding transactions, a change in either freezes a successor that
+  replaces both (`SnapshotFreezer.successor`), and **Phase 11's loan / consumption writer must hold
+  the party's `credit_profile` row `FOR UPDATE`** in the transaction that moves the exposure from
+  reserved to outstanding - the lock every decider takes first, so no decision reads the two terms
+  between the consumption's two halves. And a person may no longer approve on an absent bureau
+  balance (point 5 (b) superseded, ADR-0089 point 2): the exposure is unassessable, the approval
+  refused `422 credit.ExposureUnassessable`.
 
 Negative:
 - All decisions for one party serialise on one row — a per-party cost, invisible fleet-wide.
@@ -238,7 +250,13 @@ ADR-0003, ADR-0039.
   reserved-exposure read (`JdbcReservedExposure`, version 2) and the empty
   `credit_decision_consumption` table (`credit V011`, `UNIQUE (decision_id)`, written by no Phase 10
   code); `-018` a person's approval bounded by the limit (point 5 (b)).
-- Phase 11: the loan writes the consumption fact and the outstanding-credit composition.
+- Phase 11: the loan writes the consumption fact and the outstanding-credit composition - holding the
+  party's `credit_profile` row `FOR UPDATE` (the transition's correction above).
 - **Acceptance.** **As built** (`P10-DOC-001`, 2026-10-09): the Phase 10 review read this ADR
   against the code, corrected it in place above (and the proposal door, point 5 (a)), and accepted
   it.
+- (2026-10-10, the Phase 10 → 11 transition) ADR-0091 (`Proposed`) designs the consumption port and
+  `PlatformCreditExposure` version 2 this ADR anticipated (points 4 and 6): credit's own
+  `CreditDecisionConsumptions`, the only path to `credit_decision_consumption` (credit `V021`, a
+  `SECURITY DEFINER` function, the application role's `INSERT` revoked), and version 2 counting
+  committed and outstanding loan principal and an open credit line's limit; this ADR's decisions stand.
