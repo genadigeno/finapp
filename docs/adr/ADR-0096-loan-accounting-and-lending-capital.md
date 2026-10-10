@@ -232,5 +232,23 @@ Financial impact: the operational ledger gains the loan book and the platform's 
   L5 and re-check headroom for the principal it re-instates, refusing `422
   lending.CapitalUnavailable` with the proposal staying `PROPOSED` (`P11-TSK-020`), so no correction
   can breach `INV-LND-13`.
+- **Built: the account plan (`P11-TSK-003`, 2026-10-11), with refinements read against the code.**
+  Ledger `V026` adds `OwnerKind.LOAN` and the ten purposes, recreates the four enum-fed `CHECK`s,
+  seeds the four operational accounts in all five supported currencies (the chart's rule, although
+  both products are EUR) and restates the binding trigger. (a) The convergence identity is `V002`'s
+  partial unique index `(owner_ref, purpose, currency)`; the owner kind derives from the purpose, so
+  it is the backlog's `(owner_kind, owner_ref, purpose, currency)`. (b) The per-loan type is declared
+  once, by lending's opener (`LoanAccounts.declaredTypeOf`) - the ledger's owned factory takes the
+  type from its opener, as a wallet's does - and `openFor` returns a typed `LoanLedgerAccounts` and
+  refuses a converged account whose stored type, normal balance, currency or owner is not the
+  declaration (`INV-LED-06` at the opener). (c) `LENDING_CAPITAL` joins
+  `closedToFreeAdjustments()` through `reconciledPositions()` (the closed set is a superset); the
+  other nine join directly and none of them is a reconciled position - lending opens no
+  expectations, so completeness would report every lending line unattributed. A consequence: the
+  `finapp.reconciliation.line.unattributed` gauge gains a `purpose=LENDING_CAPITAL` series, which
+  must read 0 like every other. (d) `LendingBooksHaveOnePosterTest` sits beside
+  `FxBooksHaveOnePosterTest` in `app`'s hermetic tier: the loan-book rule is live now (lending's
+  `LoanAccounts` names the six), the capital rule's permit list is empty until `P11-TSK-004` adds
+  capital recognition (the poster) and lending's headroom and proof (readers).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

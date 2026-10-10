@@ -32,7 +32,10 @@
  * vocabularies ({@code P11-TSK-002}): the products and their kind, frequency and day count (only implemented members -
  * {@code INV-LND-09}), the application, offer and loan lifecycles with the loan's closure and cancellation reasons, the
  * delinquency buckets, the allocation components and overpayment treatments, the four engines at version 1
- * ({@link com.finapp.lending.EngineVersion}) and the aggregates' typed identifiers. No behaviour, no table, no port,
- * bean, route, event or schedule; the chart of accounts is {@code P11-TSK-003}'s, lending capital {@code -004}'s.
+ * ({@link com.finapp.lending.EngineVersion}) and the aggregates' typed identifiers. The loan chart of accounts
+ * ({@code P11-TSK-003}, ledger {@code V026}): {@link com.finapp.lending.LoanAccounts} opens a loan's six ledger accounts
+ * in its one currency, typed as ADR-0096's account plan, in the caller's transaction - unwired until the acceptance
+ * ({@code -012}). No table, port, bean, route, event or schedule, and nothing posts; lending capital's administration
+ * is {@code -004}'s.
  */
 package com.finapp.lending;

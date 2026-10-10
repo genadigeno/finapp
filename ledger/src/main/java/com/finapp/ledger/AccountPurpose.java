@@ -42,6 +42,43 @@ public enum AccountPurpose {
      */
     MERCHANT_PAYABLE(OwnerKind.MERCHANT),
 
+    // ------------------------------------------------------------------------------------------
+    // THE LOAN BOOK (`P11-TSK-003`, ledger `V026`; ADR-0096 section 1, PHASE_11_PLAN.md section
+    // 12.8; INV-LND-01). Six accounts per loan or credit line, opened together in the loan's one
+    // currency by lending's LoanAccounts at acceptance - due split from not-due and interest from
+    // principal, so past-due, income and the subledger proof each have a ledger anchor rather than
+    // a calculation over rows. Every figure a borrower is charged is a balance of one of these,
+    // derived from journal lines; posted only by lending's operations (LendingBooksHaveOnePosterTest)
+    // and closed to free adjustments. None is a reconciled position: lending moves no money across
+    // a rail itself, so they open no expectations (no *_CLEARING purpose, INV-RAIL-04) and are
+    // proven by the subledger proof against lending's own facts (`P11-TSK-029`).
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * Principal outstanding and not yet due - for a credit line, drawn principal not yet billed.
+     * An ASSET, debit-normal: the platform's claim on the borrower, raised by a disbursement or a
+     * draw (rule 1), re-classified to {@link #LOAN_PRINCIPAL_DUE} by billing (rule 3).
+     */
+    LOAN_PRINCIPAL(OwnerKind.LOAN),
+
+    /** Billed principal unpaid. An ASSET, debit-normal; days past due read from it (rule 3). */
+    LOAN_PRINCIPAL_DUE(OwnerKind.LOAN),
+
+    /** Interest earned and not yet due. An ASSET, debit-normal; a day's accrual debits it (rule 2). */
+    LOAN_INTEREST_ACCRUED(OwnerKind.LOAN),
+
+    /** Billed interest unpaid. An ASSET, debit-normal (rule 3). */
+    LOAN_INTEREST_DUE(OwnerKind.LOAN),
+
+    /** Assessed fees unpaid. An ASSET, debit-normal (rule 4). */
+    LOAN_FEES_DUE(OwnerKind.LOAN),
+
+    /**
+     * Money received beyond every receivable, owed back to the borrower. A LIABILITY,
+     * credit-normal: the one per-loan account the platform owes on (rules 5, 6, 7, 8a).
+     */
+    LOAN_CREDIT_BALANCE(OwnerKind.LOAN),
+
     /**
      * The CARD rail's value in flight: what the card PSP owes the platform for captures, net of
      * refunds, chargebacks and fees, until its clearing reports discharge it. Phase 8's seam.
@@ -192,6 +229,39 @@ public enum AccountPurpose {
      */
     CORRIDOR_CLEARING(OwnerKind.COUNTERPARTY),
 
+    /**
+     * Interest a loan has earned, per currency (`P11-TSK-003`, `V026`; ADR-0096 rule 2): REVENUE,
+     * credit-normal, credited by a day's accrual and debited only by an interest waiver (rule 9).
+     * Posted only by lending's operations; closed to free adjustments.
+     */
+    LOAN_INTEREST_INCOME(OwnerKind.OPERATIONAL),
+
+    /**
+     * Fees a loan has earned, per currency (`V026`; rules 1, 4, 8, 8a): REVENUE, credit-normal -
+     * the origination fee recognised upfront (A17) and the late fees assessed. Posted only by
+     * lending's operations; closed to free adjustments.
+     */
+    LOAN_FEE_INCOME(OwnerKind.OPERATIONAL),
+
+    /**
+     * A loan written off, per currency (`V026`; rule 14): EXPENSE, debit-normal. Seeded now so the
+     * account plan never changes when Phase 14 builds the write-off; <strong>posted by nothing in
+     * Phase 11</strong>, and closed to free adjustments so no person can post a loss here either.
+     */
+    LOAN_WRITE_OFF_EXPENSE(OwnerKind.OPERATIONAL),
+
+    /**
+     * The platform's own funds committed to lending, per currency (`V026`; ADR-0096 section 4,
+     * PHASE_11_PLAN.md section 12.9; {@code INV-LND-13}): EQUITY, credit-normal. Credited ONLY by
+     * bank recognition of a statement line matched to a four-eyes capital contribution's
+     * expectation (rule 0, `P11-TSK-004`) - capital is never typed, adjusted to fit or posted by a
+     * person. A reconciled position: completeness reports any line no recognition explains, and a
+     * free adjustment is refused. Deliberately EQUITY and never debited by a disbursement: capital
+     * is a source of funds and the loan a use; the headroom invariant, judged under this account's
+     * row lock, is what makes "funded from capital" binding.
+     */
+    LENDING_CAPITAL(OwnerKind.OPERATIONAL),
+
     /** Unattributable value, parked, aged and reported ({@code INV-REC-05}). Phase 8's seam. */
     SUSPENSE_UNMATCHED(OwnerKind.SUSPENSE);
 
@@ -217,7 +287,14 @@ public enum AccountPurpose {
      * (`P8-TSK-016`, `V018`): cash is never adjusted to fit (`INV-SET-06`). `FX_PROVIDER_CLEARING`
      * joined with its counterparty and source (`P9-TSK-011`, `V022`): every account of it is a
      * counterparty's own position, discharged only by that counterparty's evidence; so does
-     * `CORRIDOR_CLEARING` (`P9-TSK-014`, `V024`), the corridor provider's.
+     * `CORRIDOR_CLEARING` (`P9-TSK-014`, `V024`), the corridor provider's. `LENDING_CAPITAL`
+     * joined with the account (`P11-TSK-003`, `V026`; {@code INV-LND-13}) ahead of its one poster,
+     * bank recognition of a contribution's statement line (`P11-TSK-004`): until then it holds no
+     * line, and from then completeness reports any line on it that no recognition explains - the
+     * every-writer half of the single-poster discipline {@code LendingBooksHaveOnePosterTest}
+     * holds statically. The six per-loan purposes and the three loan P&amp;L purposes do NOT join:
+     * lending opens no expectations, so completeness would report every lending line unattributed;
+     * they are proven by the subledger proof instead (`P11-TSK-029`).
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
@@ -230,7 +307,8 @@ public enum AccountPurpose {
                 RECONCILIATION_LOSSES,
                 RECONCILIATION_GAINS,
                 FX_PROVIDER_CLEARING,
-                CORRIDOR_CLEARING);
+                CORRIDOR_CLEARING,
+                LENDING_CAPITAL);
     }
 
     /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */
@@ -248,6 +326,13 @@ public enum AccountPurpose {
      * no expectations, and the completeness proof would report every conversion line unattributed.
      * `V020` re-states `V015`'s binding trigger with this list; `ReversalService` mirrors and
      * reconciliation-origin resolutions stay admitted.
+     *
+     * <p>The loan book joined (`P11-TSK-003`, `V026`; ADR-0096 section 1, {@code INV-LND-01}): the
+     * six per-loan purposes and {@code LOAN_INTEREST_INCOME}, {@code LOAN_FEE_INCOME} and
+     * {@code LOAN_WRITE_OFF_EXPENSE} - every line on them is a lending operation's, and lending's
+     * own corrections (waivers, reversals, amendments) are four-eyes lending acts that post
+     * through {@code PostingService} / {@code ReversalService}, never a ledger free adjustment.
+     * {@code LENDING_CAPITAL} is closed through {@link #reconciledPositions()}.
      */
     public static java.util.Set<AccountPurpose> closedToFreeAdjustments() {
         java.util.Set<AccountPurpose> closed = java.util.EnumSet.copyOf(reconciledPositions());
@@ -256,6 +341,15 @@ public enum AccountPurpose {
         closed.add(ROUNDING_RESIDUAL);
         closed.add(FX_REALISED_GAINS);
         closed.add(FX_REALISED_LOSSES);
+        closed.add(LOAN_PRINCIPAL);
+        closed.add(LOAN_PRINCIPAL_DUE);
+        closed.add(LOAN_INTEREST_ACCRUED);
+        closed.add(LOAN_INTEREST_DUE);
+        closed.add(LOAN_FEES_DUE);
+        closed.add(LOAN_CREDIT_BALANCE);
+        closed.add(LOAN_INTEREST_INCOME);
+        closed.add(LOAN_FEE_INCOME);
+        closed.add(LOAN_WRITE_OFF_EXPENSE);
         return closed;
     }
 
