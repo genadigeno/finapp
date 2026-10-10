@@ -290,6 +290,7 @@ class CreditDecisionStormDatabaseTest {
         needleWalk();
         drain();
         census("at rest");
+        assertTheMissingDataCensusHadSubjects();
         assertTheSimulatorsCountExactly();
         assertEveryActIsCounted();
         replayCensus();
@@ -1149,7 +1150,7 @@ class CreditDecisionStormDatabaseTest {
     /**
      * ONE REPEATABLE READ snapshot, every census soft so a failure names every reading that caught it: the exposure
      * census, the decision census, the snapshot sequences, one open request per party and product, one taker per case,
-     * the records and the consent census.
+     * the records, the consent census and the missing-data census.
      */
     private void census(String when) throws SQLException {
         rounds.incrementAndGet();
@@ -1162,6 +1163,7 @@ class CreditDecisionStormDatabaseTest {
                 exposureCensus(snapshot, when, softly);
                 decisionCensus(snapshot, when, softly);
                 consentCensus(snapshot, when, softly);
+                missingDataCensus(snapshot, when, softly);
             } finally {
                 snapshot.rollback();
             }
@@ -1178,14 +1180,14 @@ class CreditDecisionStormDatabaseTest {
     private static void exposureCensus(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
         Map<UUID, List<long[]>> byParty = new HashMap<>();
         try (Statement read = snapshot.createStatement(); ResultSet row = read.executeQuery("SELECT d.party_id,"
-                + " d.approved_minor, p.maximum_exposure_minor, s.canonical FROM credit.credit_decision d"
+                + " d.approved_minor, p.maximum_exposure_minor, s.canonical, d.currency FROM credit.credit_decision d"
                 + " JOIN credit.credit_policy_version p ON p.id = d.policy_version_id"
                 + " JOIN credit.decision_snapshot s ON s.id = d.snapshot_id WHERE d.outcome = 'APPROVED'"
                 + " AND d.valid_until > statement_timestamp() AND NOT EXISTS (SELECT 1 FROM"
                 + " credit.credit_decision_consumption c WHERE c.decision_id = d.id)")) {
             while (row.next()) {
                 byParty.computeIfAbsent(row.getObject(1, UUID.class), key -> new ArrayList<>())
-                        .add(new long[] {row.getLong(2), row.getLong(3), bureauBalance(row.getString(4))});
+                        .add(new long[] {row.getLong(2), row.getLong(3), bureauBalance(row.getString(4), row.getString(5))});
             }
         }
         List<String> exceeded = new ArrayList<>();
@@ -1208,13 +1210,39 @@ class CreditDecisionStormDatabaseTest {
                 + " (INV-CRD-09)", when).isEmpty();
     }
 
-    private static long bureauBalance(String canonical) {
-        try {
-            return CanonicalSnapshot.parse(canonical).attribute(CreditAttributeCode.BUREAU_TOTAL_BALANCE).value()
-                    instanceof AttributeValue.MoneyValue money ? money.value().minorUnits() : 0;
-        } catch (RuntimeException absent) {
+    /**
+     * The bureau balance the snapshot read, in the decision's currency: {@code ABSENT} is zero (an unavailable source, or a
+     * foreign-currency balance the freezer kept out - the policy's fallback decided those); anything else that is not money
+     * in the decision's own currency is not something the census may guess at - a snapshot that does not parse, a balance
+     * of another type, or one in another currency fails the census rather than reading as zero.
+     */
+    private static long bureauBalance(String canonical, String currency) {
+        AttributeValue value = CanonicalSnapshot.parse(canonical).attribute(CreditAttributeCode.BUREAU_TOTAL_BALANCE).value();
+        if (value instanceof AttributeValue.Absent) {
             return 0;
         }
+        if (!(value instanceof AttributeValue.MoneyValue money)) {
+            throw new AssertionError("the exposure census: a bureau balance that is not money - " + value);
+        }
+        if (!money.value().currency().code().equals(currency)) {
+            throw new AssertionError("the exposure census: a bureau balance in " + money.value().currency().code()
+                    + " beside a decision in " + currency + " - never converted, never summed");
+        }
+        return money.value().minorUnits();
+    }
+
+    /**
+     * THE MISSING-DATA CENSUS ({@code INV-CRD-10}, {@link MissingDataCensus}): no {@code SYSTEM} decision {@code APPROVED},
+     * and no evaluation {@code APPROVE}, on a snapshot whose pinned policy reads a source the snapshot records
+     * {@code SOURCE_UNAVAILABLE}, or compares an attribute or figure the snapshot or its assessment holds {@code ABSENT} -
+     * recomputed from the snapshot's canonical text, the pinned rules and the assessment, never from the evaluator's own
+     * record of what it assessed.
+     */
+    private static void missingDataCensus(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
+        softly.assertThat(MissingDataCensus.systemApprovals(snapshot)).as("%s: the missing-data census - no SYSTEM approval"
+                + " on a source unavailable or an attribute ABSENT that its pinned policy reads (INV-CRD-10)", when).isEmpty();
+        softly.assertThat(MissingDataCensus.approvingEvaluations(snapshot)).as("%s: the missing-data census - no evaluation"
+                + " approving on missing data (INV-CRD-10)", when).isEmpty();
     }
 
     private static void decisionCensus(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
@@ -1310,6 +1338,20 @@ class CreditDecisionStormDatabaseTest {
     }
 
     // ================================================================== 5. at rest
+
+    /**
+     * The missing-data census was not vacuous: the storm's faults, its source past its deadline and its foreign-currency
+     * balances left evaluations on missing data - every one of them referred or declined, none approved.
+     */
+    private static void assertTheMissingDataCensusHadSubjects() throws SQLException {
+        List<String> subjects;
+        try (Connection app = DatabaseRoles.application()) {
+            subjects = MissingDataCensus.subjects(app);
+        }
+        System.out.println("P10-TST-001 MISSING DATA: evaluations on missing data by outcome " + subjects);
+        assertThat(subjects).as("the missing-data census had subjects - evaluations on missing data").isNotEmpty();
+        assertThat(subjects).as("and none of them approved").noneMatch(outcome -> outcome.startsWith("APPROVE "));
+    }
 
     private void assertTheSimulatorsCountExactly() throws Exception {
         SoftAssertions softly = new SoftAssertions();
