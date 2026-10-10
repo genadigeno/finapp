@@ -61,6 +61,7 @@ class CrossborderModuleIsolationTest {
                         "reconciliation",
                         "fx",
                         "credit",
+                        "lending",
                         "app")) {
             assertThat(classpathEntries())
                     .as("crossborder must not depend on %s", forbidden)

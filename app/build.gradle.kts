@@ -91,6 +91,14 @@ dependencies {
     // guard covers credit from its first class (INV-CRD-12).
     implementation(project(":credit"))
 
+    // The Phase 11 lending module (P11-TSK-002), on the classpath for the same reason: a module not
+    // on app's classpath is a module ProductionModules sweeps no rule over - the floating-point
+    // guard covers lending from its first class (INV-MON-01, INV-LND-09). And `app` is the only place
+    // lending and credit are both visible, so the vocabularies' agreement - each LoanProduct with
+    // its CreditProduct - is checked here (LendingVocabularyTest), and every port between them will
+    // be composed here.
+    implementation(project(":lending"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

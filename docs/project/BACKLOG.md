@@ -15859,7 +15859,7 @@ assignment and an expiry serialise (`-018`).
 
 # Phase 11 — Lending Infrastructure
 
-Status: `IN_PROGRESS` — started 2026-10-10 with `P11-TSK-001` (1 of 33 items complete; M11.1 at 1 of 5); entry gate passed 2026-10-10 by the Phase 10 → 11 transition
+Status: `IN_PROGRESS` — started 2026-10-10 with `P11-TSK-001` (2 of 33 items complete; M11.1 at 2 of 5); entry gate passed 2026-10-10 by the Phase 10 → 11 transition
 ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty-three items (`P11-TSK-001`…`-030`, `P11-TST-001`,
 `P11-TST-002`, `P11-DOC-001`) across nine milestones, with `P11-TSK-001` marked `READY`. The
@@ -16079,7 +16079,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   no posting and no external event, asserted by `CreditModuleIsolationTest`; F8 N/A — credit moves no
   money), `DOD-DOMAIN`, `DOD-SEC`. **Risk**: High. **Cx**: S.
 
-**P11-TSK-002 — The lending module boundary and floors** — `READY` *(marked by `P11-TSK-001`'s completion gate, 2026-10-10)*
+**P11-TSK-002 — The lending module boundary and floors** — `COMPLETE` (2026-10-10; marked `READY` by `P11-TSK-001`'s completion gate)
+- **As built** (2026-10-10): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is `lending/` (build file, lockfile, `V001`, `LoanProduct`, `LoanKind`, `RepaymentFrequency`, `DayCountConvention`, `LoanApplicationStatus`, `LoanOfferStatus`, `LoanStatus`, `ClosureReason`, `CancellationReason`, `DelinquencyBucket`, `AllocationComponent`, `OverpaymentTreatment`, `LendingEngine`, `EngineVersion`, six typed ids, `package-info`), identity `V021` with five `PermissionName` and three `RoleName` members, and `app -> lending`; the suites are `LendingModuleIsolationTest`, `LendingVocabulariesTest`, `LoanProductTest`, `LendingMigrationTest`, `LendingSchemaHasNoMutableMoneyTest`, `app`'s `LendingVocabularyTest`, `RoleNameTest` (three cases) and `IdentityAdministrationDatabaseTest` (the three roles granted through the real endpoint and refused administration), with the sixteen sibling isolation tests extended and the contract baseline's role enum widened. **Refinements**: `LoanProduct` declares no amount or term bounds (credit's are the only ones, A20 - the "bounds" agreement is the shape they imply: kind against term bounds, offer validity within decision validity); `EngineVersions` is spelled as the enum `EngineVersion` beside `LendingEngine`; the "planted import" probe is the build edge an import needs; the schema guard also refuses non-`bigint` money columns, floating-point columns and money tables owned by another role. No `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md` or `DISTRIBUTED_EXECUTION.md` row is this task's and no lending column exists to classify; the gate classified `P11-TSK-001`'s two unregistered consumer columns (`credit_decision_consumption.consumer_kind`, `consumer_ref`) in `DATA_CLASSIFICATION.md`, found by the adjacent `ColumnClassificationTest`.
 - **Objective**: make `lending` a build-graph fact with a privilege floor, its closed vocabularies
   for both products and its permissions, before any behaviour (the `P5-/P6-/P8-/P9-/P10-TSK-001`
   precedent).
@@ -16137,7 +16138,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   permission the later tasks need; nothing depends on it.
 - **Definition of done**: `DOD-ARCH`, `DOD-SEC`, `DOD-BUILD`. **Risk**: Low. **Cx**: S.
 
-**P11-TSK-003 — The loan chart of accounts and the lending-capital account** — `PLANNED`
+**P11-TSK-003 — The loan chart of accounts and the lending-capital account** — `READY` *(marked by `P11-TSK-002`'s completion gate, 2026-10-10)*
 - **Objective**: every loan figure and the platform's lending capital have a typed, guarded ledger
   account before any loan exists.
 - **Bounded context**: Ledger; Lending.
