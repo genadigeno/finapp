@@ -16450,7 +16450,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
   **Risk**: Medium. **Cx**: S.
 
-**P11-TSK-008 — Allocation engine v1 (both treatments)** — `PLANNED`
+**P11-TSK-008 — Allocation engine v1 (both treatments)** — `COMPLETE` (2026-10-11) *(started 2026-10-11 by the owner in parallel with `-006`, `-007` and `-010` - Phase 11 wave 1; marks no next task `READY`)*
 - **Objective**: a pure, versioned, conserving allocation of money received, by the order the
   agreement pins (ADR-0095, L6).
 - **Bounded context**: Lending (pure domain).
@@ -16491,6 +16491,23 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Acceptance criteria**: allocation conserves exactly under every order, amount and treatment.
 - **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
   **Risk**: Medium. **Cx**: S.
+- **As built (2026-10-11):** `AllocationEngineV1.allocate(amount, dueState, rules) → List<AllocationLine>` and
+  `allocatePrepayment(…)`, pure and static; `AllocationLine` (target `DUE_ITEM` + item + component,
+  `NOT_DUE_PRINCIPAL`, `CREDIT_BALANCE`; positive, one per component); `AllocationRules` (`of(terms)`, judged
+  again on construction for the agreement's canonical terms, `-011`); `DueState` / `DueItem` / `DueItemId` (the
+  caller's derivation: per billed item the fees, interest and principal still due, and the principal not yet due).
+  **Refinements:** a due state holds one billed item per due date (refused otherwise), so oldest-first is a total
+  order and the lines a function of the set; the line's remainder is principal not yet due then credit - accrued,
+  unbilled interest is not a target; the credit-balance application is `allocate` with the balance as the amount
+  (its `CREDIT_BALANCE` line = what stays held) - no separate entry point; the `PREPAYMENT` kind is
+  `allocatePrepayment`, which also refuses arrears (`ARREARS_OUTSTANDING`, the engine's half of `-028`'s
+  `ArrearsFirst`), an amount beyond the principal not yet due and the line's treatment; the typed refusal is
+  `AllocationRefused` by `Reason` (no HTTP code - the calling commands map it); conservation and never-above-due
+  are also asserted inside the engine (`IllegalStateException`, an engine defect); the backlog's
+  `AllocationEngineV1Properties` is `AllocationEngineV1PropertiesTest` (`TestTaxonomyTest` requires `*Test`), its
+  two-JVM comparison through the new lending test helper `SecondJvm` (shared with `-006`/`-007`); the backlog's
+  first probe is caught by `#respectsTheOrderAndTheTreatment`, its second by the engine's own assertion and, with
+  that disabled, by `#neverAboveDue`. ADR-0095's Follow-up and `PHASE_11_PLAN.md` §12.5 record the same.
 
 **P11-TSK-009 — Statement engine v1 (credit line minimum payment)** — `PLANNED`
 - **Objective**: a deterministic credit-line statement — what a cycle bills and the minimum payment —
