@@ -15,12 +15,18 @@ import com.finapp.lending.JdbcLoanApplicationStore;
 import com.finapp.lending.JdbcLoanOfferStore;
 import com.finapp.lending.JdbcLoanTermsStore;
 import com.finapp.lending.LoanApplicationStore;
+import com.finapp.lending.JdbcLoanStore;
+import com.finapp.lending.LoanAcceptances;
+import com.finapp.lending.LoanAccounts;
 import com.finapp.lending.LoanApplications;
 import com.finapp.lending.LoanCreditDecisions;
 import com.finapp.lending.LoanOfferStore;
 import com.finapp.lending.LoanOffers;
 import com.finapp.lending.LoanOrigination;
 import com.finapp.lending.LoanPartyStanding;
+import com.finapp.lending.LoanPayoutDestinations;
+import com.finapp.lending.LoanStore;
+import com.finapp.lending.Loans;
 import com.finapp.lending.LoanProductBounds;
 import com.finapp.lending.LoanTermsAdministration;
 import com.finapp.lending.LoanTermsStore;
@@ -58,7 +64,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * outbox, the lending officer's doors and the active-version gauge. And the loan application (`P11-TSK-010`): its store,
  * the two ports {@code app} implements over credit (the decision request and the party's standing), the domain service,
  * the customer's doors and their meter. And the offer (`P11-TSK-011`): its store, the origination step and its leaderless
- * sweep with the sweeper gauge, the two credit-event hints, the customer's offer doors and their meter.
+ * sweep with the sweeper gauge, the two credit-event hints, the customer's offer doors and their meter. And the acceptance
+ * (`P11-TSK-012`): the loan store (which the headroom's committed term reads), the two ports {@code app} implements for it
+ * (credit's profile lock and consumption on {@code LoanCreditDecisions}; the payout destination over the payment-method
+ * registry), the six-account opener, T-acc, the loan reads, the doors and their meter.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -97,10 +106,18 @@ public class LendingBeans {
         return new ReconciliationCapitalRecognitions(capitalRecognitionReadings);
     }
 
+    /** The loan accounts' store (`P11-TSK-012`) - the headroom's committed term reads it. */
+    @Bean
+    LoanStore loanStore() {
+        return new JdbcLoanStore();
+    }
+
     @Bean
     LendingCapitalHeadroom lendingCapitalHeadroom(
-            LedgerAccountStore<Connection> ledgerAccountStore, PurposeBalances<Connection> purposeBalances) {
-        return new LendingCapitalHeadroom(ledgerAccountStore, purposeBalances);
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            LoanStore loanStore) {
+        return new LendingCapitalHeadroom(ledgerAccountStore, purposeBalances, loanStore);
     }
 
     @Bean
@@ -223,8 +240,11 @@ public class LendingBeans {
     @Bean
     LoanCreditDecisions loanCreditDecisions(
             com.finapp.credit.DecisionRequests decisionRequests,
-            com.finapp.credit.CreditDecisions<Connection> creditDecisions) {
-        return new CreditLoanDecisions(decisionRequests, creditDecisions);
+            com.finapp.credit.CreditDecisions<Connection> creditDecisions,
+            com.finapp.credit.CreditDecisionConsumptions<Connection> creditDecisionConsumptions,
+            IdGenerator idGenerator) {
+        return new CreditLoanDecisions(decisionRequests, creditDecisions,
+                new com.finapp.credit.JdbcCreditProfiles(idGenerator), creditDecisionConsumptions);
     }
 
     /** The party's standing - credit's one rule, read authoritatively. */
@@ -313,6 +333,66 @@ public class LendingBeans {
             LoanOfferMetrics loanOfferMetrics) {
         return new LoanOfferDesk(loanOffers, identityStore, mfaEnrolmentStore, idempotentExecutor, lendingTransactions,
                 loanOfferMetrics);
+    }
+
+    // ------------------------------------------------------------------ the acceptance and the loan account (P11-TSK-012)
+
+    /** The borrower's own verified bank account, by opaque reference - the payment-method registry's read. */
+    @Bean
+    LoanPayoutDestinations loanPayoutDestinations(
+            com.finapp.paymentmethods.PaymentMethodStore<Connection> paymentMethodStore) {
+        return new PaymentMethodLoanPayoutDestinations(paymentMethodStore);
+    }
+
+    /** One loan's six ledger accounts, opened in the acceptance's transaction (`P11-TSK-003`). */
+    @Bean
+    LoanAccounts loanAccounts(LedgerAccountStore<Connection> ledgerAccountStore, IdGenerator idGenerator, Clock clock) {
+        return new LoanAccounts(ledgerAccountStore, idGenerator, clock);
+    }
+
+    /** T-acc - the customer's acceptance under L0, L2 and (a loan) L6. */
+    @Bean
+    LoanAcceptances loanAcceptances(
+            LoanOfferStore loanOfferStore,
+            LoanApplicationStore loanApplicationStore,
+            LoanStore loanStore,
+            LoanCreditDecisions loanCreditDecisions,
+            LoanPartyStanding loanPartyStanding,
+            LoanPayoutDestinations loanPayoutDestinations,
+            LendingCapitalHeadroom lendingCapitalHeadroom,
+            LoanAccounts loanAccounts,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanAcceptances(loanOfferStore, loanApplicationStore, loanStore, loanCreditDecisions,
+                loanPartyStanding, loanPayoutDestinations, lendingCapitalHeadroom, loanAccounts, outboxWriter, auditWriter,
+                idGenerator, clock);
+    }
+
+    /** The customer's loan reads - balances derived from journal lines. */
+    @Bean
+    Loans loans(LoanStore loanStore, LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances) {
+        return new Loans(loanStore, ledgerAccountStore, purposeBalances);
+    }
+
+    /** {@code finapp.lending.acceptance{product, outcome}}, every series registered at startup. */
+    @Bean
+    LoanAcceptanceMetrics loanAcceptanceMetrics(MeterRegistry meterRegistry) {
+        return new LoanAcceptanceMetrics(meterRegistry);
+    }
+
+    @Bean
+    LoanAccountDesk loanAccountDesk(
+            LoanAcceptances loanAcceptances,
+            Loans loans,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            LoanAcceptanceMetrics loanAcceptanceMetrics) {
+        return new LoanAccountDesk(loanAcceptances, loans, identityStore, idempotentExecutor, lendingTransactions,
+                loanAcceptanceMetrics);
     }
 
     /** The origination sweep - every instance, no lease, off in test contexts. */

@@ -42,7 +42,8 @@ import lombok.RequiredArgsConstructor;
  * {@link #purposes()} order, so two openers can only ever wait on each other's first contested
  * index entry, never hold one each of two (no deadlock cycle). No lock of its own, no JVM state.
  *
- * <p>Unwired until `P11-TSK-012`: no bean composes it before the acceptance that calls it.
+ * <p>Wired by `P11-TSK-012`: the acceptance ({@link LoanAcceptances}) calls it after the loan is born, in the same
+ * transaction.
  */
 @RequiredArgsConstructor
 public final class LoanAccounts {

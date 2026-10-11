@@ -311,6 +311,10 @@ complement, as the acceptance's is - so an offer past its instant is refused `40
 whether or not the sweep has run. An approval that cannot be offered - no `ACTIVE` terms, the chosen day no longer
 offered, the decision already lapsed, a loan that would not amortise - closes the application `CLOSED_UNDECIDED` with
 its reason code; an offer is never born expired.)*
+*(Refined by `P11-TSK-012`: credit's lapse, judged on its own clock under its lock after the offer's, refuses the
+acceptance `409 lending.OfferNotAcceptable` and writes nothing - the acceptance does not expire the offer (a refusal
+commits nothing under the customer's key); the offer, whose `expires_at <= valid_until` is then due, is expired by the
+sweep.)*
 
 ### 5.3 Loan (both kinds) — the lifecycle
 
@@ -418,6 +422,14 @@ held across a provider call (ADR-0046).
 | **T-pay** payoff | claim; (L3) loan; (L5) quote; catch-up accrual and billing; recompute; repayment, refund; `CLOSED` |
 | **T-rev / T-wvr / T-amd** corrections | claim `lending.servicing:EMPLOYEE:<id>`; (L0) profile for a repayment reversal (outstanding rises); (L3) loan; (L5) the proposal `FOR UPDATE` conditional; for a reversal that re-instates principal, (L6) the capital row and headroom ≥ the principal re-instated, else `422 lending.CapitalUnavailable` and the proposal stays `PROPOSED`; post; audit |
 | **T-cap** capital contribution | claim `lending.capital:EMPLOYEE:<id>`; advisory namespace `11` (`hashtext(currency)`) - FIRST in every proposal, approval and rejection; (L5) the proposal read (its tables are INSERT-only, so the decision is a born-once history row under the lock, not a row lock - `P11-TSK-004`); the expectation opened (reconciliation's opener, in the same transaction); recognition later, in the bank statement's own acceptance transaction (settlement's `BatchAcceptance`, rule 0) |
+
+*(As built by `P11-TSK-012` - T-acc: the claim; **(L0)** `LoanCreditDecisions.lockExposure`; **(L2)** the offer owner-scoped
+`FOR UPDATE`, `OFFERED` and unexpired on the database clock; the echoed hash (`TermsChanged`), the payout destination
+(`PayoutDestinationInvalid`) and the standing judged - every refusal before any write; `consume` (the consumer the
+agreement's id); **(L6)** for a loan; the loan, its history, agreement v1, the evidence, a loan's disbursement `PENDING`
+(path X's payment method by opaque reference on it - the plan's separate "payout instruction" is that column; the
+payout row is `-015`'s), the six accounts; the offer `ACCEPTED`; `lending.LoanAccepted`; the audit record. The
+application is read, never locked.)*
 
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
@@ -533,7 +545,7 @@ declares; every table carrying money is `INSERT`-only.
 | `capital_contribution` (+ `_event`) | `-004` | both INSERT-only (the proposal carries money); one decision per contribution (partial unique, under namespace `11`); four-eyes `CHECK` on the decision row, the proposer copy pinned by a composite key; `UNIQUE (expectation_ref)` on the approval row; `UNIQUE (reference)` |
 | `loan_application` (+ `_event`) | `-010` | `UNIQUE (decision_request_id)` |
 | `loan_offer` (+ `_event`), `loan_offer_terms` | `-011` | `UNIQUE (application_id)`, `UNIQUE (decision_id)`; canonical terms + `terms_sha256` (a `CHECK` holds the hash to the bytes) *(split by `P11-TSK-011` along the money line, as `-005`'s terms: the machine row money-free and lockable, the terms INSERT-only)* |
-| `loan` (+ `loan_event`), `loan_agreement`, `loan_acceptance`, `loan_disbursement` | `-012` | `UNIQUE (offer_id)`; `UNIQUE (loan_id, version)`; `UNIQUE (loan_id)` |
+| `loan` (+ `loan_event`), `loan_agreement`, `loan_acceptance`, `loan_disbursement` | `-012` | `UNIQUE (offer_id)`; `UNIQUE (loan_id, version)`; `UNIQUE (loan_id)` *(as built by `P11-TSK-012`, `lending V006`: also `UNIQUE (decision_id)` on the loan and `UNIQUE (agreement_id)` on the evidence; every table SELECT and INSERT only - nothing born here moves until its task grants the column; the agreement's `canonical_terms` is `text`, the offer's bytes copied, never `jsonb` - a re-serialisation would change the very bytes hashed; the disbursement carries its deadline, its permit and path X's payment method)* |
 | `repayment_schedule`, `loan_instalment`, `accrual_start` | `-014` | `UNIQUE (loan_id, schedule_version)`; `UNIQUE (schedule_id, sequence)`; `UNIQUE (loan_id)` |
 | `loan_payout` | `-015` | `UNIQUE (loan_id)`; payments' reference |
 | `interest_accrual` | `-016` | `UNIQUE (loan_id, accrual_date)` |
@@ -612,6 +624,10 @@ lending.ApplicationOpen`, `ApplicationNotWithdrawable`, `OfferNotAcceptable`, `T
 `SelfDealingRefused`; `404 lending.NotFound`; credit's refusals passed through unchanged where they are the cause.
 *(`ProposalNotPending` - the loser of a decision race, the fx trade-reversal precedent - and `ContributionInvalid` - a
 malformed capital contribution - added by `P11-TSK-004`, the first seven catalogued in `ERROR_CONTRACT.md`.)*
+*(`PayoutDestinationInvalid` (`422`) added by `P11-TSK-012` - path X without a payment method, one named for a wallet
+payout or a line, or one not the customer's own live bank account; `TermsChanged` and it catalogued, and
+`CapitalUnavailable` first raised, by that task. A lost standing at acceptance is credit's `ApplicantNotEligible`, passed
+through.)*
 
 ## 10. Event architecture
 
@@ -732,6 +748,10 @@ new terms version; existing agreements keep theirs (`INV-HIST-04`). An engine ch
 version; old versions stay in the code. **Every servicing row names the agreement version it was
 computed under**, so "why is this instalment €213.47?" is answered from rows: agreement vN (hash) →
 schedule vN → billing (period, accruals summed) → allocations → journal entries.
+*(As built by `P11-TSK-012`: `canonical_terms` is `text` - the offer's `CanonicalOfferTerms` format 1 bytes copied
+exactly, held to them by trigger and to the hash by `CHECK` - not `jsonb`, which would reorder and re-space the hashed
+bytes; the figures a servicing step reads (principal or limit, term, rate, day, engines, template) are columns beside
+it, every one held to the offer's by the same trigger.)*
 
 **No consumer-credit-law features** (L4): no statutory APR formula, no withdrawal right, no
 statutory notices or caps; **no penalty interest, no prepayment fee, no APR display** (L8). Each
@@ -1081,7 +1101,10 @@ Checked at every loan acceptance (the commitment), every draw and every repaymen
 re-instates principal, under L6 (`INV-LND-13`); a shortfall refuses the act (`422
 lending.CapitalUnavailable`; a refused reversal's proposal stays `PROPOSED`). Disbursement needs no re-check — its
 principal was committed at acceptance and no capital leaves the pool in Phase 11. Repaid principal
-restores headroom at commit; interest and fee income are not capital (A29). The one capital row per
+restores headroom at commit; interest and fee income are not capital (A29). *(As built by `P11-TSK-012`: the committed
+term is the agreement principal of the currency's loans `PENDING_DISBURSEMENT`, read in its own statement BEFORE the
+outstanding term - a disbursement committing between them is counted twice (headroom low, a refusal at worst), never in
+neither.)* The one capital row per
 currency is a hot row — every acceptance and draw in a currency serialise on it; correct by
 construction, measured in the storm, and partitioned into capital tranches by Phase 16 if the
 characterisation demands.

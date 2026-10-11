@@ -236,6 +236,19 @@ lending.OfferNotAcceptable` otherwise - so an offer past its instant but not yet
 expiry's conditional is the complement, the edge trigger holds both for every writer, and `ACCEPTED` is refused for
 every writer until `-012` replaces the edge function and admits it beside its loan.*
 
+*As built by `P11-TSK-012` (2026-10-11): `lending V006` replaces the edge function - `OFFERED → ACCEPTED` admitted only
+while `expires_at > statement_timestamp()` and only beside the offer's loan (born first, in the same transaction), and a
+deferred check commits the edge only with the loan's agreement v1 and its evidence. The acceptance is the order L0 → L2
+→ checks → credit's consumption → L6 (a loan) → inserts (`LoanAcceptances`): the echoed hash (`409 lending.TermsChanged`,
+malformed included), the payout destination (`422 lending.PayoutDestinationInvalid`, first raised here: path X exactly
+when the application preferred `EXTERNAL_ACCOUNT`, the customer's own live bank-account payment method by opaque
+reference; none for a wallet payout or a line) and the standing (`409 credit.ApplicantNotEligible`) are judged before
+any write. Credit's lapse, judged on its own clock under its lock after the offer's, refuses `409
+lending.OfferNotAcceptable` and **writes nothing** - the offer is not expired by the acceptance (a refusal commits
+nothing under the customer's key); its `expires_at <= valid_until` is then past or at the instant, and the sweep expires
+it. The binding of agreement and consumption is credit's `UNIQUE (consumer_kind, consumer_ref)` over the agreement's id
+and the one transaction - no lending trigger reads credit's table (A16 at the database).*
+
 ### 4.5 Loan (`lending.loan`), both kinds — `P11-TSK-012`, `-014`, `-023`, `-026`
 
 ```
@@ -264,6 +277,14 @@ without its reason. A `CLOSED` account's six balances are zero, proven continuou
 `LoanSubledgerProof`; a repayment, draw or servicing step on a closed account answers
 `409 lending.LoanNotRepayable` / is skipped, and no condition is written after closure (scenario 10).
 
+*As built by `P11-TSK-012` (2026-10-11): `lending V006`'s `loan` - identity, product and its kind (a `CHECK` ties them),
+status, currency, the offer and decision by value (`UNIQUE (offer_id)`, `UNIQUE (decision_id)`), the database's stamps
+and the terminal reason columns with their `CHECK`s; born by kind under the offer's lock for its own party's `OFFERED`,
+unexpired offer, identity frozen, and **no edge admitted yet** - the edge function refuses every move until `-014`,
+`-023` and `-026` replace it beside their facts, and no `UPDATE` is granted. `loan_event` is the history (one birth row
+here). Committed only beside its offer's `ACCEPTED` edge, its agreement v1, its evidence and (a loan) its disbursement;
+a line never has one.*
+
 ### 4.6 Disbursement (`lending.loan_disbursement`) — `P11-TSK-014`
 
 `PENDING → POSTED | FAILED`, born `PENDING` once per instalment loan in T-acc (`UNIQUE (loan_id)`),
@@ -273,6 +294,11 @@ retried on the sweep's permit until the deadline; ten disbursers find one `PENDI
 (`lending.disbursement:<loan>`, scenario 1); a crash after acceptance is re-driven by the sweep. The
 receivable is born exactly with the wallet credit (`INV-LND-07`). **Invalid:** anything out of
 `POSTED` or `FAILED`; either without the loan's matching edge.
+
+*As built by `P11-TSK-012` (2026-10-11): born `PENDING` in T-acc beside its instalment loan `PENDING_DISBURSEMENT`;
+the database stamps `created_at`, `deadline_at` (the pinned terms version's `disbursement_deadline_hours`) and the sweep's
+permit `next_attempt_at` (due at once); `payout_method_id` present exactly when the application preferred an external
+account. It does not move, and no `UPDATE` is granted, until `-014`.*
 
 ### 4.7 Loan payout (`lending.loan_payout`), path X only — `P11-TSK-015`
 

@@ -253,5 +253,20 @@ ADR-0087 §5, ADR-0088 §4, §6.
   to another decision is a caller's defect, refused by the consumer unique (`23505`, a `CreditStorageException`),
   not a sixth answer. The boundary's exactness rests on the database clock not stepping back across the lock's
   handover (ADR-0063 point 4's bounded-skew premise); `P11-TSK-029`'s census is the continuous check.
+- **As built by `P11-TSK-012` (2026-10-11) - point 4, the acceptance:** one transaction, in the order L0
+  (`LoanCreditDecisions.lockExposure` over credit's `CreditProfiles.lockForDecision`) → L2 (the offer, owner-scoped,
+  `OFFERED` and unexpired on the database clock) → the hash, the payout destination and the standing (every refusal
+  before any write) → `consume` (credit's port; the consumer `ConsumerRef(LOAN_AGREEMENT, agreement id)`, the profile lock
+  re-taken re-entrantly) → L6 for a loan → the inserts. Credit's five answers fold into the port's two:
+  `Consumed` (with the decision's party and amount, held by lending to the offer's, A20) or `Refused` by name -
+  `NOT_APPROVED`, `LAPSED`, `ALREADY_CONSUMED`, `NOT_FOUND` - every refusal `409 lending.OfferNotAcceptable` with the
+  name in the detail, the whole transaction rolled back. **A lapse writes nothing**: the offer is not expired by the
+  acceptance (the backlog read "a lapse also expires the offer") - a refusal commits nothing under the customer's key, and
+  the sweep expires the offer, whose `expires_at <= valid_until` is then due. **The pair with `P11-TSK-013`:** from this
+  task the reservation ends at the acceptance's commit, and until `-013` replaces `NoLoansUntilPhase11` with version 2
+  the commitment it hands over to is invisible to credit's deciding transaction - so the two ship in one release on one
+  branch, never merged apart; `-013`'s read finds the committed principal in `lending.loan` (`PENDING_DISBURSEMENT`,
+  `party_id`, `currency`) joined to `lending.loan_agreement` (the latest version's `amount_minor` and `scale`), and an
+  `ACTIVE` line's limit in the same columns.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

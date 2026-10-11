@@ -2763,6 +2763,88 @@ party, offer and decision references and the customer's choices `CONFIDENTIAL`.
 | `loan_offer_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `loan_offer_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
+### `lending` - the loan account, its agreement, evidence and disbursement - *added by `P11-TSK-012`*
+
+The loan row holds no figure; the agreement carries them - amounts and the rate `RESTRICTED-FINANCIAL`, the canonical
+terms with them; the acceptance evidence's session, client address and agent `CONFIDENTIAL` (A13); the payout method an
+opaque payments reference, `CONFIDENTIAL`, never an account identifier (`INV-RAIL-03`); hashes, versions, stamps and
+codes `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan` | `id` | `CONFIDENTIAL` | A customer's loan account reference |
+| `loan` | `party_id` | `CONFIDENTIAL` | The borrower |
+| `loan` | `product` | `INTERNAL` | A closed product code |
+| `loan` | `kind` | `INTERNAL` | A closed account kind, frozen |
+| `loan` | `status` | `INTERNAL` | The machine's state |
+| `loan` | `currency` | `INTERNAL` | Its currency |
+| `loan` | `offer_id` | `CONFIDENTIAL` | The offer it was born from |
+| `loan` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
+| `loan` | `opened_at` | `INTERNAL` | System time, stamped by the trigger at the acceptance |
+| `loan` | `closed_at` | `INTERNAL` | System time of a terminal edge |
+| `loan` | `closure_reason` | `INTERNAL` | A closed reason code |
+| `loan` | `cancellation_reason` | `INTERNAL` | A closed reason code |
+| `loan` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `loan_event` | `id` | `INTERNAL` | Generated |
+| `loan_event` | `loan_id` | `CONFIDENTIAL` | The loan it moved |
+| `loan_event` | `from_status` | `INTERNAL` | The machine edge |
+| `loan_event` | `to_status` | `INTERNAL` | The machine edge |
+| `loan_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `loan_event` | `actor` | `CONFIDENTIAL` | Who moved it - the customer, or the system |
+| `loan_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `loan_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `loan_agreement` | `id` | `CONFIDENTIAL` | An agreement version's reference - credit's consumer reference |
+| `loan_agreement` | `loan_id` | `CONFIDENTIAL` | The loan it governs |
+| `loan_agreement` | `version` | `INTERNAL` | The version number |
+| `loan_agreement` | `offer_id` | `CONFIDENTIAL` | Version 1's offer |
+| `loan_agreement` | `amendment_id` | `CONFIDENTIAL` | A later version's amendment (`P11-TSK-027`) |
+| `loan_agreement` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
+| `loan_agreement` | `terms_version_id` | `INTERNAL` | The pinned terms version |
+| `loan_agreement` | `product` | `INTERNAL` | A closed product code |
+| `loan_agreement` | `currency` | `INTERNAL` | Its currency |
+| `loan_agreement` | `scale` | `INTERNAL` | The currency's scale |
+| `loan_agreement` | `amount_minor` | `RESTRICTED-FINANCIAL` | The principal (a loan) or limit (a line) |
+| `loan_agreement` | `term_months` | `CONFIDENTIAL` | A loan's term |
+| `loan_agreement` | `nominal_annual_rate` | `RESTRICTED-FINANCIAL` | The agreed rate |
+| `loan_agreement` | `repayment_day` | `CONFIDENTIAL` | The customer's chosen day |
+| `loan_agreement` | `schedule_engine_version` | `INTERNAL` | An engine version |
+| `loan_agreement` | `accrual_engine_version` | `INTERNAL` | An engine version |
+| `loan_agreement` | `allocation_engine_version` | `INTERNAL` | An engine version |
+| `loan_agreement` | `statement_engine_version` | `INTERNAL` | An engine version |
+| `loan_agreement` | `agreement_template_id` | `INTERNAL` | A registered template |
+| `loan_agreement` | `agreement_template_version` | `INTERNAL` | A registered template's version |
+| `loan_agreement` | `canonical_format` | `INTERNAL` | The canonical form's format number |
+| `loan_agreement` | `canonical_terms` | `RESTRICTED-FINANCIAL` | The canonical terms copied from the offer - every figure agreed |
+| `loan_agreement` | `terms_sha256` | `INTERNAL` | A hash of the canonical terms |
+| `loan_agreement` | `effective_from` | `INTERNAL` | System time from which the version governs |
+| `loan_agreement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_acceptance` | `id` | `INTERNAL` | Generated |
+| `loan_acceptance` | `loan_id` | `CONFIDENTIAL` | The loan accepted |
+| `loan_acceptance` | `agreement_id` | `CONFIDENTIAL` | The agreement version accepted |
+| `loan_acceptance` | `agreement_version` | `INTERNAL` | Its version number |
+| `loan_acceptance` | `offer_id` | `CONFIDENTIAL` | The offer accepted |
+| `loan_acceptance` | `terms_sha256` | `INTERNAL` | A hash of the terms accepted |
+| `loan_acceptance` | `agreement_template_id` | `INTERNAL` | A registered template |
+| `loan_acceptance` | `agreement_template_version` | `INTERNAL` | A registered template's version |
+| `loan_acceptance` | `document_sha256` | `INTERNAL` | A hash of the document shown |
+| `loan_acceptance` | `identity_id` | `CONFIDENTIAL` | The accepting identity |
+| `loan_acceptance` | `session_id` | `CONFIDENTIAL` | The accepting session - acceptance evidence (A13) |
+| `loan_acceptance` | `assurance_level` | `INTERNAL` | A closed assurance level |
+| `loan_acceptance` | `accepted_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_acceptance` | `channel` | `INTERNAL` | A closed channel code |
+| `loan_acceptance` | `client_ip` | `CONFIDENTIAL` | The client address the platform saw - acceptance evidence (A13) |
+| `loan_acceptance` | `user_agent` | `CONFIDENTIAL` | The client's own description - acceptance evidence (A13) |
+| `loan_acceptance` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `loan_disbursement` | `id` | `INTERNAL` | Generated |
+| `loan_disbursement` | `loan_id` | `CONFIDENTIAL` | The loan it disburses |
+| `loan_disbursement` | `status` | `INTERNAL` | The machine's state |
+| `loan_disbursement` | `payout_method_id` | `CONFIDENTIAL` | Path X's payment method, by opaque reference - never an account identifier (`INV-RAIL-03`) |
+| `loan_disbursement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_disbursement` | `deadline_at` | `INTERNAL` | Stamped from the pinned terms' disbursement deadline |
+| `loan_disbursement` | `next_attempt_at` | `INTERNAL` | The disbursement sweep's permit (`P11-TSK-014`) |
+| `loan_disbursement` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

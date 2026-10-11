@@ -878,6 +878,30 @@ class OwnershipIsScopedTest {
                                         + " UPDATE under party_id = ?; the move is conditional on OFFERED and unexpired,"
                                         + " lending V005's trigger beneath.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.accept",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanOfferStore.lockOwnedBy",
+                                    "P11-TSK-012. The offer id comes from lockOwnedBy (the acceptance's L2), which this"
+                                        + " transaction holds FOR UPDATE under party_id = ?; the move is conditional on"
+                                        + " OFFERED and unexpired, lending V006's trigger beneath (only beside its loan).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loans/{id} - the identifier from the path, and l.party_id = ? in the"
+                                        + " statement is the session's own party; another party's loan and an absent one"
+                                        + " are one empty answer, the 404 (P11-TSK-012).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.insertDisbursement",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-012. The loan id is minted by the acceptance in this transaction, the loan"
+                                        + " inserted just before for the offer this transaction holds FOR UPDATE under"
+                                        + " party_id = ?; the payout method was verified as the party's own through"
+                                        + " LoanPayoutDestinations, and lending V006's trigger admits the row only beside"
+                                        + " an instalment loan PENDING_DISBURSEMENT, the method exactly when preferred.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanOfferStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3032,6 +3056,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.lending.JdbcLoanOfferStore.offerFor",
                             "com.finapp.app.lending.LoanOfferDatabaseTest.anotherPartysOfferIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.ownedBy",
+                            "com.finapp.app.lending.LoanAccountDatabaseTest.aLineIsAcceptedAndOnlyItsOwnerSeesIt"),
                     Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),

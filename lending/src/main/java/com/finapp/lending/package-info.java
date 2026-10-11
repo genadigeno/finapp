@@ -34,7 +34,7 @@
  * delinquency buckets, the allocation components and overpayment treatments, the four engines at version 1
  * ({@link com.finapp.lending.EngineVersion}) and the aggregates' typed identifiers. The loan chart of accounts
  * ({@code P11-TSK-003}, ledger {@code V026}): {@link com.finapp.lending.LoanAccounts} opens a loan's six ledger accounts
- * in its one currency, typed as ADR-0096's account plan, in the caller's transaction - unwired until the acceptance
+ * in its one currency, typed as ADR-0096's account plan, in the caller's transaction - the acceptance's
  * ({@code -012}). Lending capital ({@code P11-TSK-004}): {@code V002}'s two INSERT-only tables, the four-eyes
  * {@link com.finapp.lending.LendingCapitalAdministration} (advisory namespace {@code 11}), the ports
  * {@link com.finapp.lending.CapitalExpectations} and {@link com.finapp.lending.CapitalRecognitions} that {@code app}
@@ -74,5 +74,13 @@
  * active at the offering instant pinned - and the offer's expiry), {@link com.finapp.lending.LoanOffers} (the owner's
  * read and the decline), {@link com.finapp.lending.CanonicalOfferTerms} and {@link com.finapp.lending.OfferDocument},
  * each hashed; credit's events reach lending only as hints that pull a permit forward.
+ * The acceptance and the loan account ({@code P11-TSK-012}): {@code V006}'s money-free {@code loan} of either kind and its
+ * history, the INSERT-only agreement (version 1 the offer's terms copied byte for byte), acceptance evidence and a loan's
+ * {@code PENDING} disbursement; {@link com.finapp.lending.LoanAcceptances} (T-acc: the party's credit profile first
+ * through {@link com.finapp.lending.LoanCreditDecisions#lockExposure}, the offer, credit's consumption through
+ * {@link com.finapp.lending.LoanCreditDecisions#consume}, for a loan the capital row and headroom, then the account and
+ * its six ledger accounts) and {@link com.finapp.lending.Loans} (the owner's reads, balances derived from journal
+ * lines); the payout destination verified through {@link com.finapp.lending.LoanPayoutDestinations}. Still no posting:
+ * the first is the disbursement's ({@code -014}).
  */
 package com.finapp.lending;

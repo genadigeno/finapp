@@ -747,7 +747,9 @@ with an explicit expiry" until the Phase 10 → 11 transition, 2026-10-10.)*
 Credit Line (`ACTIVE → CLOSING → CLOSED`) — holding identity, kind, lifecycle state and permits
 only: **no amount, rate or balance column**. Its contractual figures live on the immutable Loan
 Agreement version, and every changing figure is a ledger balance of its six per-loan accounts,
-derived from journal lines (`INV-LND-01`). Planned (`P11-TSK-012`).
+derived from journal lines (`INV-LND-01`). Born at the offer's acceptance by `P11-TSK-012` (one per offer and per
+decision, with its six accounts; a loan `PENDING_DISBURSEMENT`, a line `ACTIVE`); its later edges are `-014`'s,
+`-023`'s and `-026`'s.
 **Not:** a Loan Offer, and not the Exposure it contributes to. Nor its conditions: delinquency and
 default are conditions recorded beside the lifecycle, so an `ACTIVE` loan is `ACTIVE` whether
 current or 120 days past due, and a restructuring is a new agreement version, never a state. Closed
@@ -1071,7 +1073,9 @@ the full, self-contained canonical terms (principal or limit, currency, rate, te
 statement day, fees, allocation order, day count, servicing zone, rounding, delinquency bounds,
 engine and template versions) and their SHA-256, beside the acceptance evidence of what the customer
 saw and how they were authenticated. Every servicing row names the agreement version it was
-computed under. Planned (`P11-TSK-012`).
+computed under. Version 1 built by `P11-TSK-012`: the offer's canonical terms (format 1) and their hash copied byte
+for byte - text, never re-serialised - held to the offer's terms by trigger and to its bytes by `CHECK`; its id is the
+consumer reference under which credit records the decision's consumption.
 **Not:** the Loan Offer (a proposal that may expire) or the Loan (the account and its state). Nor
 the Loan Product Terms Version it was built from: a later terms version never changes a signed
 agreement (`INV-LND-05`). And acceptance is not Consent (`INV-IDN-04`): no consent purpose is

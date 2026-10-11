@@ -288,5 +288,19 @@ Financial impact: the operational ledger gains the loan book and the platform's 
   statement as the outstanding, or before it. (g) The capital route is `GET
   /v1/operator/lending/capital` (`PHASE_11_PLAN.md` §9's row); the "Operational impact" line's
   `/v1/operator/reports/lending/capital` is the later reports task's.
+- **As built by `P11-TSK-012` (2026-10-11) - the committed term and the first capital consumer:**
+  `LendingCapitalHeadroom` reads the committed term (`LoanStore.committedPrincipal` - the latest agreement version's
+  principal of the currency's loans `PENDING_DISBURSEMENT`, folded through `Money`) in its own statement BEFORE the
+  outstanding term, as `P11-TSK-004`'s gate required: under `READ COMMITTED` a disbursement (which takes no L6 - its
+  principal was committed at acceptance) committing between the two reads is counted twice, a headroom read low, never in
+  neither. The acceptance of a loan is the first consumer of `underLock`; a line commits no capital (A28). **The
+  repudiation debt (`P11-TSK-004`'s gate, `CURRENT_STATE.md` §Known Architectural Debt) is decided here: neither refused
+  nor moved under L6.** A repudiated statement's reversal line takes a foreign-key share on the capital row, which already
+  conflicts with an L6 holder's `FOR UPDATE` - the two serialise, so no consumer judges headroom on capital being
+  withdrawn. Refusing the repudiation would deny the bank's own evidence that the money never arrived, and taking L6 in it
+  would serialise nothing more; the capital it reverses may already be deployed, so headroom can go negative - the
+  capital proof reports `FAILS` (alerted) and every later acceptance, draw and principal-re-instating reversal is refused
+  until capital is recognised again. The remedy for a deployed shortfall is treasury's (a new contribution), not a
+  lock.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

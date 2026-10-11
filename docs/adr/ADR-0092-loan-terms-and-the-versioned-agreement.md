@@ -238,5 +238,15 @@ only by an accepted amendment.
   template and line rule to the pinned `loan_terms` row. The offer document (`OfferDocument`, rendered by the
   template, naming the terms hash) is stored by its SHA-256 only and re-rendered on every read, shown only if its bytes
   are the ones hashed. `-012`'s agreement copies the canonical terms and hash; `-029`'s replay re-verifies them.
+- **As built by `P11-TSK-012` (2026-10-11) - points 5 and 6, agreement v1 and the acceptance evidence:** `lending V006`'s
+  `loan_agreement` copies the offer's `CanonicalOfferTerms` format 1 bytes and their hash - `canonical_terms` is
+  `text`, not `jsonb` (point 5's column type): a `jsonb` value is re-serialised by the database (keys reordered,
+  whitespace normalised), which would break the very hash it carries. The trigger holds version 1 to an exact copy of its
+  offer's terms (and refuses any later version until `-027`), a `CHECK` holds the hash to the bytes, and the figures a
+  servicing step reads sit beside the canonical text, each held by the same trigger. The echoed hash is compared in
+  constant time (`409 lending.TermsChanged`, malformed included). `loan_acceptance` binds the agreement's version, hash
+  and template and the offer's `document_sha256` by trigger, stamps `accepted_at`, and holds the assurance level to
+  `MULTI_FACTOR` or `STRONG` by `CHECK` (A19 for every writer); the client address is the platform's own view
+  (`getRemoteAddr`, never a forwarded header), the agent bounded to 512 characters.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

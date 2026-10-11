@@ -337,6 +337,11 @@ class OpenApiContractTest {
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}/decline",
+                        // P11-TSK-012: the acceptance (a MULTI_FACTOR act, keyed, 201 with the loan account) and the
+                        // owner's loan accounts.
+                        ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}/acceptance",
+                        ApiVersion.CURRENT_PREFIX + "/me/loans",
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

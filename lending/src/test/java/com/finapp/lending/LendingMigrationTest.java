@@ -111,12 +111,14 @@ class LendingMigrationTest {
         // with the schema. The first lending tables are P11-TSK-004's (V002, the capital
         // contribution and its history), then P11-TSK-005's (V003, the terms version, its term set
         // and its history), then P11-TSK-010's (V004, the loan application and its history), then
-        // P11-TSK-011's (V005, the offer, its terms and its history); each later task rewrites this
-        // list with its own.
+        // P11-TSK-011's (V005, the offer, its terms and its history), then P11-TSK-012's (V006, the
+        // loan, its agreement, its acceptance evidence, its disbursement and its history); each later
+        // task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly("capital_contribution", "capital_contribution_event", "flyway_schema_history",
-                        "loan_application", "loan_application_event", "loan_offer", "loan_offer_event",
-                        "loan_offer_terms", "loan_terms", "loan_terms_version", "loan_terms_version_event");
+                        "loan", "loan_acceptance", "loan_agreement", "loan_application", "loan_application_event",
+                        "loan_disbursement", "loan_event", "loan_offer", "loan_offer_event", "loan_offer_terms",
+                        "loan_terms", "loan_terms_version", "loan_terms_version_event");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

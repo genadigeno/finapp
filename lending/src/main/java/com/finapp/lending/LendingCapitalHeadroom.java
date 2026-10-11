@@ -42,10 +42,14 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>The capital row lock leaves the capital stable for the rest of the holder's transaction (its only poster waits on
  * it); the principal outstanding is read in ONE statement over both purposes ({@link PurposeBalances}), so a billing
- * moving principal from not-due to due is wholly in or wholly out. <strong>The committed term is zero until
- * `P11-TSK-012`</strong> brings the loan table: when it lands it must be read in the same statement as the
- * outstanding, or before it - a disbursement moving principal from committed to outstanding between the two reads would
- * otherwise be counted in neither.
+ * moving principal from not-due to due is wholly in or wholly out. <strong>The committed term</strong> (`P11-TSK-012`)
+ * is the agreement principal of the currency's loans {@code PENDING_DISBURSEMENT} ({@link LoanStore#committedPrincipal}),
+ * read <strong>before</strong> the outstanding term: under {@code READ COMMITTED} each statement sees what had committed
+ * when it began, so a disbursement (`P11-TSK-014`, which does not take L6 - its principal was committed at acceptance)
+ * committing between the two reads moves its principal from a term already read to one not yet read and is counted
+ * twice - a headroom read LOW, a refusal at worst - never in neither, which would read it high and over-deploy. A
+ * cancellation between them releases a commitment already read - low again. A line commits no capital at acceptance
+ * (A28): its principal arrives by draws, counted as outstanding.
  *
  * <p>{@link #atRest} is the same derivation without the lock - for the capital proof and the capital report, which
  * read in one {@code REPEATABLE READ} snapshot and decide nothing.
@@ -58,6 +62,7 @@ public final class LendingCapitalHeadroom {
 
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PurposeBalances<Connection> balances;
+    @NonNull private final LoanStore loans;
 
     /** One currency's headroom and its terms. */
     public record Headroom(CurrencyCode currency, Money capital, Money committed, Money outstanding) {
@@ -124,11 +129,14 @@ public final class LendingCapitalHeadroom {
     }
 
     private Headroom derive(Connection unitOfWork, LedgerAccount capital, CurrencyCode currency) {
+        // The committed term FIRST, the outstanding after it: a disbursement between the two is counted twice, never in
+        // neither (the class comment).
+        Money committed = loans.committedPrincipal(unitOfWork, currency);
         // CR-DR: the capital is credit-normal EQUITY.
         Money recognised = balances.netDebit(unitOfWork, EnumSet.of(capital.purpose()), currency).negated();
         Money outstanding = balances.netDebit(unitOfWork, PRINCIPAL, currency);
-        Money committed = Money.zero(currency);
-        return new Headroom(currency, adopt(recognised, outstanding), adopt(committed, outstanding), adopt(outstanding, recognised));
+        Money scale = !outstanding.isZero() ? outstanding : !recognised.isZero() ? recognised : committed;
+        return new Headroom(currency, adopt(recognised, scale), adopt(committed, scale), adopt(outstanding, scale));
     }
 
     /** A zero takes the other term's persisted scale, so the arithmetic never meets two scales. */
