@@ -47,6 +47,17 @@ class LoanAccountsTest {
     }
 
     @Test
+    @DisplayName("the principal is exactly principal not yet due and principal billed - the two the exposure read binds"
+            + " (P11-TSK-013, A3): both per-loan receivables, never interest, fees or the credit balance")
+    void thePrincipalPurposesAreTheTwoPrincipalReceivables() {
+        assertThat(LoanAccounts.principalPurposes())
+                .containsExactly(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE);
+        assertThat(LoanAccounts.purposes()).containsAll(LoanAccounts.principalPurposes());
+        LoanAccounts.principalPurposes().forEach(purpose ->
+                assertThat(LoanAccounts.declaredTypeOf(purpose)).isEqualTo(AccountType.ASSET));
+    }
+
+    @Test
     @DisplayName("five receivables are ASSET, the credit balance alone a LIABILITY")
     void theDeclaredTypesAreTheAccountPlan() {
         for (AccountPurpose purpose : LoanAccounts.purposes()) {

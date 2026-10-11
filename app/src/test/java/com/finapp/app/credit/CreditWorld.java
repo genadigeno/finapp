@@ -150,20 +150,22 @@ final class CreditWorld {
     static final CreditActingParty<Connection> ACTING_PARTIES =
             (uow, actor) -> Optional.of(ACTOR_PARTIES.computeIfAbsent(actor.id(), id -> UUID.randomUUID()));
 
-    /** Phase 10's zero - or {@link #OUTSTANDING}'s figure, read afresh on every call - under {@code NoLoansUntilPhase11}'s version. */
+    /**
+     * Phase 10's zero - or {@link #OUTSTANDING}'s figure, read afresh on every call - under version 1, the version
+     * {@code NoLoansUntilPhase11} recorded until `P11-TSK-013` wired {@code LendingCreditExposure} (version 2) in its
+     * place. The world's credit suites exercise credit's own mechanics over this seam; the real composition's figure is
+     * {@code LendingCreditExposureDatabaseTest}'s, through the application's wired freezer.
+     */
     static final PlatformCreditExposure<Connection> PLATFORM_EXPOSURE = new PlatformCreditExposure<>() {
-        private final NoLoansUntilPhase11 phase10 = new NoLoansUntilPhase11();
-
         @Override
         public int version() {
-            return phase10.version();
+            return 1;
         }
 
         @Override
         public Money outstandingFor(Connection unitOfWork, UUID partyId, CurrencyCode currency) {
             Long outstanding = OUTSTANDING.get(partyId);
-            return outstanding == null ? phase10.outstandingFor(unitOfWork, partyId, currency)
-                    : Money.ofMinorUnits(outstanding, currency);
+            return outstanding == null ? Money.zero(currency) : Money.ofMinorUnits(outstanding, currency);
         }
     };
 

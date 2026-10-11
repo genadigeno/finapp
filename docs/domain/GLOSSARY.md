@@ -777,8 +777,9 @@ until Phase 11's loans, recorded) + the **reserved exposure** of the party's cur
 (approved, unexpired on the database clock, with no consumption fact) + the requested amount, and
 the reserved part is re-read under the party's Credit Profile lock in the deciding transaction, so
 concurrent approvals never together exceed the policy's limit.
-From Phase 11 the platform outstanding credit is `PlatformCreditExposure` **version 2** (planned,
-`P11-TSK-013`): one statement over lending's rows and the ledger's journal lines answering, per
+From Phase 11 the platform outstanding credit is `PlatformCreditExposure` **version 2** (built by
+`P11-TSK-013`, 2026-10-12 - `app`'s `LendingCreditExposure` over lending `V007`'s definer view
+`party_principal_exposure`): one statement over lending's rows and the ledger's journal lines answering, per
 party and currency, the committed principal of loans awaiting disbursement, the outstanding
 principal (`LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE`) of loans not cancelled, the **limit** of every
 open (`ACTIVE`) Credit Line and the drawn principal of a closing one — principal only; and every

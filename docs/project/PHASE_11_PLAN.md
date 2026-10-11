@@ -568,7 +568,8 @@ revoked); ledger `V026` (`-003`: `OwnerKind.LOAN`, the ten purposes, the operati
 (`-002`: permissions and roles); reconciliation `V022` (`-004`: the contribution expectation kind and
 its recognition - the `RECOGNITION` decision origin and `CAPITAL_RECOGNISED` verdict, the never-aged and
 recognition-only-allocation ranks, and `capital_recognition`); payments `V032` (`-015`: the system-actor withdrawal on instruction, hold adoption);
-lending's definer view for the exposure read (`-013`).
+lending's definer view for the exposure read (`-013`). *(As built: the view is lending `V007` - `-012` took `V006`
+- so `-014`'s schedule and disbursement edges are lending `V008`.)*
 
 **Retention.** Agreement versions, acceptance evidence, servicing rows and journal entries are kept
 for the loan's life plus the jurisdiction's limitation period; `retain_until` is set at closure; the
@@ -1179,6 +1180,11 @@ instant sees neither the reservation nor the commitment; every exposure-raising 
 deciding transaction already re-reads outstanding beside reserved under L0, a change in either
 freezing a successor snapshot (R12, ADR-0087 §5 / ADR-0088 as amended). Decisions made under v1 replay
 identically (their snapshots carry zero with v1); the version is recorded as provenance.
+*As built by `P11-TSK-013` (2026-10-12), with four refinements recorded in ADR-0091's Follow-up: the view is lending
+`V007`'s `party_principal_exposure`, per loan account (the journal lines are joined by `app`'s statement, so lending's
+migration names no ledger table); a `CLOSED` line counts its drawn principal as a `CLOSED` loan does; a principal below
+zero counts zero for its loan; an uninterpretable row fails the deciding transaction, never reads as zero. The census is
+built here with its gauge, the bureau's balance left out of it.*
 
 ---
 

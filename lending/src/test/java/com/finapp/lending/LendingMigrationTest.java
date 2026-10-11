@@ -127,6 +127,44 @@ class LendingMigrationTest {
     }
 
     @Test
+    @DisplayName("the schema's one view is the exposure read's (V007): migrator-owned, a definer view, its columns exactly"
+            + " the read's, SELECT to the application role and to no one else - and nothing writable through it")
+    void theExposureViewIsTheReadsAlone() throws SQLException {
+        // P11-TSK-013: credit's exposure read (app's LendingCreditExposure) reaches lending through this one surface.
+        // Its columns are the read's and nothing else - no rate, term, terms or evidence - and its ACL is the read's.
+        assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "' ORDER BY viewname"))
+                .containsExactly("party_principal_exposure");
+        assertThat(scalar("SELECT pg_get_userbyid(c.relowner) || ':' || coalesce(array_to_string(c.reloptions, ','), '')"
+                + " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+                + " WHERE n.nspname = '" + SCHEMA + "' AND c.relname = 'party_principal_exposure'"))
+                .as("owned by the migrator, which owns what it reads; definer rights stated, not defaulted")
+                .isEqualTo("finapp_migrator:security_invoker=false");
+        assertThat(column("SELECT column_name FROM information_schema.columns WHERE table_schema = '" + SCHEMA
+                + "' AND table_name = 'party_principal_exposure' ORDER BY ordinal_position"))
+                .containsExactly("loan_id", "party_id", "decision_id", "kind", "status", "currency", "agreement_scale",
+                        "agreement_amount_minor");
+        assertThat(column("SELECT grantee || ':' || privilege_type FROM information_schema.role_table_grants"
+                + " WHERE table_schema = '" + SCHEMA + "' AND table_name = 'party_principal_exposure'"
+                + " AND grantee <> 'finapp_migrator' ORDER BY 1"))
+                .as("SELECT to the application role, nothing else, to no one else")
+                .containsExactly("finapp_app:SELECT");
+
+        assertThatCode(() -> asApplication("SELECT count(*) FROM " + SCHEMA + ".party_principal_exposure"))
+                .doesNotThrowAnyException();
+        application.rollback();
+        for (String write : List.of(
+                "DELETE FROM " + SCHEMA + ".party_principal_exposure",
+                "UPDATE " + SCHEMA + ".party_principal_exposure SET status = 'CLOSED'",
+                "INSERT INTO " + SCHEMA + ".party_principal_exposure (loan_id) VALUES (gen_random_uuid())")) {
+            // Refused twice over: the view is a join, so not automatically updatable (55000, judged first), and
+            // nothing but SELECT is granted on it (42501, the catalogue assertion above).
+            assertThatExceptionOfType(SQLException.class).as(write).isThrownBy(() -> asApplication(write))
+                    .matches(e -> List.of(INSUFFICIENT_PRIVILEGE, "55000").contains(e.getSQLState()));
+            application.rollback();
+        }
+    }
+
+    @Test
     @DisplayName("the application role can see the schema and create nothing in it")
     void usageWithoutCreate() throws SQLException {
         // The positive control first: without USAGE every denial below would pass for the wrong
@@ -174,6 +212,16 @@ class LendingMigrationTest {
                 tables.add(rows.getString(1));
             }
             return tables;
+        }
+    }
+
+    private static List<String> column(String sql) throws SQLException {
+        try (Statement statement = migrator.createStatement(); ResultSet rows = statement.executeQuery(sql)) {
+            List<String> values = new ArrayList<>();
+            while (rows.next()) {
+                values.add(rows.getString(1));
+            }
+            return values;
         }
     }
 

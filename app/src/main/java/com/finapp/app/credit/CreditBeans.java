@@ -283,14 +283,31 @@ public class CreditBeans {
     }
     // ------------------------------------------------------------------ the progress (P10-TSK-015)
 
+    /**
+     * The platform's credit exposure, version 2 (`P11-TSK-013`; ADR-0091): every loan's committed and outstanding
+     * principal and every open line's limit, in one statement over lending's definer view and the ledger's journal
+     * lines - read by the freezer and, under the party's profile lock, by the deciding transaction.
+     */
+    @Bean
+    LendingCreditExposure lendingCreditExposure() {
+        return new LendingCreditExposure();
+    }
+
     @Bean
     com.finapp.credit.SnapshotFreezer snapshotFreezer(
             CreditDataCollection creditDataCollection,
             com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
+            LendingCreditExposure lendingCreditExposure,
             IdGenerator idGenerator) {
         return new com.finapp.credit.SnapshotFreezer(new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
                 creditPartyStanding, new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(),
-                new NoLoansUntilPhase11(), idGenerator);
+                lendingCreditExposure, idGenerator);
+    }
+
+    /** The exposure census and its gauge (`P11-TSK-013`; ADR-0091 point 9): {@code finapp.credit.exposure.census{verdict}}. */
+    @Bean
+    ExposureCensusMetrics exposureCensusMetrics(DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new ExposureCensusMetrics(new ExposureCensus(), dataSource::getConnection, clock, meterRegistry);
     }
 
     /** The decision's meters, counted after each commit (`P10-TSK-016`). */

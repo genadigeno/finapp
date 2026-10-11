@@ -126,8 +126,9 @@ class CreditTelemetryCarriesNoFigureTest {
                 "provider", oneOf(Set.of(UnconfiguredBureau.CODE, UnconfiguredFinancialData.CODE)),
                 "status", oneOf(DecisionRequestStatus.OPEN.stream().map(value -> lower(value.name()))
                         .collect(Collectors.toSet())),
-                "verdict", oneOf(Arrays.stream(DecisionReplayer.Verdict.values()).map(Enum::name)
-                        .collect(Collectors.toSet())),
+                // The replay proof's verdicts (P10-TSK-019) and the exposure census's (P11-TSK-013): closed enums.
+                "verdict", oneOf(union(Arrays.stream(DecisionReplayer.Verdict.values()).map(Enum::name),
+                        Arrays.stream(com.finapp.app.credit.ExposureCensusMetrics.Verdict.values()).map(Enum::name))),
                 // A version NUMBER - a handful per product over the platform's life - never an amount's digits.
                 "policy_version", Pattern.compile("[0-9]{1,3}"));
     }

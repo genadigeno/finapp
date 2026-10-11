@@ -2845,6 +2845,25 @@ codes `INTERNAL`.
 | `loan_disbursement` | `next_attempt_at` | `INTERNAL` | The disbursement sweep's permit (`P11-TSK-014`) |
 | `loan_disbursement` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
 
+### `lending` - the exposure read's view - *added by `P11-TSK-013`*
+
+`lending V007`'s definer view `party_principal_exposure`, one row per loan account: each column classified as the
+column it projects (the loan's identity, party and decision `CONFIDENTIAL`, its kind, status and currency `INTERNAL`, its
+latest agreement's principal or limit `RESTRICTED-FINANCIAL` with its scale `INTERNAL`). SELECT to the application role
+only; read by credit's exposure (`LendingCreditExposure`, version 2) and the exposure census - no figure leaves them in a
+log, tag or span.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `party_principal_exposure` | `loan_id` | `CONFIDENTIAL` | The loan account (`loan.id`) |
+| `party_principal_exposure` | `party_id` | `CONFIDENTIAL` | The borrower (`loan.party_id`) |
+| `party_principal_exposure` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value (`loan.decision_id`) |
+| `party_principal_exposure` | `kind` | `INTERNAL` | A closed account kind (`loan.kind`) |
+| `party_principal_exposure` | `status` | `INTERNAL` | The machine's state (`loan.status`) |
+| `party_principal_exposure` | `currency` | `INTERNAL` | Its currency (`loan.currency`) |
+| `party_principal_exposure` | `agreement_scale` | `INTERNAL` | The latest agreement version's scale |
+| `party_principal_exposure` | `agreement_amount_minor` | `RESTRICTED-FINANCIAL` | The latest agreement version's principal (a loan) or limit (a line) |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

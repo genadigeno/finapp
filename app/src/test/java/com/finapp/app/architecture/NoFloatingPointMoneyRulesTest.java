@@ -308,6 +308,10 @@ class NoFloatingPointMoneyRulesTest {
                     // headroom is compared with its floor as a long in minor units and never published - an
                     // amount is an audited report (ADR-0072).
                     "com.finapp.app.lending.LendingCapitalMetrics",
+                    // P11-TSK-013. The SAME case again: the exposure census's verdicts - how many parties it HOLDS
+                    // and FAILS for - COUNTS through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
+                    // unreadable. The census compares Money with Money; no figure is ever published (ADR-0072).
+                    "com.finapp.app.credit.ExposureCensusMetrics",
                     // P11-TSK-005. The SAME case as CreditPolicyMetrics: each product's ACTIVE terms version NUMBER
                     // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable. A version number,
                     // never a rate or a fee.

@@ -64,6 +64,16 @@ public final class LoanAccounts {
     }
 
     /**
+     * The per-loan purposes whose balances are the loan's principal - not yet due and billed (`P11-TSK-013`): what the
+     * platform lent and is still owed, the principal credit's exposure counts (A3). Interest, fees and the credit balance
+     * are not principal. Lending's declaration, so a reader in {@code app} (the exposure read and its census) binds these
+     * rather than naming the loan book itself.
+     */
+    public static List<AccountPurpose> principalPurposes() {
+        return List.of(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE);
+    }
+
+    /**
      * The declared type of a per-loan purpose (ADR-0096 section 1): the five receivables ASSET,
      * the credit balance LIABILITY. Any other purpose is not a loan account and is refused.
      */

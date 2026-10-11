@@ -86,6 +86,14 @@ public final class CreditFixtures {
         CreditWorld.SUSPENDED.add(party);
     }
 
+    /**
+     * A second credit decision request for {@code party}, born {@code SUBMITTED} through credit's store, for
+     * {@code product} and {@code amount} (`P11-TSK-013` - a decision raced against the party's acceptance); its id.
+     */
+    public static UUID requestFor(UUID party, com.finapp.credit.CreditProduct product, com.finapp.sharedkernel.money.Money amount) {
+        return CreditWorld.request(party, product, amount, java.time.Duration.ofDays(1));
+    }
+
     /** One step of credit's progress on {@code request} - for a race. */
     public static void stepOnce(UUID request) {
         CreditWorld.step(CreditWorld.progressToEvaluation(), request);
