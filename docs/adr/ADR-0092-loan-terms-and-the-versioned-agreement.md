@@ -191,5 +191,41 @@ only by an accepted amendment.
   first), `P11-TSK-011` (the offer, its canonical terms and hash), `P11-TSK-012` (agreement v1 and
   acceptance evidence), `P11-TSK-027` (amendments as vN+1) and `P11-TSK-029` (the replay
   re-verifying every `terms_sha256`).
+- **As built by `P11-TSK-005` (2026-10-11) - decision 1 to 3, with these refinements:**
+  - *Two tables for one version, split along the money line* (`lending V003`). The term set carries money (the
+    origination and late fees, a line's minimum-payment floor), and every lending table carrying money is INSERT-only
+    (`LendingSchemaHasNoMutableMoneyTest`); the machine needs a row that moves and can be locked (`FOR UPDATE` by the
+    activation, `FOR SHARE` by an offer's pin - both need an `UPDATE` privilege on some column). So
+    `loan_terms_version` is the money-free machine row (credit `V008`'s shape: a column-scoped `UPDATE` of the decision
+    columns under the edge trigger, the partial uniques, the four-eyes `CHECK`, the `V014` clamp) and `loan_terms` the
+    term set - one row per version, born in the proposing transaction (a version commits only with it, deferred; a term
+    set is accepted only for a `PROPOSED` version), never changed by any role. The history is
+    `loan_terms_version_event` (the plan's `_event` spelling; the backlog read `loan_terms_event`).
+  - *The decisions take A0 too* - advisory namespace `11` on the product, then the version row (A1), then the `ACTIVE`
+    row (A2), `LENDING_LIFECYCLES.md` §3's administration order; credit's decisions take only the row locks.
+  - *Decision 2's table, narrowed.* No **amount, limit or term range** is a terms field: the offer is exactly the
+    approved decision (A20) and the request bounds are credit's `CreditProduct` - one truth (`P11-TSK-002`'s
+    refinement); whether terms amortise across those bounds is the schedule engine's judgement, read through an `app`
+    port when `P11-TSK-006` wires `422 lending.TermsNotAmortising` (catalogued now). The **jurisdiction** is the
+    agreement template's (`AgreementTemplate`, code-registered per product - A1's neutral EUR reference is the
+    documents'), and the **cure rule** (A8) has no alternative in any engine version, so neither is a field until a
+    second value and a reviewed engine version exist (the excluded-features rule of decision 2). The **allowed days** are
+    the bound that remains; the "product's declared bounds" a value is judged against are the bounds `LoanTerms`
+    declares for each field and `LoanProduct`'s offer-validity (14 days) and disbursement-deadline (24 h) **ceilings**
+    (no longer called defaults - the pinned version's values are the ones an offer and a loan are held to).
+  - *What "implemented" means* (decision 3, `INV-LND-09`): a rate type `FIXED`; instalment rounding `UP`
+    (`SCHEDULE_ENGINE_V1`, `STATEMENT_ENGINE_V1`) and interest rounding `HALF_EVEN` (`ACCRUAL_ENGINE_V1`); a day count
+    its named accrual engine implements; a fixed-offset servicing zone (`UTC` or `+HH:MM`, A2, A15); allocation
+    `OLDEST_DUE_FIRST` over any order naming every component once (the engine applies the order the terms record); the
+    overpayment treatment the kind's engines implement (`HOLD_AS_CREDIT` loan, `PAY_DOWN_PRINCIPAL` line, A26); engine
+    versions the build holds, each of its own engine. The domain refuses each (`422 lending.TermsInvalid`); `V003`'s
+    `CHECK`s hold the conventions again for every writer, so a new convention is a new engine version **and** a
+    migration widening them.
+  - *Engine versions are named on the version* (schedule or statement by kind, accrual and allocation), copied onto the
+    agreement by `P11-TSK-012`.
+  - *The doors' read* is behind `LENDING_INVESTIGATE` alone (a route declares one permission; `LENDING_OFFICER` holds
+    both); an unknown product reads `404 lending.NotFound`.
+  - *The event* is `lending.LoanTermsVersionActivated` (product, version, effective start, predecessor) - lending's first,
+    through the platform outbox in the activation's transaction; no rate or fee in it.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

@@ -981,11 +981,14 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | Code | Status | Meaning |
 |---|---|---|
 | `lending.NotFound` | 404 | No lending record matches the requested identifier. |
-| `lending.SelfApprovalRefused` | 403 | A contribution is approved by someone other than its proposer; the proposer may reject it. |
+| `lending.SelfApprovalRefused` | 403 | A proposal is approved by someone other than its proposer; the proposer may reject it. |
 | `lending.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
 | `lending.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
 | `lending.ReasonRequired` | 422 | A reason is required. |
 | `lending.ContributionInvalid` | 422 | The contribution is not well formed. |
+| `lending.TermsStale` | 409 | The terms version is no longer awaiting a decision. |
+| `lending.TermsInvalid` | 422 | The terms are not complete or not within bounds. |
+| `lending.TermsNotAmortising` | 422 | The terms cannot amortise across the product's amount and term bounds; nothing was proposed. |
 | `lending.CapitalUnavailable` | 422 | There is not enough recognised lending capital for this act; nothing was done. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
@@ -1006,6 +1009,24 @@ digits, or a reference that already names a contribution (one reference, one tra
 reversal that re-instates principal (`-020`): headroom judged under the capital row lock (L6, `INV-LND-13`). The
 capital report (`GET /v1/operator/lending/capital`, `LENDING_INVESTIGATE`) has no refusal of its own beyond the
 session's.
+
+The loan terms doors (`P11-TSK-005`, ADR-0092 §1-3): every act behind `LENDING_ADMINISTER` (role `LENDING_OFFICER`)
+and keyed per principal (`lending.terms:<type>:<id>`), the read behind `LENDING_INVESTIGATE`. `SelfApprovalRefused`
+(its title widened from "A contribution is approved ..." to "A proposal is approved ..." - the code unchanged, its
+second subject) refuses the proposer the activation (`INV-AUD-04`, `lending V003`'s `CHECK` beneath); the proposer may
+reject. `ProposalPending` answers a proposal while a version of the same product awaits a decision (one per product,
+judged under advisory namespace `11` on the product, the partial unique beneath). `TermsStale` answers an approval or
+rejection of a version already decided - the nine losers of ten racing approvers (credit's `PolicyStale`).
+`ReasonRequired` as for the capital doors. `TermsInvalid` refuses a proposal whole, naming the defect and never a
+value: a convention no engine version of the build implements (a rate type other than `FIXED`, a rounding mode other
+than instalment `UP` and interest `HALF_EVEN`, a day count its accrual engine does not compute, a zone that is not a
+fixed offset), an allocation order omitting or repeating a component, another kind's terms or overpayment treatment,
+an engine version the build does not hold, an unregistered or other product's agreement template, an amount in another
+currency, an unknown product, or a value outside the bounds lending declares or the product's own ceilings (offer
+validity, disbursement deadline). `TermsNotAmortising` is catalogued here and met from the proposal door once
+`P11-TSK-006` wires the schedule engine that judges whether the terms amortise across credit's amount and term bounds
+(ADR-0093 §5). `NotFound` answers an unknown or malformed version id, an unknown product on the read, and a product
+with no version in force at the instant asked; a malformed `at` is `api.ValidationFailed`.
 
 ## 3a. Rejection at the boundary
 

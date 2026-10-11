@@ -402,3 +402,22 @@ new reference and send the money again. A rejected contribution's reference stay
 - **`finapp.lending.capital.headroom.low` above 0** (ticket) - a currency's headroom stands below
   `finapp.lending.capital.headroom-floor.<CCY>` (minor units, 0 when unset): contribute more capital before
   acceptances start refusing `422 lending.CapitalUnavailable`.
+
+### 7.3 Loan terms versions
+
+*Added by `P11-TSK-005` (ADR-0092 §1-3, `INV-LND-05`, `INV-LND-09`).* A product is offered only while one of its terms
+versions is `ACTIVE`, and **no migration activates one**: production starts with none,
+`finapp.lending.terms.active{product}` reading 0. Bringing a product into force in production is gated
+(`PHASE_11_PLAN.md` §1.1; the activation act itself is `P11-TSK-030`'s) - in a test environment:
+
+1. A `LENDING_OFFICER` proposes a whole version - `POST /v1/operator/lending/terms` (`Idempotency-Key`): the product,
+   the rate as a decimal fraction string, every fee, convention, window, engine version and the agreement template, and a
+   reason. It is judged whole (`422 lending.TermsInvalid` names the defect) and frozen from that moment; one proposal per
+   product awaits a decision at a time. A correction is a rejection and a new proposal.
+2. A **second** `LENDING_OFFICER` activates it - `POST …/{versionId}/approval` with a reason - retiring the product's
+   predecessor in the same transaction. The activation waits for any application or offer pinning the predecessor; every
+   later offer pins the new version, and existing agreements keep theirs.
+3. `GET /v1/operator/lending/terms?product=&at=` reads the version in force now, or at any past instant.
+
+**`finapp.lending.terms.active{product}` at 0** for a product the environment offers is the alert (enabled per
+environment, `P11-TSK-030`); NaN means the read failed, never "none".

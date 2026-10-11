@@ -40,7 +40,11 @@
  * {@link com.finapp.lending.CapitalExpectations} and {@link com.finapp.lending.CapitalRecognitions} that {@code app}
  * implements over reconciliation, {@link com.finapp.lending.LendingCapitalHeadroom} (L6) and
  * {@link com.finapp.lending.LendingCapitalProof}. Lending still posts nothing: capital is credited only by bank
- * recognition of a statement line (rule 0, reconciliation's), and recognition is read here, never stored. No event and
- * no schedule yet.
+ * recognition of a statement line (rule 0, reconciliation's), and recognition is read here, never stored. Loan product
+ * terms as versioned data ({@code P11-TSK-005}): {@code V003}'s money-free machine row and INSERT-only term set,
+ * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes
+ * {@link com.finapp.lending.LoanTermsAdministration} (A0 to A2; {@code pinActive} the {@code FOR SHARE} read the
+ * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. No schedule
+ * yet.
  */
 package com.finapp.lending;

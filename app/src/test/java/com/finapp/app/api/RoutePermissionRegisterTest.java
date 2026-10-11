@@ -231,6 +231,12 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/lending/capital-contributions/{contributionId}/rejection",
                             PermissionName.LENDING_CAPITAL_ADMINISTER),
                     entry("GET /v1/operator/lending/capital", PermissionName.LENDING_INVESTIGATE),
+                    // P11-TSK-005: the lending officer's terms doors - four-eyes terms versions (LENDING_ADMINISTER)
+                    // and the terms in force at an instant (LENDING_INVESTIGATE); both held by LENDING_OFFICER.
+                    entry("POST /v1/operator/lending/terms", PermissionName.LENDING_ADMINISTER),
+                    entry("POST /v1/operator/lending/terms/{versionId}/approval", PermissionName.LENDING_ADMINISTER),
+                    entry("POST /v1/operator/lending/terms/{versionId}/rejection", PermissionName.LENDING_ADMINISTER),
+                    entry("GET /v1/operator/lending/terms", PermissionName.LENDING_INVESTIGATE),
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),

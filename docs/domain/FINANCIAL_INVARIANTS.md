@@ -1776,6 +1776,15 @@ flipping the verdict to `DIVERGED` (`P11-TSK-029`, `P11-TST-002`); scenario 8 �
 schedule version n+1 written once and a moved agreement lapsing the amendment.
 **Phase:** 11
 
+*(As built by `P11-TSK-005`, 2026-10-11 - the terms half: `lending V003` splits a version into the money-free machine
+row `loan_terms_version` (identity frozen by the edge trigger, the decision columns its only `UPDATE`, one `PROPOSED`
+and one `ACTIVE` per product by partial uniques, activator ≠ proposer by `CHECK`, the effective period clamped on a
+backward clock) and the term set `loan_terms` (INSERT-only by grant, immutable from insert by trigger for every role,
+born only for a `PROPOSED` version, a version committing only with it). Verified by
+`LoanTermsDatabaseTest#immutableForEveryRole` (raw `UPDATE`, `DELETE`, `TRUNCATE` and a late term set refused for the
+application role by privilege and for the owner by trigger, while `PROPOSED` and again once `ACTIVE`), `#fourEyesAtBothRanks`,
+`#oneActivePerProduct`, `#activeAtAnInstantOverAHistory`; the probes are `MUTATION_TESTING.md` §2's `P11-TSK-005` rows.)*
+
 ### INV-LND-06 — One decision funds at most one loan or line, and exposure has no gap
 **Statement:** A credit decision is consumed at most once — only while `APPROVED` and before its
 `valid_until`, only through credit's consumption port — in the same transaction and under the same
@@ -1890,6 +1899,14 @@ amounts equal to the projection to the minor unit on an on-time path, property-t
 the build rule with a planted `double` in `lending`; the battery's every accrual, billing and
 statement replayed `IDENTICAL` in two JVMs, a perturbed accrual flipping the verdict (`P11-TST-002`).
 **Phase:** 11
+
+*(As built by `P11-TSK-005`, 2026-10-11 - "terms naming a convention no engine version implements are refused": at the
+domain by `LoanTerms`' construction (`422 lending.TermsInvalid` - a rate type, rounding mode, day count, zone or
+allocation order no engine version of the build implements, an engine version it does not hold, `LoanTermsTest`) and for
+every writer by `lending V003`'s `loan_terms_conventions_implemented`, `_rate_type_implemented`,
+`_allocation_complete` and `_kind_coherent` `CHECK`s (`LoanTermsDatabaseTest#anUnimplementedConventionIsRefused`,
+a raw-SQL term set with each defect refused `23514`). A new convention is a new engine version and a migration
+widening those `CHECK`s.)*
 
 ### INV-LND-10 — Servicing time is the database's
 **Statement:** Every business date or instant that decides an accrual, a billing, a statement, a

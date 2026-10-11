@@ -1078,8 +1078,9 @@ fee rules, offer validity, allowed repayment days, allocation order and overpaym
 auto-collection, day count and servicing zone, delinquency bounds and default threshold, a line's
 minimum-payment rule and the engine versions — `PROPOSED → ACTIVE → RETIRED` or
 `PROPOSED → REJECTED`, activated by a second person, at most one `ACTIVE` per product. A product is
-offered only while one is active; production activates none until a real bureau exists. Planned
-(`P11-TSK-005`).
+offered only while one is active; production activates none until a real bureau exists. Built by
+`P11-TSK-005` (`lending V003`: the machine row `loan_terms_version` and its INSERT-only term set
+`loan_terms`).
 **Not:** credit's Policy Version, which decides *whether* to lend; terms say *on what conditions*.
 Nor the Loan Agreement: an agreement copies the terms it was offered under and keeps them for life
 (`INV-LND-05`, `INV-HIST-04`). Never activated by a migration.

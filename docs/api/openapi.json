@@ -4172,7 +4172,112 @@
             }
           }
         },
-        "description": "[403] A contribution is approved by someone other than its proposer; the proposer may reject it.",
+        "description": "[403] A proposal is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.TermsInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.TermsInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.TermsInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The terms are not complete or not within bounds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.TermsNotAmortising": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.TermsNotAmortising"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.TermsNotAmortising"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The terms cannot amortise across the product's amount and term bounds; nothing was proposed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.TermsStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.TermsStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.TermsStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The terms version is no longer awaiting a decision.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -10928,6 +11033,415 @@
           },
           "targetRef": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsProposalRequest": {
+        "properties": {
+          "accrualEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "agreementTemplateId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationOrder": {
+            "items": {
+              "maxLength": 16,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          },
+          "allocationSequence": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "allowedDays": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "maxItems": 28,
+            "minItems": 0,
+            "type": "array"
+          },
+          "autoCollection": {
+            "type": "boolean"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "dayCount": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "defaultThresholdDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "delinquencyBounds": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          },
+          "disbursementDeadlineHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "graceDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "instalmentRounding": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "interestRounding": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "lateFeeCapMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lateFeeDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lateFeeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minFirstPeriodDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "minimumPaymentFloorMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minimumPaymentRatioBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "nominalAnnualRate": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "offerValidityDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "originationFeeBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "originationFeeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "originationFeeTreatment": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "overpaymentTreatment": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "partialCollection": {
+            "type": "boolean"
+          },
+          "paymentDueDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "payoffHorizonDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rateType": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "scheduleEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "servicingZone": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "statementEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accrualEngineVersion",
+          "agreementTemplateId",
+          "agreementTemplateVersion",
+          "allocationEngineVersion",
+          "allocationOrder",
+          "allocationSequence",
+          "allowedDays",
+          "autoCollection",
+          "currency",
+          "dayCount",
+          "defaultThresholdDays",
+          "delinquencyBounds",
+          "graceDays",
+          "instalmentRounding",
+          "interestRounding",
+          "lateFeeCapMinor",
+          "lateFeeDay",
+          "lateFeeMinor",
+          "nominalAnnualRate",
+          "offerValidityDays",
+          "originationFeeTreatment",
+          "overpaymentTreatment",
+          "partialCollection",
+          "payoffHorizonDays",
+          "product",
+          "rateType",
+          "servicingZone"
+        ],
+        "type": "object"
+      },
+      "LoanTermsReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "retiredId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsView": {
+        "properties": {
+          "accrualEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "agreementTemplateId": {
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationOrder": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allocationSequence": {
+            "type": "string"
+          },
+          "allowedDays": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "autoCollection": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "dayCount": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "defaultThresholdDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "delinquencyBounds": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "disbursementDeadlineHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "graceDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "instalmentRounding": {
+            "type": "string"
+          },
+          "interestRounding": {
+            "type": "string"
+          },
+          "lateFeeCapMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lateFeeDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lateFeeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minFirstPeriodDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "minimumPaymentFloorMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minimumPaymentRatioBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "offerValidityDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "originationFeeBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "originationFeeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "originationFeeTreatment": {
+            "type": "string"
+          },
+          "overpaymentTreatment": {
+            "type": "string"
+          },
+          "partialCollection": {
+            "type": "boolean"
+          },
+          "paymentDueDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "payoffHorizonDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "rateType": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scheduleEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "servicingZone": {
+            "type": "string"
+          },
+          "statementEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -19365,6 +19879,166 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CapitalContributionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/terms": {
+      "get": {
+        "operationId": "readLoanTerms",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeLoanTerms",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanTermsProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/terms/{versionId}/approval": {
+      "post": {
+        "operationId": "approveLoanTerms",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanTermsDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/terms/{versionId}/rejection": {
+      "post": {
+        "operationId": "rejectLoanTerms",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanTermsDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsReceipt"
                 }
               }
             },

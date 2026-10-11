@@ -125,6 +125,28 @@ class LendingVocabulariesTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    @DisplayName("the terms version's vocabularies (P11-TSK-005): its machine, and only implemented conventions - FIXED,"
+            + " DEDUCTED, OLDEST_DUE_FIRST - and one registered agreement template per product")
+    void theTermsVocabularies() {
+        assertThat(names(LoanTermsVersionStatus.values())).containsExactly("PROPOSED", "ACTIVE", "RETIRED", "REJECTED");
+        assertThat(LoanTermsVersionStatus.PROPOSED.permittedTransitions())
+                .containsExactlyInAnyOrder(LoanTermsVersionStatus.ACTIVE, LoanTermsVersionStatus.REJECTED);
+        assertThat(LoanTermsVersionStatus.ACTIVE.permittedTransitions()).containsExactly(LoanTermsVersionStatus.RETIRED);
+        assertThat(LoanTermsVersionStatus.RETIRED.isTerminal()).isTrue();
+        assertThat(LoanTermsVersionStatus.REJECTED.isTerminal()).isTrue();
+        assertThat(names(RateType.values())).containsExactly("FIXED");
+        assertThat(names(OriginationFeeTreatment.values())).containsExactly("DEDUCTED");
+        assertThat(names(AllocationSequence.values())).containsExactly("OLDEST_DUE_FIRST");
+        for (LoanProduct product : LoanProduct.values()) {
+            assertThat(Arrays.stream(AgreementTemplate.values()).filter(template -> template.product() == product))
+                    .as("%s has its one agreement template at version 1", product).hasSize(1);
+        }
+        assertThat(AgreementTemplate.of("PERSONAL_LOAN_AGREEMENT", 1)).contains(AgreementTemplate.PERSONAL_LOAN_AGREEMENT_V1);
+        assertThat(AgreementTemplate.of("PERSONAL_LOAN_AGREEMENT", 2)).as("an unheld version is empty, never a fallback")
+                .isEmpty();
+    }
+
     private static String[] names(Enum<?>[] values) {
         return Arrays.stream(values).map(Enum::name).toArray(String[]::new);
     }

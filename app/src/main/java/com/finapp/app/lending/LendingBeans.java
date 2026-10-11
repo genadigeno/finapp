@@ -11,8 +11,12 @@ import com.finapp.lending.JdbcCapitalContributionStore;
 import com.finapp.lending.LendingCapitalAdministration;
 import com.finapp.lending.LendingCapitalHeadroom;
 import com.finapp.lending.LendingCapitalProof;
+import com.finapp.lending.JdbcLoanTermsStore;
+import com.finapp.lending.LoanTermsAdministration;
+import com.finapp.lending.LoanTermsStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.reconciliation.CapitalRecognitionReadings;
 import com.finapp.reconciliation.ExpectationRegister;
 import com.finapp.reconciliation.RuleSets;
@@ -35,7 +39,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Wiring for lending capital (`P11-TSK-004`; ADR-0096 sections 4-6): lending's first beans - the contribution store and
  * its four-eyes administration, the two ports {@code app} implements over reconciliation (the expectation opener and
- * the recognition read), the headroom, the capital proof and its gauges, and the treasury's doors.
+ * the recognition read), the headroom, the capital proof and its gauges, and the treasury's doors. And the loan terms
+ * versions (`P11-TSK-005`; ADR-0092 sections 1-3): the store, the four-eyes administration publishing through the
+ * outbox, the lending officer's doors and the active-version gauge.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -121,6 +127,41 @@ public class LendingBeans {
                 auditWriter,
                 idGenerator,
                 clock);
+    }
+
+    // ------------------------------------------------------------------ the terms versions (P11-TSK-005)
+
+    @Bean
+    LoanTermsStore loanTermsStore() {
+        return new JdbcLoanTermsStore();
+    }
+
+    @Bean
+    LoanTermsAdministration loanTermsAdministration(
+            LoanTermsStore loanTermsStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanTermsAdministration(loanTermsStore, auditWriter, outboxWriter, idGenerator, clock);
+    }
+
+    @Bean
+    LoanTermsDesk loanTermsDesk(
+            LoanTermsAdministration loanTermsAdministration,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions) {
+        return new LoanTermsDesk(loanTermsAdministration, idempotentExecutor, lendingTransactions);
+    }
+
+    /**
+     * {@code finapp.lending.terms.active{product}}: each product's ACTIVE terms version, 0 for none - the product is not
+     * offered, which production expects until the activation gate opens.
+     */
+    @Bean
+    LoanTermsMetrics loanTermsMetrics(
+            LoanTermsStore loanTermsStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new LoanTermsMetrics(loanTermsStore, dataSource::getConnection, clock, meterRegistry);
     }
 
     /**

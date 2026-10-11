@@ -2599,6 +2599,78 @@ their prose are `CONFIDENTIAL`; codes, statuses and identifiers `INTERNAL`.
 | `capital_contribution_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `capital_contribution_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
+### `lending` - the loan terms version - *added by `P11-TSK-005`*
+
+A product's price and servicing conventions: amounts and rates are `RESTRICTED-FINANCIAL` (`PHASE_11_PLAN.md` §11 -
+"amounts and rates on agreements ..."; a terms version is what every agreement copies); the people and their prose
+`CONFIDENTIAL`; product codes, statuses, conventions, engine and template versions `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_terms_version` | `id` | `INTERNAL` | Generated |
+| `loan_terms_version` | `product` | `INTERNAL` | A closed product code |
+| `loan_terms_version` | `version` | `INTERNAL` | The product's version number |
+| `loan_terms_version` | `status` | `INTERNAL` | The machine's state |
+| `loan_terms_version` | `proposed_by` | `CONFIDENTIAL` | The lending officer who proposed it |
+| `loan_terms_version` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `loan_terms_version` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_terms_version` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_terms_version` | `decided_by` | `CONFIDENTIAL` | The officer who activated or rejected it |
+| `loan_terms_version` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `loan_terms_version` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_terms_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_terms_version` | `effective_from` | `INTERNAL` | The database's stamp, clamped on a backward clock |
+| `loan_terms_version` | `effective_to` | `INTERNAL` | The database's stamp - its successor's start |
+| `loan_terms_version` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `loan_terms` | `terms_version_id` | `INTERNAL` | The version whose term set it is |
+| `loan_terms` | `product` | `INTERNAL` | A closed product code, pinned to the version's |
+| `loan_terms` | `currency` | `INTERNAL` | The product's currency |
+| `loan_terms` | `scale` | `INTERNAL` | The currency's scale |
+| `loan_terms` | `nominal_annual_rate` | `RESTRICTED-FINANCIAL` | The price - a canonical decimal fraction |
+| `loan_terms` | `rate_type` | `INTERNAL` | `FIXED` |
+| `loan_terms` | `origination_fee_minor` | `RESTRICTED-FINANCIAL` | A fee amount |
+| `loan_terms` | `origination_fee_bps` | `RESTRICTED-FINANCIAL` | A fee rate |
+| `loan_terms` | `origination_fee_treatment` | `INTERNAL` | `DEDUCTED` |
+| `loan_terms` | `late_fee_minor` | `RESTRICTED-FINANCIAL` | A fee amount |
+| `loan_terms` | `late_fee_day` | `INTERNAL` | A servicing convention (days past due) |
+| `loan_terms` | `late_fee_cap_minor` | `RESTRICTED-FINANCIAL` | A fee cap |
+| `loan_terms` | `grace_days` | `INTERNAL` | A servicing convention |
+| `loan_terms` | `delinquency_bounds` | `INTERNAL` | A servicing convention (bucket bounds) |
+| `loan_terms` | `default_threshold_days` | `INTERNAL` | A servicing convention (L7) |
+| `loan_terms` | `allocation_sequence` | `INTERNAL` | A servicing convention (L6) |
+| `loan_terms` | `allocation_order` | `INTERNAL` | A servicing convention (L6) |
+| `loan_terms` | `overpayment_treatment` | `INTERNAL` | A servicing convention (A26) |
+| `loan_terms` | `auto_collection` | `INTERNAL` | A servicing convention (A21) |
+| `loan_terms` | `partial_collection` | `INTERNAL` | A servicing convention (A21) |
+| `loan_terms` | `instalment_rounding` | `INTERNAL` | A convention an engine implements |
+| `loan_terms` | `interest_rounding` | `INTERNAL` | A convention an engine implements |
+| `loan_terms` | `day_count` | `INTERNAL` | A convention an engine implements |
+| `loan_terms` | `servicing_zone` | `INTERNAL` | What "a day" is (A2) |
+| `loan_terms` | `allowed_days` | `INTERNAL` | The repayment or statement days offered |
+| `loan_terms` | `min_first_period_days` | `INTERNAL` | A schedule convention |
+| `loan_terms` | `offer_validity_days` | `INTERNAL` | A window |
+| `loan_terms` | `payoff_horizon_days` | `INTERNAL` | A window |
+| `loan_terms` | `disbursement_deadline_hours` | `INTERNAL` | A window |
+| `loan_terms` | `minimum_payment_floor_minor` | `RESTRICTED-FINANCIAL` | A line's minimum-payment amount (A24) |
+| `loan_terms` | `minimum_payment_ratio_bps` | `RESTRICTED-FINANCIAL` | A line's minimum-payment rate (A24) |
+| `loan_terms` | `payment_due_days` | `INTERNAL` | A statement convention (A23) |
+| `loan_terms` | `schedule_engine_version` | `INTERNAL` | An engine version |
+| `loan_terms` | `accrual_engine_version` | `INTERNAL` | An engine version |
+| `loan_terms` | `allocation_engine_version` | `INTERNAL` | An engine version |
+| `loan_terms` | `statement_engine_version` | `INTERNAL` | An engine version |
+| `loan_terms` | `agreement_template_id` | `INTERNAL` | A registered template |
+| `loan_terms` | `agreement_template_version` | `INTERNAL` | A registered template's version |
+| `loan_terms_version_event` | `id` | `INTERNAL` | Generated |
+| `loan_terms_version_event` | `terms_version_id` | `INTERNAL` | The version it moved |
+| `loan_terms_version_event` | `product` | `INTERNAL` | A closed product code, pinned to the version's |
+| `loan_terms_version_event` | `from_status` | `INTERNAL` | The machine edge |
+| `loan_terms_version_event` | `to_status` | `INTERNAL` | The machine edge |
+| `loan_terms_version_event` | `actor` | `CONFIDENTIAL` | Who moved it |
+| `loan_terms_version_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `loan_terms_version_event` | `reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_terms_version_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_terms_version_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
