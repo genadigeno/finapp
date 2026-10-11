@@ -304,6 +304,16 @@ class LoanApplicationDatabaseTest {
             public List<String> reasonTexts(Connection unitOfWork, UUID request) {
                 return creditDecisions.reasonTexts(unitOfWork, request);
             }
+
+            @Override
+            public CreditOutcome decisionFor(Connection unitOfWork, UUID request, UUID party) {
+                return creditDecisions.decisionFor(unitOfWork, request, party);
+            }
+
+            @Override
+            public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
+                return creditDecisions.requestOf(unitOfWork, decision);
+            }
         };
         assertThatThrownBy(() -> inRawTransaction(uow -> applications(crashAfterOpen)
                         .submit(uow, customer.party(), submission(), actor, CorrelationId.generate(ids))))
@@ -454,12 +464,15 @@ class LoanApplicationDatabaseTest {
                 role.rollback();
             }
         }
-        // The edges: SUBMITTED is never skipped; AWAITING_DECISION's four; terminal final.
+        // The edges: SUBMITTED is never skipped; AWAITING_DECISION's four - OFFERED only beside its offer
+        // (P11-TSK-011, whose LoanOriginationDatabaseTest holds that edge and the offer's machine); terminal final.
+        // A status-unchanged update is P11-TSK-011's permit-only move, admitted only if it moves the permit alone.
         UUID awaiting = awaiting(version);
-        for (String target : List.of("SUBMITTED", "AWAITING_DECISION")) {
+        for (String target : List.of("SUBMITTED", "AWAITING_DECISION", "OFFERED")) {
             refusedUpdate(awaiting, "status = '" + target + "'", "P0001");
         }
-        for (String terminal : List.of("OFFERED", "DECLINED", "CLOSED_UNDECIDED", "WITHDRAWN")) {
+        acceptedUpdate(awaiting, "next_step_at = next_step_at + interval '1 minute'");
+        for (String terminal : List.of("DECLINED", "CLOSED_UNDECIDED", "WITHDRAWN")) {
             UUID application = awaiting(version);
             acceptedUpdate(application, "status = '" + terminal + "'");
             assertThat(scalar("SELECT closed_at IS NOT NULL FROM lending.loan_application WHERE id = ?", application))
@@ -529,7 +542,7 @@ class LoanApplicationDatabaseTest {
         }
     }
 
-    private static LoanTerms terms(LoanProduct product) {
+    static LoanTerms terms(LoanProduct product) {
         boolean loan = product == LoanProduct.PERSONAL_LOAN;
         return LoanTerms.builder()
                 .product(product)

@@ -302,7 +302,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // conditional edge under the request's row lock that the V010 trigger re-judges, with every child
                     // born once (the snapshot, assessment and evaluation by their unique keys). Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is DecisionOrchestrationDatabaseTest's.
-                    "com.finapp.app.credit.CreditDecisionProgressSchedule");
+                    "com.finapp.app.credit.CreditDecisionProgressSchedule",
+                    // P11-TSK-011: the same half for the loan origination sweep. No external call is made: each tick
+                    // claims the applications awaiting credit's decision, then the offers due their expiry, each in ONE
+                    // statement on the database clock (FOR UPDATE SKIP LOCKED, the permit re-stamped), and every step
+                    // is a conditional edge under the row lock (L1 the application, L2 the offer) that lending V005's
+                    // triggers re-judge, the offer born once by UNIQUE (application_id) and UNIQUE (decision_id); the
+                    // decision is read from credit, credit's events only pull a permit forward. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is LoanOriginationDatabaseTest's.
+                    "com.finapp.app.lending.LoanOriginationSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

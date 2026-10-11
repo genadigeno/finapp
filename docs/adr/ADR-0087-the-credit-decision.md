@@ -450,3 +450,10 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   party's exposure takes the `credit_profile` row first — the lock point 5's deciding transaction
   takes — so its re-read of reserved and outstanding credit never falls between a consumption's two
   halves; this ADR's decisions stand.
+- *Consumed by `P11-TSK-011` (2026-10-11) - as hints.* Lending's `LoanOriginationHint` takes
+  `credit.CreditDecisionRecorded` and `credit.CreditDecisionRequestClosed` and only pulls the waiting application's
+  permit forward; the origination step reads the decision through the published `CreditDecisions` read and the request
+  through `DecisionRequests.read`. Point 9's condition is met by HANDLING version 1 explicitly: the handler reads no
+  payload at all - the aggregate id alone, a decision resolved to its request through credit's read - so version 1's
+  joined `reasonCodes` and version 2's per-field codes are equally unread; a version beyond 2 is acknowledged and
+  refused (`LoanOfferDatabaseTest#bothVersionsAreHintsAndAnUnknownOneIsRefused`).

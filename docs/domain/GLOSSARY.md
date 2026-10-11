@@ -731,7 +731,10 @@ Phase 10 → 11 transition, 2026-10-10.)*
 Product Terms Version — exactly the approved amount and term, or limit (no counter-offer), as
 canonical terms with their SHA-256 — expiring at the earlier of the decision's validity and the
 terms' offer validity, judged on the database clock: `OFFERED → ACCEPTED | DECLINED | EXPIRED`,
-never `EXPIRED → ACCEPTED`. Planned (`P11-TSK-011`).
+never `EXPIRED → ACCEPTED`. The pinned version is the one `ACTIVE` at the offering instant, not the one recorded on
+the application; a loan offer shows its illustrative schedule from the offering day with the total interest and total
+payable (A5), a line offer its rate and minimum-payment rule. Built by `P11-TSK-011` (the machine row money-free, the
+terms INSERT-only; a decline only while unexpired; acceptance `-012`'s).
 **Not:** a Loan, nor the Loan Agreement: nothing is contracted or disbursed, and an expired offer
 is not a loan that failed. An expired or declined offer releases nothing in credit — the unconsumed
 decision lapses at its own validity. *(This entry read "terms the platform is prepared to grant,

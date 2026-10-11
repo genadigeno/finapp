@@ -12,10 +12,14 @@ import com.finapp.lending.LendingCapitalAdministration;
 import com.finapp.lending.LendingCapitalHeadroom;
 import com.finapp.lending.LendingCapitalProof;
 import com.finapp.lending.JdbcLoanApplicationStore;
+import com.finapp.lending.JdbcLoanOfferStore;
 import com.finapp.lending.JdbcLoanTermsStore;
 import com.finapp.lending.LoanApplicationStore;
 import com.finapp.lending.LoanApplications;
 import com.finapp.lending.LoanCreditDecisions;
+import com.finapp.lending.LoanOfferStore;
+import com.finapp.lending.LoanOffers;
+import com.finapp.lending.LoanOrigination;
 import com.finapp.lending.LoanPartyStanding;
 import com.finapp.lending.LoanProductBounds;
 import com.finapp.lending.LoanTermsAdministration;
@@ -30,12 +34,16 @@ import com.finapp.settlement.SettlementFileStore;
 import com.finapp.settlement.SettlementSources;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -49,7 +57,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * versions (`P11-TSK-005`; ADR-0092 sections 1-3): the store, the four-eyes administration publishing through the
  * outbox, the lending officer's doors and the active-version gauge. And the loan application (`P11-TSK-010`): its store,
  * the two ports {@code app} implements over credit (the decision request and the party's standing), the domain service,
- * the customer's doors and their meter.
+ * the customer's doors and their meter. And the offer (`P11-TSK-011`): its store, the origination step and its leaderless
+ * sweep with the sweeper gauge, the two credit-event hints, the customer's offer doors and their meter.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -250,8 +259,94 @@ public class LendingBeans {
             com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             IdempotentExecutor idempotentExecutor,
             LendingTransactions lendingTransactions,
-            LoanApplicationMetrics loanApplicationMetrics) {
+            LoanApplicationMetrics loanApplicationMetrics,
+            LoanOffers loanOffers) {
         return new LoanApplicationDesk(loanApplications, identityStore, mfaEnrolmentStore, idempotentExecutor,
-                lendingTransactions, loanApplicationMetrics);
+                lendingTransactions, loanApplicationMetrics, loanOffers);
+    }
+
+    // ------------------------------------------------------------------ the offer (P11-TSK-011)
+
+    @Bean
+    LoanOfferStore loanOfferStore() {
+        return new JdbcLoanOfferStore();
+    }
+
+    /** The origination step (T-off) and the expiry - the system's acts on applications and offers. */
+    @Bean
+    LoanOrigination loanOrigination(
+            LoanApplicationStore loanApplicationStore,
+            LoanOfferStore loanOfferStore,
+            LoanTermsAdministration loanTermsAdministration,
+            LoanCreditDecisions loanCreditDecisions,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanOrigination(loanApplicationStore, loanOfferStore, loanTermsAdministration, loanCreditDecisions,
+                outboxWriter, idGenerator, clock);
+    }
+
+    /** The customer's offers - the read and the decline. */
+    @Bean
+    LoanOffers loanOffers(
+            LoanOfferStore loanOfferStore,
+            LoanTermsStore loanTermsStore,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanOffers(loanOfferStore, loanTermsStore, outboxWriter, idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.offer{product, outcome}}, every series registered at startup. */
+    @Bean
+    LoanOfferMetrics loanOfferMetrics(MeterRegistry meterRegistry) {
+        return new LoanOfferMetrics(meterRegistry);
+    }
+
+    @Bean
+    LoanOfferDesk loanOfferDesk(
+            LoanOffers loanOffers,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            LoanOfferMetrics loanOfferMetrics) {
+        return new LoanOfferDesk(loanOffers, identityStore, mfaEnrolmentStore, idempotentExecutor, lendingTransactions,
+                loanOfferMetrics);
+    }
+
+    /** The origination sweep - every instance, no lease, off in test contexts. */
+    @Bean
+    @ConditionalOnProperty(name = "finapp.lending.origination.sweeper.enabled", havingValue = "true", matchIfMissing = true)
+    LoanOriginationSchedule loanOriginationSchedule(
+            LoanOrigination loanOrigination,
+            LendingTransactions lendingTransactions,
+            LoanOfferMetrics loanOfferMetrics,
+            @Value("${finapp.lending.origination.poll:PT5S}") Duration pollInterval,
+            @Value("${finapp.lending.origination.batch:20}") int batch,
+            @Value("${finapp.lending.origination.permit:PT30S}") Duration permit) {
+        return new LoanOriginationSchedule(loanOrigination, lendingTransactions, loanOfferMetrics, pollInterval, batch,
+                permit);
+    }
+
+    /** Whether this instance runs the origination sweep - eager either way (`P1-TSK-029`'s rule). */
+    @Bean
+    Gauge lendingOriginationSweeperEnabled(
+            @Value("${finapp.lending.origination.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
+        return Gauge.builder("finapp.lending.origination.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the loan origination sweep")
+                .register(meterRegistry);
+    }
+
+    /** {@code credit.CreditDecisionRecorded} as a hint - the application made due now, nothing else. */
+    @Bean
+    LoanOriginationHint loanOriginationDecisionHint(LoanOrigination loanOrigination) {
+        return new LoanOriginationHint(loanOrigination, LoanOriginationHint.Kind.DECISION_RECORDED);
+    }
+
+    /** {@code credit.CreditDecisionRequestClosed} as a hint. */
+    @Bean
+    LoanOriginationHint loanOriginationClosureHint(LoanOrigination loanOrigination) {
+        return new LoanOriginationHint(loanOrigination, LoanOriginationHint.Kind.REQUEST_CLOSED);
     }
 }

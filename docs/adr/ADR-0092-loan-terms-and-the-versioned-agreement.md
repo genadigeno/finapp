@@ -227,5 +227,16 @@ only by an accepted amendment.
     both); an unknown product reads `404 lending.NotFound`.
   - *The event* is `lending.LoanTermsVersionActivated` (product, version, effective start, predecessor) - lending's first,
     through the platform outbox in the activation's transaction; no rate or fee in it.
+- **As built by `P11-TSK-011` (2026-10-11) - the offer, its canonical terms and hash:** the offer pins the version
+  `ACTIVE` at the offering instant (`pinActive`, `FOR SHARE`), never the version recorded on the application; `lending
+  V005` splits it along the same money line as the terms - `loan_offer` (machine, money-free) and `loan_offer_terms`
+  (INSERT-only, immutable for every role). The canonical terms are `CanonicalOfferTerms` format 1, hand-written as
+  credit's `CanonicalSnapshot` is: self-contained (the offer, its decision, the approved amount and term, the day, the
+  pinned version by id and number with its whole term set, the four engines, the template, and the loan's illustrative
+  schedule figures or the line's minimum-payment rule), escape-free, every value a string token - so a `CHECK` holds
+  `terms_sha256 = sha256(canonical_terms)` for every writer, and the trigger holds the terms row's rate, engines,
+  template and line rule to the pinned `loan_terms` row. The offer document (`OfferDocument`, rendered by the
+  template, naming the terms hash) is stored by its SHA-256 only and re-rendered on every read, shown only if its bytes
+  are the ones hashed. `-012`'s agreement copies the canonical terms and hash; `-029`'s replay re-verifies them.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

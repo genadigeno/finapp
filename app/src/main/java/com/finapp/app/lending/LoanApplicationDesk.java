@@ -14,7 +14,10 @@ import com.finapp.identity.Session;
 import com.finapp.lending.LendingErrorCode;
 import com.finapp.lending.LoanApplication;
 import com.finapp.lending.LoanApplicationId;
+import com.finapp.lending.LoanApplicationStatus;
 import com.finapp.lending.LoanApplications;
+import com.finapp.lending.LoanOfferId;
+import com.finapp.lending.LoanOffers;
 import com.finapp.lending.LoanProduct;
 import com.finapp.lending.PayoutPreference;
 import com.finapp.lending.RepaymentMethod;
@@ -69,11 +72,13 @@ public final class LoanApplicationDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final LendingTransactions transactions;
     @NonNull private final LoanApplicationMetrics metrics;
+    @NonNull private final LoanOffers offers;
 
     /**
      * An application as its customer sees it - its status, credit's request id (the amount and term applied for are read
      * there), the terms version in force at submission, the customer's choices, and once declined credit's reasons in
-     * the customer's words. Never a figure, a rate, a score or a decision.
+     * the customer's words, and once offered its offer's id (`P11-TSK-011` - the offer is read at
+     * {@code /v1/me/loan-offers/{id}}). Never a figure, a rate, a score or a decision.
      */
     public record LoanApplicationView(
             String applicationId,
@@ -86,7 +91,8 @@ public final class LoanApplicationDesk {
             String payoutPreference,
             String submittedAt,
             String closedAt,
-            List<String> reasons) {}
+            List<String> reasons,
+            String offerId) {}
 
     public LoanApplicationView submit(
             Session current, String idempotencyKey, LoanApplicationController.LoanApplicationBody body) {
@@ -143,9 +149,12 @@ public final class LoanApplicationDesk {
     /** The caller's own application; another party's is the same {@code 404} as an unknown or malformed id. */
     public LoanApplicationView read(Session current, String rawId) {
         LoanApplicationId id = applicationId(rawId);
-        return transactions.inTransaction(unitOfWork -> applications.read(unitOfWork, id, partyOf(unitOfWork, current))
-                        .map(read -> view(read.application(), read.reasonTexts())))
-                .orElseThrow(LoanApplicationDesk::notFound);
+        return transactions.inTransaction(unitOfWork -> {
+            UUID party = partyOf(unitOfWork, current);
+            return applications.read(unitOfWork, id, party).map(read -> view(read.application(), read.reasonTexts(),
+                    read.application().status() == LoanApplicationStatus.OFFERED
+                            ? offers.offerFor(unitOfWork, id, party) : Optional.empty()));
+        }).orElseThrow(LoanApplicationDesk::notFound);
     }
 
     public LoanApplicationView withdraw(Session current, String rawId, String idempotencyKey) {
@@ -255,6 +264,10 @@ public final class LoanApplicationDesk {
     // ------------------------------------------------------------------ the view
 
     static LoanApplicationView view(LoanApplication application, List<String> reasons) {
+        return view(application, reasons, Optional.empty());
+    }
+
+    static LoanApplicationView view(LoanApplication application, List<String> reasons, Optional<LoanOfferId> offer) {
         return new LoanApplicationView(
                 application.id().value().toString(),
                 application.product().name(),
@@ -266,7 +279,8 @@ public final class LoanApplicationDesk {
                 application.payoutPreference().name(),
                 application.submittedAt().toString(),
                 application.closedAt().map(Instant::toString).orElse(null),
-                reasons.isEmpty() ? null : reasons);
+                reasons.isEmpty() ? null : reasons,
+                offer.map(id -> id.value().toString()).orElse(null));
     }
 
     /** A keyed act's recorded response: the application as it stood then - submitted or withdrawn, never decided. */
@@ -282,7 +296,7 @@ public final class LoanApplicationDesk {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new LoanApplicationView(fields[1], fields[2], fields[3], fields[4], Integer.parseInt(fields[5]),
                 Integer.parseInt(fields[6]), fields[7], fields[8], fields[9], fields[10].isEmpty() ? null : fields[10],
-                null);
+                null, null);
     }
 
     // ------------------------------------------------------------------ plumbing

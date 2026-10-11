@@ -68,5 +68,11 @@
  * {@link com.finapp.lending.LoanPartyStanding} - ports {@code app} implements over credit - and the withdrawal under the
  * application's row lock), the closed {@link com.finapp.lending.RepaymentMethod} and
  * {@link com.finapp.lending.PayoutPreference}.
+ * The offer ({@code P11-TSK-011}): {@code V005}'s money-free machine row, its INSERT-only terms and its history;
+ * {@link com.finapp.lending.LoanOrigination} (the origination step - an application's offer, decline or undecided
+ * closure on credit's answer read through {@link com.finapp.lending.LoanCreditDecisions#decisionFor}, the terms version
+ * active at the offering instant pinned - and the offer's expiry), {@link com.finapp.lending.LoanOffers} (the owner's
+ * read and the decline), {@link com.finapp.lending.CanonicalOfferTerms} and {@link com.finapp.lending.OfferDocument},
+ * each hashed; credit's events reach lending only as hints that pull a permit forward.
  */
 package com.finapp.lending;

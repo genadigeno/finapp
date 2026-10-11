@@ -4147,6 +4147,41 @@
           }
         }
       },
+      "lending.OfferNotAcceptable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.OfferNotAcceptable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.OfferNotAcceptable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The offer can no longer be accepted or declined.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.ProductNotOffered": {
         "content": {
           "application/problem+json": {
@@ -11016,6 +11051,38 @@
         },
         "type": "object"
       },
+      "IllustrationView": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "finalInstalment": {
+            "type": "string"
+          },
+          "firstDueDate": {
+            "type": "string"
+          },
+          "instalment": {
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodView"
+            },
+            "type": "array"
+          },
+          "start": {
+            "type": "string"
+          },
+          "totalInterest": {
+            "type": "string"
+          },
+          "totalPayable": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "IssuedKeyView": {
         "properties": {
           "alreadyIssued": {
@@ -11247,6 +11314,9 @@
           "decisionRequestId": {
             "type": "string"
           },
+          "offerId": {
+            "type": "string"
+          },
           "payoutPreference": {
             "type": "string"
           },
@@ -11270,6 +11340,92 @@
             "type": "string"
           },
           "submittedAt": {
+            "type": "string"
+          },
+          "termsVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LoanOfferDecision": {
+        "properties": {
+          "closedAt": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanOfferView": {
+        "properties": {
+          "agreementTemplate": {
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string"
+          },
+          "documentSha256": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "illustration": {
+            "$ref": "#/components/schemas/IllustrationView"
+          },
+          "minimumPayment": {
+            "$ref": "#/components/schemas/MinimumPaymentView"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "offeredAt": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "repaymentDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termsSha256": {
             "type": "string"
           },
           "termsVersion": {
@@ -11879,6 +12035,22 @@
           },
           "provisioningUri": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MinimumPaymentView": {
+        "properties": {
+          "floor": {
+            "type": "string"
+          },
+          "paymentDueDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ratioBasisPoints": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -12930,6 +13102,30 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PeriodView": {
+        "properties": {
+          "closingBalance": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "instalment": {
+            "type": "string"
+          },
+          "interest": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -17882,6 +18078,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanApplicationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loan-offers/{id}": {
+      "get": {
+        "operationId": "readLoanOffer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanOfferView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loan-offers/{id}/decline": {
+      "post": {
+        "operationId": "declineLoanOffer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanOfferDecision"
                 }
               }
             },

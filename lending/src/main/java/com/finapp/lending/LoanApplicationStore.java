@@ -3,6 +3,8 @@ package com.finapp.lending;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
+import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,6 +35,22 @@ public interface LoanApplicationStore {
 
     /** L1: {@code party}'s application {@code id}, {@code FOR UPDATE}. */
     Optional<LoanApplication> lockOwnedBy(Connection unitOfWork, LoanApplicationId id, UUID party);
+
+    /**
+     * The origination sweep's claim (`P11-TSK-011`): up to {@code limit} applications {@code AWAITING_DECISION} whose
+     * permit is due, oldest first, in ONE statement - rows another sweeper holds skipped, the page's permit re-stamped
+     * {@code permit} ahead, so an application with nothing to do yet lets its permit lapse rather than holding the page.
+     */
+    List<LoanApplicationId> claimAwaiting(Connection unitOfWork, int limit, Duration permit);
+
+    /** L1 for the system (`P11-TSK-011`): the application {@code id} - one the caller's own claim answered - {@code FOR UPDATE}. */
+    Optional<LoanApplication> lockClaimed(Connection unitOfWork, LoanApplicationId id);
+
+    /**
+     * A credit event's hint (`P11-TSK-011`): the application awaiting credit's request {@code decisionRequest} made due
+     * now - its permit and nothing else; {@code false} when no such application awaits a decision.
+     */
+    boolean hint(Connection unitOfWork, UUID decisionRequest);
 
     // ------------------------------------------------------------------ rows
 

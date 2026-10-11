@@ -4,6 +4,7 @@ import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -17,8 +18,9 @@ import java.util.UUID;
  *
  * <p>Built by `P11-TSK-010`: {@link #open} over {@code DecisionRequests.submit} (credit's arbiters and its consent gate,
  * {@code INV-CNS-01}), {@link #cancel} over {@code DecisionRequests.cancel}, and {@link #reasonTexts} over credit's
- * decision read. The offer (`P11-TSK-011`) adds {@code decisionFor}, the acceptance (`-012`) {@code consume} and
- * {@code lockExposure} - each to this same port.
+ * decision read. The offer (`P11-TSK-011`) adds {@link #decisionFor} - the authoritative read the origination step
+ * decides on - and {@link #requestOf}, which resolves a credit event's decision to its request for the hint; the
+ * acceptance (`-012`) adds {@code consume} and {@code lockExposure} - each to this same port.
  *
  * <p><strong>The refusals lending gives meaning to are declared here</strong> - an open request
  * ({@link RequestOpen}), terms outside credit's product bounds ({@link TermsOutOfBounds}), a request past cancellation
@@ -45,6 +47,82 @@ public interface LoanCreditDecisions {
 
     /** A decided request's reasons as the customer may read them, in order; empty when it has none. */
     List<String> reasonTexts(Connection unitOfWork, UUID decisionRequest);
+
+    /**
+     * Where credit's request {@code decisionRequest} of {@code party} stands, read authoritatively on the caller's unit
+     * of work (`P11-TSK-011`): still open, decided - approved or declined - or closed without a decision. The origination
+     * step decides on this read alone; a credit event never stands in for it ({@code INV-EVT-04}).
+     *
+     * @throws IllegalStateException when the party has no such request - an application's request is its own party's
+     *     and is never deleted
+     */
+    CreditOutcome decisionFor(Connection unitOfWork, UUID decisionRequest, UUID party);
+
+    /** The request credit's decision {@code decision} answers, or empty when no decision has the id. */
+    Optional<UUID> requestOf(Connection unitOfWork, UUID decision);
+
+    /** Where a credit decision request stands, as the origination step needs it (`P11-TSK-011`). */
+    sealed interface CreditOutcome {
+
+        /** The request is open: no decision yet - the application keeps waiting. */
+        record Pending() implements CreditOutcome {}
+
+        /**
+         * Approved: exactly what the offer carries (A20) - the amount (a loan's principal, a line's limit), an instalment
+         * product's term, and the decision's validity on the database clock.
+         *
+         * @param decision credit's decision id, by value
+         * @param party the decision's party - the application's own
+         * @param product the decision's product, by name
+         * @param amount the approved amount
+         * @param termMonths the approved term - an instalment product's alone
+         * @param validUntil the instant the unconsumed decision lapses
+         */
+        record Approved(
+                UUID decision,
+                UUID party,
+                LoanProduct product,
+                Money amount,
+                Optional<Integer> termMonths,
+                Instant validUntil) implements CreditOutcome {
+
+            public Approved {
+                Objects.requireNonNull(decision, "decision must not be null");
+                Objects.requireNonNull(party, "party must not be null");
+                Objects.requireNonNull(product, "product must not be null");
+                Objects.requireNonNull(amount, "amount must not be null");
+                Objects.requireNonNull(termMonths, "termMonths must not be null");
+                Objects.requireNonNull(validUntil, "validUntil must not be null");
+            }
+
+            /** Never the amount or the party ({@code INV-AUD-02}). */
+            @Override
+            public String toString() {
+                return "Approved[" + decision + ", " + product + "]";
+            }
+        }
+
+        /** Declined: no offer; the decision's reasons are read through {@link #reasonTexts}. */
+        record Declined(UUID decision) implements CreditOutcome {
+            public Declined {
+                Objects.requireNonNull(decision, "decision must not be null");
+            }
+        }
+
+        /** Closed without a decision: cancelled, expired or abandoned by credit. */
+        record Closed(Closure closure) implements CreditOutcome {
+            public Closed {
+                Objects.requireNonNull(closure, "closure must not be null");
+            }
+        }
+
+        /** How credit's request closed without a decision - credit's own terminal states, by name. */
+        enum Closure {
+            CANCELLED,
+            EXPIRED,
+            ABANDONED
+        }
+    }
 
     /**
      * What the customer asks credit for: the product (credit's of the same name), the amount or limit, the term (an

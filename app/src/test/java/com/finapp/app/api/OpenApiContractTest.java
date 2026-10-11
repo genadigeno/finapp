@@ -333,6 +333,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications",
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications/{id}/withdrawal",
+                        // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
+                        // under the conditional step-up).
+                        ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}/decline",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

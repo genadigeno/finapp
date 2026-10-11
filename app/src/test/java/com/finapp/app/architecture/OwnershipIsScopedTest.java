@@ -841,6 +841,71 @@ class OwnershipIsScopedTest {
                                         + " transaction just inserted (the submission's SUBMITTED -> AWAITING_DECISION);"
                                         + " the move is conditional on its from-state, lending V004's trigger beneath.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.lockClaimed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-011. The origination step's L1: the application id comes only from the"
+                                        + " sweep's own claimed page (claimAwaiting), never a request value; no door,"
+                                        + " customer's or operator's, reaches it - origination is the system's act"
+                                        + " (PHASE_11_PLAN.md section 11), and what stands in for an owner predicate is"
+                                        + " credit's decision for that application's own party and product, checked"
+                                        + " under the lock.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loan-offers/{id} - the identifier from the path, and o.party_id = ? in"
+                                        + " the statement is the session's own party; another party's offer and an"
+                                        + " absent one are one empty answer, the 404 (P11-TSK-011).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/loan-offers/{id}/decline - ownedBy's statement plus FOR UPDATE OF o"
+                                        + " (L2), the decline's serialization point (P11-TSK-011).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.offerFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loan-applications/{id} - the offer of the caller's own application:"
+                                        + " o.party_id = ? in the statement is the session's own party (P11-TSK-011).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.decline",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanOfferStore.lockOwnedBy",
+                                    "P11-TSK-011. The offer id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ?; the move is conditional on OFFERED and unexpired,"
+                                        + " lending V005's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.insertTerms",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-011. The offer id is minted by the origination step in this transaction,"
+                                        + " its machine row inserted just before under the application's row lock; no"
+                                        + " door reaches it, and lending V005's trigger admits terms only beside an"
+                                        + " OFFERED offer, exactly its pinned version's.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.lockClaimed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-011. The expiry's L2: the offer id comes only from the sweep's own claimed"
+                                        + " page (claimDue), never a request value; no door reaches it - the expiry is"
+                                        + " the system's act on the database clock.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.expire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-011. The offer id is the one lockClaimed holds FOR UPDATE in this"
+                                        + " transaction; the move is conditional on OFFERED and expires_at <="
+                                        + " statement_timestamp(), lending V005's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.permitAtExpiry",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-011. The offer id is the one lockClaimed holds FOR UPDATE in this"
+                                        + " transaction; only its permit moves, and only while OFFERED.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2958,6 +3023,15 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.lockOwnedBy",
                             "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.ownedBy",
+                            "com.finapp.app.lending.LoanOfferDatabaseTest.anotherPartysOfferIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.lockOwnedBy",
+                            "com.finapp.app.lending.LoanOfferDatabaseTest.anotherPartysOfferIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanOfferStore.offerFor",
+                            "com.finapp.app.lending.LoanOfferDatabaseTest.anotherPartysOfferIsNotFound"),
                     Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),
