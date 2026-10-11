@@ -1750,6 +1750,12 @@ properties — conservation, order, never above due, both overpayment treatments
 the task's probe — reading the projection for allocation turns scenario 3 red under a racing reversal
 (`MUTATION_TESTING.md` §2); the subledger proof's non-negativity arm (`P11-TSK-029`); the storm's Σ
 allocations = Σ repayments at rest (`P11-TST-001`).
+*(As built by `P11-TSK-008`, 2026-10-11 - the engine half: `AllocationEngineV1` asserts conservation and never-above-due
+before its lines return, and `AllocationEngineV1PropertiesTest` holds them over generated inputs under all six component
+orders and both treatments - `#conserves`, `#neverAboveDue`, `#respectsTheOrderAndTheTreatment` (oldest first, the
+pinned order, overflow only past every billed item and by the treatment), `#independentOfInputOrder`,
+`#aSecondJvmAllocatesIdentically`; the case-by-case `AllocationEngineV1Test`; the probes are `MUTATION_TESTING.md` §2's
+`P11-TSK-008` rows. The deferred trigger, the lock and scenario 3 remain `-018`'s.)*
 **Phase:** 11
 
 ### INV-LND-05 — Terms are pinned and immutable
