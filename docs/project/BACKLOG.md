@@ -16412,7 +16412,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Definition of done**: `DOD-FIN` (F7 binding; F1–F6 and F8 vacuous — a pure engine posts
   nothing), `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
 
-**P11-TSK-007 — Accrual engine v1** — `PLANNED`
+**P11-TSK-007 — Accrual engine v1** — `COMPLETE`
 - **Objective**: daily interest whose period sum is the period's exact interest rounded once
   (ADR-0094, L5).
 - **Bounded context**: Lending (pure domain).
@@ -16449,6 +16449,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Acceptance criteria**: every period's postings sum to one rounding of its exact interest.
 - **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
   **Risk**: Medium. **Cx**: S.
+- **As built** (2026-10-11): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is `AccrualEngineV1` (`accrue`, `postedThrough`, `project` and its `Projection`), the values `AccrualTerms` (`of(LoanTerms)` - the currency, rate, day count, interest rounding and accrual engine version as declared), `AccrualPeriod` (half-open: an instalment period `[D(j-1), Dj)` or a statement cycle) and `InterestAccrual` (date, period, base, the scale-20 cumulative figure, posted, engine - `-016`'s row), the typed refusal `AccrualRefused` with its seven `Reason`s, and `Act365Fixed` - the package-private `ACT_365F` primitive (`days`, `exactInterest` - one product, one division at scale 20 `HALF_EVEN` - and `roundedOnce`) that `SCHEDULE_ENGINE_V1` (`-006`, built in parallel) computes `interest_j` through, byte-identical in both branches; the suites `AccrualEngineV1Test` (23 hand-worked cases) and `AccrualMatchesSchedulePropertiesTest` (400 on-time paths, 3000 varying-base periods, the two-JVM comparison of a seeded 19,950-line battery through `p11-008`'s shared `SecondJvm`). **Refinements of this entry's wording, each on the invariant's side** (ADR-0094 Follow-up, `PHASE_11_PLAN.md` §12.3): the property suite is `AccrualMatchesSchedulePropertiesTest` (`TestTaxonomyTest` requires the `Test` suffix - the `AffordabilityPropertiesTest` precedent); "agreement with `ScheduleEngineV1` on on-time paths" is proven against the schedule's `interest_j` as plan §12.2 step 3 states it (one product, one division to the minor unit, one rounding - computed independently in the test) and through the shared primitive, and is exact - not approximate - because with the base at its currency's scale and the rate at ≤ 8 places the exact figure either terminates within 20 places or lies ≥ `1/(730·10^(s+8))` from any half-unit tie, so a constant-base period's sum of scale-20 daily figures rounds to the schedule's figure whenever its length is not a multiple of 73 days (every monthly period is shorter); the cross-check driving `ScheduleEngineV1`'s own `Schedule` through the engine joins at the wave-1 merge-in by whichever of `-006` / `-007` merges second (the two engines were built in parallel); the engine re-judges the conventions it is handed (an engine version, day count or rounding it does not implement, a rate outside `0..1` or past 8 places - the bound the exactness rests on) and never falls back to another version; a date with no accrual inside a period (a credit line at zero principal) contributes nothing - completeness of dates is the sweep's (`-016`, `INV-LND-02`), the engine's half being that a predecessor must be an earlier accrual of the same period by the same version, so a date accrued twice, out of order or across a reset computes nothing; the payoff's projection takes the periods covering `[next date, G-1]` and resets at each, posting exactly what `accrue` would on the current base.
 
 **P11-TSK-008 — Allocation engine v1 (both treatments)** — `PLANNED`
 - **Objective**: a pure, versioned, conserving allocation of money received, by the order the
@@ -16492,7 +16493,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Definition of done**: `DOD-FIN` (F7 binding; the rest vacuous — pure), `DOD-DOMAIN`.
   **Risk**: Medium. **Cx**: S.
 
-**P11-TSK-009 — Statement engine v1 (credit line minimum payment)** — `PLANNED`
+**P11-TSK-009 — Statement engine v1 (credit line minimum payment)** — `READY`
 - **Objective**: a deterministic credit-line statement — what a cycle bills and the minimum payment —
   from the pinned agreement (ADR-0100).
 - **Bounded context**: Lending (pure domain).

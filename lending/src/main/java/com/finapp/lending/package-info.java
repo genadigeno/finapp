@@ -44,7 +44,9 @@
  * terms as versioned data ({@code P11-TSK-005}): {@code V003}'s money-free machine row and INSERT-only term set,
  * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes
  * {@link com.finapp.lending.LoanTermsAdministration} (A0 to A2; {@code pinActive} the {@code FOR SHARE} read the
- * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. No schedule
- * yet.
+ * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. The accrual
+ * engine ({@code P11-TSK-007}): {@link com.finapp.lending.AccrualEngineV1}, pure - daily {@code ACT_365F} interest on
+ * the base the caller supplies, rounded once per period ({@code INV-LND-09}) - over the {@code ACT_365F} arithmetic
+ * it shares with the schedule engine; nothing accrues yet (the sweep is {@code P11-TSK-016}).
  */
 package com.finapp.lending;

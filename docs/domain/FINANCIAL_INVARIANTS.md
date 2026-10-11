@@ -1908,6 +1908,15 @@ every writer by `lending V003`'s `loan_terms_conventions_implemented`, `_rate_ty
 a raw-SQL term set with each defect refused `23514`). A new convention is a new engine version and a migration
 widening those `CHECK`s.)*
 
+*(As built by `P11-TSK-007`, 2026-10-11 - the cumulative rounding: `AccrualEngineV1` posts the change in the
+period's once-rounded scale-20 cumulative figure, the `ACT_365F` arithmetic shared with the schedule engine
+(`Act365Fixed`); `AccrualMatchesSchedulePropertiesTest` proves every on-time period's postings equal to the
+schedule's one rounding and every varying-base period's to its cumulative figure rounded once, two-JVM
+identical; `AccrualEngineV1Test` holds 29 February, the reset, zero days and the typed refusals - a convention,
+engine version or rate the version does not implement is refused at computation as well as at the terms. Its
+half of `INV-LND-02`: a predecessor must be an earlier accrual of the same period, so a date accrued twice
+computes nothing.)*
+
 ### INV-LND-10 — Servicing time is the database's
 **Statement:** Every business date or instant that decides an accrual, a billing, a statement, a
 delinquency condition, a fee, an offer's expiry, an acceptance window or a posting's value date is

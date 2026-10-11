@@ -803,6 +803,13 @@ An interest waiver is an explicit, reasoned posting `DR LOAN_INTEREST_INCOME / C
 explicit correction run posting deltas (`lending.accrual-correction:<loan>:<date>:<engine>`) — not
 built in Phase 11 (nothing to correct), keys reserved so nothing collides.
 
+*(As built by `P11-TSK-007`, 2026-10-11: `AccrualEngineV1` is pure over `AccrualTerms` / `AccrualPeriod` /
+`InterestAccrual`; the `ACT_365F` arithmetic is one package-private primitive, `Act365Fixed`, shared with
+`SCHEDULE_ENGINE_V1`, so §12.2 step 3's `interest_j` and a constant-base period's accruals agree exactly - every
+monthly period being shorter than 73 days, the one length at which a scale-20 daily sum could round differently.
+A date with no accrual inside a period - a line at zero principal - contributes nothing; the projection a payoff
+uses resets at each period it crosses.)*
+
 ### 12.4 Disbursement (owner brief 9.6) — the two paths (L2)
 
 ```
