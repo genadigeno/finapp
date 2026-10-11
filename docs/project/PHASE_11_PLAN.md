@@ -763,6 +763,15 @@ and refuses any terms naming a convention it does not implement.
    outcome (path X, A30) — in that transaction; the offer shows an illustrative schedule with
    `d0` = today, labelled as such, with total interest and total payable (A5).
 
+*(As built by `P11-TSK-006`, 2026-10-11 - `ScheduleEngineV1`, pure and static, answering `Projected(Schedule)` or a typed
+`Refused`. Step 2 refined, on the invariant's side: `A` is the **actual-day annuity** `A* = P / Σ v_j` over the periods'
+own factors `1 + r · days_j / 365` - the formula above is its equal-period special case, which with actual-day interest
+leaves the final instalment above the regular one in about half of all loans - computed exactly with one division
+rounded once `UP` to the minor unit, raised by the least amount only if the interest roundings would still leave the
+final instalment above it. Step 4's door judgement is exact over every real calendar of the leap cycle, against credit's
+bounds through the `LoanProductBounds` port; at 15 days' shortest first period and 6-60 months it first refuses at
+23.15 %, where a real loan first fails. ADR-0093's Follow-up records the reasoning and the measurements.)*
+
 ### 12.3 Interest and fees (owner brief 9.5) — `ACCRUAL_ENGINE_V1`
 
 **The four words, kept apart.** *Accrued* — earned day by day, not yet due (`interest_accrual`

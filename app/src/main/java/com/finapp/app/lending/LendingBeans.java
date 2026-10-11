@@ -12,6 +12,7 @@ import com.finapp.lending.LendingCapitalAdministration;
 import com.finapp.lending.LendingCapitalHeadroom;
 import com.finapp.lending.LendingCapitalProof;
 import com.finapp.lending.JdbcLoanTermsStore;
+import com.finapp.lending.LoanProductBounds;
 import com.finapp.lending.LoanTermsAdministration;
 import com.finapp.lending.LoanTermsStore;
 import com.finapp.platform.audit.AuditWriter;
@@ -136,14 +137,22 @@ public class LendingBeans {
         return new JdbcLoanTermsStore();
     }
 
+    /** Credit's amount and term bounds, for the amortisation judgement at the terms door (`P11-TSK-006`). */
+    @Bean
+    LoanProductBounds loanProductBounds() {
+        return new CreditLoanProductBounds();
+    }
+
     @Bean
     LoanTermsAdministration loanTermsAdministration(
             LoanTermsStore loanTermsStore,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
-        return new LoanTermsAdministration(loanTermsStore, auditWriter, outboxWriter, idGenerator, clock);
+            Clock clock,
+            LoanProductBounds loanProductBounds) {
+        return new LoanTermsAdministration(
+                loanTermsStore, auditWriter, outboxWriter, idGenerator, clock, loanProductBounds);
     }
 
     @Bean
