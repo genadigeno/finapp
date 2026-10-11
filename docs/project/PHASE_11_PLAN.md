@@ -812,6 +812,13 @@ An interest waiver is an explicit, reasoned posting `DR LOAN_INTEREST_INCOME / C
 explicit correction run posting deltas (`lending.accrual-correction:<loan>:<date>:<engine>`) — not
 built in Phase 11 (nothing to correct), keys reserved so nothing collides.
 
+*(As built by `P11-TSK-007`, 2026-10-11: `AccrualEngineV1` is pure over `AccrualTerms` / `AccrualPeriod` /
+`InterestAccrual`; the `ACT_365F` arithmetic is one package-private primitive, `Act365Fixed`, shared with
+`SCHEDULE_ENGINE_V1`, so §12.2 step 3's `interest_j` and a constant-base period's accruals agree exactly - every
+monthly period being shorter than 73 days, the one length at which a scale-20 daily sum could round differently.
+A date with no accrual inside a period - a line at zero principal - contributes nothing; the projection a payoff
+uses resets at each period it crosses.)*
+
 ### 12.4 Disbursement (owner brief 9.6) — the two paths (L2)
 
 ```
@@ -890,6 +897,13 @@ key `lending.repayment:<repaymentId>`.
 | Duplicate (**scenario 2**) | the same key → the same answer, one entry (`INV-IDEM-01`); auto-collection's `(item, date)` unique |
 | Concurrent (**scenario 3**) | serialised on L3; each allocates against what it finds; conserved, never over-allocated |
 | After a state change — `CLOSED` / `CANCELLED` | `409 lending.LoanNotRepayable`, nothing posted |
+
+*(As built by `P11-TSK-008`, 2026-10-11: `AllocationEngineV1.allocate(amount, dueState, rules) → AllocationLine`s,
+pure; the rules (`AllocationRules.of(terms)`, judged again on construction) applied in whichever of the six component
+orders the agreement pins; a due state holding one billed item per due date, so oldest-first is a total order; the line's
+remainder to principal not yet due and then credit - accrued, unbilled interest is not a target; the credit-balance
+application is the same call with the balance as the amount, its credit line what stays held; a `PREPAYMENT`'s line by
+`allocatePrepayment`, refusing arrears; typed refusals `AllocationRefused`; ADR-0095's Follow-up records the detail.)*
 
 **Payoff** (both products). *Quote* (keyed): good-through date `G` (today, up to 30 days); amount =
 derived outstanding + the accrual the engine would post through `G − 1` on the current base —
