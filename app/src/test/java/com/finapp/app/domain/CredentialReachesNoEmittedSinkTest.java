@@ -460,6 +460,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // card-number and account shapes at the domain and by lending V003's CHECKs.
                         "LoanTermsProposalRequest",
                         "LoanTermsDecisionRequest",
+                        // P11-TSK-010: the customer's loan application - a product, an amount and currency, a term, a
+                        // repayment day, a repayment method and payout preference CODE, and the declared monthly figures
+                        // as decimal strings passed to credit (never stored, evented or answered by lending). No secret;
+                        // closed: never a rate, an offer, a score or a party.
+                        "LoanApplicationBody",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's

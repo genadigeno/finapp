@@ -11,7 +11,12 @@ import com.finapp.lending.JdbcCapitalContributionStore;
 import com.finapp.lending.LendingCapitalAdministration;
 import com.finapp.lending.LendingCapitalHeadroom;
 import com.finapp.lending.LendingCapitalProof;
+import com.finapp.lending.JdbcLoanApplicationStore;
 import com.finapp.lending.JdbcLoanTermsStore;
+import com.finapp.lending.LoanApplicationStore;
+import com.finapp.lending.LoanApplications;
+import com.finapp.lending.LoanCreditDecisions;
+import com.finapp.lending.LoanPartyStanding;
 import com.finapp.lending.LoanProductBounds;
 import com.finapp.lending.LoanTermsAdministration;
 import com.finapp.lending.LoanTermsStore;
@@ -42,7 +47,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * its four-eyes administration, the two ports {@code app} implements over reconciliation (the expectation opener and
  * the recognition read), the headroom, the capital proof and its gauges, and the treasury's doors. And the loan terms
  * versions (`P11-TSK-005`; ADR-0092 sections 1-3): the store, the four-eyes administration publishing through the
- * outbox, the lending officer's doors and the active-version gauge.
+ * outbox, the lending officer's doors and the active-version gauge. And the loan application (`P11-TSK-010`): its store,
+ * the two ports {@code app} implements over credit (the decision request and the party's standing), the domain service,
+ * the customer's doors and their meter.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -194,5 +201,57 @@ public class LendingBeans {
             floors.put(currency.code(), floor);
         }
         return new LendingCapitalMetrics(lendingCapitalProof, dataSource::getConnection, floors, clock, meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the loan application (P11-TSK-010)
+
+    @Bean
+    LoanApplicationStore loanApplicationStore() {
+        return new JdbcLoanApplicationStore();
+    }
+
+    /** Credit decisioning as lending reaches it - the port over credit's published API (A16). */
+    @Bean
+    LoanCreditDecisions loanCreditDecisions(
+            com.finapp.credit.DecisionRequests decisionRequests,
+            com.finapp.credit.CreditDecisions<Connection> creditDecisions) {
+        return new CreditLoanDecisions(decisionRequests, creditDecisions);
+    }
+
+    /** The party's standing - credit's one rule, read authoritatively. */
+    @Bean
+    LoanPartyStanding loanPartyStanding(com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding) {
+        return new CreditLoanPartyStanding(creditPartyStanding);
+    }
+
+    @Bean
+    LoanApplications loanApplications(
+            LoanApplicationStore loanApplicationStore,
+            LoanTermsAdministration loanTermsAdministration,
+            LoanPartyStanding loanPartyStanding,
+            LoanCreditDecisions loanCreditDecisions,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanApplications(loanApplicationStore, loanTermsAdministration, loanPartyStanding,
+                loanCreditDecisions, outboxWriter, idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.application{product, outcome}}, every series registered at startup. */
+    @Bean
+    LoanApplicationMetrics loanApplicationMetrics(MeterRegistry meterRegistry) {
+        return new LoanApplicationMetrics(meterRegistry);
+    }
+
+    @Bean
+    LoanApplicationDesk loanApplicationDesk(
+            LoanApplications loanApplications,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            LoanApplicationMetrics loanApplicationMetrics) {
+        return new LoanApplicationDesk(loanApplications, identityStore, mfaEnrolmentStore, idempotentExecutor,
+                lendingTransactions, loanApplicationMetrics);
     }
 }

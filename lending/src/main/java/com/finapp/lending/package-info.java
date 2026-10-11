@@ -57,5 +57,11 @@
  * conserving {@link com.finapp.lending.Schedule} or a typed {@link com.finapp.lending.ScheduleOutcome.Refused}, and
  * judging at the terms door, through the port {@link com.finapp.lending.LoanProductBounds} {@code app} implements over
  * credit, whether terms amortise across the product's bounds.
+ * The loan application ({@code P11-TSK-010}): {@code V004}'s money-free machine row and its history,
+ * {@link com.finapp.lending.LoanApplications} (one customer act opening credit's decision request in the same
+ * transaction through {@link com.finapp.lending.LoanCreditDecisions}, the party's standing through
+ * {@link com.finapp.lending.LoanPartyStanding} - ports {@code app} implements over credit - and the withdrawal under the
+ * application's row lock), the closed {@link com.finapp.lending.RepaymentMethod} and
+ * {@link com.finapp.lending.PayoutPreference}.
  */
 package com.finapp.lending;

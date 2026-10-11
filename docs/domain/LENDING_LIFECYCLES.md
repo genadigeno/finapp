@@ -174,14 +174,19 @@ the expectation lapsed is a reconciliation break, resolved by reconciliation.
 
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
-| (birth) → `SUBMITTED → AWAITING_DECISION` | C, `MULTI_FACTOR`, `POST /v1/me/loan-applications`, key `lending.application:CUSTOMER:<id>` (T-app) | the claim; standing; the `ACTIVE` terms `FOR SHARE`, pinned on the application; `DecisionRequests.submit` through `app` (credit's arbiters, its one-open-request partial unique); `UNIQUE (decision_request_id)` | `422 lending.ProductNotOffered`, `422 lending.AmountOutOfRange`, `409 lending.ApplicationOpen`; credit's refusals passed through unchanged | `LoanApplicationSubmitted` | — (the customer's keyed act: its idempotency record, history row and event) |
+| (birth) → `SUBMITTED → AWAITING_DECISION` | C, `MULTI_FACTOR`, `POST /v1/me/loan-applications`, key `lending.application:CUSTOMER:<id>` (T-app) | the claim; standing; the `ACTIVE` terms `FOR SHARE`, recorded on the application - informational, the offer pins the version active at its own instant (`-011`); `DecisionRequests.submit` through `app` (credit's arbiters, its one-open-request partial unique); `UNIQUE (decision_request_id)`; one open application per party and product (partial unique, the backstop) | `422 lending.ProductNotOffered`, `422 lending.AmountOutOfRange`, `409 lending.ApplicationOpen`; credit's refusals passed through unchanged | `LoanApplicationSubmitted` | — (the customer's keyed act: its idempotency record, history row and event) |
 | `AWAITING_DECISION → OFFERED` | S, `LoanOriginationSchedule` (T-off); `credit.CreditDecisionRecorded` only a hint | the claim; L1 conditional `AWAITING_DECISION`; the decision read authoritatively; the pinned terms `FOR SHARE`; the offer born beside it (`UNIQUE (application_id)`) | — | `LoanOffered` | — |
 | `AWAITING_DECISION → DECLINED` | S, the same step | L1 | — | `LoanApplicationClosed` (`DECLINED`) | — |
 | `AWAITING_DECISION → CLOSED_UNDECIDED` | S, the same step, finding credit's request closed without a decision | L1 | — | `LoanApplicationClosed` | — |
 | `AWAITING_DECISION → WITHDRAWN` | C, step-up, `POST …/{id}/withdrawal`, key `lending.application-withdrawal:CUSTOMER:<id>` | L1, then credit's own cancellation of its request (credit's L2, inside credit) in the same transaction | `409 lending.ApplicationNotWithdrawable` once credit has evaluated — the decision will arrive and the customer may decline the offer | `LoanApplicationClosed` (`WITHDRAWN`) | — |
 
-`SUBMITTED` is transient, kept so the history records submission. Terminal: `OFFERED` (continued by
-the offer), `DECLINED`, `CLOSED_UNDECIDED`, `WITHDRAWN`. A decline is never reconsidered — a new
+`SUBMITTED` is transient, kept so the history records submission - the row is born in it and moved on in the same
+transaction, and `lending V004`'s deferred trigger refuses to commit a row still `SUBMITTED`, for every writer
+*(as built by `P11-TSK-010`: born `SUBMITTED` only, on its product's `ACTIVE` terms version and a repayment or statement
+day that version offers; identity and choices frozen; closure stamped by the database; the application holds no figure -
+the amount, term and declared income and expenditure are credit's request's; the trigger already admits the
+origination step's three edges, and `-011` adds "`→ OFFERED` only beside its offer" and its permit column)*. Terminal:
+`OFFERED` (continued by the offer), `DECLINED`, `CLOSED_UNDECIDED`, `WITHDRAWN`. A decline is never reconsidered — a new
 application. **Invalid:** anything out of a terminal; `SUBMITTED → OFFERED | DECLINED`; `→ OFFERED`
 without its offer beside it, or on a decision not `APPROVED`; `DECLINED → OFFERED`.
 
@@ -372,7 +377,7 @@ reporting, statutory contact limits, insolvency handling.
 |---|---|---|---|
 | Terms version | `loan_terms_version` + its INSERT-only term set `loan_terms` (`-005`) | `loan_terms_version_event` | one `PROPOSED` / one `ACTIVE` per product; four-eyes `CHECK`; content frozen from insert; retirement only beside a successor (deferred); namespace `11` |
 | Capital contribution | `capital_contribution` (`-004`) | `capital_contribution_event` | four-eyes `CHECK`; `UNIQUE (expectation_ref)`; namespace `11` |
-| Loan application | `loan_application` (`-010`) | `loan_application_event` | `UNIQUE (decision_request_id)`; `→ OFFERED` only beside its offer |
+| Loan application | `loan_application` (`-010`) | `loan_application_event` | `UNIQUE (decision_request_id)`; born `SUBMITTED` on the `ACTIVE` terms version and an offered day, never committed `SUBMITTED` (deferred); one open per party and product (partial unique); `→ OFFERED` only beside its offer (`-011`) |
 | Loan offer | `loan_offer` (`-011`) | `loan_offer_event` | `UNIQUE (application_id)`; the complementary expiry and acceptance clock conditionals; `→ ACCEPTED` only beside its loan; canonical terms and hash frozen |
 | Loan | `loan` (`-012`) | its edge history (§8, open) | `UNIQUE (offer_id)`; kind frozen; kind-specific edges; `→ ACTIVE` / `→ CANCELLED` only beside the disbursement's matching state; closure reason `CHECK` |
 | Disbursement | `loan_disbursement` (`-012`, moved `-014`) | — | `UNIQUE (loan_id)`; moves only beside the loan's edge |

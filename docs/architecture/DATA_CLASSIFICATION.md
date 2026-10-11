@@ -2671,6 +2671,39 @@ A product's price and servicing conventions: amounts and rates are `RESTRICTED-F
 | `loan_terms_version_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `loan_terms_version_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
+### `lending` - the loan application - *added by `P11-TSK-010`*
+
+A customer's request for a product, holding no figure: the amount, term and declared income and expenditure are
+credit's request's (`credit V010`, classified there). The party and the customer's references and choices
+`CONFIDENTIAL` (`PHASE_11_PLAN.md` §11 - "party and loan references"); product codes, statuses, method and preference
+codes, versions and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_application` | `id` | `CONFIDENTIAL` | A customer's application reference |
+| `loan_application` | `party_id` | `CONFIDENTIAL` | The applicant |
+| `loan_application` | `product` | `INTERNAL` | A closed product code |
+| `loan_application` | `status` | `INTERNAL` | The machine's state |
+| `loan_application` | `decision_request_id` | `CONFIDENTIAL` | Credit's decision request, by value |
+| `loan_application` | `terms_version_id` | `INTERNAL` | The terms version active at submission |
+| `loan_application` | `repayment_day` | `CONFIDENTIAL` | The customer's chosen repayment or statement day |
+| `loan_application` | `repayment_method` | `INTERNAL` | A closed method code (`WALLET`) |
+| `loan_application` | `payout_preference` | `INTERNAL` | A closed preference code - never a destination (`INV-RAIL-03`) |
+| `loan_application` | `submitted_by` | `CONFIDENTIAL` | The customer who submitted it |
+| `loan_application` | `submitted_by_type` | `INTERNAL` | A closed actor type (`CUSTOMER`) |
+| `loan_application` | `submitted_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_application` | `closed_at` | `INTERNAL` | System time, stamped by the trigger at the terminal edge |
+| `loan_application` | `correlation_id` | `INTERNAL` | The submission's correlation - credit's request carries the same |
+| `loan_application_event` | `id` | `INTERNAL` | Generated |
+| `loan_application_event` | `application_id` | `CONFIDENTIAL` | The application it moved |
+| `loan_application_event` | `from_status` | `INTERNAL` | The machine edge |
+| `loan_application_event` | `to_status` | `INTERNAL` | The machine edge |
+| `loan_application_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `loan_application_event` | `actor` | `CONFIDENTIAL` | Who moved it - the customer, or the system |
+| `loan_application_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `loan_application_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_application_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
