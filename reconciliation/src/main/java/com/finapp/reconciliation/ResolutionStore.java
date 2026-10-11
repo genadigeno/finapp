@@ -134,7 +134,8 @@ public interface ResolutionStore {
             long remainderMinor,
             String currency,
             int scale,
-            UUID positionAccountId) {}
+            UUID positionAccountId,
+            ExpectationKind kind) {}
 
     Optional<ExpectationHolding> lockExpectation(Connection unitOfWork, UUID expectationId);
 

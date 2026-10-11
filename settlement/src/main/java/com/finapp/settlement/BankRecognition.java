@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -31,7 +32,12 @@ import java.util.UUID;
  *       each other): cash the statement proves arrived (or left) but nobody's pattern explains.
  *       The intake opens one owned {@code BANK_UNATTRIBUTED} suspense item per such line beside
  *       them ({@code INV-REC-09}), each side's items summing to its line exactly — so an entry
- *       exists whenever an unattributed line does, and every suspense item names it.
+ *       exists whenever an unattributed line does, and every suspense item names it;
+ *   <li>the lending capital account - a CREDIT line of the lines the intake claimed as capital
+ *       (`P11-TSK-004`, rule 0, {@code INV-LND-13}): an otherwise unattributed credit matched, in
+ *       this same acceptance, to an approved contribution's expectation for exactly its amount.
+ *       The platform's own cash, recognised from the statement and from nothing else - never
+ *       suspense, because the contribution explains it.
  * </ul>
  *
  * <p>The folds sum to zero by construction, so the entry balances ({@code INV-LED-01}); an
@@ -49,7 +55,8 @@ public final class BankRecognition {
             LedgerAccountId cash,
             LedgerAccountId processingCosts,
             LedgerAccountId suspense,
-            Map<UUID, LedgerAccountId> positionByAttributedSource) {
+            Map<UUID, LedgerAccountId> positionByAttributedSource,
+            Optional<LedgerAccountId> capital) {
 
         public Accounts {
             Objects.requireNonNull(cash, "cash must not be null");
@@ -57,7 +64,17 @@ public final class BankRecognition {
             Objects.requireNonNull(suspense, "suspense must not be null");
             Objects.requireNonNull(
                     positionByAttributedSource, "positionByAttributedSource must not be null");
+            Objects.requireNonNull(capital, "capital must not be null");
             positionByAttributedSource = Map.copyOf(positionByAttributedSource);
+        }
+
+        /** A statement with no capital line (`P8-TSK-016`'s shape). */
+        public Accounts(
+                LedgerAccountId cash,
+                LedgerAccountId processingCosts,
+                LedgerAccountId suspense,
+                Map<UUID, LedgerAccountId> positionByAttributedSource) {
+            this(cash, processingCosts, suspense, positionByAttributedSource, Optional.empty());
         }
     }
 
@@ -90,6 +107,25 @@ public final class BankRecognition {
             int scale,
             Money declaredNet,
             Accounts accounts) {
+        return recognise(lines, currency, scale, declaredNet, accounts, Set.of());
+    }
+
+    /**
+     * The statement's recognition entry, with {@code capitalLines} - the unattributed credits the
+     * intake claimed as lending capital (`P11-TSK-004`) - credited to {@code accounts.capital()},
+     * netted into one line like every other account, instead of to suspense.
+     */
+    public static Recognition recognise(
+            List<SettlementBatchStore.LineRow> lines,
+            CurrencyCode currency,
+            int scale,
+            Money declaredNet,
+            Accounts accounts,
+            Set<UUID> capitalLines) {
+        Objects.requireNonNull(capitalLines, "capitalLines must not be null");
+        if (!capitalLines.isEmpty() && accounts.capital().isEmpty()) {
+            throw new IllegalArgumentException("capital lines need the capital account resolved");
+        }
         Objects.requireNonNull(lines, "lines must not be null");
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(declaredNet, "declaredNet must not be null");
@@ -99,6 +135,7 @@ public final class BankRecognition {
         Money fees = zero;
         Money unattributedIn = zero;
         Money unattributedOut = zero;
+        Money capital = zero;
         Map<UUID, Money> bySource = new TreeMap<>();
         for (SettlementBatchStore.LineRow line : lines) {
             if (!line.lineType().isBankLine()) {
@@ -114,7 +151,16 @@ public final class BankRecognition {
                 continue;
             }
             Optional<UUID> attributed = line.attributedSourceId();
-            if (attributed.isPresent()) {
+            if (capitalLines.contains(line.id())) {
+                if (attributed.isPresent()
+                        || line.lineType() != SettlementLineType.BANK_CREDIT
+                        || line.direction() != LineDirection.INBOUND) {
+                    throw new IllegalArgumentException(
+                            "lending capital is an unattributed bank credit's alone: line "
+                                    + line.lineNo());
+                }
+                capital = capital.plus(amount);
+            } else if (attributed.isPresent()) {
                 bySource.merge(attributed.get(), signed, Money::plus);
             } else if (line.direction() == LineDirection.INBOUND) {
                 unattributedIn = unattributedIn.plus(amount);
@@ -140,6 +186,10 @@ public final class BankRecognition {
             add(entry, position, source.getValue().negated());
         }
         add(entry, accounts.processingCosts(), fees.negated());
+        // Rule 0 (ADR-0096): the platform's own cash, a contribution's, credited to its capital.
+        if (capital.minorUnits() != 0) {
+            add(entry, accounts.capital().orElseThrow(), capital.negated());
+        }
         // The two sides apart: an unattributed credit is owed back or explained, a debit is
         // recovered or explained - never one set against the other (ADR-0070).
         add(entry, accounts.suspense(), unattributedIn.negated());

@@ -31,7 +31,7 @@ class ReconciliationV005MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "CONSTRAINT match_decision_origin CHECK (origin IN ("
-                                + DecisionOrigin.sqlValueList() + "))"))
+                                + DecisionOrigin.sqlValueListBeforeV022() + "))"))
                 .contains(normalized(
                         "CONSTRAINT match_decision_outcome CHECK (outcome IN ("
                                 + DecisionOutcome.sqlValueList() + "))"))

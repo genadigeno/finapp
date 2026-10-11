@@ -31,12 +31,13 @@ import org.junit.jupiter.api.Test;
  *       operations are the only ones that post there (through {@code PostingService} /
  *       {@code ReversalService}). Live from this task: lending's {@code LoanAccounts} names the six.
  *   <li><strong>The lending capital</strong> - {@code LENDING_CAPITAL} - is named only by its
- *       declaration and by {@link #CAPITAL_PERMITTED}, each file with its one role. <em>Vacuous until
- *       its first poster</em>: the permit list is empty in this task, so nothing but the declaration
- *       may name it; `P11-TSK-004` adds capital recognition as its one POSTER (rule 0 - bank
- *       recognition of a contribution's statement line) and lending's headroom and capital proof as
- *       READERS, and from then each permit is asserted to really name it. Lending itself holds no
- *       module-wide permit here: capital is recognised from bank evidence, never posted by lending.
+ *       declaration and by {@link #CAPITAL_PERMITTED}, each file with its one role. Live since
+ *       `P11-TSK-004`: capital recognition ({@code BatchAcceptance}, rule 0 - bank recognition of a
+ *       contribution's statement line) is its one POSTER and lending's headroom its one READER, each
+ *       permit asserted to really name it; the capital proof and the expectation opener reach the
+ *       account through the headroom. *(Vacuous, with an empty permit list, from `P11-TSK-003` until
+ *       then.)* Lending itself holds no module-wide permit here: capital is recognised from bank
+ *       evidence, never posted by lending.
  * </ul>
  *
  * <p>Read from the code with comments stripped and from the string literals; planted posters prove
@@ -53,10 +54,19 @@ class LendingBooksHaveOnePosterTest {
     private static final String LENDING_MAIN = "/lending/src/main/java/";
 
     /**
-     * Every file permitted to name {@code LENDING_CAPITAL}, with its one role. Empty until
-     * `P11-TSK-004` (capital recognition, the POSTER; the headroom and the capital proof, READERS).
+     * Every file permitted to name {@code LENDING_CAPITAL}, with its one role (`P11-TSK-004`): bank recognition, the
+     * one POSTER - the statement's acceptance resolving the account for {@code BankRecognition}'s rule 0 line - and
+     * the headroom, the one READER that resolves and locks it (L6); the capital proof and the expectation opener reach
+     * the account through the headroom and never name the purpose. *(Empty until `P11-TSK-004`.)*
      */
-    static final Map<String, String> CAPITAL_PERMITTED = Map.of();
+    static final Map<String, String> CAPITAL_PERMITTED =
+            Map.of(
+                    "BatchAcceptance.java",
+                    "POSTER: the bank statement's acceptance resolves the capital account for BankRecognition's rule 0"
+                            + " line - a statement credit matched to an approved contribution, the one way capital arises",
+                    "LendingCapitalHeadroom.java",
+                    "READER: resolves the currency's capital account, locks it FOR UPDATE (L6) and derives the headroom"
+                            + " from journal lines; it posts nothing");
 
     /** Every LOAN_* purpose, derived from the declaration. */
     static final List<String> LOAN_BOOK =
@@ -72,7 +82,8 @@ class LendingBooksHaveOnePosterTest {
     private static final Pattern CAPITAL_TOKEN = Pattern.compile("\\b" + CAPITAL + "\\b");
 
     @Test
-    @DisplayName("the loan book is named only by its declaration and lending; the capital only by its declaration")
+    @DisplayName("the loan book is named only by its declaration and lending; the capital only by its declaration, its"
+            + " poster and its reader")
     void theLendingBooksAreNamedOnlyByTheirPosters() {
         assertThat(LOAN_BOOK)
                 .as("not vacuous: the six per-loan purposes and the three loan P&L purposes")

@@ -75,6 +75,17 @@ import lombok.extern.slf4j.Slf4j;
  * successor read under the SAME source row lock that serialises every acceptance of the source,
  * so ten acceptors of one account see one chain.
  *
+ * <h2>Rule 0: lending capital (`P11-TSK-004`)</h2>
+ *
+ * <p>Before the statement's entry is computed, its unattributed credits carrying a remittance
+ * reference are offered to the intake ({@link AcceptedBatchIntake#claimCapital}); each it claims -
+ * an approved contribution's expectation under this source, exact amount, inside its window,
+ * locked for the rest of this transaction - is credited to the currency's
+ * {@code LENDING_CAPITAL} instead of suspense, and matched at intake. So capital, like all cash,
+ * moves only here and only on the bank's own statement ({@code INV-SET-06}, {@code INV-LND-13}):
+ * this class resolves the capital account for {@link BankRecognition}'s entry, the one poster
+ * {@code LendingBooksHaveOnePosterTest} permits.
+ *
  * <h2>Eligibility is authentication</h2>
  *
  * <p>A pull is authenticated by its channel; an upload moves money only past its second
@@ -368,6 +379,7 @@ public final class BatchAcceptance {
                                                 ? ", unattributed=" + intaken.unattributed()
                                                         + ", continuityBreaks="
                                                         + intaken.continuityBreaks()
+                                                        + ", capital=" + intaken.capital().size()
                                                 : "")
                                         + ", postingOmitted=" + postingOmitted)));
         SettlementFileEvents.accepted(
@@ -543,6 +555,27 @@ public final class BatchAcceptance {
                                 accountBySource.put(sourceId, settling(uow, attributed, batch));
                             });
         }
+        // Rule 0 (P11-TSK-004): which unattributed credits an approved contribution explains -
+        // claimed under this source, the contributions locked for the rest of the acceptance.
+        List<AcceptedBatchIntake.CapitalCandidate> candidates = new java.util.ArrayList<>();
+        for (SettlementBatchStore.LineRow line : lines) {
+            String reference = line.references().get(LineReferenceKind.REMITTANCE_REF);
+            if (line.lineType() == SettlementLineType.BANK_CREDIT
+                    && line.direction() == LineDirection.INBOUND
+                    && line.attributedSourceId().isEmpty()
+                    && reference != null) {
+                candidates.add(
+                        new AcceptedBatchIntake.CapitalCandidate(
+                                line.id(),
+                                line.lineNo(),
+                                reference,
+                                Money.ofPersisted(line.amountMinor(), line.currency(), line.scale())));
+            }
+        }
+        Map<UUID, UUID> capital =
+                candidates.isEmpty()
+                        ? Map.of()
+                        : intake.claimCapital(uow, file.sourceId(), List.copyOf(candidates));
         BankRecognition.Recognition recognition =
                 BankRecognition.recognise(
                         lines,
@@ -553,7 +586,12 @@ public final class BatchAcceptance {
                                 operational(uow, AccountPurpose.CASH_AT_BANK, batch),
                                 operational(uow, AccountPurpose.PROCESSING_COSTS, batch),
                                 operational(uow, AccountPurpose.SUSPENSE_UNMATCHED, batch),
-                                accountBySource));
+                                accountBySource,
+                                capital.isEmpty()
+                                        ? Optional.empty()
+                                        : Optional.of(
+                                                operational(uow, AccountPurpose.LENDING_CAPITAL, batch))),
+                        capital.keySet());
 
         // The chain's neighbours, read under the source row lock this transaction holds: no
         // other acceptance of this source can commit between the read and our own commit.
@@ -588,7 +626,7 @@ public final class BatchAcceptance {
                         sequence,
                         Optional.empty(),
                         net,
-                        canonicalLines(lines, positionBySource),
+                        canonicalLines(lines, positionBySource, capital, file.sourceId()),
                         actor,
                         now,
                         correlation,
@@ -638,25 +676,56 @@ public final class BatchAcceptance {
     private static List<AcceptedBatchIntake.CanonicalLine> canonicalLines(
             List<SettlementBatchStore.LineRow> lines,
             Map<UUID, AccountPurpose> positionBySource) {
+        return canonicalLines(lines, positionBySource, Map.of(), null);
+    }
+
+    /**
+     * The canonical lines; a capital line (`P11-TSK-004`) stands attributed to the statement's own
+     * source - the key scope its contribution was opened under - in the capital position, naming
+     * the expectation it settles.
+     */
+    private static List<AcceptedBatchIntake.CanonicalLine> canonicalLines(
+            List<SettlementBatchStore.LineRow> lines,
+            Map<UUID, AccountPurpose> positionBySource,
+            Map<UUID, UUID> capital,
+            UUID statementSource) {
         return lines.stream()
                 .map(
                         line ->
-                                new AcceptedBatchIntake.CanonicalLine(
-                                        line.id(),
-                                        line.lineNo(),
-                                        line.lineType(),
-                                        line.direction(),
-                                        Money.ofPersisted(
-                                                line.amountMinor(),
-                                                line.currency(),
-                                                line.scale()),
-                                        line.businessDate(),
-                                        line.settlementDate(),
-                                        line.valueDate(),
-                                        line.canonicalFingerprint(),
-                                        line.references(),
-                                        line.attributedSourceId(),
-                                        line.attributedSourceId().map(positionBySource::get)))
+                                capital.containsKey(line.id())
+                                        ? new AcceptedBatchIntake.CanonicalLine(
+                                                line.id(),
+                                                line.lineNo(),
+                                                line.lineType(),
+                                                line.direction(),
+                                                Money.ofPersisted(
+                                                        line.amountMinor(),
+                                                        line.currency(),
+                                                        line.scale()),
+                                                line.businessDate(),
+                                                line.settlementDate(),
+                                                line.valueDate(),
+                                                line.canonicalFingerprint(),
+                                                line.references(),
+                                                Optional.of(statementSource),
+                                                Optional.of(AccountPurpose.LENDING_CAPITAL),
+                                                Optional.of(capital.get(line.id())))
+                                        : new AcceptedBatchIntake.CanonicalLine(
+                                                line.id(),
+                                                line.lineNo(),
+                                                line.lineType(),
+                                                line.direction(),
+                                                Money.ofPersisted(
+                                                        line.amountMinor(),
+                                                        line.currency(),
+                                                        line.scale()),
+                                                line.businessDate(),
+                                                line.settlementDate(),
+                                                line.valueDate(),
+                                                line.canonicalFingerprint(),
+                                                line.references(),
+                                                line.attributedSourceId(),
+                                                line.attributedSourceId().map(positionBySource::get)))
                 .toList();
     }
 

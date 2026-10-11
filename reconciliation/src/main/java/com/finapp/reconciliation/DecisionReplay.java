@@ -135,6 +135,7 @@ public final class DecisionReplay {
             case CORRECTION -> conclusion = correction(stored);
             case FEE -> conclusion = fee(stored);
             case MANUAL -> conclusion = manual(stored);
+            case RECOGNITION -> conclusion = recognition(stored);
             case CONTAINED -> {
                 return new Replayed(stored.decisionId(), Result.NOT_REPLAYED, "contained");
             }
@@ -299,6 +300,36 @@ public final class DecisionReplay {
         return new Conclusion(
                 DecisionVerdict.MANUAL_CHOICE,
                 List.of(new Allocation(chosen, amount)),
+                EnumSet.of(DecisionOutcome.MATCHED));
+    }
+
+    /**
+     * A capital recognition (`P11-TSK-004`, {@link CapitalRecognition}): the one candidate its
+     * reference reached must be a {@code LENDING_CAPITAL_CONTRIBUTION}, INBOUND like the line, in the
+     * line's currency, with its whole remainder equal to the judged line - and then the conclusion is
+     * that remainder allocated whole, {@code MATCHED}. Anything else is not a recognition: no
+     * verdict, so the stored one diverges.
+     */
+    private static Conclusion recognition(StoredDecision stored) {
+        if (stored.candidates().size() != 1) {
+            return new Conclusion(null, List.of(), EnumSet.noneOf(DecisionOutcome.class));
+        }
+        MatchEngine.HitFacts candidate = stored.candidates().get(0);
+        boolean recognisable =
+                candidate.kind() == ExpectationKind.LENDING_CAPITAL_CONTRIBUTION
+                        && candidate.direction() == ExpectationDirection.INBOUND
+                        && stored.item().direction() == ExpectationDirection.INBOUND
+                        && candidate.amount().currency().equals(stored.item().amount().currency())
+                        && candidate.amount().scale() == stored.item().amount().scale()
+                        && candidate.remainderMinor() == candidate.amount().minorUnits()
+                        && candidate.remainderMinor() == stored.judgedMinor()
+                        && stored.item().amount().minorUnits() == stored.judgedMinor();
+        if (!recognisable) {
+            return new Conclusion(null, List.of(), EnumSet.noneOf(DecisionOutcome.class));
+        }
+        return new Conclusion(
+                DecisionVerdict.CAPITAL_RECOGNISED,
+                List.of(new Allocation(candidate.expectationId(), stored.judgedMinor())),
                 EnumSet.of(DecisionOutcome.MATCHED));
     }
 

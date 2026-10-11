@@ -302,6 +302,12 @@ class NoFloatingPointMoneyRulesTest {
                     // replay IDENTICAL and how many DIVERGED, COUNTS - through the ToDoubleFunction a Gauge
                     // imposes, NaN the sentinel for unreadable. Verdict counts, never an amount or a score.
                     "com.finapp.app.credit.CreditReplayMetrics",
+                    // P11-TSK-004. The SAME case again: the capital proof's verdicts - how many currencies it
+                    // HOLDS and FAILS for - and how many currencies' headroom stands below the floor, COUNTS
+                    // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable. The
+                    // headroom is compared with its floor as a long in minor units and never published - an
+                    // amount is an audited report (ADR-0072).
+                    "com.finapp.app.lending.LendingCapitalMetrics",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

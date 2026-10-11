@@ -2569,6 +2569,55 @@ the applicant, so they are `RESTRICTED-FINANCIAL`; who held and decided it, and 
 | `underwriting_case_event` | `first_decided_by` | `CONFIDENTIAL` | The first decider a second person's act answered |
 | `underwriting_case_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 
+### `lending` - the capital contribution - *added by `P11-TSK-004`*
+
+The platform's own money proposed to lending capital: the amount is what the platform commits to lend, so it is
+`RESTRICTED-FINANCIAL` (`PHASE_11_PLAN.md` §11); the bank reference the corporate transfer carries and the people and
+their prose are `CONFIDENTIAL`; codes, statuses and identifiers `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `capital_contribution` | `id` | `INTERNAL` | Generated |
+| `capital_contribution` | `currency` | `INTERNAL` | The capital's currency - a supported one |
+| `capital_contribution` | `amount_minor` | `RESTRICTED-FINANCIAL` | The platform's money committed to lending |
+| `capital_contribution` | `scale` | `INTERNAL` | The currency's scale |
+| `capital_contribution` | `reference` | `CONFIDENTIAL` | The bank remittance reference the transfer carries (`LCAP-` and digits) - never an account identifier |
+| `capital_contribution` | `proposed_by` | `CONFIDENTIAL` | The treasury officer who proposed it |
+| `capital_contribution` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `capital_contribution` | `reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `capital_contribution` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `capital_contribution` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `capital_contribution_event` | `id` | `INTERNAL` | Generated |
+| `capital_contribution_event` | `contribution_id` | `INTERNAL` | The contribution it moved |
+| `capital_contribution_event` | `from_status` | `INTERNAL` | The machine edge |
+| `capital_contribution_event` | `to_status` | `INTERNAL` | The machine edge |
+| `capital_contribution_event` | `actor` | `CONFIDENTIAL` | Who moved it - the proposer, or the deciding officer |
+| `capital_contribution_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `capital_contribution_event` | `proposed_by` | `CONFIDENTIAL` | The proposer, copied and pinned by the composite key - the four-eyes `CHECK`'s operand |
+| `capital_contribution_event` | `reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `capital_contribution_event` | `expectation_ref` | `INTERNAL` | The reconciliation expectation an approval opened |
+| `capital_contribution_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `capital_contribution_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
+### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
+
+Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `capital_recognition` | `id` | `INTERNAL` | Generated |
+| `capital_recognition` | `expectation_id` | `INTERNAL` | The contribution's expectation - once |
+| `capital_recognition` | `external_item_id` | `INTERNAL` | The statement line's item - once |
+| `capital_recognition` | `decision_id` | `INTERNAL` | The `RECOGNITION` decision that matched it |
+| `capital_recognition` | `batch_id` | `INTERNAL` | The accepted statement |
+| `capital_recognition` | `journal_entry_id` | `INTERNAL` | The recognition entry whose capital credit it explains |
+| `capital_recognition` | `amount_minor` | `RESTRICTED-FINANCIAL` | The contribution recognised |
+| `capital_recognition` | `currency` | `INTERNAL` | Its currency |
+| `capital_recognition` | `scale` | `INTERNAL` | Its scale |
+| `capital_recognition` | `recognised_on` | `INTERNAL` | The acceptance's date |
+| `capital_recognition` | `created_at` | `INTERNAL` | System time |
+| `capital_recognition` | `correlation_id` | `INTERNAL` | The statement's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

@@ -1545,7 +1545,7 @@ class ResolutionMatrixDatabaseTest {
 
     @Test
     @Order(20)
-    @DisplayName("nothing deletable, schema-wide: every one of the reconciliation schema's 32"
+    @DisplayName("nothing deletable, schema-wide: every one of the reconciliation schema's 33"
             + " tables refuses DELETE and TRUNCATE to the application by privilege and carries an"
             + " enabled BEFORE DELETE row trigger, a live owner DELETE refused on every table"
             + " holding a row; the seven column-narrowed tables refuse a frozen column to the"
@@ -1563,8 +1563,9 @@ class ResolutionMatrixDatabaseTest {
                     + " pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname ="
                     + " 'reconciliation' AND c.relkind IN ('r', 'p') AND c.relname <>"
                     + " 'flyway_schema_history' ORDER BY c.relname");
-            // 32 since V016 (the Phase 8 -> 9 transition's match_reach).
-            assertThat(tables).as("a new table cannot slip past this scan").hasSize(32);
+            // 32 since V016 (the Phase 8 -> 9 transition's match_reach); 33 since V022 (P11-TSK-004's
+            // capital_recognition, append-only by trigger and granted SELECT, INSERT only).
+            assertThat(tables).as("a new table cannot slip past this scan").hasSize(33);
             for (String table : tables) {
                 String name = "reconciliation." + table;
                 for (String privilege : List.of("DELETE", "TRUNCATE")) {

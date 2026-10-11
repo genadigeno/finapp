@@ -72,7 +72,7 @@ class ReconciliationV012MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "CONSTRAINT match_decision_verdict CHECK (verdict IS NULL OR verdict IN ("
-                                + DecisionVerdict.sqlValueList() + "))"))
+                                + DecisionVerdict.sqlValueList(DecisionVerdict.beforeV022()) + "))"))
                 .contains(normalized(
                         "CONSTRAINT match_decision_judged_status CHECK (judged_status IS NULL OR"
                                 + " judged_status IN (" + JudgedStatus.sqlValueList() + "))"))

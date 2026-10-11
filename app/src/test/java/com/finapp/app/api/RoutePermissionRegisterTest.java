@@ -224,6 +224,13 @@ class RoutePermissionRegisterTest {
                     // P10-TSK-012: the credit policy doors - policy versions under four eyes, every act keyed,
                     // and the policy in force at an instant for the investigator; both held by
                     // CREDIT_POLICY_OFFICER (ADR-0086 sections 4-5).
+                    // P11-TSK-004: the lending treasury's doors - four-eyes contributions and the capital report.
+                    entry("POST /v1/operator/lending/capital-contributions", PermissionName.LENDING_CAPITAL_ADMINISTER),
+                    entry("POST /v1/operator/lending/capital-contributions/{contributionId}/approval",
+                            PermissionName.LENDING_CAPITAL_ADMINISTER),
+                    entry("POST /v1/operator/lending/capital-contributions/{contributionId}/rejection",
+                            PermissionName.LENDING_CAPITAL_ADMINISTER),
+                    entry("GET /v1/operator/lending/capital", PermissionName.LENDING_INVESTIGATE),
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),

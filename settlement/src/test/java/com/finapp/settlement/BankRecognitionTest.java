@@ -323,4 +323,48 @@ class BankRecognitionTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(String.valueOf(BatchRecognition.MAX_ENTRY_LINES));
     }
+
+    // ----------------------------------------------------------------- rule 0 (P11-TSK-004)
+
+    private static final LedgerAccountId CAPITAL = LedgerAccountId.of(IDS.next());
+
+    private static final BankRecognition.Accounts WITH_CAPITAL =
+            new BankRecognition.Accounts(CASH, COSTS, SUSPENSE, ACCOUNTS.positionByAttributedSource(),
+                    Optional.of(CAPITAL));
+
+    @Test
+    @DisplayName("rule 0: the claimed capital credits net to ONE CR LENDING_CAPITAL line beside the cash debit,"
+            + " never suspense; an unclaimed credit beside them still parks")
+    void claimedCapitalCreditsTheCapital() {
+        SettlementBatchStore.LineRow first = unattributedCredit(1, 400_00);
+        SettlementBatchStore.LineRow second = unattributedCredit(2, 100_00);
+        SettlementBatchStore.LineRow stranger = unattributedCredit(3, 7_00);
+        BankRecognition.Recognition recognition =
+                BankRecognition.recognise(List.of(first, second, stranger), EUR, 2, eur(507_00), WITH_CAPITAL,
+                        java.util.Set.of(first.id(), second.id()));
+        assertThat(recognition.entryLines())
+                .containsExactly(dr(CASH, 507_00), cr(CAPITAL, 500_00), cr(SUSPENSE, 7_00));
+        assertBalances(recognition.entryLines());
+    }
+
+    @Test
+    @DisplayName("rule 0 refuses loudly: a claimed line that is attributed, a debit, or claimed with no capital"
+            + " account resolved")
+    void capitalIsAnUnattributedCreditsAlone() {
+        SettlementBatchStore.LineRow attributed = credit(1, 100_00, PSP_SOURCE);
+        assertThatThrownBy(() -> BankRecognition.recognise(List.of(attributed), EUR, 2, eur(100_00), WITH_CAPITAL,
+                        java.util.Set.of(attributed.id())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lending capital");
+        SettlementBatchStore.LineRow debit = unattributedDebit(1, 100_00);
+        assertThatThrownBy(() -> BankRecognition.recognise(List.of(debit), EUR, 2, eur(-100_00), WITH_CAPITAL,
+                        java.util.Set.of(debit.id())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("lending capital");
+        SettlementBatchStore.LineRow credit = unattributedCredit(1, 100_00);
+        assertThatThrownBy(() -> BankRecognition.recognise(List.of(credit), EUR, 2, eur(100_00), ACCOUNTS,
+                        java.util.Set.of(credit.id())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("capital account");
+    }
 }

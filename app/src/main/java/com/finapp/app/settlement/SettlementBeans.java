@@ -502,7 +502,8 @@ public class SettlementBeans {
             IdGenerator idGenerator,
             com.finapp.reconciliation.BreakRegister breakRegister,
             com.finapp.reconciliation.Suspense suspense,
-            com.finapp.reconciliation.StatementChain statementChain) {
+            com.finapp.reconciliation.StatementChain statementChain,
+            com.finapp.reconciliation.CapitalRecognition capitalRecognition) {
         return new ReconciliationIntake(
                 reconciliationRuns,
                 externalItems,
@@ -512,7 +513,8 @@ public class SettlementBeans {
                 idGenerator,
                 breakRegister,
                 suspense,
-                statementChain);
+                statementChain,
+                capitalRecognition);
     }
 
     /**

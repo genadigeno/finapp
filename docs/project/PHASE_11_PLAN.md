@@ -412,7 +412,7 @@ held across a provider call (ADR-0046).
 | **T-drw** draw (line) | claim `lending.draw:CUSTOMER:<id>`; (L3) line `FOR UPDATE` `ACTIVE`, draws not suspended; (L5) draw born; (L6) capital headroom ≥ amount; available limit ≥ amount (derived under L3); post; events |
 | **T-pay** payoff | claim; (L3) loan; (L5) quote; catch-up accrual and billing; recompute; repayment, refund; `CLOSED` |
 | **T-rev / T-wvr / T-amd** corrections | claim `lending.servicing:EMPLOYEE:<id>`; (L0) profile for a repayment reversal (outstanding rises); (L3) loan; (L5) the proposal `FOR UPDATE` conditional; for a reversal that re-instates principal, (L6) the capital row and headroom ≥ the principal re-instated, else `422 lending.CapitalUnavailable` and the proposal stays `PROPOSED`; post; audit |
-| **T-cap** capital contribution | claim `lending.capital:EMPLOYEE:<id>`; advisory namespace `11` (`hashtext(currency)`); (L5) the proposal; the expectation opened (reconciliation's opener, in the same transaction); recognition later in reconciliation's own bank-recognition transaction |
+| **T-cap** capital contribution | claim `lending.capital:EMPLOYEE:<id>`; advisory namespace `11` (`hashtext(currency)`) - FIRST in every proposal, approval and rejection; (L5) the proposal read (its tables are INSERT-only, so the decision is a born-once history row under the lock, not a row lock - `P11-TSK-004`); the expectation opened (reconciliation's opener, in the same transaction); recognition later, in the bank statement's own acceptance transaction (settlement's `BatchAcceptance`, rule 0) |
 
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
@@ -450,7 +450,11 @@ credit lock — and credit never locks a lending row. (f) Reconciliation's bank 
 capital contribution posts to `LENDING_CAPITAL` under its own order (namespace 4, its rows, then the
 projections); its journal line's foreign-key share on the capital account's row may wait on a
 lending transaction holding L6, but no lending transaction ever waits on anything the recognition
-holds (reconciliation's rows, `CASH_AT_BANK`) — a one-way wait, never a cycle.
+holds (reconciliation's rows, `CASH_AT_BANK`) — a one-way wait, never a cycle. *(Refined by `P11-TSK-004`:
+the recognition runs in the bank statement's ACCEPTANCE, not a reconciliation run - the one transaction in which cash
+moves - so its order is the acceptance's: the file claim, the settlement source row, the claimed contributions'
+expectation rows `FOR UPDATE`, reconciliation's rows (namespace `4` only for a gap close), then the posting, whose
+capital line's foreign-key share is what may wait on L6. Still one-way: no lending transaction waits on any of these.)*
 
 ### 7.4 Contention table
 
@@ -520,7 +524,7 @@ declares; every table carrying money is `INSERT`-only.
 | Table (lending) | Born | Key arbiters |
 |---|---|---|
 | `loan_terms_version` (+ `_event`) | `-005` | one `PROPOSED`, one `ACTIVE` per product (partial uniques); immutable once proposed |
-| `capital_contribution` (+ `_event`) | `-004` | four-eyes `CHECK`; `UNIQUE (expectation_ref)` |
+| `capital_contribution` (+ `_event`) | `-004` | both INSERT-only (the proposal carries money); one decision per contribution (partial unique, under namespace `11`); four-eyes `CHECK` on the decision row, the proposer copy pinned by a composite key; `UNIQUE (expectation_ref)` on the approval row; `UNIQUE (reference)` |
 | `loan_application` (+ `_event`) | `-010` | `UNIQUE (decision_request_id)` |
 | `loan_offer` (+ `_event`) | `-011` | `UNIQUE (application_id)`; canonical terms + `terms_sha256` |
 | `loan` (+ `loan_event`), `loan_agreement`, `loan_acceptance`, `loan_disbursement` | `-012` | `UNIQUE (offer_id)`; `UNIQUE (loan_id, version)`; `UNIQUE (loan_id)` |
@@ -544,7 +548,8 @@ and says so):** credit `V021` (`-001`: the consumption columns, the definer func
 revoked); ledger `V026` (`-003`: `OwnerKind.LOAN`, the ten purposes, the operational accounts and
 `LENDING_CAPITAL` seeded per supported currency, the adjustment guard extended); identity `V021`
 (`-002`: permissions and roles); reconciliation `V022` (`-004`: the contribution expectation kind and
-its recognition); payments `V032` (`-015`: the system-actor withdrawal on instruction, hold adoption);
+its recognition - the `RECOGNITION` decision origin and `CAPITAL_RECOGNISED` verdict, the never-aged and
+recognition-only-allocation ranks, and `capital_recognition`); payments `V032` (`-015`: the system-actor withdrawal on instruction, hold adoption);
 lending's definer view for the exposure read (`-013`).
 
 **Retention.** Agreement versions, acceptance evidence, servicing rows and journal entries are kept
@@ -595,10 +600,12 @@ create a loan, change a rate outside an amendment, draw, or disburse.**
 **Errors** (each catalogued in `ERROR_CONTRACT.md` by the task that builds it): `409
 lending.ApplicationOpen`, `ApplicationNotWithdrawable`, `OfferNotAcceptable`, `TermsChanged`,
 `LoanNotRepayable`, `LoanClosed`, `PayoffQuoteStale`, `AmendmentLapsed`, `TermsStale`,
-`ProposalPending`, `ArrearsFirst`, `DrawsSuspended`; `422 lending.ProductNotOffered`,
+`ProposalPending`, `ProposalNotPending`, `ArrearsFirst`, `DrawsSuspended`; `422 lending.ProductNotOffered`,
 `AmountOutOfRange`, `TermsNotAmortising`, `TermsInvalid`, `InsufficientFunds`, `ReasonRequired`,
-`WaiverExceedsDue`, `LimitExceeded`, `CapitalUnavailable`; `403 lending.SelfApprovalRefused`, `SelfDealingRefused`; `404
-lending.NotFound`; credit's refusals passed through unchanged where they are the cause.
+`WaiverExceedsDue`, `LimitExceeded`, `CapitalUnavailable`, `ContributionInvalid`; `403 lending.SelfApprovalRefused`,
+`SelfDealingRefused`; `404 lending.NotFound`; credit's refusals passed through unchanged where they are the cause.
+*(`ProposalNotPending` - the loser of a decision race, the fx trade-reversal precedent - and `ContributionInvalid` - a
+malformed capital contribution - added by `P11-TSK-004`, the first seven catalogued in `ERROR_CONTRACT.md`.)*
 
 ## 10. Event architecture
 

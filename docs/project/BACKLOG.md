@@ -16196,7 +16196,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   binding on the opener; F8: `LENDING_CAPITAL` reconciled by `-004`), `DOD-ARCH`. **Risk**: Medium.
   **Cx**: S.
 
-**P11-TSK-004 — Lending capital: contribution, recognition, headroom and the capital proof** — `READY` *(marked by `P11-TSK-003`'s completion gate, 2026-10-11)*
+**P11-TSK-004 — Lending capital: contribution, recognition, headroom and the capital proof** — `COMPLETE` (2026-10-11; marked `READY` by `P11-TSK-003`'s completion gate)
+- **As built** (2026-10-11): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is lending `V002` (`capital_contribution` and `capital_contribution_event`, both INSERT-only; the reason screen's PL/pgSQL twin), `LendingCapitalAdministration` / `JdbcCapitalContributionStore` (namespace `11` registered), the ports `CapitalExpectations` / `CapitalRecognitions` (`app`'s `ReconciliationCapitalExpectations` / `ReconciliationCapitalRecognitions`), `LendingCapitalHeadroom` (L6) over ledger's new `PurposeBalances`, `LendingCapitalProof` and `LendingCapitalMetrics`, the treasury's doors (`LendingCapitalController` / `LendingCapitalDesk`); reconciliation `V022` (the kind, `RECOGNITION` / `CAPITAL_RECOGNISED`, `capital_recognition`, the never-aged and recognition-only-allocation ranks), `CapitalRecognition` claiming and matching inside settlement's statement acceptance (`AcceptedBatchIntake.claimCapital`, `BankRecognition`'s rule 0 line), the ageing exclusion and the resolution guard. **Refinements of this entry's wording, each on the invariant's side** (ADR-0096 Follow-up, `PHASE_11_PLAN.md` §7.1, §7.3(f), §8, §9): rule 0 is a line of the statement's ONE recognition entry (cash is debited there once), recognised in the acceptance and matched there by a replayable `RECOGNITION` decision - not a second posting by a reconciliation run "under namespace 4"; the contribution's tables are INSERT-only (every lending money table is), so "the proposal `FOR UPDATE` conditional on `PROPOSED`" is the currency's advisory lock plus a decided-once partial unique, and `UNIQUE (expectation_ref)` and the four-eyes `CHECK` stand on the decision row with its proposer copy pinned by a composite key; the losers of ten racing approvers answer `409 lending.ProposalNotPending` (the fx trade-reversal precedent - `ProposalPending` keeps its meaning, one pending proposal per currency) and a malformed proposal `422 lending.ContributionInvalid`, both catalogued; "the expectation's tolerance is reconciliation's versioned rule" - no amount tolerance can be represented (`INV-REC-08`), the window is the bank source's pinned `funding_lag_days`; a contribution's expectation is never aged (an overdue break could only be written off into capital) and lapse is lending's derived report; the backlog's `ReconciliationRecognitionDatabaseTest` does not exist - the recognition is proven over the real composition by `LendingCapitalDatabaseTest` (own-container, eleven cases) and its replay by `DecisionReplayTest#capitalRecognition`; the foreign posting the proof finds is planted through a second poster (`PostingService`) in a rolled-back transaction - a raw journal insert needs an entry's every audited column, and either is a line no recognition explains.
 - **Objective**: fund lending from the platform's own money, recognised only from bank evidence and
   never over-deployed, so the safeguarding position stays exact (L1, ADR-0096).
 - **Bounded context**: Lending (the administration); Settlement and Reconciliation (the
@@ -16285,13 +16286,13 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   Phase 11, a statement-line correction is reconciliation's; F5 binding on duplicate statement lines;
   F8 implemented — the recognition), `DOD-SEC`, `DOD-API`. **Risk**: High. **Cx**: L.
 
-**P11-TSK-005 — Loan product terms as versioned data (both products)** — `PLANNED`
+**P11-TSK-005 — Loan product terms as versioned data (both products)** — `READY` *(marked by `P11-TSK-004`'s completion gate, 2026-10-11)*
 - **Objective**: every rate, fee and servicing parameter of both products is a reviewed,
   four-eyes-activated, immutable version, pinned by whatever uses it — and a product is offered only
   while one is `ACTIVE`.
 - **Bounded context**: Lending; Identity.
 - **Dependencies**: `-002`.
-- **Scope**: `lending V002`: `loan_terms_version` (+ `loan_terms_event`): product, nominal annual
+- **Scope**: `lending V003` *(the next free number - `-004` took `V002`, 2026-10-11)*: `loan_terms_version` (+ `loan_terms_event`): product, nominal annual
   rate (decimal string, `FIXED` only), origination fee (amount or bps, `DEDUCTED`, default 0, A17),
   late fee (amount, day, cap; A18), grace days, DPD bucket bounds, default threshold (90, L7),
   allocation order (ordered steps, L6), overpayment treatment (loan `HOLD_AS_CREDIT`, line
@@ -16303,7 +16304,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   `PROPOSED → REJECTED`; one `PROPOSED` and one `ACTIVE` per product by partial uniques; activation
   locks the active row and retires it beside its successor; four-eyes at the domain and by `CHECK`;
   immutable once proposed (trigger, every role); advisory namespace `11` (`hashtext(product)`,
-  registered by whichever of `-004`/`-005` lands first); effective periods clamped on a backward
+  registered by whichever of `-004`/`-005` lands first - `-004` did, 2026-10-11: extend
+  `JdbcCapitalContributionStore.NAMESPACE`'s registration); effective periods clamped on a backward
   database clock (credit `V014`'s lesson); validation refusing an unimplemented day count or rounding
   mode, an allocation order omitting a component, and a value outside the product's declared bounds
   (`422 lending.TermsInvalid`), and refusing terms that cannot amortise at the product's declared
@@ -16315,7 +16317,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Out of scope**: using the terms (`-010`, `-011`); variable rates; production activation (an
   operator act under `OPERATIONS_RUNBOOK.md` §7, `-030`).
 - **Domain changes**: `LoanTermsVersion` and its machine.
-- **Persistence**: `lending V002`.
+- **Persistence**: `lending V003`.
 - **APIs**: the four routes above, keyed `lending.terms:EMPLOYEE:<id>`; errors `lending.TermsStale`,
   `lending.ProposalPending`, `lending.SelfApprovalRefused`, `lending.ReasonRequired`,
   `lending.TermsInvalid`, `lending.TermsNotAmortising` — catalogued in `ERROR_CONTRACT.md` by this

@@ -614,6 +614,15 @@ scorecard acts at `P10-TSK-011`, the three policy acts at `P10-TSK-012`, `credit
 at `P10-TSK-018`, `credit.DecisionReplayed` at `P10-TSK-019`, `credit.ReportRead` at `P10-TSK-020`,
 `credit.ReviewOwnCaseRefused` at the Phase 10 to 11 transition, and `credit.DecisionConsumed` at `P11-TSK-001`.
 
+| Action code | Reason required | Description |
+|---|---|---|
+| `lending.CapitalContributionProposed` | **Yes** | A holder of `LENDING_CAPITAL_ADMINISTER` proposed a contribution of the platform's own money to lending capital (`P11-TSK-004`, ADR-0096 §4) - currency, amount and the bank reference its transfer will carry - awaiting a DIFFERENT holder's approval (`INV-AUD-04`). Never capital by itself (`INV-LND-13`). The summary names the currency only - never the amount or the reference (`INV-AUD-02`). |
+| `lending.CapitalContributionApproved` | **Yes** | A holder of `LENDING_CAPITAL_ADMINISTER` other than its proposer approved a lending-capital contribution (`INV-AUD-04`, also held by `lending V002`'s four-eyes `CHECK` and pinned proposer copy), opening its `LENDING_CAPITAL_CONTRIBUTION` expectation in the same transaction; capital exists only once bank recognition matches the statement line (`INV-LND-13`, `INV-SET-06`). The summary names the currency and the expectation reference. Losers of a race record nothing. |
+| `lending.CapitalContributionRejected` | **Yes** | A proposed lending-capital contribution was rejected - or withdrawn by its proposer (`byProposer=true` in the summary); no expectation was opened and no capital can arise from it. |
+| `lending.ReportRead` | No | A holder of `LENDING_INVESTIGATE` was served a lending report - since `P11-TSK-004` the capital report (`GET /v1/operator/lending/capital`): per supported currency the recognised capital, the committed and outstanding principal, the headroom, the safeguarding term and the capital proof's verdict, and the most recent contributions with their derived recognition - read in one `REPEATABLE READ` snapshot and committed with this record, so no report is served without it. Amounts are an audited report, never a metric (ADR-0072). Its target the report's name (`capital`), its detail `report=capital, currencies=N, contributions=M, truncated=B`. |
+
+The four lending actions joined at `P11-TSK-004` - the module's first audited acts.
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

@@ -365,3 +365,40 @@ case someone holds is never expired under them, so release what you will not dec
 - **`CreditGaugesUnreadable`** (ticket) - a credit gauge reads NaN (its database read failed): the
   replay proof, the open requests, the review queue or the active policies are unwatched until it
   reads again. Check the instance's database connectivity.
+
+## 7. Lending capital (Phase 11)
+
+*Added by `P11-TSK-004` (ADR-0096 §4-6, `INV-LND-13`).* No loan can be accepted and no line drawn until the
+platform's own money is recognised as lending capital in that currency - and capital is recognised only from the
+settlement bank's statement, never typed.
+
+### 7.1 Contributing capital
+
+1. A `LENDING_TREASURY_OFFICER` proposes the contribution - `POST /v1/operator/lending/capital-contributions`
+   (`Idempotency-Key`), currency, amount in minor units, the bank remittance reference the corporate transfer will
+   carry (`LCAP-` and 4 to 12 digits, never used before), a reason. One proposal per currency awaits a decision at a
+   time.
+2. A **second** `LENDING_TREASURY_OFFICER` approves it - `POST …/{id}/approval` with a reason. The approval opens the
+   contribution's reconciliation expectation; it creates **no** capital. The window it opens is the approval's date plus
+   the settlement bank source's `funding_lag_days` (rule set pinned on the expectation).
+3. Treasury sends the corporate transfer **after** the approval, carrying exactly that reference, for exactly that
+   amount, to the settlement account.
+4. When the bank's statement carrying the credit is accepted, bank recognition credits `LENDING_CAPITAL` and matches
+   the contribution in the same transaction. `GET /v1/operator/lending/capital` (a `LENDING_OFFICER`, audited) shows
+   the contribution `RECOGNISED` and the currency's recognised capital and headroom.
+
+**What does not become capital.** A transfer that arrives before the approval, after the window (the contribution
+then reads `LAPSED`), for another amount, with another reference, or a second time: each is an unattributed statement
+credit - an `UNKNOWN_EXTERNAL(BANK_LINE_UNATTRIBUTED)` break with its suspense item - and is returned or otherwise
+resolved through the normal break procedure. **It is never resolved into capital**: propose a new contribution with a
+new reference and send the money again. A rejected contribution's reference stays spent.
+
+### 7.2 The capital alerts
+
+- **`finapp.lending.capital.proof{verdict="FAILS"}` above 0** (page) - a `LENDING_CAPITAL` line no recognition
+  explains, or headroom below zero at rest. Capital is never adjusted to fit: find the foreign entry (the CRITICAL log
+  line names the currency; the capital report shows the terms) and open an incident. A repudiated bank statement that
+  carried a recognised contribution also reports here - its reversal is a capital movement Phase 11 does not model.
+- **`finapp.lending.capital.headroom.low` above 0** (ticket) - a currency's headroom stands below
+  `finapp.lending.capital.headroom-floor.<CCY>` (minor units, 0 when unset): contribute more capital before
+  acceptances start refusing `422 lending.CapitalUnavailable`.

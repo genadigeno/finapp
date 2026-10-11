@@ -729,6 +729,9 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " AND t.comparison = 'SETTLEMENT_DATE_DAYS'"
                                 + " WHERE e.status IN ('OPEN', 'PARTIALLY_SETTLED')"
                                 + " AND e.overdue_since IS NULL"
+                                // A capital contribution is never aged (P11-TSK-004): lending
+                                // reports it lapsed; V022's CHECK holds it for every writer.
+                                + " AND e.kind NOT IN (" + ExpectationKind.sqlNotAgedList() + ")"
                                 + " AND e.expected_by + COALESCE(t.days, 0) < current_date"
                                 // The keyset past the rows this sweep already tried: a row that
                                 // failed is passed, never re-read at the page's head.
@@ -778,6 +781,7 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " status_changed_at = ?"
                                 + " WHERE e.id = ? AND e.overdue_since IS NULL"
                                 + " AND e.status IN ('OPEN', 'PARTIALLY_SETTLED')"
+                                + " AND e.kind NOT IN (" + ExpectationKind.sqlNotAgedList() + ")"
                                 + " AND EXISTS (SELECT 1 FROM reconciliation.expectation x"
                                 + " LEFT JOIN reconciliation.tolerance t"
                                 + " ON t.rule_set_id = x.rule_set_id"

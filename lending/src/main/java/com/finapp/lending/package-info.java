@@ -35,7 +35,12 @@
  * ({@link com.finapp.lending.EngineVersion}) and the aggregates' typed identifiers. The loan chart of accounts
  * ({@code P11-TSK-003}, ledger {@code V026}): {@link com.finapp.lending.LoanAccounts} opens a loan's six ledger accounts
  * in its one currency, typed as ADR-0096's account plan, in the caller's transaction - unwired until the acceptance
- * ({@code -012}). No table, port, bean, route, event or schedule, and nothing posts; lending capital's administration
- * is {@code -004}'s.
+ * ({@code -012}). Lending capital ({@code P11-TSK-004}): {@code V002}'s two INSERT-only tables, the four-eyes
+ * {@link com.finapp.lending.LendingCapitalAdministration} (advisory namespace {@code 11}), the ports
+ * {@link com.finapp.lending.CapitalExpectations} and {@link com.finapp.lending.CapitalRecognitions} that {@code app}
+ * implements over reconciliation, {@link com.finapp.lending.LendingCapitalHeadroom} (L6) and
+ * {@link com.finapp.lending.LendingCapitalProof}. Lending still posts nothing: capital is credited only by bank
+ * recognition of a statement line (rule 0, reconciliation's), and recognition is read here, never stored. No event and
+ * no schedule yet.
  */
 package com.finapp.lending;

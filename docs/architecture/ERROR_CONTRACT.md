@@ -976,6 +976,37 @@ request is `NotFound`, exactly as an unknown or malformed id. An MFA-enrolled id
 
 The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/credit/profile` answer `NotFound` for another party's request exactly as for an unknown one, and carry no figure. The investigator's doors, behind `CREDIT_INVESTIGATE`: the explanation answers `NotFound` for an unknown decision; the evidence read refuses a blank reason `422 ReasonRequired` before anything is read, answers `NotFound` for an unknown record or one with no readable evidence, and `503 EvidenceUnreadable` when its key cannot decrypt it - the attempt recorded FAILED and nothing served.
 
+### `lending` — `LendingErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `lending.NotFound` | 404 | No lending record matches the requested identifier. |
+| `lending.SelfApprovalRefused` | 403 | A contribution is approved by someone other than its proposer; the proposer may reject it. |
+| `lending.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
+| `lending.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
+| `lending.ReasonRequired` | 422 | A reason is required. |
+| `lending.ContributionInvalid` | 422 | The contribution is not well formed. |
+| `lending.CapitalUnavailable` | 422 | There is not enough recognised lending capital for this act; nothing was done. |
+
+The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
+`LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
+receipt and a refusal stores nothing. `NotFound` answers an unknown or malformed contribution id.
+`SelfApprovalRefused` is a `403`, the credit precedent: the proposer is refused the approval itself (four-eyes,
+`INV-AUD-04`, held also by `lending V002`'s `CHECK` and the pinned proposer copy), while the state is unchanged; the
+proposer may still reject - a withdrawal. `ProposalPending` answers a proposal while a contribution of the same
+currency awaits a decision (one at a time per currency, judged under the currency's advisory lock, namespace `11`).
+`ProposalNotPending` answers an approval or rejection of a contribution already decided - the nine losers of ten racing
+approvers; the backlog named the losers `ProposalPending`, refined to the fx trade-reversal precedent, where the two
+are the proposal machine's two distinct states. `ReasonRequired` answers an act with no reason, one past 1,000
+characters, or one holding a card-number or bank-account shape (`INV-AUD-02`; `lending V002`'s twin beneath).
+`ContributionInvalid` (added by this task's design) names the defect of a malformed proposal - a currency the platform
+does not support or is not an ISO 4217 code, an amount that is not positive, a reference outside `LCAP-` and 4 to 12
+digits, or a reference that already names a contribution (one reference, one transfer, for all time) - never a value.
+`CapitalUnavailable` is declared here and met from the loan acceptance (`P11-TSK-012`), the draw (`-021`) and the
+reversal that re-instates principal (`-020`): headroom judged under the capital row lock (L6, `INV-LND-13`). The
+capital report (`GET /v1/operator/lending/capital`, `LENDING_INVESTIGATE`) has no refusal of its own beyond the
+session's.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).
