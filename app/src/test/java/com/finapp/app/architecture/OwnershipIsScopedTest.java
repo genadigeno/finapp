@@ -819,6 +819,38 @@ class OwnershipIsScopedTest {
                                         + " policy has no owner to scope by, and its one door is the investigator's, behind"
                                         + " @RequiresPermission(CREDIT_INVESTIGATE).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-005. The version id is minted by the administration in this transaction,"
+                                        + " its machine row inserted just before; a terms version is platform-wide product"
+                                        + " configuration with no owner to scope by, every writing door behind"
+                                        + " @RequiresPermission(LENDING_ADMINISTER), asserted per route by"
+                                        + " LoanTermsEndpointDatabaseTest with nothing written, and lending V003's trigger"
+                                        + " admits a term set only for a PROPOSED version.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanTermsStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-005. The id comes only from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id), under the product's advisory lock), the move conditional on"
+                                        + " PROPOSED; product configuration behind LENDING_ADMINISTER, four-eyes by CHECK.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanTermsStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-005. The id comes only from the product's ACTIVE row this transaction"
+                                        + " locked FOR UPDATE (lockActive), the move conditional on ACTIVE, and a deferred"
+                                        + " trigger refuses a retirement that commits without its successor.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanTermsStore.version",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-005. A read of platform-wide product configuration: the version id is one"
+                                        + " the effective periods, the ACTIVE status or the FOR SHARE pin answered; terms"
+                                        + " have no owner to scope by, and their one door is the investigator's, behind"
+                                        + " @RequiresPermission(LENDING_INVESTIGATE).")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideAutomatically",
                             new Entry(
                                     Scope.ADMINISTERED,

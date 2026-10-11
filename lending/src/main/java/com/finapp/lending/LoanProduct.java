@@ -25,19 +25,25 @@ import java.util.Objects;
  *   <li>its currency - every amount of its agreements, postings and facts is in it;</li>
  *   <li>its {@link LoanKind} - frozen on each loan at birth;</li>
  *   <li>its {@link RepaymentFrequency} - {@code MONTHLY}, the only one the engines implement;</li>
- *   <li>its offer validity default - an offer expires at the earlier of the decision's {@code valid_until} and
- *       {@code offered_at} plus this (a terms version may set its own), judged on the database clock;</li>
- *   <li>its disbursement deadline - how long a {@code PENDING_DISBURSEMENT} loan waits for a postable wallet before it
- *       is {@code CANCELLED (DISBURSEMENT_FAILED)}; it binds instalment loans only, a revolving line being born
- *       {@code ACTIVE} and drawing to the wallet per draw.</li>
+ *   <li>its offer validity ceiling - an offer expires at the earlier of the decision's {@code valid_until} and
+ *       {@code offered_at} plus its pinned terms version's validity, judged on the database clock; no terms version
+ *       may name a longer one ({@link LoanTerms}, `P11-TSK-005`);</li>
+ *   <li>its disbursement deadline ceiling - how long a {@code PENDING_DISBURSEMENT} loan may wait for a postable wallet
+ *       before it is {@code CANCELLED (DISBURSEMENT_FAILED)}, the pinned terms version naming the deadline itself, never
+ *       a longer one; it binds instalment loans only, a revolving line being born {@code ACTIVE} and drawing to the
+ *       wallet per draw.</li>
  * </ul>
+ *
+ * <p><strong>Ceilings, not values</strong> (`P11-TSK-005`): the value an offer or a loan is held to is its pinned
+ * terms version's - one truth, on the version - and these two are the product's declared bounds that every version is
+ * judged against ({@code 422 lending.TermsInvalid}).
  */
 public enum LoanProduct {
 
-    /** The amortising instalment loan, in EUR, monthly; an offer valid 14 days, a disbursement deadline of 24 hours. */
+    /** The amortising instalment loan, in EUR, monthly; offers valid at most 14 days, disbursed within at most 24 hours. */
     PERSONAL_LOAN(euro(), LoanKind.INSTALMENT, RepaymentFrequency.MONTHLY, Duration.ofDays(14), Duration.ofHours(24)),
 
-    /** The revolving credit line, in EUR, stated monthly; an offer valid 14 days (the deadline is the shared one). */
+    /** The revolving credit line, in EUR, stated monthly; offers valid at most 14 days (the deadline is the shared one). */
     CREDIT_LINE(euro(), LoanKind.REVOLVING, RepaymentFrequency.MONTHLY, Duration.ofDays(14), Duration.ofHours(24));
 
     private final CurrencyCode currency;
@@ -78,12 +84,12 @@ public enum LoanProduct {
         return frequency;
     }
 
-    /** How long an offer stays acceptable by default, capped by the decision's own validity. */
+    /** The longest offer validity a terms version of this product may name - itself capped by the decision's validity. */
     public Duration offerValidity() {
         return offerValidity;
     }
 
-    /** How long an instalment loan may wait for its disbursement before it is cancelled. */
+    /** The longest disbursement deadline a terms version of this product may name. */
     public Duration disbursementDeadline() {
         return disbursementDeadline;
     }

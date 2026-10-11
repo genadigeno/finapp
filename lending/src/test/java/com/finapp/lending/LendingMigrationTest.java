@@ -109,9 +109,11 @@ class LendingMigrationTest {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An
         // application role that could read or write it could make the schema's provenance disagree
         // with the schema. The first lending tables are P11-TSK-004's (V002, the capital
-        // contribution and its history); each later task rewrites this list with its own.
+        // contribution and its history), then P11-TSK-005's (V003, the terms version, its term set
+        // and its history); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
-                .containsExactly("capital_contribution", "capital_contribution_event", "flyway_schema_history");
+                .containsExactly("capital_contribution", "capital_contribution_event", "flyway_schema_history",
+                        "loan_terms", "loan_terms_version", "loan_terms_version_event");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

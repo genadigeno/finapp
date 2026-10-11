@@ -523,7 +523,7 @@ declares; every table carrying money is `INSERT`-only.
 
 | Table (lending) | Born | Key arbiters |
 |---|---|---|
-| `loan_terms_version` (+ `_event`) | `-005` | one `PROPOSED`, one `ACTIVE` per product (partial uniques); immutable once proposed |
+| `loan_terms_version` (+ `_event`), `loan_terms` | `-005` | one `PROPOSED`, one `ACTIVE` per product (partial uniques); immutable once proposed - the machine row carries no money (a column-scoped `UPDATE` of its decision columns, lockable), the term set `loan_terms` INSERT-only *(split by `P11-TSK-005`: the term set carries money)* |
 | `capital_contribution` (+ `_event`) | `-004` | both INSERT-only (the proposal carries money); one decision per contribution (partial unique, under namespace `11`); four-eyes `CHECK` on the decision row, the proposer copy pinned by a composite key; `UNIQUE (expectation_ref)` on the approval row; `UNIQUE (reference)` |
 | `loan_application` (+ `_event`) | `-010` | `UNIQUE (decision_request_id)` |
 | `loan_offer` (+ `_event`) | `-011` | `UNIQUE (application_id)`; canonical terms + `terms_sha256` |
@@ -709,6 +709,12 @@ reason where required, correlation, outcome; losers record nothing): `lending.Of
 | Minimum payment (line) | floor, ratio, payment-due days (A23, A24) | agreement |
 | Engine versions | `SCHEDULE_ENGINE_V1`, `ACCRUAL_ENGINE_V1`, `ALLOCATION_ENGINE_V1`, `STATEMENT_ENGINE_V1` | agreement |
 | Agreement template version | code-registered template id + version | agreement + acceptance evidence |
+
+*(As built by `P11-TSK-005`, 2026-10-11: the terms version holds every row above that names "the terms version", the
+engine versions and the template, and no amount, limit or term range - those are the decision's (A20) under credit's
+product bounds, one truth; `LoanProduct`'s 14-day offer validity and 24-hour disbursement deadline are the ceilings a
+version is judged against. Only conventions the build's engines implement are accepted (`INV-LND-09`), by the domain
+and by `lending V003`'s `CHECK`s; ADR-0092's Follow-up records the refinements.)*
 
 `loan_agreement` is `INSERT`-only for every role, one row per version: `(id, loan_id, version,
 offer_id | amendment_id, decision_id, terms_version_id, template_id, template_version, engines,

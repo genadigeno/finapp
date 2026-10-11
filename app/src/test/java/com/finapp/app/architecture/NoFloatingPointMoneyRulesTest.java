@@ -308,6 +308,11 @@ class NoFloatingPointMoneyRulesTest {
                     // headroom is compared with its floor as a long in minor units and never published - an
                     // amount is an audited report (ADR-0072).
                     "com.finapp.app.lending.LendingCapitalMetrics",
+                    // P11-TSK-005. The SAME case as CreditPolicyMetrics: each product's ACTIVE terms version NUMBER
+                    // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable. A version number,
+                    // never a rate or a fee.
+                    "com.finapp.app.lending.LoanTermsMetrics",
+                    "com.finapp.app.lending.LoanTermsMetrics$Cached",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

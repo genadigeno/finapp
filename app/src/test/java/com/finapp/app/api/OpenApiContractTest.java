@@ -323,6 +323,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/capital",
+                        // P11-TSK-005: the lending officer's terms doors - terms versions under four eyes
+                        // (LENDING_ADMINISTER, keyed) and the terms in force at an instant (LENDING_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/terms",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/rejection",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

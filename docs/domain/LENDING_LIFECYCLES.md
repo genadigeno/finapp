@@ -370,7 +370,7 @@ reporting, statutory contact limits, insolvency handling.
 
 | Machine | Table (task) | History | Database rank beyond the edge trigger |
 |---|---|---|---|
-| Terms version | `loan_terms_version` (`-005`) | `loan_terms_version_event` | one `PROPOSED` / one `ACTIVE` per product; four-eyes `CHECK`; content frozen from insert; retirement only beside a successor (deferred); namespace `11` |
+| Terms version | `loan_terms_version` + its INSERT-only term set `loan_terms` (`-005`) | `loan_terms_version_event` | one `PROPOSED` / one `ACTIVE` per product; four-eyes `CHECK`; content frozen from insert; retirement only beside a successor (deferred); namespace `11` |
 | Capital contribution | `capital_contribution` (`-004`) | `capital_contribution_event` | four-eyes `CHECK`; `UNIQUE (expectation_ref)`; namespace `11` |
 | Loan application | `loan_application` (`-010`) | `loan_application_event` | `UNIQUE (decision_request_id)`; `→ OFFERED` only beside its offer |
 | Loan offer | `loan_offer` (`-011`) | `loan_offer_event` | `UNIQUE (application_id)`; the complementary expiry and acceptance clock conditionals; `→ ACCEPTED` only beside its loan; canonical terms and hash frozen |

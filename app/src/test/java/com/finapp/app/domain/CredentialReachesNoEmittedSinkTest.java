@@ -454,6 +454,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // card-number and account shapes at the domain and by lending V002's CHECKs.
                         "ContributionProposalRequest",
                         "ContributionDecisionRequest",
+                        // P11-TSK-005: the loan terms doors. No secret in either. A proposal is a product's terms -
+                        // codes, integer minor units, basis points, day counts, a decimal rate string, engine and
+                        // template versions - and a REASON; a decision carries a REASON. Every reason is screened for
+                        // card-number and account shapes at the domain and by lending V003's CHECKs.
+                        "LoanTermsProposalRequest",
+                        "LoanTermsDecisionRequest",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's
