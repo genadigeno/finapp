@@ -819,6 +819,28 @@ class OwnershipIsScopedTest {
                                         + " policy has no owner to scope by, and its one door is the investigator's, behind"
                                         + " @RequiresPermission(CREDIT_INVESTIGATE).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loan-applications/{id} - the identifier from the path, and a.party_id = ?"
+                                        + " in the statement is the session's own party; another party's application and an"
+                                        + " absent one are one empty answer, the 404 (P11-TSK-010).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/loan-applications/{id}/withdrawal - ownedBy's statement plus FOR UPDATE OF"
+                                        + " a (L1), the withdrawal's serialization point (P11-TSK-010).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.transition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanApplicationStore.lockOwnedBy",
+                                    "P11-TSK-010. The application id comes from lockOwnedBy (the withdrawal), which this"
+                                        + " transaction holds FOR UPDATE under party_id = ?, or from the application this"
+                                        + " transaction just inserted (the submission's SUBMITTED -> AWAITING_DECISION);"
+                                        + " the move is conditional on its from-state, lending V004's trigger beneath.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2930,6 +2952,12 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.ownedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
+                            "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.lockOwnedBy",
+                            "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
                     Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),

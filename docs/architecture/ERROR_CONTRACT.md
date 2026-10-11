@@ -990,6 +990,10 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.TermsInvalid` | 422 | The terms are not complete or not within bounds. |
 | `lending.TermsNotAmortising` | 422 | The terms cannot amortise across the product's amount and term bounds; nothing was proposed. |
 | `lending.CapitalUnavailable` | 422 | There is not enough recognised lending capital for this act; nothing was done. |
+| `lending.ApplicationOpen` | 409 | An application for this product is already open; wait for its decision or withdraw it. |
+| `lending.ApplicationNotWithdrawable` | 409 | The application can no longer be withdrawn. |
+| `lending.ProductNotOffered` | 422 | The product is not offered. |
+| `lending.AmountOutOfRange` | 422 | The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1027,6 +1031,27 @@ validity, disbursement deadline). `TermsNotAmortising` is catalogued here and me
 `P11-TSK-006` wires the schedule engine that judges whether the terms amortise across credit's amount and term bounds
 (ADR-0093 §5). `NotFound` answers an unknown or malformed version id, an unknown product on the read, and a product
 with no version in force at the instant asked; a malformed `at` is `api.ValidationFailed`.
+
+The loan application doors (`P11-TSK-010`, `LENDING_LIFECYCLES.md` §4.3): the customer's, owner-scoped, the submission
+keyed `lending.application:<type>:<id>` and the withdrawal `lending.application-withdrawal:<type>:<id>`, so a lost
+response replays and a refusal stores nothing - and writes nothing in lending or in credit, whose decision request is
+opened in the same transaction. A session that is not `MULTI_FACTOR` is `identity.AssuranceRequired` (`403`) on the
+submission whether or not a factor is enrolled (A19); the withdrawal keeps the conditional step-up. `ProductNotOffered`
+answers a product with no `ACTIVE` terms version - production's state until the activation gate opens (L11) - and an
+unknown product; a product lending offers but no credit policy does is credit's own `422 credit.ProductNotOffered`,
+passed through. `AmountOutOfRange` answers an amount or limit, a term (or a term on a line, none on a loan) or a currency
+outside the product's bounds - judged by credit's product, the one truth for them, and answered in lending's code - or a
+repayment or statement day the product's `ACTIVE` terms version does not offer; it names the bound, never the figure.
+`ApplicationOpen` answers a submission while the party has an open application or an open credit decision request for
+the product: credit's one-open-request partial unique the arbiter a racing second key meets (credit's
+`DecisionRequestOpen`, re-worded), `lending V004`'s one-open partial unique the backstop - it also answers while an
+application whose credit request has closed still awaits the origination step's closure (`P11-TSK-011`).
+`ApplicationNotWithdrawable` answers a withdrawal of an application no longer `AWAITING_DECISION`, or one whose credit
+request credit has evaluated - its decision will arrive, and the customer may decline the offer. Credit's other refusals
+pass through unchanged: `409 credit.ApplicantNotEligible` (lending's own standing read gives the same answer, before the
+terms are read) and `409 consent.ConsentRequired` naming the purpose. A credit line preferring an external payout, an
+unknown repayment method or payout preference, a malformed amount and a day outside 1-31 are `api.ValidationFailed`.
+`NotFound` answers another party's application exactly as an unknown or malformed id.
 
 ## 3a. Rejection at the boundary
 

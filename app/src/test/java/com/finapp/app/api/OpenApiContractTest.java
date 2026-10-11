@@ -328,6 +328,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/rejection",
+                        // P11-TSK-010: the customer's loan applications (a MULTI_FACTOR session to apply, 202; the
+                        // owner's own application only; the withdrawal under the conditional step-up).
+                        ApiVersion.CURRENT_PREFIX + "/me/loan-applications",
+                        ApiVersion.CURRENT_PREFIX + "/me/loan-applications/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/me/loan-applications/{id}/withdrawal",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

@@ -3937,6 +3937,111 @@
           }
         }
       },
+      "lending.AmountOutOfRange": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.AmountOutOfRange"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.AmountOutOfRange"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ApplicationNotWithdrawable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ApplicationNotWithdrawable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ApplicationNotWithdrawable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The application can no longer be withdrawn.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ApplicationOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ApplicationOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ApplicationOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] An application for this product is already open; wait for its decision or withdraw it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.CapitalUnavailable": {
         "content": {
           "application/problem+json": {
@@ -4033,6 +4138,41 @@
           }
         },
         "description": "[404] No lending record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ProductNotOffered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ProductNotOffered"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ProductNotOffered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The product is not offered.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -11037,6 +11177,108 @@
         },
         "type": "object"
       },
+      "LoanApplicationBody": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          },
+          "declaredMonthlyExpenditure": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "declaredMonthlyIncome": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "payoutPreference": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "product": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "repaymentDay": {
+            "format": "int32",
+            "maximum": 31,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "repaymentMethod": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "termMonths": {
+            "format": "int32",
+            "maximum": 600,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "product",
+          "repaymentDay",
+          "repaymentMethod"
+        ],
+        "type": "object"
+      },
+      "LoanApplicationView": {
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "decisionRequestId": {
+            "type": "string"
+          },
+          "payoutPreference": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "repaymentDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "repaymentMethod": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termsVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "LoanTermsDecisionRequest": {
         "properties": {
           "reason": {
@@ -17545,6 +17787,105 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/loan-applications": {
+      "post": {
+        "operationId": "submitLoanApplication",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanApplicationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanApplicationView"
+                }
+              }
+            },
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/me/loan-applications/{id}": {
+      "get": {
+        "operationId": "readLoanApplication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanApplicationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loan-applications/{id}/withdrawal": {
+      "post": {
+        "operationId": "withdrawLoanApplication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanApplicationView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

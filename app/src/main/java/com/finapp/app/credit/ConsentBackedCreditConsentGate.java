@@ -38,8 +38,11 @@ public final class ConsentBackedCreditConsentGate implements CreditConsentGate<C
         return consents.permits(unitOfWork, partyId, purposeOf(kind));
     }
 
-    /** The consent purpose that is the lawful basis for collecting this kind's data. */
-    static ConsentPurpose purposeOf(CreditSourceKind kind) {
+    /**
+     * The consent purpose that is the lawful basis for collecting this kind's data - public since `P11-TSK-010`: the
+     * loan application door answers credit's consent refusal with it, unchanged.
+     */
+    public static ConsentPurpose purposeOf(CreditSourceKind kind) {
         Objects.requireNonNull(kind, "kind must not be null");
         return switch (kind) {
             case BUREAU -> ConsentPurpose.CREDIT_BUREAU_ACCESS;

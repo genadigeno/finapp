@@ -4,9 +4,9 @@ import com.finapp.platform.api.ErrorCode;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`; PHASE_11_PLAN.md section 9): the capital and terms
- * administrations' refusals, and the capital shortfall its headroom judges. Each is actionable by the operator who met
- * it; none names an amount, a rate, a reference or a balance.
+ * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`, `P11-TSK-010`; PHASE_11_PLAN.md section 9): the
+ * capital and terms administrations' refusals, the capital shortfall its headroom judges, and the loan application's
+ * refusals. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a balance.
  */
 @RequiredArgsConstructor
 public enum LendingErrorCode implements ErrorCode {
@@ -73,7 +73,40 @@ public enum LendingErrorCode implements ErrorCode {
     CAPITAL_UNAVAILABLE(
             "lending.CapitalUnavailable",
             422,
-            "There is not enough recognised lending capital for this act; nothing was done.");
+            "There is not enough recognised lending capital for this act; nothing was done."),
+
+    /**
+     * The party already holds an open loan application - or an open credit decision request - for the product
+     * (`P11-TSK-010`): credit's one-open-request partial unique the arbiter, lending's one-open partial unique the
+     * backstop. Wait for its decision, or withdraw it, and retry.
+     */
+    APPLICATION_OPEN(
+            "lending.ApplicationOpen",
+            409,
+            "An application for this product is already open; wait for its decision or withdraw it."),
+
+    /**
+     * The application can no longer be withdrawn (`P11-TSK-010`): it is decided or closed, or credit has evaluated its
+     * decision request - the decision will arrive, and the customer may decline the offer.
+     */
+    APPLICATION_NOT_WITHDRAWABLE(
+            "lending.ApplicationNotWithdrawable", 409, "The application can no longer be withdrawn."),
+
+    /**
+     * No terms version of the product is {@code ACTIVE} (`P11-TSK-010`; L11): the product is not offered - production's
+     * state until the activation gate opens ({@code PHASE_11_PLAN.md} section 1.1).
+     */
+    PRODUCT_NOT_OFFERED("lending.ProductNotOffered", 422, "The product is not offered."),
+
+    /**
+     * The amount or limit, the term, or the repayment or statement day is outside the product's bounds
+     * (`P11-TSK-010`): the figures judged by credit's product (the one truth for them), the day by the product's
+     * {@code ACTIVE} terms version. Nothing was submitted.
+     */
+    AMOUNT_OUT_OF_RANGE(
+            "lending.AmountOutOfRange",
+            422,
+            "The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted.");
 
     private final String code;
     private final int status;

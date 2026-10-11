@@ -715,7 +715,10 @@ one manual review; underwriting is the activity, automatic or manual.
 own lifecycle — `SUBMITTED → AWAITING_DECISION → OFFERED | DECLINED | CLOSED_UNDECIDED | WITHDRAWN`
 — that opens exactly one credit Decision Request in its own transaction, through credit's
 submission port, and stores only that request's id; the terms version active at submission is
-pinned on it. Planned (`P11-TSK-010`).
+recorded on it - informational, the offer pins the version active at its own instant. Built by
+`P11-TSK-010`: it holds no figure - the amount or limit, the term and the declared income and
+expenditure are the Decision Request's - only the product, the request's id, the terms version,
+the repayment or statement day, the Repayment Method and the payout preference.
 **Not:** a Loan Offer — an application may be declined, withdrawn or closed undecided without any
 offer. Nor the Decision Request, which is credit's envelope asking only for a decision: lending
 never reads a score, an attribute or a threshold, and a decline is never reconsidered (a new

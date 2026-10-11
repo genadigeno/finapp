@@ -44,7 +44,12 @@
  * terms as versioned data ({@code P11-TSK-005}): {@code V003}'s money-free machine row and INSERT-only term set,
  * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes
  * {@link com.finapp.lending.LoanTermsAdministration} (A0 to A2; {@code pinActive} the {@code FOR SHARE} read the
- * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. No schedule
- * yet.
+ * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. The loan
+ * application ({@code P11-TSK-010}): {@code V004}'s money-free machine row and its history,
+ * {@link com.finapp.lending.LoanApplications} (one customer act opening credit's decision request in the same
+ * transaction through {@link com.finapp.lending.LoanCreditDecisions}, the party's standing through
+ * {@link com.finapp.lending.LoanPartyStanding} - ports {@code app} implements over credit - and the withdrawal under the
+ * application's row lock), the closed {@link com.finapp.lending.RepaymentMethod} and
+ * {@link com.finapp.lending.PayoutPreference}. No schedule yet.
  */
 package com.finapp.lending;
