@@ -61,7 +61,8 @@ class LoanTermsAdministrationTest {
                     (OutboxWriter<Connection>) (uow, envelope, payload, media) ->
                             published.add(envelope.eventType() + "|" + new String(payload, StandardCharsets.UTF_8)),
                     IDS,
-                    CLOCK);
+                    CLOCK,
+                    LoanTermsFixtures.BOUNDS);
 
     @Test
     @DisplayName("a proposal takes the product's lock before it reads anything, is numbered max + 1, and leaves one"
@@ -119,6 +120,21 @@ class LoanTermsAdministrationTest {
         assertThat(activation.changeSummary().orElseThrow()).contains("activated=v2", "retired=v1");
         assertThat(audited).allSatisfy(record -> assertThat(record.changeSummary().orElse(""))
                 .doesNotContain("0.08").doesNotContain("0.09"));
+    }
+
+    @Test
+    @DisplayName("terms that cannot amortise across the product's bounds are refused before the product is locked or"
+            + " anything written (P11-TSK-006); a line's terms have no schedule to judge")
+    void termsThatCannotAmortiseAreRefusedFirst() {
+        assertThatThrownBy(() -> propose(personalLoan("0.30").build(), ALICE))
+                .isInstanceOf(LoanTermsAdministration.TermsNotAmortising.class)
+                .hasMessageContaining("60-month")
+                .hasMessageNotContaining("0.3");
+        assertThat(store.log).as("judged before A0").isEmpty();
+        assertThat(store.rows).isEmpty();
+        assertThat(audited).isEmpty();
+        assertThat(propose(personalLoan("0.2310").build(), ALICE).version()).as("23.10 % amortises").isEqualTo(1);
+        assertThat(propose(creditLine("0.30").build(), BOB).version()).as("a line is not scheduled").isEqualTo(1);
     }
 
     @Test

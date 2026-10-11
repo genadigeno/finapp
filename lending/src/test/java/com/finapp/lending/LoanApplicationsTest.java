@@ -57,7 +57,7 @@ class LoanApplicationsTest {
     private final LoanApplications applications = new LoanApplications(
             store,
             new LoanTermsAdministration(terms(), (uow, record) -> {}, (OutboxWriter<Connection>) (uow, envelope, payload,
-                    mediaType) -> {}, IDS, CLOCK),
+                    mediaType) -> {}, IDS, CLOCK, LoanTermsFixtures.BOUNDS),
             (uow, party) -> {
                 calls.add("standing");
                 return inGoodStanding;

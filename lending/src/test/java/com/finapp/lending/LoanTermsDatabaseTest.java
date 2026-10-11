@@ -57,7 +57,8 @@ class LoanTermsDatabaseTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final JdbcLoanTermsStore STORE = new JdbcLoanTermsStore();
     private static final LoanTermsAdministration ADMINISTRATION =
-            new LoanTermsAdministration(STORE, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK);
+            new LoanTermsAdministration(STORE, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK,
+                    LoanTermsFixtures.BOUNDS);
     private static final LoanProduct LOAN = LoanProduct.PERSONAL_LOAN;
     private static final LoanProduct LINE = LoanProduct.CREDIT_LINE;
 
@@ -427,6 +428,33 @@ class LoanTermsDatabaseTest {
         }
         return "INSERT INTO lending.loan_terms (" + String.join(", ", values.keySet()) + ") VALUES ("
                 + String.join(", ", values.values()) + ")";
+    }
+
+    // ------------------------------------------------------------------ amortisation (P11-TSK-006)
+
+    @Test
+    @DisplayName("terms that cannot amortise at credit's bounds are refused at the proposal - nothing written, no lock"
+            + " held, no audit; the same terms at a rate that amortises are proposed (P11-TSK-006, INV-LND-03)")
+    void termsThatCannotAmortiseAreRefusedAtProposal() throws SQLException {
+        clearPending(LOAN);
+        long versions = count("SELECT count(*) FROM lending.loan_terms_version WHERE product = 'PERSONAL_LOAN'");
+        long audits = count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.TermsVersionProposed'");
+        Actor proposer = employee();
+        assertThatExceptionOfType(LoanTermsAdministration.TermsNotAmortising.class)
+                .isThrownBy(() -> inOneTransaction(uow -> ADMINISTRATION.propose(uow,
+                        LoanTermsFixtures.personalLoan("0.30").build(), "a rate no 60-month loan amortises at", proposer,
+                        correlation())))
+                .withMessageContaining("60-month");
+        assertThat(count("SELECT count(*) FROM lending.loan_terms_version WHERE product = 'PERSONAL_LOAN'"))
+                .as("no version written").isEqualTo(versions);
+        assertThat(count("SELECT count(*) FROM lending.loan_terms t JOIN lending.loan_terms_version v"
+                + " ON v.id = t.terms_version_id WHERE v.product = 'PERSONAL_LOAN'"
+                + " AND v.proposed_by = '" + proposer.id() + "'"))
+                .as("no term set written").isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.TermsVersionProposed'"))
+                .as("nothing audited").isEqualTo(audits);
+        LoanTermsAdministration.Proposed amortising = propose(LOAN, "0.2310", proposer);
+        assertThat(status(amortising.id())).as("23.10 % amortises across 6-60 months").isEqualTo("PROPOSED");
     }
 
     // ------------------------------------------------------------------ plumbing

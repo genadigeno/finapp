@@ -1731,6 +1731,16 @@ exactly and replayed `IDENTICAL` (`P11-TST-002`); `LoanReplayProof` re-running t
 every schedule version (`P11-TSK-029`).
 **Phase:** 11
 
+*(As built by `P11-TSK-006`, 2026-10-11 - `SCHEDULE_ENGINE_V1`: the level instalment is the actual-day annuity rounded
+once `UP` (raised by the least amount only if the period roundings would leave the final instalment above it), period
+interest rounded once `HALF_EVEN` through `Act365Fixed`, the final principal portion the remaining balance, conservation
+asserted by `Schedule`'s construction; a non-positive principal portion a typed `NOT_AMORTISING`, and terms under which
+any loan within credit's bounds could not amortise refused at the proposal (`422 lending.TermsNotAmortising`). Verified
+by `ScheduleEngineV1Test` (golden cases checked by hand and by an independent exact-rational oracle) and
+`ScheduleEngineV1PropertiesTest` (every day of 2027 and 2028 x every repayment day 1-28 x every term 6-60, rates
+including 0, the clamp from an intended 29th-31st, monotone in rate, two JVMs byte-identical); the "refused at the
+offer" half is `P11-TSK-011`'s.)*
+
 ### INV-LND-04 — Allocation conserves and never over-pays a component
 **Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
 component (fee, interest or principal of one due item) had due when the repayment was allocated; no
@@ -1750,6 +1760,12 @@ properties — conservation, order, never above due, both overpayment treatments
 the task's probe — reading the projection for allocation turns scenario 3 red under a racing reversal
 (`MUTATION_TESTING.md` §2); the subledger proof's non-negativity arm (`P11-TSK-029`); the storm's Σ
 allocations = Σ repayments at rest (`P11-TST-001`).
+*(As built by `P11-TSK-008`, 2026-10-11 - the engine half: `AllocationEngineV1` asserts conservation and never-above-due
+before its lines return, and `AllocationEngineV1PropertiesTest` holds them over generated inputs under all six component
+orders and both treatments - `#conserves`, `#neverAboveDue`, `#respectsTheOrderAndTheTreatment` (oldest first, the
+pinned order, overflow only past every billed item and by the treatment), `#independentOfInputOrder`,
+`#aSecondJvmAllocatesIdentically`; the case-by-case `AllocationEngineV1Test`; the probes are `MUTATION_TESTING.md` §2's
+`P11-TSK-008` rows. The deferred trigger, the lock and scenario 3 remain `-018`'s.)*
 **Phase:** 11
 
 ### INV-LND-05 — Terms are pinned and immutable
@@ -1907,6 +1923,15 @@ every writer by `lending V003`'s `loan_terms_conventions_implemented`, `_rate_ty
 `_allocation_complete` and `_kind_coherent` `CHECK`s (`LoanTermsDatabaseTest#anUnimplementedConventionIsRefused`,
 a raw-SQL term set with each defect refused `23514`). A new convention is a new engine version and a migration
 widening those `CHECK`s.)*
+
+*(As built by `P11-TSK-007`, 2026-10-11 - the cumulative rounding: `AccrualEngineV1` posts the change in the
+period's once-rounded scale-20 cumulative figure, the `ACT_365F` arithmetic shared with the schedule engine
+(`Act365Fixed`); `AccrualMatchesSchedulePropertiesTest` proves every on-time period's postings equal to the
+schedule's one rounding and every varying-base period's to its cumulative figure rounded once, two-JVM
+identical; `AccrualEngineV1Test` holds 29 February, the reset, zero days and the typed refusals - a convention,
+engine version or rate the version does not implement is refused at computation as well as at the terms. Its
+half of `INV-LND-02`: a predecessor must be an earlier accrual of the same period, so a date accrued twice
+computes nothing.)*
 
 ### INV-LND-10 — Servicing time is the database's
 **Statement:** Every business date or instant that decides an accrual, a billing, a statement, a

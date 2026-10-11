@@ -44,12 +44,24 @@
  * terms as versioned data ({@code P11-TSK-005}): {@code V003}'s money-free machine row and INSERT-only term set,
  * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes
  * {@link com.finapp.lending.LoanTermsAdministration} (A0 to A2; {@code pinActive} the {@code FOR SHARE} read the
- * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. The loan
- * application ({@code P11-TSK-010}): {@code V004}'s money-free machine row and its history,
+ * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. The
+ * allocation engine ({@code P11-TSK-008}): {@link com.finapp.lending.AllocationEngineV1}, pure and versioned - a
+ * payment over a {@link com.finapp.lending.DueState} by the agreement's pinned
+ * {@link com.finapp.lending.AllocationRules} into {@link com.finapp.lending.AllocationLine}s, billed items oldest first,
+ * the pinned component order within each, the remainder by the overpayment treatment; conserving and never above due
+ * ({@code INV-LND-04}), unwired until billing and repayment ({@code -017}, {@code -018}). The accrual engine
+ * ({@code P11-TSK-007}): {@link com.finapp.lending.AccrualEngineV1}, pure - daily {@code ACT_365F} interest on the base
+ * the caller supplies, rounded once per period ({@code INV-LND-09}) - over the {@code ACT_365F} arithmetic it shares
+ * with the schedule engine; nothing accrues yet (the sweep is {@code P11-TSK-016}).
+ * The schedule engine ({@code P11-TSK-006}): {@link com.finapp.lending.ScheduleEngineV1}, pure, projecting a
+ * conserving {@link com.finapp.lending.Schedule} or a typed {@link com.finapp.lending.ScheduleOutcome.Refused}, and
+ * judging at the terms door, through the port {@link com.finapp.lending.LoanProductBounds} {@code app} implements over
+ * credit, whether terms amortise across the product's bounds.
+ * The loan application ({@code P11-TSK-010}): {@code V004}'s money-free machine row and its history,
  * {@link com.finapp.lending.LoanApplications} (one customer act opening credit's decision request in the same
  * transaction through {@link com.finapp.lending.LoanCreditDecisions}, the party's standing through
  * {@link com.finapp.lending.LoanPartyStanding} - ports {@code app} implements over credit - and the withdrawal under the
  * application's row lock), the closed {@link com.finapp.lending.RepaymentMethod} and
- * {@link com.finapp.lending.PayoutPreference}. No schedule yet.
+ * {@link com.finapp.lending.PayoutPreference}.
  */
 package com.finapp.lending;

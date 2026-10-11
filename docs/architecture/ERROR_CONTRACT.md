@@ -1027,9 +1027,10 @@ than instalment `UP` and interest `HALF_EVEN`, a day count its accrual engine do
 fixed offset), an allocation order omitting or repeating a component, another kind's terms or overpayment treatment,
 an engine version the build does not hold, an unregistered or other product's agreement template, an amount in another
 currency, an unknown product, or a value outside the bounds lending declares or the product's own ceilings (offer
-validity, disbursement deadline). `TermsNotAmortising` is catalogued here and met from the proposal door once
-`P11-TSK-006` wires the schedule engine that judges whether the terms amortise across credit's amount and term bounds
-(ADR-0093 §5). `NotFound` answers an unknown or malformed version id, an unknown product on the read, and a product
+validity, disbursement deadline). `TermsNotAmortising` is met from the proposal door since
+`P11-TSK-006`: the schedule engine judges whether every loan within credit's amount and term bounds amortises under the
+terms (ADR-0093 §5 and its Follow-up), before anything is locked or written; the detail names a term and a period's
+days, never a rate or an amount. `NotFound` answers an unknown or malformed version id, an unknown product on the read, and a product
 with no version in force at the instant asked; a malformed `at` is `api.ValidationFailed`.
 
 The loan application doors (`P11-TSK-010`, `LENDING_LIFECYCLES.md` §4.3): the customer's, owner-scoped, the submission

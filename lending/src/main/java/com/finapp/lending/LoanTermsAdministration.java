@@ -58,6 +58,7 @@ public final class LoanTermsAdministration {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final LoanProductBounds bounds;
 
     // ------------------------------------------------------------------ outcomes
 
@@ -114,6 +115,19 @@ public final class LoanTermsAdministration {
         }
     }
 
+    /**
+     * The terms cannot amortise across the product's amount and term bounds (`P11-TSK-006`; ADR-0093 section 5,
+     * {@code INV-LND-03}): some loan within them would repay no principal in an instalment. The detail names a term and
+     * a period's days, never a rate or an amount.
+     */
+    public static final class TermsNotAmortising extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        TermsNotAmortising(String detail) {
+            super(detail);
+        }
+    }
+
     // ------------------------------------------------------------------ propose
 
     /**
@@ -121,7 +135,13 @@ public final class LoanTermsAdministration {
      * (A0), numbered {@code max + 1}, written {@code PROPOSED} with its term set, its history row and the reasoned audit
      * record.
      *
+     * <p>An instalment product's terms are first judged by the schedule engine they pin against the product's amount and
+     * term bounds - credit's, through {@link LoanProductBounds} - so terms under which some loan within those bounds
+     * could not amortise are refused before anything is locked or written (`P11-TSK-006`,
+     * {@link ScheduleEngineV1#judgeAmortisation}). A pure judgement over code-held bounds: the same on every instance.
+     *
      * @throws ProposalPending when a version of the product already awaits a decision
+     * @throws TermsNotAmortising when some loan within the product's bounds could not amortise under the terms
      * @throws LendingCapitalAdministration.ReasonRequired for a missing, unbounded or instrument-bearing reason
      */
     public Proposed propose(Connection unitOfWork, LoanTerms terms, String reason, Actor actor, CorrelationId correlation) {
@@ -130,6 +150,7 @@ public final class LoanTermsAdministration {
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
         String reasoned = LendingCapitalAdministration.reasoned(reason);
+        amortises(terms);
         store.lockProduct(unitOfWork, terms.product());
         if (store.proposalPending(unitOfWork, terms.product())) {
             throw new ProposalPending();
@@ -284,6 +305,22 @@ public final class LoanTermsAdministration {
         Objects.requireNonNull(product, "product");
         LoanTermsVersionId id = store.shareActive(unitOfWork, product).orElseThrow(TermsNotFound::new);
         return store.version(unitOfWork, id).orElseThrow(TermsNotFound::new);
+    }
+
+    /** An instalment product's terms amortise across its bounds, or the proposal is refused whole. */
+    private void amortises(LoanTerms terms) {
+        if (terms.product().kind() != LoanKind.INSTALMENT) {
+            return;
+        }
+        LoanProductBounds.Bounds within = bounds.amortisationBounds(terms.product())
+                .orElseThrow(() -> new IllegalStateException("an instalment product declares its amount and term bounds"));
+        Optional<ScheduleOutcome.Refused> refused = ScheduleEngineV1.judgeAmortisation(terms, within);
+        if (refused.isPresent()) {
+            if (refused.get().reason() == ScheduleRefusal.NOT_AMORTISING) {
+                throw new TermsNotAmortising(refused.get().detail());
+            }
+            throw new LoanTerms.TermsInvalid(refused.get().detail());
+        }
     }
 
     // ------------------------------------------------------------------ plumbing

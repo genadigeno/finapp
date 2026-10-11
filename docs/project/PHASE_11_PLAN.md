@@ -763,6 +763,15 @@ and refuses any terms naming a convention it does not implement.
    outcome (path X, A30) — in that transaction; the offer shows an illustrative schedule with
    `d0` = today, labelled as such, with total interest and total payable (A5).
 
+*(As built by `P11-TSK-006`, 2026-10-11 - `ScheduleEngineV1`, pure and static, answering `Projected(Schedule)` or a typed
+`Refused`. Step 2 refined, on the invariant's side: `A` is the **actual-day annuity** `A* = P / Σ v_j` over the periods'
+own factors `1 + r · days_j / 365` - the formula above is its equal-period special case, which with actual-day interest
+leaves the final instalment above the regular one in about half of all loans - computed exactly with one division
+rounded once `UP` to the minor unit, raised by the least amount only if the interest roundings would still leave the
+final instalment above it. Step 4's door judgement is exact over every real calendar of the leap cycle, against credit's
+bounds through the `LoanProductBounds` port; at 15 days' shortest first period and 6-60 months it first refuses at
+23.15 %, where a real loan first fails. ADR-0093's Follow-up records the reasoning and the measurements.)*
+
 ### 12.3 Interest and fees (owner brief 9.5) — `ACCRUAL_ENGINE_V1`
 
 **The four words, kept apart.** *Accrued* — earned day by day, not yet due (`interest_accrual`
@@ -802,6 +811,13 @@ An interest waiver is an explicit, reasoned posting `DR LOAN_INTEREST_INCOME / C
 (or `…ACCRUED`). A wrong accrual (an engine defect) is never edited: a new engine version and an
 explicit correction run posting deltas (`lending.accrual-correction:<loan>:<date>:<engine>`) — not
 built in Phase 11 (nothing to correct), keys reserved so nothing collides.
+
+*(As built by `P11-TSK-007`, 2026-10-11: `AccrualEngineV1` is pure over `AccrualTerms` / `AccrualPeriod` /
+`InterestAccrual`; the `ACT_365F` arithmetic is one package-private primitive, `Act365Fixed`, shared with
+`SCHEDULE_ENGINE_V1`, so §12.2 step 3's `interest_j` and a constant-base period's accruals agree exactly - every
+monthly period being shorter than 73 days, the one length at which a scale-20 daily sum could round differently.
+A date with no accrual inside a period - a line at zero principal - contributes nothing; the projection a payoff
+uses resets at each period it crosses.)*
 
 ### 12.4 Disbursement (owner brief 9.6) — the two paths (L2)
 
@@ -881,6 +897,13 @@ key `lending.repayment:<repaymentId>`.
 | Duplicate (**scenario 2**) | the same key → the same answer, one entry (`INV-IDEM-01`); auto-collection's `(item, date)` unique |
 | Concurrent (**scenario 3**) | serialised on L3; each allocates against what it finds; conserved, never over-allocated |
 | After a state change — `CLOSED` / `CANCELLED` | `409 lending.LoanNotRepayable`, nothing posted |
+
+*(As built by `P11-TSK-008`, 2026-10-11: `AllocationEngineV1.allocate(amount, dueState, rules) → AllocationLine`s,
+pure; the rules (`AllocationRules.of(terms)`, judged again on construction) applied in whichever of the six component
+orders the agreement pins; a due state holding one billed item per due date, so oldest-first is a total order; the line's
+remainder to principal not yet due and then credit - accrued, unbilled interest is not a target; the credit-balance
+application is the same call with the balance as the amount, its credit line what stays held; a `PREPAYMENT`'s line by
+`allocatePrepayment`, refusing arrears; typed refusals `AllocationRefused`; ADR-0095's Follow-up records the detail.)*
 
 **Payoff** (both products). *Quote* (keyed): good-through date `G` (today, up to 30 days); amount =
 derived outstanding + the accrual the engine would post through `G − 1` on the current base —

@@ -360,6 +360,8 @@ public final class LoanTermsDesk {
             throw refused(LendingErrorCode.REASON_REQUIRED, reason);
         } catch (LoanTerms.TermsInvalid invalid) {
             throw refused(LendingErrorCode.TERMS_INVALID, invalid);
+        } catch (LoanTermsAdministration.TermsNotAmortising notAmortising) {
+            throw refused(LendingErrorCode.TERMS_NOT_AMORTISING, notAmortising);
         }
     }
 

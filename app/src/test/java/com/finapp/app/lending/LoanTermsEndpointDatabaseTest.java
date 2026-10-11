@@ -116,8 +116,9 @@ class LoanTermsEndpointDatabaseTest {
 
     @Test
     @Order(2)
-    @DisplayName("the refusals: an unimplemented convention, another kind's terms, an unregistered template, another"
-            + " currency, a pending proposal, a stale decision, a missing reason, an unknown id, product or instant")
+    @DisplayName("the refusals: an unimplemented convention, terms that cannot amortise, another kind's terms, an"
+            + " unregistered template, another currency, a pending proposal, a stale decision, a missing reason, an unknown"
+            + " id, product or instant")
     void theRefusals() throws Exception {
         String officer = sessionWith(RoleName.LENDING_OFFICER);
         String other = sessionWith(RoleName.LENDING_OFFICER);
@@ -138,6 +139,12 @@ class LoanTermsEndpointDatabaseTest {
             assertThat(refused.statusCode()).as(defect + ": " + refused.body()).isEqualTo(422);
             assertThat(refused.body()).as(defect.toString()).contains("lending.TermsInvalid");
         }
+        long before = versions();
+        HttpResponse<String> notAmortising = post(TERMS, terms("PERSONAL_LOAN", "0.30", Map.of()), officer, someKey());
+        assertThat(notAmortising.statusCode()).as(notAmortising.body()).isEqualTo(422);
+        assertThat(notAmortising.body()).as("P11-TSK-006: no 60-month loan at 30 % amortises")
+                .contains("lending.TermsNotAmortising").doesNotContain("0.3");
+        assertThat(versions()).as("nothing proposed").isEqualTo(before);
 
         HttpResponse<String> line = post(TERMS, terms("CREDIT_LINE", "0.1499", Map.of()), officer, someKey());
         assertThat(line.statusCode()).as(line.body()).isEqualTo(201);
