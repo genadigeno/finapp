@@ -85,8 +85,11 @@ class LoanApplicationsTest {
                 .containsExactly("APPLICATION_SUBMITTED", "CREDIT_REQUEST_OPENED");
         assertThat(published).singleElement().satisfies(event -> assertThat(event)
                 .startsWith(LoanApplications.SUBMITTED_EVENT)
-                .contains(born.id().value().toString(), born.decisionRequest().toString(), "PERSONAL_LOAN")
-                .doesNotContain("10000", "3200", "1400", "36"));
+                .contains(born.id().value().toString(), born.decisionRequest().toString(), "PERSONAL_LOAN"));
+        // The figures are looked for with the identifiers masked: a random UUID's hex holds "36" in about a third of
+        // runs, which made this check flaky without making it any stronger (found by P11-TSK-009's verification).
+        assertThat(published.get(0).replaceAll("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<id>"))
+                .doesNotContain("10000", "3200", "1400", "36");
         assertThat(credit.asked.get(0).toString()).doesNotContain("10000");
     }
 
