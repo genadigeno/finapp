@@ -253,5 +253,45 @@ ADR-0087 §5, ADR-0088 §4, §6.
   to another decision is a caller's defect, refused by the consumer unique (`23505`, a `CreditStorageException`),
   not a sixth answer. The boundary's exactness rests on the database clock not stepping back across the lock's
   handover (ADR-0063 point 4's bounded-skew premise); `P11-TSK-029`'s census is the continuous check.
+- **As built by `P11-TSK-012` (2026-10-11) - point 4, the acceptance:** one transaction, in the order L0
+  (`LoanCreditDecisions.lockExposure` over credit's `CreditProfiles.lockForDecision`) → L2 (the offer, owner-scoped,
+  `OFFERED` and unexpired on the database clock) → the hash, the payout destination and the standing (every refusal
+  before any write) → `consume` (credit's port; the consumer `ConsumerRef(LOAN_AGREEMENT, agreement id)`, the profile lock
+  re-taken re-entrantly) → L6 for a loan → the inserts. Credit's five answers fold into the port's two:
+  `Consumed` (with the decision's party and amount, held by lending to the offer's, A20) or `Refused` by name -
+  `NOT_APPROVED`, `LAPSED`, `ALREADY_CONSUMED`, `NOT_FOUND` - every refusal `409 lending.OfferNotAcceptable` with the
+  name in the detail, the whole transaction rolled back. **A lapse writes nothing**: the offer is not expired by the
+  acceptance (the backlog read "a lapse also expires the offer") - a refusal commits nothing under the customer's key, and
+  the sweep expires the offer, whose `expires_at <= valid_until` is then due. **The pair with `P11-TSK-013`:** from this
+  task the reservation ends at the acceptance's commit, and until `-013` replaces `NoLoansUntilPhase11` with version 2
+  the commitment it hands over to is invisible to credit's deciding transaction - so the two ship in one release on one
+  branch, never merged apart; `-013`'s read finds the committed principal in `lending.loan` (`PENDING_DISBURSEMENT`,
+  `party_id`, `currency`) joined to `lending.loan_agreement` (the latest version's `amount_minor` and `scale`), and an
+  `ACTIVE` line's limit in the same columns.
+- **As built by `P11-TSK-013` (2026-10-12) - points 5, 6, 7 and 9, the exposure:** `app`'s `LendingCreditExposure`,
+  version 2, wired into credit's `SnapshotFreezer` in `CreditBeans` in place of `NoLoansUntilPhase11` (retired). ONE
+  statement over lending `V007`'s definer view `lending.party_principal_exposure` (per loan account: party, consumed
+  decision, kind, status, currency and the latest agreement version's `amount_minor` and `scale` - nothing else; owned by
+  the migrator, `security_invoker = false` stated, SELECT to the application role alone, a join and so not updatable)
+  and a lateral read of the loan's `LOAN_PRINCIPAL` + `LOAN_PRINCIPAL_DUE` journal lines grouped by scale, folded per
+  loan in Java through `Money` (two scales refuse loudly). Four refinements, each on the side of the invariant: (1) **the
+  ledger read is `app`'s, not the view's** - a lending view naming ledger tables would make lending's migration depend
+  on ledger's, and each module migrates its own schema in no guaranteed order (ADR-0006, ADR-0011), so the view carries
+  the loan's id and the statement joins the journal lines; the view therefore exposes per-loan rows, not per-party sums
+  (the backlog's "principal sums per (party, currency)") - only the exposure read's columns; (2) **a `CLOSED` line
+  counts its drawn principal** like a `CLOSED` loan (zero by the closure rule; if a later reversal re-raises it, it is
+  outstanding credit); (3) **a principal below zero counts zero for its loan** - a ledger defect never offsets another
+  loan's exposure; (4) **an uninterpretable row is refused** (no agreement, an unknown kind or status) - the deciding
+  transaction fails and credit's sweep re-drives it, never a zero. The census (point 9) is built here with its gauge
+  (the backlog's `-013` scope names it; `-029` keeps the storm's use of it): `ExposureCensus` over credit's live
+  approvals (the reservation predicate) and the view's loans with the limit of each one's decision's policy,
+  order-free - for every limit among a party's items, those under a limit at most it fit it - in one `REPEATABLE READ`
+  snapshot, gauged `finapp.credit.exposure.census{verdict}` (`ExposureCensusMetrics`, the `LendingCapitalMetrics`
+  shape); the bureau's balance is left out (the census bounds the platform's own terms - weaker than the Phase 10
+  storm's, never a false alarm). Proven by `LendingCreditExposureDatabaseTest`: both orders of an acceptance against a
+  credit decision for one party, through `LoanAccountDesk` and credit's own deciding transaction, the waiting statement
+  asserted on `credit_profile`; a disbursement committed between the read's statements never torn; each arm; replay of a
+  version 1 decision `IDENTICAL` after its own loan exists; the census naming an over-limit party. **The pair is
+  complete**: the commitment `-012` hands the reservation over to is what credit's deciding transaction now reads.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

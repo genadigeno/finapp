@@ -42,7 +42,8 @@ import lombok.RequiredArgsConstructor;
  * {@link #purposes()} order, so two openers can only ever wait on each other's first contested
  * index entry, never hold one each of two (no deadlock cycle). No lock of its own, no JVM state.
  *
- * <p>Unwired until `P11-TSK-012`: no bean composes it before the acceptance that calls it.
+ * <p>Wired by `P11-TSK-012`: the acceptance ({@link LoanAcceptances}) calls it after the loan is born, in the same
+ * transaction.
  */
 @RequiredArgsConstructor
 public final class LoanAccounts {
@@ -60,6 +61,16 @@ public final class LoanAccounts {
                 AccountPurpose.LOAN_INTEREST_DUE,
                 AccountPurpose.LOAN_FEES_DUE,
                 AccountPurpose.LOAN_CREDIT_BALANCE);
+    }
+
+    /**
+     * The per-loan purposes whose balances are the loan's principal - not yet due and billed (`P11-TSK-013`): what the
+     * platform lent and is still owed, the principal credit's exposure counts (A3). Interest, fees and the credit balance
+     * are not principal. Lending's declaration, so a reader in {@code app} (the exposure read and its census) binds these
+     * rather than naming the loan book itself.
+     */
+    public static List<AccountPurpose> principalPurposes() {
+        return List.of(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE);
     }
 
     /**

@@ -227,7 +227,8 @@ class DecisionOrchestrationDatabaseTest {
     private static DecisionProgress instance(CreditDataCollection.Timing timing, Clock clock) {
         CreditDataCollection collection = collection(timing, clock);
         SnapshotFreezer freezer = new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection, STANDING,
-                new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(), new NoLoansUntilPhase11(), IDS);
+                new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(), CreditWorld.PLATFORM_EXPOSURE,
+                IDS);
         return new DecisionProgress(TRANSACTIONS, REQUESTS, POLICIES, SCORECARDS, new JdbcDecisionSnapshotStore(),
                 collection, freezer,
                 new CreditAssessments(new JdbcCreditAssessmentStore(), SCORECARDS, new JdbcOutboxWriter(), IDS, clock),

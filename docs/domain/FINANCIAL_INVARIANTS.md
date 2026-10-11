@@ -1798,6 +1798,7 @@ every role (`P11-TSK-005`, `P11-TSK-012`); a changed offer refused at acceptance
 flipping the verdict to `DIVERGED` (`P11-TSK-029`, `P11-TST-002`); scenario 8 —
 `AmendmentDatabaseTest#anApprovedAmendmentChangesTheScheduleOnce` (`P11-TSK-027`), the agreement and
 schedule version n+1 written once and a moved agreement lapsing the amendment.
+*(The agreement half built by `P11-TSK-012`, 2026-10-11 - `lending V006`'s `loan_agreement` and `loan_acceptance`, INSERT-only by grant and immutable by trigger for every role, version 1 held to an exact copy of its offer's terms (canonical `text`, its hash by `CHECK`); verified by `LoanAcceptanceDatabaseTest#theAgreementIsNeverUpdatedByAnyRole` and `#aMismatchedHashRefuses` (`409 lending.TermsChanged`, nothing written); probes in `MUTATION_TESTING.md` §2.)*
 **Phase:** 11
 
 *(As built by `P11-TSK-005`, 2026-10-11 - the terms half: `lending V003` splits a version into the money-free machine
@@ -1844,6 +1845,8 @@ side of the invariant: the lapse is judged on the database clock read **after** 
 negation of the reservation's `valid_until > now`) — `statement_timestamp()` is the calling statement's
 start, from before any wait on the lock; and an existing consumption is judged before the lapse, so a
 consumer's retry after `valid_until` replays its own consumption rather than reading a lapse.)*
+*(The acceptance half built by `P11-TSK-012`, 2026-10-11 - L0 first through `LoanCreditDecisions.lockExposure`, the consumption in the acceptance's transaction with the agreement as the consumer, `loan UNIQUE (offer_id)` and `UNIQUE (decision_id)`, the loan and the offer's `ACCEPTED` edge committed only together (deferred checks); verified by `LoanAcceptanceDatabaseTest#tenAcceptancesOneLoan`, `#acceptanceTakesTheProfileFirst`, `#aCrashAfterEachInsertLeavesNothing`, `#theAgreementIsNeverUpdatedByAnyRole` and `app`'s `LoanAccountDatabaseTest#acceptanceWaitsOnCreditsProfileLock`, `#tenAcceptancesUnderOneKeyOneLoan`. The exposure half - the commitment visible to credit's deciding transaction - is `P11-TSK-013`'s, shipped in the same release.)*
+*(The exposure half built by `P11-TSK-013`, 2026-10-12 - the pair complete: `app`'s `LendingCreditExposure` (`PlatformCreditExposure` version 2) wired into credit's freezer in place of Phase 10's zero, ONE statement over lending `V007`'s definer view `party_principal_exposure` and the loans' `LOAN_PRINCIPAL` + `LOAN_PRINCIPAL_DUE` journal lines, read under L0 in the deciding transaction beside the reservation; verified by `LendingCreditExposureDatabaseTest` - `#acceptanceAndADecisionForThePartySerialise` (both orders against the real acceptance, the waiting statement asserted on `credit_profile`; the decision reads the approval reserved or the loan committed, exactly once), `#aDisbursementDuringTheReadIsNeverMissed` (a disbursement committed between a read's statements, never torn), the arms (an open line's limit, drawn beyond it, a closing line, a cancelled loan, principal repaid, interest and fees not exposure) and `#theCensusFindsAnOverLimitParty` (`ExposureCensus`, gauged `finapp.credit.exposure.census{verdict}`) - probes in `MUTATION_TESTING.md` §2. The outstanding arms rest on owner-role fixtures until `-014`, `-018`, `-023` and the storm re-assert them through the real paths; `-014` must commit the `PENDING_DISBURSEMENT -> ACTIVE` edge and the principal posting in one transaction, L0 first.)*
 **Phase:** 11
 
 ### INV-LND-07 — A loan is disbursed at most once, its receivable born exactly with the wallet credit, and no payout outcome creates, duplicates or undoes it
@@ -2032,6 +2035,7 @@ admitted (`P11-TSK-012`);
 draws racing for the last capital (`P11-TSK-021`); the probe skipping the capital lock letting two
 acceptances over-deploy (`MUTATION_TESTING.md` §2); the capital proof in every storm round with
 headroom contested (`P11-TST-001`).
+*(The first consumer built by `P11-TSK-012`, 2026-10-11 - a loan's acceptance judges headroom under L6, the committed term the agreement principal of the loans `PENDING_DISBURSEMENT`, read before the outstanding; a line commits none (A28); verified by `LoanAcceptanceDatabaseTest#acceptancesRacingForTheLastCapitalAdmitOne` (the lock-wait and ten loans for one loan's headroom, one admitted) and `#aLineCommitsNoCapital`.)*
 **Phase:** 11
 
 ### INV-LND-14 — A draw never exceeds the available limit

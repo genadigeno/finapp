@@ -46,6 +46,13 @@ public interface LoanOfferStore {
     boolean decline(Connection unitOfWork, LoanOfferId id);
 
     /**
+     * {@code OFFERED -> ACCEPTED} (`P11-TSK-012`), conditional on {@code OFFERED} and {@code expires_at >
+     * statement_timestamp()} - the expiry's complement; {@code false} when either no longer holds. {@code lending V006}
+     * admits the edge only beside the offer's loan, and commits it only with its agreement and evidence.
+     */
+    boolean accept(Connection unitOfWork, LoanOfferId id);
+
+    /**
      * The expiry sweep's claim: up to {@code limit} {@code OFFERED} offers whose permit is due, oldest first, in ONE
      * statement - rows another sweeper holds skipped, the page's permit re-stamped {@code permit} ahead.
      */

@@ -61,6 +61,17 @@ public enum LendingAuditAction implements AuditableAction {
                     + " product is free for a new proposal.",
             true),
 
+    /** A customer accepted a loan offer: the agreement committed, the decision consumed, the loan account opened. */
+    OFFER_ACCEPTED(
+            "lending.OfferAccepted",
+            "A customer accepted their own loan offer from a MULTI_FACTOR session (P11-TSK-012, A19): agreement version 1"
+                    + " committed as an exact copy of the offer's terms, credit's decision consumed (credit's own"
+                    + " credit.DecisionConsumed beside it), the loan account and its six ledger accounts opened, exposure"
+                    + " and - for a loan - capital committed, all in one transaction under the party's credit profile lock."
+                    + " The summary names the offer, the loan and the agreement version - never an amount (INV-AUD-02);"
+                    + " the acceptance evidence is its own record. Losers of a race record nothing.",
+            false),
+
     /** A holder of LENDING_INVESTIGATE was served a lending report. */
     REPORT_READ(
             "lending.ReportRead",

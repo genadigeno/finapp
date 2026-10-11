@@ -278,6 +278,16 @@ class LoanApplicationsTest {
         public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
             throw new UnsupportedOperationException("the application never resolves a decision");
         }
+
+        @Override
+        public boolean lockExposure(Connection unitOfWork, UUID party) {
+            throw new UnsupportedOperationException("the application takes no exposure lock");
+        }
+
+        @Override
+        public Consumption consume(Connection unitOfWork, UUID decision, LoanAgreementId agreement) {
+            throw new UnsupportedOperationException("the application consumes no decision");
+        }
     }
 
     private final class FakeApplications implements LoanApplicationStore {

@@ -314,6 +314,17 @@ class LoanApplicationDatabaseTest {
             public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
                 return creditDecisions.requestOf(unitOfWork, decision);
             }
+
+            @Override
+            public boolean lockExposure(Connection unitOfWork, UUID party) {
+                return creditDecisions.lockExposure(unitOfWork, party);
+            }
+
+            @Override
+            public Consumption consume(Connection unitOfWork, UUID decision,
+                    com.finapp.lending.LoanAgreementId agreement) {
+                return creditDecisions.consume(unitOfWork, decision, agreement);
+            }
         };
         assertThatThrownBy(() -> inRawTransaction(uow -> applications(crashAfterOpen)
                         .submit(uow, customer.party(), submission(), actor, CorrelationId.generate(ids))))

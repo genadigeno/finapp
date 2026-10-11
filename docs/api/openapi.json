@@ -4182,6 +4182,41 @@
           }
         }
       },
+      "lending.PayoutDestinationInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.PayoutDestinationInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.PayoutDestinationInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The payout destination is not the customer's own verified bank account, or is not expected here.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.ProductNotOffered": {
         "content": {
           "application/problem+json": {
@@ -4348,6 +4383,41 @@
           }
         },
         "description": "[403] A proposal is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.TermsChanged": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.TermsChanged"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.TermsChanged"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The terms accepted are not the offer's; nothing was accepted.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -7804,6 +7874,48 @@
         },
         "type": "object"
       },
+      "AgreementView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementTemplate": {
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "string"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "repaymentDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termsSha256": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "AllocationView": {
         "properties": {
           "amount": {
@@ -8027,6 +8139,32 @@
             "type": "array"
           },
           "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BalancesView": {
+        "properties": {
+          "creditBalance": {
+            "type": "string"
+          },
+          "feesDue": {
+            "type": "string"
+          },
+          "interestAccrued": {
+            "type": "string"
+          },
+          "interestDue": {
+            "type": "string"
+          },
+          "principalDue": {
+            "type": "string"
+          },
+          "principalNotDue": {
+            "type": "string"
+          },
+          "principalOutstanding": {
             "type": "string"
           }
         },
@@ -11244,6 +11382,57 @@
         },
         "type": "object"
       },
+      "LoanAcceptanceBody": {
+        "properties": {
+          "payoutMethodId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          },
+          "termsSha256": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "termsSha256"
+        ],
+        "type": "object"
+      },
+      "LoanAcceptedView": {
+        "properties": {
+          "acceptedAt": {
+            "type": "string"
+          },
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "termsSha256": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanApplicationBody": {
         "properties": {
           "amount": {
@@ -11345,6 +11534,17 @@
           "termsVersion": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LoanListView": {
+        "properties": {
+          "loans": {
+            "items": {
+              "$ref": "#/components/schemas/LoanView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -11840,6 +12040,41 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LoanView": {
+        "properties": {
+          "agreement": {
+            "$ref": "#/components/schemas/AgreementView"
+          },
+          "balances": {
+            "$ref": "#/components/schemas/BalancesView"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -18113,6 +18348,51 @@
         }
       }
     },
+    "/v1/me/loan-offers/{id}/acceptance": {
+      "post": {
+        "operationId": "acceptLoanOffer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanAcceptanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanAcceptedView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/me/loan-offers/{id}/decline": {
       "post": {
         "operationId": "declineLoanOffer",
@@ -18140,6 +18420,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanOfferDecision"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loans": {
+      "get": {
+        "operationId": "listLoans",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanListView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}": {
+      "get": {
+        "operationId": "readLoan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanView"
                 }
               }
             },

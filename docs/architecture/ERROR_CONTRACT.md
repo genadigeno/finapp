@@ -995,6 +995,8 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.ProductNotOffered` | 422 | The product is not offered. |
 | `lending.AmountOutOfRange` | 422 | The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted. |
 | `lending.OfferNotAcceptable` | 409 | The offer can no longer be accepted or declined. |
+| `lending.TermsChanged` | 409 | The terms accepted are not the offer's; nothing was accepted. |
+| `lending.PayoutDestinationInvalid` | 422 | The payout destination is not the customer's own verified bank account, or is not expected here. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1065,6 +1067,22 @@ instant). `NotFound` answers another party's offer exactly as an unknown or malf
 The offer is born by the system, never by a request: an approval that cannot be offered closes its application
 `CLOSED_UNDECIDED` with a reason code (`TERMS_NOT_AMORTISING`, `PRODUCT_NOT_OFFERED`, `REPAYMENT_DAY_NOT_OFFERED`,
 `DECISION_LAPSED`) read on the application, and answers no request with an error.
+
+The acceptance and the loan reads (`P11-TSK-012`, `LENDING_LIFECYCLES.md` §4.4 and §4.5): `POST
+/v1/me/loan-offers/{id}/acceptance` keyed `lending.offer-acceptance:<type>:<id>` and always a `MULTI_FACTOR` act (A19 -
+enrolled or not, a weaker session is `identity.AssuranceRequired`, `403`), `201` with the loan account; a lost response
+replays its receipt and every refusal stores nothing - the refusals are judged under the party's credit profile lock and
+the offer's row lock, before any write. `NotFound` answers another party's offer exactly as an unknown or malformed one.
+`OfferNotAcceptable` refuses an offer no longer `OFFERED` or past its `expires_at` on the database clock (swept or not),
+and an offer whose decision credit will not take up - lapsed on credit's clock, not an approval, already consumed or
+unknown - credit's reason by name in the detail, never a figure. `TermsChanged` (first raised here) refuses an echoed
+terms hash that is not the offer's, malformed included: the customer accepts only the bytes the offer read showed.
+`PayoutDestinationInvalid` (first raised here) refuses path X without a payment method, a payment method named for a
+wallet payout or a credit line (A25), and one that is not the customer's own live bank account - before credit is asked.
+`CapitalUnavailable` (declared by `P11-TSK-004`, first raised here) refuses a loan the currency's recognised lending
+capital cannot cover, judged under the capital row lock (L6); a credit line takes no capital at acceptance (A28). A
+party no longer in good standing is credit's own `credit.ApplicantNotEligible` (`409`), the application's precedent.
+`GET /v1/me/loans` and `/{id}` are owner-scoped reads; another party's loan is `NotFound`, as an unknown or malformed id.
 
 ## 3a. Rejection at the boundary
 

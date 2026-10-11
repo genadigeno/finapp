@@ -940,5 +940,15 @@ class LoanOriginationDatabaseTest {
         public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
             return Optional.ofNullable(requestOfDecision.get(decision));
         }
+
+        @Override
+        public boolean lockExposure(Connection unitOfWork, UUID party) {
+            throw new UnsupportedOperationException("the offer takes no exposure lock");
+        }
+
+        @Override
+        public Consumption consume(Connection unitOfWork, UUID decision, LoanAgreementId agreement) {
+            throw new UnsupportedOperationException("the offer consumes no decision");
+        }
     }
 }

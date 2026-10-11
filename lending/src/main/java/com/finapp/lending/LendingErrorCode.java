@@ -4,9 +4,9 @@ import com.finapp.platform.api.ErrorCode;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`, `P11-TSK-010`; PHASE_11_PLAN.md section 9): the
- * capital and terms administrations' refusals, the capital shortfall its headroom judges, the loan application's
- * refusals and the offer's. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a
+ * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`, `P11-TSK-010`, `P11-TSK-011`, `P11-TSK-012`;
+ * PHASE_11_PLAN.md section 9): the capital and terms administrations' refusals, the capital shortfall its headroom
+ * judges, the loan application's refusals, the offer's and the acceptance's. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a
  * balance.
  */
 @RequiredArgsConstructor
@@ -114,7 +114,24 @@ public enum LendingErrorCode implements ErrorCode {
      * not - or accepted. First met from the decline ({@code LENDING_LIFECYCLES.md} section 4.4); the acceptance
      * (`P11-TSK-012`) answers it too.
      */
-    OFFER_NOT_ACCEPTABLE("lending.OfferNotAcceptable", 409, "The offer can no longer be accepted or declined.");
+    OFFER_NOT_ACCEPTABLE("lending.OfferNotAcceptable", 409, "The offer can no longer be accepted or declined."),
+
+    /**
+     * The acceptance echoed a terms hash that is not the offer's (`P11-TSK-012`, ADR-0092 point 6, {@code INV-LND-05}):
+     * the customer accepted terms other than the ones recorded - nothing was written. Read the offer again and accept
+     * what it shows.
+     */
+    TERMS_CHANGED("lending.TermsChanged", 409, "The terms accepted are not the offer's; nothing was accepted."),
+
+    /**
+     * The payout destination is not one the acceptance can take (`P11-TSK-012`, ADR-0097, A25, {@code INV-RAIL-03}): an
+     * external account was preferred and none named, one was named for a wallet payout or a credit line, or the one named
+     * is not the customer's own live bank account. Refused before anything was written.
+     */
+    PAYOUT_DESTINATION_INVALID(
+            "lending.PayoutDestinationInvalid",
+            422,
+            "The payout destination is not the customer's own verified bank account, or is not expected here.");
 
     private final String code;
     private final int status;

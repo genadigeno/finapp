@@ -197,6 +197,18 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
     }
 
     @Override
+    public boolean accept(Connection unitOfWork, LoanOfferId id) {
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE lending.loan_offer SET status = 'ACCEPTED' WHERE id = ? AND status = 'OFFERED'"
+                        + " AND expires_at > statement_timestamp()")) {
+            update.setObject(1, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("accepting a loan offer", failure);
+        }
+    }
+
+    @Override
     public List<LoanOfferId> claimDue(Connection unitOfWork, int limit, Duration permit) {
         if (limit < 1) {
             throw new IllegalArgumentException("a claim takes at least one offer");

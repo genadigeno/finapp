@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
  * A customer's loan offers (`P11-TSK-011`; {@code LENDING_LIFECYCLES.md} section 4.4, {@code PHASE_11_PLAN.md} section
  * 9): the owner's read and the decline, each on the caller's unit of work - the door's idempotency claim wraps the
  * decline, so a retried key replays and a refusal, which writes nothing, rolls the claim back with it. The acceptance is
- * `P11-TSK-012`'s.
+ * {@link LoanAcceptances}' (`P11-TSK-012`).
  *
  * <p><strong>The read shows the bytes that were hashed.</strong> The offer document is re-rendered from the stored terms
  * and shown only if its SHA-256 is the one stored at birth; a loan's illustrative periods are re-derived by the pinned
@@ -140,7 +140,10 @@ public final class LoanOffers {
         }
     }
 
-    /** The offer is past acting on - declined, expired (on the database clock) or accepted. */
+    /**
+     * The offer is past acting on - declined, expired (on the database clock) or accepted - or, at an acceptance, credit
+     * would not consume its decision (`P11-TSK-012`: credit's reason, by name, in the message).
+     */
     public static final class OfferNotAcceptable extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
@@ -150,6 +153,21 @@ public final class LoanOffers {
             super(status == LoanOfferStatus.OFFERED ? "the offer has expired"
                     : "a " + status + " offer can no longer be acted on");
             this.product = product;
+        }
+
+        private OfferNotAcceptable(String message, LoanProduct product) {
+            super(message);
+            this.product = product;
+        }
+
+        /** {@code offer} as it stands - moved, or past its expiry on the database clock. */
+        static OfferNotAcceptable of(LoanOffer offer) {
+            return new OfferNotAcceptable(offer.status(), offer.product());
+        }
+
+        /** Credit would not consume the offer's decision - its reason by name; never a figure. */
+        static OfferNotAcceptable unconsumable(LoanProduct product, LoanCreditDecisions.Consumption.Refusal refusal) {
+            return new OfferNotAcceptable("credit's decision cannot be taken up: " + refusal, product);
         }
 
         /** The offer's product - for the meter. */

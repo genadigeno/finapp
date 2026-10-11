@@ -20,7 +20,8 @@ import java.util.UUID;
  * {@code INV-CNS-01}), {@link #cancel} over {@code DecisionRequests.cancel}, and {@link #reasonTexts} over credit's
  * decision read. The offer (`P11-TSK-011`) adds {@link #decisionFor} - the authoritative read the origination step
  * decides on - and {@link #requestOf}, which resolves a credit event's decision to its request for the hint; the
- * acceptance (`-012`) adds {@code consume} and {@code lockExposure} - each to this same port.
+ * acceptance (`P11-TSK-012`) adds {@link #lockExposure} (L0, over credit's profile lock) and {@link #consume} (over
+ * credit's {@code CreditDecisionConsumptions}) - each to this same port.
  *
  * <p><strong>The refusals lending gives meaning to are declared here</strong> - an open request
  * ({@link RequestOpen}), terms outside credit's product bounds ({@link TermsOutOfBounds}), a request past cancellation
@@ -60,6 +61,67 @@ public interface LoanCreditDecisions {
 
     /** The request credit's decision {@code decision} answers, or empty when no decision has the id. */
     Optional<UUID> requestOf(Connection unitOfWork, UUID decision);
+
+    /**
+     * L0 (`P11-TSK-012`; {@code PHASE_11_PLAN.md} section 7.2): {@code party}'s credit profile row {@code FOR UPDATE},
+     * held to the caller's commit - taken FIRST by every lending transaction that raises the party's exposure or moves
+     * it between reserved, committed and outstanding (the acceptance; the disbursement and the reversal later), so such
+     * a transaction and a credit decision for the party serialise ({@code INV-CRD-09}, {@code INV-LND-06}).
+     *
+     * @return {@code false} when the party has no credit profile - then it has no credit decision, and so no offer to
+     *     accept; the caller finds nothing under it
+     */
+    boolean lockExposure(Connection unitOfWork, UUID party);
+
+    /**
+     * Takes up credit's approved decision {@code decision} for the agreement {@code agreement} - credit's own consumption
+     * port, on the caller's unit of work (`P11-TSK-012`, ADR-0091 point 4): under the party's profile lock (re-entrant
+     * after {@link #lockExposure}), only while {@code APPROVED} and before its {@code valid_until} on the database
+     * clock, at most once ({@code INV-LND-06}). The reservation the decision held ends in the same commit that births
+     * the agreement whose principal or limit replaces it. Credit's audit record is written by credit.
+     */
+    Consumption consume(Connection unitOfWork, UUID decision, LoanAgreementId agreement);
+
+    /** What came of a consumption, as the acceptance needs it (`P11-TSK-012`). */
+    sealed interface Consumption {
+
+        /**
+         * Consumed by this agreement - the decision's party and approved amount, so the acceptance can hold them to the
+         * offer's (A20).
+         */
+        record Consumed(UUID decision, UUID party, Money amount) implements Consumption {
+            public Consumed {
+                Objects.requireNonNull(decision, "decision must not be null");
+                Objects.requireNonNull(party, "party must not be null");
+                Objects.requireNonNull(amount, "amount must not be null");
+            }
+
+            /** Never the amount or the party ({@code INV-AUD-02}). */
+            @Override
+            public String toString() {
+                return "Consumed[" + decision + "]";
+            }
+        }
+
+        /** Not consumable - credit's own answer, by name; nothing was consumed. */
+        record Refused(Refusal refusal) implements Consumption {
+            public Refused {
+                Objects.requireNonNull(refusal, "refusal must not be null");
+            }
+        }
+
+        /** Why credit would not consume - credit's four refusals, by name. */
+        enum Refusal {
+            /** The decision is not an approval. */
+            NOT_APPROVED,
+            /** The approval lapsed at its {@code valid_until}, on the database clock read under the profile lock. */
+            LAPSED,
+            /** Another consumer already took the approval up. */
+            ALREADY_CONSUMED,
+            /** Credit has no such decision. */
+            NOT_FOUND
+        }
+    }
 
     /** Where a credit decision request stands, as the origination step needs it (`P11-TSK-011`). */
     sealed interface CreditOutcome {

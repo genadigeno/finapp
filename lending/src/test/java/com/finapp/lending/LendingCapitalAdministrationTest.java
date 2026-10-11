@@ -68,7 +68,7 @@ class LendingCapitalAdministrationTest {
                         opened.add(opening);
                         return opening.contribution().value().toString();
                     },
-                    new LendingCapitalHeadroom(capitalChart(), unusedBalances()),
+                    new LendingCapitalHeadroom(capitalChart(), unusedBalances(), new JdbcLoanStore()),
                     (AuditWriter<Connection>) (uow, record) -> audited.add(record),
                     IDS,
                     CLOCK);

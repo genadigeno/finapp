@@ -1,14 +1,19 @@
 package com.finapp.app.lending;
 
+import com.finapp.credit.ConsumerKind;
+import com.finapp.credit.ConsumerRef;
 import com.finapp.credit.CreditDecision;
+import com.finapp.credit.CreditDecisionConsumptions;
 import com.finapp.credit.CreditDecisionId;
 import com.finapp.credit.CreditDecisions;
+import com.finapp.credit.CreditProfiles;
 import com.finapp.credit.CreditProduct;
 import com.finapp.credit.DecisionRequest;
 import com.finapp.credit.DecisionOutcome;
 import com.finapp.credit.DecisionRequestId;
 import com.finapp.credit.DecisionRequests;
 import com.finapp.credit.ReasonCode;
+import com.finapp.lending.LoanAgreementId;
 import com.finapp.lending.LoanCreditDecisions;
 import com.finapp.lending.LoanProduct;
 import com.finapp.platform.security.Actor;
@@ -37,12 +42,21 @@ import lombok.RequiredArgsConstructor;
  * read - plain reads on the caller's connection, no credit lock taken, so the offering transaction never waits on
  * credit's deciding one (credit locks no lending row either). {@link #requestOf} resolves a decision id - the aggregate
  * of {@code credit.CreditDecisionRecorded} - to its request for the hint.
+ *
+ * <p><strong>The acceptance's two calls</strong> (`P11-TSK-012`): {@link #lockExposure} is credit's own profile lock -
+ * {@code CreditProfiles.lockForDecision}, lock-order element (1), Phase 11's L0 - taken first by the acceptance, so it and
+ * a credit decision for the party serialise; {@link #consume} is credit's published consumption port
+ * ({@code CreditDecisionConsumptions}), the consumer the agreement ({@code ConsumerKind.LOAN_AGREEMENT}, its id) - credit
+ * re-takes the lock (re-entrant), judges the lapse on its own clock and writes its own audit record. Credit's five answers
+ * are folded into the port's two: consumed (a replay too - the same agreement asking again), or refused by name.
  */
 @RequiredArgsConstructor
 public final class CreditLoanDecisions implements LoanCreditDecisions {
 
     @NonNull private final DecisionRequests requests;
     @NonNull private final CreditDecisions<Connection> decisions;
+    @NonNull private final CreditProfiles<Connection> profiles;
+    @NonNull private final CreditDecisionConsumptions<Connection> consumptions;
 
     @Override
     public UUID open(Connection unitOfWork, UUID party, CreditTerms terms, Actor actor, CorrelationId correlation) {
@@ -95,6 +109,31 @@ public final class CreditLoanDecisions implements LoanCreditDecisions {
     @Override
     public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
         return decisions.byId(unitOfWork, CreditDecisionId.of(decision)).map(CreditDecision::decisionRequest);
+    }
+
+    @Override
+    public boolean lockExposure(Connection unitOfWork, UUID party) {
+        return profiles.lockForDecision(unitOfWork, party).isPresent();
+    }
+
+    @Override
+    public Consumption consume(Connection unitOfWork, UUID decision, LoanAgreementId agreement) {
+        CreditDecisionConsumptions.Consumption answer = consumptions.consume(unitOfWork, CreditDecisionId.of(decision),
+                new ConsumerRef(ConsumerKind.LOAN_AGREEMENT, agreement.value()));
+        return switch (answer) {
+            case CreditDecisionConsumptions.Consumption.Consumed consumed -> new Consumption.Consumed(
+                    consumed.decision().id().value(), consumed.decision().party(),
+                    consumed.decision().approved().orElseThrow(
+                            () -> new IllegalStateException("a consumed decision is an approval with its amount")));
+            case CreditDecisionConsumptions.Consumption.NotApproved notApproved ->
+                    new Consumption.Refused(Consumption.Refusal.NOT_APPROVED);
+            case CreditDecisionConsumptions.Consumption.Lapsed lapsed ->
+                    new Consumption.Refused(Consumption.Refusal.LAPSED);
+            case CreditDecisionConsumptions.Consumption.AlreadyConsumed taken ->
+                    new Consumption.Refused(Consumption.Refusal.ALREADY_CONSUMED);
+            case CreditDecisionConsumptions.Consumption.NotFound absent ->
+                    new Consumption.Refused(Consumption.Refusal.NOT_FOUND);
+        };
     }
 
     private static CreditOutcome decided(CreditDecision decision) {

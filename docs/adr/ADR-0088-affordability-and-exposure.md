@@ -138,7 +138,9 @@ traps:
    identically (`INV-CRD-01`). *As built by `P10-TSK-010` (2026-10-08): the term is the snapshot
    attribute `PLATFORM_OUTSTANDING_CREDIT`, added to the closed vocabulary because no code named
    it, frozen by `SnapshotFreezer` with the port's version; Phase 10's composition is `app`'s
-   `NoLoansUntilPhase11`, version 1.*
+   `NoLoansUntilPhase11`, version 1.* *Replaced by `P11-TSK-013` (2026-10-12): `app`'s `LendingCreditExposure`,
+   version 2 (ADR-0091 point 5 as built) - `NoLoansUntilPhase11` retired from the wiring; every decision frozen under
+   version 1 carries its zero and its version in its snapshot and replays from it identically.*
 
 ## Alternatives Considered
 
