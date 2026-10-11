@@ -306,6 +306,11 @@ lending.ApplicationNotWithdrawable` — the decision will arrive and the custome
 stamped on the database clock. Acceptance is conditional on `expires_at > statement_timestamp()`,
 expiry on `<=` — exactly one at the boundary. An expired or declined offer releases nothing: the
 unconsumed decision lapses at its own `valid_until`. Never `EXPIRED → ACCEPTED`.
+*(Refined by `P11-TSK-011`: the decline is conditional on `expires_at > statement_timestamp()` too - the expiry's
+complement, as the acceptance's is - so an offer past its instant is refused `409 lending.OfferNotAcceptable` and expires
+whether or not the sweep has run. An approval that cannot be offered - no `ACTIVE` terms, the chosen day no longer
+offered, the decision already lapsed, a loan that would not amortise - closes the application `CLOSED_UNDECIDED` with
+its reason code; an offer is never born expired.)*
 
 ### 5.3 Loan (both kinds) — the lifecycle
 
@@ -497,7 +502,8 @@ capital line's foreign-key share is what may wait on L6. Still one-way: no lendi
 
 All claim in one `UPDATE … WHERE id IN (SELECT … ORDER BY permit, id LIMIT ? FOR UPDATE SKIP
 LOCKED)` statement stamping the permit from `statement_timestamp()`, then act per account in its own
-transaction under L3 with conditional steps. A duplicate tick, two instances, a crash after any
+transaction under L3 with conditional steps. *(As built by `P11-TSK-011` for `LoanOriginationSchedule`: one such statement per
+table - applications, then offers - since a statement updates one table; the offer's permit is stamped at its expiry.)* A duplicate tick, two instances, a crash after any
 statement or a restart re-drives to the same rows. `NoSingleInstanceAssumptionRulesTest.
 LEASE_PROTECTED_SCHEDULERS` twenty-two → twenty-six.
 
@@ -526,7 +532,7 @@ declares; every table carrying money is `INSERT`-only.
 | `loan_terms_version` (+ `_event`), `loan_terms` | `-005` | one `PROPOSED`, one `ACTIVE` per product (partial uniques); immutable once proposed - the machine row carries no money (a column-scoped `UPDATE` of its decision columns, lockable), the term set `loan_terms` INSERT-only *(split by `P11-TSK-005`: the term set carries money)* |
 | `capital_contribution` (+ `_event`) | `-004` | both INSERT-only (the proposal carries money); one decision per contribution (partial unique, under namespace `11`); four-eyes `CHECK` on the decision row, the proposer copy pinned by a composite key; `UNIQUE (expectation_ref)` on the approval row; `UNIQUE (reference)` |
 | `loan_application` (+ `_event`) | `-010` | `UNIQUE (decision_request_id)` |
-| `loan_offer` (+ `_event`) | `-011` | `UNIQUE (application_id)`; canonical terms + `terms_sha256` |
+| `loan_offer` (+ `_event`), `loan_offer_terms` | `-011` | `UNIQUE (application_id)`, `UNIQUE (decision_id)`; canonical terms + `terms_sha256` (a `CHECK` holds the hash to the bytes) *(split by `P11-TSK-011` along the money line, as `-005`'s terms: the machine row money-free and lockable, the terms INSERT-only)* |
 | `loan` (+ `loan_event`), `loan_agreement`, `loan_acceptance`, `loan_disbursement` | `-012` | `UNIQUE (offer_id)`; `UNIQUE (loan_id, version)`; `UNIQUE (loan_id)` |
 | `repayment_schedule`, `loan_instalment`, `accrual_start` | `-014` | `UNIQUE (loan_id, schedule_version)`; `UNIQUE (schedule_id, sequence)`; `UNIQUE (loan_id)` |
 | `loan_payout` | `-015` | `UNIQUE (loan_id)`; payments' reference |
@@ -636,7 +642,8 @@ nobody consumes, one event per account per day; the accrual is the row and the e
 billing or statement event carries what became due. `LoanDelinquent` is renamed
 `LoanDelinquencyChanged` (it also announces cure). Lending consumes no event for correctness; it may
 consume `credit.CreditDecisionRecorded` v2 and `credit.CreditDecisionRequestClosed` as hints (an
-`InboxEventHandler`; v1 refused or handled, ADR-0087 as amended). No event carries a wallet id, an
+`InboxEventHandler`; v1 refused or handled, ADR-0087 as amended). *(As built by `P11-TSK-011`: `LoanOriginationHint`
+reads no payload - both versions handled alike, an unknown one refused - and only pulls the application's permit to now.)* No event carries a wallet id, an
 account identifier or a party's figures beyond its own amounts.
 
 ---

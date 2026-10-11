@@ -2694,6 +2694,7 @@ codes, versions and stamps `INTERNAL`.
 | `loan_application` | `submitted_at` | `INTERNAL` | System time, stamped by the trigger |
 | `loan_application` | `closed_at` | `INTERNAL` | System time, stamped by the trigger at the terminal edge |
 | `loan_application` | `correlation_id` | `INTERNAL` | The submission's correlation - credit's request carries the same |
+| `loan_application` | `next_step_at` | `INTERNAL` | The origination sweep's permit - *added by `P11-TSK-011`* |
 | `loan_application_event` | `id` | `INTERNAL` | Generated |
 | `loan_application_event` | `application_id` | `CONFIDENTIAL` | The application it moved |
 | `loan_application_event` | `from_status` | `INTERNAL` | The machine edge |
@@ -2703,6 +2704,64 @@ codes, versions and stamps `INTERNAL`.
 | `loan_application_event` | `actor_type` | `INTERNAL` | A closed actor type |
 | `loan_application_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `loan_application_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
+### `lending` - the loan offer - *added by `P11-TSK-011`*
+
+The machine row holds no figure; the terms carry them - amounts and rates `RESTRICTED-FINANCIAL` (`PHASE_11_PLAN.md`
+§11), the canonical terms with them since they spell every figure; the hashes, versions, stamps and codes `INTERNAL`;
+party, offer and decision references and the customer's choices `CONFIDENTIAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_offer` | `id` | `CONFIDENTIAL` | A customer's offer reference |
+| `loan_offer` | `application_id` | `CONFIDENTIAL` | The application it continues |
+| `loan_offer` | `party_id` | `CONFIDENTIAL` | The applicant |
+| `loan_offer` | `product` | `INTERNAL` | A closed product code |
+| `loan_offer` | `status` | `INTERNAL` | The machine's state |
+| `loan_offer` | `decision_id` | `CONFIDENTIAL` | Credit's approved decision, by value |
+| `loan_offer` | `terms_version_id` | `INTERNAL` | The terms version pinned at the offering instant |
+| `loan_offer` | `offered_at` | `INTERNAL` | The database's instant of the offering |
+| `loan_offer` | `decision_valid_until` | `INTERNAL` | Credit's decision validity, copied by value - a stamp, not a figure |
+| `loan_offer` | `expires_at` | `INTERNAL` | Stamped by the trigger on the database clock |
+| `loan_offer` | `next_step_at` | `INTERNAL` | The expiry sweep's permit |
+| `loan_offer` | `closed_at` | `INTERNAL` | System time, stamped by the trigger at the terminal edge |
+| `loan_offer` | `correlation_id` | `INTERNAL` | The application's correlation |
+| `loan_offer_terms` | `offer_id` | `CONFIDENTIAL` | The offer it prices |
+| `loan_offer_terms` | `product` | `INTERNAL` | A closed product code, pinned to the offer's |
+| `loan_offer_terms` | `currency` | `INTERNAL` | Its currency |
+| `loan_offer_terms` | `scale` | `INTERNAL` | The currency's scale |
+| `loan_offer_terms` | `amount_minor` | `RESTRICTED-FINANCIAL` | The approved principal or limit |
+| `loan_offer_terms` | `term_months` | `CONFIDENTIAL` | The approved term - a loan's |
+| `loan_offer_terms` | `nominal_annual_rate` | `RESTRICTED-FINANCIAL` | The pinned version's rate |
+| `loan_offer_terms` | `repayment_day` | `CONFIDENTIAL` | The customer's chosen day |
+| `loan_offer_terms` | `illustrative_start` | `INTERNAL` | The illustrative schedule's first day - the offering day |
+| `loan_offer_terms` | `first_due_date` | `INTERNAL` | The illustrative first due date |
+| `loan_offer_terms` | `instalment_minor` | `RESTRICTED-FINANCIAL` | The illustrative level instalment |
+| `loan_offer_terms` | `final_instalment_minor` | `RESTRICTED-FINANCIAL` | The illustrative final instalment |
+| `loan_offer_terms` | `total_interest_minor` | `RESTRICTED-FINANCIAL` | The illustrative total interest (A5) |
+| `loan_offer_terms` | `total_payable_minor` | `RESTRICTED-FINANCIAL` | The illustrative total payable (A5) |
+| `loan_offer_terms` | `minimum_payment_floor_minor` | `RESTRICTED-FINANCIAL` | A line's minimum-payment floor |
+| `loan_offer_terms` | `minimum_payment_ratio_bps` | `RESTRICTED-FINANCIAL` | A line's minimum-payment ratio |
+| `loan_offer_terms` | `payment_due_days` | `INTERNAL` | A line's days from statement to due date |
+| `loan_offer_terms` | `schedule_engine_version` | `INTERNAL` | An engine version |
+| `loan_offer_terms` | `accrual_engine_version` | `INTERNAL` | An engine version |
+| `loan_offer_terms` | `allocation_engine_version` | `INTERNAL` | An engine version |
+| `loan_offer_terms` | `statement_engine_version` | `INTERNAL` | An engine version |
+| `loan_offer_terms` | `agreement_template_id` | `INTERNAL` | A registered template |
+| `loan_offer_terms` | `agreement_template_version` | `INTERNAL` | A registered template's version |
+| `loan_offer_terms` | `canonical_format` | `INTERNAL` | The canonical form's format number |
+| `loan_offer_terms` | `canonical_terms` | `RESTRICTED-FINANCIAL` | The canonical terms - every figure the offer carries |
+| `loan_offer_terms` | `terms_sha256` | `INTERNAL` | A hash of the canonical terms |
+| `loan_offer_terms` | `document_sha256` | `INTERNAL` | A hash of the document shown |
+| `loan_offer_event` | `id` | `INTERNAL` | Generated |
+| `loan_offer_event` | `offer_id` | `CONFIDENTIAL` | The offer it moved |
+| `loan_offer_event` | `from_status` | `INTERNAL` | The machine edge |
+| `loan_offer_event` | `to_status` | `INTERNAL` | The machine edge |
+| `loan_offer_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `loan_offer_event` | `actor` | `CONFIDENTIAL` | Who moved it - the customer, or the system |
+| `loan_offer_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `loan_offer_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_offer_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 

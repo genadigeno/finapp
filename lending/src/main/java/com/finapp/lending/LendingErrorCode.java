@@ -5,8 +5,9 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`, `P11-TSK-010`; PHASE_11_PLAN.md section 9): the
- * capital and terms administrations' refusals, the capital shortfall its headroom judges, and the loan application's
- * refusals. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a balance.
+ * capital and terms administrations' refusals, the capital shortfall its headroom judges, the loan application's
+ * refusals and the offer's. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a
+ * balance.
  */
 @RequiredArgsConstructor
 public enum LendingErrorCode implements ErrorCode {
@@ -106,7 +107,14 @@ public enum LendingErrorCode implements ErrorCode {
     AMOUNT_OUT_OF_RANGE(
             "lending.AmountOutOfRange",
             422,
-            "The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted.");
+            "The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted."),
+
+    /**
+     * The offer can no longer be acted on (`P11-TSK-011`): it is declined, expired - on the database clock, swept or
+     * not - or accepted. First met from the decline ({@code LENDING_LIFECYCLES.md} section 4.4); the acceptance
+     * (`P11-TSK-012`) answers it too.
+     */
+    OFFER_NOT_ACCEPTABLE("lending.OfferNotAcceptable", 409, "The offer can no longer be accepted or declined.");
 
     private final String code;
     private final int status;

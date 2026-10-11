@@ -6,6 +6,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -104,6 +107,60 @@ public final class JdbcLoanApplicationStore implements LoanApplicationStore {
             return owned(select, id, party);
         } catch (SQLException failure) {
             throw failed("locking a loan application", failure);
+        }
+    }
+
+    @Override
+    public List<LoanApplicationId> claimAwaiting(Connection unitOfWork, int limit, Duration permit) {
+        if (limit < 1) {
+            throw new IllegalArgumentException("a claim takes at least one application");
+        }
+        try (PreparedStatement claim = unitOfWork.prepareStatement(
+                "UPDATE lending.loan_application SET next_step_at = statement_timestamp() + ? * interval '1 millisecond'"
+                        + " WHERE id IN (SELECT id FROM lending.loan_application WHERE status = 'AWAITING_DECISION'"
+                        + " AND next_step_at <= statement_timestamp()"
+                        + " ORDER BY next_step_at, id LIMIT ? FOR UPDATE SKIP LOCKED)"
+                        + " AND status = 'AWAITING_DECISION' RETURNING id")) {
+            claim.setLong(1, permit.toMillis());
+            claim.setInt(2, limit);
+            List<LoanApplicationId> claimed = new ArrayList<>();
+            try (ResultSet rows = claim.executeQuery()) {
+                while (rows.next()) {
+                    claimed.add(LoanApplicationId.of(rows.getObject(1, UUID.class)));
+                }
+            }
+            return claimed;
+        } catch (SQLException failure) {
+            throw failed("claiming loan applications awaiting a decision", failure);
+        }
+    }
+
+    @Override
+    public Optional<LoanApplication> lockClaimed(Connection unitOfWork, LoanApplicationId id) {
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS
+                + " FROM lending.loan_application a JOIN lending.loan_terms_version v ON v.id = a.terms_version_id"
+                + " WHERE a.id = ? FOR UPDATE OF a")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(application(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("locking a claimed loan application", failure);
+        }
+    }
+
+    @Override
+    public boolean hint(Connection unitOfWork, UUID decisionRequest) {
+        Objects.requireNonNull(decisionRequest, "decisionRequest");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE lending.loan_application SET next_step_at = statement_timestamp()"
+                        + " WHERE decision_request_id = ? AND status = 'AWAITING_DECISION'"
+                        + " AND next_step_at > statement_timestamp()")) {
+            update.setObject(1, decisionRequest);
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("hinting a loan application", failure);
         }
     }
 

@@ -415,6 +415,14 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " pins the versions in force, opens the data requests, freezes, assesses and evaluates, and"
                         + " expires or abandons a request, each edge recorded in the request's history as the system's."),
                     Map.entry(
+                            "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
+                    "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
+                        + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"
+                        + " offer's expiry - the platform reads credit's decision and acts on it, each edge recorded in"
+                        + " the application's and the offer's histories as the system's, under the application's own"
+                        + " correlation, so the record ties to the customer's submission. A person's approval is"
+                        + " credit's underwriting; the customer's own acts on an offer are theirs."),
+                    Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
                         + " cover is the platform's own trade with its provider - nobody commands a"

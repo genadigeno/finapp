@@ -268,6 +268,16 @@ class LoanApplicationsTest {
         public List<String> reasonTexts(Connection unitOfWork, UUID decisionRequest) {
             return List.of("Your income could not support the repayments.");
         }
+
+        @Override
+        public CreditOutcome decisionFor(Connection unitOfWork, UUID decisionRequest, UUID party) {
+            throw new UnsupportedOperationException("the application never reads a decision");
+        }
+
+        @Override
+        public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
+            throw new UnsupportedOperationException("the application never resolves a decision");
+        }
     }
 
     private final class FakeApplications implements LoanApplicationStore {
@@ -324,6 +334,21 @@ class LoanApplicationsTest {
         public Optional<LoanApplication> lockOwnedBy(Connection unitOfWork, LoanApplicationId id, UUID party) {
             calls.add("lock");
             return ownedBy(unitOfWork, id, party);
+        }
+
+        @Override
+        public List<LoanApplicationId> claimAwaiting(Connection unitOfWork, int limit, java.time.Duration permit) {
+            throw new UnsupportedOperationException("the application never claims");
+        }
+
+        @Override
+        public Optional<LoanApplication> lockClaimed(Connection unitOfWork, LoanApplicationId id) {
+            throw new UnsupportedOperationException("the application never locks a claimed row");
+        }
+
+        @Override
+        public boolean hint(Connection unitOfWork, UUID decisionRequest) {
+            throw new UnsupportedOperationException("the application never hints");
         }
     }
 }

@@ -994,6 +994,7 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.ApplicationNotWithdrawable` | 409 | The application can no longer be withdrawn. |
 | `lending.ProductNotOffered` | 422 | The product is not offered. |
 | `lending.AmountOutOfRange` | 422 | The amount, limit, term or repayment day is outside the product's bounds; nothing was submitted. |
+| `lending.OfferNotAcceptable` | 409 | The offer can no longer be accepted or declined. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1053,6 +1054,17 @@ pass through unchanged: `409 credit.ApplicantNotEligible` (lending's own standin
 terms are read) and `409 consent.ConsentRequired` naming the purpose. A credit line preferring an external payout, an
 unknown repayment method or payout preference, a malformed amount and a day outside 1-31 are `api.ValidationFailed`.
 `NotFound` answers another party's application exactly as an unknown or malformed id.
+
+The loan offer doors (`P11-TSK-011`, `LENDING_LIFECYCLES.md` §4.4): the customer's, owner-scoped; the decline keyed
+`lending.offer-decline:<type>:<id>` under the conditional step-up (an MFA-enrolled identity on a password-only session
+is `identity.AssuranceRequired`, `403`), so a lost response replays its receipt and a refusal stores nothing.
+`OfferNotAcceptable` (first met here; the acceptance, `P11-TSK-012`, answers it too) refuses a decline of an offer no
+longer `OFFERED` - declined, expired or accepted - or one past its `expires_at` on the database clock whether or not the
+sweep has expired it yet (the decline and the expiry are complementary conditionals, so exactly one lands at the
+instant). `NotFound` answers another party's offer exactly as an unknown or malformed id, on the read and the decline.
+The offer is born by the system, never by a request: an approval that cannot be offered closes its application
+`CLOSED_UNDECIDED` with a reason code (`TERMS_NOT_AMORTISING`, `PRODUCT_NOT_OFFERED`, `REPAYMENT_DAY_NOT_OFFERED`,
+`DECISION_LAPSED`) read on the application, and answers no request with an error.
 
 ## 3a. Rejection at the boundary
 

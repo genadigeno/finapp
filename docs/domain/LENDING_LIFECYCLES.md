@@ -190,6 +190,16 @@ origination step's three edges, and `-011` adds "`→ OFFERED` only beside its o
 application. **Invalid:** anything out of a terminal; `SUBMITTED → OFFERED | DECLINED`; `→ OFFERED`
 without its offer beside it, or on a decision not `APPROVED`; `DECLINED → OFFERED`.
 
+*As built by `P11-TSK-011` (2026-10-11): the origination step (`LoanOrigination`, swept by `LoanOriginationSchedule`)
+takes the three exits under L1 on credit's answer read through `LoanCreditDecisions.decisionFor` - `OFFERED` (reason
+`DECISION_APPROVED`) only beside its offer (`lending V005`'s replaced edge function), `DECLINED` (`CREDIT_DECLINED`),
+`CLOSED_UNDECIDED` with `CREDIT_REQUEST_CANCELLED | _EXPIRED | _ABANDONED`, and - refined - also for an approval that
+cannot be offered: `PRODUCT_NOT_OFFERED` (no `ACTIVE` terms version), `REPAYMENT_DAY_NOT_OFFERED` (the active version no
+longer offers the chosen day), `DECISION_LAPSED` (the decision's `valid_until` already past on the database clock - an
+offer is never born expired) and `TERMS_NOT_AMORTISING`. The application gained its permit `next_step_at` (due at birth,
+re-stamped by every claim, pulled forward by a credit event's hint) - a permit-only update admitted only while
+`AWAITING_DECISION`. The owner's read names the offer's id once `OFFERED`.*
+
 ### 4.4 Loan offer (`lending.loan_offer`) — `P11-TSK-011`, accepted `-012`
 
 ```
@@ -210,6 +220,21 @@ An expired or declined offer releases nothing: the unconsumed decision lapses at
 level, client IP and user agent as `CONFIDENTIAL` (A13). **Invalid:** anything out of `ACCEPTED`,
 `DECLINED`, `EXPIRED` — `EXPIRED → ACCEPTED` above all (a new application); `→ ACCEPTED` without its
 loan and consumption beside it, or at `expires_at <= statement_timestamp()`; `→ EXPIRED` before it.
+
+*As built by `P11-TSK-011` (2026-10-11): `lending V005` splits the offer along the money line, as `-005` split the terms
+version - `loan_offer`, the machine row with no money (column-scoped `UPDATE` of `status` and its permit
+`next_step_at`, lockable as L2), and `loan_offer_terms`, INSERT-only and immutable for every role: exactly the approved
+amount and term, the pinned version's rate, engines, template and a line's rule (the trigger holds them to the pinned
+`loan_terms` row and the application's day), the loan's illustrative schedule figures from the offering day (A5), the
+canonical terms (format 1) with `terms_sha256` - a `CHECK` holds the hash to the stored bytes - and the offer document's
+`document_sha256`; `loan_offer_event` the history. Born `OFFERED` under L1 for an application `AWAITING_DECISION` of the
+same party and product, on the product's `ACTIVE` version, `offered_at` a database instant of the transaction;
+`expires_at` and the permit stamped by the trigger; `UNIQUE (application_id)` and `UNIQUE (decision_id)`; committed only
+beside the application's `OFFERED` edge and with its terms (deferred). The decline (`POST /v1/me/loan-offers/{id}/decline`,
+conditional step-up) is conditional on `OFFERED` and `expires_at > statement_timestamp()`, refused `409
+lending.OfferNotAcceptable` otherwise - so an offer past its instant but not yet swept is not declined; it expires. The
+expiry's conditional is the complement, the edge trigger holds both for every writer, and `ACCEPTED` is refused for
+every writer until `-012` replaces the edge function and admits it beside its loan.*
 
 ### 4.5 Loan (`lending.loan`), both kinds — `P11-TSK-012`, `-014`, `-023`, `-026`
 

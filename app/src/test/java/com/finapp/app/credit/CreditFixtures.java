@@ -63,6 +63,29 @@ public final class CreditFixtures {
         return reached;
     }
 
+    /**
+     * Decides {@code request} with credit's own progress and deciding transaction over the simulated sources (`P11-TSK-011`
+     * - the offer's suites): stepped to {@code EVALUATED}, then decided; the decision's outcome.
+     */
+    public static String decide(UUID request) {
+        String reached = stepUntil(request, "EVALUATED");
+        if (!"EVALUATED".equals(reached)) {
+            throw new IllegalStateException("the request stopped at " + reached);
+        }
+        CreditWorld.decide(CreditWorld.deciding(), request);
+        return CreditWorld.scalar("SELECT outcome FROM credit.credit_decision WHERE decision_request_id = ?", request);
+    }
+
+    /** The bureau's total balance for {@code party}, in minor units - a large one declines (`P11-TSK-011`). */
+    public static void bureauBalance(UUID party, long minorUnits) {
+        CreditWorld.BALANCES.put(party, minorUnits);
+    }
+
+    /** {@code party}'s standing lost - credit's next step abandons its open request (`P11-TSK-011`). */
+    public static void standingLost(UUID party) {
+        CreditWorld.SUSPENDED.add(party);
+    }
+
     /** One step of credit's progress on {@code request} - for a race. */
     public static void stepOnce(UUID request) {
         CreditWorld.step(CreditWorld.progressToEvaluation(), request);
