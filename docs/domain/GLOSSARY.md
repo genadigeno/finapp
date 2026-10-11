@@ -1092,7 +1092,8 @@ Nor the Loan Agreement: an agreement copies the terms it was offered under and k
 rounded once, due dates clamped to month end from the intended day) from an agreement version — at
 the accrual start, and again from agreement v n+1 after an accepted change. Principal is conserved
 exactly (`INV-LND-03`); billed instalments of an old version are kept and unbilled ones superseded,
-nothing updated. Planned (`P11-TSK-006`, `-014`).
+nothing updated. The engine is built (`P11-TSK-006`: the level instalment is the actual-day annuity,
+of which the textbook `P·i/(1−(1+i)^−n)` is the equal-month case); persistence is `-014`'s.
 **Not:** the bill. The schedule projects; Instalment Billing bills the interest actually accrued, so
 a late payment changes what becomes due while the projection stands. Nor a Credit Line's terms — a
 line has statements, not a schedule — and not the offer's illustrative schedule, which is labelled

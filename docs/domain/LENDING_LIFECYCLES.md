@@ -420,8 +420,9 @@ the code:
   `PROPOSED`/`APPROVED`, so a rejected proposal can be proposed again.
 - **The loan's edge history** (`-012`): `loan_event`, as for the other machines.
 - **Where `TermsNotAmortising` is judged**: at the terms proposal (`-005`), for terms that cannot
-  amortise at their declared bounds; a specific offer that still would not amortise closes its
-  application `CLOSED_UNDECIDED (TERMS_NOT_AMORTISING)` with no offer (`-011`).
+  amortise at their declared bounds (wired by `-006`: the schedule engine against credit's bounds,
+  exact over every real calendar, before anything is locked); a specific offer that still would not
+  amortise closes its application `CLOSED_UNDECIDED (TERMS_NOT_AMORTISING)` with no offer (`-011`).
 - **The terms an offer pins** (`-011`): the version `ACTIVE` at the offering instant, read `FOR
   SHARE`; the version recorded on the application is informational, so a retirement between
   application and decision changes nothing already pinned and the offer takes the active one.

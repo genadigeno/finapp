@@ -53,5 +53,9 @@
  * ({@code P11-TSK-007}): {@link com.finapp.lending.AccrualEngineV1}, pure - daily {@code ACT_365F} interest on the base
  * the caller supplies, rounded once per period ({@code INV-LND-09}) - over the {@code ACT_365F} arithmetic it shares
  * with the schedule engine; nothing accrues yet (the sweep is {@code P11-TSK-016}).
+ * The schedule engine ({@code P11-TSK-006}): {@link com.finapp.lending.ScheduleEngineV1}, pure, projecting a
+ * conserving {@link com.finapp.lending.Schedule} or a typed {@link com.finapp.lending.ScheduleOutcome.Refused}, and
+ * judging at the terms door, through the port {@link com.finapp.lending.LoanProductBounds} {@code app} implements over
+ * credit, whether terms amortise across the product's bounds.
  */
 package com.finapp.lending;

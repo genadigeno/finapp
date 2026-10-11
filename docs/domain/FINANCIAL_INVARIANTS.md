@@ -1731,6 +1731,16 @@ exactly and replayed `IDENTICAL` (`P11-TST-002`); `LoanReplayProof` re-running t
 every schedule version (`P11-TSK-029`).
 **Phase:** 11
 
+*(As built by `P11-TSK-006`, 2026-10-11 - `SCHEDULE_ENGINE_V1`: the level instalment is the actual-day annuity rounded
+once `UP` (raised by the least amount only if the period roundings would leave the final instalment above it), period
+interest rounded once `HALF_EVEN` through `Act365Fixed`, the final principal portion the remaining balance, conservation
+asserted by `Schedule`'s construction; a non-positive principal portion a typed `NOT_AMORTISING`, and terms under which
+any loan within credit's bounds could not amortise refused at the proposal (`422 lending.TermsNotAmortising`). Verified
+by `ScheduleEngineV1Test` (golden cases checked by hand and by an independent exact-rational oracle) and
+`ScheduleEngineV1PropertiesTest` (every day of 2027 and 2028 x every repayment day 1-28 x every term 6-60, rates
+including 0, the clamp from an intended 29th-31st, monotone in rate, two JVMs byte-identical); the "refused at the
+offer" half is `P11-TSK-011`'s.)*
+
 ### INV-LND-04 — Allocation conserves and never over-pays a component
 **Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
 component (fee, interest or principal of one due item) had due when the repayment was allocated; no

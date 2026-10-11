@@ -176,5 +176,45 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
   `P11-TSK-015` (path X); recalculated by `P11-TSK-027` and, if not cut, `P11-TSK-028`.
 - Probe (recorded in `MUTATION_TESTING.md` §2 by the building task): round the instalment
   `HALF_EVEN` → the "final ≤ regular" property red.
+- **As built by `P11-TSK-006` (2026-10-11) - decisions 1 to 5 and 9, with these refinements, each on the invariant's
+  side:**
+  - *The level instalment is the actual-day annuity* (decision 3). With each period's growth factor
+    `1 + r · days_j / 365` - the interest the period really charges (decision 4) - `A* = P / Σ_j v_j`, `v_j` the
+    product of the first `j` factors' reciprocals. The formula decision 3 names, `P · i / (1 − (1+i)^−n)` with
+    `i = r / 12`, is exactly its equal-period special case (`days_j = 365/12`), and `r = 0` still gives `P / n`. The
+    literal formula cannot keep decision 3's own promise once interest is actual-day: the first period runs
+    `min_first_period_days` to `min_first_period_days + 30` days, so a 40-day first period leaves the final instalment
+    ABOVE the regular one - in 910 of 1,908 generated loans at 5-20 % (worst +84 %); a 15-day one at a high rate and a
+    long term repays the loan an instalment early (a non-positive final principal portion). Computed exactly - each
+    factor as `365 + r · days_j`, `A* = P · F_n / S_n` with `F_j = F_(j−1) · f_j`, `S_j = S_(j−1) · f_j + 365^j` -
+    and ONE division rounded once `UP` straight to the minor unit (no scale-20 quotient rounded a second time, and no
+    `i = r / 12` rounded at all). Only when the periods' `HALF_EVEN` interest roundings would still leave the final
+    instalment above `UP(A*)` is `A` raised, to the least amount the final instalment does not exceed (a gallop and a
+    bisection; 224 of the 20,468 grid loans, about 1 %, by cents - the property holds it within 10 cents of `A*`) - "rounded once `UP`, the final instalment never larger" now holds
+    for every generated case.
+  - *Period interest* is `Act365Fixed` (`P11-TSK-007`'s primitive, shared byte-identical): `exactInterest` at scale
+    20 then `roundedOnce` `HALF_EVEN` - provably one rounding of the exact quotient (its own javadoc), so schedule and
+    accrual cannot disagree on a day, a year or the division.
+  - *The engine* is `ScheduleEngineV1` (static, pure) answering a sealed `ScheduleOutcome` - `Projected(Schedule)` or
+    `Refused(ScheduleRefusal, detail)`, `NOT_AMORTISING`, `CONVENTION_NOT_IMPLEMENTED` or `INVALID_REQUEST`; nothing
+    throws for a business reason. `Schedule` asserts conservation at construction (decision 5) and names its engine
+    version. The intended day may be 1 to 31 (the month-end clamp is the engine's, tested from an intended 31st); the
+    terms' allowed set (1-28) is the offer's to enforce. Recalculation (decision 9) is `recalculate(terms, P,
+    remaining, intendedDay, effectiveFrom, nextDueDate)` - the first period's interest from `effectiveFrom`.
+  - *The terms door's judgement* (decision 5) is exact over every real calendar, not sampled: `A*` rises with each
+    period's days and falls as the term lengthens, and the first period's interest over `A*` rises with the first
+    period's days, so for each later-period calendar of the leap cycle the worst loan is the longest term at its
+    longest first period; two bounds against `UP(A*)` (which every instalment is at least) then hold every principal
+    portion positive - the first period's interest, and interest on the whole principal over the calendar's longest
+    month - at the bounds' smallest and largest principal. The bounds are credit's, through the new port
+    `LoanProductBounds` (`app`'s `CreditLoanProductBounds` over `CreditProduct`, A16). Measured: at the plan's
+    `min_first_period_days` 15 and credit's 6-60 months the door first refuses at 23.15 %, the rate at which a real
+    60-month loan first fails - sound and tight to 5 bp, in 5 ms. With a 1- or 2-day shortest first period the later-period bound binds instead
+    (first refusal at 56.50 % and 56.90 %), conservatively - no real loan was found failing there; a tighter later bound
+    is not worth its arithmetic at rates no product would name. Within a minor unit of the boundary an offer is still
+    judged by its own schedule (`P11-TSK-011`'s closure).
+  - *Probes* (`MUTATION_TESTING.md` §2): the follow-up's "round the instalment `HALF_EVEN`" is caught by the golden
+    cases and by the property "A is never below the exact annuity" - the "final ≤ regular" property alone no longer
+    catches it, the least-amount raise repairing the final instalment.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

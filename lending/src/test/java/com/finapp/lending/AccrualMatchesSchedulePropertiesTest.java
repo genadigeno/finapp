@@ -28,7 +28,8 @@ import org.junit.jupiter.api.Test;
  * </ul>
  *
  * <p>Seeded, so a failure reproduces. The cross-check driving {@code ScheduleEngineV1}'s own schedules through the
- * engine joins when the two engines meet on one branch (built in parallel, `P11-TSK-006`).
+ * engine - {@link #theScheduleEnginesOwnSchedulesAgree} - joined when the two engines met on one branch, at
+ * `P11-TSK-006`'s merge-in (built in parallel).
  */
 @DisplayName("the accrual engine agrees with the schedule and rounds once per period (P11-TSK-007)")
 class AccrualMatchesSchedulePropertiesTest {
@@ -71,6 +72,35 @@ class AccrualMatchesSchedulePropertiesTest {
             assertThat(total).as("path " + i + ": the whole path's interest").isEqualTo(scheduled);
         }
         assertThat(periods).as("periods compared").isGreaterThan(PATHS * 10);
+    }
+
+    @Test
+    @DisplayName("ScheduleEngineV1's own schedules, accrued day by day on each period's opening balance, bill exactly"
+            + " each period's projected interest (the cross-check joined at P11-TSK-006's merge-in)")
+    void theScheduleEnginesOwnSchedulesAgree() {
+        List<ScheduleEngineV1PropertiesTest.Case> grid = ScheduleEngineV1PropertiesTest.grid();
+        int schedules = 0;
+        int compared = 0;
+        for (int index = 0; index < grid.size(); index += 20) {
+            ScheduleEngineV1PropertiesTest.Case loan = grid.get(index);
+            Schedule schedule = ((ScheduleOutcome.Projected) ScheduleEngineV1.project(
+                    loan.terms(), loan.principal(), loan.term(), loan.day(), loan.start())).schedule();
+            AccrualTerms terms = AccrualTerms.of(loan.terms());
+            for (SchedulePeriod scheduled : schedule.periods()) {
+                AccrualPeriod period = new AccrualPeriod(scheduled.periodStart(), scheduled.dueDate());
+                Optional<InterestAccrual> previous = Optional.empty();
+                for (LocalDate date = period.start(); date.isBefore(period.endExclusive()); date = date.plusDays(1)) {
+                    previous = Optional.of(
+                            AccrualEngineV1.accrue(terms, period, previous, date, scheduled.openingBalance()));
+                }
+                assertThat(AccrualEngineV1.postedThrough(previous.orElseThrow()))
+                        .as("loan " + index + " period " + scheduled.sequence()).isEqualTo(scheduled.interest());
+                compared++;
+            }
+            schedules++;
+        }
+        assertThat(schedules).isEqualTo((grid.size() + 19) / 20);
+        assertThat(compared).as("periods compared").isGreaterThan(schedules * 6);
     }
 
     @Test

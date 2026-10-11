@@ -15,6 +15,15 @@ final class LoanTermsFixtures {
 
     static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
+    /**
+     * Credit's bounds for each product as {@code app}'s adapter reads them (`P11-TSK-006`): the personal loan EUR 500.00
+     * to 25,000.00 over 6 to 60 months, the line none - {@code CreditLoanProductBoundsTest} holds the adapter to these.
+     */
+    static final LoanProductBounds BOUNDS = product -> product.kind() == LoanKind.INSTALMENT
+            ? Optional.of(new LoanProductBounds.Bounds(
+                    Money.ofMinorUnits(500_00, EUR), Money.ofMinorUnits(25_000_00, EUR), 6, 60))
+            : Optional.empty();
+
     private LoanTermsFixtures() {}
 
     /** The personal loan at {@code rate} (a decimal fraction string): every plan value, no origination or late fee. */
