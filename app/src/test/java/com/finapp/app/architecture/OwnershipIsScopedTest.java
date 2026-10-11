@@ -2262,6 +2262,23 @@ class OwnershipIsScopedTest {
                                         + " accounts from findAllOwned (owner_ref = ? in the"
                                         + " ledger's statement) under the merchant's own key.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcPurposeBalances.linesOn",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P11-TSK-004. The derivation read a third way - one account's lines by entry -"
+                                        + " classified as derive is: its one caller is the capital proof, over the"
+                                        + " platform's own LENDING_CAPITAL account (operational, no owner exists), and the"
+                                        + " figures leave only through the capital report behind LENDING_INVESTIGATE.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcCapitalContributionStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-004. A capital contribution is the platform's own money - no party owns it"
+                                        + " to scope by; every door reaching this read is behind"
+                                        + " @RequiresPermission(LENDING_CAPITAL_ADMINISTER), asserted per route by"
+                                        + " LendingCapitalDatabaseTest, and the decision re-reads it under the currency's"
+                                        + " advisory lock.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcBalanceDerivation.linesInRange",
                             new Entry(
                                     Scope.NOT_OWNED,

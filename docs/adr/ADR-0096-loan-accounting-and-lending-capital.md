@@ -250,5 +250,43 @@ Financial impact: the operational ledger gains the loan book and the platform's 
   `FxBooksHaveOnePosterTest` in `app`'s hermetic tier: the loan-book rule is live now (lending's
   `LoanAccounts` names the six), the capital rule's permit list is empty until `P11-TSK-004` adds
   capital recognition (the poster) and lending's headroom and proof (readers).
+- **Built: lending capital (`P11-TSK-004`, 2026-10-11), with refinements read against the code.**
+  (a) **Rule 0 is a line of the statement's one recognition entry, not a second posting.** Bank
+  recognition already debits `CASH_AT_BANK` with the statement's whole fold at acceptance
+  (`BankRecognition`, key `settlement-batch:<batchId>`); a separate `DR CASH_AT_BANK / CR
+  LENDING_CAPITAL` would count the cash twice. So in the acceptance, before the entry is computed,
+  each unattributed credit carrying a remittance reference is offered to reconciliation
+  (`AcceptedBatchIntake.claimCapital` → `CapitalRecognition.claim`): an `OPEN`
+  `LENDING_CAPITAL_CONTRIBUTION` expectation its reference reaches under the statement's own source,
+  in its currency and scale, for EXACTLY its amount (no amount tolerance can be represented,
+  `INV-REC-08`) and inside its window on the database clock, locked `FOR UPDATE`, is claimed - one
+  line per expectation in line order - and the line is credited to `LENDING_CAPITAL` in that entry
+  instead of `SUSPENSE_UNMATCHED`. (b) **The recognition is the match.** The claimed item is matched
+  in the same transaction by a `RECOGNITION` decision (verdict `CAPITAL_RECOGNISED`, its one candidate
+  snapshotted - the run replay re-derives it), the allocation settles the expectation, and after the
+  posting a `capital_recognition` row records the entry it explains, `UNIQUE (expectation_id)` and
+  `UNIQUE (external_item_id)` - born once per contribution and per line (reconciliation `V022`). A
+  line that claims nothing parks like any unattributed credit: an unmatched line is a break like any
+  other. (c) **A contribution's expectation is never aged**, and no resolution disposes of it: its
+  remainder is no position of the books (the approval posts nothing), so an overdue break would hold
+  nothing and a write-off would credit capital into being - the ageing sweep skips the kind
+  (`ExpectationKind.agedByReconciliation`, `V022`'s `CHECK` beneath), the resolution machine reads
+  its holding as nothing, and `V022`'s trigger refuses any allocation to it but a recognition's.
+  Lapse is lending's derived report (database date past `expected_by`), final because recognition
+  refuses a lapsed contribution on the same clock. (d) **The window** is the approval's database date
+  plus the settlement bank source's ACTIVE rule set's `funding_lag_days`, the rule set pinned on the
+  expectation (`INV-HIST-04`) - the versioned, four-eyes "how long funds take to land"; no new rule
+  set version is needed. (e) **The contribution's tables are INSERT-only** (`lending V002`:
+  `capital_contribution` born once, `capital_contribution_event` its machine as history), because
+  every lending table carrying money is (`LendingSchemaHasNoMutableMoneyTest`): a decision cannot lock
+  the proposal `FOR UPDATE` (that needs an UPDATE privilege), so every act takes namespace `11` first
+  and the decided-once partial unique is the arbiter; `UNIQUE (expectation_ref)` stands on the
+  approval row, and the four-eyes `CHECK` on the decision row, its proposer copy pinned by a
+  composite foreign key. (f) **Headroom** (`LendingCapitalHeadroom`) reads the capital and the
+  principal outstanding through a new ledger read, `PurposeBalances` (one statement per term, folded
+  through `Money`); the committed term is zero until `P11-TSK-012`, which must read it in the same
+  statement as the outstanding, or before it. (g) The capital route is `GET
+  /v1/operator/lending/capital` (`PHASE_11_PLAN.md` §9's row); the "Operational impact" line's
+  `/v1/operator/reports/lending/capital` is the later reports task's.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

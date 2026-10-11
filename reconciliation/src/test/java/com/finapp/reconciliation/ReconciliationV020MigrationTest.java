@@ -66,6 +66,8 @@ class ReconciliationV020MigrationTest {
         Set<ExpectationKind> kinds = EnumSet.allOf(ExpectationKind.class);
         kinds.removeAll(EnumSet.range(ExpectationKind.CARD_CAPTURE, ExpectationKind.REMITTANCE));
         kinds.removeAll(EnumSet.of(ExpectationKind.CROSSBORDER_PAYOUT, ExpectationKind.CROSSBORDER_RETURN));
+        // Appended after V020 by V022 (P11-TSK-004): applied history, not this migration's.
+        kinds.remove(ExpectationKind.LENDING_CAPITAL_CONTRIBUTION);
         assertThat(kinds).containsExactly(ExpectationKind.FX_SELL_LEG, ExpectationKind.FX_BUY_LEG);
         assertThat(ExternalLineType.fxVocabulary())
                 .containsExactly(ExternalLineType.FX_SOLD, ExternalLineType.FX_BOUGHT, ExternalLineType.FX_FEE);

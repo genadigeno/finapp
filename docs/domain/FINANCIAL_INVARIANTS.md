@@ -1964,11 +1964,21 @@ safeguarding position becomes false. Capital posted by a person, or adjusted to 
 `LENDING_CAPITAL`) + `DOMAIN` (`LENDING_CAPITAL` in `closedToFreeAdjustments()` and in
 `reconciledPositions()`'s single-poster discipline; bank recognition the one poster of `CASH_AT_BANK`,
 `INV-SET-06`; headroom derived from journal lines under the capital row lock, L6, a shortfall refused
-`422 lending.CapitalUnavailable`; interest and fee income never counted as capital).
+`422 lending.CapitalUnavailable`; interest and fee income never counted as capital). *As built by `P11-TSK-004`:*
+the four-eyes `CHECK` and `UNIQUE (expectation_ref)` stand on `capital_contribution_event`'s decision row (the
+contribution's tables are INSERT-only), the proposer copy pinned by a composite key; rule 0 is the bank statement's own
+recognition entry crediting `LENDING_CAPITAL` for a line `CapitalRecognition` claimed - an approved contribution's
+expectation under the statement's source, exact amount, inside its window, locked - and `capital_recognition` is born
+once per contribution and per line (reconciliation `V022`), which also refuses any allocation to a contribution but a
+`RECOGNITION` decision's and never lets one age; the resolution machine disposes of nothing on it.
 **Verify:** `LendingCapitalProof` (`P11-TSK-004`) per currency in one `REPEATABLE READ` snapshot —
 every capital journal line a recognised contribution's, headroom ≥ 0 at rest, the safeguarding
 adjustment `lending_funded(c)` published — gauged `finapp.lending.capital.proof{verdict}` and alerting
-on any failure; acceptances racing for the last capital, one admitted (`P11-TSK-004`, `P11-TSK-012`);
+on any failure (built: `LendingCapitalDatabaseTest#theProofFindsAForeignPosting`); capital recognised only from a
+statement line, a duplicate line recognising once, an unmatched contribution yielding nothing, headroom reading the
+ledger not the status, the recognition's one-way wait on L6 and two headroom consumers racing for the last capital
+with one admitted (`LendingCapitalDatabaseTest`, `P11-TSK-004`); acceptances racing for the last capital, one
+admitted (`P11-TSK-012`);
 draws racing for the last capital (`P11-TSK-021`); the probe skipping the capital lock letting two
 acceptances over-deploy (`MUTATION_TESTING.md` §2); the capital proof in every storm round with
 headroom contested (`P11-TST-001`).

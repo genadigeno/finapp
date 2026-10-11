@@ -19,7 +19,8 @@ import java.util.UUID;
  *
  * @param journalEntryId absent exactly for a {@code REMITTANCE} (`V002`'s {@code CHECK}):
  *     a statement line's expectation is opened at report acceptance (`P8-TSK-009`) and
- *     records no posting of ours
+ *     records no posting of ours - and, since `V022` (`P11-TSK-004`), for a
+ *     {@code LENDING_CAPITAL_CONTRIBUTION}, whose approval posts nothing
  * @param settlementCycle the cycle the completion announced, when it announced one — a
  *     matching attribute and a report dimension, never a key (the transition's A5)
  * @param expectedBy {@code posting_date + lag_days[kind]} from the source's active rule
@@ -88,11 +89,11 @@ public record NewExpectation(
             throw new IllegalArgumentException(
                     "an expectation's amount must be strictly positive (ADR-0067 §6)");
         }
-        if ((kind == ExpectationKind.REMITTANCE) == journalEntryId.isPresent()) {
+        if (kind.recordsAPosting() != journalEntryId.isPresent()) {
             throw new IllegalArgumentException(
-                    "a REMITTANCE expectation records no posting of ours, and every other"
-                            + " kind records exactly the entry its completion posted"
-                            + " (ADR-0067 §4)");
+                    "a REMITTANCE or LENDING_CAPITAL_CONTRIBUTION expectation records no posting of"
+                            + " ours, and every other kind records exactly the entry its completion"
+                            + " posted (ADR-0067 §4, P11-TSK-004)");
         }
     }
 }

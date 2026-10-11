@@ -393,7 +393,7 @@ credit before its report — while unexplained value never rests unowned past gr
 ### 6.6 Decision snapshots
 
 Every evaluation writes a `reconciliation.match_decision` — item, origin (`RUN`, `REMATCH`,
-`REPROCESS`, `MANUAL`), `rule_set_id NOT NULL`, rule priority, strategy, matched key kind, outcome,
+`REPROCESS`, `MANUAL`, and since `V022` `RECOGNITION` - §17), `rule_set_id NOT NULL`, rule priority, strategy, matched key kind, outcome,
 claimant rank and count, date deviation and the timing tolerance applied, fee expected, reported
 and tolerated, who and when, and — by reconciliation `V012`, required of every writer by an insert
 trigger — the six columns its replay needs: the engine's `verdict`, the `judged_status` and
@@ -1025,3 +1025,47 @@ proof** (`FxBooksProof`, `INV-FX-06`) explains `FX_POSITION`, `FX_SPREAD_REVENUE
 reversals, `finapp.fx.proof{purpose}` counting failing currencies; **`FxPlanVerification`**
 recomputes every trade's plan from its stored columns and compares it with the posted entry, line by
 line. `FX_POSITION` and the P&L books open no expectations and are not reconciled positions.
+
+## 17. Lending capital — *as built by `P11-TSK-004`*
+
+The platform's own money contributed to lending (ADR-0096 §4, `PHASE_11_PLAN.md` §12.9, `INV-LND-13`). Reconciliation
+owns its recognition; lending owns the four-eyes contribution and reads recognition back through `app` - reconciliation
+never calls lending.
+
+**The expectation** (reconciliation `V022`): `LENDING_CAPITAL_CONTRIBUTION`, opened by the contribution's approval
+through `ExpectationRegister` on the approval's own connection - operation reference the contribution id, posting key
+`lending.capital-contribution:<id>`, INBOUND on the currency's `LENDING_CAPITAL`, under the settlement bank's statement
+source (the one declared `BANK_STATEMENT` source), keyed `REMITTANCE_REF` = the contribution's reference (`LCAP-` and 4
+to 12 digits), `expected_by` = the approval's database date + the bank source's ACTIVE rule set's `funding_lag_days`
+(pinned). Like a `REMITTANCE` it records no posting of ours (`expectation_records_its_posting`, generated from
+`ExpectationKind.recordsAPosting()`).
+
+**Recognition is the match, in the statement's acceptance.** The statement's recognition entry already debits
+`CASH_AT_BANK` with the whole fold; a capital line is the entry's `CR LENDING_CAPITAL` instead of its
+`CR SUSPENSE_UNMATCHED` - never a second posting. In the acceptance, before the entry is computed, each unattributed
+credit with a remittance reference is offered to `CapitalRecognition.claim`: an `OPEN` contribution expectation its
+reference reaches under the statement's own source, nothing allocated or resolved, in the line's currency and scale, for
+EXACTLY its amount (no amount tolerance exists, `INV-REC-08`) and inside its window on `statement_timestamp()`, locked
+`FOR UPDATE` in id order, is claimed - one line per expectation, first by line number. The claimed line's item is born
+attributed to the statement's own source in the `LENDING_CAPITAL` position and matched at once by a `RECOGNITION`
+decision (verdict `CAPITAL_RECOGNISED`, strategy `ONE_TO_ONE`, key `REMITTANCE_REF`, its one candidate snapshotted - the
+run replay re-derives it: one contribution candidate, INBOUND, its whole remainder equal to the line), the allocation
+settling the expectation and `SettlementExpectationSettled` announced; after the posting a `capital_recognition` row
+names the entry it explains - `UNIQUE (expectation_id)`, `UNIQUE (external_item_id)`, append-only. A line that claims
+nothing - a wrong amount, a rejected or unknown reference, a lapsed contribution, a second copy - is an unattributed
+credit like any other: `UNKNOWN_EXTERNAL(BANK_LINE_UNATTRIBUTED)` and its `BANK_UNATTRIBUTED` suspense item.
+
+**Never aged, never resolved into capital.** A contribution's remainder is no position of the books - the approval
+posted nothing - so an overdue `MISSING_EXTERNAL` on it would hold nothing, and a person's `WRITE_OFF` would credit
+`LENDING_CAPITAL` into being. The ageing sweep skips the kind (`ExpectationKind.agedByReconciliation()`;
+`expectation_capital_is_never_aged` beneath), the resolution machine reads a contribution's holding as nothing (every
+posting kind refused), and `allocation_to_capital_is_recognition` refuses any allocation to it but a `RECOGNITION`
+decision's (or a repudiation's counter-allocation). Lapse is lending's derived report - final, because the claim refuses
+a contribution past its window on the same database clock.
+
+**Completeness and the capital proof.** A recognition entry is a known-entry class of the completeness proof (§12), so completeness explains every
+`LENDING_CAPITAL` line it carries; a line elsewhere is unattributed (`finapp.reconciliation.line.unattributed{purpose=
+LENDING_CAPITAL}`). Lending's `LendingCapitalProof` proves more: entry by entry, CR−DR on `LENDING_CAPITAL` equals the
+`capital_recognition` amounts recorded against it. *(A repudiated statement reverses its recognition entry and counters
+the allocation, reopening the contribution: the reversal is a capital line no recognition explains, so the proof reports
+it - capital reversal is out of Phase 11's scope, and the alert asks a person to look.)*

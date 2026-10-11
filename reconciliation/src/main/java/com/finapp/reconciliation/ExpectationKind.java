@@ -53,7 +53,51 @@ public enum ExpectationKind {
      * line reaches the anchor, the payout-return precedent). Its opener is the return fact
      * (`P9-TSK-023`).
      */
-    CROSSBORDER_RETURN;
+    CROSSBORDER_RETURN,
+
+    /**
+     * The platform's own corporate transfer funding lending (`P11-TSK-004`, ADR-0096 section 4):
+     * INBOUND on {@code LENDING_CAPITAL}, opened by a four-eyes capital contribution's approval
+     * under the settlement bank's statement source, keyed {@code REMITTANCE_REF} = the
+     * contribution's reference. It records NO posting of ours (the approval posts nothing - capital
+     * exists only once the bank's statement shows the cash) and is never aged: an approved
+     * contribution whose window passes unmatched is reported lapsed by lending, never a break a
+     * person could resolve into capital. Matched only by bank recognition, in the statement's own
+     * acceptance ({@code CapitalRecognition}), never by the run's matcher.
+     */
+    LENDING_CAPITAL_CONTRIBUTION;
+
+    /**
+     * Whether an expectation of this kind records the journal entry its completion posted - every
+     * kind but the bank statement's two: a {@code REMITTANCE} (opened at report acceptance) and a
+     * {@code LENDING_CAPITAL_CONTRIBUTION} (opened by an approval that posts nothing). The
+     * {@code expectation_records_its_posting} {@code CHECK}'s rule (reconciliation `V022`).
+     */
+    public boolean recordsAPosting() {
+        return this != REMITTANCE && this != LENDING_CAPITAL_CONTRIBUTION;
+    }
+
+    /**
+     * Whether the ageing sweep ages this kind into an overdue {@code MISSING_EXTERNAL} - every kind
+     * but {@code LENDING_CAPITAL_CONTRIBUTION} (`P11-TSK-004`): its remainder is no position of the
+     * books (the approval posted nothing), so a break on it would hold nothing a person could
+     * dispose of, and a write-off would credit capital into being. Held for every writer by
+     * `V022`'s {@code expectation_capital_is_never_aged} {@code CHECK}.
+     */
+    public boolean agedByReconciliation() {
+        return this != LENDING_CAPITAL_CONTRIBUTION;
+    }
+
+    /** The kinds the ageing sweep never ages, as a SQL literal list. */
+    public static String sqlNotAgedList() {
+        java.util.Set<ExpectationKind> notAged = java.util.EnumSet.noneOf(ExpectationKind.class);
+        for (ExpectationKind kind : values()) {
+            if (!kind.agedByReconciliation()) {
+                notAged.add(kind);
+            }
+        }
+        return sqlValueList(notAged);
+    }
 
     /** The `V002` {@code CHECK}'s value list — reconciled by the migration test. */
     public static String sqlValueList() {

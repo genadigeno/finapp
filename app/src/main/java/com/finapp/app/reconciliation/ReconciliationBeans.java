@@ -457,6 +457,24 @@ public class ReconciliationBeans {
         return new com.finapp.reconciliation.JdbcMatchingStore();
     }
 
+    /**
+     * Rule 0's recognition (`P11-TSK-004`, ADR-0096 section 4): a statement's capital lines claimed,
+     * matched and recorded inside the statement's own acceptance.
+     */
+    @Bean
+    com.finapp.reconciliation.CapitalRecognition capitalRecognition(
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.platform.outbox.OutboxWriter<java.sql.Connection> outboxWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.CapitalRecognition(matchingStore, outboxWriter, idGenerator);
+    }
+
+    /** What reconciliation knows of the capital contributions, read for lending (`P11-TSK-004`). */
+    @Bean
+    com.finapp.reconciliation.CapitalRecognitionReadings capitalRecognitionReadings() {
+        return new com.finapp.reconciliation.CapitalRecognitionReadings();
+    }
+
     /** The pinned rule set's rows and tolerance, read per chunk (`P8-TSK-011`). */
     @Bean
     com.finapp.reconciliation.MatchingRules matchingRules() {

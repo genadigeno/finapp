@@ -1553,6 +1553,14 @@ public final class ResolutionMachine {
                     item.positionAccountId());
         }
         if (expectation.isPresent()
+                && expectation.get().kind() == ExpectationKind.LENDING_CAPITAL_CONTRIBUTION) {
+            // A contribution's remainder is no position of the books - its approval posted
+            // nothing - so no person's resolution ever disposes of it: a write-off would credit
+            // LENDING_CAPITAL into being (P11-TSK-004, INV-LND-13). Capital comes only from the
+            // bank's statement, through CapitalRecognition.
+            return new ResolutionTemplates.Holding.Nothing();
+        }
+        if (expectation.isPresent()
                 && (expectation.get().status() == ExpectationStatus.OPEN
                         || expectation.get().status() == ExpectationStatus.PARTIALLY_SETTLED)
                 && expectation.get().remainderMinor() > 0) {

@@ -210,6 +210,38 @@ class DecisionReplayTest {
     }
 
     @Test
+    @DisplayName("CAPITAL_RECOGNISED (P11-TSK-004): the one contribution candidate allocated whole, MATCHED; another"
+            + " amount, another kind, a partial remainder or a second candidate diverges")
+    void capitalRecognition() {
+        MatchEngine.HitFacts contribution = capitalHit(E1, 500_00, 500_00);
+        assertIdentical(recognition(500_00, List.of(contribution), List.of(alloc(E1, 500_00))));
+        assertThat(DecisionReplay.replay(recognition(400_00, List.of(contribution), List.of(alloc(E1, 400_00))))
+                        .result())
+                .as("an amount other than the contribution's is no recognition")
+                .isEqualTo(DecisionReplay.Result.DIVERGED);
+        assertThat(DecisionReplay.replay(recognition(
+                                500_00, List.of(hit(E1, 500_00, 500_00, EUR, ExpectationDirection.INBOUND)),
+                                List.of(alloc(E1, 500_00))))
+                        .result())
+                .as("a candidate that is not a capital contribution is no recognition")
+                .isEqualTo(DecisionReplay.Result.DIVERGED);
+        assertThat(DecisionReplay.replay(recognition(500_00, List.of(capitalHit(E1, 900_00, 500_00)),
+                                List.of(alloc(E1, 500_00))))
+                        .result())
+                .as("a contribution already partly allocated is no recognition")
+                .isEqualTo(DecisionReplay.Result.DIVERGED);
+        assertThat(DecisionReplay.replay(recognition(500_00, List.of(contribution, capitalHit(E2, 500_00, 500_00)),
+                                List.of(alloc(E1, 500_00))))
+                        .result())
+                .as("a recognition reaches exactly one contribution")
+                .isEqualTo(DecisionReplay.Result.DIVERGED);
+        assertThat(DecisionReplay.replay(recognition(500_00, List.of(contribution), List.of(alloc(E2, 500_00))))
+                        .result())
+                .as("the allocation names the candidate")
+                .isEqualTo(DecisionReplay.Result.DIVERGED);
+    }
+
+    @Test
     @DisplayName("an ERRORED decision and one written before V012 stored a verdict are not"
             + " replayed - never counted as divergence")
     void notReplayed() {
@@ -350,6 +382,25 @@ class DecisionReplayTest {
                 Optional.of(new DecisionReplay.FeeFacts(
                         Optional.of(terms), 2, Optional.of(100_00L), storedExpected)),
                 List.of());
+    }
+
+    private static MatchEngine.HitFacts capitalHit(UUID id, long amount, long remainder) {
+        return new MatchEngine.HitFacts(
+                id, ExpectationKind.LENDING_CAPITAL_CONTRIBUTION, ExpectationDirection.INBOUND,
+                Money.ofPersisted(amount, EUR, 2), remainder, OPENED, DAY, Optional.of(KeyKind.REMITTANCE_REF),
+                id.toString(), Optional.empty());
+    }
+
+    private static DecisionReplay.StoredDecision recognition(
+            long lineMinor, List<MatchEngine.HitFacts> candidates, List<DecisionReplay.Allocation> allocations) {
+        MatchEngine.ItemFacts bankCredit =
+                new MatchEngine.ItemFacts(
+                        ITEM, ExternalLineType.BANK_CREDIT, ExpectationDirection.INBOUND,
+                        Money.ofPersisted(lineMinor, EUR, 2), DAY, Optional.empty(), false);
+        return new DecisionReplay.StoredDecision(
+                UUID.randomUUID(), DecisionOrigin.RECOGNITION, Optional.of(DecisionVerdict.CAPITAL_RECOGNISED),
+                Optional.of(JudgedStatus.PENDING), lineMinor, DecisionOutcome.MATCHED, bankCredit, DAY,
+                Optional.empty(), false, 2, candidates, List.of(), Optional.empty(), Optional.empty(), allocations);
     }
 
     private static DecisionReplay.StoredDecision manual(UUID chosen, long allocated) {

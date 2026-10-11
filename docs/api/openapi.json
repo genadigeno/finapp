@@ -3937,6 +3937,251 @@
           }
         }
       },
+      "lending.CapitalUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.CapitalUnavailable"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.CapitalUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] There is not enough recognised lending capital for this act; nothing was done.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ContributionInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ContributionInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ContributionInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The contribution is not well formed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.NotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.NotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.NotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No lending record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ProposalNotPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ProposalNotPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ProposalNotPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The proposal is no longer awaiting a decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ProposalPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ProposalPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ProposalPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A proposal already awaits a decision; decide or reject it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.ReasonRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ReasonRequired"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ReasonRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A reason is required.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] A contribution is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.DestinationChangeNotOpen": {
         "content": {
           "application/problem+json": {
@@ -7858,6 +8103,40 @@
         },
         "type": "object"
       },
+      "CapitalContributionReceipt": {
+        "properties": {
+          "expectationRef": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CapitalReport": {
+        "properties": {
+          "contributions": {
+            "items": {
+              "$ref": "#/components/schemas/ContributionView"
+            },
+            "type": "array"
+          },
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyCapitalView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "CaseFileResponse": {
         "properties": {
           "checks": {
@@ -8085,6 +8364,85 @@
             "type": "string"
           },
           "fileId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ContributionDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ContributionProposalRequest": {
+        "properties": {
+          "amountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reference": {
+            "maxLength": 17,
+            "minLength": 9,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "reference"
+        ],
+        "type": "object"
+      },
+      "ContributionView": {
+        "properties": {
+          "amountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "expectedBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "recognisedOn": {
+            "type": "string"
+          },
+          "recognition": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -9387,6 +9745,41 @@
         "properties": {
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CurrencyCapitalView": {
+        "properties": {
+          "committedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "headroomMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lendingFundedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outstandingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "proofHolds": {
+            "type": "boolean"
+          },
+          "recognisedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -18828,6 +19221,150 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScreeningDecisionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/capital": {
+      "get": {
+        "operationId": "readLendingCapital",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/capital-contributions": {
+      "post": {
+        "operationId": "proposeCapitalContribution",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalContributionReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/capital-contributions/{contributionId}/approval": {
+      "post": {
+        "operationId": "approveCapitalContribution",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "contributionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalContributionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/capital-contributions/{contributionId}/rejection": {
+      "post": {
+        "operationId": "rejectCapitalContribution",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "contributionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalContributionReceipt"
                 }
               }
             },

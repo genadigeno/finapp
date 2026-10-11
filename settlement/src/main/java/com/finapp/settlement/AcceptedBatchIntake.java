@@ -46,15 +46,79 @@ public interface AcceptedBatchIntake {
             Connection unitOfWork, AcceptedBatch batch, Intaken intaken, Optional<UUID> entryId);
 
     /**
+     * Which of a statement's unattributed credit lines are LENDING CAPITAL (`P11-TSK-004`,
+     * ADR-0096 section 4): line id to the contribution expectation it settles, those expectations
+     * locked for the rest of the acceptance. Called before the recognition is computed, on the
+     * acceptance's own connection, with the statement's own source - the key scope a contribution
+     * is opened under. A claimed line is credited to the capital account in the recognition
+     * entry and matched by {@link #intake}; every other line is unchanged. A report never asks.
+     *
+     * <p>The default claims nothing: an intake that knows no contributions recognises no capital,
+     * and every line it is offered stays unattributed - cash nobody's pattern explains.
+     */
+    default Map<UUID, UUID> claimCapital(
+            Connection unitOfWork, UUID sourceId, List<CapitalCandidate> candidates) {
+        return Map.of();
+    }
+
+    /** An unattributed statement credit offered for capital: its line, reference and amount. */
+    record CapitalCandidate(UUID lineId, int lineNo, String reference, Money amount) {
+
+        public CapitalCandidate {
+            Objects.requireNonNull(lineId, "lineId must not be null");
+            Objects.requireNonNull(reference, "reference must not be null");
+            Objects.requireNonNull(amount, "amount must not be null");
+        }
+
+        /** Identifiers only - never an amount or a reference ({@code INV-AUD-02}). */
+        @Override
+        public String toString() {
+            return "CapitalCandidate[" + lineId + "]";
+        }
+    }
+
+    /**
+     * A capital line the intake matched to its contribution (`P11-TSK-004`) - carried from
+     * {@link #intake} to {@link #recognised}, which records it against the recognition's entry.
+     */
+    record CapitalMatched(UUID itemId, UUID expectationId, UUID decisionId, Money amount) {
+
+        public CapitalMatched {
+            Objects.requireNonNull(itemId, "itemId must not be null");
+            Objects.requireNonNull(expectationId, "expectationId must not be null");
+            Objects.requireNonNull(decisionId, "decisionId must not be null");
+            Objects.requireNonNull(amount, "amount must not be null");
+        }
+
+        @Override
+        public String toString() {
+            return "CapitalMatched[" + itemId + "]";
+        }
+    }
+
+    /**
      * What the intake wrote: telemetry and the audit summary's material. {@code unattributed}
-     * and {@code continuityBreaks} are a statement's (zero for a report).
+     * and {@code continuityBreaks} are a statement's (zero for a report); {@code capital} the
+     * statement's lines recognised as lending capital (`P11-TSK-004`).
      */
     record Intaken(
             UUID runId,
             int items,
             boolean remittanceOpened,
             int unattributed,
-            int continuityBreaks) {
+            int continuityBreaks,
+            List<CapitalMatched> capital) {
+
+        public Intaken {
+            Objects.requireNonNull(capital, "capital must not be null");
+            capital = List.copyOf(capital);
+        }
+
+        /** A statement's answer with no capital line (`P8-TSK-016`'s shape). */
+        public Intaken(
+                UUID runId, int items, boolean remittanceOpened, int unattributed, int continuityBreaks) {
+            this(runId, items, remittanceOpened, unattributed, continuityBreaks, List.of());
+        }
 
         /** A report's answer (`P8-TSK-009`'s shape). */
         public Intaken(UUID runId, int items, boolean remittanceOpened) {
@@ -248,6 +312,10 @@ public interface AcceptedBatchIntake {
      * One canonical line, copied whole — the item the matcher will dispose of. A bank credit or
      * debit carries its attribution: the source whose remittance pattern matched and that
      * source's clearing position (both, or neither — then it is unattributed and parks owned).
+     * A statement credit claimed as lending capital (`P11-TSK-004`) carries the contribution
+     * expectation it settles, attributed to the statement's own source (the key scope its
+     * contribution is opened under) and to the capital position - and is matched at intake,
+     * never left for the run.
      */
     record CanonicalLine(
             UUID lineId,
@@ -261,7 +329,8 @@ public interface AcceptedBatchIntake {
             byte[] canonicalFingerprint,
             Map<LineReferenceKind, String> references,
             Optional<UUID> attributedSourceId,
-            Optional<AccountPurpose> attributedPosition) {
+            Optional<AccountPurpose> attributedPosition,
+            Optional<UUID> capitalExpectationId) {
 
         public CanonicalLine {
             Objects.requireNonNull(lineId, "lineId must not be null");
@@ -275,6 +344,14 @@ public interface AcceptedBatchIntake {
             Objects.requireNonNull(references, "references must not be null");
             Objects.requireNonNull(attributedSourceId, "attributedSourceId must not be null");
             Objects.requireNonNull(attributedPosition, "attributedPosition must not be null");
+            Objects.requireNonNull(capitalExpectationId, "capitalExpectationId must not be null");
+            if (capitalExpectationId.isPresent()
+                    && (type != SettlementLineType.BANK_CREDIT
+                            || direction != LineDirection.INBOUND
+                            || attributedSourceId.isEmpty())) {
+                throw new IllegalArgumentException(
+                        "lending capital is an attributed bank credit's alone (P11-TSK-004)");
+            }
             if (lineNo < 1) {
                 throw new IllegalArgumentException("a line number is 1-based");
             }
@@ -295,6 +372,25 @@ public interface AcceptedBatchIntake {
             references = Map.copyOf(references);
         }
 
+        /** A line that is not lending capital (`P8-TSK-016`'s shape). */
+        public CanonicalLine(
+                UUID lineId,
+                int lineNo,
+                SettlementLineType type,
+                LineDirection direction,
+                Money amount,
+                LocalDate businessDate,
+                Optional<LocalDate> settlementDate,
+                Optional<LocalDate> valueDate,
+                byte[] canonicalFingerprint,
+                Map<LineReferenceKind, String> references,
+                Optional<UUID> attributedSourceId,
+                Optional<AccountPurpose> attributedPosition) {
+            this(lineId, lineNo, type, direction, amount, businessDate, settlementDate, valueDate,
+                    canonicalFingerprint, references, attributedSourceId, attributedPosition,
+                    Optional.empty());
+        }
+
         /** A report line — never attributed (`P8-TSK-009`'s shape). */
         public CanonicalLine(
                 UUID lineId,
@@ -308,7 +404,8 @@ public interface AcceptedBatchIntake {
                 byte[] canonicalFingerprint,
                 Map<LineReferenceKind, String> references) {
             this(lineId, lineNo, type, direction, amount, businessDate, settlementDate, valueDate,
-                    canonicalFingerprint, references, Optional.empty(), Optional.empty());
+                    canonicalFingerprint, references, Optional.empty(), Optional.empty(),
+                    Optional.empty());
         }
 
         @Override

@@ -20,17 +20,22 @@ class ReconciliationV021MigrationTest {
 
     private static final String V021 = "db/migration/reconciliation/V021__the_corridor_expectation_kinds.sql";
 
+    /** The kinds as V021 left them - before V022 (`P11-TSK-004`) appended the capital contribution. */
+    private static final Set<ExpectationKind> AS_OF_V021 =
+            EnumSet.range(ExpectationKind.CARD_CAPTURE, ExpectationKind.CROSSBORDER_RETURN);
+
     @Test
-    @DisplayName("each kind CHECK is the enum's whole list, the corridor's kinds appended last")
+    @DisplayName("each kind CHECK is the enum's whole list as of V021, the corridor's kinds appended last")
     void everyListIsTheEnum() {
         String sql = normalized(migration());
+        String asOfV021 = ExpectationKind.sqlValueList(AS_OF_V021);
         assertThat(sql)
-                .contains(normalized("ADD CONSTRAINT expectation_kind CHECK (kind IN (" + ExpectationKind.sqlValueList() + "))"))
+                .contains(normalized("ADD CONSTRAINT expectation_kind CHECK (kind IN (" + asOfV021 + "))"))
                 .contains(normalized("ADD CONSTRAINT rule_expectation_kind CHECK (expectation_kind IS NULL OR expectation_kind IN ("
-                        + ExpectationKind.sqlValueList() + "))"))
+                        + asOfV021 + "))"))
                 .contains(normalized("ADD CONSTRAINT rule_set_lag_kind CHECK (expectation_kind IN ("
-                        + ExpectationKind.sqlValueList() + "))"));
-        Set<ExpectationKind> appended = EnumSet.allOf(ExpectationKind.class);
+                        + asOfV021 + "))"));
+        Set<ExpectationKind> appended = EnumSet.copyOf(AS_OF_V021);
         appended.removeAll(EnumSet.range(ExpectationKind.CARD_CAPTURE, ExpectationKind.FX_BUY_LEG));
         assertThat(appended).containsExactly(ExpectationKind.CROSSBORDER_PAYOUT, ExpectationKind.CROSSBORDER_RETURN);
     }

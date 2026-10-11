@@ -6,6 +6,7 @@ import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.reconciliation.BreakCause;
 import com.finapp.reconciliation.BreakRegister;
 import com.finapp.reconciliation.BreakType;
+import com.finapp.reconciliation.CapitalRecognition;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.reconciliation.ExpectationRegister;
@@ -59,6 +60,14 @@ import lombok.RequiredArgsConstructor;
  * {@code BANK_UNATTRIBUTED} suspense item carrying the entry ({@link #recognised}). The
  * statement's place in its chain is judged by {@link StatementChain}: the continuity breaks on
  * its run, and the successor's gap it fills closed {@code EVIDENCED}.
+ *
+ * <h2>Lending capital (`P11-TSK-004`)</h2>
+ *
+ * <p>{@link #claimCapital} hands the statement's unattributed credits to reconciliation's
+ * {@link CapitalRecognition}, which locks the approved contributions they reach under the
+ * statement's own source; a claimed line is born attributed to that source in the capital
+ * position and matched at once - a {@code RECOGNITION} decision settling its contribution - and,
+ * after the posting, recorded against the entry whose capital credit it explains.
  */
 @RequiredArgsConstructor
 public class ReconciliationIntake implements AcceptedBatchIntake {
@@ -72,6 +81,21 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
     @NonNull private final BreakRegister breaks;
     @NonNull private final Suspense suspense;
     @NonNull private final StatementChain chain;
+
+    /** Rule 0's recognition (`P11-TSK-004`) - appended last (the Lombok rule). */
+    @NonNull private final CapitalRecognition capitalRecognition;
+
+    @Override
+    public Map<UUID, UUID> claimCapital(
+            Connection unitOfWork, UUID sourceId, List<CapitalCandidate> candidates) {
+        return capitalRecognition.claim(
+                unitOfWork,
+                sourceId,
+                candidates.stream()
+                        .map(candidate -> new CapitalRecognition.Candidate(
+                                candidate.lineId(), candidate.lineNo(), candidate.reference(), candidate.amount()))
+                        .toList());
+    }
 
     @Override
     public Intaken intake(Connection unitOfWork, AcceptedBatch batch) {
@@ -195,6 +219,34 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
                                     batch.correlation().correlationId()));
             unattributed.add(new Suspense.Unattributed(item.id(), raised.breakId()));
         }
+        // Rule 0 (P11-TSK-004): each claimed capital line matched whole to its contribution now,
+        // in the acceptance that recognised its cash - never left for the run.
+        List<CapitalMatched> capital = new ArrayList<>();
+        for (CanonicalLine line : batch.lines()) {
+            if (line.capitalExpectationId().isEmpty()) {
+                continue;
+            }
+            ExternalItems.NewItem item =
+                    newItems.stream()
+                            .filter(born -> born.settlementLineId().equals(line.lineId()))
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalStateException("every line is born an item"));
+            CapitalRecognition.Matched matched =
+                    capitalRecognition.match(
+                            unitOfWork,
+                            runId,
+                            ruleSet.id(),
+                            batch.sourceId(),
+                            item.id(),
+                            item.amount(),
+                            line.capitalExpectationId().orElseThrow(),
+                            batch.actor(),
+                            batch.at(),
+                            batch.acceptedOn(),
+                            batch.correlation().correlationId());
+            capital.add(new CapitalMatched(
+                    matched.itemId(), matched.expectationId(), matched.decisionId(), matched.amount()));
+        }
         if (!unattributed.isEmpty()) {
             suspense.bornParked(
                     unitOfWork,
@@ -220,7 +272,8 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
                                 batch.actor(),
                                 batch.at(),
                                 batch.correlation().correlationId()));
-        return new Intaken(runId, newItems.size(), false, unattributed.size(), judged.raised());
+        return new Intaken(
+                runId, newItems.size(), false, unattributed.size(), judged.raised(), capital);
     }
 
     private static StatementChain.Link link(AcceptedBatchIntake.Neighbour neighbour) {
@@ -231,12 +284,31 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
 
     /**
      * After the recognition posted: each unattributed line's owned suspense item, carrying the
-     * entry whole. A report — and a statement with nothing unattributed — writes nothing.
+     * entry whole, and each capital line's recognition against the same entry (`P11-TSK-004`). A
+     * report — and a statement with nothing unattributed and no capital — writes nothing.
      */
     @Override
     public void recognised(
             Connection unitOfWork, AcceptedBatch batch, Intaken intaken, Optional<UUID> entryId) {
-        if (batch.statement().isEmpty() || intaken.unattributed() == 0) {
+        if (batch.statement().isEmpty()) {
+            return;
+        }
+        if (!intaken.capital().isEmpty()) {
+            capitalRecognition.record(
+                    unitOfWork,
+                    batch.batchId(),
+                    intaken.capital().stream()
+                            .map(line -> new CapitalRecognition.Matched(
+                                    line.itemId(), line.expectationId(), line.decisionId(), line.amount()))
+                            .toList(),
+                    entryId.orElseThrow(
+                            () -> new IllegalStateException(
+                                    "a capital line always posts its capital credit (BankRecognition)")),
+                    batch.acceptedOn(),
+                    batch.at(),
+                    batch.correlation().correlationId());
+        }
+        if (intaken.unattributed() == 0) {
             return;
         }
         int opened =

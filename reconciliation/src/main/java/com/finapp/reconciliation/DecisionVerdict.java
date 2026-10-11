@@ -12,7 +12,9 @@ import java.util.stream.Collectors;
  * how replay knows which function to re-run: {@link MatchEngine}'s verdicts, {@link GroupMatch}'s
  * prefixed {@code GROUP_}, {@link CorrectionEngine}'s, {@link FeeCheck}'s within or beyond its
  * tolerance; a person's {@code MANUAL_CHOICE}; and {@code ERRORED}, a contained exception —
- * nothing pure to re-run.
+ * nothing pure to re-run. {@code CAPITAL_RECOGNISED} (`P11-TSK-004`, `V022`) is
+ * {@link CapitalRecognition}'s: a capital line allocated whole to the one contribution
+ * expectation its reference reached, exact amount, INBOUND, in the line's currency.
  */
 public enum DecisionVerdict {
     ALLOCATE,
@@ -32,7 +34,8 @@ public enum DecisionVerdict {
     FEE_WITHIN,
     FEE_BEYOND,
     MANUAL_CHOICE,
-    ERRORED;
+    ERRORED,
+    CAPITAL_RECOGNISED;
 
     /** The pure function a verdict came from, which replay re-runs. */
     public enum Engine {
@@ -41,7 +44,8 @@ public enum DecisionVerdict {
         CORRECTION,
         FEE,
         MANUAL,
-        CONTAINED
+        CONTAINED,
+        RECOGNITION
     }
 
     public Engine engine() {
@@ -54,7 +58,13 @@ public enum DecisionVerdict {
             case FEE_WITHIN, FEE_BEYOND -> Engine.FEE;
             case MANUAL_CHOICE -> Engine.MANUAL;
             case ERRORED -> Engine.CONTAINED;
+            case CAPITAL_RECOGNISED -> Engine.RECOGNITION;
         };
+    }
+
+    /** The verdicts `V012` stated, before `V022` added {@code CAPITAL_RECOGNISED}. */
+    public static Set<DecisionVerdict> beforeV022() {
+        return EnumSet.complementOf(EnumSet.of(CAPITAL_RECOGNISED));
     }
 
     public static DecisionVerdict of(MatchEngine.VerdictKind kind) {

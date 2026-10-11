@@ -268,7 +268,7 @@ public final class JdbcResolutionStore implements ResolutionStore {
         return JdbcBreakInquiries.one(
                 unitOfWork,
                 "SELECT id, direction, status, amount_minor - allocated_minor - resolved_minor"
-                        + " AS remainder, currency, scale, ledger_account_id"
+                        + " AS remainder, currency, scale, ledger_account_id, kind"
                         + " FROM reconciliation.expectation WHERE id = ? FOR UPDATE",
                 expectationId,
                 row ->
@@ -279,7 +279,8 @@ public final class JdbcResolutionStore implements ResolutionStore {
                                 row.getLong("remainder"),
                                 row.getString("currency").trim(),
                                 row.getInt("scale"),
-                                row.getObject("ledger_account_id", UUID.class)));
+                                row.getObject("ledger_account_id", UUID.class),
+                                ExpectationKind.valueOf(row.getString("kind"))));
     }
 
     @Override

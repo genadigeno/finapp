@@ -690,7 +690,7 @@ amount_minor` (`CHECK`).
 
 | Edge | Driver | Condition |
 |---|---|---|
-| `PENDING → MATCHED` | The run leg (a chunk) | The item is allocated whole under the pinned rule — `ONE_TO_ONE`, `PARTIAL`, `GROUP_BY_VALUE_DATE` (a bank line whose reference reaches no remittance equals exactly the total of **every untouched** remittance — `OPEN`, nothing allocated or resolved — of its attributed source, direction and currency whose `expected_by` is the line's value date, else its business date), or a `CORRECTION` topping up the original's remainder *(corrected 2026-10-01, `P8-DOC-001`: a `REPROCESS` run re-decides residual items only, never a `PENDING` one; and the group read "all open remittances … with no other claimant")* |
+| `PENDING → MATCHED` | The run leg (a chunk); since `P11-TSK-004`, a bank statement's capital line in its own acceptance (a `RECOGNITION` decision, `RECONCILIATION_MODEL.md` §17) | The item is allocated whole under the pinned rule — `ONE_TO_ONE`, `PARTIAL`, `GROUP_BY_VALUE_DATE` (a bank line whose reference reaches no remittance equals exactly the total of **every untouched** remittance — `OPEN`, nothing allocated or resolved — of its attributed source, direction and currency whose `expected_by` is the line's value date, else its business date), or a `CORRECTION` topping up the original's remainder *(corrected 2026-10-01, `P8-DOC-001`: a `REPROCESS` run re-decides residual items only, never a `PENDING` one; and the group read "all open remittances … with no other claimant")* |
 | `PENDING → CHECKED` | The run leg | A non-allocating fee or bank-fee line, checked under `CHECK` against the pinned `provider_fee_schedule`; `FEE_MISMATCH` raised beyond the tolerance |
 | `PENDING → OFFSET` | The run leg | A `CORRECTION` whose original item holds a parked excess of the opposite direction and equal amount: a suspense release with cause `CORRECTION_OFFSET` and an unpark posting; the original's `AMOUNT_MISMATCH` resolves `EVIDENCED` |
 | `PENDING → UNMATCHED` | The run leg | A remainder that late internal evidence could still change — `UNKNOWN_EXTERNAL` (the key is unknown), `MISSING_INTERNAL` (the operation is known but not completed), a `PAYOUT_RETURNED` with no return yet — with `grace_until` pinned per rule. A `PAYOUT_RETURNED` line always takes this edge: rule set v1 declares its rule **operation-anchored**, so it is never key-matched against the OUTBOUND `MERCHANT_PAYOUT` expectation its references name (which would be a direction mismatch, parked at once as `REVERSAL_MISMATCH`), and the matcher raises no break for it; it waits for the return worker (§5.10) *(the Phase 7 → 8 transition's consistency review, A4)* |
@@ -754,7 +754,9 @@ amount_minor` (`CHECK`).
   the one exit `RESOLVED → REPUDIATED`, and `ItemStatus.permittedTransitions()` is the authority.)*
 
 **Every decision is on the record** (`INV-REC-04`, `INV-REC-07`). Each evaluation writes a
-`match_decision` — origin (`RUN`, `REMATCH`, `REPROCESS`, `MANUAL`), `rule_set_id NOT NULL`, the
+`match_decision` — origin (`RUN`, `REMATCH`, `REPROCESS`, `MANUAL`, and since reconciliation `V022` `RECOGNITION` -
+a statement's capital line matched to its contribution inside the statement's own acceptance, `P11-TSK-004`),
+`rule_set_id NOT NULL`, the
 rule's priority, the strategy, the matched key kind, the outcome, the claimant's rank and count,
 the date deviation and the applied tolerances — and one `match_candidate` per candidate
 considered, with its remainder before. Allocations reference their decision and are append-only

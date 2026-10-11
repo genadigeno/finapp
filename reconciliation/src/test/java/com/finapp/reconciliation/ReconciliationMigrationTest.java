@@ -155,7 +155,10 @@ class ReconciliationMigrationTest {
                         // V013 (P8-TSK-023): the breaks a repudiation closed.
                         "repudiation_closure",
                         // V016 (the Phase 8 -> 9 transition): a late leg's judged reach.
-                        "match_reach");
+                        "match_reach",
+                        // V022 (P11-TSK-004): which recognition entry each recognised capital
+                        // contribution explains.
+                        "capital_recognition");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

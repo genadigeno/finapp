@@ -103,12 +103,15 @@ class LendingMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds only Flyway's history - which the application cannot read")
+    @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables its"
+            + " migrations name")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An
         // application role that could read or write it could make the schema's provenance disagree
-        // with the schema. The first lending table is P11-TSK-004's, and it rewrites this list.
-        assertThat(tablesIn(SCHEMA)).containsExactly("flyway_schema_history");
+        // with the schema. The first lending tables are P11-TSK-004's (V002, the capital
+        // contribution and its history); each later task rewrites this list with its own.
+        assertThat(tablesIn(SCHEMA))
+                .containsExactly("capital_contribution", "capital_contribution_event", "flyway_schema_history");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

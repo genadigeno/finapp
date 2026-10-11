@@ -448,6 +448,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // REASON.
                         "PolicyProposalRequest",
                         "PolicyDecisionRequest",
+                        // P11-TSK-004: the lending-capital doors. No secret in either. A proposal is a currency,
+                        // integer minor units, the bank remittance reference (LCAP- and digits, never an account
+                        // identifier) and a REASON; a decision carries a REASON. Every reason is screened for
+                        // card-number and account shapes at the domain and by lending V002's CHECKs.
+                        "ContributionProposalRequest",
+                        "ContributionDecisionRequest",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's

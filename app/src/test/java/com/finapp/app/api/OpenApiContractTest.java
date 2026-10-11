@@ -317,6 +317,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/registrations",
                         ApiVersion.CURRENT_PREFIX + "/authentications",
                         ApiVersion.CURRENT_PREFIX + "/sessions",
+                        // P11-TSK-004: the lending treasury's doors - capital contributions under four eyes
+                        // (LENDING_CAPITAL_ADMINISTER, keyed) and the capital report (LENDING_INVESTIGATE, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/capital",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

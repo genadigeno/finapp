@@ -127,6 +127,9 @@ public final class ComposedCaseFileEvidence implements EvidenceTargets, TraceEvi
                     // the credit (P9-TSK-027); the case file links none of it (the transition's
                     // read, 2026-10-07: the comment said "until then nothing opens these kinds").
                     case CROSSBORDER_PAYOUT, CROSSBORDER_RETURN -> List.of();
+                    // A capital contribution has no provider: its evidence is the bank statement
+                    // line its recognition matched (P11-TSK-004).
+                    case LENDING_CAPITAL_CONTRIBUTION -> List.of();
                 };
         return found.stream().map(ProviderEvidenceStore.EvidenceMetadata::id).toList();
     }
