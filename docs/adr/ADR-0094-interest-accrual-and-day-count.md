@@ -179,5 +179,15 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   no production clock seam (A15).
 - Probes: drop the accrual unique → scenario 4 red; judge the boundary on the instance clock → the
   skew test red.
+- **As built by `P11-TSK-007` (2026-10-11) - the engine.** `AccrualEngineV1` (`accrue`, `postedThrough`,
+  `project`) over the values `AccrualTerms`, `AccrualPeriod` and `InterestAccrual`, refusing by the typed
+  `AccrualRefused`; the `ACT_365F` arithmetic is the package-private `Act365Fixed` (one product, one
+  division at scale 20 `HALF_EVEN`, one rounding), shared with `SCHEDULE_ENGINE_V1` so the two engines
+  cannot disagree on a day, a year or the division. Point 3's agreement with the schedule is exact, not
+  approximate: with the base at its currency's scale and the rate at ≤ 8 places, a constant-base
+  period's sum of scale-20 daily figures rounds to the schedule's `interest_j` whenever the period is
+  not a multiple of 73 days long - every monthly period is shorter (`AccrualMatchesSchedulePropertiesTest`,
+  two-JVM identical). A date with no accrual inside a period contributes nothing; completeness is the
+  sweep's (`P11-TSK-016`). Nine probes, `MUTATION_TESTING.md` §2.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

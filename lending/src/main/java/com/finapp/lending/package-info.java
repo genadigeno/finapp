@@ -49,6 +49,9 @@
  * payment over a {@link com.finapp.lending.DueState} by the agreement's pinned
  * {@link com.finapp.lending.AllocationRules} into {@link com.finapp.lending.AllocationLine}s, billed items oldest first,
  * the pinned component order within each, the remainder by the overpayment treatment; conserving and never above due
- * ({@code INV-LND-04}), unwired until billing and repayment ({@code -017}, {@code -018}).
+ * ({@code INV-LND-04}), unwired until billing and repayment ({@code -017}, {@code -018}). The accrual engine
+ * ({@code P11-TSK-007}): {@link com.finapp.lending.AccrualEngineV1}, pure - daily {@code ACT_365F} interest on the base
+ * the caller supplies, rounded once per period ({@code INV-LND-09}) - over the {@code ACT_365F} arithmetic it shares
+ * with the schedule engine; nothing accrues yet (the sweep is {@code P11-TSK-016}).
  */
 package com.finapp.lending;
