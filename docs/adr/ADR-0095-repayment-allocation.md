@@ -184,5 +184,28 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   scenario 6), `P11-TSK-021`…`023` (the line's paydown) and `P11-TSK-026` (payoff).
 - Probes: read the projection for allocation → scenario 3 red under a racing reversal; take the
   wallet before the loan → `40P01` in scenario 3.
+- **As built by `P11-TSK-008` (2026-10-11) - decision 1, 2 and the engine halves of 5 and 8, with these
+  refinements:** `AllocationEngineV1.allocate(amount, dueState, rules)` returns `AllocationLine`s
+  (target `DUE_ITEM` with the item and component, `NOT_DUE_PRINCIPAL` or `CREDIT_BALANCE`; every line
+  positive, one per component). `AllocationRules` (engine version, sequence, order, treatment) is taken
+  from the terms (`AllocationRules.of`) and judged again by its constructor, since the agreement's
+  canonical terms will rebuild it (`-011`): an order naming every component once, an allocation
+  engine's version - and the engine refuses rules pinning any version but its own. `DueState` is the
+  caller's derivation (each billed item's identity, due date and fees / interest / principal still due,
+  and the principal not yet due), refused whole for a negative figure, a repeated item or **a repeated
+  due date** - oldest-first is then a total order and the allocation a function of the set, never of an
+  input order. Every order the vocabulary admits (the six permutations `LoanTerms` accepts) is applied
+  as pinned. **The line's remainder** pays down principal not yet due and holds only the rest; accrued,
+  unbilled interest is not a target (it is billed first, then the credit balance applies). **The
+  credit-balance application (rule 6) is `allocate` with the credit balance as the amount** - its
+  `CREDIT_BALANCE` line is what stays held, so no separate entry point. **The prepayment** is
+  `allocatePrepayment` (one `NOT_DUE_PRINCIPAL` line) and refuses arrears (`ARREARS_OUTSTANDING` - the
+  engine's half of `-028`'s `409 lending.ArrearsFirst`), an amount beyond the principal not yet due and
+  the line's treatment. Refusals are one typed exception, `AllocationRefused`, by `Reason` (negative
+  amount, currency or scale, malformed rules, unsupported engine, malformed due state, and the three
+  prepayment reasons); no HTTP code - the commands that call the engine map them. Conservation and
+  never-above-due are asserted before the lines return (an `IllegalStateException`: an engine defect,
+  never an input refusal). The backlog's `AllocationEngineV1Properties` is `AllocationEngineV1PropertiesTest`
+  (`TestTaxonomyTest`), its two-JVM comparison through the lending test helper `SecondJvm`.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

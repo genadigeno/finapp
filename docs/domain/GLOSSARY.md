@@ -1139,7 +1139,8 @@ wallet. External inbound repayment rails are deferred: money arrives as a wallet
 components, born with it in the pinned order — billed items oldest due date first, fees → interest
 → principal within each, the remainder held as Loan Credit Balance (loan) or paying down drawn
 principal (line) — computed by a pure engine under the loan's lock from postings, its lines summing
-to the amount exactly and none above its component's due (`INV-LND-04`). Planned (`P11-TSK-008`,
+to the amount exactly and none above its component's due (`INV-LND-04`). The engine is built
+(`P11-TSK-008`: `AllocationEngineV1`, its `AllocationLine`s); the rows and the posting are planned (`-017`,
 `-018`).
 **Not:** the Repayment (the money) and not the journal entry, whose lines are aggregated per
 account: the allocation is the per-item explanation the entry's figures must equal. Never edited — a

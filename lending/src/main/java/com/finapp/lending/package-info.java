@@ -44,7 +44,11 @@
  * terms as versioned data ({@code P11-TSK-005}): {@code V003}'s money-free machine row and INSERT-only term set,
  * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes
  * {@link com.finapp.lending.LoanTermsAdministration} (A0 to A2; {@code pinActive} the {@code FOR SHARE} read the
- * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. No schedule
- * yet.
+ * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. The
+ * allocation engine ({@code P11-TSK-008}): {@link com.finapp.lending.AllocationEngineV1}, pure and versioned - a
+ * payment over a {@link com.finapp.lending.DueState} by the agreement's pinned
+ * {@link com.finapp.lending.AllocationRules} into {@link com.finapp.lending.AllocationLine}s, billed items oldest first,
+ * the pinned component order within each, the remainder by the overpayment treatment; conserving and never above due
+ * ({@code INV-LND-04}), unwired until billing and repayment ({@code -017}, {@code -018}).
  */
 package com.finapp.lending;

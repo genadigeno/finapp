@@ -882,6 +882,13 @@ key `lending.repayment:<repaymentId>`.
 | Concurrent (**scenario 3**) | serialised on L3; each allocates against what it finds; conserved, never over-allocated |
 | After a state change — `CLOSED` / `CANCELLED` | `409 lending.LoanNotRepayable`, nothing posted |
 
+*(As built by `P11-TSK-008`, 2026-10-11: `AllocationEngineV1.allocate(amount, dueState, rules) → AllocationLine`s,
+pure; the rules (`AllocationRules.of(terms)`, judged again on construction) applied in whichever of the six component
+orders the agreement pins; a due state holding one billed item per due date, so oldest-first is a total order; the line's
+remainder to principal not yet due and then credit - accrued, unbilled interest is not a target; the credit-balance
+application is the same call with the balance as the amount, its credit line what stays held; a `PREPAYMENT`'s line by
+`allocatePrepayment`, refusing arrears; typed refusals `AllocationRefused`; ADR-0095's Follow-up records the detail.)*
+
 **Payoff** (both products). *Quote* (keyed): good-through date `G` (today, up to 30 days); amount =
 derived outstanding + the accrual the engine would post through `G − 1` on the current base —
 deterministic, stored immutable with its inputs. Daily accrual means no rebate arithmetic exists
