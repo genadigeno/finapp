@@ -1741,6 +1741,14 @@ by `ScheduleEngineV1Test` (golden cases checked by hand and by an independent ex
 including 0, the clamp from an intended 29th-31st, monotone in rate, two JVMs byte-identical); the "refused at the
 offer" half is `P11-TSK-011`'s.)*
 
+*(The credit line's analogue, as built by `P11-TSK-009`, 2026-10-11 - a line has no schedule, so what it conserves is
+that a statement never bills more principal than is drawn and not yet due: `STATEMENT_ENGINE_V1`'s principal part is
+`min(N, max(round_UP(ratio x D), floor - interest - fees, 0))`, so the minimum payment never exceeds the statement's
+interest, fees and principal not yet due, and `Statement`'s construction asserts the minimum is exactly its parts.
+Verified by `StatementEngineV1Test#drawnPrincipalBelowTheFloorIsCapped` and `StatementEngineV1PropertiesTest` - the
+principal part at most `N`, the minimum at most what can be billed and at least the floor or all of it, over 3,000
+generated lines, two JVMs identical.)*
+
 ### INV-LND-04 — Allocation conserves and never over-pays a component
 **Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
 component (fee, interest or principal of one due item) had due when the repayment was allocated; no

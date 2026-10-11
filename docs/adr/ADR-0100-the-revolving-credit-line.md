@@ -182,5 +182,18 @@ Financial impact: rule 1 per draw, rule 3 per statement, rule 5 with principal p
 - *(Written 2026-10-10: the transition's first draft of A24 read the EUR 25.00 floor as a
   principal floor, contradicting §12.6; the plan was corrected during the transition to §12.6's
   formula, which point 6 records — the floor applies to the whole minimum payment.)*
+- **As built by `P11-TSK-009` (2026-10-11) - the engine.** `StatementEngineV1`, pure and static, over
+  `StatementTerms` (`of(terms, statementDay)` - the floor, ratio, payment-due days, the minimum
+  payment's rounding and the engine version, as declared, re-judged by the engine), answering a
+  `Statement` (what the cycle billed and nothing else - no balance, no drawn principal) or a typed
+  `StatementRefused`. Point 6 refined on the invariant's side: every cycle ends on the statement day,
+  its exclusive end being the statement date and the next cycle's first day (the `AccrualPeriod`
+  point 5's accruals round within); the first cycle runs from the opening to the first statement date
+  strictly after it. "Drawn principal" in the ratio is `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE`, the cap
+  `LOAN_PRINCIPAL` alone; the minimum never exceeds what the statement can bill (its interest, fees and
+  principal not yet due - an earlier unpaid minimum stays on its own due item); the interest is the
+  cycle's posted accruals summed, a list that is not one chain of the cycle's own refused. Nine probes - eight caught,
+  one an equivalent mutant recorded as such - `MUTATION_TESTING.md` §2. The statement row, its posting and the credit-balance application stay
+  `P11-TSK-022`'s.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

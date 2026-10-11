@@ -57,6 +57,11 @@
  * conserving {@link com.finapp.lending.Schedule} or a typed {@link com.finapp.lending.ScheduleOutcome.Refused}, and
  * judging at the terms door, through the port {@link com.finapp.lending.LoanProductBounds} {@code app} implements over
  * credit, whether terms amortise across the product's bounds.
+ * The statement engine ({@code P11-TSK-009}): {@link com.finapp.lending.StatementEngineV1}, pure - a credit line's
+ * cycles from its agreement's statement day ({@link com.finapp.lending.StatementTerms}), and a cycle's
+ * {@link com.finapp.lending.Statement}: the cycle's posted accruals summed, the fees carried, A24's principal part capped
+ * at the drawn principal not yet due and the minimum payment, due the agreement's payment-due days (A23: 25) after the statement date - or a typed
+ * {@link com.finapp.lending.StatementRefused}; nothing is stated yet (the statement step is {@code P11-TSK-022}).
  * The loan application ({@code P11-TSK-010}): {@code V004}'s money-free machine row and its history,
  * {@link com.finapp.lending.LoanApplications} (one customer act opening credit's decision request in the same
  * transaction through {@link com.finapp.lending.LoanCreditDecisions}, the party's standing through

@@ -1252,8 +1252,9 @@ Nor the whole amount owed: paying only the minimum leaves the rest drawn and acc
 **Is:** the least a Credit Line borrower must pay by a statement's due date to stay current —
 interest billed plus fees billed plus a principal part set by the pinned terms' ratio and floor
 (by default 3 % of drawn principal, raised so the whole payment is at least EUR 25.00), capped at the drawn principal — the
-principal part billed as principal due; Days Past Due runs from its due date while it is unpaid. Planned (`P11-TSK-009`,
-`-022`).
+principal part billed as principal due; Days Past Due runs from its due date while it is unpaid. Computed by
+`STATEMENT_ENGINE_V1` (`P11-TSK-009`: the ratio of all drawn principal, capped at the drawn principal not yet due);
+stated and collected from `P11-TSK-022`.
 **Not:** an Instalment — nothing amortises to zero over a term — and not the full outstanding.
 Paying more pays down drawn principal and restores the Available Limit.
 **Owned by:** `lending`

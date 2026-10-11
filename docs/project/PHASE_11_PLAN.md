@@ -941,6 +941,12 @@ drawn principal), EUR 25.00 − interest − fees, 0))` (A24: the whole minimum 
 days (A23). The statement's opening and closing balances are derived from the ledger, never stored as
 figures that could drift (the statement row stores only what it billed).
 
+*(As built by `P11-TSK-009`, 2026-10-11 - `StatementEngineV1`, pure: a cycle ends on the statement day, its exclusive
+end the statement date and the next cycle's first day, the first cycle running from the opening to the first statement
+date strictly after it; "drawn principal" in the ratio is `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` and the cap
+`LOAN_PRINCIPAL`; the minimum never exceeds what the statement can bill - its interest, fees and principal not yet due;
+the interest is the cycle's posted accruals summed. ADR-0100's Follow-up records the refinements.)*
+
 **Available limit recomputation** is never a stored number: every draw derives it under L3; a
 principal repayment (due or not-due) restores it at commit; interest and fees never consume it.
 
