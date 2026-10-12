@@ -450,6 +450,13 @@ instruction read unlocked and `LoanPayouts.dispatch` with no lending transaction
 withdrawal read plainly by its instruction; undecided - observed; concluded - `PAID_OUT`/`FAILED`, the conclusion instant held
 within the payout's life, the accrual start, schedule v1, `lending.LoanPayoutConcluded`; run at once after a dispatch, so a
 synchronous answer concludes without waiting a sweep.)*
+*(As built by `P11-TSK-016` - T-svc's skeleton and its accrual step: the sweep's claim committed first (it stamps the retry cadence);
+**(L3)** the loan `FOR UPDATE`, serviced only while `ACTIVE` or `CLOSING`; the database clock read after it and its business date in the
+pinned zone; the accrual - every elapsed date after the latest accrual, oldest first, from the accrual start (an instalment loan's
+`accrual_start`, none - nothing; a line's opening business date) while the base over journal lines with `value_date <= d` is positive, each
+date's row and its rule 2 entry together, at most 92 dates a step; then the steps later tasks add, in the stated order; then the permit - the
+start of the next business date, or now when the step stopped at its bound. No L0 (interest is not principal; exposure does not move), no L6,
+no L7; the ledger's projection rows last.)*
 
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
@@ -537,7 +544,11 @@ LOCKED)` statement stamping the permit from `statement_timestamp()`, then act pe
 transaction under L3 with conditional steps. *(As built by `P11-TSK-011` for `LoanOriginationSchedule`: one such statement per
 table - applications, then offers - since a statement updates one table; the offer's permit is stamped at its expiry.)* A duplicate tick, two instances, a crash after any
 statement or a restart re-drives to the same rows. `NoSingleInstanceAssumptionRulesTest.
-LEASE_PROTECTED_SCHEDULERS` twenty-two → twenty-six.
+LEASE_PROTECTED_SCHEDULERS` twenty-two → twenty-six. *(As built by `P11-TSK-016` for `LoanServicingSchedule`: the claim stamps the
+permit to the retry cadence (`finapp.lending.servicing.retry`, 15 minutes) - the cadence of a step that fails - and a completed step stamps
+the start of the next business date in the pinned zone; `lending V010` adds `loan.next_servicing_at`, stamped at birth by the loan's
+edge function, which admits the permit's move alone on an account in servicing. The twenty-sixth entry - `-015`'s `LoanPayoutSchedule`
+the twenty-fifth, built in parallel.)*
 
 **Advisory namespace `11`:** lending's administrations — the terms proposals (`hashtext(product)`)
 and the capital contributions (`hashtext(currency)`) — blocking; registered by `-005`, its first
@@ -568,7 +579,7 @@ declares; every table carrying money is `INSERT`-only.
 | `loan` (+ `loan_event`), `loan_agreement`, `loan_acceptance`, `loan_disbursement` | `-012` | `UNIQUE (offer_id)`; `UNIQUE (loan_id, version)`; `UNIQUE (loan_id)` *(as built by `P11-TSK-012`, `lending V006`: also `UNIQUE (decision_id)` on the loan and `UNIQUE (agreement_id)` on the evidence; every table SELECT and INSERT only - nothing born here moves until its task grants the column; the agreement's `canonical_terms` is `text`, the offer's bytes copied, never `jsonb` - a re-serialisation would change the very bytes hashed; the disbursement carries its deadline, its permit and path X's payment method)* |
 | `repayment_schedule`, `loan_instalment`, `accrual_start` | `-014` | `UNIQUE (loan_id, schedule_version)`; `UNIQUE (schedule_id, sequence)`; `UNIQUE (loan_id)` *(as built by `P11-TSK-014`, `lending V008`: all INSERT-only; schedule v1 only (later versions `-027`'s), born for its loan's agreement v1 by its pinned engine from the accrual start, and held to its rows by a deferred conservation check for every writer - n rows numbered 1..n that chain, the principal portions summing to P and the interest to the header's total; a wallet disbursement's accrual start its entry's value date; also `loan_disbursement`'s outcome columns - the entry by value (`UNIQUE`), the value date, the decision instant, the failure reason - and the loan's and the disbursement's edges, each only beside the other, two deferred checks; the application role granted `UPDATE (status, cancellation_reason)` on `loan` and `UPDATE (status, next_attempt_at, journal_entry_id, value_date, failure_reason)` on `loan_disbursement`, the terminal instants stamped by trigger)* |
 | `loan_payout` | `-015` | `UNIQUE (loan_id)`; payments' reference |
-| `interest_accrual` | `-016` | `UNIQUE (loan_id, accrual_date)` |
+| `interest_accrual` | `-016` | `UNIQUE (loan_id, accrual_date)` *(as built by `P11-TSK-016`, `lending V010` - `-015` took `V009`: also `UNIQUE (journal_entry_id)`; INSERT-only for every role; a row exactly while the base is positive, an entry exactly when it posts; its trigger holding an account in servicing, a date ended on the database clock in the pinned zone, on or after the accrual start, after every date already accrued, the account's own agreement version, currency, scale and engine; the period stored beside it; `loan.next_servicing_at` the permit, the application role granted `UPDATE (next_servicing_at)`)* |
 | `instalment_billing`, `credit_balance_application` | `-017` | `UNIQUE (instalment_id)`; `UNIQUE (billing_id)` |
 | `repayment`, `repayment_allocation` | `-018` | a deferred trigger: Σ allocation = amount |
 | `collection_attempt` | `-019` | `UNIQUE (due_item_id, attempt_date)` |
@@ -866,6 +877,18 @@ built in Phase 11 (nothing to correct), keys reserved so nothing collides.
 monthly period being shorter than 73 days, the one length at which a scale-20 daily sum could round differently.
 A date with no accrual inside a period - a line at zero principal - contributes nothing; the projection a payoff
 uses resets at each period it crosses.)*
+
+*(As built by `P11-TSK-016`, 2026-10-12 - the accrual's database half: `LoanServicing` over `lending V010`. The base is
+`LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` over the ledger's `PurposeBalances.datedLinesOn` - both accounts' lines with their entries'
+value dates in one statement, folded through `Money` per date; a date whose base is not positive writes no row. The periods: the latest
+schedule version's instalment periods, **continued monthly on the intended day after the final due date** (`InstalmentCalendar`) - a loan
+whose principal is still outstanding after maturity keeps accruing on it (principal due included, never interest - A4), rounded per month;
+how that interest becomes due is `-017`'s and `-024`'s; a line's statement cycles from `StatementEngineV1.cycle` from its opening business
+date. Rule 2's `reference` is the loan (rule 1's), so a second attempt at a date is the same request under the same key - a replay the step
+refuses as a defect. **The correction key** `lending.accrual-correction:<loan>:<date>:<engine>` is a named constant
+(`LoanServicing.CORRECTION_KEY_PREFIX`); nothing posts under it. `finapp.lending.accrual{outcome}` counts `posted` and `zero` dates and
+`failed` steps; `finapp.lending.accrual.lag` reads instalment loans only - a line's zero-principal days write no row, so its lag needs
+`-021`'s draws to define (recorded).)*
 
 ### 12.4 Disbursement (owner brief 9.6) — the two paths (L2)
 

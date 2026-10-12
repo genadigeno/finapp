@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -95,6 +96,50 @@ public final class JdbcPurposeBalances implements PurposeBalances<Connection> {
         } catch (SQLException failure) {
             throw new LedgerStorageException(
                     DatabaseFailure.describe("reading the lines of account " + account, failure));
+        }
+    }
+
+    @Override
+    public List<DatedLine> datedLinesOn(
+            Connection unitOfWork, Set<LedgerAccountId> accounts, LocalDate valueDateThrough) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accounts, "accounts must not be null");
+        Objects.requireNonNull(valueDateThrough, "valueDateThrough must not be null");
+        if (accounts.isEmpty()) {
+            throw new IllegalArgumentException("name at least one account");
+        }
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT line.entry_id, line.ledger_account_id, entry.value_date, line.direction,"
+                                + " line.amount_minor, line.currency, line.scale"
+                                + " FROM ledger.journal_line line"
+                                + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
+                                + " WHERE line.ledger_account_id = ANY (?) AND entry.value_date <= ?"
+                                + " ORDER BY entry.value_date, line.entry_id")) {
+            Array ids =
+                    unitOfWork.createArrayOf(
+                            "uuid", accounts.stream().map(LedgerAccountId::value).toArray());
+            select.setArray(1, ids);
+            select.setObject(2, valueDateThrough);
+            List<DatedLine> lines = new ArrayList<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    lines.add(
+                            new DatedLine(
+                                    JournalEntryId.of(row.getObject("entry_id", UUID.class)),
+                                    LedgerAccountId.of(row.getObject("ledger_account_id", UUID.class)),
+                                    row.getObject("value_date", LocalDate.class),
+                                    Direction.valueOf(row.getString("direction")),
+                                    Money.ofPersisted(
+                                            row.getLong("amount_minor"),
+                                            CurrencyCode.of(row.getString("currency").stripTrailing()),
+                                            row.getShort("scale"))));
+                }
+            }
+            return List.copyOf(lines);
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("reading the dated lines of " + accounts.size() + " accounts", failure));
         }
     }
 }

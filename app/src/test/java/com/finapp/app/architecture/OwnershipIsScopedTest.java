@@ -985,6 +985,26 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "GET /v1/me/loans/{id} and the listing - the loan id from the owner-scoped loan read, and l.party_id = ? in this statement is the session's own party; another party's loan has no payout status, the 404 before it (P11-TSK-015).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanServicingStore.restamp",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-016. The servicing step's permit, for the account the servicing sweep claimed (LoanServicingStore.claimDue) and this transaction holds FOR UPDATE (L3); conditional on ACTIVE or CLOSING, lending V010's trigger admitting the permit's move alone; no door reaches it - servicing is the system's act.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanServicingStore.accrualStartOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-016. The accrual start of the account the servicing sweep claimed and this transaction holds FOR UPDATE (L3); never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanServicingStore.calendarOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-016. The latest schedule's periods of the account the servicing sweep claimed and this transaction holds FOR UPDATE (L3); never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanServicingStore.latestAccrual",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-016. The latest accrual of the account the servicing sweep claimed and this transaction holds FOR UPDATE (L3) - read after the lock, the predecessor of the next date; never a request value, no door reaches it.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanOfferStore.lockClaimed",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -443,6 +443,13 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " leaving ties to the customer's accepting act. No person can send it, and none is recorded"
                         + " as having done so."),
                     Map.entry(
+                            "com.finapp.app.lending.LoanServicingSchedule.sweepOnce",
+                    "The loan servicing sweep (P11-TSK-016, ADR-0094): interest is earned because a day ended, never"
+                        + " because someone asked - nobody commands an accrual and no operator can accrue; the platform"
+                        + " posts rule 2 for each elapsed date of an account in servicing, the interest_accrual row and"
+                        + " its ledger entry the trail (a scheduled process, not a privileged act: no audit record), under"
+                        + " the account's own correlation."),
+                    Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
                         + " cover is the platform's own trade with its provider - nobody commands a"

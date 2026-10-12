@@ -114,11 +114,11 @@ class LendingMigrationTest {
         // P11-TSK-011's (V005, the offer, its terms and its history), then P11-TSK-012's (V006, the
         // loan, its agreement, its acceptance evidence, its disbursement and its history), then
         // P11-TSK-014's (V008, the accrual start, the schedule and its instalments), then P11-TSK-015's (V009, the
-        // payout); each later task
-        // rewrites this list with its own.
+        // payout) and P11-TSK-016's (V010, the interest accrual); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly("accrual_start", "capital_contribution", "capital_contribution_event",
-                        "flyway_schema_history", "loan", "loan_acceptance", "loan_agreement", "loan_application",
+                        "flyway_schema_history", "interest_accrual", "loan", "loan_acceptance", "loan_agreement",
+                        "loan_application",
                         "loan_application_event", "loan_disbursement", "loan_event", "loan_instalment", "loan_offer",
                         "loan_offer_event", "loan_offer_terms", "loan_payout", "loan_terms", "loan_terms_version",
                         "loan_terms_version_event", "repayment_schedule");
