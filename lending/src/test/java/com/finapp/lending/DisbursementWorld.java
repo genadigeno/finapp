@@ -133,17 +133,33 @@ final class DisbursementWorld {
      */
     static Accepted acceptedLoan(long minor, int term) {
         ensureActive();
+        fund(Money.ofMinorUnits(minor, EUR));
+        return accepted(LoanProduct.PERSONAL_LOAN, minor, Optional.of(term));
+    }
+
+    /**
+     * A fresh party's credit line of limit {@code minor}, offered and accepted (`P11-TSK-016`) - born {@code ACTIVE}; a
+     * line commits no capital (A28). The terms in force are the line's ACTIVE version.
+     */
+    static Accepted acceptedLine(long minor) {
+        Boolean active = inOneTransaction(uow -> TERMS_STORE.active(uow, LoanProduct.CREDIT_LINE).isPresent());
+        if (!active) {
+            activate(LoanTermsFixtures.of(LoanProduct.CREDIT_LINE, "0.1299").build());
+        }
+        return accepted(LoanProduct.CREDIT_LINE, minor, Optional.empty());
+    }
+
+    private static Accepted accepted(LoanProduct product, long minor, Optional<Integer> term) {
         Money amount = Money.ofMinorUnits(minor, EUR);
-        fund(amount);
         LoanApplicationId application = LoanApplicationId.next(IDS);
         UUID party = UUID.randomUUID();
         UUID request = UUID.randomUUID();
         inOneTransaction(uow -> {
-            LoanTermsStore.LoanTermsVersion version = ADMINISTRATION.pinActive(uow, LoanProduct.PERSONAL_LOAN);
+            LoanTermsStore.LoanTermsVersion version = ADMINISTRATION.pinActive(uow, product);
             Actor customer = customer(party);
             CorrelationId correlation = correlation();
             APPLICATIONS.insert(uow, new LoanApplicationStore.NewApplication(application, party,
-                    LoanProduct.PERSONAL_LOAN, request, version.row().id(), 10, RepaymentMethod.WALLET,
+                    product, request, version.row().id(), 10, RepaymentMethod.WALLET,
                     PayoutPreference.WALLET, customer, correlation));
             APPLICATIONS.appendEvent(uow, new LoanApplicationStore.HistoryRow(IDS.next(), application,
                     Optional.empty(), LoanApplicationStatus.SUBMITTED, "APPLICATION_SUBMITTED", customer, correlation));
@@ -154,7 +170,7 @@ final class DisbursementWorld {
                     "CREDIT_REQUEST_OPENED", customer, correlation));
             return null;
         });
-        CREDIT.approve(request, party, amount, Optional.of(term), databaseNow().plus(Duration.ofDays(30)));
+        CREDIT.approve(request, party, product, amount, term, databaseNow().plus(Duration.ofDays(30)));
         LoanOrigination.Outcome outcome = inOneTransaction(uow -> ORIGINATION.originate(uow, application, SYSTEM));
         assertThat(outcome.kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
         LoanOfferId offer = LoanOfferId.of(UUID.fromString(scalar(
@@ -390,9 +406,14 @@ final class DisbursementWorld {
         private final Map<UUID, CreditOutcome.Approved> byDecision = new ConcurrentHashMap<>();
 
         void approve(UUID request, UUID party, Money amount, Optional<Integer> term, Instant validUntil) {
+            approve(request, party, LoanProduct.PERSONAL_LOAN, amount, term, validUntil);
+        }
+
+        void approve(UUID request, UUID party, LoanProduct product, Money amount, Optional<Integer> term,
+                Instant validUntil) {
             UUID decision = UUID.randomUUID();
-            CreditOutcome.Approved approved = new CreditOutcome.Approved(decision, party, LoanProduct.PERSONAL_LOAN,
-                    amount, term, validUntil);
+            CreditOutcome.Approved approved = new CreditOutcome.Approved(decision, party, product, amount, term,
+                    validUntil);
             byRequest.put(request, approved);
             byDecision.put(decision, approved);
         }

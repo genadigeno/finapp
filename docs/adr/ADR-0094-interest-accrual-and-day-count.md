@@ -189,5 +189,19 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   not a multiple of 73 days long - every monthly period is shorter (`AccrualMatchesSchedulePropertiesTest`,
   two-JVM identical). A date with no accrual inside a period contributes nothing; completeness is the
   sweep's (`P11-TSK-016`). Nine probes, `MUTATION_TESTING.md` §2.
+- **As built by `P11-TSK-016` (2026-10-12) - the database half.** `LoanServicing` (T-svc: L3, the database clock
+  after it, the accrual step, the permit) and `LoanServicingSchedule` over `lending V010` (`interest_accrual`,
+  `loan.next_servicing_at`). Refinements, each for its reason: **point 4** - the row also stores its period
+  (`period_start`, `period_end`) so the predecessor and a replay are read from rows, and `UNIQUE (journal_entry_id)`;
+  its trigger holds every point-7 judgement for every writer (a date that has ended on the database clock in the pinned
+  zone, on or after the accrual start, after every date already accrued). **Point 3** - after an instalment loan's final
+  due date the periods continue monthly on the intended day (`InstalmentCalendar`), so post-maturity interest is still
+  rounded per month. **Point 5** - a line accrues from its opening business date on each date with drawn principal
+  (no `accrual_start` row exists for a line). **Point 7** - the claim stamps the permit to a retry cadence (15
+  minutes) and a completed step to the next business date's start; at most 92 dates a step after an outage, the rest
+  due at once. **Rule 2's reference** is the loan, so a re-attempted date is the same request under the same key, a
+  replay refused as a defect. **Point 11** - `LoanServicing.CORRECTION_KEY_PREFIX` names the reserved key. The
+  accrual-lag gauge reads instalment loans (a line's zero days write no row; its arm waits for `-021`). Two probes and
+  their companions, `MUTATION_TESTING.md` §2.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

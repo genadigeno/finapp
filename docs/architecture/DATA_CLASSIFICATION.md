@@ -2917,6 +2917,33 @@ account, named only on the journal line).
 | `loan_instalment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The instalment |
 | `loan_instalment` | `closing_principal_minor` | `RESTRICTED-FINANCIAL` | The principal outstanding after it |
 
+### `lending` - the interest accrual and the servicing permit - *added by `P11-TSK-016`*
+
+`lending V010`: one row per account and accrued date - the base, the period's exact cumulative interest and what the date
+posted `RESTRICTED-FINANCIAL` as every lending amount (a borrower's balance can be read from them), the loan, agreement and
+entry references `CONFIDENTIAL`, dates, periods, versions and stamps `INTERNAL`; and the loan's servicing permit, a
+scheduling instant (`INTERNAL`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan` | `next_servicing_at` | `INTERNAL` | The servicing sweep's permit - when the account is next claimed (`P11-TSK-016`) |
+| `interest_accrual` | `id` | `INTERNAL` | Generated |
+| `interest_accrual` | `loan_id` | `CONFIDENTIAL` | The account the interest accrued on |
+| `interest_accrual` | `accrual_date` | `INTERNAL` | The elapsed date accrued - one row per account and date |
+| `interest_accrual` | `period_start` | `INTERNAL` | The first date of the period it is rounded within |
+| `interest_accrual` | `period_end` | `INTERNAL` | The first date after that period - a due date or the next cycle's start |
+| `interest_accrual` | `currency` | `INTERNAL` | The account's currency |
+| `interest_accrual` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `interest_accrual` | `base_minor` | `RESTRICTED-FINANCIAL` | The principal outstanding at the end of the date, from journal lines |
+| `interest_accrual` | `cumulative_exact` | `RESTRICTED-FINANCIAL` | The period's exact interest through the date, at scale 20 |
+| `interest_accrual` | `posted_minor` | `RESTRICTED-FINANCIAL` | What the date posted (rule 2) - zero for a zero day |
+| `interest_accrual` | `agreement_id` | `CONFIDENTIAL` | The agreement version it was computed under |
+| `interest_accrual` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `interest_accrual` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine version |
+| `interest_accrual` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 2's journal entry, by value - null for a zero day |
+| `interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `interest_accrual` | `correlation_id` | `INTERNAL` | The account's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
