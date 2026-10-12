@@ -66,8 +66,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * row before any lending row; a lost standing refused; the owner's reads and nobody else's. And the disbursement
  * (`P11-TSK-014`) through the real ports: the sweep posting to the borrower's own wallet opened through accounts' door,
  * credit's real profile row taken before the loan, the schedule read. And the accrual (`P11-TSK-016`) through the wired
- * servicing sweep and its meter. The races and the database's ranks are
- * {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s and {@code LoanDisbursementDatabaseTest}'s.
+ * servicing sweep and its meter. And a line's draw (`P11-TSK-021`) through the real door, wallet port and meter. The races
+ * and the database's ranks are {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s, {@code LoanDisbursementDatabaseTest}'s
+ * and {@code CreditLineDrawDatabaseTest}'s.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}, X-TSK-016): the suite brings credit's seeded policies
  * into force, activates both products' lending terms and plants EUR lending capital by a posting from
@@ -77,7 +78,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance, the disbursement and the accrual end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016)")
+@DisplayName("the acceptance, the disbursement, the accrual and the draw end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016,"
+        + " P11-TSK-021)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -444,7 +446,72 @@ class LoanAccountDatabaseTest {
                 "ledger.post:lending.accrual:" + loanId + ":%")).as("one entry a date, however often swept").isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("a line is drawn to the borrower's own wallet end to end (P11-TSK-021): 201 with the draw from a"
+            + " MULTI_FACTOR session; the key replays its receipt byte for byte and refuses another amount 409; past the"
+            + " available limit 422 lending.LimitExceeded; the read derives the limit left; the wallet opened through"
+            + " accounts' door credited once; another party's line the uniform 404; each counted after its commit")
+    void aLineIsDrawnToTheBorrowersWalletEndToEnd() throws Exception {
+        CreditFixtures.Customer owner = customers.consentingCustomer();
+        String offer = offered(owner, line("2500.00"));
+        String hash = field(client.get(OFFERS + "/" + offer, owner.token()).body(), "termsSha256");
+        String loanId = field(accept(owner.token(), offer, hash, null, key()).body(), "loanId");
+        assertThat(client.get(LOANS + "/" + loanId, owner.token()).body()).contains("\"availableLimit\":\"2500.00\"");
+
+        double drawnBefore = drawn("drawn");
+        double exceededBefore = drawn("limit_exceeded");
+        String key = key();
+        HttpResponse<String> drawn = draw(owner.token(), loanId, "1000.00", key);
+        assertThat(drawn.statusCode()).as(drawn.body()).isEqualTo(201);
+        assertThat(drawn.body()).contains("\"loanId\":\"" + loanId + "\"", "\"amount\":\"1000.00\"",
+                "\"currency\":\"EUR\"", "\"agreementVersion\":1");
+        String drawId = field(drawn.body(), "drawId");
+        HttpResponse<String> replay = draw(owner.token(), loanId, "1000.00", key);
+        assertThat(replay.statusCode()).isEqualTo(201);
+        assertThat(replay.body()).as("the receipt, byte for byte").isEqualTo(drawn.body());
+        HttpResponse<String> reused = draw(owner.token(), loanId, "1000.01", key);
+        assertThat(reused.statusCode()).as(reused.body()).isEqualTo(409);
+        assertThat(reused.body()).contains("api.Conflict");
+        HttpResponse<String> otherCurrency = client.post(LOANS + "/" + loanId + "/draws",
+                "{\"amount\":\"10.00\",\"currency\":\"USD\"}", owner.token(), key());
+        assertThat(otherCurrency.statusCode()).as("not the line's currency").isEqualTo(422);
+        assertThat(otherCurrency.body()).contains("api.ValidationFailed");
+        HttpResponse<String> beyond = draw(owner.token(), loanId, "1500.01", key());
+        assertThat(beyond.statusCode()).as(beyond.body()).isEqualTo(422);
+        assertThat(beyond.body()).contains("lending.LimitExceeded").doesNotContain("1500");
+        assertThat(drawn("drawn")).as("counted after the commit, the replay not").isEqualTo(drawnBefore + 1);
+        assertThat(drawn("limit_exceeded")).isEqualTo(exceededBefore + 1);
+
+        assertThat(client.get(LOANS + "/" + loanId, owner.token()).body())
+                .contains("\"availableLimit\":\"1500.00\"", "\"principalNotDue\":\"1000.00\"");
+        assertThat(scalar("SELECT coalesce(sum(CASE l.direction WHEN 'CREDIT' THEN l.amount_minor"
+                + " ELSE -l.amount_minor END), 0)::text FROM ledger.journal_line l"
+                + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                + " JOIN accounts.customer_account c ON c.id = a.owner_ref"
+                + " JOIN party.customer pc ON pc.id = c.customer_id"
+                + " WHERE a.purpose = 'CUSTOMER_WALLET' AND a.currency = 'EUR' AND pc.party_id = ?::uuid",
+                owner.party().toString())).as("the borrower's own wallet credited once").isEqualTo("100000");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                "ledger.post:lending.draw:" + drawId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> foreign = draw(stranger.token(), loanId, "10.00", key());
+        assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
+        assertThat(foreign.body()).contains("lending.NotFound");
+        assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    private HttpResponse<String> draw(String token, String loanId, String amount, String key) throws Exception {
+        return client.post(LOANS + "/" + loanId + "/draws", "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\"}",
+                token, key);
+    }
+
+    private double drawn(String outcome) {
+        return meterRegistry.find(CreditLineDrawMetrics.DRAW).tag("outcome", outcome).counter().count();
+    }
 
     private double accrued(String outcome) {
         return meterRegistry.find(LoanServicingMetrics.ACCRUAL).tag("outcome", outcome).counter().count();

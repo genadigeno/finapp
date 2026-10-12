@@ -82,6 +82,8 @@ public final class LoanAccountDesk {
      * A loan account as its customer sees it. Amounts and the rate are exact decimal strings. {@code payoutStatus} is the
      * external payout's state on path X (`P11-TSK-015`: {@code PENDING}, {@code DISPATCHING}, {@code DISPATCHED},
      * {@code PAID_OUT}, {@code FAILED}, {@code NOT_DISPATCHED}) - null for a wallet loan and a line; never the destination.
+     * {@code availableLimit} is a line's (`P11-TSK-021`): its limit less its drawn principal while {@code ACTIVE}, zero
+     * once it is not - derived in the read's snapshot, never stored; null for an instalment loan.
      */
     public record LoanView(
             String loanId,
@@ -94,7 +96,8 @@ public final class LoanAccountDesk {
             String closedAt,
             AgreementView agreement,
             BalancesView balances,
-            String payoutStatus) {}
+            String payoutStatus,
+            String availableLimit) {}
 
     /** The agreement version that governs the account - a loan's principal, or a line's limit. */
     public record AgreementView(
@@ -306,7 +309,8 @@ public final class LoanAccountDesk {
                         decimal(balances.interestDue()),
                         decimal(balances.feesDue()),
                         decimal(balances.creditBalance())),
-                read.payout().map(Enum::name).orElse(null));
+                read.payout().map(Enum::name).orElse(null),
+                read.availableLimit().map(LoanAccountDesk::decimal).orElse(null));
     }
 
     private static String decimal(Money amount) {

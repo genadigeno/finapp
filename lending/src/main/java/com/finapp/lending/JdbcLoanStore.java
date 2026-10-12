@@ -309,6 +309,22 @@ public final class JdbcLoanStore implements LoanStore {
         }
     }
 
+    @Override
+    public Optional<Owned> lockOwnedBy(Connection unitOfWork, LoanId id, UUID party) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(party, "party");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + COLUMNS + FROM + " WHERE l.id = ? AND l.party_id = ? FOR UPDATE OF l")) {
+            select.setObject(1, id.value());
+            select.setObject(2, party);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(owned(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("locking a loan", failure);
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private static Owned owned(ResultSet row) throws SQLException {

@@ -4,9 +4,9 @@ import com.finapp.platform.api.ErrorCode;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`, `P11-TSK-010`, `P11-TSK-011`, `P11-TSK-012`;
- * PHASE_11_PLAN.md section 9): the capital and terms administrations' refusals, the capital shortfall its headroom
- * judges, the loan application's refusals, the offer's and the acceptance's. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a
+ * The lending module's error codes (`P11-TSK-004`, `P11-TSK-005`, `P11-TSK-010`, `P11-TSK-011`, `P11-TSK-012`,
+ * `P11-TSK-021`; PHASE_11_PLAN.md section 9): the capital and terms administrations' refusals, the capital shortfall its
+ * headroom judges, the loan application's refusals, the offer's and the acceptance's, and the draw's. Each is actionable by the caller who met it; none names an amount, a rate, a reference or a
  * balance.
  */
 @RequiredArgsConstructor
@@ -131,7 +131,38 @@ public enum LendingErrorCode implements ErrorCode {
     PAYOUT_DESTINATION_INVALID(
             "lending.PayoutDestinationInvalid",
             422,
-            "The payout destination is not the customer's own verified bank account, or is not expected here.");
+            "The payout destination is not the customer's own verified bank account, or is not expected here."),
+
+    /**
+     * The draw exceeds the line's available limit (`P11-TSK-021`, {@code INV-LND-14}): the limit less the drawn principal,
+     * derived from journal lines under the line's row lock - zero once the drawn principal reaches the limit. Nothing was
+     * drawn; a principal repayment restores the limit.
+     */
+    LIMIT_EXCEEDED("lending.LimitExceeded", 422, "The draw exceeds the line's available limit; nothing was drawn."),
+
+    /**
+     * The line's draws are suspended (`P11-TSK-021`; A25, ADR-0098): an amount is past due or the line is defaulted - a
+     * derived condition, read under the line's row lock. Nothing was drawn; bring the line up to date, and draws resume.
+     */
+    DRAWS_SUSPENDED(
+            "lending.DrawsSuspended",
+            409,
+            "The line's draws are suspended while an amount is past due or the line is in default; nothing was drawn."),
+
+    /**
+     * The account cannot be drawn (`P11-TSK-021`): it is an instalment loan, or a credit line no longer {@code ACTIVE} - a
+     * closing or closed line takes no further draws (ADR-0100 point 8). Nothing was drawn.
+     */
+    LINE_NOT_DRAWABLE(
+            "lending.LineNotDrawable", 409, "The account is not a credit line open for draws; nothing was drawn."),
+
+    /**
+     * The borrower's wallet cannot receive the draw now (`P11-TSK-021`; A25 - a line pays out to the wallet only): the
+     * wallet cannot be had, or the ledger refuses to post to it. Nothing was drawn and the key is not spent; retry once
+     * the wallet is available.
+     */
+    WALLET_UNAVAILABLE(
+            "lending.WalletUnavailable", 409, "The wallet cannot receive the draw now; nothing was drawn.");
 
     private final String code;
     private final int status;

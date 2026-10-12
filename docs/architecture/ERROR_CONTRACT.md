@@ -997,6 +997,10 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.OfferNotAcceptable` | 409 | The offer can no longer be accepted or declined. |
 | `lending.TermsChanged` | 409 | The terms accepted are not the offer's; nothing was accepted. |
 | `lending.PayoutDestinationInvalid` | 422 | The payout destination is not the customer's own verified bank account, or is not expected here. |
+| `lending.LimitExceeded` | 422 | The draw exceeds the line's available limit; nothing was drawn. |
+| `lending.DrawsSuspended` | 409 | The line's draws are suspended while an amount is past due or the line is in default; nothing was drawn. |
+| `lending.LineNotDrawable` | 409 | The account is not a credit line open for draws; nothing was drawn. |
+| `lending.WalletUnavailable` | 409 | The wallet cannot receive the draw now; nothing was drawn. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1083,6 +1087,22 @@ wallet payout or a credit line (A25), and one that is not the customer's own liv
 capital cannot cover, judged under the capital row lock (L6); a credit line takes no capital at acceptance (A28). A
 party no longer in good standing is credit's own `credit.ApplicantNotEligible` (`409`), the application's precedent.
 `GET /v1/me/loans` and `/{id}` are owner-scoped reads; another party's loan is `NotFound`, as an unknown or malformed id.
+
+The draw (`P11-TSK-021`, ADR-0100 point 3, `INV-LND-14`): `POST /v1/me/loans/{id}/draws` keyed `lending.draw:<type>:<id>`
+and always a `MULTI_FACTOR` act (A19 - a weaker session is `identity.AssuranceRequired`, `403`), `201` with the draw; a
+lost response replays its receipt, a key retried after its claim lapsed converges on the draw born under it
+(`UNIQUE (loan_id, draw_key)`) - another amount under it is the platform's `api.Conflict` (`409`), as for any reused key -
+and every refusal stores nothing, judged under the line's row lock (L3) before any write. `NotFound` answers another
+party's account exactly as an unknown or malformed id. `LineNotDrawable` refuses an instalment loan and a line no longer
+`ACTIVE` (closing or closed). `DrawsSuspended` refuses while an amount is past due or the line is defaulted (A25) - a
+derived condition whose sources (the statement, `-022`; the condition step, `-024`) bring it into force. `LimitExceeded`
+refuses an amount above the available limit - the limit less `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` derived from journal
+lines under L3, zero when drawn principal is at or above the limit. `CapitalUnavailable` (`422`) refuses a draw the
+currency's recognised lending capital cannot cover, judged under the capital row lock (L6, A28) - a draw within the limit
+can meet it. `WalletUnavailable` refuses when the borrower's wallet cannot be had or the ledger will not post to it (draws
+go to the wallet only, A25). An amount that is not positive, not exact at the currency's minor units, or not in the line's
+currency is `api.ValidationFailed` (`422`). A party no longer in good standing is `credit.ApplicantNotEligible` (`409`),
+the acceptance's precedent.
 
 ## 3a. Rejection at the boundary
 

@@ -469,6 +469,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.
                         "LoanAcceptanceBody",
+                        // P11-TSK-021: the customer's draw on their own line - an amount and its currency code as
+                        // strings. No secret; closed: never a destination (A25: the wallet only), never a party.
+                        "CreditLineDrawBody",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's
