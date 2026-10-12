@@ -341,6 +341,24 @@ NOT_DISPATCHED`; `DISPATCHED` without payments' reference. Payments' withdrawal 
 state (`DISPATCHED → COMPLETED | FAILED | UNKNOWN`), so `RETURNED` is mapped from payments' return
 record of a `COMPLETED` withdrawal.
 
+*As built by `P11-TSK-015` (2026-10-12): `lending V009` - `loan_payout` born `PENDING` in path X's T-dis beside the loan
+`ACTIVE` and its disbursement `POSTED` (L7 the wallet's row before the posting, then a hold of `P - f`); a deferred check
+holds the `ACTIVE` edge to the payout's birth. The claim (one statement, `FOR UPDATE SKIP LOCKED`) moves `PENDING →
+DISPATCHING` and re-stamps the permit of lapsed `DISPATCHING` and due `DISPATCHED` rows; every later step acts only on
+the permit its claim stamped. `DISPATCHING → DISPATCHED` names payments' withdrawal (stamped `dispatched_at`, due for an
+observation at once); `DISPATCHING → NOT_DISPATCHED` names its reason (`NO_ELIGIBLE_RAIL` - payments' recorded routing
+refusal; `DESTINATION_UNAVAILABLE` - the method no longer the borrower's own active bank account; `CUSTOMER_UNAVAILABLE`
+- no active customer) and the hold is released in that transaction; `DISPATCHED → DISPATCHED` stamps an observation
+(`last_observed_at`) and nothing else; `DISPATCHED → PAID_OUT | FAILED` carries payments' conclusion instant, held by the
+trigger within `[created_at, statement_timestamp()]`. A terminal payout commits only beside its accrual start
+(`PAYOUT_CONCLUDED`, the conclusion's business date in the pinned zone) and schedule version 1 (a deferred check).
+**Refinement: `RETURNED` is not a state.** Payments keeps no return record for an instant withdrawal - the instant rail
+is final on acceptance (`INV-REV-03`) and recalls and return windows are deferred by ADR-0062 - so a `RETURNED` edge
+would have no producer (every state has one, ADR-0044). Funds that come back after `PAID_OUT` arrive as payments' and
+Phase 8's own facts (an inbound credit, a parked confirmation) and the payout stays `PAID_OUT`, the loan untouched
+(`LoanPayoutDatabaseTest#aReturnLandsInTheWalletAndTheLoanIsUnaffected`); the state arrives with a payments return
+capability, if ever.*
+
 ### 4.8 Repayment (`lending.repayment`) — `P11-TSK-018`, `-019`, `-026`
 
 Born `ALLOCATED` — a repayment row exists only once its money moved, with its allocations
@@ -403,7 +421,7 @@ repayment kind with agreement and schedule v n+1, refused while past due (`409 l
 | Agreement version | `loan_agreement` | acceptance (v1); accepted amendment or prepayment (v n+1) | `UNIQUE (loan_id, version)`; `INSERT`-only for every role; `terms_sha256` re-verified by replay |
 | Acceptance evidence | `loan_acceptance` | acceptance; amendment acceptance | one per accepting act |
 | Schedule version · instalment | `repayment_schedule`, `loan_instalment` | the accrual start; an accepted change | `UNIQUE (loan_id, schedule_version)`; `UNIQUE (schedule_id, sequence)` |
-| Accrual start | `accrual_start` | T-dis (path W) / T-pyr (path X) | `UNIQUE (loan_id)` |
+| Accrual start | `accrual_start` | T-dis (path W) / the payout's terminal outcome - T-pyr, or T-pyo's `NOT_DISPATCHED` (path X, `P11-TSK-015`) | `UNIQUE (loan_id)`; no row = interest has not started |
 | Interest accrual | `interest_accrual` | T-svc, per elapsed date, oldest first | `UNIQUE (loan_id, accrual_date)` + ledger key (`INV-LND-02`, scenario 4) |
 | Instalment billing · credit-balance application | `instalment_billing`, `credit_balance_application` | T-svc at the due date, after every accrual through `Dj − 1` | `UNIQUE (instalment_id)`; `UNIQUE (billing_id)` |
 | Draw | `credit_line_draw` | C, `MULTI_FACTOR`, T-drw: L3 `ACTIVE`, draws not suspended, L5, L6 headroom, available limit derived under L3 | `UNIQUE (loan_id, draw_key)`; `422 lending.LimitExceeded` (`INV-LND-14`), `409 lending.DrawsSuspended`, `422 lending.CapitalUnavailable` |

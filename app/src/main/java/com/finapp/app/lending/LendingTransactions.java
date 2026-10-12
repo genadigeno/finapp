@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingUnitOfWork;
 import java.sql.Connection;
 import java.util.Objects;
 import java.util.function.Function;
@@ -10,9 +11,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Lending's unit of work over Spring (`P11-TSK-004`) - the {@code creditTransactionRunner} shape, composed here because
- * the lending module carries no framework: one transaction, default propagation, one connection for the work.
+ * the lending module carries no framework: one transaction, default propagation, one connection for the work. Lending's
+ * {@link LendingUnitOfWork} - the seam the payout's multi-transaction step runs through (`P11-TSK-015`).
  */
-public final class LendingTransactions {
+public final class LendingTransactions implements LendingUnitOfWork {
 
     private final TransactionTemplate transactions;
     private final TransactionTemplate snapshots;
@@ -43,6 +45,7 @@ public final class LendingTransactions {
     }
 
     /** {@code work} in one transaction on one connection; a thrown refusal rolls it back whole. */
+    @Override
     public <R> R inTransaction(Function<Connection, R> work) {
         return transactions.execute(status -> {
             Connection unitOfWork = DataSourceUtils.getConnection(dataSource);

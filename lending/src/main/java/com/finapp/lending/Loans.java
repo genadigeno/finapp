@@ -34,13 +34,18 @@ public final class Loans {
     @NonNull private final LoanStore store;
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PurposeBalances<Connection> balances;
+    @NonNull private final LoanPayoutStore payouts;
 
-    /** A loan, its governing agreement and its derived balances. */
-    public record Read(LoanStore.Owned owned, Balances balances) {
+    /**
+     * A loan, its governing agreement, its derived balances and - path X - its payout's status (`P11-TSK-015`; empty for a
+     * wallet loan or a line).
+     */
+    public record Read(LoanStore.Owned owned, Balances balances, Optional<PayoutStatus> payout) {
 
         public Read {
             Objects.requireNonNull(owned, "owned must not be null");
             Objects.requireNonNull(balances, "balances must not be null");
+            Objects.requireNonNull(payout, "payout must not be null");
         }
 
         @Override
@@ -84,15 +89,20 @@ public final class Loans {
     /** {@code party}'s loan {@code id}. */
     public Optional<Read> read(Connection unitOfWork, LoanId id, UUID party) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
-        return store.ownedBy(unitOfWork, id, party).map(owned -> new Read(owned, balancesOf(unitOfWork, owned)));
+        return store.ownedBy(unitOfWork, id, party).map(owned -> readOf(unitOfWork, owned, party));
     }
 
     /** {@code party}'s loans, newest first. */
     public List<Read> list(Connection unitOfWork, UUID party) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         return store.listOwnedBy(unitOfWork, party, LISTING_LIMIT).stream()
-                .map(owned -> new Read(owned, balancesOf(unitOfWork, owned)))
+                .map(owned -> readOf(unitOfWork, owned, party))
                 .toList();
+    }
+
+    private Read readOf(Connection unitOfWork, LoanStore.Owned owned, UUID party) {
+        return new Read(owned, balancesOf(unitOfWork, owned),
+                payouts.statusOwnedBy(unitOfWork, owned.loan().id(), party));
     }
 
     /** Each balance at the agreement's persisted scale - the scale every posting to the loan is made in. */

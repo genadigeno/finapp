@@ -2,6 +2,7 @@ package com.finapp.payments;
 
 import com.finapp.ledger.Hold;
 import com.finapp.ledger.HoldExceedsAvailableBalanceException;
+import com.finapp.ledger.HoldId;
 import com.finapp.ledger.HoldService;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.platform.audit.AuditId;
@@ -14,6 +15,7 @@ import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
 import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -27,6 +29,8 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The wallet withdrawal command (`P7-TSK-008`, ADR-0062 §6) — hold-then-dispatch on the
@@ -158,6 +162,59 @@ public final class Withdrawals {
         Resolved resolve(Connection unitOfWork);
     }
 
+    /**
+     * A recorded instruction a SYSTEM flow asks payments to carry out (`P11-TSK-015`, ADR-0097
+     * point 5): {@code <namespace>:<uuid>} - lending's {@code lending:<loanId>} - the amount, and
+     * the ledger hold its instructor placed under the wallet's lock, which the withdrawal ADOPTS
+     * instead of placing its own. The instruction is the claim's key, the row's dispatch key and
+     * part of the request's fingerprint: one withdrawal per instruction, whoever re-drives it.
+     */
+    public record Instruction(String reference, Money amount, HoldId hold) {
+
+        /** The namespace (lowercase letters and dashes - never a UUID), then the UUID. */
+        static final Pattern SHAPE = Pattern.compile(
+                "^([a-z][a-z-]{0,31}):"
+                        + "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$");
+
+        public Instruction {
+            Objects.requireNonNull(reference, "reference must not be null");
+            Objects.requireNonNull(amount, "amount must not be null");
+            Objects.requireNonNull(hold, "hold must not be null");
+            if (!SHAPE.matcher(reference).matches()) {
+                throw new SystemWithdrawalRefusedException(
+                        SystemWithdrawalRefusedException.Reason.INSTRUCTION_MALFORMED);
+            }
+            if (!amount.isPositive()) {
+                throw new IllegalArgumentException(
+                        "an instructed withdrawal moves a positive amount");
+            }
+        }
+
+        /** The instruction and the hold - never the amount (the `Resolved` idiom). */
+        @Override
+        public String toString() {
+            return "Instruction[" + reference + ", hold=" + hold + "]";
+        }
+
+        /** The claim's scope: {@code payments.withdrawal:<namespace>} - never a customer's. */
+        String claimScope() {
+            return CLAIM_SCOPE_PREFIX + part(1);
+        }
+
+        /** The claim's key: the instruction's UUID. */
+        String claimKey() {
+            return part(2);
+        }
+
+        private String part(int group) {
+            Matcher parts = SHAPE.matcher(reference);
+            if (!parts.matches()) {
+                throw new IllegalStateException("an instruction keeps the shape it was born with");
+            }
+            return parts.group(group);
+        }
+    }
+
     /** The command's committed answer — the row's truth at this call's end. */
     public record Initiated(
             WithdrawalId id,
@@ -175,27 +232,95 @@ public final class Withdrawals {
     }
 
     /** Tx1's committed working state, carried across the connectionless gap: the
-     * dispatched row, or the recorded routing refusal. */
+     * dispatched row, the recorded routing refusal, or - on an instruction - the recorded
+     * refusal of an instruction payments cannot serve (`P11-TSK-015`). */
     private record Dispatch(
             Optional<Withdrawal> withdrawal,
             boolean firstSend,
             Instant permit,
             boolean sendIt,
-            Optional<RoutingDecisionId> refusedDecision) {
+            Optional<RoutingDecisionId> refusedDecision,
+            Optional<SystemWithdrawalRefusedException.Reason> refusedInstruction) {
 
         private Dispatch {
-            if (withdrawal.isPresent() == refusedDecision.isPresent()) {
+            int carried = (withdrawal.isPresent() ? 1 : 0) + (refusedDecision.isPresent() ? 1 : 0)
+                    + (refusedInstruction.isPresent() ? 1 : 0);
+            if (carried != 1) {
                 throw new IllegalStateException(
-                        "a dispatch carries exactly one of the row and the refusal");
+                        "a dispatch carries exactly one of the row and a refusal");
             }
+        }
+
+        private Dispatch(
+                Optional<Withdrawal> withdrawal,
+                boolean firstSend,
+                Instant permit,
+                boolean sendIt,
+                Optional<RoutingDecisionId> refusedDecision) {
+            this(withdrawal, firstSend, permit, sendIt, refusedDecision, Optional.empty());
+        }
+
+        /** What the claim records as its working body: the row's id, or the refusal's. */
+        private byte[] claimBody() {
+            String body = withdrawal.map(w -> w.id().value().toString())
+                    .or(() -> refusedDecision.map(decision -> decision.value().toString()))
+                    .orElseGet(() -> "REFUSED:" + refusedInstruction.orElseThrow().name());
+            return body.getBytes(StandardCharsets.UTF_8);
+        }
+
+        /** The refusal's response of record, when this dispatch is one. */
+        private Optional<StoredResponse> refusalResponse() {
+            Optional<String> recorded = refusedDecision
+                    .map(decision -> "ERR|NO_ELIGIBLE_RAIL|" + decision.value())
+                    .or(() -> refusedInstruction.map(reason -> "ERR|REFUSED|" + reason.name()));
+            return recorded.map(text -> StoredResponse.of(text.getBytes(StandardCharsets.UTF_8), "text/plain"));
         }
     }
 
-    @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public Initiated withdraw(String clientKey, Money amount, Resolver resolver) {
         Objects.requireNonNull(clientKey, "clientKey must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
         Objects.requireNonNull(resolver, "resolver must not be null");
+        return initiate(clientKey, amount, resolver, Optional.empty());
+    }
+
+    /**
+     * The SYSTEM entry (`P11-TSK-015`, payments {@code V032}, ADR-0097 point 5): a withdrawal on
+     * an instructor's recorded instruction, ADOPTING the hold the instructor placed rather than
+     * placing a second one - judged under the wallet account's lock (ACTIVE, on the resolved
+     * wallet, of exactly the amount; one withdrawal per hold). Everything after the hold is the
+     * person's machine unchanged: routing (a refusal recorded under the instruction's key),
+     * dispatch, our reference, {@code UNKNOWN} held, the inquiry-only outcomes, the expectation.
+     * Refused before any transaction for any actor but the platform: a person cannot use it.
+     *
+     * <p><strong>The claim comes first, then the resolver</strong> - the person's door's order
+     * reversed, because the instruction alone keys and fingerprints the request: so the
+     * instruction's withdrawal is looked for, and the instructor's resolver consulted, only
+     * under the instruction's claim, which concurrent asks serialise on. A withdrawal already
+     * born under the instruction is converged on without asking the resolver at all, and the
+     * resolver's two servable refusals - {@code CUSTOMER_UNAVAILABLE},
+     * {@code DESTINATION_UNAVAILABLE} - are RECORDED under the key like the routing refusal and
+     * replayed: an instruction refused is refused for good, so no withdrawal can ever be born
+     * under it afterwards, and the instructor may release its hold.
+     *
+     * @throws SystemWithdrawalRefusedException not the system actor, a hold not adoptable, or a
+     *     recorded refusal of the instruction (replayed under the key)
+     * @throws NoEligibleRailException the recorded routing refusal (replayed under the key)
+     */
+    public Initiated withdrawOnInstruction(Instruction instruction, Resolver resolver) {
+        Objects.requireNonNull(instruction, "instruction must not be null");
+        Objects.requireNonNull(resolver, "resolver must not be null");
+        if (SecurityContext.require().type() != ActorType.SYSTEM) {
+            throw new SystemWithdrawalRefusedException(
+                    SystemWithdrawalRefusedException.Reason.NOT_A_SYSTEM_ACTOR);
+        }
+        return initiate(
+                instruction.reference(), instruction.amount(), resolver, Optional.of(instruction));
+    }
+
+    @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
+    private Initiated initiate(
+            String clientKey, Money amount, Resolver resolver, Optional<Instruction> instruction) {
         Correlation correlation = resolvedCorrelation();
         Actor person = SecurityContext.require();
 
@@ -204,31 +329,26 @@ public final class Withdrawals {
         IdempotentExecutor.BeginOutcome begun =
                 transactions.inTransaction(
                         uow -> {
-                            // The boundary's own checks, inside the deciding transaction:
-                            // a refusal rolls the claim back, so the key stays unburned.
-                            Resolved resolved = resolver.resolve(uow);
-                            if (!amount.currency().equals(resolved.walletCurrency())) {
-                                throw new WithdrawalCurrencyMismatchedException(
-                                        resolved.walletCurrency().code(),
-                                        amount.currency().code());
-                            }
+                            // The person's boundary checks run first, inside the deciding
+                            // transaction: a refusal rolls the claim back, so the key stays
+                            // unburned. An instruction keys itself: its resolver runs under the
+                            // claim (dispatchOrConverge), and only when no withdrawal exists.
+                            Optional<Resolved> early =
+                                    instruction.isPresent()
+                                            ? Optional.empty()
+                                            : Optional.of(resolvedFor(uow, resolver, amount));
                             IdempotencyKey key =
-                                    new IdempotencyKey(
-                                            CLAIM_SCOPE_PREFIX + resolved.customerId(),
-                                            clientKey);
+                                    instruction.isPresent()
+                                            ? new IdempotencyKey(
+                                                    instruction.get().claimScope(),
+                                                    instruction.get().claimKey())
+                                            : new IdempotencyKey(
+                                                    CLAIM_SCOPE_PREFIX + early.get().customerId(),
+                                                    clientKey);
                             keyHolder[0] = key;
                             RequestFingerprint fingerprint =
                                     RequestFingerprint.sha256(
-                                            ("payments.withdrawal|"
-                                                            + resolved.customerId()
-                                                            + "|"
-                                                            + resolved.paymentMethodId()
-                                                            + "|"
-                                                            + amount.minorUnits()
-                                                            + "|"
-                                                            + amount.currency().code()
-                                                            + "|"
-                                                            + amount.scale())
+                                            fingerprinted(early, amount, instruction)
                                                     .getBytes(StandardCharsets.UTF_8));
                             IdempotentExecutor.BeginOutcome outcome =
                                     executor.begin(
@@ -241,39 +361,20 @@ public final class Withdrawals {
                                                                 claimed,
                                                                 clientKey,
                                                                 amount,
-                                                                resolved,
+                                                                early,
+                                                                resolver,
                                                                 person,
-                                                                correlation);
+                                                                correlation,
+                                                                instruction);
                                                 holder[0] = dispatched;
-                                                return dispatched
-                                                        .withdrawal()
-                                                        .map(w -> w.id().value().toString())
-                                                        .orElseGet(
-                                                                () ->
-                                                                        dispatched
-                                                                                .refusedDecision()
-                                                                                .orElseThrow()
-                                                                                .value()
-                                                                                .toString())
-                                                        .getBytes(StandardCharsets.UTF_8);
+                                                return dispatched.claimBody();
                                             });
-                            // An unroutable withdrawal is a recorded refusal: the refused
-                            // decision AND the claim's outcome commit together, and the
-                            // exception follows the commit.
-                            if (outcome.dispatched().isPresent()
-                                    && holder[0].refusedDecision().isPresent()) {
-                                executor.complete(
-                                        uow,
-                                        key,
-                                        false,
-                                        StoredResponse.of(
-                                                ("ERR|NO_ELIGIBLE_RAIL|"
-                                                                + holder[0]
-                                                                        .refusedDecision()
-                                                                        .get()
-                                                                        .value())
-                                                        .getBytes(StandardCharsets.UTF_8),
-                                                "text/plain"));
+                            // A refusal is recorded: the refused decision (or the instruction's
+                            // refusal) AND the claim's outcome commit together, and the exception
+                            // follows the commit.
+                            if (outcome.dispatched().isPresent()) {
+                                holder[0].refusalResponse().ifPresent(
+                                        response -> executor.complete(uow, key, false, response));
                             }
                             return outcome;
                         });
@@ -283,6 +384,9 @@ public final class Withdrawals {
         Dispatch dispatch = holder[0];
         if (dispatch.refusedDecision().isPresent()) {
             throw new NoEligibleRailException(dispatch.refusedDecision().get());
+        }
+        if (dispatch.refusedInstruction().isPresent()) {
+            throw new SystemWithdrawalRefusedException(dispatch.refusedInstruction().get());
         }
         Withdrawal committed = dispatch.withdrawal().orElseThrow();
 
@@ -405,17 +509,23 @@ public final class Withdrawals {
             Connection uow,
             String clientKey,
             Money amount,
-            Resolved resolved,
+            Optional<Resolved> early,
+            Resolver resolver,
             Actor person,
-            Correlation correlation) {
+            Correlation correlation,
+            Optional<Instruction> instruction) {
         Optional<Withdrawal> existing =
-                withdrawals.findByDispatchKey(uow, resolved.customerId(), clientKey);
+                instruction.isPresent()
+                        ? withdrawals.findByInstruction(uow, instruction.get().reference())
+                        : withdrawals.findByDispatchKey(uow, early.orElseThrow().customerId(), clientKey);
         if (existing.isPresent()) {
             // THE TAKEOVER: this claim's lease expired with its withdrawal already
             // committed. The fingerprint already refused different facts under this key;
             // a row that disagrees is a defect, refused loudly rather than guessed at.
             Withdrawal found = existing.get();
-            if (!found.amount().equals(amount)) {
+            boolean anotherHold =
+                    instruction.isPresent() && !instruction.get().hold().equals(found.holdId());
+            if (!found.amount().equals(amount) || anotherHold) {
                 throw new IllegalStateException(
                         "a taken-over withdrawal claim found different facts under its key");
             }
@@ -436,6 +546,23 @@ public final class Withdrawals {
             // Tx2 converges on the row's truth.
             return new Dispatch(
                     Optional.of(found), false, found.lastDispatchedAt(), false, Optional.empty());
+        }
+
+        // An instruction's resolver, under its claim and only now that no withdrawal exists: its
+        // servable refusals are the instruction's recorded answer (P11-TSK-015).
+        Resolved resolved;
+        if (early.isPresent()) {
+            resolved = early.get();
+        } else {
+            try {
+                resolved = resolvedFor(uow, resolver, amount);
+            } catch (SystemWithdrawalRefusedException refused) {
+                if (!refused.reason().isRecorded()) {
+                    throw refused;
+                }
+                return new Dispatch(Optional.empty(), true, Instant.now(clock), false,
+                        Optional.empty(), Optional.of(refused.reason()));
+            }
         }
 
         // THE ROUTING MOMENT (ADR-0060 §2): decided from stored facts in this transaction,
@@ -489,13 +616,26 @@ public final class Withdrawals {
 
         // THE BOUND, judged under the wallet account's lock (INV-BAL-04): ten concurrent
         // withdrawals admit exactly the affordable set.
+        // An instructed withdrawal ADOPTS the hold its instructor placed, judged under the same
+        // lock (P11-TSK-015): the money was held once and is never held twice - payments V032's
+        // one-withdrawal-per-hold index stands behind the judgement.
         Hold hold;
-        try {
-            hold = holds.place(uow, resolved.walletAccountId(), amount);
-        } catch (HoldExceedsAvailableBalanceException unfunded) {
-            // Aborts the transaction whole - claim, decision, everything: transient
-            // state, and the same key may honestly retry after a top-up.
-            throw new WithdrawalUnfundedException();
+        if (instruction.isPresent()) {
+            hold = holds.adopt(
+                            uow, instruction.get().hold(), resolved.walletAccountId(), amount)
+                    .orElseThrow(
+                            () ->
+                                    new SystemWithdrawalRefusedException(
+                                            SystemWithdrawalRefusedException.Reason
+                                                    .HOLD_NOT_ADOPTABLE));
+        } else {
+            try {
+                hold = holds.place(uow, resolved.walletAccountId(), amount);
+            } catch (HoldExceedsAvailableBalanceException unfunded) {
+                // Aborts the transaction whole - claim, decision, everything: transient
+                // state, and the same key may honestly retry after a top-up.
+                throw new WithdrawalUnfundedException();
+            }
         }
 
         Withdrawal fresh =
@@ -511,7 +651,10 @@ public final class Withdrawals {
                         chosen,
                         hold.id());
         // The permit as stored (X-TSK-013): what the first-send rule later compares with.
-        fresh = fresh.withSendPermit(withdrawals.insert(uow, fresh, clientKey));
+        fresh = fresh.withSendPermit(
+                instruction.isPresent()
+                        ? withdrawals.insertInstructed(uow, fresh, instruction.get().reference())
+                        : withdrawals.insert(uow, fresh, clientKey));
         routing.insertDecision(
                 uow,
                 RoutingDecision.create(
@@ -524,7 +667,8 @@ public final class Withdrawals {
 
         Instant now = Instant.now(clock);
         outcomes.announceInitiated(uow, fresh, correlation, now);
-        // The person's own act (the dispatch); every outcome is the platform's.
+        // The person's own act (the dispatch) - the platform's, on an instruction; every outcome
+        // is the platform's.
         audit.append(
                 uow,
                 new AuditRecord(
@@ -546,6 +690,43 @@ public final class Withdrawals {
                 Optional.of(fresh), true, fresh.lastDispatchedAt(), true, Optional.empty());
     }
 
+    /** The caller's resolution with the currency judged - a mismatch aborts, writing nothing. */
+    private static Resolved resolvedFor(Connection uow, Resolver resolver, Money amount) {
+        Resolved resolved = resolver.resolve(uow);
+        if (!amount.currency().equals(resolved.walletCurrency())) {
+            throw new WithdrawalCurrencyMismatchedException(
+                    resolved.walletCurrency().code(), amount.currency().code());
+        }
+        return resolved;
+    }
+
+    /**
+     * The request's fingerprint text: the person's verbatim; the system's the recorded
+     * instruction, the hold it adopts and the amount (ADR-0097 point 5) - everything that keys
+     * an instruction, known before its resolver runs; a re-drive naming another hold or amount
+     * under the same instruction is the key's distinct conflict.
+     */
+    private static String fingerprinted(
+            Optional<Resolved> early, Money amount, Optional<Instruction> instruction) {
+        String money =
+                amount.minorUnits() + "|" + amount.currency().code() + "|" + amount.scale();
+        if (instruction.isEmpty()) {
+            Resolved resolved = early.orElseThrow();
+            return "payments.withdrawal|"
+                    + resolved.customerId()
+                    + "|"
+                    + resolved.paymentMethodId()
+                    + "|"
+                    + money;
+        }
+        return "payments.withdrawal.system|"
+                + instruction.get().reference()
+                + "|"
+                + instruction.get().hold()
+                + "|"
+                + money;
+    }
+
     /** The judged status, stored for the replay: {@code OK|id|status|reason|createdAt}. */
     private static String renderedForm(Withdrawal current) {
         return "OK|"
@@ -563,6 +744,10 @@ public final class Withdrawals {
         if (stored.startsWith("ERR|NO_ELIGIBLE_RAIL|")) {
             throw new NoEligibleRailException(
                     RoutingDecisionId.of(UUID.fromString(stored.substring(21))));
+        }
+        if (stored.startsWith("ERR|REFUSED|")) {
+            throw new SystemWithdrawalRefusedException(
+                    SystemWithdrawalRefusedException.Reason.valueOf(stored.substring(12)));
         }
         String[] parts = stored.split("\\|");
         if (parts.length != 5 || !"OK".equals(parts[0])) {

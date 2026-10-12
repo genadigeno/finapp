@@ -2880,7 +2880,7 @@ account, named only on the journal line).
 | `loan_disbursement` | `failure_reason` | `INTERNAL` | A closed cancellation reason (`STANDING_LOST`, `DISBURSEMENT_FAILED`) |
 | `accrual_start` | `id` | `INTERNAL` | Generated |
 | `accrual_start` | `loan_id` | `CONFIDENTIAL` | The loan whose interest runs from it |
-| `accrual_start` | `start_date` | `INTERNAL` | The day interest runs from - path W the disbursement entry's value date |
+| `accrual_start` | `start_date` | `INTERNAL` | The day interest runs from - path W the disbursement entry's value date; path X the business date of the payout's conclusion (`P11-TSK-015`) |
 | `accrual_start` | `origin` | `INTERNAL` | A closed origin (`DISBURSEMENT`; `PAYOUT_CONCLUDED` from `P11-TSK-015`) |
 | `accrual_start` | `journal_entry_id` | `CONFIDENTIAL` | The disbursement entry, by value (path W) |
 | `accrual_start` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
@@ -2917,6 +2917,38 @@ account, named only on the journal line).
 | `loan_instalment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The instalment |
 | `loan_instalment` | `closing_principal_minor` | `RESTRICTED-FINANCIAL` | The principal outstanding after it |
 
+### `lending` - the external payout - *added by `P11-TSK-015`*
+
+`lending V009`: path X's payout machine row. No money column (the amount is the disbursement's, held on the wallet by the
+ledger) and no account identifier (`INV-RAIL-03`): the payout method, the wallet, the hold and payments' withdrawal are
+named by value - `CONFIDENTIAL` as references to a person's money; states, reasons and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_payout` | `id` | `INTERNAL` | Generated |
+| `loan_payout` | `loan_id` | `CONFIDENTIAL` | The loan whose funds it pays out - one payout per loan |
+| `loan_payout` | `payment_method_id` | `CONFIDENTIAL` | The borrower's verified payout method, by opaque reference - never an account identifier (`INV-RAIL-03`) |
+| `loan_payout` | `wallet_account_id` | `CONFIDENTIAL` | The borrower's wallet ledger account the hold stands on, by value |
+| `loan_payout` | `hold_id` | `INTERNAL` | The ledger hold the disbursement placed and payments' withdrawal adopts (the `withdrawal.hold_reference` reasoning) |
+| `loan_payout` | `status` | `INTERNAL` | The machine's state |
+| `loan_payout` | `withdrawal_id` | `CONFIDENTIAL` | Payments' system withdrawal, by value, once dispatched |
+| `loan_payout` | `not_dispatched_reason` | `INTERNAL` | A closed reason payments did not take it (`NO_ELIGIBLE_RAIL`, `DESTINATION_UNAVAILABLE`, `CUSTOMER_UNAVAILABLE`) |
+| `loan_payout` | `next_attempt_at` | `INTERNAL` | The payout sweep's permit - each claim's token |
+| `loan_payout` | `last_observed_at` | `INTERNAL` | System time of the latest observation of payments' undecided withdrawal |
+| `loan_payout` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_payout` | `dispatched_at` | `INTERNAL` | System time payments' withdrawal was recorded, stamped by the trigger |
+| `loan_payout` | `concluded_at` | `INTERNAL` | Payments' conclusion instant (held within the payout's life), or the `NOT_DISPATCHED` edge's - the accrual start's source (A30) |
+| `loan_payout` | `decided_at` | `INTERNAL` | System time of the terminal edge, stamped by the trigger |
+| `loan_payout` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+
+### `payments` - the system withdrawal - *added by `P11-TSK-015`*
+
+`payments V032`: the instructor's recorded instruction on a system withdrawal - a namespace and the instructor's own
+identifier (`lending:<loanId>`), equal to the row's dispatch key; it names a lending record, never a person.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `withdrawal` | `instruction_reference` | `INTERNAL` | The recorded instruction a system withdrawal carries out (`lending:<loanId>`) - one withdrawal per instruction; null on a person's |
 ### `lending` - the interest accrual and the servicing permit - *added by `P11-TSK-016`*
 
 `lending V010`: one row per account and accrued date - the base, the period's exact cumulative interest and what the date

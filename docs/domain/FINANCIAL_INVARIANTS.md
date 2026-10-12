@@ -1904,6 +1904,14 @@ a returned or failed payout leaving the receivable and the disbursement entry un
 only beside the disbursement `POSTED` and refuse every edge out of `ACTIVE` but the later tasks' closures, and two deferred checks
 hold the pair together at commit; a failed attempt rolls back to a savepoint and posts nothing. Verified by
 `LoanDisbursementDatabaseTest` (scenario 1, ten disbursers, ten sweepers) and `LendingOutboxAtomicityDatabaseTest` (scenario 9).)*
+*(As built by `P11-TSK-015`, 2026-10-12 - path X: the same one-transaction birth, the hold of `P - f` placed under the wallet's
+row lock (L7, before the posting) and the payout born `PENDING` beside the `ACTIVE` edge (a deferred check); `loan_payout`
+`UNIQUE (loan_id)`, `UNIQUE (hold_id)`, `UNIQUE (withdrawal_id)`; payments' key is `payments.withdrawal:lending` / `<loanId>` with
+`UNIQUE (instruction_reference)` and one withdrawal per hold (payments `V032`); each payout step acts only on the permit its claim
+stamped; lending only reads payments' withdrawal, and an `UNKNOWN` one is observed, never re-sent. No payout step touches the
+receivable or the disbursement entry. `RETURNED` is not a state (payments keeps no return record for an instant withdrawal, final
+on acceptance): a return after `PAID_OUT` leaves the payout and the loan untouched. Verified by `LoanPayoutDatabaseTest`
+(scenario 1's payout half, scenario 5, the failure, the unroutable payout, the return) and `LoanPayoutStepsDatabaseTest`.)*
 
 ### INV-LND-08 — Closed is closed, and closed means settled
 **Statement:** A loan or line reaches `CLOSED` only in the transaction that brings its last

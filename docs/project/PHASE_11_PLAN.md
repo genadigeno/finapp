@@ -348,7 +348,10 @@ and the future servicing holds are not states** — they are conditions (§5.5);
   the wallet — the refusal is met after the claim, so in `DISPATCHING`). Lending only *observes*
   payments' outcome; `UNKNOWN` at payments is `DISPATCHED` here until payments concludes from an
   authenticated inquiry. Payments' withdrawal machine has no `RETURNED` state — `-015` maps
-  `RETURNED` from payments' return record of a `COMPLETED` withdrawal.
+  `RETURNED` from payments' return record of a `COMPLETED` withdrawal. *(As built by `P11-TSK-015`: `RETURNED` is not
+  a state - payments keeps no return record for an instant withdrawal (final on acceptance, `INV-REV-03`), so it would
+  have no producer; `NOT_DISPATCHED`'s causes are payments' routing refusal, a method no longer the borrower's own
+  active bank account, and no active customer. `LENDING_LIFECYCLES.md` section 4.7.)*
 - **Repayment** — born `ALLOCATED` (a row exists only once its money moved); the row is
   `INSERT`-only, so `REVERSED` is derived from its approved reversal, never written onto it (P,
   four-eyes). A failed collection is a `collection_attempt`, never a repayment.
@@ -437,6 +440,16 @@ application is read, never locked.)*
 `POSTED`, the loan `ACTIVE`, the accrual start, schedule v1, `lending.LoanDisbursed`, the audit record. No L6 and no L7 on path W. A
 wallet not to be had or not postable writes nothing (the savepoint) and is retried on the permit; the attempt that fails at or after
 `deadline_at` cancels `DISBURSEMENT_FAILED` - a sweep down past the deadline still attempts first, and a postable wallet disburses.)*
+*(As built by `P11-TSK-015` - T-dis, path X: as path W to the wallet's resolution; then, inside the same savepoint, **(L7)** the
+wallet's ledger account row `FOR UPDATE` before the posting's projections, rule 1, and a `HoldService` hold of `P - f` judged under
+L7; the disbursement `POSTED`, the loan `ACTIVE`, the payout born `PENDING` (no accrual start, no schedule). T-pyo: (a) the claim
+in ONE statement (`PENDING -> DISPATCHING`, lapsed `DISPATCHING` re-driven, due `DISPATCHED` observed), committed; (b) the
+instruction read unlocked and `LoanPayouts.dispatch` with no lending transaction open - payments' `withdrawOnInstruction`, claim
+`payments.withdrawal:lending` / `<loanId>`, the hold adopted under the wallet lock; (c) L3, L5, recorded only on the claim's permit:
+`DISPATCHED`, or `NOT_DISPATCHED` with (L7) the hold released, the accrual start and schedule v1. T-pyr: L3, L5, payments'
+withdrawal read plainly by its instruction; undecided - observed; concluded - `PAID_OUT`/`FAILED`, the conclusion instant held
+within the payout's life, the accrual start, schedule v1, `lending.LoanPayoutConcluded`; run at once after a dispatch, so a
+synchronous answer concludes without waiting a sweep.)*
 *(As built by `P11-TSK-016` - T-svc's skeleton and its accrual step: the sweep's claim committed first (it stamps the retry cadence);
 **(L3)** the loan `FOR UPDATE`, serviced only while `ACTIVE` or `CLOSING`; the database clock read after it and its business date in the
 pinned zone; the accrual - every elapsed date after the latest accrual, oldest first, from the accrual start (an instalment loan's
@@ -899,6 +912,12 @@ transaction's dates; the origination fee `on` the principal - an amount as state
 not below the principal treated as a wallet that cannot be posted (retried, cancelled at the deadline: no entry can credit a wallet
 nothing); schedule v1 from `ScheduleEngineV1.project` with `d0` the value date. `LendingCreditExposureDatabaseTest`'s planted
 disbursement replaced by the real path.)*
+
+*(As built by `P11-TSK-015` for path X: `LoanDisbursements` (L7 then the hold of `P - f`) and `LoanPayoutSteps` over `lending V009`
+and payments `V032`; the hold adopted, not duplicated (`UNIQUE (hold_reference)` on payments' withdrawal, judged under the wallet
+lock by `HoldService.adopt`); the accrual start the business date of payments' conclusion instant in the pinned zone (or of the
+`NOT_DISPATCHED` edge), held within the payout's life against clock skew; no `RETURNED` (no payments return record exists for an
+instant withdrawal - see section 5.4). Scenario 1's payout half and scenario 5: `LoanPayoutDatabaseTest`.)*
 
 **When the loan becomes a receivable — both paths:** when the borrower's wallet is credited
 (`LOAN_PRINCIPAL` debited in the same entry), in T-dis. Before that there is a commitment (counted

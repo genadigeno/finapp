@@ -90,6 +90,32 @@ class LendingVocabulariesTest {
     }
 
     @Test
+    @DisplayName("the payout machine (P11-TSK-015) has exactly section 4.7's six states as built - no RETURNED, which no"
+            + " payments record would produce - its edges, three terminals and three NOT_DISPATCHED reasons, generated into"
+            + " lending V009's CHECKs")
+    void thePayoutMachine() throws java.io.IOException {
+        assertThat(names(PayoutStatus.values()))
+                .containsExactly("PENDING", "DISPATCHING", "DISPATCHED", "PAID_OUT", "FAILED", "NOT_DISPATCHED")
+                .doesNotContain("RETURNED");
+        assertThat(PayoutStatus.PENDING.permittedTransitions()).containsExactly(PayoutStatus.DISPATCHING);
+        assertThat(PayoutStatus.DISPATCHING.permittedTransitions())
+                .containsExactlyInAnyOrder(PayoutStatus.DISPATCHED, PayoutStatus.NOT_DISPATCHED);
+        assertThat(PayoutStatus.DISPATCHED.permittedTransitions())
+                .containsExactlyInAnyOrder(PayoutStatus.PAID_OUT, PayoutStatus.FAILED);
+        assertThat(java.util.Arrays.stream(PayoutStatus.values()).filter(PayoutStatus::isTerminal).map(Enum::name))
+                .containsExactly("PAID_OUT", "FAILED", "NOT_DISPATCHED");
+        assertThat(names(NotDispatchedReason.values()))
+                .containsExactly("NO_ELIGIBLE_RAIL", "DESTINATION_UNAVAILABLE", "CUSTOMER_UNAVAILABLE");
+        String v009;
+        try (var migration = getClass().getResourceAsStream("/db/migration/lending/V009__the_external_payout.sql")) {
+            assertThat(migration).as("lending V009 on the classpath").isNotNull();
+            v009 = new String(migration.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        assertThat(v009).contains("status IN (" + PayoutStatus.sqlValueList() + ")")
+                .contains("not_dispatched_reason IN (" + NotDispatchedReason.sqlValueList() + ")");
+    }
+
+    @Test
     @DisplayName("the loan's terminal reasons: three for CLOSED, two for CANCELLED")
     void theTerminalReasons() {
         assertThat(names(ClosureReason.values())).containsExactly("REPAID", "PAID_OFF_EARLY", "CLOSED_BY_CUSTOMER");

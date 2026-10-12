@@ -379,6 +379,37 @@ class InterestAccrualDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("a real path X loan awaiting its payout accrues nothing (P11-TSK-015's re-assertion of the fixture above):"
+            + " disbursed with its hold and payout PENDING, then DISPATCHED with payments undecided - no accrual start, no"
+            + " row, no entry, the permit moved on; the payout's conclusion then births the accrual start the sweep reads")
+    void aRealPathXLoanAwaitingItsPayoutAccruesNothing() throws Exception {
+        LoanId loan = DisbursementWorld.disbursedExternally(3_100_00, 12).loan();
+        backdate(loan, 3);
+        for (int round = 0; round < 2; round++) {
+            LoanServicing.Outcome step = service(loan);
+            assertThat(step.kind()).isEqualTo(LoanServicing.Outcome.Kind.SERVICED);
+            assertThat(step.posted() + step.zero()).isZero();
+            assertThat(rows(loan)).isZero();
+            assertThat(entries(loan)).isZero();
+            assertThat(scalar("SELECT (next_servicing_at > statement_timestamp())::text FROM lending.loan WHERE id = ?",
+                    loan.value())).isEqualTo("true");
+            // The first round with the payout PENDING; the second with it DISPATCHED and payments undecided.
+            assertThat(DisbursementWorld.sweepPayouts(java.time.Duration.ofMillis(1))).containsKey(loan);
+        }
+        assertThat(scalar("SELECT status FROM lending.loan_payout WHERE loan_id = ?", loan.value())).isEqualTo("DISPATCHED");
+        assertThat(count("SELECT count(*) FROM lending.accrual_start WHERE loan_id = ?", loan.value())).isZero();
+        DisbursementWorld.PAYMENTS.outcomes.put(loan, new LoanPayouts.Outcome.Concluded(PayoutStatus.PAID_OUT,
+                java.time.Instant.now()));
+        Thread.sleep(20);
+        assertThat(DisbursementWorld.sweepPayouts(java.time.Duration.ofMillis(1)).get(loan))
+                .containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
+        assertThat(scalar("SELECT origin FROM lending.accrual_start WHERE loan_id = ?", loan.value()))
+                .isEqualTo("PAYOUT_CONCLUDED");
+        assertThat(service(loan).kind()).as("the sweep reads the payout's accrual start").isEqualTo(
+                LoanServicing.Outcome.Kind.SERVICED);
+    }
+
     // ------------------------------------------------------------------ the line
 
     @Test

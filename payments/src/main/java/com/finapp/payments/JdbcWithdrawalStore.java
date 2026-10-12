@@ -42,11 +42,28 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
     public Instant insert(Connection unitOfWork, Withdrawal dispatched, String dispatchKey) {
         Objects.requireNonNull(dispatched, "dispatched must not be null");
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null");
+        return inserted(unitOfWork, dispatched, dispatchKey, null);
+    }
+
+    @Override
+    public Instant insertInstructed(
+            Connection unitOfWork, Withdrawal dispatched, String instructionReference) {
+        Objects.requireNonNull(dispatched, "dispatched must not be null");
+        Objects.requireNonNull(instructionReference, "instructionReference must not be null");
+        // A system row's dispatch key IS its instruction (payments V032's CHECK).
+        return inserted(unitOfWork, dispatched, instructionReference, instructionReference);
+    }
+
+    private Instant inserted(
+            Connection unitOfWork,
+            Withdrawal dispatched,
+            String dispatchKey,
+            String instructionReference) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
-                        "INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES"
+                        "INSERT INTO " + TABLE + " (" + COLUMNS + ", instruction_reference) VALUES"
                                 + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()))"
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()), ?)"
                                 + " RETURNING last_dispatched_at")) {
             insert.setObject(1, dispatched.id().value());
             insert.setObject(2, dispatched.partyId());
@@ -69,6 +86,7 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
             insert.setTimestamp(18, Timestamp.from(dispatched.createdAt()));
             // The birth permit: never older than the database's clock, never before created_at.
             insert.setTimestamp(19, Timestamp.from(dispatched.createdAt()));
+            insert.setString(20, instructionReference);
             try (ResultSet stored = insert.executeQuery()) {
                 stored.next();
                 return stored.getTimestamp(1).toInstant();
@@ -117,10 +135,52 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         return one(
                 unitOfWork,
                 "SELECT " + COLUMNS + " FROM " + TABLE
-                        + " WHERE customer_id = ? AND dispatch_key = ?",
+                        // The person's rows only (payments V032): a system row's dispatch key is
+                        // its instruction, never a person's convergence target.
+                        + " WHERE customer_id = ? AND dispatch_key = ?"
+                        + " AND instruction_reference IS NULL",
                 "reading a withdrawal by its dispatch key",
                 customerId,
                 dispatchKey);
+    }
+
+    @Override
+    public Optional<Withdrawal> findByInstruction(
+            Connection unitOfWork, String instructionReference) {
+        Objects.requireNonNull(instructionReference, "instructionReference must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE instruction_reference = ?")) {
+            select.setString(1, instructionReference);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(map(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading a withdrawal by its instruction", failure));
+        }
+    }
+
+    @Override
+    public Optional<Instant> concludedAt(Connection unitOfWork, WithdrawalId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT occurred_at FROM payments.withdrawal_event"
+                                + " WHERE withdrawal_id = ? AND to_status IN ("
+                                + WithdrawalStatus.sqlTerminalValueList()
+                                + ") ORDER BY id LIMIT 1")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getTimestamp(1).toInstant())
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading a withdrawal's conclusion", failure));
+        }
     }
 
     @Override

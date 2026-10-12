@@ -25,6 +25,27 @@ public interface WithdrawalStore<T> {
      * what the first-send rule later compares the locked row's with. */
     Instant insert(T unitOfWork, Withdrawal dispatched, String dispatchKey);
 
+    /**
+     * Stores a freshly dispatched SYSTEM withdrawal on its instructor's recorded instruction
+     * (`P11-TSK-015`, payments {@code V032}): the instruction is its dispatch key and its
+     * convergence target, one withdrawal per instruction. Returns the send permit as stored.
+     */
+    Instant insertInstructed(T unitOfWork, Withdrawal dispatched, String instructionReference);
+
+    /**
+     * The system withdrawal carrying {@code instructionReference}, unlocked (`P11-TSK-015`):
+     * the system entry's takeover target, and the instructor's plain read of its outcome - the
+     * instruction scopes the read as the customer scopes the person's.
+     */
+    Optional<Withdrawal> findByInstruction(T unitOfWork, String instructionReference);
+
+    /**
+     * When the withdrawal reached its terminal state - the instant its history recorded for
+     * the move into {@code COMPLETED} or {@code FAILED}, stamped from the resolver's clock - or
+     * empty while it awaits the scheme's word (`P11-TSK-015`: lending's interest starts there).
+     */
+    Optional<Instant> concludedAt(T unitOfWork, WithdrawalId id);
+
     /** The customer's withdrawal, unlocked — the read surface's one query (one 404). */
     Optional<Withdrawal> findOwned(T unitOfWork, WithdrawalId id, UUID customerId);
 

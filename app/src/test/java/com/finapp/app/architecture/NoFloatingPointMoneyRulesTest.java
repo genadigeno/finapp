@@ -322,6 +322,10 @@ class NoFloatingPointMoneyRulesTest {
                     // never an amount (the principal is the agreement's and the ledger's, ADR-0072).
                     "com.finapp.app.lending.LoanDisbursementMetrics",
                     "com.finapp.app.lending.LoanDisbursementMetrics$Cached",
+                    // P11-TSK-015. The SAME case again: the oldest unconcluded payout's age in SECONDS through the
+                    // ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - a duration, never an amount.
+                    "com.finapp.app.lending.LoanPayoutMetrics",
+                    "com.finapp.app.lending.LoanPayoutMetrics$Cached",
                     // P11-TSK-016. The SAME case again: the accrual lag in SECONDS through the ToDoubleFunction a Gauge
                     // imposes, NaN the sentinel for unreadable, and the accrued-date COUNTS through Counter.increment's
                     // double - a duration and counts, never an amount (the accruals are the rows' and the ledger's,
