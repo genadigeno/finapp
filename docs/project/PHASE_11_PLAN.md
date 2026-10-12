@@ -808,6 +808,12 @@ schedule vN → billing (period, accruals summed) → allocations → journal en
 exactly, held to them by trigger and to the hash by `CHECK` - not `jsonb`, which would reorder and re-space the hashed
 bytes; the figures a servicing step reads (principal or limit, term, rate, day, engines, template) are columns beside
 it, every one held to the offer's by the same trigger.)*
+*(As built by `P11-TSK-031`, 2026-10-12: `CanonicalOfferTerms` writes **format 2** - format 1 with `+` added to the
+token set, nothing else changed - because format 1 could not spell a servicing zone east of UTC that `LoanTerms` and
+`lending V003` admit, so every offer under such a version failed at rendering. Format 1 is kept byte for byte for
+replay (`-029` re-renders a row in its stored format; a golden hash pins it); every stored format-1 row stays format 1.
+The stored `canonical_format` is the bytes' own first token, and `lending V011`'s canonical-shape `CHECK`s hold the
+column to it and each format to its token set, for every writer; an agreement copies its offer's format.)*
 
 **No consumer-credit-law features** (L4): no statutory APR formula, no withdrawal right, no
 statutory notices or caps; **no penalty interest, no prepayment fee, no APR display** (L8). Each

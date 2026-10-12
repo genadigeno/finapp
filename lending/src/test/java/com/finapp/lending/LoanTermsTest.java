@@ -54,6 +54,10 @@ class LoanTermsTest {
         assertThat(personalLoan("1.00").build().nominalAnnualRate().toPlainString()).isEqualTo("1");
         assertThat(personalLoan("0.000").build().nominalAnnualRate().toPlainString()).as("r = 0 (ADR-0093)").isEqualTo("0");
         assertThat(personalLoan("0.12").servicingZone("+02:00").build().servicingZone()).isEqualTo("+02:00");
+        // The widest offsets, east and west - each offerable end to end (P11-TSK-031, canonical offer terms format 2).
+        assertThat(personalLoan("0.12").servicingZone("+14:00").build().servicingZone()).isEqualTo("+14:00");
+        assertThat(personalLoan("0.12").servicingZone("-14:00").build().servicingZone()).isEqualTo("-14:00");
+        assertThat(personalLoan("0.12").servicingZone("+05:30").build().servicingZone()).isEqualTo("+05:30");
         LoanTerms line = creditLine("0.1499").originationFee(LoanTerms.OriginationFee.ofBasisPoints(150)).build();
         assertThat(line.revolving()).isPresent();
         assertThat(line.instalment()).isEmpty();
@@ -70,6 +74,7 @@ class LoanTermsTest {
         refused(terms -> terms.servicingZone("Europe/London"), "fixed offset");
         refused(terms -> terms.servicingZone("+02:00:30"), "whole minutes");
         refused(terms -> terms.servicingZone("+15:00"), "zone");
+        refused(terms -> terms.servicingZone("+14:01"), "zone");
         refused(terms -> terms.servicingZone("Mars/Olympus"), "zone");
         refused(terms -> terms.accrualEngine(EngineVersion.ALLOCATION_ENGINE_V1), "accrual engine");
         refused(terms -> terms.allocationEngine(EngineVersion.ACCRUAL_ENGINE_V1), "allocation engine");

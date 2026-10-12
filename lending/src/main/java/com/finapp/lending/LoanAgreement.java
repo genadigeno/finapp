@@ -10,9 +10,9 @@ import java.util.UUID;
 
 /**
  * One version of a loan agreement (`P11-TSK-012`, {@code lending V006}; ADR-0092 point 5, {@code INV-LND-05}): version 1
- * is its offer's terms, copied byte for byte at the acceptance - the canonical terms ({@link CanonicalOfferTerms} format
- * 1) and their SHA-256 - with the figures a servicing step needs beside them. Never changed by any role; a change of
- * terms is version n+1 (`P11-TSK-027`).
+ * is its offer's terms, copied byte for byte at the acceptance - the canonical terms ({@link CanonicalOfferTerms}, in
+ * the offer's own format) and their SHA-256 - with the figures a servicing step needs beside them. Never changed by any
+ * role; a change of terms is version n+1 (`P11-TSK-027`).
  *
  * @param offer the offer it was accepted from - version 1's; an amendment's version names its amendment instead
  * @param decision credit's decision the acceptance consumed, by value

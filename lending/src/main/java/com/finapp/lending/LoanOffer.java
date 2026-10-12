@@ -74,7 +74,7 @@ public record LoanOffer(
      * @param minimumPayment the line's minimum-payment rule - present exactly for a line
      * @param scheduleEngine the schedule engine version - a loan's
      * @param statementEngine the statement engine version - a line's
-     * @param canonicalTerms {@link CanonicalOfferTerms} format 1, exactly the bytes hashed
+     * @param canonicalTerms {@link CanonicalOfferTerms} in the format they declare, exactly the bytes hashed
      * @param termsSha256 the SHA-256 of {@code canonicalTerms}
      * @param documentSha256 the SHA-256 of the offer document's bytes ({@link OfferDocument})
      */

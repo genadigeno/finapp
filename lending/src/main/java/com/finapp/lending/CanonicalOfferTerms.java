@@ -8,10 +8,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The canonical form of an offer's terms, format 1 (`P11-TSK-011`; {@code PHASE_11_PLAN.md} section 12.1,
+ * The canonical form of an offer's terms, format 2 (`P11-TSK-011`, `P11-TSK-031`; {@code PHASE_11_PLAN.md} section 12.1,
  * {@code INV-LND-05}, {@code INV-HIST-04}): the same offer always yields the same bytes, and so the same SHA-256 - the
  * {@code terms_sha256} the customer's acceptance echoes and the agreement copies (`P11-TSK-012`) and replay re-verifies
  * (`-029`).
@@ -28,14 +29,29 @@ import java.util.regex.Pattern;
  * whitespace, every value a string token (amounts as minor units - the currency and scale stated once - rates as their
  * canonical decimal, dates ISO, absent values the token {@code NONE}), each token checked against a character set that
  * needs no escaping - so the form never holds an escape, and {@code lending V005}'s {@code CHECK} can hold the stored
- * hash to the stored bytes for every writer. A change to this form is format 2, with format 1 kept for replay.
+ * hash to the stored bytes for every writer. A change to this form is a new format, with every earlier one kept for
+ * replay.
+ *
+ * <p><strong>The formats.</strong> Format 1 (`P11-TSK-011`) admitted {@code [A-Za-z0-9_.:-]} in a token - and so no
+ * servicing zone east of UTC: {@code +05:30} was refused at the offer although the terms door admitted it. Format 2
+ * (`P11-TSK-031`, {@code lending V011}) is format 1 with {@code +} added to the token set and nothing else changed: the
+ * same content renders the same bytes under both but for the leading format token, wherever format 1 renders at all.
+ * Every format-1 row ever stored stays format 1 - its bytes and hash immutable - and {@link #render(Content, int)}
+ * re-renders it byte for byte for replay (`-029`). The format is the bytes' own first token; {@link #formatOf} reads it
+ * back, so a store writes the format its bytes declare and never a constant (an agreement copies its offer's).
  */
 public final class CanonicalOfferTerms {
 
     /** The format this class writes - stored beside the terms. */
-    public static final int FORMAT = 1;
+    public static final int FORMAT = 2;
 
-    private static final Pattern CANONICAL_VALUE = Pattern.compile("[A-Za-z0-9_.:-]{1,64}");
+    /** Format 1's token set: every format-1 row ever stored is in it ({@code lending V005}, {@code V006}). */
+    private static final Pattern FORMAT_1_VALUE = Pattern.compile("[A-Za-z0-9_.:-]{1,64}");
+
+    /** Format 2's: format 1's and {@code +}, so a servicing zone east of UTC is spelled ({@code lending V011}). */
+    private static final Pattern FORMAT_2_VALUE = Pattern.compile("[A-Za-z0-9_.:+-]{1,64}");
+
+    private static final Pattern FORMAT_TOKEN = Pattern.compile("\\{\"format\":\"([0-9]{1,4})\",.*", Pattern.DOTALL);
 
     private static final String NONE = "NONE";
 
@@ -77,13 +93,25 @@ public final class CanonicalOfferTerms {
         }
     }
 
-    /** The canonical form of {@code content}. */
+    /** The canonical form of {@code content}, in the format this class writes ({@link #FORMAT}). */
     public static String render(Content content) {
+        return render(content, FORMAT);
+    }
+
+    /**
+     * The canonical form of {@code content} in {@code format} - 1 or 2: an earlier format for replay, byte for byte what
+     * it wrote. Content a format cannot spell (a {@code +} under format 1) is refused, never re-spelled.
+     */
+    public static String render(Content content, int format) {
         Objects.requireNonNull(content, "content");
         LoanTerms terms = content.terms();
-        StringBuilder out = new StringBuilder(2048);
+        Canonical out = new Canonical(switch (format) {
+            case 1 -> FORMAT_1_VALUE;
+            case 2 -> FORMAT_2_VALUE;
+            default -> throw new IllegalArgumentException("the canonical offer terms are format 1 or 2");
+        });
         out.append('{');
-        field(out, "format", Integer.toString(FORMAT)).append(',');
+        field(out, "format", Integer.toString(format)).append(',');
         out.append("\"offer\":{");
         field(out, "offer", content.offer().value().toString()).append(',');
         field(out, "application", content.application().value().toString()).append(',');
@@ -153,6 +181,23 @@ public final class CanonicalOfferTerms {
         return out.toString();
     }
 
+    /**
+     * The format {@code canonical} declares - its own first token. A store writes this beside the bytes, so the column
+     * and the bytes cannot disagree ({@code lending V011}'s {@code CHECK} holds them together for every writer).
+     */
+    public static int formatOf(String canonical) {
+        Objects.requireNonNull(canonical, "canonical");
+        Matcher token = FORMAT_TOKEN.matcher(canonical);
+        if (!token.matches()) {
+            throw new IllegalArgumentException("canonical offer terms open with their format token");
+        }
+        int format = Integer.parseInt(token.group(1));
+        if (format != 1 && format != 2) {
+            throw new IllegalArgumentException("the canonical offer terms are format 1 or 2");
+        }
+        return format;
+    }
+
     /** The SHA-256 of {@code text}'s UTF-8 bytes - the canonical terms', or the offer document's. */
     public static byte[] sha256(String text) {
         Objects.requireNonNull(text, "text");
@@ -165,20 +210,46 @@ public final class CanonicalOfferTerms {
 
     // ------------------------------------------------------------------ the tokens
 
-    private static StringBuilder field(StringBuilder out, String name, String value) {
-        return out.append('"').append(name).append("\":").append(token(value));
+    /** The text being rendered and the token set of the format it is rendered in. */
+    private static final class Canonical {
+
+        private final StringBuilder text = new StringBuilder(2048);
+        private final Pattern tokens;
+
+        Canonical(Pattern tokens) {
+            this.tokens = tokens;
+        }
+
+        Canonical append(char c) {
+            text.append(c);
+            return this;
+        }
+
+        Canonical append(String s) {
+            text.append(s);
+            return this;
+        }
+
+        @Override
+        public String toString() {
+            return text.toString();
+        }
     }
 
-    private static StringBuilder list(StringBuilder out, String name, List<String> values) {
+    private static Canonical field(Canonical out, String name, String value) {
+        return out.append('"').append(name).append("\":").append(token(out.tokens, value));
+    }
+
+    private static Canonical list(Canonical out, String name, List<String> values) {
         out.append('"').append(name).append("\":[");
         for (int i = 0; i < values.size(); i++) {
-            out.append(i == 0 ? "" : ",").append(token(values.get(i)));
+            out.append(i == 0 ? "" : ",").append(token(out.tokens, values.get(i)));
         }
         return out.append(']');
     }
 
-    private static String token(String value) {
-        if (!CANONICAL_VALUE.matcher(value).matches()) {
+    private static String token(Pattern tokens, String value) {
+        if (!tokens.matcher(value).matches()) {
             // Never the value: it may be a figure.
             throw new IllegalArgumentException("a canonical offer token is outside the escape-free character set");
         }

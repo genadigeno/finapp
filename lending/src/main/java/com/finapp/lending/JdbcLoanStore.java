@@ -116,7 +116,8 @@ public final class JdbcLoanStore implements LoanStore {
             setInt(insert, ++i, agreement.statementEngine().map(EngineVersion::number));
             insert.setString(++i, agreement.template().id());
             insert.setInt(++i, agreement.template().version());
-            insert.setInt(++i, CanonicalOfferTerms.FORMAT);
+            // The format the bytes declare - an agreement copies its offer's, whichever it was (P11-TSK-031).
+            insert.setInt(++i, CanonicalOfferTerms.formatOf(agreement.canonicalTerms()));
             insert.setString(++i, agreement.canonicalTerms());
             insert.setBytes(++i, agreement.termsSha256());
             try (ResultSet row = insert.executeQuery()) {

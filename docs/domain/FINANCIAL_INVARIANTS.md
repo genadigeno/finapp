@@ -1836,6 +1836,9 @@ flipping the verdict to `DIVERGED` (`P11-TSK-029`, `P11-TST-002`); scenario 8 โ€
 `AmendmentDatabaseTest#anApprovedAmendmentChangesTheScheduleOnce` (`P11-TSK-027`), the agreement and
 schedule version n+1 written once and a moved agreement lapsing the amendment.
 *(The agreement half built by `P11-TSK-012`, 2026-10-11 - `lending V006`'s `loan_agreement` and `loan_acceptance`, INSERT-only by grant and immutable by trigger for every role, version 1 held to an exact copy of its offer's terms (canonical `text`, its hash by `CHECK`); verified by `LoanAcceptanceDatabaseTest#theAgreementIsNeverUpdatedByAnyRole` and `#aMismatchedHashRefuses` (`409 lending.TermsChanged`, nothing written); probes in `MUTATION_TESTING.md` ยง2.)*
+*(Canonical format 2 by `P11-TSK-031`, 2026-10-12 - `lending V011`: the canonical terms' stored format is the bytes' own
+first token, held by `CHECK` with each format's token set for every writer; format 1 rows unchanged and re-renderable
+byte for byte, so replay re-verifies every hash in the format it was written in.)*
 **Phase:** 11
 
 *(As built by `P11-TSK-005`, 2026-10-11 - the terms half: `lending V003` splits a version into the money-free machine

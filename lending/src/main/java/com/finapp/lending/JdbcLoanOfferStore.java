@@ -118,7 +118,7 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
             setInt(insert, ++i, terms.statementEngine().map(EngineVersion::number));
             insert.setString(++i, terms.template().id());
             insert.setInt(++i, terms.template().version());
-            insert.setInt(++i, CanonicalOfferTerms.FORMAT);
+            insert.setInt(++i, CanonicalOfferTerms.formatOf(terms.canonicalTerms()));
             insert.setString(++i, terms.canonicalTerms());
             insert.setBytes(++i, terms.termsSha256());
             insert.setBytes(++i, terms.documentSha256());
