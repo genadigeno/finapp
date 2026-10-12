@@ -293,6 +293,14 @@ disbursement `POSTED` and, on path W, its accrual start and schedule v1. The app
 cancellation_reason)`. History reasons `DISBURSED`, `STANDING_LOST`, `DISBURSEMENT_FAILED`; events `lending.LoanDisbursed`,
 `lending.LoanCancelled`.*
 
+*As built by `P11-TSK-018` (2026-10-12): `lending V014` replaces the edge function to admit `ACTIVE -> CLOSED (REPAID)` for an
+instalment loan, only beside its `loan_closure` row born in the same transaction (one per loan, refusing while any instalment of
+the latest schedule is unbilled or any billed component unpaid); a deferred check holds every closure to its loan `CLOSED` at
+commit; the application role holds `UPDATE (closure_reason)`, the closing instant the trigger's. The closing transactions are a
+repayment and the servicing step after a credit-balance application (`LoanClosures`, under L3, the refund after L7); `PAID_OFF_EARLY`
+(`-026`) and a line's closure (`-023`) replace both functions beside their facts. History reason `REPAID`; event
+`lending.LoanClosed`.*
+
 ### 4.6 Disbursement (`lending.loan_disbursement`) — `P11-TSK-014`
 
 `PENDING → POSTED | FAILED`, born `PENDING` once per instalment loan in T-acc (`UNIQUE (loan_id)`),
@@ -377,6 +385,11 @@ The same key replays one answer (scenario 2); two keys serialise on L3, each all
 it finds (scenario 3). The allocation order is the pinned terms' (L6): oldest due first, fees →
 interest → principal; the remainder held as credit (loan) or paying down drawn principal (line, A26).
 
+*As built by `P11-TSK-018` (2026-10-12): `repayment` carries no status - every repayment reads `ALLOCATED` until `-020`'s
+approved reversal derives `REVERSED`; `UNIQUE (loan_id, kind, request_key)` is the arbiter behind a lapsed claim; a wallet absent
+or not `ACTIVE` is `422 lending.InsufficientFunds` (ADR-0095 point 4); an `ACTIVE` instalment loan only - a line answers `409
+lending.LoanNotRepayable` until `-023`. Read: `GET /v1/me/loans/{id}/repayments`, owner-scoped.*
+
 ### 4.9 Servicing proposals — repayment reversal, waiver, amendment — `P11-TSK-020`, `-025`, `-027`
 
 ```
@@ -426,6 +439,8 @@ repayment kind with agreement and schedule v n+1, refused while past due (`409 l
 | Interest accrual | `interest_accrual` | T-svc, per elapsed date, oldest first | `UNIQUE (loan_id, accrual_date)` + ledger key (`INV-LND-02`, scenario 4) |
 | Instalment billing · credit-balance application | `instalment_billing`, `credit_balance_application` (+ `credit_balance_allocation`) | T-svc at the due date, after every accrual through `Dj − 1`, oldest first; after the final due date each post-maturity month in which interest accrued, interest only (`P11-TSK-017`) | `UNIQUE (instalment_id)`, `UNIQUE (loan_id, due_date)` + ledger key `lending.billing:<instalment>`; `UNIQUE (billing_id)` + `lending.credit-application:<billing>`; never before the due date, interest exactly the period's accruals, no accrual into a billed period, no billed component over-paid (`lending V012`, every writer) |
 | Draw | `credit_line_draw` | C, `MULTI_FACTOR`, T-drw: L3 `ACTIVE`, draws not suspended, available limit derived under L3, L6 headroom, the row born whole after its posting (`P11-TSK-021`) | `UNIQUE (loan_id, draw_key)` + `UNIQUE (journal_entry_id)` + ledger key `lending.draw:<drawId>`; `422 lending.LimitExceeded` (`INV-LND-14`), `409 lending.DrawsSuspended`, `422 lending.CapitalUnavailable`, `409 lending.LineNotDrawable`, `409 lending.WalletUnavailable` |
+| Repayment · allocation | `repayment`, `repayment_allocation` | C, the door's claim, T-rep: L3 `ACTIVE` instalment loan, the due state derived under L3 and explained by the ledger, L7 and the available balance, rule 5, the rows born after the posting (`P11-TSK-018`) | `UNIQUE (loan_id, kind, request_key)` + `UNIQUE (journal_entry_id)` + ledger key `lending.repayment:<id>`; the rows sum to the amount and no billed component is over-paid, at commit (every writer) |
+| Closure | `loan_closure` | the transaction that zeroes the last receivable - a repayment, or the servicing step after a credit-balance application - with every elapsed date accrued; the credit balance refunded (`P11-TSK-018`) | `UNIQUE (loan_id)` + ledger key `lending.closure-refund:<loan>` + the conditional edge; only beside the loan `CLOSED` at commit |
 | Statement | `credit_line_statement` | T-svc at the cycle end, after its accruals | `UNIQUE (loan_id, cycle_end)` |
 | Line closure request | `line_closure_request` | `ACTIVE → CLOSING` | `UNIQUE (loan_id)` |
 | Collection attempt | `collection_attempt` | T-svc | `UNIQUE (due_item_id, attempt_date)` |

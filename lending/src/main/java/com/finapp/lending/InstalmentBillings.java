@@ -1,16 +1,15 @@
 package com.finapp.lending;
 
-import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalLine;
-import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.ledger.PurposeBalances;
 import com.finapp.lending.InstalmentBillingStore.BilledItem;
+import com.finapp.lending.LoanReceivables.Accounts;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.correlation.CausationId;
@@ -116,15 +115,6 @@ public final class InstalmentBillings {
     /** A due date the step may bill: an instalment, or a post-maturity period. */
     private record Candidate(BillingKind kind, Optional<UUID> instalment, int sequence, AccrualPeriod period) {}
 
-    /** The loan's six accounts, resolved once a step. */
-    private record Accounts(
-            LedgerAccountId principal,
-            LedgerAccountId principalDue,
-            LedgerAccountId interestAccrued,
-            LedgerAccountId interestDue,
-            LedgerAccountId feesDue,
-            LedgerAccountId creditBalance) {}
-
     /**
      * Bills every instalment of {@code loan} due by {@code today} whose period is accrued through
      * {@code accruedThrough}, oldest first, each followed by the credit-balance application - on the caller's unit of
@@ -158,13 +148,13 @@ public final class InstalmentBillings {
         }
         CurrencyCode currency = loan.currency();
         Money zero = Money.ofPersisted(0, currency, agreement.amount().scale());
-        Accounts accounts = accounts(unitOfWork, loan.id(), currency);
+        Accounts accounts = receivables().accounts(unitOfWork, loan.id(), currency);
         AllocationRules rules = AllocationRules.of(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }
         // The principal not yet due, from the ledger under L3 - what the final instalment bills and nothing exceeds.
-        Money notDue = netDebit(unitOfWork, accounts.principal(), zero);
+        Money notDue = receivables().netDebit(unitOfWork, accounts.principal(), zero);
         int billed = 0;
         int applied = 0;
         for (Candidate candidate : candidates) {
@@ -286,11 +276,11 @@ public final class InstalmentBillings {
      */
     private Optional<CreditBalanceApplication> apply(Connection unitOfWork, Loan loan, LoanAgreement agreement,
             AllocationRules rules, InstalmentBilling billing, LocalDate today, Accounts accounts, Money zero) {
-        Money credit = netDebit(unitOfWork, accounts.creditBalance(), zero).negated();
+        Money credit = receivables().netDebit(unitOfWork, accounts.creditBalance(), zero).negated();
         if (!credit.isPositive()) {
             return Optional.empty();
         }
-        DueState dueState = dueState(unitOfWork, loan, accounts, zero);
+        DueState dueState = receivables().dueState(unitOfWork, loan.id(), accounts, zero);
         if (!dueState.anythingBilledDue()) {
             return Optional.empty();
         }
@@ -318,12 +308,7 @@ public final class InstalmentBillings {
         List<JournalLine> entryLines = new ArrayList<>();
         entryLines.add(new JournalLine(accounts.creditBalance(), Direction.DEBIT, amount));
         for (Map.Entry<AllocationComponent, Money> component : perComponent.entrySet()) {
-            LedgerAccountId due = switch (component.getKey()) {
-                case FEES -> accounts.feesDue();
-                case INTEREST -> accounts.interestDue();
-                case PRINCIPAL -> accounts.principalDue();
-            };
-            entryLines.add(new JournalLine(due, Direction.CREDIT, component.getValue()));
+            entryLines.add(new JournalLine(accounts.due(component.getKey()), Direction.CREDIT, component.getValue()));
         }
         PostingResult result = postings.post(unitOfWork, new PostingCommand(APPLICATION_KEY_PREFIX + billing.id(),
                 today, today, applicationId.toString(), entryLines));
@@ -334,34 +319,6 @@ public final class InstalmentBillings {
                 amount, agreement.id(), agreement.version(), agreement.allocationEngine(), lines, result.entryId());
         store.insertApplication(unitOfWork, application, loan.correlation());
         return Optional.of(application);
-    }
-
-    /**
-     * The allocation engine's due state, derived under L3 from the rows - each billed item's billed less paid, the
-     * principal not yet due from {@code LOAN_PRINCIPAL} - and refused unless the rows explain the due accounts' ledger
-     * balances exactly ({@code INV-LND-01}: a difference is an alert, never allocated over).
-     */
-    private DueState dueState(Connection unitOfWork, Loan loan, Accounts accounts, Money zero) {
-        List<DueState.DueItem> items = new ArrayList<>();
-        Money fees = zero;
-        Money interest = zero;
-        Money principal = zero;
-        for (BilledItem item : store.billedItems(unitOfWork, loan.id())) {
-            DueState.DueItem due = item.dueItem();
-            fees = fees.plus(due.fees());
-            interest = interest.plus(due.interest());
-            principal = principal.plus(due.principal());
-            if (!due.total().isZero()) {
-                items.add(due);
-            }
-        }
-        if (!fees.equals(netDebit(unitOfWork, accounts.feesDue(), zero))
-                || !interest.equals(netDebit(unitOfWork, accounts.interestDue(), zero))
-                || !principal.equals(netDebit(unitOfWork, accounts.principalDue(), zero))) {
-            throw new IllegalStateException(
-                    "the billed items do not explain the loan's due accounts - nothing is allocated (INV-LND-01)");
-        }
-        return new DueState(items, netDebit(unitOfWork, accounts.principal(), zero));
     }
 
     // ------------------------------------------------------------------ the event
@@ -411,32 +368,11 @@ public final class InstalmentBillings {
 
     // ------------------------------------------------------------------ the ledger
 
-    private Accounts accounts(Connection unitOfWork, LoanId loan, CurrencyCode currency) {
-        return new Accounts(
-                owned(unitOfWork, loan, AccountPurpose.LOAN_PRINCIPAL, currency),
-                owned(unitOfWork, loan, AccountPurpose.LOAN_PRINCIPAL_DUE, currency),
-                owned(unitOfWork, loan, AccountPurpose.LOAN_INTEREST_ACCRUED, currency),
-                owned(unitOfWork, loan, AccountPurpose.LOAN_INTEREST_DUE, currency),
-                owned(unitOfWork, loan, AccountPurpose.LOAN_FEES_DUE, currency),
-                owned(unitOfWork, loan, AccountPurpose.LOAN_CREDIT_BALANCE, currency));
-    }
-
-    private LedgerAccountId owned(Connection unitOfWork, LoanId loan, AccountPurpose purpose, CurrencyCode currency) {
-        return ledgerAccounts.findOwned(unitOfWork, loan.value(), purpose, currency)
-                .orElseThrow(() -> new IllegalStateException("the acceptance opened the loan's six accounts"))
-                .id();
-    }
-
     /**
-     * DR - CR over one of the loan's own accounts, folded through {@link Money} from its journal lines - never the
-     * projection ({@code INV-BAL-05}). Read under L3: every writer of a loan's accounts holds L3, so the six reads of one
-     * step see one history.
+     * The loan's receivables, read under L3 from its journal lines and billed items - the derivation the repayment and
+     * the closure share ({@link LoanReceivables}, lifted out of this step by `P11-TSK-018`).
      */
-    private Money netDebit(Connection unitOfWork, LedgerAccountId account, Money zero) {
-        Money net = zero;
-        for (PurposeBalances.EntryLine line : balances.linesOn(unitOfWork, account)) {
-            net = line.direction() == Direction.DEBIT ? net.plus(line.amount()) : net.minus(line.amount());
-        }
-        return net;
+    private LoanReceivables receivables() {
+        return new LoanReceivables(store, ledgerAccounts, balances);
     }
 }

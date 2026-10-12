@@ -104,10 +104,24 @@ final class DisbursementWorld {
     static final Map<UUID, Boolean> STANDING = new ConcurrentHashMap<>();
     static final Set<UUID> UNREACHABLE_WALLETS = ConcurrentHashMap.newKeySet();
     static final LoanPartyStanding STANDING_PORT = (unitOfWork, party) -> STANDING.getOrDefault(party, true);
-    static final LoanWallets WALLETS = (unitOfWork, party, currency) -> UNREACHABLE_WALLETS.contains(party)
-            ? Optional.empty()
-            : Optional.of(LEDGER_ACCOUNTS.insertIfAbsent(unitOfWork, LedgerAccount.owned(IDS, CLOCK, AccountType.LIABILITY,
-                    AccountPurpose.CUSTOMER_WALLET, currency, party)).account().id());
+    static final LoanWallets WALLETS = new LoanWallets() {
+        @Override
+        public Optional<LedgerAccountId> walletFor(Connection unitOfWork, UUID party, CurrencyCode currency) {
+            return UNREACHABLE_WALLETS.contains(party)
+                    ? Optional.empty()
+                    : Optional.of(LEDGER_ACCOUNTS.insertIfAbsent(unitOfWork, LedgerAccount.owned(IDS, CLOCK,
+                            AccountType.LIABILITY, AccountPurpose.CUSTOMER_WALLET, currency, party)).account().id());
+        }
+
+        /** The party's wallet if the world opened one - never opened here, whatever the standing (P11-TSK-018). */
+        @Override
+        public Optional<LedgerAccountId> existingWallet(Connection unitOfWork, UUID party, CurrencyCode currency) {
+            return UNREACHABLE_WALLETS.contains(party)
+                    ? Optional.empty()
+                    : LEDGER_ACCOUNTS.findOwned(unitOfWork, party, AccountPurpose.CUSTOMER_WALLET, currency)
+                            .map(LedgerAccount::id);
+        }
+    };
     static final LoanOrigination ORIGINATION = new LoanOrigination(APPLICATIONS, OFFER_STORE, ADMINISTRATION,
             CREDIT, new JdbcOutboxWriter(), IDS, CLOCK);
     static final LoanAcceptances ACCEPTANCES = new LoanAcceptances(OFFER_STORE, APPLICATIONS, LOAN_STORE, CREDIT,
@@ -126,6 +140,10 @@ final class DisbursementWorld {
     static final LoanSchedules SCHEDULES = new LoanSchedules(DISBURSEMENT_STORE, BILLING_STORE);
     static final InstalmentBillings BILLINGS = new InstalmentBillings(BILLING_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS,
             new JdbcOutboxWriter(), IDS, CLOCK);
+    static final LoanClosures CLOSURES = new LoanClosures(LOAN_STORE, new JdbcLoanServicingStore(), BILLING_STORE,
+            WALLETS, LEDGER_ACCOUNTS, BALANCES, POSTINGS, new JdbcOutboxWriter(), IDS, CLOCK);
+    static final JdbcRepaymentStore REPAYMENT_STORE = new JdbcRepaymentStore();
+    static final Repayments REPAYMENTS = repayments(REPAYMENT_STORE, new JdbcOutboxWriter());
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
             TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);
@@ -142,6 +160,13 @@ final class DisbursementWorld {
     static LoanDisbursements disbursements(OutboxWriter<Connection> outbox, AuditWriter<Connection> audit) {
         return new LoanDisbursements(LOAN_STORE, DISBURSEMENT_STORE, TERMS_STORE, CREDIT, STANDING_PORT, WALLETS,
                 LEDGER_ACCOUNTS, POSTINGS, HOLDS, PAYOUT_STORE, outbox, audit, IDS, CLOCK);
+    }
+
+    /** T-rep over the real stores, ledger and closure, with this repayment store and outbox (P11-TSK-018). */
+    static Repayments repayments(RepaymentStore store, OutboxWriter<Connection> outbox) {
+        return new Repayments(LOAN_STORE, store, BILLING_STORE, TERMS_STORE, WALLETS,
+                new com.finapp.ledger.AvailableBalance<>(new JdbcBalanceDerivation(), HOLD_STORE), LEDGER_ACCOUNTS,
+                BALANCES, POSTINGS, CLOSURES, outbox, IDS, CLOCK);
     }
 
     // ------------------------------------------------------------------ the loans

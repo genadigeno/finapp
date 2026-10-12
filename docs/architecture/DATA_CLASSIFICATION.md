@@ -3047,6 +3047,50 @@ No available-limit column exists: the limit is derived, never stored (ADR-0100 p
 | `credit_line_draw` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `credit_line_draw` | `correlation_id` | `INTERNAL` | The draw request's correlation |
 
+### `lending` - the repayment and the closure - *added by `P11-TSK-018`*
+
+`lending V014`: one row per repayment, its allocation lines and a loan's closure - every amount `RESTRICTED-FINANCIAL` as
+every lending amount (a borrower's balance and payments can be read from them), the loan, agreement, billed item, repayment
+and entry references `CONFIDENTIAL`, the requester's key `CONFIDENTIAL` (the client's own idempotency key, a request
+handle - never logged, never in an event), kinds, targets, components, reasons, dates, versions and stamps `INTERNAL`. No
+wallet identifier is stored: the wallet is the party's, resolved through accounts in the transaction.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `repayment` | `id` | `INTERNAL` | Generated - the repayment's identity and its ledger key's (`lending.repayment:<id>`) |
+| `repayment` | `loan_id` | `CONFIDENTIAL` | The loan repaid |
+| `repayment` | `kind` | `INTERNAL` | `CUSTOMER`, `AUTO_COLLECTION` or `PAYOFF` |
+| `repayment` | `request_key` | `CONFIDENTIAL` | The requester's Idempotency-Key - one repayment per loan, kind and key |
+| `repayment` | `currency` | `INTERNAL` | The loan's currency |
+| `repayment` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `repayment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount taken from the wallet (rule 5) |
+| `repayment` | `agreement_id` | `CONFIDENTIAL` | The agreement version it was allocated under |
+| `repayment` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `repayment` | `allocation_engine_version` | `INTERNAL` | The allocation engine version that split it |
+| `repayment` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 5's journal entry, by value |
+| `repayment` | `value_date` | `INTERNAL` | The business date of the database clock in the pinned zone |
+| `repayment` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment` | `correlation_id` | `INTERNAL` | The repayment request's correlation |
+| `repayment_allocation` | `id` | `INTERNAL` | Generated |
+| `repayment_allocation` | `repayment_id` | `CONFIDENTIAL` | The repayment it is a line of |
+| `repayment_allocation` | `ordinal` | `INTERNAL` | Its place in the engine's order |
+| `repayment_allocation` | `target` | `INTERNAL` | `DUE_ITEM`, `NOT_DUE_PRINCIPAL` or `CREDIT_BALANCE` |
+| `repayment_allocation` | `billing_id` | `CONFIDENTIAL` | The billed item it paid - null for an overflow target |
+| `repayment_allocation` | `component` | `INTERNAL` | `FEES`, `INTEREST` or `PRINCIPAL` - null for an overflow target |
+| `repayment_allocation` | `currency` | `INTERNAL` | The loan's currency |
+| `repayment_allocation` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `repayment_allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | What it paid, or held as credit |
+| `loan_closure` | `id` | `INTERNAL` | Generated |
+| `loan_closure` | `loan_id` | `CONFIDENTIAL` | The loan closed - one closure per loan |
+| `loan_closure` | `reason` | `INTERNAL` | `REPAID`, `PAID_OFF_EARLY` or `CLOSED_BY_CUSTOMER` |
+| `loan_closure` | `currency` | `INTERNAL` | The loan's currency |
+| `loan_closure` | `scale` | `INTERNAL` | The refund's persisted scale |
+| `loan_closure` | `refund_minor` | `RESTRICTED-FINANCIAL` | The credit balance refunded to the wallet at closure |
+| `loan_closure` | `refund_journal_entry_id` | `CONFIDENTIAL` | The refund's journal entry, by value - null when nothing was refunded |
+| `loan_closure` | `repayment_id` | `CONFIDENTIAL` | The repayment whose transaction closed it - null for a closure by the servicing step |
+| `loan_closure` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_closure` | `correlation_id` | `INTERNAL` | The closing transaction's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

@@ -479,6 +479,24 @@ lending.WalletUnavailable` when it cannot be had or posted - resolving may open 
 row (born whole, naming its entry: no L5 lock, since no other writer can wait on a row this transaction creates - the same
 key's other attempt holds the claim and L3 first) and `lending.CreditLineDrawn`. No L0 and no L7.)*
 
+*(As built by `P11-TSK-018` - T-rep: the door's claim (`lending.repayment:<type>:<id>`, the platform's conditional step-up);
+**(L3)** the loan `FOR UPDATE`, owner-scoped (another party's never locked - the `404`); a repayment already born under the
+customer's key converged on (`UNIQUE (loan_id, kind, request_key)`, the arbiter behind a claim that lapsed; another amount
+`409 api.Conflict`); an `ACTIVE` instalment loan only (`409 lending.LoanNotRepayable` otherwise - closed, cancelled, not yet
+disbursed, or a line until `-023`); the database clock after the lock, the value date its business date in the pinned zone;
+the due state derived under L3 from the billed items (billed less every payer's allocations) and refused unless they explain
+the due accounts' ledger balances (`LoanReceivables`, lifted out of `-017`'s billing step for its second caller); the
+allocation (`AllocationEngineV1`, the pinned rules); **(L7)** the wallet's ledger row `FOR UPDATE` (`LoanWallets.existingWallet`
+- the party's existing wallet whatever its standing, never opened) and `AvailableBalance.underLock` >= the amount, a wallet
+absent or not `ACTIVE` folded into `422 lending.InsufficientFunds` (ADR-0095 point 4); **(L8)** `lockBalancesInOrder` over
+every account the transaction may post to (rule 5's and a closure refund's); rule 5 under `lending.repayment:<repaymentId>`;
+then only inserts - the repayment, its allocation rows, `lending.RepaymentReceived` - and the closure when every receivable
+is now zero and no elapsed date is left unaccrued with principal outstanding (`LoanClosures`): the credit balance refunded
+to the wallet under `lending.closure-refund:<loan>`, `loan_closure` born, `ACTIVE -> CLOSED (REPAID)`, `lending.LoanClosed`.
+No standing check, no L0 (outstanding exposure only falls), no L5, no L6 (repaid principal restores headroom at commit). T-svc
+gains the same closure as its last step (L7 after L3), so a credit-balance application that settles a loan closes it; a
+closed account is not re-permitted.)*
+
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
 One order for every lending writer holding more than one of them:
@@ -684,6 +702,9 @@ through.)*
 *(`LineNotDrawable` (`409` - an instalment loan, or a line no longer `ACTIVE`) and `WalletUnavailable` (`409` - the wallet
 cannot be had or the ledger will not post to it) added by `P11-TSK-021`, beside `LimitExceeded` and `DrawsSuspended`, all
 four catalogued in `ERROR_CONTRACT.md`; a draw's lost standing is credit's `ApplicantNotEligible`, as the acceptance's.)*
+*(`LoanNotRepayable` (`409`) and `InsufficientFunds` (`422` - the available balance short, or the wallet absent or not
+`ACTIVE`, ADR-0095 point 4) catalogued by `P11-TSK-018`; a refused conservation is a defect - `500`, counted by
+`finapp.lending.allocation.anomaly`.)*
 
 ## 10. Event architecture
 
@@ -1039,6 +1060,19 @@ accounts' ledger balances exactly (`INV-LND-01`). Its `DUE_ITEM` lines are `cred
 component, amount), aggregated per due account in rule 6's entry under `lending.credit-application:<billing>`; its
 `CREDIT_BALANCE` line stays held. The database holds the rows to the application and no billed component above what it billed,
 at commit, for every writer.)*
+
+*(As built by `P11-TSK-018`, 2026-10-12 - rule 5: a customer's repayment of any amount, allocated by `AllocationEngineV1` over
+the due state derived under L3 (the same derivation rule 6 uses, `LoanReceivables`), its lines `repayment_allocation` rows
+(ordinal, target, billed item and component when it pays one, amount) and one entry `DR CUSTOMER_WALLET A / CR <due accounts>
+/ CR LOAN_CREDIT_BALANCE rest` aggregated per account; `lending.billing_component_paid` replaced to count both payers, so
+`V012`'s and `V014`'s never-over-paid rules, the closure's and the schedule read's paid status cover every payer. **Closure
+(ADR-0090) is this task's for an instalment loan** - in the repayment that settles the last receivable, and at the servicing
+step after a credit-balance application that does (`LENDING_LIFECYCLES.md` section 4.5's "a repayment, a payoff, a
+credit-balance application or a waiver") - through one `LoanClosures` that `-023` and `-026` extend: every receivable zero
+**and no elapsed date left unaccrued with principal outstanding at its end** (such a date has earned interest the ledger does
+not yet hold - closing would forgo it), then the credit balance refunded to the wallet (key `lending.closure-refund:<loan>`),
+the `loan_closure` fact (the subledger proof's credit-balance arm: overpayments - applications - refunds) and
+`CLOSED (REPAID)`. A line's repayment remains `-023`'s.)*
 
 **Payoff** (both products). *Quote* (keyed): good-through date `G` (today, up to 30 days); amount =
 derived outstanding + the accrual the engine would post through `G − 1` on the current base —

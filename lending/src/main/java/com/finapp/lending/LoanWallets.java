@@ -22,4 +22,12 @@ public interface LoanWallets {
 
     /** The party's wallet ledger account in {@code currency}, opened if absent; empty when it cannot be had now. */
     Optional<LedgerAccountId> walletFor(Connection unitOfWork, UUID party, CurrencyCode currency);
+
+    /**
+     * The party's existing wallet ledger account in {@code currency}, whatever the customer's standing - never opened
+     * (`P11-TSK-018`): the account a repayment is debited from and a closure's refund credited to. A suspended customer's
+     * wallet is found (a suspended customer may still repay); empty when the party holds no live wallet agreement with a
+     * wallet in the currency. Whether the account accepts the posting is the ledger's to judge, under the caller's L7.
+     */
+    Optional<LedgerAccountId> existingWallet(Connection unitOfWork, UUID party, CurrencyCode currency);
 }

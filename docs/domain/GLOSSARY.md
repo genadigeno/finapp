@@ -1140,8 +1140,9 @@ are the record. Penalty interest and interest on interest are not built.
 **Is:** money received against one Loan from the borrower's wallet — the customer's repayment, a
 scheduled auto-collection or a payoff — born `ALLOCATED`, with its Repayment Allocation and its one
 journal entry debiting the wallet, in a single transaction (a row exists only once its money moved),
-and `REVERSED` only by an approved, four-eyes repayment reversal (`INV-LND-11`). Planned
-(`P11-TSK-018`).
+and `REVERSED` only by an approved, four-eyes repayment reversal (`INV-LND-11`). Built for the customer
+(`P11-TSK-018`: `repayment`, `Repayments`, `POST /v1/me/loans/{id}/repayments`); auto-collection and payoff planned (`-019`,
+`-026`).
 **Not:** an Instalment (what was scheduled) or an Instalment Billing (what became due): a repayment
 is an event that may settle several, part of one, or none. Nor a failed collection, which is a
 collection attempt and never a repayment, and not a Transfer — it credits receivables, not a
@@ -1154,8 +1155,8 @@ components, born with it in the pinned order — billed items oldest due date fi
 → principal within each, the remainder held as Loan Credit Balance (loan) or paying down drawn
 principal (line) — computed by a pure engine under the loan's lock from postings, its lines summing
 to the amount exactly and none above its component's due (`INV-LND-04`). The engine is built
-(`P11-TSK-008`: `AllocationEngineV1`, its `AllocationLine`s); the rows and the posting are planned (`-017`,
-`-018`).
+(`P11-TSK-008`: `AllocationEngineV1`, its `AllocationLine`s); the rows and the postings built by `-017`
+(`credit_balance_allocation`) and `-018` (`repayment_allocation`, every line - the held remainder included).
 **Not:** the Repayment (the money) and not the journal entry, whose lines are aggregated per
 account: the allocation is the per-item explanation the entry's figures must equal. Never edited — a
 reversal negates allocations by rows, and later allocations are not re-cut.
@@ -1166,7 +1167,7 @@ reversal negates allocations by rows, and later allocations are not re-cut.
 per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing,
 refunded to the wallet at closure, and the destination of a paid fee's refund. The account by
 `P11-TSK-003`; its application at each billing built by `P11-TSK-017` (`credit_balance_application`);
-its refund planned (`-018`, `-026`).
+its refund at closure built by `P11-TSK-018` (`loan_closure`, `lending.closure-refund:<loan>`); a payoff's by `-026`.
 **Not:** a wallet balance, and not a prepayment: an overpayment on an instalment loan does not reduce
 principal (on a line it pays down drawn principal first, and only the excess is held). Nor a
 receivable: it is subtracted from what is outstanding, and a closed loan's credit balance is zero

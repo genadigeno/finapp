@@ -88,7 +88,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * leaderless disbursement sweep with its meters and sweeper gauge. And the external payout (`P11-TSK-015`): its store, the
  * port {@code app} implements over payments' withdrawal machinery, the payout steps and the leaderless payout sweep with
  * its meters and sweeper gauge. And the servicing (`P11-TSK-016`): its store, T-svc with its accrual step, and the
- * leaderless servicing sweep with its meters and sweeper gauge.
+ * leaderless servicing sweep with its meters and sweeper gauge. And the repayment (`P11-TSK-018`): its store, the closure
+ * T-rep and T-svc share, T-rep with the wallet's available balance, the doors and their meters.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -612,7 +613,7 @@ public class LendingBeans {
 
     /**
      * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing and the
-     * credit-balance application (rules 3 and 6, P11-TSK-017).
+     * credit-balance application (rules 3 and 6, P11-TSK-017), then the closure of a settled loan (P11-TSK-018).
      */
     @Bean
     LoanServicing loanServicing(
@@ -623,9 +624,10 @@ public class LendingBeans {
             PurposeBalances<Connection> purposeBalances,
             PostingService postingService,
             IdGenerator idGenerator,
-            InstalmentBillings instalmentBillings) {
+            InstalmentBillings instalmentBillings,
+            com.finapp.lending.LoanClosures loanClosures) {
         return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
-                postingService, idGenerator, instalmentBillings);
+                postingService, idGenerator, instalmentBillings, loanClosures);
     }
 
     /** {@code finapp.lending.accrual{outcome}} and the accrual lag, every series registered at startup. */
@@ -723,5 +725,69 @@ public class LendingBeans {
             CreditLineDrawMetrics creditLineDrawMetrics) {
         return new CreditLineDrawDesk(creditLineDraws, identityStore, idempotentExecutor, lendingTransactions,
                 creditLineDrawMetrics);
+    }
+
+    // ------------------------------------------------------------------ the repayment and the closure (P11-TSK-018)
+
+    /** The repayments' store - {@code repayment} and {@code repayment_allocation}, INSERT-only. */
+    @Bean
+    com.finapp.lending.RepaymentStore repaymentStore() {
+        return new com.finapp.lending.JdbcRepaymentStore();
+    }
+
+    /** The closure of a settled instalment loan - the refund (L7 after L3), the edge, the event - for T-rep and T-svc. */
+    @Bean
+    com.finapp.lending.LoanClosures loanClosures(
+            LoanStore loanStore,
+            LoanServicingStore loanServicingStore,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.LoanClosures(loanStore, loanServicingStore, instalmentBillingStore, loanWallets,
+                ledgerAccountStore, purposeBalances, postingService, outboxWriter, idGenerator, clock);
+    }
+
+    /** T-rep - the repayment under L3 then L7, posting rule 5 from the wallet through the ledger, and any closure. */
+    @Bean
+    com.finapp.lending.Repayments repayments(
+            LoanStore loanStore,
+            com.finapp.lending.RepaymentStore repaymentStore,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanTermsStore loanTermsStore,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            com.finapp.lending.LoanClosures loanClosures,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.Repayments(loanStore, repaymentStore, instalmentBillingStore, loanTermsStore,
+                loanWallets, new com.finapp.ledger.AvailableBalance<>(new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore()),
+                ledgerAccountStore, purposeBalances, postingService, loanClosures, outboxWriter, idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.repayment{kind, outcome}} and {@code finapp.lending.allocation.anomaly}, eager. */
+    @Bean
+    RepaymentMetrics repaymentMetrics(MeterRegistry meterRegistry) {
+        return new RepaymentMetrics(meterRegistry);
+    }
+
+    @Bean
+    LoanRepaymentDesk loanRepaymentDesk(
+            com.finapp.lending.Repayments repayments,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            RepaymentMetrics repaymentMetrics) {
+        return new LoanRepaymentDesk(repayments, identityStore, mfaEnrolmentStore, idempotentExecutor, lendingTransactions,
+                repaymentMetrics);
     }
 }

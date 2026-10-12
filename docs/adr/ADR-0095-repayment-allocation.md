@@ -217,5 +217,21 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   what it billed, the paid sum one function (`lending.billing_component_paid`) that `-018` extends with
   `repayment_allocation`, so the rule covers every payer. Point 1's per-item split and point 2's order are the engine's,
   unchanged.
+- **As built by `P11-TSK-018` (2026-10-12) - points 3 and 4, the customer's repayment, with these refinements:** `lending
+  V014` (the board's next free version; the backlog's `V011` stale). The repayment row carries no status - `ALLOCATED` is
+  what a repayment without an approved reversal reads as (point 7's `REVERSED` derived by `-020`); its `request_key` makes
+  `UNIQUE (loan_id, kind, request_key)` the arbiter behind a lapsed claim. `repayment_allocation` records every line -
+  billed items' components, and the overflow targets (`CREDIT_BALANCE`; `NOT_DUE_PRINCIPAL` refused for an instalment loan
+  by its trigger until a line's paydown, `-023`) - so Σ rows = amount is exact at commit and the credit balance's arm of the
+  subledger proof reads from rows. The due state is the one `-017` derives (lifted to `LoanReceivables` for its second
+  caller); an unexplained ledger or an engine defect is an `AllocationAnomaly` (a `500`, nothing written, counted by
+  `finapp.lending.allocation.anomaly`). Point 4's "wallet not postable" folds into `422 lending.InsufficientFunds`: the
+  wallet is the party's existing one whatever their standing (`LoanWallets.existingWallet` - never opened) and must be
+  `ACTIVE` under L7. **Closure (point 3's last clause)** runs in the repayment and, for a credit-balance application that
+  settles the loan, as the servicing step's last step - one `LoanClosures` - and additionally requires that no elapsed
+  date is left unaccrued with principal outstanding; the refund is its own entry (`lending.closure-refund:<loan>`) and the
+  closure its own fact (`loan_closure`, one per loan). A credit line's repayment answers `409 lending.LoanNotRepayable`
+  until `-023`. The probe "wallet before loan → 40P01" is held by scenario 3's racing loan-then-wallet writer and by
+  `RepaymentDatabaseTest#repaymentTakesTheLoanThenTheWallet`.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.
