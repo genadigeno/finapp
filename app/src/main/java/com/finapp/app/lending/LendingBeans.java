@@ -669,4 +669,59 @@ public class LendingBeans {
     LoanOriginationHint loanOriginationClosureHint(LoanOrigination loanOrigination) {
         return new LoanOriginationHint(loanOrigination, LoanOriginationHint.Kind.REQUEST_CLOSED);
     }
+
+    // ------------------------------------------------------------------ the credit line draw (P11-TSK-021)
+
+    /** The draws' store - {@code credit_line_draw}, INSERT-only. */
+    @Bean
+    com.finapp.lending.CreditLineDrawStore creditLineDrawStore() {
+        return new com.finapp.lending.JdbcCreditLineDrawStore();
+    }
+
+    /**
+     * The draws-suspended condition over what exists: nothing can be past due before a line's statement (`-022`) and
+     * nothing defaulted before the condition step (`-024`), which replaces this bean with the condition read.
+     */
+    @Bean
+    com.finapp.lending.DrawSuspension drawSuspension() {
+        return com.finapp.lending.DrawSuspension.BEFORE_ANY_CONDITION;
+    }
+
+    /** T-drw - the draw under L3 and L6, posting rule 1 to the wallet through the ledger. */
+    @Bean
+    com.finapp.lending.CreditLineDraws creditLineDraws(
+            LoanStore loanStore,
+            com.finapp.lending.CreditLineDrawStore creditLineDrawStore,
+            LoanTermsStore loanTermsStore,
+            com.finapp.lending.DrawSuspension drawSuspension,
+            LoanPartyStanding loanPartyStanding,
+            LendingCapitalHeadroom lendingCapitalHeadroom,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.CreditLineDraws(loanStore, creditLineDrawStore, loanTermsStore, drawSuspension,
+                loanPartyStanding, lendingCapitalHeadroom, loanWallets, ledgerAccountStore, purposeBalances,
+                postingService, outboxWriter, idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.draw{outcome}}, every series registered at startup. */
+    @Bean
+    CreditLineDrawMetrics creditLineDrawMetrics(MeterRegistry meterRegistry) {
+        return new CreditLineDrawMetrics(meterRegistry);
+    }
+
+    @Bean
+    CreditLineDrawDesk creditLineDrawDesk(
+            com.finapp.lending.CreditLineDraws creditLineDraws,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            CreditLineDrawMetrics creditLineDrawMetrics) {
+        return new CreditLineDrawDesk(creditLineDraws, identityStore, idempotentExecutor, lendingTransactions,
+                creditLineDrawMetrics);
+    }
 }

@@ -466,6 +466,19 @@ business date of the transaction (ADR-0094 point 8); then, after each, rule 6 if
 billed is due; `lending.InstalmentBilled` per billing. Every ledger account touched is the loan's own, written by nobody
 without L3, so no `lockBalancesInOrder` beyond each posting's own.)*
 
+*(As built by `P11-TSK-021` - T-drw: the door's claim (`lending.draw:<type>:<id>`, `MULTI_FACTOR`); **(L3)** the line `FOR
+UPDATE`, owner-scoped (another party's never locked - the `404`); a draw already born under the customer's key converged on
+(`UNIQUE (loan_id, draw_key)` - the arbiter behind a claim that lapsed; another amount under it `409 api.Conflict`); an
+`ACTIVE` line only (`409 lending.LineNotDrawable` otherwise); the database clock after the lock, the value date its business
+date in the pinned zone; the suspension (`DrawSuspension`, derived - nothing can be past due or defaulted before `-022` and
+`-024`, which bring it into force) and the standing; the available limit `L - (LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE)` folded
+from the line's journal lines in one statement under L3 and judged **before** L6, so a draw past its own limit never queues
+on the currency's hot row; **(L6)** the capital row and headroom >= the amount; the wallet resolved after it (`409
+lending.WalletUnavailable` when it cannot be had or posted - resolving may open it, and no wallet row precedes L6, section
+7.3 (c)); rule 1 under `lending.draw:<drawId>`, projections last; then only inserts - the draw
+row (born whole, naming its entry: no L5 lock, since no other writer can wait on a row this transaction creates - the same
+key's other attempt holds the claim and L3 first) and `lending.CreditLineDrawn`. No L0 and no L7.)*
+
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
 One order for every lending writer holding more than one of them:
@@ -592,7 +605,7 @@ declares; every table carrying money is `INSERT`-only.
 | `repayment`, `repayment_allocation` | `-018` | a deferred trigger: Σ allocation = amount |
 | `collection_attempt` | `-019` | `UNIQUE (due_item_id, attempt_date)` |
 | `repayment_reversal`, `repayment_allocation_reversal` | `-020` | one live proposal per repayment (partial unique over `PROPOSED`/`APPROVED`); four-eyes `CHECK` |
-| `credit_line_draw` | `-021` | `UNIQUE (loan_id, draw_key)` |
+| `credit_line_draw` | `-021` | `UNIQUE (loan_id, draw_key)` *(as built by `P11-TSK-021`, `lending V013` - `V011` left free, `V012` `-017`'s: also `UNIQUE (journal_entry_id)`; INSERT-only for every role; its trigger holding an `ACTIVE` line, its governing (highest) agreement version, that agreement's currency and scale, an amount within the limit and the business date of the drawing transaction; the agreement version and the entry by value on the row; no available-limit column anywhere)* |
 | `credit_line_statement` | `-022` | `UNIQUE (loan_id, cycle_end)` |
 | `line_closure_request` | `-023` | `UNIQUE (loan_id)` |
 | `loan_condition_event` | `-024` | `UNIQUE (loan_id, business_date, kind)` |
@@ -668,6 +681,9 @@ malformed capital contribution - added by `P11-TSK-004`, the first seven catalog
 payout or a line, or one not the customer's own live bank account; `TermsChanged` and it catalogued, and
 `CapitalUnavailable` first raised, by that task. A lost standing at acceptance is credit's `ApplicantNotEligible`, passed
 through.)*
+*(`LineNotDrawable` (`409` - an instalment loan, or a line no longer `ACTIVE`) and `WalletUnavailable` (`409` - the wallet
+cannot be had or the ledger will not post to it) added by `P11-TSK-021`, beside `LimitExceeded` and `DrawsSuspended`, all
+four catalogued in `ERROR_CONTRACT.md`; a draw's lost standing is credit's `ApplicantNotEligible`, as the acceptance's.)*
 
 ## 10. Event architecture
 
@@ -1061,7 +1077,12 @@ date strictly after it; "drawn principal" in the ratio is `LOAN_PRINCIPAL + LOAN
 the interest is the cycle's posted accruals summed. ADR-0100's Follow-up records the refinements.)*
 
 **Available limit recomputation** is never a stored number: every draw derives it under L3; a
-principal repayment (due or not-due) restores it at commit; interest and fees never consume it.
+principal repayment (due or not-due) restores it at commit; interest and fees never consume it. *(As built by
+`P11-TSK-021`, 2026-10-12 - `AvailableLimit`, zero once drawn principal reaches the limit; the draw derives it from the
+line's journal lines under L3 (every value date - no lending posting is dated after its own commit's business date), the
+line's read in its snapshot - zero for a line no longer `ACTIVE`, none for an instalment loan. The draw lands in the wallet
+with the request's own correlation, not the acceptance's - each draw is the customer's own flow. ADR-0100's Follow-up
+records the refinements.)*
 
 **Closure.** The customer requests closure (`ACTIVE → CLOSING`, no further draws); the line closes in
 the transaction that zeroes its last receivable; a line with nothing outstanding closes at the request.

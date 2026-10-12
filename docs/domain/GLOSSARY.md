@@ -1243,7 +1243,8 @@ it adds (the full limit while open).
 **Is:** principal taken against a Credit Line — born once per line and draw key under the line's
 lock, admitted only while the line is `ACTIVE`, its draws not suspended, the amount within the
 Available Limit (`INV-LND-14`) and within lending capital headroom (`INV-LND-13`) — posting
-`DR LOAN_PRINCIPAL / CR CUSTOMER_WALLET`. Planned (`P11-TSK-021`).
+`DR LOAN_PRINCIPAL / CR CUSTOMER_WALLET`. Built by `P11-TSK-021` (`credit_line_draw`, `CreditLineDraws`; the door
+`POST /v1/me/loans/{id}/draws`, `MULTI_FACTOR`).
 **Not:** a Disbursement (once per instalment loan), and not a Withdrawal: a draw lands in the
 wallet, and leaving the platform is the borrower's own withdrawal. Capital is consumed by a draw,
 never by an undrawn limit.
@@ -1274,7 +1275,8 @@ Paying more pays down drawn principal and restores the Available Limit.
 **Is:** how much more a Credit Line borrower may draw now — the agreement's limit less drawn
 principal (`LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE`), derived from journal lines under the line's lock
 at each draw and never stored; a principal repayment restores it at commit, and interest and fees
-never consume it. Planned (`P11-TSK-021`).
+never consume it; zero once drawn principal reaches the limit, and zero on a line no longer `ACTIVE`. Built by
+`P11-TSK-021` (`AvailableLimit`; shown on the line's read).
 **Not:** Exposure — credit counts an open line at its full limit whatever is drawn, since it can be
 drawn without a new decision. Nor lending capital headroom (the platform's, per currency), and not a
 wallet's available balance.
