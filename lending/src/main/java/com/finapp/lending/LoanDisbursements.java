@@ -2,6 +2,9 @@ package com.finapp.lending;
 
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
+import com.finapp.ledger.Hold;
+import com.finapp.ledger.HoldId;
+import com.finapp.ledger.HoldService;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccountId;
@@ -43,7 +46,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The disbursement to the borrower's wallet - T-dis, path W (`P11-TSK-014`; {@code PHASE_11_PLAN.md} sections 5.3, 7.1,
+ * The disbursement - T-dis, path W (`P11-TSK-014`) and path X (`P11-TSK-015`; {@code PHASE_11_PLAN.md} sections 5.3, 7.1,
  * 7.2, 12.4 and 12.8, {@code LENDING_LIFECYCLES.md} sections 4.5 and 4.6; ADR-0097, ADR-0096, ADR-0093;
  * {@code INV-LND-07}, {@code INV-LND-01}, {@code INV-LND-03}, {@code INV-LND-13}, {@code INV-LED-01},
  * {@code INV-IDEM-01}, {@code INV-EVT-01}, {@code INV-LIFE-04}). The loan is born financially - once, unambiguously, in
@@ -69,9 +72,16 @@ import lombok.RequiredArgsConstructor;
  *       (or a fee not below the principal) rolls back to the savepoint - nothing posted (rule 11) - and is retried on the
  *       sweep's permit until the deadline; the attempt that fails at or after it cancels {@code DISBURSEMENT_FAILED};
  *   <li>then only conditional edges and inserts: the disbursement {@code POSTED}, the loan {@code ACTIVE} and its
- *       history, the accrual start (the entry's value date) and schedule version 1 from the pinned engine,
- *       {@code lending.LoanDisbursed} in the outbox, the audit record.
+ *       history; path W: the accrual start (the entry's value date) and schedule version 1 from the pinned engine; path X:
+ *       the payout born {@code PENDING} beside its hold - no accrual start and no schedule until the payout's terminal
+ *       outcome (A30, {@link LoanPayoutSteps}); {@code lending.LoanDisbursed} in the outbox, the audit record.
  * </ol>
+ *
+ * <p><strong>Path X</strong> (`P11-TSK-015`, ADR-0097 point 3): inside the savepoint, after the wallet is resolved,
+ * <strong>(L7)</strong> the wallet's ledger account {@code FOR UPDATE} - before the posting's projections (L8), the order
+ * every wallet writer keeps - then rule 1, then a ledger hold of {@code P - f} through {@link HoldService} judged under
+ * that lock: the funds the borrower asked to be paid out cannot be spent between the disbursement and the payout, and
+ * payments' withdrawal adopts this hold rather than placing another.
  *
  * <p>No L6: the principal was committed against capital at the acceptance, and the disbursement moves it from the
  * headroom's committed term to its outstanding term in the same commit - headroom does not move. No L7 on path W: a
@@ -98,6 +108,8 @@ public final class LoanDisbursements {
     @NonNull private final LoanWallets wallets;
     @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final PostingService postings;
+    @NonNull private final HoldService holds;
+    @NonNull private final LoanPayoutStore payouts;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
@@ -118,7 +130,7 @@ public final class LoanDisbursements {
 
         /** The step's effect. */
         public enum Kind {
-            /** The loan was no longer awaiting a wallet disbursement - another step moved it, or it is path X's. */
+            /** The loan was no longer awaiting its disbursement - another step moved it. */
             NOTHING,
             /** Posting rule 1 committed with the loan {@code ACTIVE} and its schedule. */
             POSTED,
@@ -171,10 +183,6 @@ public final class LoanDisbursements {
             throw new IllegalStateException(
                     "a loan PENDING_DISBURSEMENT has its disbursement PENDING - they move only together (INV-LND-07)");
         }
-        if (disbursement.path() != PayoutPreference.WALLET) {
-            // Path X posts beside its payout's hold - P11-TSK-015's; its sweep does not claim it until then.
-            return Outcome.nothing();
-        }
         PayoutPreference path = disbursement.path();
         // The database clock, read after the locks.
         Instant now = disbursements.databaseNow(unitOfWork);
@@ -186,12 +194,15 @@ public final class LoanDisbursements {
                 .terms();
         LocalDate valueDate = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
         Money principal = agreement.amount();
-        Schedule schedule = schedule(pinned, agreement, valueDate);
+        // Path W's schedule is projected before anything is written; path X's waits for its payout's conclusion.
+        Optional<Schedule> schedule = path == PayoutPreference.WALLET
+                ? Optional.of(schedule(pinned, agreement, valueDate))
+                : Optional.empty();
 
         Correlation flow = Correlation.startingWith(loan.correlation()).causing(CausationId.of(loan.correlation().value()));
         try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
-            Optional<JournalEntryId> posted = postBehindSavepoint(unitOfWork, loan, party, principal,
-                    pinned.originationFee().on(principal), valueDate);
+            Optional<Posted> posted = postBehindSavepoint(unitOfWork, loan, party, principal,
+                    pinned.originationFee().on(principal), valueDate, path);
             if (posted.isEmpty()) {
                 // The wallet could not be posted: nothing written. Retried on the permit - until the deadline, judged on
                 // the database clock; the attempt that fails at or after it cancels the loan.
@@ -199,7 +210,7 @@ public final class LoanDisbursements {
                         ? new Outcome(Outcome.Kind.RETRYING, Optional.of(path), Optional.empty())
                         : cancel(unitOfWork, loan, path, CancellationReason.DISBURSEMENT_FAILED, actor);
             }
-            JournalEntryId entry = posted.get();
+            JournalEntryId entry = posted.get().entry();
             if (!disbursements.post(unitOfWork, id, entry, valueDate)) {
                 throw new IllegalStateException("the locked disbursement moved under its own row lock");
             }
@@ -209,12 +220,19 @@ public final class LoanDisbursements {
             loans.appendEvent(unitOfWork, new LoanStore.HistoryRow(ids.next(), id,
                     Optional.of(LoanStatus.PENDING_DISBURSEMENT), LoanStatus.ACTIVE, DISBURSED_REASON, actor,
                     loan.correlation()));
-            // Path W: interest runs from the entry's value date, and the schedule is fixed from it (ADR-0097 point 2).
-            disbursements.insertAccrualStart(unitOfWork, ids.next(), new AccrualStart(id, valueDate, entry),
-                    loan.correlation());
-            RepaymentSchedule versionOne =
-                    new RepaymentSchedule(ids.next(), id, 1, agreement.id(), agreement.version(), schedule);
-            disbursements.insertSchedule(unitOfWork, versionOne, versionOne.instalments(ids), loan.correlation());
+            if (schedule.isPresent()) {
+                // Path W: interest runs from the entry's value date, and the schedule is fixed from it (ADR-0097 point 2).
+                disbursements.insertAccrualStart(unitOfWork, ids.next(),
+                        AccrualStart.ofDisbursement(id, valueDate, entry), loan.correlation());
+                RepaymentSchedule versionOne = new RepaymentSchedule(ids.next(), id, 1, agreement.id(),
+                        agreement.version(), schedule.get());
+                disbursements.insertSchedule(unitOfWork, versionOne, versionOne.instalments(ids), loan.correlation());
+            } else {
+                // Path X: the payout born PENDING beside its hold; interest and the schedule wait for its terminal outcome
+                // (ADR-0097 points 3 and 7, A30).
+                payouts.insert(unitOfWork, ids.next(), id, disbursement.payoutMethod().orElseThrow(),
+                        posted.get().wallet(), posted.get().hold().orElseThrow(), loan.correlation());
+            }
             publishDisbursed(unitOfWork, loan, entry, valueDate, principal, path);
             audited(unitOfWork, loan, entry, valueDate, path, actor);
             return new Outcome(Outcome.Kind.POSTED, Optional.of(path), Optional.empty());
@@ -223,12 +241,17 @@ public final class LoanDisbursements {
 
     // ------------------------------------------------------------------ the money
 
+    /** What the savepoint's step committed: the entry, the wallet it credited and - path X - the hold placed on it. */
+    private record Posted(JournalEntryId entry, LedgerAccountId wallet, Optional<HoldId> hold) {}
+
     /**
-     * Posting rule 1 behind a savepoint: the wallet resolved (opened if absent) and the entry posted, or - the wallet not
-     * to be had, not postable, or nothing to credit it - everything since the savepoint rolled back and empty.
+     * Posting rule 1 behind a savepoint: the wallet resolved (opened if absent) and the entry posted - on path X under
+     * the wallet's row lock (L7) taken first, with the hold of {@code P - f} placed after the posting - or, the wallet not
+     * to be had, not postable, or nothing to credit it, everything since the savepoint rolled back and empty.
      */
-    private Optional<JournalEntryId> postBehindSavepoint(
-            Connection unitOfWork, Loan loan, UUID party, Money principal, Money fee, LocalDate valueDate) {
+    private Optional<Posted> postBehindSavepoint(
+            Connection unitOfWork, Loan loan, UUID party, Money principal, Money fee, LocalDate valueDate,
+            PayoutPreference path) {
         CurrencyCode currency = loan.currency();
         Money credited = principal.minus(fee);
         if (fee.isNegative() || !credited.isPositive()) {
@@ -241,6 +264,11 @@ public final class LoanDisbursements {
             if (wallet.isEmpty()) {
                 rollback(unitOfWork, beforePosting);
                 return Optional.empty();
+            }
+            if (path == PayoutPreference.EXTERNAL_ACCOUNT) {
+                // (L7) The wallet's row, before the posting's projections (L8): the hold below is judged under it.
+                ledgerAccounts.lockForUpdate(unitOfWork, wallet.get())
+                        .orElseThrow(() -> new IllegalStateException("a resolved wallet has its ledger account row"));
             }
             LedgerAccountId receivable = ledgerAccounts
                     .findOwned(unitOfWork, loan.id().value(), AccountPurpose.LOAN_PRINCIPAL, currency)
@@ -262,16 +290,23 @@ public final class LoanDisbursements {
                 // The key's entry exists while the loan still awaits it: the one-transaction rule was broken somewhere.
                 throw new IllegalStateException("a disbursement entry exists for a loan still PENDING_DISBURSEMENT (INV-LND-07)");
             }
+            Optional<HoldId> hold = Optional.empty();
+            if (path == PayoutPreference.EXTERNAL_ACCOUNT) {
+                // The funds made the borrower's and held for the payout at once: a credit of P - f always affords a hold
+                // of P - f (INV-BAL-04 holds before it), so a refusal here is a defect and rolls the whole step back.
+                Hold placed = holds.place(unitOfWork, wallet.get(), credited);
+                hold = Optional.of(placed.id());
+            }
             release(unitOfWork, beforePosting);
-            return Optional.of(result.entryId());
+            return Optional.of(new Posted(result.entryId(), wallet.get(), hold));
         } catch (LedgerAccountNotPostableException notPostable) {
             rollback(unitOfWork, beforePosting);
             return Optional.empty();
         }
     }
 
-    /** Schedule version 1 by the agreement's pinned engine from the accrual start (ADR-0093). */
-    private static Schedule schedule(LoanTerms pinned, LoanAgreement agreement, LocalDate accrualStart) {
+    /** Schedule version 1 by the agreement's pinned engine from the accrual start (ADR-0093) - both paths'. */
+    static Schedule schedule(LoanTerms pinned, LoanAgreement agreement, LocalDate accrualStart) {
         ScheduleOutcome projected = ScheduleEngineV1.project(pinned, agreement.amount(),
                 agreement.termMonths().orElseThrow(() -> new IllegalStateException("an instalment agreement has a term")),
                 agreement.repaymentDay(), accrualStart);

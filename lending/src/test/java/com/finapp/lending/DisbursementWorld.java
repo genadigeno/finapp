@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.Direction;
+import com.finapp.ledger.HoldService;
+import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceProjection;
+import com.finapp.ledger.JdbcHoldStore;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.JdbcPurposeBalances;
@@ -71,7 +74,10 @@ import java.util.function.Function;
  *   <li><strong>the standing</strong>, a map a case flips;
  *   <li><strong>the wallet</strong> ({@link LoanWallets}), a real {@code CUSTOMER_WALLET} ledger account per party opened
  *       through the ledger's own {@code insertIfAbsent} - accounts' real door is {@code app}'s suites'; a party a case
- *       marks unreachable answers empty.
+ *       marks unreachable answers empty;
+ *   <li><strong>payments</strong> ({@link LoanPayouts}, `P11-TSK-015`), {@link Payments}: a scripted answer per loan, every
+ *       dispatch counted - payments' real system withdrawal is {@code app}'s suites'. The hold, the wallet and the ledger
+ *       are real ({@link HoldService}).
  * </ul>
  *
  * <p>Capital is planted by a posting from {@code CASH_AT_BANK} - the fixture's, never a path the platform has.
@@ -105,33 +111,51 @@ final class DisbursementWorld {
     static final LoanOrigination ORIGINATION = new LoanOrigination(APPLICATIONS, OFFER_STORE, ADMINISTRATION,
             CREDIT, new JdbcOutboxWriter(), IDS, CLOCK);
     static final LoanAcceptances ACCEPTANCES = new LoanAcceptances(OFFER_STORE, APPLICATIONS, LOAN_STORE, CREDIT,
-            STANDING_PORT, (unitOfWork, party, method) -> Optional.empty(), HEADROOM,
+            STANDING_PORT, (unitOfWork, party, method) -> Optional.of(method), HEADROOM,
             new LoanAccounts(LEDGER_ACCOUNTS, IDS, CLOCK), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
     static final PostingService POSTINGS = new PostingService(
             new IdempotentExecutor(new JdbcIdempotencyRecordStore(), CLOCK, Duration.ofDays(1), Duration.ofMinutes(5)),
             new JdbcJournalEntryStore(IDS), new JdbcAuditWriter(), new JdbcOutboxWriter(), new JdbcBalanceProjection(),
             IDS, CLOCK, PostingObserver.NONE);
+    static final JdbcHoldStore HOLD_STORE = new JdbcHoldStore();
+    static final HoldService HOLDS = new HoldService(LEDGER_ACCOUNTS, new JdbcBalanceDerivation(), HOLD_STORE,
+            new JdbcBalanceProjection(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK);
+    static final JdbcLoanPayoutStore PAYOUT_STORE = new JdbcLoanPayoutStore();
     static final LoanDisbursements DISBURSEMENTS = disbursements(new JdbcOutboxWriter(), new JdbcAuditWriter());
     static final LoanSchedules SCHEDULES = new LoanSchedules(DISBURSEMENT_STORE);
+    static final Payments PAYMENTS = new Payments();
+    static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
+            TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);
+    static final LendingUnitOfWork UNIT_OF_WORK = new LendingUnitOfWork() {
+        @Override
+        public <R> R inTransaction(Function<Connection, R> work) {
+            return inOneTransaction(work);
+        }
+    };
 
     private DisbursementWorld() {}
 
     /** T-dis over the real stores and ledger, with this outbox and audit writer. */
     static LoanDisbursements disbursements(OutboxWriter<Connection> outbox, AuditWriter<Connection> audit) {
         return new LoanDisbursements(LOAN_STORE, DISBURSEMENT_STORE, TERMS_STORE, CREDIT, STANDING_PORT, WALLETS,
-                LEDGER_ACCOUNTS, POSTINGS, outbox, audit, IDS, CLOCK);
+                LEDGER_ACCOUNTS, POSTINGS, HOLDS, PAYOUT_STORE, outbox, audit, IDS, CLOCK);
     }
 
     // ------------------------------------------------------------------ the loans
 
-    /** An accepted loan awaiting its disbursement. */
-    record Accepted(LoanId loan, UUID party, Money principal) {}
+    /** An accepted loan awaiting its disbursement; path X's payout method when it has one. */
+    record Accepted(LoanId loan, UUID party, Money principal, Optional<UUID> payoutMethod) {}
 
     /**
      * A fresh party's {@code minor} loan over {@code term} months, offered by the origination step and accepted for a
      * wallet payout, capital planted as needed; the terms in force are the product's ACTIVE version.
      */
     static Accepted acceptedLoan(long minor, int term) {
+        return acceptedLoan(minor, term, PayoutPreference.WALLET);
+    }
+
+    /** As {@link #acceptedLoan(long, int)}, for {@code payout} - an external account names a fresh payout method. */
+    static Accepted acceptedLoan(long minor, int term, PayoutPreference payout) {
         ensureActive();
         Money amount = Money.ofMinorUnits(minor, EUR);
         fund(amount);
@@ -144,7 +168,7 @@ final class DisbursementWorld {
             CorrelationId correlation = correlation();
             APPLICATIONS.insert(uow, new LoanApplicationStore.NewApplication(application, party,
                     LoanProduct.PERSONAL_LOAN, request, version.row().id(), 10, RepaymentMethod.WALLET,
-                    PayoutPreference.WALLET, customer, correlation));
+                    payout, customer, correlation));
             APPLICATIONS.appendEvent(uow, new LoanApplicationStore.HistoryRow(IDS.next(), application,
                     Optional.empty(), LoanApplicationStatus.SUBMITTED, "APPLICATION_SUBMITTED", customer, correlation));
             APPLICATIONS.transition(uow, application, LoanApplicationStatus.SUBMITTED,
@@ -161,11 +185,14 @@ final class DisbursementWorld {
                 "SELECT id::text FROM lending.loan_offer WHERE application_id = ?", application.value())));
         String hash = scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_offer_terms WHERE offer_id = ?",
                 offer.value());
+        Optional<UUID> method = payout == PayoutPreference.EXTERNAL_ACCOUNT
+                ? Optional.of(UUID.randomUUID())
+                : Optional.empty();
         LoanAcceptances.Accepted accepted = inOneTransaction(uow -> ACCEPTANCES.accept(uow, offer, party,
-                new LoanAcceptances.Acceptance(hash, Optional.empty(), new AcceptanceEvidence(UUID.randomUUID(),
+                new LoanAcceptances.Acceptance(hash, method, new AcceptanceEvidence(UUID.randomUUID(),
                         UUID.randomUUID(), "MULTI_FACTOR", Optional.empty(), Optional.empty())),
                 customer(party), correlation()));
-        return new Accepted(accepted.loan().id(), party, amount);
+        return new Accepted(accepted.loan().id(), party, amount, method);
     }
 
     /** The product's terms in force: a fee-free 8.99 % version unless a case activated another. */
@@ -191,6 +218,85 @@ final class DisbursementWorld {
     static LoanDisbursements.Outcome disburse(LoanDisbursements disbursements, LoanId loan) {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
             return inOneTransaction(uow -> disbursements.disburse(uow, loan, SYSTEM));
+        }
+    }
+
+    // ------------------------------------------------------------------ the payout (P11-TSK-015)
+
+    /** One payout sweep's claim, committed - as the sweep takes it. */
+    static List<LoanPayoutStore.Claimed> claimPayouts(Duration permit) {
+        return inOneTransaction(uow -> PAYOUT_STEPS.claim(uow, 100, permit));
+    }
+
+    /** The claim for {@code loan}, from a sweep's claim (empty when this claim did not take it). */
+    static Optional<LoanPayoutStore.Claimed> claimed(List<LoanPayoutStore.Claimed> claims, LoanId loan) {
+        return claims.stream().filter(claim -> claim.loan().equals(loan)).findFirst();
+    }
+
+    /**
+     * One payout sweep as the schedule takes it: the claim committed, then EVERY claimed payout stepped - so no claim
+     * leaves another case's payout parked on a permit. Answers each claimed loan's effects.
+     */
+    static Map<LoanId, List<LoanPayoutSteps.Outcome.Kind>> sweepPayouts(Duration permit) {
+        Map<LoanId, List<LoanPayoutSteps.Outcome.Kind>> effects = new java.util.LinkedHashMap<>();
+        for (LoanPayoutStore.Claimed claim : claimPayouts(permit)) {
+            effects.put(claim.loan(), payoutStep(claim).stream().map(LoanPayoutSteps.Outcome::kind).toList());
+        }
+        return effects;
+    }
+
+    /** One claimed payout's step under the system actor, each part its own transaction. */
+    static List<LoanPayoutSteps.Outcome> payoutStep(LoanPayoutStore.Claimed claimed) {
+        try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
+            return PAYOUT_STEPS.step(UNIT_OF_WORK, claimed, SYSTEM);
+        }
+    }
+
+    /** A path X loan disbursed: accepted for an external payout and posted, its payout born PENDING. */
+    static Accepted disbursedExternally(long minor, int term) {
+        Accepted loan = acceptedLoan(minor, term, PayoutPreference.EXTERNAL_ACCOUNT);
+        assertThat(disburse(loan.loan()).kind()).isEqualTo(LoanDisbursements.Outcome.Kind.POSTED);
+        return loan;
+    }
+
+    /** The available balance of {@code account} - settled less its standing holds - as the ledger derives it. */
+    static Money available(LedgerAccountId account) {
+        return inOneTransaction(uow -> new com.finapp.ledger.AvailableBalance<>(new JdbcBalanceDerivation(), HOLD_STORE)
+                .underLock(uow, account));
+    }
+
+    /**
+     * Payments as the world needs it: a scripted dispatch answer per loan (default: accepted, one stable withdrawal id per
+     * loan), every dispatch counted, an optional probe run while payments "holds the wire", and a scripted outcome per
+     * loan (default: undecided).
+     */
+    static final class Payments implements LoanPayouts {
+
+        final Map<LoanId, Dispatch> answers = new ConcurrentHashMap<>();
+        final Map<LoanId, Outcome> outcomes = new ConcurrentHashMap<>();
+        final Map<LoanId, UUID> withdrawals = new ConcurrentHashMap<>();
+        final Map<LoanId, java.util.concurrent.atomic.AtomicInteger> dispatches = new ConcurrentHashMap<>();
+        final Map<LoanId, Instruction> instructions = new ConcurrentHashMap<>();
+        volatile java.util.function.Consumer<Instruction> duringDispatch = instruction -> { };
+
+        @Override
+        public Dispatch dispatch(Instruction instruction) {
+            dispatches.computeIfAbsent(instruction.loan(), loan -> new java.util.concurrent.atomic.AtomicInteger())
+                    .incrementAndGet();
+            instructions.put(instruction.loan(), instruction);
+            duringDispatch.accept(instruction);
+            return answers.getOrDefault(instruction.loan(),
+                    new Dispatch.Accepted(withdrawals.computeIfAbsent(instruction.loan(), loan -> UUID.randomUUID())));
+        }
+
+        @Override
+        public Outcome outcome(Connection unitOfWork, LoanId loan, UUID withdrawal) {
+            return outcomes.getOrDefault(loan, new Outcome.Undecided());
+        }
+
+        int dispatchesOf(LoanId loan) {
+            java.util.concurrent.atomic.AtomicInteger count = dispatches.get(loan);
+            return count == null ? 0 : count.get();
         }
     }
 

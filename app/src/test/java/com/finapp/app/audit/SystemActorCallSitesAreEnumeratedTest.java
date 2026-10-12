@@ -233,8 +233,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " The scope wraps each row's query-and-resolve; the candidate read"
                         + " before it claims nothing."),
                     Map.entry(
-                            "com.finapp.payments.Withdrawals.withdraw",
-                    "The withdrawal's outcome transaction (P7-TSK-008, ADR-0062 section 6):"
+                            "com.finapp.payments.Withdrawals.initiate",
+                    "The withdrawal's outcome transaction (P7-TSK-008, ADR-0062 section 6; the site"
+                        + " moved from withdraw to initiate by P11-TSK-015, which shares it between the"
+                        + " person's door and the system entry on an instruction - whose dispatch is"
+                        + " the platform's too, recorded so in its own audit record):"
                         + " the MerchantPayouts.initiate reasoning, pointed at a customer's"
                         + " wallet. The person is recorded as the asker in the dispatch"
                         + " transaction's own audit record; the scheme's answer is then"
@@ -430,6 +433,15 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " posted by the deadline, each edge recorded in the loan's history and lending.LoanDisbursed"
                         + " audited as the system's, under the acceptance's own correlation, so the money ties to the"
                         + " customer's accepting act."),
+                    Map.entry(
+                            "com.finapp.app.lending.LoanPayoutSchedule.sweepOnce",
+                    "The loan payout sweep (P11-TSK-015, ADR-0097 points 4 and 5, A7: the acceptance named the"
+                        + " destination and is the instruction): nobody commands a payout - the platform asks payments'"
+                        + " system withdrawal entry to carry the disbursed funds to the borrower's verified account,"
+                        + " adopting the disbursement's hold, and records payments' outcome; payments audits the"
+                        + " withdrawal's dispatch as the system's, under the acceptance's own correlation, so the money"
+                        + " leaving ties to the customer's accepting act. No person can send it, and none is recorded"
+                        + " as having done so."),
                     Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"

@@ -950,6 +950,41 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "GET /v1/me/loans/{id}/schedule - the identifier from the path, and l.party_id = ? in the statement is the session's own party; another party's loan, a loan with no schedule and an absent version are one empty answer, the 404 (P11-TSK-014).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.insert",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. Path X's T-dis births the payout for the loan it holds FOR UPDATE (L3) beside its disbursement (L5), the hold the one this transaction placed; no door reaches it, and lending V009's trigger refuses a payout beside any loan but its ACTIVE path X disbursement.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. The private read behind find() and lock() (L5): the loan id comes only from the payout sweep's own claimed page (claimDue), never a request value; no door reaches it - the payout is the system's act.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.dispatched",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. T-pyo (c): the payout lock() holds FOR UPDATE in this transaction under L3; conditional on DISPATCHING and on the claim's own permit, the withdrawal the one payments answered for this loan's instruction; lending V009's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.notDispatched",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. T-pyo (c): the payout lock() holds FOR UPDATE in this transaction under L3; conditional on DISPATCHING and on the claim's own permit, the reason payments' recorded refusal; lending V009's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.observed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. T-pyr: the payout lock() holds FOR UPDATE in this transaction under L3; conditional on DISPATCHED, an observation stamp and nothing else (lending V009's trigger).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.concluded",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. T-pyr: the payout lock() holds FOR UPDATE in this transaction under L3; conditional on DISPATCHED, the outcome and instant payments' own withdrawal record carries (read by its instruction); lending V009's trigger holds the instant within the payout's life.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.statusOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loans/{id} and the listing - the loan id from the owner-scoped loan read, and l.party_id = ? in this statement is the session's own party; another party's loan has no payout status, the 404 before it (P11-TSK-015).")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanOfferStore.lockClaimed",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1124,6 +1159,14 @@ class OwnershipIsScopedTest {
                                         + " sweep read and then locked the same way - never"
                                         + " a request's raw identifier: the surface read is"
                                         + " findOwned, whose statement carries the customer.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.concludedAt",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-015. The instructor's plain read of a withdrawal's conclusion instant: the id"
+                                        + " is the one lending's payout recorded from payments' own answer to its"
+                                        + " instruction, re-read here by that instruction (findByInstruction) in the same"
+                                        + " transaction; no door reaches it - the payout is the system's act.")),
                     Map.entry(
                             "com.finapp.payments.JdbcWithdrawalStore.appendHistory",
                             new Entry(
@@ -3099,6 +3142,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.lending.JdbcLoanDisbursementStore.scheduleOwnedBy",
                             "com.finapp.app.lending.LoanAccountDatabaseTest.aLoanIsDisbursedToTheBorrowersWalletEndToEnd"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.statusOwnedBy",
+                            "com.finapp.app.lending.LoanPayoutDatabaseTest.interestStartsAtTheTerminalOutcome"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanStore.ownedBy",
                             "com.finapp.app.lending.LoanAccountDatabaseTest.aLineIsAcceptedAndOnlyItsOwnerSeesIt"),

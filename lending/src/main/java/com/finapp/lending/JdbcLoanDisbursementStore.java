@@ -48,7 +48,7 @@ public final class JdbcLoanDisbursementStore implements LoanDisbursementStore {
         try (PreparedStatement claim = unitOfWork.prepareStatement(
                 "UPDATE lending.loan_disbursement SET next_attempt_at = statement_timestamp() + ? * interval '1 millisecond'"
                         + " WHERE id IN (SELECT id FROM lending.loan_disbursement WHERE status = 'PENDING'"
-                        + " AND payout_method_id IS NULL AND next_attempt_at <= statement_timestamp()"
+                        + " AND next_attempt_at <= statement_timestamp()"
                         + " ORDER BY next_attempt_at, id LIMIT ? FOR UPDATE SKIP LOCKED)"
                         + " AND status = 'PENDING' RETURNING loan_id")) {
             claim.setLong(1, permit.toMillis());
@@ -123,8 +123,8 @@ public final class JdbcLoanDisbursementStore implements LoanDisbursementStore {
             insert.setObject(1, id);
             insert.setObject(2, start.loan().value());
             insert.setObject(3, start.startDate());
-            insert.setString(4, AccrualStart.DISBURSEMENT_ORIGIN);
-            insert.setObject(5, start.journalEntry().value());
+            insert.setString(4, start.origin().name());
+            insert.setObject(5, start.journalEntry().map(JournalEntryId::value).orElse(null), java.sql.Types.OTHER);
             insert.setString(6, correlation.value());
             insert.executeUpdate();
         } catch (SQLException failure) {

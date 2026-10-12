@@ -162,6 +162,29 @@ public final class HoldService {
     }
 
     /**
+     * The hold {@code holdId} judged adoptable by a second flow under the same serialisation point as placement — the
+     * account row {@code FOR UPDATE} (`P11-TSK-015`, ADR-0097 point 5): {@code ACTIVE}, on {@code accountId}, of exactly
+     * {@code amount}. A read that writes nothing: the hold stays what it is and whoever adopts it records the adoption on
+     * its own row (payments' withdrawal names it in {@code hold_reference}, one withdrawal per hold), so the money is held
+     * once, never twice. Adoption under the lock means no release can interleave between the judgement and the adopter's
+     * commit.
+     *
+     * @return the hold, or empty when it is unknown, not {@code ACTIVE}, on another account or of another amount
+     */
+    public Optional<Hold> adopt(Connection unitOfWork, HoldId holdId, LedgerAccountId accountId, Money amount) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(holdId, "holdId must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        accounts.lockForUpdate(unitOfWork, accountId)
+                .orElseThrow(() -> new IllegalArgumentException("no ledger account " + accountId + " to adopt a hold on"));
+        return holds.findById(unitOfWork, holdId)
+                .filter(found -> found.status() == HoldStatus.ACTIVE)
+                .filter(found -> found.account().equals(accountId))
+                .filter(found -> found.amount().equals(amount));
+    }
+
+    /**
      * Ends the hold {@code holdId}, or converges on an already-released one — the row count
      * of the conditional move is the outcome, so of N concurrent releasers exactly one
      * decrements, records and announces; the rest write <strong>nothing</strong>.

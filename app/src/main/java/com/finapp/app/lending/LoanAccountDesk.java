@@ -78,7 +78,11 @@ public final class LoanAccountDesk {
             String termsSha256,
             String acceptedAt) {}
 
-    /** A loan account as its customer sees it. Amounts and the rate are exact decimal strings. */
+    /**
+     * A loan account as its customer sees it. Amounts and the rate are exact decimal strings. {@code payoutStatus} is the
+     * external payout's state on path X (`P11-TSK-015`: {@code PENDING}, {@code DISPATCHING}, {@code DISPATCHED},
+     * {@code PAID_OUT}, {@code FAILED}, {@code NOT_DISPATCHED}) - null for a wallet loan and a line; never the destination.
+     */
     public record LoanView(
             String loanId,
             String offerId,
@@ -89,7 +93,8 @@ public final class LoanAccountDesk {
             String openedAt,
             String closedAt,
             AgreementView agreement,
-            BalancesView balances) {}
+            BalancesView balances,
+            String payoutStatus) {}
 
     /** The agreement version that governs the account - a loan's principal, or a line's limit. */
     public record AgreementView(
@@ -300,7 +305,8 @@ public final class LoanAccountDesk {
                         decimal(balances.interestAccrued()),
                         decimal(balances.interestDue()),
                         decimal(balances.feesDue()),
-                        decimal(balances.creditBalance())));
+                        decimal(balances.creditBalance())),
+                read.payout().map(Enum::name).orElse(null));
     }
 
     private static String decimal(Money amount) {

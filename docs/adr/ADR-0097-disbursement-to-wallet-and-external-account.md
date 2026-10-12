@@ -198,5 +198,29 @@ outcome creates, duplicates or undoes it), `INV-RAIL-02`, `INV-RAIL-03`, `INV-PA
   attempt that fails at or after the deadline (the trigger refuses it before), so an outage past the deadline does not cancel a
   postable loan; a cancellation is recorded by the loan's history and `lending.LoanCancelled`, not audited (the lifecycle's "—").
   Scenarios 1 and 9: `LoanDisbursementDatabaseTest`, `LendingOutboxAtomicityDatabaseTest`.
+- **Built by `P11-TSK-015` (2026-10-12) — points 3, 4, 5, 7, 8 and 9 for path X.** `lending V009` (`loan_payout`, the
+  accrual start's `PAYOUT_CONCLUDED`, the disbursement claim taking both paths), `LoanDisbursements` (path X: L7 the
+  wallet's row before the posting, then the `HoldService` hold of `P - f`, the payout born `PENDING`), `LoanPayoutSteps`
+  (T-pyo, T-pyr), the port `LoanPayouts` with `app`'s `PaymentsLoanPayouts`, `LoanPayoutSchedule`; payments `V032` and
+  `Withdrawals.withdrawOnInstruction`; ledger `HoldService.adopt` (a read under the account row lock, writing nothing).
+  Refinements: **`RETURNED` is not a state** - payments keeps no return record for an instant withdrawal (final on
+  acceptance, `INV-REV-03`; recalls and return windows deferred by ADR-0062), so point 4's mapping and point 9's two
+  return rows have no producer today: a return after `PAID_OUT` is payments' and Phase 8's fact and the payout stays
+  `PAID_OUT`; the owner's judgement is recorded. **The system entry's key** is `payments.withdrawal:lending` /
+  `<loanId>` (the namespace never a UUID, so never a customer's scope), the instruction `lending:<loanId>` stored as the
+  row's `instruction_reference` and dispatch key, the person's per-customer dispatch key made unique among persons' rows
+  only (a person spelling an instruction as an Idempotency-Key cannot pre-empt or be converged onto the platform's
+  withdrawal), and one withdrawal per hold (`UNIQUE (hold_reference)`). **"An unrecorded instruction" refused** at
+  `app`'s resolver, inside payments' dispatch transaction: the payout must be lending's own `DISPATCHING` row naming the
+  hold, the method and the wallet; the adoption then re-judges the hold under the wallet lock (ACTIVE, that account, that
+  amount). **`NOT_DISPATCHED` has three causes**: payments' routing refusal (recorded under the instruction's key and
+  replayed), a payout method no longer the borrower's own active bank account, and no active customer - each releases the
+  hold in the recording transaction. **Each claim's permit is its token**: a dispatcher whose permit lapsed and was
+  re-claimed writes nothing (it cannot undo a faster one's `DISPATCHED`, nor release a hold a live withdrawal adopted).
+  **The conclusion instant** is payments' withdrawal history's terminal move, held by `lending V009`'s trigger within
+  `[payout created_at, the recording statement's clock]` against another process's clock skew; the payout carries no
+  amount column (the schema's no-mutable-money rule) - the instruction's amount is re-derived (principal less the pinned
+  fee) and judged against the hold by the adoption. Scenarios 1 (payout half) and 5: `LoanPayoutDatabaseTest`,
+  `LoanPayoutStepsDatabaseTest`; the entry: `SystemWithdrawalDatabaseTest`.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

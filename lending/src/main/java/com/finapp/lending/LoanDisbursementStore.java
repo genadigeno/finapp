@@ -23,7 +23,7 @@ public interface LoanDisbursementStore {
     /**
      * Claims at most {@code limit} wallet disbursements {@code PENDING} whose permit is due, in ONE statement: the permit
      * re-stamped {@code permit} ahead on the database clock, rows another claimer holds skipped ({@code FOR UPDATE SKIP
-     * LOCKED}). Path X's are not claimed until `P11-TSK-015`. Answers the claimed disbursements' loans.
+     * LOCKED}) - both paths since `P11-TSK-015`. Answers the claimed disbursements' loans.
      */
     List<LoanId> claimDue(Connection unitOfWork, int limit, Duration permit);
 
@@ -36,7 +36,10 @@ public interface LoanDisbursementStore {
     /** {@code PENDING -> FAILED} for {@code reason}, conditional; whether this call moved it. */
     boolean fail(Connection unitOfWork, LoanId loan, CancellationReason reason);
 
-    /** Births the loan's accrual start (path W: the disbursement entry's value date). */
+    /**
+     * Births the loan's accrual start - path W: the disbursement entry's value date; path X: the business date of the
+     * payout's conclusion (`P11-TSK-015`).
+     */
     void insertAccrualStart(Connection unitOfWork, UUID id, AccrualStart start, CorrelationId correlation);
 
     /** Births a schedule version and its instalment rows. */
