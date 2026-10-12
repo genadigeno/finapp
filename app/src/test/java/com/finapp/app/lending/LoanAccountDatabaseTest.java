@@ -65,7 +65,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * consumption naming the agreement and credit's audit beside lending's; the acceptance waiting on credit's own profile
  * row before any lending row; a lost standing refused; the owner's reads and nobody else's. And the disbursement
  * (`P11-TSK-014`) through the real ports: the sweep posting to the borrower's own wallet opened through accounts' door,
- * credit's real profile row taken before the loan, the schedule read. The races and the database's ranks are
+ * credit's real profile row taken before the loan, the schedule read. And the accrual (`P11-TSK-016`) through the wired
+ * servicing sweep and its meter. The races and the database's ranks are
  * {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s and {@code LoanDisbursementDatabaseTest}'s.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}, X-TSK-016): the suite brings credit's seeded policies
@@ -76,7 +77,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance and the disbursement end to end (P11-TSK-012, P11-TSK-014)")
+@DisplayName("the acceptance, the disbursement and the accrual end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -97,6 +98,8 @@ class LoanAccountDatabaseTest {
     @Autowired private LendingCapitalHeadroom headroom;
     @Autowired private LoanDisbursements disbursements;
     @Autowired private LoanDisbursementMetrics disbursementMetrics;
+    @Autowired private com.finapp.lending.LoanServicing loanServicing;
+    @Autowired private LoanServicingMetrics servicingMetrics;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -391,7 +394,61 @@ class LoanAccountDatabaseTest {
         }
     }
 
+    // ------------------------------------------------------------------ the accrual (P11-TSK-016)
+
+    @Test
+    @DisplayName("a disbursed loan accrues through the wired servicing sweep (P11-TSK-016): two elapsed dates accrued once"
+            + " under the system actor, each posting rule 2 dated its date under the loan's own correlation, counted after"
+            + " the commit, the borrower's read showing the interest accrued; a second sweep accrues nothing")
+    void aDisbursedLoanAccruesThroughTheWiredSweep() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3650.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        // The fixture's clock: the loan's dated facts two days into the past (the bootstrap owner, triggers suspended).
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE ledger.journal_entry SET posting_date = posting_date - 2, value_date = value_date"
+                        + " - 2 WHERE id = (SELECT journal_entry_id FROM lending.loan_disbursement WHERE loan_id = '"
+                        + loanId + "'); UPDATE lending.accrual_start SET start_date = start_date - 2 WHERE loan_id = '"
+                        + loanId + "'; UPDATE lending.repayment_schedule SET start_date = start_date - 2 WHERE loan_id = '"
+                        + loanId + "'; UPDATE lending.loan_instalment SET period_start = period_start - 2, due_date ="
+                        + " due_date - 2 WHERE loan_id = '" + loanId + "'");
+            }
+            owner.commit();
+        }
+        double before = accrued("posted");
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        assertThat(count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ?::uuid", loanId)).isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM lending.interest_accrual a JOIN ledger.journal_entry e"
+                + " ON e.id = a.journal_entry_id JOIN lending.loan l ON l.id = a.loan_id WHERE a.loan_id = ?::uuid"
+                + " AND e.value_date = a.accrual_date AND e.correlation_id = l.correlation_id",
+                loanId)).as("rule 2 dated its date, in the loan's own flow").isEqualTo(2);
+        assertThat(accrued("posted")).as("counted after the commit").isGreaterThanOrEqualTo(before + 2);
+        // 3,650.00 at the product's rate: two days' interest, rounded once within the instalment period.
+        String expected = scalar("SELECT to_char(round(sum(posted_minor) / 100.0, 2), 'FM999990.00')"
+                + " FROM lending.interest_accrual WHERE loan_id = ?::uuid", loanId);
+        assertThat(client.get(LOANS + "/" + loanId, customer.token()).body())
+                .contains("\"interestAccrued\":\"" + expected + "\"");
+        servicing.sweepOnce();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope LIKE ?",
+                "ledger.post:lending.accrual:" + loanId + ":%")).as("one entry a date, however often swept").isEqualTo(2);
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    private double accrued(String outcome) {
+        return meterRegistry.find(LoanServicingMetrics.ACCRUAL).tag("outcome", outcome).counter().count();
+    }
 
     /** {@code body} applied for by {@code customer}, approved by credit and offered by the sweep; the offer's id. */
     private String offered(CreditFixtures.Customer customer, String body) throws Exception {

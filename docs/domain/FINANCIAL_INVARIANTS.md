@@ -1710,6 +1710,15 @@ of every account present exactly once at rest (`P11-TST-001`); `finapp.lending.a
 past one day.
 **Phase:** 11
 
+*(As built by `P11-TSK-016`, 2026-10-12 - `LoanServicing` over `lending V010`: three arbiters - L3 (each step reads the
+latest accrual after the loan's lock), `interest_accrual UNIQUE (loan_id, accrual_date)` (and `UNIQUE (journal_entry_id)`),
+and the ledger key, whose replay - an entry for a date with no row - the step refuses as a defect; the row's trigger also
+refuses a date at or before one already accrued (oldest first) for every writer. Scenario 4 counted by
+`InterestAccrualDatabaseTest#theAccrualRunTwiceAccruesOnce` (twice, ten racing steps, ten racing sweepers over three
+accounts, a crash mid-run; the unique proven beneath L3 with the triggers suspended; the key's replay refused); catch-up
+oldest first by `#threeMissedDaysAreCaughtUpOldestFirst`; zero days by `#zeroDaysWriteARowAndNoEntry`. The lag gauge reads
+instalment loans - a line's zero-principal days write no row, so its arm waits for `-021`.)*
+
 ### INV-LND-03 — A schedule conserves principal exactly
 **Statement:** Every repayment schedule version's principal portions sum to its principal exactly,
 and its instalment amounts to that principal plus the sum of its period interest, every rounding at a
@@ -1974,6 +1983,16 @@ the lock; no back-valued postings).
 red (`MUTATION_TESTING.md` §2); the storm's two instances with clocks ±5 s across at least three real
 business-date boundaries (`P11-TST-001`).
 **Phase:** 11
+
+*(As built by `P11-TSK-016`, 2026-10-12 - the accrual: the step reads `statement_timestamp()` after the loan's lock and
+accrues only dates that have ended in the agreement's pinned zone; `lending V010`'s trigger refuses, for every writer, an
+accrual date that has not ended on the database clock in that zone (never early, whatever a writer's clock says); rule
+2's posting and value date are the accrual date - the only lending posting dated before its transaction, and only for a
+date already ended. `InterestAccrualDatabaseTest#skewNeverAccruesEarlyOrTwice` runs the step on instances whose own
+clocks sit fourteen hours ahead and twelve behind UTC, racing two at a time, over accounts pinned to UTC and to
+`-14:00`: each accrues exactly through the day before the database's business date in its own zone, once. Found on the
+way, not this task's: a positive servicing zone (`+HH:MM`, admitted by `LoanTerms`) cannot be offered - the canonical
+offer terms' escape-free character set and `lending V005`/`V006`'s `CHECK`s exclude `+` - recorded for the owner.)*
 
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)

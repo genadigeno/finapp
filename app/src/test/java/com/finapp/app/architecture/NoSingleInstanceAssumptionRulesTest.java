@@ -318,7 +318,16 @@ class NoSingleInstanceAssumptionRulesTest {
                     // under the ledger key lending.disbursement:<loan> and the schedule born once by UNIQUE (loan_id,
                     // schedule_version). Register row: DISTRIBUTED_EXECUTION.md section 3; the two-instance and
                     // ten-disburser races are LoanDisbursementDatabaseTest's.
-                    "com.finapp.app.lending.LoanDisbursementSchedule");
+                    "com.finapp.app.lending.LoanDisbursementSchedule",
+                    // P11-TSK-016: the same half for the loan servicing sweep - the 26th entry (P11-TSK-015's
+                    // LoanPayoutSchedule the 25th). No external call is made: each tick claims the accounts in servicing
+                    // whose permit has come in ONE statement on the database clock (FOR UPDATE SKIP LOCKED, the permit
+                    // re-stamped to the retry cadence), and every step takes L3 (the loan) and accrues each elapsed date
+                    // judged on the database clock after the lock, every date born once by interest_accrual UNIQUE
+                    // (loan_id, accrual_date) and posted under the ledger key lending.accrual:<loan>:<date>. Register
+                    // row: DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is InterestAccrualDatabaseTest's
+                    // (scenario 4).
+                    "com.finapp.app.lending.LoanServicingSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

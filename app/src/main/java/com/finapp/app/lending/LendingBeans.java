@@ -21,6 +21,9 @@ import com.finapp.lending.JdbcLoanDisbursementStore;
 import com.finapp.lending.LoanDisbursementStore;
 import com.finapp.lending.LoanDisbursements;
 import com.finapp.lending.LoanSchedules;
+import com.finapp.lending.JdbcLoanServicingStore;
+import com.finapp.lending.LoanServicing;
+import com.finapp.lending.LoanServicingStore;
 import com.finapp.lending.LoanWallets;
 import com.finapp.lending.LoanAcceptances;
 import com.finapp.lending.LoanAccounts;
@@ -75,7 +78,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * (credit's profile lock and consumption on {@code LoanCreditDecisions}; the payout destination over the payment-method
  * registry), the six-account opener, T-acc, the loan reads, the doors and their meter. And the disbursement
  * (`P11-TSK-014`): its store, the wallet port {@code app} implements over accounts, T-dis, the schedule read, and the
- * leaderless disbursement sweep with its meters and sweeper gauge.
+ * leaderless disbursement sweep with its meters and sweeper gauge. And the servicing (`P11-TSK-016`): its store, T-svc
+ * with its accrual step, and the leaderless servicing sweep with its meters and sweeper gauge.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -498,6 +502,58 @@ public class LendingBeans {
             @Value("${finapp.lending.disbursement.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
         return Gauge.builder("finapp.lending.disbursement.sweeper.enabled", () -> enabled ? 1 : 0)
                 .description("Whether this instance runs the loan disbursement sweep")
+                .register(meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the servicing (P11-TSK-016)
+
+    /** The servicing permit, the accrual start and schedule reads, and the accrual rows - their store. */
+    @Bean
+    LoanServicingStore loanServicingStore() {
+        return new JdbcLoanServicingStore();
+    }
+
+    /** T-svc - the servicing step under L3; its first step, daily accrual, posting rule 2 through the ledger. */
+    @Bean
+    LoanServicing loanServicing(
+            LoanStore loanStore,
+            LoanServicingStore loanServicingStore,
+            LoanTermsStore loanTermsStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            IdGenerator idGenerator) {
+        return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
+                postingService, idGenerator);
+    }
+
+    /** {@code finapp.lending.accrual{outcome}} and the accrual lag, every series registered at startup. */
+    @Bean
+    LoanServicingMetrics loanServicingMetrics(
+            LoanServicingStore loanServicingStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new LoanServicingMetrics(loanServicingStore, dataSource::getConnection, clock, meterRegistry);
+    }
+
+    /** The servicing sweep - every instance, no lease, off in test contexts. */
+    @Bean
+    @ConditionalOnProperty(name = "finapp.lending.servicing.sweeper.enabled", havingValue = "true", matchIfMissing = true)
+    LoanServicingSchedule loanServicingSchedule(
+            LoanServicing loanServicing,
+            LendingTransactions lendingTransactions,
+            LoanServicingMetrics loanServicingMetrics,
+            @Value("${finapp.lending.servicing.poll:PT1M}") Duration pollInterval,
+            @Value("${finapp.lending.servicing.batch:50}") int batch,
+            @Value("${finapp.lending.servicing.retry:PT15M}") Duration retryCadence) {
+        return new LoanServicingSchedule(loanServicing, lendingTransactions, loanServicingMetrics, pollInterval, batch,
+                retryCadence);
+    }
+
+    /** Whether this instance runs the servicing sweep - eager either way (`P1-TSK-029`'s rule). */
+    @Bean
+    Gauge lendingServicingSweeperEnabled(
+            @Value("${finapp.lending.servicing.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
+        return Gauge.builder("finapp.lending.servicing.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the loan servicing sweep")
                 .register(meterRegistry);
     }
 
