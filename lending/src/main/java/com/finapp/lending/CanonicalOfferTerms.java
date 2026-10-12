@@ -51,7 +51,7 @@ public final class CanonicalOfferTerms {
     /** Format 2's: format 1's and {@code +}, so a servicing zone east of UTC is spelled ({@code lending V011}). */
     private static final Pattern FORMAT_2_VALUE = Pattern.compile("[A-Za-z0-9_.:+-]{1,64}");
 
-    private static final Pattern FORMAT_TOKEN = Pattern.compile("\\{\"format\":\"([0-9]{1,4})\",.*", Pattern.DOTALL);
+    private static final Pattern FORMAT_LEAD = Pattern.compile("\\{\"format\":\"([0-9]{1,4})\",.*", Pattern.DOTALL);
 
     private static final String NONE = "NONE";
 
@@ -187,7 +187,7 @@ public final class CanonicalOfferTerms {
      */
     public static int formatOf(String canonical) {
         Objects.requireNonNull(canonical, "canonical");
-        Matcher token = FORMAT_TOKEN.matcher(canonical);
+        Matcher token = FORMAT_LEAD.matcher(canonical);
         if (!token.matches()) {
             throw new IllegalArgumentException("canonical offer terms open with their format token");
         }
