@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -36,6 +37,18 @@ public class LoanController {
     @GetMapping("/{id}")
     public LoanAccountDesk.LoanView readLoan(@PathVariable("id") String id, HttpServletRequest request) {
         return desk.read(current(request), id);
+    }
+
+    /**
+     * The caller's own loan's schedule (`P11-TSK-014`): a version - the latest when {@code version} is absent - with its
+     * instalments. A loan not yet disbursed has none.
+     */
+    @GetMapping("/{id}/schedule")
+    public LoanAccountDesk.ScheduleView readSchedule(
+            @PathVariable("id") String id,
+            @RequestParam(name = "version", required = false) Integer version,
+            HttpServletRequest request) {
+        return desk.schedule(current(request), id, java.util.Optional.ofNullable(version));
     }
 
     private static Session current(HttpServletRequest request) {

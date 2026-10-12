@@ -2864,6 +2864,59 @@ log, tag or span.
 | `party_principal_exposure` | `agreement_scale` | `INTERNAL` | The latest agreement version's scale |
 | `party_principal_exposure` | `agreement_amount_minor` | `RESTRICTED-FINANCIAL` | The latest agreement version's principal (a loan) or limit (a line) |
 
+### `lending` - the disbursement, the accrual start and the schedule - *added by `P11-TSK-014`*
+
+`lending V008`: the disbursement's outcome columns (its journal entry by value, never a cross-schema key; its value date;
+its decision instant; its cancellation reason), the accrual start, and the schedule versions with their instalment rows -
+the projection's amounts `RESTRICTED-FINANCIAL` as every lending amount, the loan and entry references `CONFIDENTIAL`,
+dates, versions, engines and stamps `INTERNAL`. No wallet identifier is stored by lending (the wallet is the ledger's
+account, named only on the journal line).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_disbursement` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 1's journal entry, by value (`P11-TSK-014`) - one per disbursement |
+| `loan_disbursement` | `value_date` | `INTERNAL` | The entry's value date - the business date of the database clock in the pinned zone (A10) |
+| `loan_disbursement` | `decided_at` | `INTERNAL` | System time of the terminal edge, stamped by the trigger |
+| `loan_disbursement` | `failure_reason` | `INTERNAL` | A closed cancellation reason (`STANDING_LOST`, `DISBURSEMENT_FAILED`) |
+| `accrual_start` | `id` | `INTERNAL` | Generated |
+| `accrual_start` | `loan_id` | `CONFIDENTIAL` | The loan whose interest runs from it |
+| `accrual_start` | `start_date` | `INTERNAL` | The day interest runs from - path W the disbursement entry's value date |
+| `accrual_start` | `origin` | `INTERNAL` | A closed origin (`DISBURSEMENT`; `PAYOUT_CONCLUDED` from `P11-TSK-015`) |
+| `accrual_start` | `journal_entry_id` | `CONFIDENTIAL` | The disbursement entry, by value (path W) |
+| `accrual_start` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `accrual_start` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `repayment_schedule` | `id` | `INTERNAL` | Generated |
+| `repayment_schedule` | `loan_id` | `CONFIDENTIAL` | The loan it schedules |
+| `repayment_schedule` | `schedule_version` | `INTERNAL` | The schedule version (1 at disbursement) |
+| `repayment_schedule` | `agreement_id` | `CONFIDENTIAL` | The agreement version it projects |
+| `repayment_schedule` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `repayment_schedule` | `schedule_engine_version` | `INTERNAL` | The pinned schedule engine version |
+| `repayment_schedule` | `currency` | `INTERNAL` | The loan's currency |
+| `repayment_schedule` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `repayment_schedule` | `principal_minor` | `RESTRICTED-FINANCIAL` | The principal amortised |
+| `repayment_schedule` | `instalment_minor` | `RESTRICTED-FINANCIAL` | The level instalment |
+| `repayment_schedule` | `final_instalment_minor` | `RESTRICTED-FINANCIAL` | The final instalment |
+| `repayment_schedule` | `total_interest_minor` | `RESTRICTED-FINANCIAL` | The projected total interest |
+| `repayment_schedule` | `term_months` | `INTERNAL` | The term in instalments |
+| `repayment_schedule` | `start_date` | `INTERNAL` | The accrual start the first period runs from |
+| `repayment_schedule` | `intended_day` | `INTERNAL` | The repayment day the due dates are computed from |
+| `repayment_schedule` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment_schedule` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `loan_instalment` | `id` | `INTERNAL` | Generated |
+| `loan_instalment` | `schedule_id` | `INTERNAL` | Its schedule version |
+| `loan_instalment` | `loan_id` | `CONFIDENTIAL` | The loan it belongs to |
+| `loan_instalment` | `sequence` | `INTERNAL` | 1 to n |
+| `loan_instalment` | `period_start` | `INTERNAL` | The day the period's interest runs from |
+| `loan_instalment` | `due_date` | `INTERNAL` | The instalment's due date |
+| `loan_instalment` | `days` | `INTERNAL` | The period's actual days (ACT/365F) |
+| `loan_instalment` | `currency` | `INTERNAL` | The loan's currency |
+| `loan_instalment` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `loan_instalment` | `opening_principal_minor` | `RESTRICTED-FINANCIAL` | The principal outstanding through the period |
+| `loan_instalment` | `interest_minor` | `RESTRICTED-FINANCIAL` | The period's projected interest |
+| `loan_instalment` | `principal_minor` | `RESTRICTED-FINANCIAL` | The principal portion |
+| `loan_instalment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The instalment |
+| `loan_instalment` | `closing_principal_minor` | `RESTRICTED-FINANCIAL` | The principal outstanding after it |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

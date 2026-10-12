@@ -16,6 +16,8 @@ import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingService;
 import com.finapp.lending.LendingCapitalHeadroom;
+import com.finapp.lending.LoanDisbursements;
+import com.finapp.lending.LoanId;
 import com.finapp.lending.LoanOrigination;
 import com.finapp.lending.LoanProduct;
 import com.finapp.lending.LoanTermsAdministration;
@@ -61,8 +63,10 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * {@code LENDING_LIFECYCLES.md} sections 4.4 and 4.5; {@code INV-LND-06}, {@code INV-CRD-09}, {@code INV-IDEM-01}): an
  * offer accepted over HTTP from a {@code MULTI_FACTOR} session, replayed by its key and refused under another; credit's
  * consumption naming the agreement and credit's audit beside lending's; the acceptance waiting on credit's own profile
- * row before any lending row; a lost standing refused; the owner's reads and nobody else's. The races and the database's
- * ranks are {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s.
+ * row before any lending row; a lost standing refused; the owner's reads and nobody else's. And the disbursement
+ * (`P11-TSK-014`) through the real ports: the sweep posting to the borrower's own wallet opened through accounts' door,
+ * credit's real profile row taken before the loan, the schedule read. The races and the database's ranks are
+ * {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s and {@code LoanDisbursementDatabaseTest}'s.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}, X-TSK-016): the suite brings credit's seeded policies
  * into force, activates both products' lending terms and plants EUR lending capital by a posting from
@@ -72,7 +76,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance end to end (P11-TSK-012)")
+@DisplayName("the acceptance and the disbursement end to end (P11-TSK-012, P11-TSK-014)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -91,6 +95,8 @@ class LoanAccountDatabaseTest {
     @Autowired private PostingService postingService;
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private LendingCapitalHeadroom headroom;
+    @Autowired private LoanDisbursements disbursements;
+    @Autowired private LoanDisbursementMetrics disbursementMetrics;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -294,6 +300,97 @@ class LoanAccountDatabaseTest {
         assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?::uuid", externalOffer)).isEqualTo("OFFERED");
     }
 
+    // ------------------------------------------------------------------ the disbursement (P11-TSK-014)
+
+    @Test
+    @DisplayName("a loan is disbursed to the borrower's wallet end to end (P11-TSK-014): no schedule while pending (404);"
+            + " the sweep disburses it once under the system actor - the customer's CUSTOMER_WALLET, opened through"
+            + " accounts' door, credited the principal, the loan ACTIVE with its principal a ledger balance; the schedule"
+            + " read 200 - latest and version 1 - another version and another party 404; counted once; a second sweep"
+            + " posts nothing")
+    void aLoanIsDisbursedToTheBorrowersWalletEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("5000.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        HttpResponse<String> accepted = accept(customer.token(), offer, hash, null, key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String loanId = field(accepted.body(), "loanId");
+        HttpResponse<String> none = client.get(LOANS + "/" + loanId + "/schedule", customer.token());
+        assertThat(none.statusCode()).as("no schedule before the disbursement").isEqualTo(404);
+        assertThat(none.body()).contains("lending.NotFound");
+
+        double postedBefore = posted();
+        LoanDisbursementSchedule sweep = new LoanDisbursementSchedule(disbursements, lendingTransactions,
+                disbursementMetrics, Duration.ofSeconds(5), 100, Duration.ofMinutes(1));
+        assertThat(sweep.sweepOnce()).as("the accepted loan was due at once").isPositive();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        assertThat(posted()).as("counted after the commit").isGreaterThanOrEqualTo(postedBefore + 1);
+        assertThat(scalar("SELECT coalesce(sum(CASE l.direction WHEN 'CREDIT' THEN l.amount_minor"
+                + " ELSE -l.amount_minor END), 0)::text FROM ledger.journal_line l"
+                + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                + " JOIN accounts.customer_account c ON c.id = a.owner_ref"
+                + " JOIN party.customer pc ON pc.id = c.customer_id"
+                + " WHERE a.purpose = 'CUSTOMER_WALLET' AND a.currency = 'EUR' AND pc.party_id = ?::uuid",
+                customer.party().toString())).as("the borrower's own wallet credited the principal").isEqualTo("500000");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.LoanDisbursed'"
+                + " AND target_id = ? AND actor_type = 'SYSTEM'", loanId)).isEqualTo(1);
+        assertThat(scalar("SELECT e.correlation_id FROM ledger.journal_entry e JOIN lending.loan_disbursement d"
+                + " ON d.journal_entry_id = e.id WHERE d.loan_id = ?::uuid", loanId))
+                .as("one flow from the acceptance to the money")
+                .isEqualTo(scalar("SELECT correlation_id FROM lending.loan WHERE id = ?::uuid", loanId));
+        assertThat(client.get(LOANS + "/" + loanId, customer.token()).body())
+                .contains("\"status\":\"ACTIVE\"", "\"principalNotDue\":\"5000.00\"");
+
+        HttpResponse<String> latest = client.get(LOANS + "/" + loanId + "/schedule", customer.token());
+        assertThat(latest.statusCode()).as(latest.body()).isEqualTo(200);
+        assertThat(latest.body()).contains("\"scheduleVersion\":1", "\"agreementVersion\":1",
+                "\"principal\":\"5000.00\"", "\"termMonths\":12", "\"sequence\":12", "\"closingPrincipal\":\"0.00\"")
+                .doesNotContain("\"sequence\":13");
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule?version=1", customer.token()).body())
+                .isEqualTo(latest.body());
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule?version=2", customer.token()).statusCode()).isEqualTo(404);
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> peek = client.get(LOANS + "/" + loanId + "/schedule", stranger.token());
+        assertThat(peek.statusCode()).isEqualTo(404);
+        assertThat(peek.body()).contains("lending.NotFound").doesNotContain("5000.00");
+
+        sweep.sweepOnce();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                "ledger.post:lending.disbursement:" + loanId)).as("one entry, however often swept").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the disbursement waits on credit's own profile row (L0) before the loan: behind a transaction holding the"
+            + " party's credit_profile it waits holding no loan lock, and posts once released")
+    void disbursementWaitsOnCreditsProfileLock() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("4000.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock = holder.prepareStatement(
+                    "SELECT 1 FROM credit.credit_profile WHERE party_id = ? FOR UPDATE")) {
+                lock.setObject(1, customer.party());
+                lock.executeQuery().close();
+            }
+            Future<LoanDisbursements.Outcome> disbursing = pool.submit(() -> {
+                try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
+                    return lendingTransactions.inTransaction(uow -> disbursements.disburse(uow,
+                            LoanId.of(UUID.fromString(loanId)), SecurityContext.require()));
+                }
+            });
+            String waiting = awaitAStatementBlockedBy(pid(holder));
+            assertThat(waiting).as("the disbursement waits on credit's profile row").contains("credit_profile");
+            assertThat(loanLockableNoWait(loanId)).as("holding no loan lock while it waits: L0 before L3").isTrue();
+            holder.commit();
+            assertThat(disbursing.get(60, TimeUnit.SECONDS).kind()).isEqualTo(LoanDisbursements.Outcome.Kind.POSTED);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** {@code body} applied for by {@code customer}, approved by credit and offered by the sweep; the offer's id. */
@@ -332,6 +429,30 @@ class LoanAccountDatabaseTest {
     private double accepted(LoanProduct product) {
         return meterRegistry.find(LoanAcceptanceMetrics.ACCEPTANCE).tag("product", product.name())
                 .tag("outcome", "accepted").counter().count();
+    }
+
+    private double posted() {
+        return meterRegistry.find(LoanDisbursementMetrics.DISBURSEMENT).tag("payout", "wallet")
+                .tag("outcome", "posted").counter().count();
+    }
+
+    private static boolean loanLockableNoWait(String loan) throws SQLException {
+        try (Connection probe = DatabaseRoles.application()) {
+            probe.setAutoCommit(false);
+            try (PreparedStatement lock = probe.prepareStatement(
+                    "SELECT 1 FROM lending.loan WHERE id = ?::uuid FOR UPDATE NOWAIT")) {
+                lock.setString(1, loan);
+                lock.executeQuery().close();
+                return true;
+            } catch (SQLException held) {
+                if ("55P03".equals(held.getSQLState())) {
+                    return false;
+                }
+                throw held;
+            } finally {
+                probe.rollback();
+            }
+        }
     }
 
     private static boolean offerLockableNoWait(String offer) throws SQLException {

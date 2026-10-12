@@ -26,6 +26,25 @@ import org.junit.jupiter.api.Test;
 class LoanTermsTest {
 
     @Test
+    @DisplayName("the origination fee on a principal (P11-TSK-014, A17): an amount as stated; basis points of the principal"
+            + " at its scale, one division rounded once HALF_EVEN to the minor unit")
+    void theOriginationFeeOnAPrincipal() {
+        Money principal = Money.ofMinorUnits(4_000_00, EUR);
+        assertThat(LoanTerms.OriginationFee.ofBasisPoints(150).on(principal)).isEqualTo(Money.ofMinorUnits(60_00, EUR));
+        assertThat(LoanTerms.OriginationFee.none(EUR).on(principal).isZero()).isTrue();
+        assertThat(LoanTerms.OriginationFee.ofAmount(Money.ofMinorUnits(25_00, EUR)).on(principal))
+                .isEqualTo(Money.ofMinorUnits(25_00, EUR));
+        // 1,234.57 x 1.25 % = 15.432125 -> 15.43; 1,000.02 x 0.25 % = 2.50005 -> 2.50; the half: 1.00 x 50 bps = 0.005 -> 0.00
+        assertThat(LoanTerms.OriginationFee.ofBasisPoints(125).on(Money.ofMinorUnits(1_234_57, EUR)))
+                .isEqualTo(Money.ofMinorUnits(15_43, EUR));
+        assertThat(LoanTerms.OriginationFee.ofBasisPoints(25).on(Money.ofMinorUnits(1_000_02, EUR)))
+                .isEqualTo(Money.ofMinorUnits(2_50, EUR));
+        assertThat(LoanTerms.OriginationFee.ofBasisPoints(50).on(Money.ofMinorUnits(1_00, EUR)).isZero()).isTrue();
+        assertThat(LoanTerms.OriginationFee.ofBasisPoints(150).on(Money.ofMinorUnits(1_00, EUR)))
+                .as("0.015 -> 0.02, the even neighbour").isEqualTo(Money.ofMinorUnits(2, EUR));
+    }
+
+    @Test
     @DisplayName("both products' plan terms are admitted, the rate canonical and the zone spelled once")
     void thePlanTermsAreAdmitted() {
         LoanTerms loan = personalLoan("0.08990").servicingZone("Z").build();

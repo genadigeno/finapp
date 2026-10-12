@@ -72,6 +72,18 @@ public enum LendingAuditAction implements AuditableAction {
                     + " the acceptance evidence is its own record. Losers of a race record nothing.",
             false),
 
+    /** The platform disbursed a loan: posting rule 1, the loan ACTIVE, the schedule fixed - a system act. */
+    LOAN_DISBURSED(
+            "lending.LoanDisbursed",
+            "The platform disbursed an instalment loan to the borrower's wallet (P11-TSK-014, ADR-0097; a system act - the"
+                    + " acceptance is the instruction, no person disburses): posting rule 1 (DR LOAN_PRINCIPAL / CR the"
+                    + " wallet, less an origination fee to LOAN_FEE_INCOME) under the key lending.disbursement:<loan>, the"
+                    + " disbursement POSTED and the loan ACTIVE, the accrual start and schedule version 1 fixed, all in one"
+                    + " transaction under the party's credit profile lock and the loan's row lock. Its target the loan; the"
+                    + " summary names the loan, the journal entry, the value date and the path - never an amount or the"
+                    + " wallet (INV-AUD-02). Losers of a race and retries record nothing.",
+            false),
+
     /** A holder of LENDING_INVESTIGATE was served a lending report. */
     REPORT_READ(
             "lending.ReportRead",

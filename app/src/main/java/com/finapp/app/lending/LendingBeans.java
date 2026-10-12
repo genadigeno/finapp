@@ -1,6 +1,7 @@
 package com.finapp.app.lending;
 
 import com.finapp.ledger.JdbcPurposeBalances;
+import com.finapp.ledger.PostingService;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PurposeBalances;
 import com.finapp.ledger.SupportedCurrencies;
@@ -16,6 +17,11 @@ import com.finapp.lending.JdbcLoanOfferStore;
 import com.finapp.lending.JdbcLoanTermsStore;
 import com.finapp.lending.LoanApplicationStore;
 import com.finapp.lending.JdbcLoanStore;
+import com.finapp.lending.JdbcLoanDisbursementStore;
+import com.finapp.lending.LoanDisbursementStore;
+import com.finapp.lending.LoanDisbursements;
+import com.finapp.lending.LoanSchedules;
+import com.finapp.lending.LoanWallets;
 import com.finapp.lending.LoanAcceptances;
 import com.finapp.lending.LoanAccounts;
 import com.finapp.lending.LoanApplications;
@@ -67,7 +73,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * sweep with the sweeper gauge, the two credit-event hints, the customer's offer doors and their meter. And the acceptance
  * (`P11-TSK-012`): the loan store (which the headroom's committed term reads), the two ports {@code app} implements for it
  * (credit's profile lock and consumption on {@code LoanCreditDecisions}; the payout destination over the payment-method
- * registry), the six-account opener, T-acc, the loan reads, the doors and their meter.
+ * registry), the six-account opener, T-acc, the loan reads, the doors and their meter. And the disbursement
+ * (`P11-TSK-014`): its store, the wallet port {@code app} implements over accounts, T-dis, the schedule read, and the
+ * leaderless disbursement sweep with its meters and sweeper gauge.
  */
 @Configuration(proxyBeanMethods = false)
 public class LendingBeans {
@@ -390,9 +398,10 @@ public class LendingBeans {
             com.finapp.identity.IdentityStore<Connection> identityStore,
             IdempotentExecutor idempotentExecutor,
             LendingTransactions lendingTransactions,
-            LoanAcceptanceMetrics loanAcceptanceMetrics) {
+            LoanAcceptanceMetrics loanAcceptanceMetrics,
+            LoanSchedules loanSchedules) {
         return new LoanAccountDesk(loanAcceptances, loans, identityStore, idempotentExecutor, lendingTransactions,
-                loanAcceptanceMetrics);
+                loanAcceptanceMetrics, loanSchedules);
     }
 
     /** The origination sweep - every instance, no lease, off in test contexts. */
@@ -415,6 +424,80 @@ public class LendingBeans {
             @Value("${finapp.lending.origination.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
         return Gauge.builder("finapp.lending.origination.sweeper.enabled", () -> enabled ? 1 : 0)
                 .description("Whether this instance runs the loan origination sweep")
+                .register(meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the disbursement (P11-TSK-014)
+
+    /** The disbursement, the accrual start and the schedule versions - their store. */
+    @Bean
+    LoanDisbursementStore loanDisbursementStore() {
+        return new JdbcLoanDisbursementStore();
+    }
+
+    /** The borrower's wallet - the port over accounts (opened through accounts' doors if absent). */
+    @Bean
+    LoanWallets loanWallets(
+            com.finapp.party.PartyStore<Connection> partyStore,
+            com.finapp.accounts.CustomerAccountStore<Connection> customerAccountStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.accounts.AccountOpening accountOpening) {
+        return new AccountsLoanWallets(partyStore, customerAccountStore, ledgerAccountStore, accountOpening);
+    }
+
+    /** T-dis - the disbursement to the wallet under L0, L3 and L5, posting rule 1 through the ledger. */
+    @Bean
+    LoanDisbursements loanDisbursements(
+            LoanStore loanStore,
+            LoanDisbursementStore loanDisbursementStore,
+            LoanTermsStore loanTermsStore,
+            LoanCreditDecisions loanCreditDecisions,
+            LoanPartyStanding loanPartyStanding,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PostingService postingService,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanDisbursements(loanStore, loanDisbursementStore, loanTermsStore, loanCreditDecisions,
+                loanPartyStanding, loanWallets, ledgerAccountStore, postingService, outboxWriter, auditWriter, idGenerator,
+                clock);
+    }
+
+    /** The customer's schedule read. */
+    @Bean
+    LoanSchedules loanSchedules(LoanDisbursementStore loanDisbursementStore) {
+        return new LoanSchedules(loanDisbursementStore);
+    }
+
+    /** {@code finapp.lending.disbursement{path, outcome}} and the pending age, every series registered at startup. */
+    @Bean
+    LoanDisbursementMetrics loanDisbursementMetrics(
+            LoanDisbursementStore loanDisbursementStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new LoanDisbursementMetrics(loanDisbursementStore, dataSource::getConnection, clock, meterRegistry);
+    }
+
+    /** The disbursement sweep - every instance, no lease, off in test contexts. */
+    @Bean
+    @ConditionalOnProperty(name = "finapp.lending.disbursement.sweeper.enabled", havingValue = "true", matchIfMissing = true)
+    LoanDisbursementSchedule loanDisbursementSchedule(
+            LoanDisbursements loanDisbursements,
+            LendingTransactions lendingTransactions,
+            LoanDisbursementMetrics loanDisbursementMetrics,
+            @Value("${finapp.lending.disbursement.poll:PT5S}") Duration pollInterval,
+            @Value("${finapp.lending.disbursement.batch:20}") int batch,
+            @Value("${finapp.lending.disbursement.permit:PT1M}") Duration permit) {
+        return new LoanDisbursementSchedule(loanDisbursements, lendingTransactions, loanDisbursementMetrics, pollInterval,
+                batch, permit);
+    }
+
+    /** Whether this instance runs the disbursement sweep - eager either way (`P1-TSK-029`'s rule). */
+    @Bean
+    Gauge lendingDisbursementSweeperEnabled(
+            @Value("${finapp.lending.disbursement.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
+        return Gauge.builder("finapp.lending.disbursement.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the loan disbursement sweep")
                 .register(meterRegistry);
     }
 

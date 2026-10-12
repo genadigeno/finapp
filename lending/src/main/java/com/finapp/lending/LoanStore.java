@@ -54,6 +54,21 @@ public interface LoanStore {
      */
     Money committedPrincipal(Connection unitOfWork, CurrencyCode currency);
 
+    /**
+     * The party a loan belongs to, unlocked (`P11-TSK-014`) - a frozen column, read so the disbursement can take the
+     * party's profile lock (L0) BEFORE the loan's row (L3); empty when there is no such loan.
+     */
+    Optional<UUID> partyOf(Connection unitOfWork, LoanId id);
+
+    /** The loan {@code FOR UPDATE} (L3) with its current agreement version (`P11-TSK-014`). */
+    Optional<Owned> lock(Connection unitOfWork, LoanId id);
+
+    /** {@code PENDING_DISBURSEMENT -> ACTIVE}, conditional (`P11-TSK-014`); whether this call moved it. */
+    boolean activate(Connection unitOfWork, LoanId id);
+
+    /** {@code PENDING_DISBURSEMENT -> CANCELLED} for {@code reason}, conditional (`P11-TSK-014`); whether it moved. */
+    boolean cancel(Connection unitOfWork, LoanId id, CancellationReason reason);
+
     // ------------------------------------------------------------------ rows
 
     /** A loan at birth - its status the kind's (a loan {@code PENDING_DISBURSEMENT}, a line {@code ACTIVE}). */

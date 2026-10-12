@@ -310,7 +310,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // triggers re-judge, the offer born once by UNIQUE (application_id) and UNIQUE (decision_id); the
                     // decision is read from credit, credit's events only pull a permit forward. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is LoanOriginationDatabaseTest's.
-                    "com.finapp.app.lending.LoanOriginationSchedule");
+                    "com.finapp.app.lending.LoanOriginationSchedule",
+                    // P11-TSK-014: the same half for the loan disbursement sweep. No external call is made: each tick
+                    // claims the due wallet disbursements in ONE statement on the database clock (FOR UPDATE SKIP
+                    // LOCKED, the permit re-stamped), and every step takes L0 (credit's profile), L3 (the loan) and L5
+                    // (the disbursement) and moves both by conditional edges lending V008's triggers re-judge, the money
+                    // under the ledger key lending.disbursement:<loan> and the schedule born once by UNIQUE (loan_id,
+                    // schedule_version). Register row: DISTRIBUTED_EXECUTION.md section 3; the two-instance and
+                    // ten-disburser races are LoanDisbursementDatabaseTest's.
+                    "com.finapp.app.lending.LoanDisbursementSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

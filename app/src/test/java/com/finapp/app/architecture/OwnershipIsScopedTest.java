@@ -910,6 +910,46 @@ class OwnershipIsScopedTest {
                                         + " door reaches it, and lending V005's trigger admits terms only beside an"
                                         + " OFFERED offer, exactly its pinned version's.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.partyOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The disbursement's unlocked read of a loan's frozen party, so L0 comes first: the loan id comes only from the disbursement sweep's own claimed page (LoanDisbursementStore.claimDue), never a request value; no door reaches it - the disbursement is the system's act.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The disbursement's L3: the loan id comes only from the sweep's claimed page; no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.activate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The loan lock() holds FOR UPDATE in this transaction; conditional on PENDING_DISBURSEMENT, lending V008's trigger admitting it only beside the disbursement POSTED.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.cancel",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The loan lock() holds FOR UPDATE in this transaction; conditional on PENDING_DISBURSEMENT, lending V008's trigger admitting it only beside the disbursement FAILED for the same reason.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanDisbursementStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The disbursement's L5, for the loan the sweep claimed and this transaction holds FOR UPDATE (L3); no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanDisbursementStore.post",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The disbursement lock() holds FOR UPDATE in this transaction; conditional on PENDING, the entry the one this transaction posted under lending.disbursement:<loan>, lending V008's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanDisbursementStore.fail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-014. The disbursement lock() holds FOR UPDATE in this transaction; conditional on PENDING, lending V008's trigger refusing DISBURSEMENT_FAILED before the deadline.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanDisbursementStore.scheduleOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loans/{id}/schedule - the identifier from the path, and l.party_id = ? in the statement is the session's own party; another party's loan, a loan with no schedule and an absent version are one empty answer, the 404 (P11-TSK-014).")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanOfferStore.lockClaimed",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3056,6 +3096,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.lending.JdbcLoanOfferStore.offerFor",
                             "com.finapp.app.lending.LoanOfferDatabaseTest.anotherPartysOfferIsNotFound"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanDisbursementStore.scheduleOwnedBy",
+                            "com.finapp.app.lending.LoanAccountDatabaseTest.aLoanIsDisbursedToTheBorrowersWalletEndToEnd"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanStore.ownedBy",
                             "com.finapp.app.lending.LoanAccountDatabaseTest.aLineIsAcceptedAndOnlyItsOwnerSeesIt"),

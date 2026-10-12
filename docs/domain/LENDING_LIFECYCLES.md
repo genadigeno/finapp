@@ -285,6 +285,13 @@ unexpired offer, identity frozen, and **no edge admitted yet** - the edge functi
 here). Committed only beside its offer's `ACCEPTED` edge, its agreement v1, its evidence and (a loan) its disbursement;
 a line never has one.*
 
+*As built by `P11-TSK-014` (2026-10-12): `lending V008` replaces the edge function - `PENDING_DISBURSEMENT -> ACTIVE`
+only beside the disbursement `POSTED`, `-> CANCELLED` only beside it `FAILED` with the same reason (the closing instant stamped by
+the trigger); every other edge still refused until `-023`/`-026`; a deferred check holds an instalment loan's `ACTIVE` edge to its
+disbursement `POSTED` and, on path W, its accrual start and schedule v1. The application role holds `UPDATE (status,
+cancellation_reason)`. History reasons `DISBURSED`, `STANDING_LOST`, `DISBURSEMENT_FAILED`; events `lending.LoanDisbursed`,
+`lending.LoanCancelled`.*
+
 ### 4.6 Disbursement (`lending.loan_disbursement`) — `P11-TSK-014`
 
 `PENDING → POSTED | FAILED`, born `PENDING` once per instalment loan in T-acc (`UNIQUE (loan_id)`),
@@ -299,6 +306,15 @@ receivable is born exactly with the wallet credit (`INV-LND-07`). **Invalid:** a
 the database stamps `created_at`, `deadline_at` (the pinned terms version's `disbursement_deadline_hours`) and the sweep's
 permit `next_attempt_at` (due at once); `payout_method_id` present exactly when the application preferred an external
 account. It does not move, and no `UPDATE` is granted, until `-014`.*
+
+*As built by `P11-TSK-014` (2026-10-12): `lending V008` - identity, path, birth and deadline frozen; a permit-only move
+(the sweep's claim, path W only - `payout_method_id IS NULL` - until `-015`); `PENDING -> POSTED` with the journal entry by value
+(`UNIQUE`) and its value date (held to this transaction's business date in the pinned zone), `PENDING -> FAILED` with the
+cancellation's reason - `STANDING_LOST` at any time, `DISBURSEMENT_FAILED` only once `deadline_at <= statement_timestamp()`, so
+the deadline is the database's for every writer; either only while the loan is `PENDING_DISBURSEMENT`, and a deferred check
+holds each beside the loan's matching edge. Path X's `POSTED` is refused until `-015`. Refinement: "retries stop and the loan is
+cancelled at `<=`" reads, as built, "the attempt that fails at or after the deadline cancels" - a wallet that can be posted is
+still disbursed after an outage longer than the deadline.*
 
 ### 4.7 Loan payout (`lending.loan_payout`), path X only — `P11-TSK-015`
 

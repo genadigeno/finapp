@@ -430,6 +430,13 @@ agreement's id); **(L6)** for a loan; the loan, its history, agreement v1, the e
 (path X's payment method by opaque reference on it - the plan's separate "payout instruction" is that column; the
 payout row is `-015`'s), the six accounts; the offer `ACCEPTED`; `lending.LoanAccepted`; the audit record. The
 application is read, never locked.)*
+*(As built by `P11-TSK-014` - T-dis, path W: the sweep's claim committed first; the loan's party read unlocked (a frozen column) so
+**(L0)** `LoanCreditDecisions.lockExposure` comes before any lending row; **(L3)** the loan `FOR UPDATE`, acted on only while
+`PENDING_DISBURSEMENT`; **(L5)** the disbursement `FOR UPDATE`; the database clock read after the locks; the standing (lost ->
+`CANCELLED (STANDING_LOST)` at once); behind a savepoint the wallet (`LoanWallets`, opened if absent) and rule 1; then the disbursement
+`POSTED`, the loan `ACTIVE`, the accrual start, schedule v1, `lending.LoanDisbursed`, the audit record. No L6 and no L7 on path W. A
+wallet not to be had or not postable writes nothing (the savepoint) and is retried on the permit; the attempt that fails at or after
+`deadline_at` cancels `DISBURSEMENT_FAILED` - a sweep down past the deadline still attempts first, and a postable wallet disburses.)*
 
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
@@ -546,7 +553,7 @@ declares; every table carrying money is `INSERT`-only.
 | `loan_application` (+ `_event`) | `-010` | `UNIQUE (decision_request_id)` |
 | `loan_offer` (+ `_event`), `loan_offer_terms` | `-011` | `UNIQUE (application_id)`, `UNIQUE (decision_id)`; canonical terms + `terms_sha256` (a `CHECK` holds the hash to the bytes) *(split by `P11-TSK-011` along the money line, as `-005`'s terms: the machine row money-free and lockable, the terms INSERT-only)* |
 | `loan` (+ `loan_event`), `loan_agreement`, `loan_acceptance`, `loan_disbursement` | `-012` | `UNIQUE (offer_id)`; `UNIQUE (loan_id, version)`; `UNIQUE (loan_id)` *(as built by `P11-TSK-012`, `lending V006`: also `UNIQUE (decision_id)` on the loan and `UNIQUE (agreement_id)` on the evidence; every table SELECT and INSERT only - nothing born here moves until its task grants the column; the agreement's `canonical_terms` is `text`, the offer's bytes copied, never `jsonb` - a re-serialisation would change the very bytes hashed; the disbursement carries its deadline, its permit and path X's payment method)* |
-| `repayment_schedule`, `loan_instalment`, `accrual_start` | `-014` | `UNIQUE (loan_id, schedule_version)`; `UNIQUE (schedule_id, sequence)`; `UNIQUE (loan_id)` |
+| `repayment_schedule`, `loan_instalment`, `accrual_start` | `-014` | `UNIQUE (loan_id, schedule_version)`; `UNIQUE (schedule_id, sequence)`; `UNIQUE (loan_id)` *(as built by `P11-TSK-014`, `lending V008`: all INSERT-only; schedule v1 only (later versions `-027`'s), born for its loan's agreement v1 by its pinned engine from the accrual start, and held to its rows by a deferred conservation check for every writer - n rows numbered 1..n that chain, the principal portions summing to P and the interest to the header's total; a wallet disbursement's accrual start its entry's value date; also `loan_disbursement`'s outcome columns - the entry by value (`UNIQUE`), the value date, the decision instant, the failure reason - and the loan's and the disbursement's edges, each only beside the other, two deferred checks; the application role granted `UPDATE (status, cancellation_reason)` on `loan` and `UPDATE (status, next_attempt_at, journal_entry_id, value_date, failure_reason)` on `loan_disbursement`, the terminal instants stamped by trigger)* |
 | `loan_payout` | `-015` | `UNIQUE (loan_id)`; payments' reference |
 | `interest_accrual` | `-016` | `UNIQUE (loan_id, accrual_date)` |
 | `instalment_billing`, `credit_balance_application` | `-017` | `UNIQUE (instalment_id)`; `UNIQUE (billing_id)` |
@@ -862,6 +869,13 @@ credit decision APPROVED → offer → accept (T-acc: L0; decision consumed; cap
      accrual start = payments' conclusion instant in the pinned zone; schedule v1 generated
 → rail → settlement → reconciliation (payments' and Phase 8's existing machinery)
 ```
+
+*(As built by `P11-TSK-014` for path W: `LoanDisbursements` (T-dis) over `lending V008`; the value date the business date of the
+database clock in the agreement's pinned servicing zone, read after the locks and held by the disbursement's trigger to this
+transaction's dates; the origination fee `on` the principal - an amount as stated, basis points rounded once `HALF_EVEN` - and a fee
+not below the principal treated as a wallet that cannot be posted (retried, cancelled at the deadline: no entry can credit a wallet
+nothing); schedule v1 from `ScheduleEngineV1.project` with `d0` the value date. `LendingCreditExposureDatabaseTest`'s planted
+disbursement replaced by the real path.)*
 
 **When the loan becomes a receivable — both paths:** when the borrower's wallet is credited
 (`LOAN_PRINCIPAL` debited in the same entry), in T-dis. Before that there is a commitment (counted
@@ -1299,7 +1313,7 @@ scenario 5 red).
 | `finapp.lending.application` | counter | product, outcome | — |
 | `finapp.lending.offer` | counter | product, outcome | — |
 | `finapp.lending.acceptance` | counter | product, outcome | — |
-| `finapp.lending.disbursement` | counter | path, outcome | — |
+| `finapp.lending.disbursement` | counter | path, outcome *(as built by `P11-TSK-014`: the key is `payout` - `path` is a forbidden tag fragment in `MetricNames`; values `wallet`, `external_account`; outcomes `posted`, `retrying`, `standing_lost`, `disbursement_failed`)* | — |
 | `finapp.lending.disbursement.pending.age` | gauge (seconds, oldest) | — | above the disbursement deadline |
 | `finapp.lending.payout` | counter | outcome | — |
 | `finapp.lending.payout.dispatched.age` | gauge (seconds, oldest awaiting an outcome) | — | above payments' outcome objective |

@@ -423,6 +423,14 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " correlation, so the record ties to the customer's submission. A person's approval is"
                         + " credit's underwriting; the customer's own acts on an offer are theirs."),
                     Map.entry(
+                            "com.finapp.app.lending.LoanDisbursementSchedule.sweepOnce",
+                    "The loan disbursement sweep (P11-TSK-014, ADR-0097, A7: the acceptance is the instruction): nobody"
+                        + " commands a disbursement - no operator can disburse - the platform posts rule 1 to the"
+                        + " borrower's wallet, or cancels a loan whose standing was lost or whose wallet could not be"
+                        + " posted by the deadline, each edge recorded in the loan's history and lending.LoanDisbursed"
+                        + " audited as the system's, under the acceptance's own correlation, so the money ties to the"
+                        + " customer's accepting act."),
+                    Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
                         + " cover is the platform's own trade with its provider - nobody commands a"
