@@ -45,9 +45,11 @@ import lombok.RequiredArgsConstructor;
  *   <li>the database clock, read after the lock, and its business date in the agreement's pinned servicing zone - never
  *       an instance clock ({@code INV-LND-10});
  *   <li><strong>accrue</strong> (this task): every elapsed date not yet accrued, oldest first;
- *   <li>the steps later tasks add, in this order: bill the instalments due or produce the statement (`P11-TSK-017`,
- *       `-022`), auto-collect (`-019`), the condition (`-024`), the late fee (`-025`) - each after accrual, each under
- *       the same lock;
+ *   <li><strong>bill</strong> (`P11-TSK-017`, {@link InstalmentBillings}): an instalment loan's instalments due by
+ *       today whose periods the accrual has reached, oldest first - posting rule 3 - each followed by the credit-balance
+ *       application, rule 6 (a line's statement is `-022`'s);
+ *   <li>the steps later tasks add, in this order: auto-collect (`-019`), the condition (`-024`), the late fee (`-025`) -
+ *       each after billing, each under the same lock;
  *   <li>the permit: the start of the next business date in the pinned zone - or now, when a long catch-up stopped at its
  *       bound and the rest is due at once.
  * </ol>
@@ -101,19 +103,23 @@ public final class LoanServicing {
     @NonNull private final PurposeBalances<Connection> balances;
     @NonNull private final PostingService postings;
     @NonNull private final IdGenerator ids;
+    @NonNull private final InstalmentBillings billings;
 
-    /** What one servicing step did - for the meter; never a figure or a date. */
-    public record Outcome(Kind kind, int posted, int zero, boolean caughtUp) {
+    /**
+     * What one servicing step did - for the meter; never a figure or a date: {@code posted} and {@code zero} accrued
+     * dates, {@code billed} items made due and credit-balance applications {@code applied} (`P11-TSK-017`).
+     */
+    public record Outcome(Kind kind, int posted, int zero, boolean caughtUp, int billed, int applied) {
 
         public Outcome {
             Objects.requireNonNull(kind, "kind must not be null");
-            if (posted < 0 || zero < 0) {
+            if (posted < 0 || zero < 0 || billed < 0 || applied < 0) {
                 throw new IllegalArgumentException("counts are not negative");
             }
         }
 
         static Outcome notServiced() {
-            return new Outcome(Kind.NOT_SERVICED, 0, 0, true);
+            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0);
         }
 
         /** The step's effect. */
@@ -157,16 +163,24 @@ public final class LoanServicing {
 
         Correlation flow = Correlation.startingWith(loan.correlation()).causing(CausationId.of(loan.correlation().value()));
         Accrued accrued;
+        InstalmentBillings.Billed billed = InstalmentBillings.Billed.NOTHING;
         try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
             accrued = accrue(unitOfWork, loan, agreement, pinned, zone, today);
-            // The steps later tasks add run here, after accrual and under the same lock: billing or the statement
-            // (P11-TSK-017, -022), auto-collection (-019), the condition (-024), the late fee (-025).
+            // Then billing (P11-TSK-017): an instalment loan's instalments due by today whose periods the accrual has
+            // reached, oldest first, each followed by the credit-balance application - under the same lock. A line's
+            // statement is P11-TSK-022's.
+            if (accrued.accruedThrough().isPresent()) {
+                billed = billings.bill(unitOfWork, loan, agreement, pinned, today, accrued.accruedThrough().get());
+            }
+            // The steps later tasks add run here, after billing and under the same lock: auto-collection (-019), the
+            // condition (-024), the late fee (-025).
         }
         Instant permit = accrued.caughtUp() ? today.plusDays(1).atStartOfDay(zone).toInstant() : now;
         if (!store.restamp(unitOfWork, id, permit)) {
             throw new IllegalStateException("the locked account left servicing under its own row lock");
         }
-        return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), accrued.caughtUp());
+        return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), accrued.caughtUp(), billed.billed(),
+                billed.applied());
     }
 
     private static boolean inServicing(LoanStatus status) {
@@ -175,7 +189,11 @@ public final class LoanServicing {
 
     // ------------------------------------------------------------------ the accrual step
 
-    private record Accrued(int posted, int zero, boolean caughtUp) {}
+    /**
+     * What the accrual step did, and through which date every elapsed date has been accrued or found with nothing to
+     * accrue on - empty when the account has no accrual start (nothing accrues, nothing is billed).
+     */
+    private record Accrued(int posted, int zero, boolean caughtUp, Optional<LocalDate> accruedThrough) {}
 
     /** Every elapsed date after the latest accrual, oldest first, under L3 (ADR-0094 points 2-4, 7). */
     private Accrued accrue(
@@ -186,7 +204,7 @@ public final class LoanServicing {
                 : Optional.of(LocalDate.ofInstant(loan.openedAt(), zone));
         if (accrualStart.isEmpty()) {
             // Path X awaiting its payout's terminal outcome (A30): no accrual start, nothing accrues - never a guess.
-            return new Accrued(0, 0, true);
+            return new Accrued(0, 0, true, Optional.empty());
         }
         LocalDate lastElapsed = today.minusDays(1);
         Optional<RecordedAccrual> latest = store.latestAccrual(unitOfWork, id);
@@ -194,7 +212,7 @@ public final class LoanServicing {
                 .filter(next -> next.isAfter(accrualStart.get()))
                 .orElse(accrualStart.get());
         if (from.isAfter(lastElapsed)) {
-            return new Accrued(0, 0, true);
+            return new Accrued(0, 0, true, Optional.of(lastElapsed));
         }
         Function<LocalDate, AccrualPeriod> periodOf = periods(unitOfWork, loan, agreement, pinned, accrualStart.get());
         AccrualTerms accrualTerms = new AccrualTerms(loan.currency(), agreement.nominalAnnualRate(), pinned.dayCount(),
@@ -227,7 +245,7 @@ public final class LoanServicing {
                 continue;
             }
             if (posted + zero == MAX_ACCRUALS_PER_STEP) {
-                return new Accrued(posted, zero, false);
+                return new Accrued(posted, zero, false, Optional.of(date.minusDays(1)));
             }
             AccrualPeriod period = periodOf.apply(date);
             Optional<InterestAccrual> previous = latest.map(RecordedAccrual::accrual)
@@ -246,7 +264,7 @@ public final class LoanServicing {
                 zero++;
             }
         }
-        return new Accrued(posted, zero, true);
+        return new Accrued(posted, zero, true, Optional.of(lastElapsed));
     }
 
     /** The account's accrual periods: the schedule's instalment periods, or the line's statement cycles. */

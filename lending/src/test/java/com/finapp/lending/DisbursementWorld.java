@@ -122,7 +122,10 @@ final class DisbursementWorld {
             new JdbcBalanceProjection(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK);
     static final JdbcLoanPayoutStore PAYOUT_STORE = new JdbcLoanPayoutStore();
     static final LoanDisbursements DISBURSEMENTS = disbursements(new JdbcOutboxWriter(), new JdbcAuditWriter());
-    static final LoanSchedules SCHEDULES = new LoanSchedules(DISBURSEMENT_STORE);
+    static final JdbcInstalmentBillingStore BILLING_STORE = new JdbcInstalmentBillingStore();
+    static final LoanSchedules SCHEDULES = new LoanSchedules(DISBURSEMENT_STORE, BILLING_STORE);
+    static final InstalmentBillings BILLINGS = new InstalmentBillings(BILLING_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS,
+            new JdbcOutboxWriter(), IDS, CLOCK);
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
             TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);

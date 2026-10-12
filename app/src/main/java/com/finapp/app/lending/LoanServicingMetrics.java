@@ -29,6 +29,10 @@ import lombok.extern.slf4j.Slf4j;
  *       when unreadable - never zero for a read that failed. The alert sits above one day (`P11-TSK-030`). Read from the
  *       database, so every instance reports the same value - aggregate with {@code max()}, never {@code sum()}; cached
  *       15 s behind a per-instance refresh floor - never truth.
+ *   <li>{@code finapp.lending.billing{kind, outcome}} (`P11-TSK-017`) - each billed item of a committed servicing step
+ *       ({@code kind = instalment}, {@code outcome = billed}) and each credit-balance application at one
+ *       ({@code outcome = credit_applied}), counted once after the step's transaction committed. Registered eagerly for
+ *       every outcome; a line's statement ({@code kind = statement}) is {@code P11-TSK-022}'s to add.
  * </ul>
  *
  * <p>Never an amount, a party, a loan id or a date in a tag (ADR-0072).
@@ -41,6 +45,19 @@ public final class LoanServicingMetrics {
 
     /** Exported as {@code finapp_lending_accrual_lag}. */
     public static final String LAG = "finapp.lending.accrual.lag";
+
+    /** Exported as {@code finapp_lending_billing} (`P11-TSK-017`). */
+    public static final String BILLING = "finapp.lending.billing";
+
+    /** The billing series' closed set of outcomes. */
+    public enum BillingOutcome {
+        BILLED,
+        CREDIT_APPLIED;
+
+        String tag() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
 
     static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
@@ -77,6 +94,9 @@ public final class LoanServicingMetrics {
         for (Outcome outcome : Outcome.values()) {
             counter(outcome);
         }
+        for (BillingOutcome outcome : BillingOutcome.values()) {
+            billing(outcome);
+        }
         Gauge.builder(LAG, this, LoanServicingMetrics::lagSeconds)
                 .description("Seconds since the end of the oldest elapsed date an instalment loan in servicing has not"
                         + " accrued, on the database clock in its pinned zone - 0 when none, NaN when unreadable. Alert"
@@ -86,7 +106,7 @@ public final class LoanServicingMetrics {
                 .register(registry);
     }
 
-    /** One committed servicing step - its accrued dates counted. */
+    /** One committed servicing step - its accrued dates and its billed items counted. */
     public void record(LoanServicing.Outcome step) {
         Objects.requireNonNull(step, "step");
         if (step.posted() > 0) {
@@ -94,6 +114,12 @@ public final class LoanServicingMetrics {
         }
         if (step.zero() > 0) {
             counter(Outcome.ZERO).increment(step.zero());
+        }
+        if (step.billed() > 0) {
+            billing(BillingOutcome.BILLED).increment(step.billed());
+        }
+        if (step.applied() > 0) {
+            billing(BillingOutcome.CREDIT_APPLIED).increment(step.applied());
         }
     }
 
@@ -123,6 +149,14 @@ public final class LoanServicingMetrics {
         }
         cached.set(fresh);
         return fresh;
+    }
+
+    private Counter billing(BillingOutcome outcome) {
+        return Counter.builder(BILLING)
+                .description("Billed items of committed servicing steps (billed) and the credit-balance applications at"
+                        + " them (credit_applied) - an instalment loan's instalments and post-maturity periods")
+                .tags("kind", "instalment", "outcome", outcome.tag())
+                .register(registry);
     }
 
     private Counter counter(Outcome outcome) {

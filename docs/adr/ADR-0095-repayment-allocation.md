@@ -207,5 +207,15 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   never-above-due are asserted before the lines return (an `IllegalStateException`: an engine defect,
   never an input refusal). The backlog's `AllocationEngineV1Properties` is `AllocationEngineV1PropertiesTest`
   (`TestTaxonomyTest`), its two-JVM comparison through the lending test helper `SecondJvm`.
+- **As built by `P11-TSK-017` (2026-10-12) - point 5, the credit-balance application.** After each billing, in its
+  transaction, a positive `LOAN_CREDIT_BALANCE` is `allocate`d over the due state derived under L3 from the rows (each
+  billed item's billed less allocated - `InstalmentBillingStore.BilledItem.dueItem()`, the billed-item model `-018`
+  allocates against - and `LOAN_PRINCIPAL` as the principal not yet due), refused unless those rows explain the due
+  accounts' ledger balances exactly. Its `DUE_ITEM` lines are `credit_balance_allocation` rows, aggregated per due account
+  in rule 6's entry; its `CREDIT_BALANCE` line stays held; a balance that meets nothing due writes no application.
+  `lending V012`: `UNIQUE (billing_id)`; at commit the rows sum to the application and no billed component is paid beyond
+  what it billed, the paid sum one function (`lending.billing_component_paid`) that `-018` extends with
+  `repayment_allocation`, so the rule covers every payer. Point 1's per-item split and point 2's order are the engine's,
+  unchanged.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

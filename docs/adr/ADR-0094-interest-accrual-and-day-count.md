@@ -203,5 +203,18 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   replay refused as a defect. **Point 11** - `LoanServicing.CORRECTION_KEY_PREFIX` names the reserved key. The
   accrual-lag gauge reads instalment loans (a line's zero days write no row; its arm waits for `-021`). Two probes and
   their companions, `MUTATION_TESTING.md` §2.
+- **As built by `P11-TSK-017` (2026-10-12) - point 6, billing.** `InstalmentBillings`, T-svc's step after the
+  accrual under the same L3, over `lending V012`'s `instalment_billing`. Refinements: **completeness** is "`Dj` has come
+  and the accrual has reached `Dj - 1`" (`Dj <= min(today, accrued-through + 1)`), so a catch-up stopped at its bound
+  waits; the database half is forward - the billing's trigger holds interest due to exactly the period's accruals and
+  the accrual's trigger, replaced, refuses any date inside a billed period, so billed interest stays accrued interest
+  for ever. **Post-maturity**: each period of the continued calendar (point 3's refinement) in which interest accrued is
+  billed at its end, interest only (`POST_MATURITY`, key `lending.billing:<loan>:<due date>`) - so a loan past maturity
+  stays closable; this ADR's billing, not ADR-0098's. **One billed item per due date**: `UNIQUE (loan_id, due_date)` beside
+  `UNIQUE (instalment_id)`. **Point 8 applies to billing**: rules 3 and 6 are dated the business date of their
+  transaction, so a billing caught up after an outage is applied that day - and a credit balance held through the outage
+  is applied that day too (the outage days accrued on the principal it would have paid; owner judgement recorded). Rule
+  3's reference is the item billed, so a second attempt from the same history is a replay refused as a defect. Two
+  probes and their companions, `MUTATION_TESTING.md` §2.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

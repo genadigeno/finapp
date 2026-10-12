@@ -6,6 +6,9 @@ import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.lending.AcceptanceEvidence;
+import com.finapp.lending.BillingKind;
+import com.finapp.lending.InstalmentBilling;
+import com.finapp.lending.InstalmentBillingStore;
 import com.finapp.lending.LendingErrorCode;
 import com.finapp.lending.LoanAcceptances;
 import com.finapp.lending.LoanAgreement;
@@ -34,7 +37,10 @@ import com.finapp.sharedkernel.money.Money;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
@@ -125,8 +131,9 @@ public final class LoanAccountDesk {
 
     /**
      * A schedule version as its customer sees it (`P11-TSK-014`): the projection of an agreement version by its pinned
-     * engine from the accrual start - amounts exact decimal strings, dates ISO. The projection, not the bill: billed and
-     * paid status arrive with billing and repayment (`P11-TSK-017`, `-018`).
+     * engine from the accrual start - amounts exact decimal strings, dates ISO - and beside it the bill (`P11-TSK-017`):
+     * each instalment's status and, once billed, what it made due and what has been paid of it; and the post-maturity
+     * periods billed after the final due date (interest accrued on principal still outstanding, made due monthly).
      */
     public record ScheduleView(
             String loanId,
@@ -141,9 +148,14 @@ public final class LoanAccountDesk {
             String totalPayable,
             String startDate,
             int termMonths,
-            List<InstalmentView> instalments) {}
+            List<InstalmentView> instalments,
+            List<BillingView> postMaturityBillings) {}
 
-    /** One instalment period: its interest runs over {@code [periodStart, dueDate)} on the opening principal. */
+    /**
+     * One instalment period: its interest runs over {@code [periodStart, dueDate)} on the opening principal - the
+     * projection; {@code status} {@code UNBILLED}, {@code DUE}, {@code PARTIALLY_PAID} or {@code PAID}, and the
+     * {@code billing} once billed (`P11-TSK-017`) - the bill, which carries interest actually accrued.
+     */
     public record InstalmentView(
             int sequence,
             String periodStart,
@@ -153,7 +165,26 @@ public final class LoanAccountDesk {
             String interest,
             String principal,
             String amount,
-            String closingPrincipal) {}
+            String closingPrincipal,
+            String status,
+            BillingView billing) {}
+
+    /**
+     * A billed item (`P11-TSK-017`): what became due - interest actually accrued, the principal portion - what has been
+     * paid of each, and what is still due; {@code status} {@code DUE}, {@code PARTIALLY_PAID} or {@code PAID}.
+     */
+    public record BillingView(
+            String billingId,
+            String kind,
+            int sequence,
+            String periodStart,
+            String dueDate,
+            String status,
+            String interestBilled,
+            String principalBilled,
+            String interestPaid,
+            String principalPaid,
+            String outstanding) {}
 
     /**
      * Accepts the caller's offer: the agreement, the consumption, the commitment and the account in one transaction.
@@ -241,8 +272,18 @@ public final class LoanAccountDesk {
 
     // ------------------------------------------------------------------ the views
 
-    static ScheduleView view(RepaymentSchedule recorded) {
+    static ScheduleView view(LoanSchedules.Read read) {
+        RepaymentSchedule recorded = read.schedule();
         Schedule schedule = recorded.schedule();
+        Map<Integer, InstalmentBillingStore.BilledItem> billedHere = new HashMap<>();
+        List<BillingView> postMaturity = new ArrayList<>();
+        for (InstalmentBillingStore.BilledItem item : read.billed()) {
+            if (item.billing().kind() == BillingKind.POST_MATURITY) {
+                postMaturity.add(view(item));
+            } else if (item.billing().scheduleVersion() == recorded.version()) {
+                billedHere.put(item.billing().sequence(), item);
+            }
+        }
         return new ScheduleView(
                 recorded.loan().value().toString(),
                 recorded.version(),
@@ -256,10 +297,14 @@ public final class LoanAccountDesk {
                 decimal(schedule.totalPayable()),
                 schedule.start().toString(),
                 schedule.termMonths(),
-                schedule.periods().stream().map(LoanAccountDesk::view).toList());
+                schedule.periods().stream()
+                        .map(period -> view(period, Optional.ofNullable(billedHere.get(period.sequence()))))
+                        .toList(),
+                postMaturity);
     }
 
-    private static InstalmentView view(SchedulePeriod period) {
+    private static InstalmentView view(SchedulePeriod period, Optional<InstalmentBillingStore.BilledItem> billed) {
+        Optional<BillingView> billing = billed.map(LoanAccountDesk::view);
         return new InstalmentView(
                 period.sequence(),
                 period.periodStart().toString(),
@@ -269,7 +314,27 @@ public final class LoanAccountDesk {
                 decimal(period.interest()),
                 decimal(period.principal()),
                 decimal(period.amount()),
-                decimal(period.closingBalance()));
+                decimal(period.closingBalance()),
+                billing.map(BillingView::status).orElse("UNBILLED"),
+                billing.orElse(null));
+    }
+
+    private static BillingView view(InstalmentBillingStore.BilledItem item) {
+        InstalmentBilling billing = item.billing();
+        Money outstanding = item.outstanding();
+        String status = outstanding.isZero() ? "PAID" : item.paid().isZero() ? "DUE" : "PARTIALLY_PAID";
+        return new BillingView(
+                billing.id().toString(),
+                billing.kind().name(),
+                billing.sequence(),
+                billing.period().start().toString(),
+                billing.dueDate().toString(),
+                status,
+                decimal(billing.interestDue()),
+                decimal(billing.principalDue()),
+                decimal(item.interestPaid()),
+                decimal(item.principalPaid()),
+                decimal(outstanding));
     }
 
     static LoanView view(Loans.Read read) {

@@ -26,6 +26,9 @@ import com.finapp.lending.LoanDisbursementStore;
 import com.finapp.lending.LoanDisbursements;
 import com.finapp.lending.LoanSchedules;
 import com.finapp.lending.JdbcLoanServicingStore;
+import com.finapp.lending.InstalmentBillingStore;
+import com.finapp.lending.InstalmentBillings;
+import com.finapp.lending.JdbcInstalmentBillingStore;
 import com.finapp.lending.LoanServicing;
 import com.finapp.lending.LoanServicingStore;
 import com.finapp.lending.LoanWallets;
@@ -477,10 +480,11 @@ public class LendingBeans {
                 outboxWriter, auditWriter, idGenerator, clock);
     }
 
-    /** The customer's schedule read. */
+    /** The customer's schedule read, with each instalment's billed and paid status (P11-TSK-017). */
     @Bean
-    LoanSchedules loanSchedules(LoanDisbursementStore loanDisbursementStore) {
-        return new LoanSchedules(loanDisbursementStore);
+    LoanSchedules loanSchedules(
+            LoanDisbursementStore loanDisbursementStore, InstalmentBillingStore instalmentBillingStore) {
+        return new LoanSchedules(loanDisbursementStore, instalmentBillingStore);
     }
 
     /** {@code finapp.lending.disbursement{path, outcome}} and the pending age, every series registered at startup. */
@@ -586,7 +590,30 @@ public class LendingBeans {
         return new JdbcLoanServicingStore();
     }
 
-    /** T-svc - the servicing step under L3; its first step, daily accrual, posting rule 2 through the ledger. */
+    /** The billed items, the credit-balance applications and the facts billing reads - their store (P11-TSK-017). */
+    @Bean
+    InstalmentBillingStore instalmentBillingStore() {
+        return new JdbcInstalmentBillingStore();
+    }
+
+    /** T-svc's billing step (P11-TSK-017) - posting rules 3 and 6 through the ledger, under the step's L3. */
+    @Bean
+    InstalmentBillings instalmentBillings(
+            InstalmentBillingStore instalmentBillingStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new InstalmentBillings(instalmentBillingStore, ledgerAccountStore, purposeBalances, postingService,
+                outboxWriter, idGenerator, clock);
+    }
+
+    /**
+     * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing and the
+     * credit-balance application (rules 3 and 6, P11-TSK-017).
+     */
     @Bean
     LoanServicing loanServicing(
             LoanStore loanStore,
@@ -595,9 +622,10 @@ public class LendingBeans {
             LedgerAccountStore<Connection> ledgerAccountStore,
             PurposeBalances<Connection> purposeBalances,
             PostingService postingService,
-            IdGenerator idGenerator) {
+            IdGenerator idGenerator,
+            InstalmentBillings instalmentBillings) {
         return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
-                postingService, idGenerator);
+                postingService, idGenerator, instalmentBillings);
     }
 
     /** {@code finapp.lending.accrual{outcome}} and the accrual lag, every series registered at startup. */

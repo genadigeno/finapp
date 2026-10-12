@@ -66,7 +66,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * row before any lending row; a lost standing refused; the owner's reads and nobody else's. And the disbursement
  * (`P11-TSK-014`) through the real ports: the sweep posting to the borrower's own wallet opened through accounts' door,
  * credit's real profile row taken before the loan, the schedule read. And the accrual (`P11-TSK-016`) through the wired
- * servicing sweep and its meter. The races and the database's ranks are
+ * servicing sweep and its meter, and the billing (`P11-TSK-017`) through the same sweep and the schedule read. The races and the database's ranks are
  * {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s and {@code LoanDisbursementDatabaseTest}'s.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}, X-TSK-016): the suite brings credit's seeded policies
@@ -77,7 +77,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance, the disbursement and the accrual end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016)")
+@DisplayName("the acceptance, the disbursement, the accrual and the billing end to end (P11-TSK-012, P11-TSK-014,"
+        + " P11-TSK-016, P11-TSK-017)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -444,7 +445,75 @@ class LoanAccountDatabaseTest {
                 "ledger.post:lending.accrual:" + loanId + ":%")).as("one entry a date, however often swept").isEqualTo(2);
     }
 
+    // ------------------------------------------------------------------ the billing (P11-TSK-017)
+
+    @Test
+    @DisplayName("a loan is billed on its due date through the wired servicing sweep (P11-TSK-017): the first instalment"
+            + " billed once under the system actor - interest actually accrued, posting rule 3 dated the day under the"
+            + " loan's own correlation, lending.InstalmentBilled in the outbox, counted after the commit - and the"
+            + " borrower's schedule read shows it DUE beside its projection, every later instalment UNBILLED")
+    void aLoanIsBilledOnItsDueDateThroughTheWiredSweep() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3650.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        long days = count("SELECT i.due_date - s.start_date FROM lending.loan_instalment i JOIN lending.accrual_start s"
+                + " ON s.loan_id = i.loan_id WHERE i.loan_id = ?::uuid AND i.sequence = 1", loanId);
+        // The fixture's clock: the loan's dated facts moved back until its first due date is today.
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE ledger.journal_entry SET posting_date = posting_date - " + days + ", value_date ="
+                        + " value_date - " + days + " WHERE id = (SELECT journal_entry_id FROM lending.loan_disbursement"
+                        + " WHERE loan_id = '" + loanId + "'); UPDATE lending.loan_disbursement SET value_date = value_date"
+                        + " - " + days + " WHERE loan_id = '" + loanId + "'; UPDATE lending.accrual_start SET start_date ="
+                        + " start_date - " + days + " WHERE loan_id = '" + loanId + "'; UPDATE lending.repayment_schedule"
+                        + " SET start_date = start_date - " + days + " WHERE loan_id = '" + loanId + "';"
+                        + " UPDATE lending.loan_instalment SET period_start = period_start - " + days + ", due_date ="
+                        + " due_date - " + days + " WHERE loan_id = '" + loanId + "'");
+            }
+            owner.commit();
+        }
+        double before = billed();
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing b JOIN ledger.journal_entry e"
+                + " ON e.id = b.journal_entry_id JOIN lending.loan l ON l.id = b.loan_id WHERE b.loan_id = ?::uuid"
+                + " AND e.value_date = b.due_date AND e.posting_date = b.due_date AND e.correlation_id = l.correlation_id"
+                + " AND b.interest_due_minor = (SELECT sum(a.posted_minor) FROM lending.interest_accrual a"
+                + " WHERE a.loan_id = b.loan_id AND a.period_end = b.due_date)",
+                loanId)).as("rule 3 dated the due date - today - in the loan's own flow, billing what accrued").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?::uuid AND event_type ="
+                + " 'lending.InstalmentBilled'", loanId)).isEqualTo(1);
+        assertThat(billed()).as("counted after the commit").isGreaterThanOrEqualTo(before + 1);
+        String schedule = client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body();
+        String interest = scalar("SELECT to_char(interest_due_minor / 100.0, 'FM999990.00') FROM lending.instalment_billing"
+                + " WHERE loan_id = ?::uuid", loanId);
+        assertThat(schedule).contains("\"status\":\"DUE\"").contains("\"interestBilled\":\"" + interest + "\"")
+                .contains("\"postMaturityBillings\":[]");
+        assertThat(schedule.split("\"status\":\"UNBILLED\"", -1)).as("eleven instalments still unbilled").hasSize(12);
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule", stranger.token()).statusCode())
+                .as("another party's schedule and its bill: the same 404 as an unknown loan").isEqualTo(404);
+        servicing.sweepOnce();
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?::uuid", loanId))
+                .as("billed once, however often swept").isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    private double billed() {
+        return meterRegistry.find(LoanServicingMetrics.BILLING).tag("kind", "instalment").tag("outcome", "billed")
+                .counter().count();
+    }
 
     private double accrued(String outcome) {
         return meterRegistry.find(LoanServicingMetrics.ACCRUAL).tag("outcome", outcome).counter().count();
