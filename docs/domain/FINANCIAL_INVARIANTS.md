@@ -1690,6 +1690,13 @@ due account negative — gauged `finapp.lending.subledger.proof{verdict}` and al
 (`P11-TST-001`).
 **Phase:** 11
 
+*(As built by `P11-TSK-017`, 2026-10-12 - the billing arms: every `instalment_billing` row is born with posting rule 3's entry
+(or none, for a billing of nothing) and every `credit_balance_allocation` with rule 6's, in one transaction, so
+`LOAN_INTEREST_DUE` and `LOAN_PRINCIPAL_DUE` are the billings less the allocations and `LOAN_INTEREST_ACCRUED` the accruals less
+the billed interest. The credit-balance application derives its due state from those rows under L3 and refuses to allocate
+unless they explain the due accounts' ledger balances exactly - a difference is an alert, never allocated over
+(`InstalmentBillingDatabaseTest#aCreditBalancePaysTheBill`); every case of the suite asserts the arms.)*
+
 ### INV-LND-02 — Interest accrues once per account per date
 **Statement:** For each loan or credit line and each accrual date at most one accrual row exists and
 at most one journal entry records it, whatever reruns, instances, crashes, restarts or clock skew
@@ -1765,6 +1772,13 @@ principal and the interest to the header's total; a row added to a committed sch
 engine's projection from the accrual start, re-asserted by `Schedule`'s construction on every read
 (`LoanDisbursementDatabaseTest#theScheduleIsGeneratedOnce`).)*
 
+*(As built by `P11-TSK-017`, 2026-10-12 - what is billed: interest due exactly the sum of the period's accruals, principal due
+`max(0, A - I)` never beyond the principal not yet due, the final instalment all of it, so the principal billed over a loan's
+life is its principal whatever its history; `lending V012`'s trigger refuses, for every writer, principal billed beyond the
+agreement's. On an on-time path the bills equal the projection to the minor unit
+(`InstalmentBillingDatabaseTest#onTimeBillingEqualsTheProjection`); after an irregular one the final instalment clears principal
+(`#theFinalInstalmentClearsPrincipal`).)*
+
 ### INV-LND-04 — Allocation conserves and never over-pays a component
 **Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
 component (fee, interest or principal of one due item) had due when the repayment was allocated; no
@@ -1791,6 +1805,13 @@ pinned order, overflow only past every billed item and by the treatment), `#inde
 `#aSecondJvmAllocatesIdentically`; the case-by-case `AllocationEngineV1Test`; the probes are `MUTATION_TESTING.md` §2's
 `P11-TSK-008` rows. The deferred trigger, the lock and scenario 3 remain `-018`'s.)*
 **Phase:** 11
+
+*(As built by `P11-TSK-017`, 2026-10-12 - the credit-balance application, the first caller of `allocate` against real rows:
+the credit balance as the amount over the due state derived under L3, its lines on billed items recorded as
+`credit_balance_allocation` rows; `lending V012`'s deferred check refuses at commit, for every writer, an application whose rows
+do not sum to it or that pays any billed component beyond what it billed (the paid sum `lending.billing_component_paid`, which
+`-018` extends with its repayment allocations so the rule covers every payer). The repayment's own trigger and scenario 3 stay
+`-018`'s.)*
 
 ### INV-LND-05 — Terms are pinned and immutable
 **Statement:** A loan agreement version never changes once written; it carries the full,
@@ -2001,6 +2022,11 @@ clocks sit fourteen hours ahead and twelve behind UTC, racing two at a time, ove
 `-14:00`: each accrues exactly through the day before the database's business date in its own zone, once. Found on the
 way, not this task's: a positive servicing zone (`+HH:MM`, admitted by `LoanTerms`) cannot be offered - the canonical
 offer terms' escape-free character set and `lending V005`/`V006`'s `CHECK`s exclude `+` - recorded for the owner.)*
+
+*(As built by `P11-TSK-017`, 2026-10-12 - the billing: an instalment is billed only once its due date has come on the database
+clock read after the loan's lock, in the pinned zone - `lending V012`'s trigger refuses an earlier billing for every writer
+(`InstalmentBillingDatabaseTest#billedOnTheDueDateOnce`); rules 3 and 6 are dated the business date of their transaction, never
+back-valued to the due date (ADR-0094 point 8).)*
 
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)

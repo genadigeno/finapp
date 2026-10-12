@@ -1116,7 +1116,9 @@ as such.
 period's posted accruals, principal due the level instalment less that interest (the final one all
 remaining principal) — written once per instalment, only after every accrual through the day
 before, with one entry re-classifying `LOAN_INTEREST_ACCRUED` and `LOAN_PRINCIPAL` into their due
-accounts, then any Loan Credit Balance applied. Planned (`P11-TSK-017`).
+accounts, then any Loan Credit Balance applied. After the final due date, each month in which interest
+accrued on principal still outstanding is billed the same way, interest only (a post-maturity billing).
+Built (`P11-TSK-017`: `instalment_billing`, `InstalmentBillings`).
 **Not:** the Instalment (the projection) and not a Repayment. Billing moves nothing between parties:
 it re-classifies the same claim from not due to due, which is what makes Days Past Due readable. A
 Credit Line's equivalent is the Credit Line Statement.
@@ -1162,8 +1164,9 @@ reversal negates allocations by rows, and later allocations are not re-cut.
 ### Loan Credit Balance
 **Is:** money received beyond every receivable of one loan and owed back to the borrower — the
 per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing,
-refunded to the wallet at closure, and the destination of a paid fee's refund. Planned
-(`P11-TSK-003`, `-017`).
+refunded to the wallet at closure, and the destination of a paid fee's refund. The account by
+`P11-TSK-003`; its application at each billing built by `P11-TSK-017` (`credit_balance_application`);
+its refund planned (`-018`, `-026`).
 **Not:** a wallet balance, and not a prepayment: an overpayment on an instalment loan does not reduce
 principal (on a line it pays down drawn principal first, and only the excess is held). Nor a
 receivable: it is subtracted from what is outstanding, and a closed loan's credit balance is zero

@@ -531,7 +531,8 @@ class InterestAccrualDatabaseTest {
     // ------------------------------------------------------------------ the world
 
     static LoanServicing servicing(LoanServicingStore store) {
-        return new LoanServicing(LOAN_STORE, store, TERMS_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS, IDS);
+        return new LoanServicing(LOAN_STORE, store, TERMS_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS, IDS,
+                DisbursementWorld.BILLINGS);
     }
 
     /** A fresh wallet loan disbursed by the real T-dis. */
@@ -615,9 +616,11 @@ class InterestAccrualDatabaseTest {
                 + " ON e.id = a.journal_entry_id WHERE a.loan_id = ? AND (e.value_date <> a.accrual_date"
                 + " OR e.posting_date <> a.accrual_date OR e.idempotency_scope <> 'ledger.post:lending.accrual:'"
                 + " || a.loan_id || ':' || a.accrual_date)", id)).as("each entry dated its date, under its key").isZero();
+        // The accrued account is the rows' postings less what billing made due (P11-TSK-017's arm of the proof).
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_INTEREST_ACCRUED)).minorUnits())
-                .isEqualTo(Long.parseLong(scalar("SELECT coalesce(sum(posted_minor), 0)::text FROM lending.interest_accrual"
-                        + " WHERE loan_id = ?", id)));
+                .isEqualTo(Long.parseLong(scalar("SELECT (coalesce((SELECT sum(posted_minor) FROM lending.interest_accrual"
+                        + " WHERE loan_id = ?), 0) - coalesce((SELECT sum(interest_due_minor) FROM lending.instalment_billing"
+                        + " WHERE loan_id = ?), 0))::text", id, id)));
     }
 
     /**

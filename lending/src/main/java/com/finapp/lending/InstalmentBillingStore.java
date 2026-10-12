@@ -1,0 +1,96 @@
+package com.finapp.lending;
+
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.Money;
+import java.sql.Connection;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Persistence for billing and the credit-balance application (`P11-TSK-017`, {@code lending V012}): the facts the
+ * billing step reads under the loan's lock (the latest schedule, a period's accruals, the billed items and what has been
+ * paid of them) and the rows it writes - INSERT-only. The billed-item model the allocation engine's due state is derived
+ * from: {@code P11-TSK-018}'s repayment allocations join {@link BilledItem}'s paid figures, {@code -022}'s statements
+ * reuse it. One owner-scoped read serves the schedule door.
+ */
+public interface InstalmentBillingStore {
+
+    /** An instalment loan's latest schedule version, with its instalments oldest first; empty when it has none. */
+    Optional<BillableSchedule> latestSchedule(Connection unitOfWork, LoanId loan);
+
+    /**
+     * The accruals of {@code loan} rounded within {@code period} - their count and the sum of what they posted, in
+     * {@code currency} at {@code scale}: exactly the interest a billing of the period makes due (ADR-0094 point 6).
+     */
+    PeriodAccruals periodAccruals(Connection unitOfWork, LoanId loan, AccrualPeriod period, Money zero);
+
+    /** Every billed item of {@code loan}, oldest due date first, with what has been paid of each. */
+    List<BilledItem> billedItems(Connection unitOfWork, LoanId loan);
+
+    /**
+     * Every billed item of {@code party}'s loan {@code loan}, oldest due date first, with what has been paid of each -
+     * owner-scoped in the statement: another party's loan is the same empty answer as a loan billed nothing.
+     */
+    List<BilledItem> billedItemsOwnedBy(Connection unitOfWork, LoanId loan, UUID party);
+
+    /** Births one billing; the database stamps the instant. */
+    void insertBilling(Connection unitOfWork, InstalmentBilling billing, CorrelationId correlation);
+
+    /** Births one application and its allocation rows (ordinals 1..n in the lines' order); the database stamps it. */
+    void insertApplication(Connection unitOfWork, CreditBalanceApplication application, CorrelationId correlation);
+
+    /** A period's accruals: how many rows and what they posted. */
+    record PeriodAccruals(long rows, Money posted) {
+
+        public PeriodAccruals {
+            Objects.requireNonNull(posted, "posted must not be null");
+            if (rows < 0 || posted.isNegative()) {
+                throw new IllegalArgumentException("a period's accruals are counted and summed from zero");
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "PeriodAccruals[" + rows + " rows]";
+        }
+    }
+
+    /**
+     * One billed item and what has been paid of it, per component - every allocation that pays a billed item (the
+     * credit-balance applications here; {@code P11-TSK-018}'s repayments when they land). A billing bills no fee, so its
+     * fees due are what a later assessment adds ({@code P11-TSK-025}) less what was paid.
+     */
+    record BilledItem(InstalmentBilling billing, Money feesPaid, Money interestPaid, Money principalPaid) {
+
+        public BilledItem {
+            Objects.requireNonNull(billing, "billing must not be null");
+            Objects.requireNonNull(feesPaid, "feesPaid must not be null");
+            Objects.requireNonNull(interestPaid, "interestPaid must not be null");
+            Objects.requireNonNull(principalPaid, "principalPaid must not be null");
+        }
+
+        /** What the item still has due, per component - billed less paid; the allocation engine's input. */
+        public DueState.DueItem dueItem() {
+            Money zero = Money.ofPersisted(0, billing.interestDue().currency(), billing.interestDue().scale());
+            return new DueState.DueItem(DueItemId.of(billing.id()), billing.dueDate(), zero.minus(feesPaid),
+                    billing.interestDue().minus(interestPaid), billing.principalDue().minus(principalPaid));
+        }
+
+        /** Everything still due on it. */
+        public Money outstanding() {
+            return dueItem().total();
+        }
+
+        /** Everything paid of it. */
+        public Money paid() {
+            return feesPaid.plus(interestPaid).plus(principalPaid);
+        }
+
+        @Override
+        public String toString() {
+            return "BilledItem[" + billing + "]";
+        }
+    }
+}

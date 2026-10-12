@@ -448,7 +448,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " because someone asked - nobody commands an accrual and no operator can accrue; the platform"
                         + " posts rule 2 for each elapsed date of an account in servicing, the interest_accrual row and"
                         + " its ledger entry the trail (a scheduled process, not a privileged act: no audit record), under"
-                        + " the account's own correlation."),
+                        + " the account's own correlation. And billing (P11-TSK-017): an instalment falls due because its"
+                        + " due date came - rule 3 and, from money already held, rule 6, the instalment_billing and"
+                        + " credit_balance_application rows and their entries the trail, no door and no audit record."),
                     Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"

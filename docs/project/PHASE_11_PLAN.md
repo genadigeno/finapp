@@ -457,6 +457,14 @@ pinned zone; the accrual - every elapsed date after the latest accrual, oldest f
 date's row and its rule 2 entry together, at most 92 dates a step; then the steps later tasks add, in the stated order; then the permit - the
 start of the next business date, or now when the step stopped at its bound. No L0 (interest is not principal; exposure does not move), no L6,
 no L7; the ledger's projection rows last.)*
+*(As built by `P11-TSK-017` - T-svc's billing step, after the accrual and under the same L3 (still no L0, L6 or L7): every
+instalment of the latest schedule version whose due date has come on the database clock in the pinned zone and whose period
+the accrual reached - `Dj <= min(today, accrued-through + 1)`, so a catch-up stopped at its bound bills only what it reached -
+oldest first; after the final due date each period of the continued calendar in which interest accrued, interest only
+(`POST_MATURITY` - post-maturity interest is billed here, not by `-024`). Each billing's row and rule 3 together, dated the
+business date of the transaction (ADR-0094 point 8); then, after each, rule 6 if the credit balance is positive and anything
+billed is due; `lending.InstalmentBilled` per billing. Every ledger account touched is the loan's own, written by nobody
+without L3, so no `lockBalancesInOrder` beyond each posting's own.)*
 
 *(As built by `P11-TSK-021` - T-drw: the door's claim (`lending.draw:<type>:<id>`, `MULTI_FACTOR`); **(L3)** the line `FOR
 UPDATE`, owner-scoped (another party's never locked - the `404`); a draw already born under the customer's key converged on
@@ -874,6 +882,18 @@ interest due)` (final: all remaining principal); one entry `DR LOAN_INTEREST_DUE
 LOAN_INTEREST_ACCRUED` and `DR LOAN_PRINCIPAL_DUE / CR LOAN_PRINCIPAL`; then any credit balance
 applied (rule 6).
 
+*(As built by `P11-TSK-017`, 2026-10-12 - `InstalmentBillings` over `lending V012`. Interest due is the sum of the period's
+`interest_accrual.posted_minor` (the rows whose `(period_start, period_end)` are the instalment's), and the database holds it
+for every writer: the billing's trigger refuses any other figure, and the accrual's trigger, replaced, refuses a date inside a
+period already billed - so billed interest is accrued interest for ever. Principal due `max(0, A - I)`, never beyond the
+principal not yet due (`LOAN_PRINCIPAL`, a ledger balance), the final instalment all of it; the trigger refuses principal billed
+beyond the agreement's over the loan's life. A billing of nothing writes its row and no entry. Rule 3's key
+`lending.billing:<instalment>`, a post-maturity period's `lending.billing:<loan>:<due date>`, the reference the item billed (so a
+second attempt from the same history is a replay, refused as a defect). Entries are dated the business date of the transaction,
+not the due date: a billing caught up after an outage is applied on the day it is applied (ADR-0094 point 8) - recorded
+consequence: a credit balance held through such an outage is applied that day, so the outage days accrue on the principal it
+would have paid.)*
+
 **Fees**: origination (A17: `DEDUCTED` at disbursement, upfront in the operational ledger, EIR
 amortisation Phase 14's); late fee (A18: once per due item on the day DPD reaches `late_fee_day` >
 grace, born once, capped per account; `DR LOAN_FEES_DUE / CR LOAN_FEE_INCOME`); **no penalty
@@ -1004,6 +1024,15 @@ orders the agreement pins; a due state holding one billed item per due date, so 
 remainder to principal not yet due and then credit - accrued, unbilled interest is not a target; the credit-balance
 application is the same call with the balance as the amount, its credit line what stays held; a `PREPAYMENT`'s line by
 `allocatePrepayment`, refusing arrears; typed refusals `AllocationRefused`; ADR-0095's Follow-up records the detail.)*
+
+*(As built by `P11-TSK-017`, 2026-10-12 - rule 6: after each billing, a positive `LOAN_CREDIT_BALANCE` is
+`AllocationEngineV1.allocate`d over the due state derived under L3 from the rows - each billed item's billed less allocated
+(`InstalmentBillingStore.BilledItem`; the paid sum is one SQL function, `lending.billing_component_paid`, which `-018` extends
+with `repayment_allocation`) and the principal not yet due from `LOAN_PRINCIPAL` - and refused unless those rows explain the due
+accounts' ledger balances exactly (`INV-LND-01`). Its `DUE_ITEM` lines are `credit_balance_allocation` rows (ordinal, billed item,
+component, amount), aggregated per due account in rule 6's entry under `lending.credit-application:<billing>`; its
+`CREDIT_BALANCE` line stays held. The database holds the rows to the application and no billed component above what it billed,
+at commit, for every writer.)*
 
 **Payoff** (both products). *Quote* (keyed): good-through date `G` (today, up to 30 days); amount =
 derived outstanding + the accrual the engine would post through `G − 1` on the current base —

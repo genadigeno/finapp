@@ -8468,6 +8468,45 @@
         },
         "type": "object"
       },
+      "BillingView": {
+        "properties": {
+          "billingId": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "interestBilled": {
+            "type": "string"
+          },
+          "interestPaid": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "principalBilled": {
+            "type": "string"
+          },
+          "principalPaid": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BreakAssignmentRequest": {
         "properties": {
           "assigneeId": {
@@ -11412,6 +11451,9 @@
           "amount": {
             "type": "string"
           },
+          "billing": {
+            "$ref": "#/components/schemas/BillingView"
+          },
           "closingPrincipal": {
             "type": "string"
           },
@@ -11437,6 +11479,9 @@
           "sequence": {
             "format": "int32",
             "type": "integer"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -15609,6 +15654,12 @@
           },
           "loanId": {
             "type": "string"
+          },
+          "postMaturityBillings": {
+            "items": {
+              "$ref": "#/components/schemas/BillingView"
+            },
+            "type": "array"
           },
           "principal": {
             "type": "string"

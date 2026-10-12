@@ -14,8 +14,8 @@ import org.springframework.context.SmartLifecycle;
 
 /**
  * The servicing sweep (`P11-TSK-016`; PHASE_11_PLAN.md sections 7.1 T-svc and 7.5, ADR-0094): every account in servicing
- * is serviced once each business date - its elapsed dates accrued (and, as later tasks land, its instalments billed, its
- * statement produced, its condition evaluated). Every instance runs it with no lease: each tick claims the accounts whose
+ * is serviced once each business date - its elapsed dates accrued, its instalments due billed and money already held
+ * applied to them (`P11-TSK-017`), and, as later tasks land, its statement produced and its condition evaluated. Every instance runs it with no lease: each tick claims the accounts whose
  * permit has come in ONE statement on the database clock - the permit re-stamped to the retry cadence, rows another
  * sweeper or a servicing act holds skipped - and takes each one's step in a transaction of its own under L3, every date
  * born once by {@code interest_accrual UNIQUE (loan_id, accrual_date)} and posted under the ledger key

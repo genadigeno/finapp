@@ -137,7 +137,8 @@ class LoanDisbursementDatabaseTest {
                 .isEqualTo(valueDate.toString());
 
         RepaymentSchedule read = inOneTransaction(uow ->
-                DisbursementWorld.SCHEDULES.read(uow, loan.loan(), loan.party(), Optional.empty())).orElseThrow();
+                DisbursementWorld.SCHEDULES.read(uow, loan.loan(), loan.party(), Optional.empty())).orElseThrow()
+                .schedule();
         LoanTerms pinned = inOneTransaction(uow -> DisbursementWorld.TERMS_STORE.version(uow, LoanTermsVersionId.of(
                 UUID.fromString(scalar("SELECT terms_version_id::text FROM lending.loan_agreement WHERE loan_id = ?",
                         id)))).orElseThrow().terms());
@@ -147,10 +148,10 @@ class LoanDisbursementDatabaseTest {
                 .isEqualTo(projected);
         assertThat(read.version()).isEqualTo(1);
         assertThat(read.agreementVersion()).isEqualTo(1);
-        Optional<RepaymentSchedule> absent = inOneTransaction(uow -> DisbursementWorld.SCHEDULES.read(uow, loan.loan(),
+        Optional<LoanSchedules.Read> absent = inOneTransaction(uow -> DisbursementWorld.SCHEDULES.read(uow, loan.loan(),
                 loan.party(), Optional.of(2)));
         assertThat(absent).as("no such version").isEmpty();
-        Optional<RepaymentSchedule> foreign = inOneTransaction(uow -> DisbursementWorld.SCHEDULES.read(uow, loan.loan(),
+        Optional<LoanSchedules.Read> foreign = inOneTransaction(uow -> DisbursementWorld.SCHEDULES.read(uow, loan.loan(),
                 UUID.randomUUID(), Optional.empty()));
         assertThat(foreign).as("another party's loan has no schedule to read").isEmpty();
 

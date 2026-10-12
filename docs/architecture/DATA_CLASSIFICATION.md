@@ -2976,6 +2976,55 @@ scheduling instant (`INTERNAL`).
 | `interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `interest_accrual` | `correlation_id` | `INTERNAL` | The account's correlation |
 
+### `lending` - the instalment billing and the credit-balance application - *added by `P11-TSK-017`*
+
+`lending V012`: the billed item - what became due and when - and money already held applied to it, line by line; the
+amounts `RESTRICTED-FINANCIAL` as every lending amount (a borrower's balance can be read from them), the loan, agreement
+and entry references `CONFIDENTIAL`, dates, periods, kinds, versions and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `instalment_billing` | `id` | `INTERNAL` | Generated |
+| `instalment_billing` | `loan_id` | `CONFIDENTIAL` | The account billed |
+| `instalment_billing` | `kind` | `INTERNAL` | `INSTALMENT` or `POST_MATURITY` |
+| `instalment_billing` | `schedule_id` | `INTERNAL` | The schedule version billed |
+| `instalment_billing` | `schedule_version` | `INTERNAL` | That version's number |
+| `instalment_billing` | `instalment_id` | `INTERNAL` | The instalment billed - null for a post-maturity period |
+| `instalment_billing` | `sequence` | `INTERNAL` | The instalment's sequence; a post-maturity period's continues the count |
+| `instalment_billing` | `period_start` | `INTERNAL` | The period's first date |
+| `instalment_billing` | `due_date` | `INTERNAL` | The due date - one billed item per due date |
+| `instalment_billing` | `currency` | `INTERNAL` | The account's currency |
+| `instalment_billing` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `instalment_billing` | `interest_due_minor` | `RESTRICTED-FINANCIAL` | Interest made due - exactly the period's accrued interest |
+| `instalment_billing` | `principal_due_minor` | `RESTRICTED-FINANCIAL` | Principal made due - `max(0, A - interest)`, the final instalment all left |
+| `instalment_billing` | `agreement_id` | `CONFIDENTIAL` | The agreement version it was computed under |
+| `instalment_billing` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `instalment_billing` | `schedule_engine_version` | `INTERNAL` | The schedule version's engine |
+| `instalment_billing` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine version |
+| `instalment_billing` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 3's journal entry, by value - null for a billing of nothing |
+| `instalment_billing` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `instalment_billing` | `correlation_id` | `INTERNAL` | The account's correlation |
+| `credit_balance_application` | `id` | `INTERNAL` | Generated |
+| `credit_balance_application` | `billing_id` | `INTERNAL` | The billing it was applied at - once |
+| `credit_balance_application` | `loan_id` | `CONFIDENTIAL` | The account |
+| `credit_balance_application` | `currency` | `INTERNAL` | The account's currency |
+| `credit_balance_application` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `credit_balance_application` | `amount_minor` | `RESTRICTED-FINANCIAL` | What of the credit balance was applied |
+| `credit_balance_application` | `agreement_id` | `CONFIDENTIAL` | The agreement version it was computed under |
+| `credit_balance_application` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `credit_balance_application` | `allocation_engine_version` | `INTERNAL` | The pinned allocation engine version |
+| `credit_balance_application` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 6's journal entry, by value |
+| `credit_balance_application` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_balance_application` | `correlation_id` | `INTERNAL` | The account's correlation |
+| `credit_balance_allocation` | `id` | `INTERNAL` | Generated |
+| `credit_balance_allocation` | `application_id` | `INTERNAL` | The application it is a line of |
+| `credit_balance_allocation` | `ordinal` | `INTERNAL` | Its place in the engine's order |
+| `credit_balance_allocation` | `billing_id` | `INTERNAL` | The billed item it paid |
+| `credit_balance_allocation` | `component` | `INTERNAL` | `FEES`, `INTEREST` or `PRINCIPAL` |
+| `credit_balance_allocation` | `currency` | `INTERNAL` | The account's currency |
+| `credit_balance_allocation` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `credit_balance_allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | What it paid of the component |
+
 ### `lending` - the credit line draw - *added by `P11-TSK-021`*
 
 `lending V013`: one row per draw - the amount `RESTRICTED-FINANCIAL` as every lending amount (a borrower's drawn principal

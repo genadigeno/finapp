@@ -214,7 +214,14 @@ public final class MetricNames {
                     // series names the key "path" (PHASE_11_PLAN.md section 15, finapp.lending.disbursement{path,
                     // outcome}); "path" is a forbidden fragment - a URL path is the unbounded value it guards against - so
                     // the key says what it holds rather than taking a spelling exemption. Registered eagerly per value.
-                    "payout");
+                    "payout",
+                    // Which kind of billed item (P11-TSK-017): instalment (an instalment loan's instalments and
+                    // post-maturity periods) or statement (a credit line's, P11-TSK-022) - the product kind's billing, a
+                    // category every borrower of the kind shares, never a person, a resource or a request's value (the
+                    // code writes a constant per billing step). The plan's own series carries it (PHASE_11_PLAN.md
+                    // section 15: finapp.lending.billing{kind, outcome}); a name-split would make "is billing running"
+                    // two queries. Registered eagerly.
+                    "kind");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling
