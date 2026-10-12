@@ -471,6 +471,49 @@ class LoanAcceptanceDatabaseTest {
     }
 
     @Test
+    @DisplayName("an offer east of UTC is accepted end to end (P11-TSK-031): its +05:30 terms in canonical format 2, the"
+            + " agreement copying the bytes, their hash and their format 2 - V011's widened CHECK admits it")
+    void anOfferEastOfUtcIsAccepted() throws Exception {
+        Offer offer;
+        try {
+            activate(LoanTermsFixtures.of(LOAN, "0.0899").servicingZone("+05:30").build());
+            offer = offered(LOAN, 1_900_00, Optional.of(12), Duration.ofDays(30), PayoutPreference.WALLET);
+        } finally {
+            activate(LoanTermsFixtures.of(LOAN, "0.0899").build()); // the suite's later cases find a UTC version
+        }
+        fund(offer.amount());
+        UUID loan = accept(offer, offer.termsSha256(), Optional.empty()).loan().id().value();
+        assertThat(scalar("SELECT canonical_format::text FROM lending.loan_agreement WHERE loan_id = ?", loan))
+                .isEqualTo("2");
+        assertThat(scalar("SELECT canonical_terms FROM lending.loan_agreement WHERE loan_id = ?", loan))
+                .contains("\"servicingZone\":\"+05:30\"")
+                .isEqualTo(scalar("SELECT canonical_terms FROM lending.loan_offer_terms WHERE offer_id = ?",
+                        offer.id().value()));
+        assertThat(scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_agreement WHERE loan_id = ?", loan))
+                .isEqualTo(offer.termsSha256());
+    }
+
+    @Test
+    @DisplayName("a format-1 offer left OFFERED from before V011 is still accepted (P11-TSK-031): the agreement copies its"
+            + " offer's format 1 - the format its bytes declare, never the build's - or V006's exact-copy trigger"
+            + " would refuse every such acceptance")
+    void aFormat1OfferIsStillAccepted() throws Exception {
+        LoanOrigination beforeV011 = new LoanOrigination(APPLICATIONS, writingFormat1(OFFER_STORE), ADMINISTRATION,
+                CREDIT, new JdbcOutboxWriter(), IDS, CLOCK);
+        Offer offer = offered(beforeV011, LOAN, 1_700_00, Optional.of(12), Duration.ofDays(30), PayoutPreference.WALLET);
+        assertThat(scalar("SELECT canonical_format::text FROM lending.loan_offer_terms WHERE offer_id = ?",
+                offer.id().value())).as("the offer as the format-1 build wrote it").isEqualTo("1");
+        fund(offer.amount());
+        UUID loan = accept(offer, offer.termsSha256(), Optional.empty()).loan().id().value();
+        assertThat(scalar("SELECT canonical_format::text FROM lending.loan_agreement WHERE loan_id = ?", loan))
+                .isEqualTo("1");
+        assertThat(scalar("SELECT canonical_terms FROM lending.loan_agreement WHERE loan_id = ?", loan))
+                .startsWith("{\"format\":\"1\",")
+                .isEqualTo(scalar("SELECT canonical_terms FROM lending.loan_offer_terms WHERE offer_id = ?",
+                        offer.id().value()));
+    }
+
+    @Test
     @DisplayName("the agreement is never updated by any role - nor the evidence, the loan, its disbursement or its"
             + " history: refused by privilege for the application and by trigger for the owner; version 2 and a forged"
             + " copy refused; a loan or an ACCEPTED edge committed without the other refused at commit")
@@ -573,6 +616,12 @@ class LoanAcceptanceDatabaseTest {
      */
     private static Offer offered(
             LoanProduct product, long minor, Optional<Integer> term, Duration validity, PayoutPreference preference) {
+        return offered(ORIGINATION, product, minor, term, validity, preference);
+    }
+
+    /** As {@link #offered(LoanProduct, long, Optional, Duration, PayoutPreference)}, offered by {@code origination}. */
+    private static Offer offered(LoanOrigination origination, LoanProduct product, long minor, Optional<Integer> term,
+            Duration validity, PayoutPreference preference) {
         ensureActive(product);
         LoanApplicationId application = LoanApplicationId.next(IDS);
         UUID party = UUID.randomUUID();
@@ -595,13 +644,53 @@ class LoanAcceptanceDatabaseTest {
         Money amount = Money.ofMinorUnits(minor, LoanTermsFixtures.EUR);
         // The validity from the DATABASE's clock - the one every boundary is judged on - never this JVM's.
         UUID decision = CREDIT.approve(request, party, product, amount, term, databaseNow().plus(validity));
-        LoanOrigination.Outcome outcome = inOneTransaction(uow -> ORIGINATION.originate(uow, application, SYSTEM));
+        LoanOrigination.Outcome outcome = inOneTransaction(uow -> origination.originate(uow, application, SYSTEM));
         assertThat(outcome.kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
         LoanOfferId offer = LoanOfferId.of(UUID.fromString(scalar(
                 "SELECT id::text FROM lending.loan_offer WHERE application_id = ?", application.value())));
         String hash = scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_offer_terms WHERE offer_id = ?",
                 offer.value());
         return new Offer(offer, party, decision, amount, hash);
+    }
+
+    /** A fresh version of {@code terms}, proposed by one person and activated by another. */
+    private static void activate(LoanTerms terms) {
+        LoanTermsAdministration.Proposed proposed = inOneTransaction(uow -> ADMINISTRATION.propose(uow, terms,
+                "a case's terms", employee(), correlation()));
+        inOneTransaction(uow -> ADMINISTRATION.approve(uow, proposed.id(), employee(), "reviewed", correlation()));
+    }
+
+    /**
+     * {@code delegate} writing every offer's canonical terms as the format-1 build did (`P11-TSK-011` to before
+     * `P11-TSK-031`): the same content with the format token 1 - byte for byte format 1 wherever it spells the content
+     * ({@code CanonicalOfferTermsTest#format1IsKeptByteForByte}) - its hash and the document's recomputed. The offer's
+     * event keeps the format-2 hash; this suite reads the rows.
+     */
+    private static LoanOfferStore writingFormat1(LoanOfferStore delegate) {
+        return (LoanOfferStore) Proxy.newProxyInstance(LoanOfferStore.class.getClassLoader(),
+                new Class<?>[] {LoanOfferStore.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("insertTerms")) {
+                        LoanOffer.Terms written = (LoanOffer.Terms) args[3];
+                        String two = written.canonicalTerms();
+                        assertThat(two).startsWith("{\"format\":\"2\",").doesNotContain("+");
+                        String one = "{\"format\":\"1\"" + two.substring("{\"format\":\"2\"".length());
+                        LoanOffer.Terms unhashed = withCanonical(written, one, new byte[32]);
+                        args[3] = withCanonical(written, one, CanonicalOfferTerms.sha256(
+                                OfferDocument.render((LoanOfferId) args[1], (LoanProduct) args[2], unhashed)));
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+    }
+
+    private static LoanOffer.Terms withCanonical(LoanOffer.Terms terms, String canonical, byte[] documentSha256) {
+        return new LoanOffer.Terms(terms.amount(), terms.termMonths(), terms.nominalAnnualRate(), terms.repaymentDay(),
+                terms.illustration(), terms.minimumPayment(), terms.scheduleEngine(), terms.accrualEngine(),
+                terms.allocationEngine(), terms.statementEngine(), terms.template(), canonical,
+                CanonicalOfferTerms.sha256(canonical), documentSha256);
     }
 
     private static void ensureActive(LoanProduct product) {

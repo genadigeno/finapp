@@ -17930,6 +17930,48 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   states the production gate and every lending procedure.
 - **Definition of done**: `DOD-OBS`, `DOD-API`, `DOD-SEC`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
 
+**P11-TSK-031 — Remediation: canonical offer terms format 2 (a servicing zone east of UTC)** — `READY` *(added and marked `READY` out of turn on the owner's instruction, 2026-10-12 - a Phase 11 remediation item, run beside `-015` and `-016`; it belongs to no milestone and reopens none; found by `P11-TSK-016` writing `InterestAccrualDatabaseTest`'s skew case, which used `-14:00` around it)*
+- **As built** (2026-10-12, gate pending): `CanonicalOfferTerms` writes format 2 (`FORMAT = 2`; format 1's token set `[A-Za-z0-9_.:-]` with `+` added, nothing else changed) and keeps format 1 as `render(content, 1)` - byte-identical to `P11-TSK-011`'s renderer, compared against it at commit `1a4c8575` over three zones and pinned by a golden hash; `formatOf` reads the bytes' own first token, and `JdbcLoanOfferStore.insertTerms` and `JdbcLoanStore.insertAgreement` write it instead of the build's constant (an agreement copies its offer's format - before this, raising the constant alone would have made every format-1 offer still `OFFERED` at deploy unacceptable under `V006`'s exact-copy trigger); `lending V011` replaces `loan_offer_terms_canonical_shape` and `loan_agreement_canonical_shape` (the column equal to the bytes' `{"format":"N",` token by `starts_with`, format 1 its own set, format 2 that set and `+`, any other format refused) and restates both table comments. **V011, not V009**: `-015` holds `V009` and `-016` `V010` on their branches; this merges after both (lending's Flyway `outOfOrder` is false). Tests: `CanonicalOfferTermsTest` (`format2SpellsAZoneEastOfUtc`, `format1IsKeptByteForByte`, the first case's prefix and set updated), `LoanTermsTest#thePlanTermsAreAdmitted` (`+14:00`, `-14:00`, `+05:30` admitted) and `#unimplementedConventionsAreRefused` (`+14:01` refused), `LoanOriginationDatabaseTest#aVersionEastOfUtcIsOfferable`, `LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted` and `#aFormat1OfferIsStillAccepted`.
+- **Objective**: a terms version whose servicing zone lies east of UTC - admitted by `LoanTerms` and `lending V003` - is
+  offerable and acceptable end to end, instead of activating cleanly and then failing every offer under it.
+- **Bounded context**: Lending (origination - the offer's canonical terms and the agreement's copy).
+- **Dependencies**: `-011`, `-012` (both `COMPLETE`). Must land before `-029` (replay re-renders each row in its stored
+  format).
+- **The defect**: `CanonicalOfferTerms` format 1 renders every token through `[A-Za-z0-9_.:-]{1,64}` and `lending
+  V005`/`V006` hold `canonical_terms ~ '^\{[A-Za-z0-9_.:",{}\[\]-]*\}$'`, which exclude `+`; `LoanTerms.canonicalZone`
+  and `V003`'s `loan_terms_conventions_implemented` admit `+HH:MM` to 14 hours. A `+05:30` version can be proposed and
+  four-eyes activated, and every application for the product then fails inside `LoanOrigination.offer` with an
+  `IllegalArgumentException` - a defect surfacing as a 500 and a stalled sweep, not a closure - until another version is
+  activated. Severity IMPORTANT: configuration alone stops origination for a product.
+- **Decision** (with the owner, 2026-10-12): **format 2**, not a narrower domain. The alternative - refusing positive
+  zones at the door (`422 lending.TermsInvalid`) with a `V0xx` `CHECK` on `loan_terms.servicing_zone` - would make every
+  zone east of Greenwich inexpressible, a EUR product's natural day included, to suit a serialisation detail, and its
+  `CHECK` would fail to apply over any stored positive-zone version.
+- **Scope**: as built above. **Out of scope**: the real-world offset range (`-14:00` exists in no jurisdiction; the
+  bounds stay `LoanTerms`' and `V003`'s); the offer document's rendering (unaffected - hashed, not character-checked);
+  replay itself (`-029`).
+- **Domain changes**: none - a format version of the canonical form. **Persistence**: `lending V011` (two `CHECK`s
+  replaced, two comments); no column, no data change - every stored row is format 1 and passes. **APIs**: none.
+  **Events**: none. **Policy/model versioning**: the canonical format is versioned in the row; format 1 kept.
+- **Financial impact**: none - no money moves; the hashed terms the borrower accepts become producible for every
+  admitted zone. **Invariants**: `INV-LND-05` (the canonical terms and hash immutable and re-verifiable in their stored
+  format), `INV-HIST-04`.
+- **Distributed-system concerns**: none new - a pure renderer and a migration run once under Flyway's lock; the
+  ten-instance answer is unchanged from `-011`/`-012` (`PASS` on their counted tests, re-run). **Idempotency**, **Consistency**,
+  **Atomicity**: unchanged - the offer's and the acceptance's transactions as they were. **Failure handling**: the
+  rendering failure removed for every admitted zone; a format a build does not know is refused by `formatOf` and by the
+  `CHECK`. **Security**: none - no new input; the zone is the terms door's. **Audit**: none. **Observability**: none.
+  **Reconciliation implications**: none.
+- **Tests**: as built above.
+- **Probe** (at the gate): format 2's set without `+` → `format2SpellsAZoneEastOfUtc` and
+  `aVersionEastOfUtcIsOfferable` red; the agreement written with the build's constant → `aFormat1OfferIsStillAccepted`
+  red (`P0001` from the exact-copy trigger); `V011`'s token clause dropped → the column-disagreeing raw insert admitted;
+  format 1 rendered with format 2's set → `format2SpellsAZoneEastOfUtc` red.
+- **Acceptance criteria**: a `+14:00` and a `+05:30` version are offered (format 2, the zone spelled, the hash the
+  bytes') and a `+05:30` offer is accepted (the agreement format 2, byte-identical); a format-1 offer is still accepted
+  (the agreement format 1); format 1 re-renders byte for byte; raw SQL holds every writer to the format `CHECK`.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+
 **P11-TST-001 — The lending storm** — `PLANNED`
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
   end to end from application to closure, for both products — every mandatory scenario exercised.

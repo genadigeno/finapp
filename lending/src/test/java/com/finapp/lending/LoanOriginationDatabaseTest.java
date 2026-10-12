@@ -489,6 +489,74 @@ class LoanOriginationDatabaseTest {
         assertThat(read(offer, UUID.randomUUID())).isEmpty();
     }
 
+    @Test
+    @DisplayName("a terms version east of UTC is offerable end to end (P11-TSK-031): +14:00 and +05:30 activated, approved"
+            + " and offered in canonical format 2 spelling the zone, the stored format the bytes' own, the illustration"
+            + " from the offering day in the pinned zone; raw SQL holds every writer to V011's format CHECK")
+    void aVersionEastOfUtcIsOfferable() throws Exception {
+        List<UUID> east = new ArrayList<>();
+        try {
+            for (String zone : List.of("+14:00", "+05:30")) {
+                activate(LOAN, LoanTermsFixtures.of(LOAN, "0.0824").servicingZone(zone).build());
+                Application application = application(LOAN, 10);
+                approve(application, 10_000_00, Optional.of(36), Duration.ofDays(30));
+                assertThat(sweepUntilClaimed(application, HOUR)).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+                LoanOfferId offer = offerOf(application);
+                east.add(offer.value());
+                LoanOffers.Read read = read(offer, application.party()).orElseThrow();
+                LoanOffer.Terms terms = read.offer().terms();
+                assertThat(terms.canonicalTerms()).startsWith("{\"format\":\"2\",")
+                        .contains("\"servicingZone\":\"" + zone + "\"");
+                assertThat(CanonicalOfferTerms.sha256(terms.canonicalTerms())).isEqualTo(terms.termsSha256());
+                assertThat(scalar("SELECT canonical_format::text FROM lending.loan_offer_terms WHERE offer_id = ?",
+                        offer.value())).isEqualTo("2");
+                assertThat(terms.illustration().orElseThrow().start())
+                        .as("from the offering day, on the database clock in the pinned zone")
+                        .isEqualTo(read.offer().offeredAt().atZone(java.time.ZoneOffset.of(zone)).toLocalDate());
+            }
+        } finally {
+            activate(LOAN, "0.0824"); // the suite's later cases, and its siblings', find a UTC version
+        }
+        Application utc = application(LOAN, 10);
+        approve(utc, 5_000_00, Optional.of(24), Duration.ofDays(30));
+        assertThat(sweepUntilClaimed(utc, HOUR)).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+        UUID plain = offerOf(utc).value();
+        assertThat(scalar("SELECT canonical_format::text FROM lending.loan_offer_terms WHERE offer_id = ?", plain))
+                .as("a zone format 1 could spell is still written in format 2").isEqualTo("2");
+
+        // The CHECK alone, as rawSqlCannotSkipAnEdgeForAnyRole's: the born-once trigger admits a second terms row for an
+        // OFFERED offer and the CHECK is judged before the primary key - so 23505 means the CHECK admitted the row.
+        try (Connection owner = DatabaseRoles.migrator()) {
+            refused(owner, rawTermsCopy(east.get(0), "canonical_format", "canonical_terms"), "23505");
+            refused(owner, rawTermsCopy(plain, "canonical_format", "canonical_terms"), "23505");
+            // A '+' under format 1, the bytes declaring 1 and their hash recomputed: format 1's token set refuses it.
+            refused(owner, rawTermsCopy(east.get(0), "1::smallint",
+                    "replace(canonical_terms, '{\"format\":\"2\"', '{\"format\":\"1\"')"), "23514");
+            // The column disagreeing with the bytes it describes - format 1 claimed over format-2 bytes with no '+'.
+            refused(owner, rawTermsCopy(plain, "1::smallint", "canonical_terms"), "23514");
+            // A format this build does not write, declared by both the column and the bytes.
+            refused(owner, rawTermsCopy(plain, "3::smallint",
+                    "replace(canonical_terms, '{\"format\":\"2\"', '{\"format\":\"3\"')"), "23514");
+            // Format 2's token set is format 1's and '+', nothing more.
+            refused(owner, rawTermsCopy(east.get(0), "canonical_format", "replace(canonical_terms, '+', ' ')"), "23514");
+        }
+    }
+
+    /**
+     * An INSERT copying {@code offer}'s terms row with {@code format} and {@code canonical} as its canonical columns and
+     * the hash recomputed over {@code canonical} - so only the canonical-shape CHECK can refuse it before the key.
+     */
+    private static String rawTermsCopy(UUID offer, String format, String canonical) {
+        return "INSERT INTO lending.loan_offer_terms SELECT offer_id, product, currency, scale,"
+                + " amount_minor, term_months, nominal_annual_rate, repayment_day, illustrative_start, first_due_date,"
+                + " instalment_minor, final_instalment_minor, total_interest_minor, total_payable_minor,"
+                + " minimum_payment_floor_minor, minimum_payment_ratio_bps, payment_due_days,"
+                + " schedule_engine_version, accrual_engine_version, allocation_engine_version,"
+                + " statement_engine_version, agreement_template_id, agreement_template_version, " + format + ", "
+                + canonical + ", sha256(convert_to(" + canonical + ", 'UTF8')), document_sha256"
+                + " FROM lending.loan_offer_terms WHERE offer_id = '" + offer + "'";
+    }
+
     // ------------------------------------------------------------------ the starvation lesson
 
     @Test

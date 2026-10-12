@@ -1074,7 +1074,7 @@ the full, self-contained canonical terms (principal or limit, currency, rate, te
 statement day, fees, allocation order, day count, servicing zone, rounding, delinquency bounds,
 engine and template versions) and their SHA-256, beside the acceptance evidence of what the customer
 saw and how they were authenticated. Every servicing row names the agreement version it was
-computed under. Version 1 built by `P11-TSK-012`: the offer's canonical terms (format 1) and their hash copied byte
+computed under. Version 1 built by `P11-TSK-012`: the offer's canonical terms (in the offer's format - 1, or 2 from `P11-TSK-031`) and their hash copied byte
 for byte - text, never re-serialised - held to the offer's terms by trigger and to its bytes by `CHECK`; its id is the
 consumer reference under which credit records the decision's consumption.
 **Not:** the Loan Offer (a proposal that may expire) or the Loan (the account and its state). Nor

@@ -226,7 +226,8 @@ version - `loan_offer`, the machine row with no money (column-scoped `UPDATE` of
 `next_step_at`, lockable as L2), and `loan_offer_terms`, INSERT-only and immutable for every role: exactly the approved
 amount and term, the pinned version's rate, engines, template and a line's rule (the trigger holds them to the pinned
 `loan_terms` row and the application's day), the loan's illustrative schedule figures from the offering day (A5), the
-canonical terms (format 1) with `terms_sha256` - a `CHECK` holds the hash to the stored bytes - and the offer document's
+canonical terms (format 1; format 2 from `P11-TSK-031` - format 1 with `+` in a token, so a servicing zone east of UTC
+is spelled) with `terms_sha256` - a `CHECK` holds the hash to the stored bytes - and the offer document's
 `document_sha256`; `loan_offer_event` the history. Born `OFFERED` under L1 for an application `AWAITING_DECISION` of the
 same party and product, on the product's `ACTIVE` version, `offered_at` a database instant of the transaction;
 `expires_at` and the permit stamped by the trigger; `UNIQUE (application_id)` and `UNIQUE (decision_id)`; committed only

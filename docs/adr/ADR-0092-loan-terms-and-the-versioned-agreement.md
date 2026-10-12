@@ -248,5 +248,16 @@ only by an accepted amendment.
   and template and the offer's `document_sha256` by trigger, stamps `accepted_at`, and holds the assurance level to
   `MULTI_FACTOR` or `STRONG` by `CHECK` (A19 for every writer); the client address is the platform's own view
   (`getRemoteAddr`, never a forwarded header), the agent bounded to 512 characters.
+- **As built by `P11-TSK-031` (2026-10-12) - canonical offer terms format 2:** format 1's token set
+  (`[A-Za-z0-9_.:-]`) could not spell a servicing zone east of UTC, which the terms door and `lending V003` admit - a
+  `+05:30` version could be activated and then every offer under it failed at rendering. Decided with the owner: fix
+  the format, not narrow the domain (refusing positive zones would make a EUR product's natural day inexpressible).
+  Format 2 is format 1 with `+` in the token set and nothing else; the class's rule "a change to this form is a new
+  format, earlier ones kept for replay" applied - `CanonicalOfferTerms.render(content, 1)` re-renders format 1 byte
+  for byte (a golden hash pinned from the format-1 renderer) and every stored format-1 row stays format 1, its bytes
+  and hash untouched. The stored `canonical_format` is now the bytes' own first token (`formatOf`), never the build's
+  constant - so an agreement copies its offer's format and a format-1 offer still `OFFERED` at deploy remains
+  acceptable under the exact-copy trigger. `lending V011` replaces both canonical-shape `CHECK`s: the column equal to
+  the bytes' token, format 1 its own set, format 2 that set and `+`, any other format refused - for every writer.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.
