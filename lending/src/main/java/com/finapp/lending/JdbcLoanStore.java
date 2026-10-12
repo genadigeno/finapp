@@ -326,6 +326,40 @@ public final class JdbcLoanStore implements LoanStore {
         }
     }
 
+    @Override
+    public boolean close(Connection unitOfWork, LoanClosure closure, CorrelationId correlation) {
+        Objects.requireNonNull(closure, "closure");
+        Objects.requireNonNull(correlation, "correlation");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO lending.loan_closure (id, loan_id, reason, currency, scale, refund_minor,"
+                        + " refund_journal_entry_id, repayment_id, created_at, correlation_id)"
+                        // The instant is the trigger's; the placeholder is overwritten.
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, statement_timestamp(), ?)")) {
+            int i = 0;
+            insert.setObject(++i, closure.id());
+            insert.setObject(++i, closure.loan().value());
+            insert.setString(++i, closure.reason().name());
+            insert.setString(++i, closure.refund().currency().code());
+            insert.setInt(++i, closure.refund().scale());
+            insert.setLong(++i, closure.refund().minorUnits());
+            insert.setObject(++i, closure.refundEntry().map(com.finapp.ledger.JournalEntryId::value).orElse(null));
+            insert.setObject(++i, closure.repayment().orElse(null));
+            insert.setString(++i, correlation.value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw failed("inserting a loan closure", failure);
+        }
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                // The terminal instant is the trigger's.
+                "UPDATE lending.loan SET status = 'CLOSED', closure_reason = ? WHERE id = ? AND status = 'ACTIVE'")) {
+            update.setString(1, closure.reason().name());
+            update.setObject(2, closure.loan().value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("closing a loan", failure);
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private static Owned owned(ResultSet row) throws SQLException {

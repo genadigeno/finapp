@@ -1813,6 +1813,14 @@ do not sum to it or that pays any billed component beyond what it billed (the pa
 `-018` extends with its repayment allocations so the rule covers every payer). The repayment's own trigger and scenario 3 stay
 `-018`'s.)*
 
+*(As built by `P11-TSK-018`, 2026-10-12 - the repayment: `lending V014`'s deferred check refuses at commit, for every writer, a
+repayment whose `repayment_allocation` rows do not sum to it or that pays a billed component beyond what it billed
+(`lending.billing_component_paid` now counts both payers); the due state is derived from rows under L3 and refused unless it
+explains the due accounts (`AllocationAnomaly`); concurrent repayments serialise on L3 and each allocates what the last left -
+scenario 3 (`RepaymentDatabaseTest#twoRepaymentsOnOneInstalmentSerialiseAndConserve`, beside a loan-then-wallet writer) and
+`#tenKeysOneLoanConserve`; every case of the suite closes on the subledger proof's arms over both payers. Probes in
+`MUTATION_TESTING.md` section 2.)*
+
 ### INV-LND-05 — Terms are pinned and immutable
 **Statement:** A loan agreement version never changes once written; it carries the full,
 self-contained canonical term set, its SHA-256 and the agreement template and engine versions; every
@@ -1959,6 +1967,15 @@ and scenario 10 —
 the subledger proof's closure arm — every `CLOSED` account's six balances zero (`P11-TSK-029`,
 `P11-TST-001`).
 **Phase:** 11
+
+*(As built by `P11-TSK-018`, 2026-10-12 - an instalment loan's closure: `LoanClosures`, in the repayment that zeroes the last
+receivable and as the servicing step's last step after a credit-balance application that does; settled means every receivable
+zero on the ledger under L3 **and** no elapsed date left unaccrued with principal outstanding; the credit balance refunded
+to the wallet (L7 after L3) before `CLOSED (REPAID)`, so all six balances are zero at commit
+(`RepaymentDatabaseTest#theLastRepaymentClosesAndRefunds`, `#aCreditBalanceThatSettlesTheLoanClosesAtServicing`,
+`#aLoanIsNotClosedOverAnUnaccruedDay`); `lending V014` holds the edge to its `loan_closure` row, the closure to a fully billed
+and paid schedule and to its loan `CLOSED` at commit; a repayment on a closed loan `409 lending.LoanNotRepayable`, nothing
+posted (`#aClosedLoanRefuses`), and refused by the repayment trigger for every writer (`#theRowsAreHeldForEveryWriter`).)*
 
 ### INV-LND-09 — Interest arithmetic is exact and its conventions declared
 **Statement:** Interest is computed in exact decimal under the day count, servicing zone and rounding

@@ -504,7 +504,8 @@ class InstalmentBillingDatabaseTest {
                 DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES, DisbursementWorld.POSTINGS,
                 new com.finapp.platform.outbox.JdbcOutboxWriter(), IDS, DisbursementWorld.CLOCK);
         LoanServicing crashingServicing = new LoanServicing(DisbursementWorld.LOAN_STORE, SERVICING_STORE, TERMS_STORE,
-                DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES, DisbursementWorld.POSTINGS, IDS, crashing);
+                DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES, DisbursementWorld.POSTINGS, IDS, crashing,
+                DisbursementWorld.CLOSURES);
         assertThatThrownBy(() -> InterestAccrualDatabaseTest.service(crashingServicing, crashed)).hasMessageContaining("crash");
         assertThat(billings(crashed)).isEmpty();
         assertThat(billingEntries(crashed)).isZero();
@@ -654,8 +655,8 @@ class InstalmentBillingDatabaseTest {
 
     /**
      * Moves every dated fact of {@code loan} {@code days} further into the past - its journal entries' dates, the
-     * disbursement, the accrual start, the schedule, the accruals, the billings, the opening instant - and re-dates the
-     * keys that carry a date (the accruals', a post-maturity billing's) with them: the fixture's clock moving, so the next
+     * disbursement, the accrual start, the schedule, the accruals, the billings, the repayments (`P11-TSK-018`), the opening
+     * instant - and re-dates the keys that carry a date (the accruals', a post-maturity billing's) with them: the fixture's clock moving, so the next
      * step runs {@code days} later in the loan's life. Never a path the platform has.
      */
     static void advance(LoanId loan, int days) {
@@ -681,10 +682,19 @@ class InstalmentBillingDatabaseTest {
                 + " UPDATE lending.repayment_schedule SET start_date = start_date - " + days + " WHERE loan_id = '" + id + "';"
                 + " UPDATE lending.loan_instalment SET period_start = period_start - " + days + ", due_date = due_date - "
                 + days + " WHERE loan_id = '" + id + "';"
-                + " UPDATE lending.interest_accrual SET accrual_date = accrual_date - " + days + ", period_start ="
-                + " period_start - " + days + ", period_end = period_end - " + days + " WHERE loan_id = '" + id + "';"
-                + " UPDATE lending.instalment_billing SET period_start = period_start - " + days + ", due_date = due_date - "
-                + days + " WHERE loan_id = '" + id + "';"
+                // The dated uniques are checked row by row, so the rows move far away and back (P11-TSK-018 found a
+                // second advance of an accrued loan colliding with its own next row once the heap order had changed).
+                + " UPDATE lending.interest_accrual SET accrual_date = accrual_date - 1000000, period_start ="
+                + " period_start - 1000000, period_end = period_end - 1000000 WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.interest_accrual SET accrual_date = accrual_date + " + (1_000_000 - days)
+                + ", period_start = period_start + " + (1_000_000 - days) + ", period_end = period_end + "
+                + (1_000_000 - days) + " WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.instalment_billing SET period_start = period_start - 1000000, due_date = due_date"
+                + " - 1000000 WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.instalment_billing SET period_start = period_start + " + (1_000_000 - days)
+                + ", due_date = due_date + " + (1_000_000 - days) + " WHERE loan_id = '" + id + "';"
+                // P11-TSK-018: a repayment's value date moves with its entry.
+                + " UPDATE lending.repayment SET value_date = value_date - " + days + " WHERE loan_id = '" + id + "';"
                 + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days' WHERE id = '" + id + "'");
     }
 

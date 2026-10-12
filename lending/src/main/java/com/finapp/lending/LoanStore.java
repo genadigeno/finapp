@@ -76,6 +76,14 @@ public interface LoanStore {
      */
     Optional<Owned> lockOwnedBy(Connection unitOfWork, LoanId id, UUID party);
 
+    /**
+     * Closes an {@code ACTIVE} instalment loan (`P11-TSK-018`): births {@code closure}'s {@code loan_closure} row, then
+     * moves the loan {@code ACTIVE -> CLOSED} for its reason, conditional - in this order, which the edge function
+     * requires. Whether the loan moved; called only under the loan's row lock (L3), in the transaction that zeroed its
+     * last receivable and refunded its credit balance.
+     */
+    boolean close(Connection unitOfWork, LoanClosure closure, CorrelationId correlation);
+
     // ------------------------------------------------------------------ rows
 
     /** A loan at birth - its status the kind's (a loan {@code PENDING_DISBURSEMENT}, a line {@code ACTIVE}). */

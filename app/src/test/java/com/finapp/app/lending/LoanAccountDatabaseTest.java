@@ -9,6 +9,7 @@ import static com.finapp.app.lending.LoanApplicationClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.credit.LendingCreditExposure;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;
@@ -67,7 +68,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * (`P11-TSK-014`) through the real ports: the sweep posting to the borrower's own wallet opened through accounts' door,
  * credit's real profile row taken before the loan, the schedule read. And the accrual (`P11-TSK-016`) through the wired
  * servicing sweep and its meter, and the billing (`P11-TSK-017`) through the same sweep and the schedule read. And a line's
- * draw (`P11-TSK-021`) through the real door, wallet port and meter. The races and the database's ranks are
+ * draw (`P11-TSK-021`) through the real door, wallet port and meter. And a loan's repayment (`P11-TSK-018`) through
+ * the real door, wallet port, meter and credit exposure. The races and the database's ranks are
  * {@code lending}'s {@code LoanAcceptanceDatabaseTest}'s, {@code LoanDisbursementDatabaseTest}'s,
  * {@code InstalmentBillingDatabaseTest}'s and {@code CreditLineDrawDatabaseTest}'s.
  *
@@ -79,8 +81,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance, the disbursement, the accrual, the billing and the draw end to end (P11-TSK-012,"
-        + " P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021)")
+@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw and the repayment end to end"
+        + " (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-018)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -103,6 +105,7 @@ class LoanAccountDatabaseTest {
     @Autowired private LoanDisbursementMetrics disbursementMetrics;
     @Autowired private com.finapp.lending.LoanServicing loanServicing;
     @Autowired private LoanServicingMetrics servicingMetrics;
+    @Autowired private LendingCreditExposure creditExposure;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -566,7 +569,104 @@ class LoanAccountDatabaseTest {
         assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a loan is repaid from the borrower's wallet end to end (P11-TSK-018): billed through the wired sweep, then"
+            + " repaid over the door - 201 with the allocation (interest, principal, the rest held), the key replaying"
+            + " its receipt byte for byte and refusing another amount 409; the schedule read shows the instalment PAID; the"
+            + " repayments read lists it; more than the wallet holds 422 lending.InsufficientFunds; another party's loan"
+            + " the uniform 404 both ways; the platform's credit exposure falls by the principal repaid; each counted after"
+            + " its commit")
+    void aLoanIsRepaidFromTheBorrowersWalletEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3650.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        toFirstDueDate(loanId);
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        long interest = count("SELECT interest_due_minor FROM lending.instalment_billing WHERE loan_id = ?::uuid", loanId);
+        long principal = count("SELECT principal_due_minor FROM lending.instalment_billing WHERE loan_id = ?::uuid",
+                loanId);
+        Money exposureBefore = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                customer.party(), EUR));
+
+        double repaidBefore = repayments("repaid");
+        double insufficientBefore = repayments("insufficient_funds");
+        String amount = Money.ofMinorUnits(interest + principal + 10_00, EUR).toBigDecimal().toPlainString();
+        String key = key();
+        HttpResponse<String> repaid = repay(customer.token(), loanId, amount, key);
+        assertThat(repaid.statusCode()).as(repaid.body()).isEqualTo(201);
+        assertThat(repaid.body()).contains("\"loanId\":\"" + loanId + "\"", "\"kind\":\"CUSTOMER\"",
+                "\"status\":\"ALLOCATED\"", "\"amount\":\"" + amount + "\"", "\"target\":\"CREDIT_BALANCE\"",
+                "\"component\":\"INTEREST\"", "\"component\":\"PRINCIPAL\"", "\"amount\":\"10.00\"",
+                "\"closure\":null");
+        HttpResponse<String> replay = repay(customer.token(), loanId, amount, key);
+        assertThat(replay.statusCode()).isEqualTo(201);
+        assertThat(replay.body()).as("the receipt, byte for byte").isEqualTo(repaid.body());
+        HttpResponse<String> reused = repay(customer.token(), loanId, "1.00", key);
+        assertThat(reused.statusCode()).as(reused.body()).isEqualTo(409);
+        assertThat(reused.body()).contains("api.Conflict");
+        HttpResponse<String> beyond = repay(customer.token(), loanId, "99999.00", key());
+        assertThat(beyond.statusCode()).as(beyond.body()).isEqualTo(422);
+        assertThat(beyond.body()).contains("lending.InsufficientFunds").doesNotContain("99999");
+        assertThat(repayments("repaid")).as("counted after the commit, the replay not").isEqualTo(repaidBefore + 1);
+        assertThat(repayments("insufficient_funds")).isEqualTo(insufficientBefore + 1);
+
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body())
+                .contains("\"status\":\"PAID\"");
+        String listed = client.get(LOANS + "/" + loanId + "/repayments", customer.token()).body();
+        assertThat(listed).contains(field(repaid.body(), "repaymentId"));
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        Money exposureAfter = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                customer.party(), EUR));
+        assertThat(exposureAfter).as("exposure falls by the principal repaid (-013's carried case, a real repayment)")
+                .isEqualTo(exposureBefore.minus(Money.ofMinorUnits(principal, EUR)));
+
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> foreign = repay(stranger.token(), loanId, "1.00", key());
+        assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
+        assertThat(foreign.body()).contains("lending.NotFound");
+        assertThat(client.get(LOANS + "/" + loanId + "/repayments", stranger.token()).statusCode()).isEqualTo(404);
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    /** The fixture's clock: the loan's dated facts moved back until its first due date is today (never a path). */
+    static void toFirstDueDate(String loanId) throws Exception {
+        long days = count("SELECT i.due_date - s.start_date FROM lending.loan_instalment i JOIN lending.accrual_start s"
+                + " ON s.loan_id = i.loan_id WHERE i.loan_id = ?::uuid AND i.sequence = 1", loanId);
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE ledger.journal_entry SET posting_date = posting_date - " + days + ", value_date ="
+                        + " value_date - " + days + " WHERE id = (SELECT journal_entry_id FROM lending.loan_disbursement"
+                        + " WHERE loan_id = '" + loanId + "'); UPDATE lending.loan_disbursement SET value_date = value_date"
+                        + " - " + days + " WHERE loan_id = '" + loanId + "'; UPDATE lending.accrual_start SET start_date ="
+                        + " start_date - " + days + " WHERE loan_id = '" + loanId + "'; UPDATE lending.repayment_schedule"
+                        + " SET start_date = start_date - " + days + " WHERE loan_id = '" + loanId + "';"
+                        + " UPDATE lending.loan_instalment SET period_start = period_start - " + days + ", due_date ="
+                        + " due_date - " + days + " WHERE loan_id = '" + loanId + "'");
+            }
+            owner.commit();
+        }
+    }
+
+    private HttpResponse<String> repay(String token, String loanId, String amount, String key) throws Exception {
+        return client.post(LOANS + "/" + loanId + "/repayments", "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\"}",
+                token, key);
+    }
+
+    private double repayments(String outcome) {
+        return meterRegistry.find(RepaymentMetrics.REPAYMENT).tag("kind", "customer").tag("outcome", outcome).counter()
+                .count();
+    }
 
     private double billed() {
         return meterRegistry.find(LoanServicingMetrics.BILLING).tag("kind", "instalment").tag("outcome", "billed")

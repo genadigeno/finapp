@@ -4147,6 +4147,41 @@
           }
         }
       },
+      "lending.InsufficientFunds": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.InsufficientFunds"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.InsufficientFunds"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The wallet's available balance cannot fund the repayment; nothing was posted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.LimitExceeded": {
         "content": {
           "application/problem+json": {
@@ -4208,6 +4243,41 @@
           }
         },
         "description": "[409] The account is not a credit line open for draws; nothing was drawn.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.LoanNotRepayable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.LoanNotRepayable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.LoanNotRepayable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The loan cannot be repaid; nothing was posted.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -11900,6 +11970,25 @@
         },
         "type": "object"
       },
+      "LoanRepaymentBody": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "type": "object"
+      },
       "LoanTermsDecisionRequest": {
         "properties": {
           "reason": {
@@ -14524,6 +14613,87 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "RepaymentAllocationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "billingId": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RepaymentClosureView": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "refunded": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RepaymentListView": {
+        "properties": {
+          "repayments": {
+            "items": {
+              "$ref": "#/components/schemas/RepaymentView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RepaymentView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/RepaymentAllocationView"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "closure": {
+            "$ref": "#/components/schemas/RepaymentClosureView"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ReportAmount": {
@@ -18837,6 +19007,76 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreditLineDrawView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}/repayments": {
+      "get": {
+        "operationId": "listRepayments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepaymentListView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "repayLoan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanRepaymentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepaymentView"
                 }
               }
             },

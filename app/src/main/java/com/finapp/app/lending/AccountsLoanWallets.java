@@ -76,4 +76,22 @@ public final class AccountsLoanWallets implements LoanWallets {
             return Optional.empty();
         }
     }
+
+    /**
+     * The party's existing wallet in exactly {@code currency} (`P11-TSK-018`): its live customer - whatever its status, so a
+     * suspended customer's wallet is found and a suspended customer may still repay - its live {@code WALLET} agreement,
+     * and that agreement's {@code CUSTOMER_WALLET} account. Never opened: a repayment needs money already there, and a
+     * closure refunds to the wallet the loan was repaid from. Empty when any link is missing.
+     */
+    @Override
+    public Optional<LedgerAccountId> existingWallet(Connection unitOfWork, UUID party, CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(party, "party must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        return parties.findLiveCustomerFor(unitOfWork, PartyId.of(party))
+                .flatMap(found -> customerAccounts.findLive(unitOfWork, found.id().value(), ProductType.WALLET))
+                .flatMap(agreement -> ledgerAccounts.findOwned(
+                        unitOfWork, agreement.id().value(), AccountPurpose.CUSTOMER_WALLET, currency))
+                .map(LedgerAccount::id);
+    }
 }

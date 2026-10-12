@@ -1001,6 +1001,8 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.DrawsSuspended` | 409 | The line's draws are suspended while an amount is past due or the line is in default; nothing was drawn. |
 | `lending.LineNotDrawable` | 409 | The account is not a credit line open for draws; nothing was drawn. |
 | `lending.WalletUnavailable` | 409 | The wallet cannot receive the draw now; nothing was drawn. |
+| `lending.LoanNotRepayable` | 409 | The loan cannot be repaid; nothing was posted. |
+| `lending.InsufficientFunds` | 422 | The wallet's available balance cannot fund the repayment; nothing was posted. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1103,6 +1105,22 @@ can meet it. `WalletUnavailable` refuses when the borrower's wallet cannot be ha
 go to the wallet only, A25). An amount that is not positive, not exact at the currency's minor units, or not in the line's
 currency is `api.ValidationFailed` (`422`). A party no longer in good standing is `credit.ApplicantNotEligible` (`409`),
 the acceptance's precedent.
+
+The repayment (`P11-TSK-018`, ADR-0095 points 3 and 4, `INV-LND-04`, `INV-LND-08`): `POST /v1/me/loans/{id}/repayments`
+keyed `lending.repayment:<type>:<id>` under the platform's conditional step-up (A19 - a customer with an active second
+factor on a weaker session is `identity.AssuranceRequired`, `403`; one without may repay from a password session), `201`
+with the repayment, its allocation lines and - when it settled every receivable - the closure it brought (`REPAID`, the
+credit balance refunded). A lost response replays its receipt; a key retried after its claim lapsed converges on the
+repayment born under it (`UNIQUE (loan_id, kind, request_key)`) - another amount under it is `api.Conflict` (`409`); every
+refusal stores nothing, judged under the loan's row lock (L3) and the wallet's (L7) before any write. `NotFound` answers
+another party's loan exactly as an unknown or malformed id, on this door and on `GET /v1/me/loans/{id}/repayments`.
+`LoanNotRepayable` refuses a loan `CLOSED` (a loan closed a moment earlier included), `CANCELLED` or not yet disbursed,
+and a credit line until `P11-TSK-023` opens the door to lines. `InsufficientFunds` refuses an amount above the wallet's
+available balance - settled less its standing holds, judged under the wallet's row lock (`INV-BAL-04`) - and a wallet that
+cannot be debited now (none, or not `ACTIVE`; ADR-0095 point 4 folds the two). No standing check: a suspended customer may
+still repay. An amount that is not positive, not exact at the currency's minor units, or not in the loan's currency is
+`api.ValidationFailed` (`422`). A refused conservation (the loan's rows not explaining its due accounts) is a defect, not a
+customer's error: a `500`, nothing written, counted by `finapp.lending.allocation.anomaly`.
 
 ## 3a. Rejection at the boundary
 

@@ -909,6 +909,22 @@ class OwnershipIsScopedTest {
                                         + " UPDATE under party_id = ? (L3); the key is the session's own Idempotency-Key"
                                         + " under that line - UNIQUE (loan_id, draw_key), lending V013.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.findByKey",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-018. The loan id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); the key is the session's own Idempotency-Key"
+                                        + " under that loan - UNIQUE (loan_id, kind, request_key), lending V014.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loans/{id}/repayments - the identifier from the path, and l.party_id = ? in"
+                                        + " the statement (joined to the loan) is the session's own party; another party's"
+                                        + " loan is the same empty answer as one never repaid, and the desk's ownedBy read"
+                                        + " answers the 404 (P11-TSK-018).")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanStore.insertDisbursement",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3210,6 +3226,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
                             "com.finapp.app.lending.LoanAccountDatabaseTest.aLineIsDrawnToTheBorrowersWalletEndToEnd"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.ownedBy",
+                            "com.finapp.app.lending.LoanAccountDatabaseTest.aLoanIsRepaidFromTheBorrowersWalletEndToEnd"),
                     Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.lockOwnedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),

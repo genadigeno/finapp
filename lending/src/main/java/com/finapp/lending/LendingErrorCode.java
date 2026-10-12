@@ -162,7 +162,23 @@ public enum LendingErrorCode implements ErrorCode {
      * the wallet is available.
      */
     WALLET_UNAVAILABLE(
-            "lending.WalletUnavailable", 409, "The wallet cannot receive the draw now; nothing was drawn.");
+            "lending.WalletUnavailable", 409, "The wallet cannot receive the draw now; nothing was drawn."),
+
+    /**
+     * The account takes no repayment (`P11-TSK-018`; {@code INV-LND-08}): it is {@code CLOSED} or {@code CANCELLED}, not
+     * yet disbursed, or a credit line (whose repayment is `P11-TSK-023`'s). Nothing was posted.
+     */
+    LOAN_NOT_REPAYABLE("lending.LoanNotRepayable", 409, "The loan cannot be repaid; nothing was posted."),
+
+    /**
+     * The repayment cannot be funded (`P11-TSK-018`; ADR-0095 point 4, {@code INV-BAL-04}): the wallet's available balance,
+     * judged under its row lock, is below the amount - or the wallet cannot be debited now. Nothing was posted and the key
+     * is not spent; retry with a smaller amount or once funds are available.
+     */
+    INSUFFICIENT_FUNDS(
+            "lending.InsufficientFunds",
+            422,
+            "The wallet's available balance cannot fund the repayment; nothing was posted.");
 
     private final String code;
     private final int status;

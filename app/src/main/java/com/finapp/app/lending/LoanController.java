@@ -28,8 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
  * The customer's loan account doors (`P11-TSK-012`; PHASE_11_PLAN.md section 9): their loans, and one of them - the
  * state, the kind, the agreement version that governs it (a loan's principal, a line's limit) and the six balances
  * derived from journal lines. Owner-scoped; another party's loan is the uniform {@code 404}. The account is opened by the
- * offer's acceptance; the one command here is a line's draw to the wallet (`P11-TSK-021`) - a {@code MULTI_FACTOR} act,
- * keyed ({@code lending.draw:CUSTOMER:<id>}), {@code 201} with the draw made.
+ * offer's acceptance; the commands here are a line's draw to the wallet (`P11-TSK-021`) - a {@code MULTI_FACTOR} act,
+ * keyed ({@code lending.draw:CUSTOMER:<id>}), {@code 201} with the draw made - and a loan's repayment from the wallet
+ * (`P11-TSK-018`), keyed ({@code lending.repayment:CUSTOMER:<id>}), the platform's conditional step-up, {@code 201}.
  */
 @RestController
 @RequestMapping(path = "/me/loans", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -39,6 +40,7 @@ public class LoanController {
 
     @NonNull private final LoanAccountDesk desk;
     @NonNull private final CreditLineDrawDesk draws;
+    @NonNull private final LoanRepaymentDesk repayments;
 
     /** The caller's loans, newest first. */
     @GetMapping
@@ -78,6 +80,37 @@ public class LoanController {
             HttpServletRequest request) {
         return draws.draw(current(request), id, idempotencyKey, body);
     }
+
+    /**
+     * Repays the caller's own loan from their wallet (`P11-TSK-018`) - allocated by the agreement's pinned order, the rest
+     * held as credit; the repayment that settles every receivable closes the loan and refunds its credit balance. Keyed
+     * ({@code lending.repayment:CUSTOMER:<id>}), the platform's conditional step-up, {@code 201} with the repayment.
+     */
+    @PostMapping(path = "/{id}/repayments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanRepaymentDesk.RepaymentView repayLoan(
+            @PathVariable("id") String id,
+            @Valid @RequestBody LoanRepaymentBody body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return repayments.repay(current(request), id, idempotencyKey, body);
+    }
+
+    /** The caller's own loan's repayments and their allocations, newest first (`P11-TSK-018`). */
+    @GetMapping("/{id}/repayments")
+    public LoanRepaymentDesk.RepaymentListView listRepayments(@PathVariable("id") String id, HttpServletRequest request) {
+        return repayments.list(current(request), id);
+    }
+
+    /**
+     * A repayment: the amount and its currency, the amount an exact decimal at the currency's minor units. Closed - an
+     * unknown field is {@code 422}; the source is the borrower's own wallet, never the body's to name.
+     */
+    @ClosedBody
+    public record LoanRepaymentBody(
+            @NotBlank @Size(max = 32) String amount,
+            @NotBlank @Size(max = 3) String currency) {}
 
     /**
      * A draw: the amount and its currency, the amount an exact decimal at the currency's minor units. Closed - an unknown

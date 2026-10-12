@@ -50,6 +50,9 @@ import lombok.RequiredArgsConstructor;
  *       application, rule 6 (a line's statement is `-022`'s);
  *   <li>the steps later tasks add, in this order: auto-collect (`-019`), the condition (`-024`), the late fee (`-025`) -
  *       each after billing, each under the same lock;
+ *   <li><strong>close</strong> (`P11-TSK-018`, {@link LoanClosures}): a caught-up instalment loan whose every receivable
+ *       is zero closes {@code REPAID}, its credit balance refunded to the wallet - (L7) the wallet's row after L3 - and is
+ *       not re-permitted;
  *   <li>the permit: the start of the next business date in the pinned zone - or now, when a long catch-up stopped at its
  *       bound and the rest is due at once.
  * </ol>
@@ -104,12 +107,14 @@ public final class LoanServicing {
     @NonNull private final PostingService postings;
     @NonNull private final IdGenerator ids;
     @NonNull private final InstalmentBillings billings;
+    @NonNull private final LoanClosures closures;
 
     /**
      * What one servicing step did - for the meter; never a figure or a date: {@code posted} and {@code zero} accrued
-     * dates, {@code billed} items made due and credit-balance applications {@code applied} (`P11-TSK-017`).
+     * dates, {@code billed} items made due and credit-balance applications {@code applied} (`P11-TSK-017`), and whether
+     * the step {@code closed} the loan - its last receivable settled by an application (`P11-TSK-018`).
      */
-    public record Outcome(Kind kind, int posted, int zero, boolean caughtUp, int billed, int applied) {
+    public record Outcome(Kind kind, int posted, int zero, boolean caughtUp, int billed, int applied, boolean closed) {
 
         public Outcome {
             Objects.requireNonNull(kind, "kind must not be null");
@@ -119,7 +124,7 @@ public final class LoanServicing {
         }
 
         static Outcome notServiced() {
-            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0);
+            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0, false);
         }
 
         /** The step's effect. */
@@ -164,6 +169,7 @@ public final class LoanServicing {
         Correlation flow = Correlation.startingWith(loan.correlation()).causing(CausationId.of(loan.correlation().value()));
         Accrued accrued;
         InstalmentBillings.Billed billed = InstalmentBillings.Billed.NOTHING;
+        Optional<LoanClosure> closure = Optional.empty();
         try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
             accrued = accrue(unitOfWork, loan, agreement, pinned, zone, today);
             // Then billing (P11-TSK-017): an instalment loan's instalments due by today whose periods the accrual has
@@ -174,13 +180,24 @@ public final class LoanServicing {
             }
             // The steps later tasks add run here, after billing and under the same lock: auto-collection (-019), the
             // condition (-024), the late fee (-025).
+            // Last, the closure (P11-TSK-018): a loan the step's credit-balance application settled - or one settled
+            // earlier whose refund could not be credited then - closes here, its credit balance refunded (L7 after L3).
+            if (accrued.caughtUp()) {
+                closure = closures.closeIfSettled(unitOfWork, loan, agreement, today, Optional.empty(),
+                        com.finapp.platform.security.SecurityContext::require, loan.correlation());
+            }
+        }
+        if (closure.isPresent()) {
+            // A CLOSED account leaves servicing: no permit moves on a terminal account (the edge function's rule).
+            return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), true, billed.billed(),
+                    billed.applied(), true);
         }
         Instant permit = accrued.caughtUp() ? today.plusDays(1).atStartOfDay(zone).toInstant() : now;
         if (!store.restamp(unitOfWork, id, permit)) {
             throw new IllegalStateException("the locked account left servicing under its own row lock");
         }
         return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), accrued.caughtUp(), billed.billed(),
-                billed.applied());
+                billed.applied(), false);
     }
 
     private static boolean inServicing(LoanStatus status) {
