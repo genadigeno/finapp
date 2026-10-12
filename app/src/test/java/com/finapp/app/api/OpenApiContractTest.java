@@ -342,6 +342,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}/acceptance",
                         ApiVersion.CURRENT_PREFIX + "/me/loans",
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}",
+                        // P11-TSK-014: the owner's schedule read (a version, the latest when none is asked).
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/schedule",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

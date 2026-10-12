@@ -15,7 +15,11 @@ import com.finapp.lending.LoanKind;
 import com.finapp.lending.LoanOfferId;
 import com.finapp.lending.LoanOffers;
 import com.finapp.lending.LoanProduct;
+import com.finapp.lending.LoanSchedules;
 import com.finapp.lending.Loans;
+import com.finapp.lending.RepaymentSchedule;
+import com.finapp.lending.Schedule;
+import com.finapp.lending.SchedulePeriod;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -60,6 +64,7 @@ public final class LoanAccountDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final LendingTransactions transactions;
     @NonNull private final LoanAcceptanceMetrics metrics;
+    @NonNull private final LoanSchedules schedules;
 
     /** What an acceptance answers - and replays: the account opened. */
     public record LoanAcceptedView(
@@ -112,6 +117,38 @@ public final class LoanAccountDesk {
 
     /** The caller's loans, newest first. */
     public record LoanListView(List<LoanView> loans) {}
+
+    /**
+     * A schedule version as its customer sees it (`P11-TSK-014`): the projection of an agreement version by its pinned
+     * engine from the accrual start - amounts exact decimal strings, dates ISO. The projection, not the bill: billed and
+     * paid status arrive with billing and repayment (`P11-TSK-017`, `-018`).
+     */
+    public record ScheduleView(
+            String loanId,
+            int scheduleVersion,
+            int agreementVersion,
+            int scheduleEngineVersion,
+            String currency,
+            String principal,
+            String instalment,
+            String finalInstalment,
+            String totalInterest,
+            String totalPayable,
+            String startDate,
+            int termMonths,
+            List<InstalmentView> instalments) {}
+
+    /** One instalment period: its interest runs over {@code [periodStart, dueDate)} on the opening principal. */
+    public record InstalmentView(
+            int sequence,
+            String periodStart,
+            String dueDate,
+            long days,
+            String openingPrincipal,
+            String interest,
+            String principal,
+            String amount,
+            String closingPrincipal) {}
 
     /**
      * Accepts the caller's offer: the agreement, the consumption, the commitment and the account in one transaction.
@@ -186,7 +223,49 @@ public final class LoanAccountDesk {
                 loans.list(unitOfWork, partyOf(unitOfWork, current)).stream().map(LoanAccountDesk::view).toList()));
     }
 
+    /**
+     * The caller's own loan's schedule version {@code version} - its latest when absent; another party's loan, a loan not
+     * yet disbursed and a version that does not exist are the same {@code 404} as an unknown or malformed id.
+     */
+    public ScheduleView schedule(Session current, String rawId, Optional<Integer> version) {
+        LoanId id = loanId(rawId);
+        return transactions.inSnapshot(unitOfWork -> schedules.read(unitOfWork, id, partyOf(unitOfWork, current), version)
+                        .map(LoanAccountDesk::view))
+                .orElseThrow(() -> notFound("loan schedule"));
+    }
+
     // ------------------------------------------------------------------ the views
+
+    static ScheduleView view(RepaymentSchedule recorded) {
+        Schedule schedule = recorded.schedule();
+        return new ScheduleView(
+                recorded.loan().value().toString(),
+                recorded.version(),
+                recorded.agreementVersion(),
+                schedule.engine().number(),
+                schedule.currency().code(),
+                decimal(schedule.principal()),
+                decimal(schedule.instalment()),
+                decimal(schedule.finalInstalment()),
+                decimal(schedule.totalInterest()),
+                decimal(schedule.totalPayable()),
+                schedule.start().toString(),
+                schedule.termMonths(),
+                schedule.periods().stream().map(LoanAccountDesk::view).toList());
+    }
+
+    private static InstalmentView view(SchedulePeriod period) {
+        return new InstalmentView(
+                period.sequence(),
+                period.periodStart().toString(),
+                period.dueDate().toString(),
+                period.days(),
+                decimal(period.openingBalance()),
+                decimal(period.interest()),
+                decimal(period.principal()),
+                decimal(period.amount()),
+                decimal(period.closingBalance()));
+    }
 
     static LoanView view(Loans.Read read) {
         LoanAgreement agreement = read.owned().agreement();

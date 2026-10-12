@@ -254,6 +254,61 @@ public final class JdbcLoanStore implements LoanStore {
         }
     }
 
+    @Override
+    public Optional<UUID> partyOf(Connection unitOfWork, LoanId id) {
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT party_id FROM lending.loan WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(row.getObject(1, UUID.class)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a loan's party", failure);
+        }
+    }
+
+    @Override
+    public Optional<Owned> lock(Connection unitOfWork, LoanId id) {
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + COLUMNS + FROM + " WHERE l.id = ? FOR UPDATE OF l")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(owned(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("locking a loan", failure);
+        }
+    }
+
+    @Override
+    public boolean activate(Connection unitOfWork, LoanId id) {
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE lending.loan SET status = 'ACTIVE' WHERE id = ? AND status = 'PENDING_DISBURSEMENT'")) {
+            update.setObject(1, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("activating a loan", failure);
+        }
+    }
+
+    @Override
+    public boolean cancel(Connection unitOfWork, LoanId id, CancellationReason reason) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(reason, "reason");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                // The terminal instant is the trigger's.
+                "UPDATE lending.loan SET status = 'CANCELLED', cancellation_reason = ?"
+                        + " WHERE id = ? AND status = 'PENDING_DISBURSEMENT'")) {
+            update.setString(1, reason.name());
+            update.setObject(2, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("cancelling a loan", failure);
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private static Owned owned(ResultSet row) throws SQLException {

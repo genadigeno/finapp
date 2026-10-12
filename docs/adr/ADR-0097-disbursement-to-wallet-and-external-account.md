@@ -191,5 +191,12 @@ outcome creates, duplicates or undoes it), `INV-RAIL-02`, `INV-RAIL-03`, `INV-PA
   `P11-TSK-014` (T-dis, path W, scenarios 1 and 9) and `P11-TSK-015` (path X, payments `V032`, the
   payout machine and sweep, scenario 5).
 - Probe: re-dispatch a payout on `UNKNOWN` → scenario 5 red.
+- **Built by `P11-TSK-014` (2026-10-12) — points 1, 2 and 9 for path W.** `LoanDisbursements` over `lending V008`, the wallet
+  through `app`'s `AccountsLoanWallets` (accounts' `AccountOpening` when absent). Refinements: the wallet resolution and the
+  posting share one savepoint, so a wallet that cannot be had (no active customer, the agreement not active) is retried exactly
+  as one that cannot be posted; a fee not below the principal is treated alike; the cancellation `DISBURSEMENT_FAILED` follows the
+  attempt that fails at or after the deadline (the trigger refuses it before), so an outage past the deadline does not cancel a
+  postable loan; a cancellation is recorded by the loan's history and `lending.LoanCancelled`, not audited (the lifecycle's "—").
+  Scenarios 1 and 9: `LoanDisbursementDatabaseTest`, `LendingOutboxAtomicityDatabaseTest`.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

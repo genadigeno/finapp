@@ -1749,6 +1749,13 @@ Verified by `StatementEngineV1Test#drawnPrincipalBelowTheFloorIsCapped` and `Sta
 principal part at most `N`, the minimum at most what can be billed and at least the floor or all of it, over 3,000
 generated lines, two JVMs identical.)*
 
+*(As built by `P11-TSK-014`, 2026-10-12 - the database rank: `lending V008`'s `repayment_schedule` and `loan_instalment` are
+INSERT-only for every role, and a deferred check holds each schedule to its rows at commit - n periods numbered 1..n that chain
+from the start date and principal, level instalments then the final one, closing at zero, the principal portions summing to the
+principal and the interest to the header's total; a row added to a committed schedule fails it. Schedule v1 is the pinned
+engine's projection from the accrual start, re-asserted by `Schedule`'s construction on every read
+(`LoanDisbursementDatabaseTest#theScheduleIsGeneratedOnce`).)*
+
 ### INV-LND-04 — Allocation conserves and never over-pays a component
 **Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
 component (fee, interest or principal of one due item) had due when the repayment was allocated; no
@@ -1882,6 +1889,12 @@ a returned or failed payout leaving the receivable and the disbursement entry un
 (`MUTATION_TESTING.md` §2); the storm's one disbursement per non-cancelled loan at rest
 (`P11-TST-001`).
 **Phase:** 11
+
+*(As built by `P11-TSK-014`, 2026-10-12 - path W: the disbursement's journal entry is named on its row by value with
+`UNIQUE (journal_entry_id)` beside `UNIQUE (loan_id)` and the ledger key; `lending V008`'s triggers admit `PENDING_DISBURSEMENT -> ACTIVE`
+only beside the disbursement `POSTED` and refuse every edge out of `ACTIVE` but the later tasks' closures, and two deferred checks
+hold the pair together at commit; a failed attempt rolls back to a savepoint and posts nothing. Verified by
+`LoanDisbursementDatabaseTest` (scenario 1, ten disbursers, ten sweepers) and `LendingOutboxAtomicityDatabaseTest` (scenario 9).)*
 
 ### INV-LND-08 — Closed is closed, and closed means settled
 **Statement:** A loan or line reaches `CLOSED` only in the transaction that brings its last

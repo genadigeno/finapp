@@ -275,6 +275,23 @@ public record LoanTerms(
             return new OriginationFee(Optional.empty(), Optional.of(basisPoints));
         }
 
+        /**
+         * The fee on {@code principal} (`P11-TSK-014`, A17): the amount as stated, or the basis points of the principal at
+         * its scale - {@code principal x bps / 10 000}, one exact division rounded once {@code HALF_EVEN} to the minor
+         * unit, the platform's rounding of a proportional charge (ADR-0093's period interest). Deducted from the
+         * disbursement ({@link OriginationFeeTreatment#DEDUCTED}); the borrower owes the whole principal.
+         */
+        public Money on(Money principal) {
+            Objects.requireNonNull(principal, "principal must not be null");
+            if (amount.isPresent()) {
+                return amount.get();
+            }
+            BigDecimal fee = BigDecimal.valueOf(principal.minorUnits())
+                    .multiply(BigDecimal.valueOf(basisPoints.orElseThrow()))
+                    .divide(BigDecimal.valueOf(10_000), 0, RoundingMode.HALF_EVEN);
+            return Money.ofPersisted(fee.longValueExact(), principal.currency(), principal.scale());
+        }
+
         /** How it is stated. */
         public FeeBasis basis() {
             return amount.isPresent() ? FeeBasis.AMOUNT : FeeBasis.BASIS_POINTS;

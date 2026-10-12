@@ -24,6 +24,8 @@ import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingService;
 import com.finapp.lending.LendingCapitalHeadroom;
+import com.finapp.lending.LoanDisbursements;
+import com.finapp.lending.LoanId;
 import com.finapp.lending.LoanOrigination;
 import com.finapp.lending.LoanProduct;
 import com.finapp.lending.LoanTermsAdministration;
@@ -80,12 +82,15 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * accepted end to end through {@code LoanAcceptances} and {@code LoanAccountDesk}, credit's real decision, consumption
  * and profile lock beneath.
  *
- * <p><strong>The outstanding arms on owner-role fixtures.</strong> No path the platform has yet disburses, draws, bills,
- * repays, closes or cancels (`P11-TSK-014`, `-018`, `-021`, `-023`); this suite plants those facts directly - the loan's
- * status moved by the bootstrap superuser with the database's triggers suspended for that one transaction
- * ({@code session_replication_role = replica}: lending's edge function admits no edge until those tasks), and the
- * principal, interest and fee lines posted through the ledger's own {@link PostingService} against
- * {@code CASH_AT_BANK}. The figures are re-asserted through the real paths by `-014`, `-018`, `-023` and the storm.
+ * <p><strong>The disbursement is the real one</strong> (`P11-TSK-014`): the loan's ACTIVE edge and its principal posting
+ * through {@link LoanDisbursements} - one transaction under L0 - in {@code #aDisbursementDuringTheReadIsNeverMissed},
+ * {@code #principalRepaidStopsCounting}, {@code #interestAndFeesAreNotExposure} and the census case.
+ * <strong>The other outstanding arms stay owner-role fixtures</strong>: no path the platform has yet draws, bills, repays,
+ * closes or cancels a line (`-018`, `-021`, `-023`); this suite plants those facts directly - a status moved by the
+ * bootstrap superuser with the database's triggers suspended for that one transaction
+ * ({@code session_replication_role = replica}), and principal, interest and fee lines posted through the ledger's own
+ * {@link PostingService} against {@code CASH_AT_BANK}. Those figures are re-asserted through the real paths by `-018`,
+ * `-021`, `-023` and the storm.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): the suite brings credit's seeded policies into
  * force, activates both products' terms and plants EUR lending capital, as {@code LoanAccountDatabaseTest} does - and
@@ -117,6 +122,7 @@ class LendingCreditExposureDatabaseTest {
     @Autowired private PostingService postingService;
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private LendingCapitalHeadroom headroom;
+    @Autowired private LoanDisbursements disbursements;
 
     private CreditFixtures customers;
     private LoanOriginationSchedule sweep;
@@ -220,7 +226,7 @@ class LendingCreditExposureDatabaseTest {
             // The disbursement commits on another connection the moment the read's first statement has executed - so a
             // read split into two statements would read the committed arm before it and the outstanding arm after.
             Connection interleaved = interleaving(reader, () -> {
-                disburse(loan, 7_500_00);
+                disburse(loan);
                 disbursed.set(true);
             });
             assertThat(exposure.outstandingFor(interleaved, customer.party(), EUR))
@@ -297,7 +303,7 @@ class LendingCreditExposureDatabaseTest {
     void principalRepaidStopsCounting() throws Exception {
         CreditFixtures.Customer customer = customers.consentingCustomer();
         UUID loan = acceptedLoan(customer, loan("5000.00"));
-        disburse(loan, 5_000_00);
+        disburse(loan);
         assertThat(v2(customer.party())).isEqualTo(eur(5_000_00));
         post(List.of(line(account(loan, AccountPurpose.LOAN_PRINCIPAL), Direction.CREDIT, 1_000_00),
                 line(account(loan, AccountPurpose.LOAN_PRINCIPAL_DUE), Direction.DEBIT, 1_000_00)));
@@ -315,7 +321,7 @@ class LendingCreditExposureDatabaseTest {
     void interestAndFeesAreNotExposure() throws Exception {
         CreditFixtures.Customer customer = customers.consentingCustomer();
         UUID loan = acceptedLoan(customer, loan("4000.00"));
-        disburse(loan, 4_000_00);
+        disburse(loan);
         post(List.of(line(account(loan, AccountPurpose.LOAN_INTEREST_ACCRUED), Direction.DEBIT, 50_00),
                 line(account(loan, AccountPurpose.LOAN_INTEREST_DUE), Direction.DEBIT, 30_00),
                 line(account(loan, AccountPurpose.LOAN_FEES_DUE), Direction.DEBIT, 25_00),
@@ -360,7 +366,7 @@ class LendingCreditExposureDatabaseTest {
                 + " JOIN credit.credit_decision d ON d.id = l.decision_id"
                 + " JOIN credit.credit_policy_version p ON p.id = d.policy_version_id WHERE l.id = ?::uuid", loan.toString()));
         // Disbursed, and then principal no decision ever approved - a fixture breach the census must name.
-        disburse(loan, 3_500_00);
+        disburse(loan);
         post(List.of(line(account(loan, AccountPurpose.LOAN_PRINCIPAL), Direction.DEBIT, limit - 3_500_00 + 1),
                 line(cash(), Direction.CREDIT, limit - 3_500_00 + 1)));
         ExposureCensus.Report after = census.readNow();
@@ -410,13 +416,17 @@ class LendingCreditExposureDatabaseTest {
         return post(OFFERS + "/" + offer + "/acceptance", "{\"termsSha256\":\"" + hash + "\"}", token);
     }
 
-    /** The disbursement {@code -014} will perform, planted: the edge and the principal posting in ONE transaction. */
-    private void disburse(UUID loan, long principal) {
-        asOwner(owner -> {
-            update(owner, "UPDATE lending.loan SET status = 'ACTIVE' WHERE id = ?", loan);
-            post(owner, List.of(line(account(loan, AccountPurpose.LOAN_PRINCIPAL), Direction.DEBIT, principal),
-                    line(cash(), Direction.CREDIT, principal)));
-        });
+    /**
+     * The real disbursement (`P11-TSK-014`, T-dis): the loan's ACTIVE edge and posting rule 1 - DR LOAN_PRINCIPAL / CR the
+     * borrower's wallet - committed in ONE transaction under L0, through the wired {@link LoanDisbursements} and its
+     * wallet port over accounts. Until `-014` this suite planted the edge and the posting as an owner-role fixture.
+     */
+    private void disburse(UUID loan) {
+        try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
+            LoanDisbursements.Outcome outcome = lendingTransactions.inTransaction(uow ->
+                    disbursements.disburse(uow, LoanId.of(loan), SecurityContext.require()));
+            assertThat(outcome.kind()).as("disbursed").isEqualTo(LoanDisbursements.Outcome.Kind.POSTED);
+        }
     }
 
     /** {@code work} as the bootstrap superuser, the database's triggers suspended for this one transaction. */

@@ -11221,6 +11221,40 @@
         },
         "type": "object"
       },
+      "InstalmentView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "closingPrincipal": {
+            "type": "string"
+          },
+          "days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "interest": {
+            "type": "string"
+          },
+          "openingPrincipal": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "IssuedKeyView": {
         "properties": {
           "alreadyIssued": {
@@ -15360,6 +15394,57 @@
         },
         "type": "object"
       },
+      "ScheduleView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "finalInstalment": {
+            "type": "string"
+          },
+          "instalment": {
+            "type": "string"
+          },
+          "instalments": {
+            "items": {
+              "$ref": "#/components/schemas/InstalmentView"
+            },
+            "type": "array"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "scheduleEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalInterest": {
+            "type": "string"
+          },
+          "totalPayable": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ScorecardDecisionRequest": {
         "properties": {
           "reason": {
@@ -18464,6 +18549,42 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}/schedule": {
+      "get": {
+        "operationId": "readSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleView"
                 }
               }
             },

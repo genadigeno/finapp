@@ -207,7 +207,14 @@ public final class MetricNames {
                     // finapp.credit.request.open.age{status}), registered eagerly per open state; the alert above the
                     // request validity must leave in_review out - a case an underwriter holds is never expired under
                     // them - which a single untagged gauge could not.
-                    "status");
+                    "status",
+                    // Which disbursement path (P11-TSK-014): wallet or external_account, the closed PayoutPreference - the
+                    // borrower's choice at the application, a category every borrower on it shares, never a person, a
+                    // resource or a request's value (the code writes it from the disbursement row's own path). The plan's
+                    // series names the key "path" (PHASE_11_PLAN.md section 15, finapp.lending.disbursement{path,
+                    // outcome}); "path" is a forbidden fragment - a URL path is the unbounded value it guards against - so
+                    // the key says what it holds rather than taking a spelling exemption. Registered eagerly per value.
+                    "payout");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling
