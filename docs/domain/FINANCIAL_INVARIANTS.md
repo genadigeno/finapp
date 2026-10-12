@@ -2076,6 +2076,7 @@ draws racing for the last capital (`P11-TSK-021`); the probe skipping the capita
 acceptances over-deploy (`MUTATION_TESTING.md` §2); the capital proof in every storm round with
 headroom contested (`P11-TST-001`).
 *(The first consumer built by `P11-TSK-012`, 2026-10-11 - a loan's acceptance judges headroom under L6, the committed term the agreement principal of the loans `PENDING_DISBURSEMENT`, read before the outstanding; a line commits none (A28); verified by `LoanAcceptanceDatabaseTest#acceptancesRacingForTheLastCapitalAdmitOne` (the lock-wait and ten loans for one loan's headroom, one admitted) and `#aLineCommitsNoCapital`.)*
+*(The second consumer built by `P11-TSK-021`, 2026-10-12 - a draw judges headroom under L6 after the line's lock (L3) and its available limit; verified by `CreditLineDrawDatabaseTest#drawsRacingForTheLastCapitalAdmitOne` (the lock-wait, then five draws and five acceptances for exactly one's headroom - one admitted, headroom exactly zero) and `#drawingTakesTheLineThenTheCapital`.)*
 **Phase:** 11
 
 ### INV-LND-14 — A draw never exceeds the available limit
@@ -2094,6 +2095,12 @@ defaulted).
 lending.LimitExceeded`; ten draws under one key, one entry; a suspended line refusing a draw
 (`P11-TSK-021`); the battery's ≥ 2,000 generated lines replayed `IDENTICAL` (`P11-TST-002`); the
 storm's no line's drawn principal above its limit at rest (`P11-TST-001`).
+*(Built by `P11-TSK-021`, 2026-10-12 - `CreditLineDraws` derives the limit from the line's journal lines under L3 and refuses
+`422 lending.LimitExceeded` before the capital lock; `lending V013`'s trigger holds every writer to an `ACTIVE` line, its
+governing agreement version and an amount within the limit; verified by `CreditLineDrawDatabaseTest#twoDrawsRacingForTheLimitAdmitOne`
+(two for one limit, one admitted; ten for its last 300.00, exactly three), `#aDrawBeyondTheAvailableLimitIsRefused`,
+`#interestAndFeesNeverConsumeTheLimit` and `#tenDrawsOneKey`; the suspension check built over its derived condition, brought
+into force and tested biting by `P11-TSK-024`.)*
 **Phase:** 11
 
 *`INV-LND-01`…`INV-LND-14` catalogued by the Phase 10 → 11 transition (2026-10-10), the `INV-CRD`

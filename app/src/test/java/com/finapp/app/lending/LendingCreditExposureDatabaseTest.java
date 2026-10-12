@@ -85,12 +85,14 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p><strong>The disbursement is the real one</strong> (`P11-TSK-014`): the loan's ACTIVE edge and its principal posting
  * through {@link LoanDisbursements} - one transaction under L0 - in {@code #aDisbursementDuringTheReadIsNeverMissed},
  * {@code #principalRepaidStopsCounting}, {@code #interestAndFeesAreNotExposure} and the census case.
- * <strong>The other outstanding arms stay owner-role fixtures</strong>: no path the platform has yet draws, bills, repays,
- * closes or cancels a line (`-018`, `-021`, `-023`); this suite plants those facts directly - a status moved by the
+ * <strong>The line's draw is the real one</strong> (`P11-TSK-021`): {@code #anOpenLinesLimitIsCounted} and
+ * {@code #aClosingLineCountsItsDrawnPrincipal} draw through the door. <strong>The other outstanding arms stay owner-role
+ * fixtures</strong>: no path the platform has yet bills, repays, closes or cancels a line, or draws one past its limit
+ * (`-018`, `-020`, `-023`); this suite plants those facts directly - a status moved by the
  * bootstrap superuser with the database's triggers suspended for that one transaction
  * ({@code session_replication_role = replica}), and principal, interest and fee lines posted through the ledger's own
  * {@link PostingService} against {@code CASH_AT_BANK}. Those figures are re-asserted through the real paths by `-018`,
- * `-021`, `-023` and the storm.
+ * `-020`, `-023` and the storm.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): the suite brings credit's seeded policies into
  * force, activates both products' terms and plants EUR lending capital, as {@code LoanAccountDatabaseTest} does - and
@@ -248,9 +250,11 @@ class LendingCreditExposureDatabaseTest {
         CreditFixtures.Customer customer = customers.consentingCustomer();
         UUID line = acceptedLoan(customer, line("2500.00"));
         assertThat(v2(customer.party())).as("undrawn: the whole limit").isEqualTo(eur(2_500_00));
-        post(List.of(line(account(line, AccountPurpose.LOAN_PRINCIPAL), Direction.DEBIT, 1_000_00),
-                line(cash(), Direction.CREDIT, 1_000_00)));
+        // The real draw (P11-TSK-021): rule 1 to the borrower's wallet through the door - exposure does not move.
+        draw(customer, line, "1000.00");
         assertThat(v2(customer.party())).as("drawn within it: still the limit").isEqualTo(eur(2_500_00));
+        draw(customer, line, "1500.00");
+        assertThat(v2(customer.party())).as("drawn to the limit: still the limit").isEqualTo(eur(2_500_00));
 
         UUID second = CreditFixtures.requestFor(customer.party(), CreditProduct.PERSONAL_LOAN, eur(1_000_00));
         assertThat(CreditFixtures.stepUntil(second, "EVALUATED")).isEqualTo("EVALUATED");
@@ -277,8 +281,7 @@ class LendingCreditExposureDatabaseTest {
     void aClosingLineCountsItsDrawnPrincipal() throws Exception {
         CreditFixtures.Customer customer = customers.consentingCustomer();
         UUID line = acceptedLoan(customer, line("2500.00"));
-        post(List.of(line(account(line, AccountPurpose.LOAN_PRINCIPAL), Direction.DEBIT, 700_00),
-                line(cash(), Direction.CREDIT, 700_00)));
+        draw(customer, line, "700.00");
         assertThat(v2(customer.party())).isEqualTo(eur(2_500_00));
         asOwner(owner -> update(owner, "UPDATE lending.loan SET status = 'CLOSING' WHERE id = ?", line));
         assertThat(v2(customer.party())).as("no draw is possible: the promise is what is drawn").isEqualTo(eur(700_00));
@@ -427,6 +430,13 @@ class LendingCreditExposureDatabaseTest {
                     disbursements.disburse(uow, LoanId.of(loan), SecurityContext.require()));
             assertThat(outcome.kind()).as("disbursed").isEqualTo(LoanDisbursements.Outcome.Kind.POSTED);
         }
+    }
+
+    /** The real draw (`P11-TSK-021`, T-drw) through the door, from the customer's MULTI_FACTOR session. */
+    private void draw(CreditFixtures.Customer customer, UUID line, String amount) throws Exception {
+        HttpResponse<String> drawn = post("/v1/me/loans/" + line + "/draws",
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\"}", customer.token());
+        assertThat(drawn.statusCode()).as(drawn.body()).isEqualTo(201);
     }
 
     /** {@code work} as the bootstrap superuser, the database's triggers suspended for this one transaction. */

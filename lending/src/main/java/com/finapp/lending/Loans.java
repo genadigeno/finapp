@@ -48,6 +48,24 @@ public final class Loans {
             Objects.requireNonNull(payout, "payout must not be null");
         }
 
+        /**
+         * A line's available limit (`P11-TSK-021`, {@link AvailableLimit}): the governing agreement's limit less the drawn
+         * principal of these balances while the line is {@code ACTIVE}; zero once it is not (a closing or closed line takes
+         * no draw); empty for an instalment loan. Derived in the read's snapshot, never stored - it decides nothing: the
+         * draw derives its own under the line's lock.
+         */
+        public Optional<Money> availableLimit() {
+            Loan loan = owned.loan();
+            if (loan.kind() != LoanKind.REVOLVING) {
+                return Optional.empty();
+            }
+            Money limit = owned.agreement().amount();
+            if (loan.status() != LoanStatus.ACTIVE) {
+                return Optional.of(Money.ofPersisted(0, limit.currency(), limit.scale()));
+            }
+            return Optional.of(new AvailableLimit(limit, balances.principalOutstanding()).available());
+        }
+
         @Override
         public String toString() {
             return "Read[" + owned.loan() + "]";

@@ -424,7 +424,7 @@ repayment kind with agreement and schedule v n+1, refused while past due (`409 l
 | Accrual start | `accrual_start` | T-dis (path W) / the payout's terminal outcome - T-pyr, or T-pyo's `NOT_DISPATCHED` (path X, `P11-TSK-015`) | `UNIQUE (loan_id)`; no row = interest has not started |
 | Interest accrual | `interest_accrual` | T-svc, per elapsed date, oldest first | `UNIQUE (loan_id, accrual_date)` + ledger key (`INV-LND-02`, scenario 4) |
 | Instalment billing · credit-balance application | `instalment_billing`, `credit_balance_application` | T-svc at the due date, after every accrual through `Dj − 1` | `UNIQUE (instalment_id)`; `UNIQUE (billing_id)` |
-| Draw | `credit_line_draw` | C, `MULTI_FACTOR`, T-drw: L3 `ACTIVE`, draws not suspended, L5, L6 headroom, available limit derived under L3 | `UNIQUE (loan_id, draw_key)`; `422 lending.LimitExceeded` (`INV-LND-14`), `409 lending.DrawsSuspended`, `422 lending.CapitalUnavailable` |
+| Draw | `credit_line_draw` | C, `MULTI_FACTOR`, T-drw: L3 `ACTIVE`, draws not suspended, available limit derived under L3, L6 headroom, the row born whole after its posting (`P11-TSK-021`) | `UNIQUE (loan_id, draw_key)` + `UNIQUE (journal_entry_id)` + ledger key `lending.draw:<drawId>`; `422 lending.LimitExceeded` (`INV-LND-14`), `409 lending.DrawsSuspended`, `422 lending.CapitalUnavailable`, `409 lending.LineNotDrawable`, `409 lending.WalletUnavailable` |
 | Statement | `credit_line_statement` | T-svc at the cycle end, after its accruals | `UNIQUE (loan_id, cycle_end)` |
 | Line closure request | `line_closure_request` | `ACTIVE → CLOSING` | `UNIQUE (loan_id)` |
 | Collection attempt | `collection_attempt` | T-svc | `UNIQUE (due_item_id, attempt_date)` |

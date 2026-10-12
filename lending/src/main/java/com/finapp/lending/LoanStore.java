@@ -69,6 +69,13 @@ public interface LoanStore {
     /** {@code PENDING_DISBURSEMENT -> CANCELLED} for {@code reason}, conditional (`P11-TSK-014`); whether it moved. */
     boolean cancel(Connection unitOfWork, LoanId id, CancellationReason reason);
 
+    /**
+     * {@code party}'s loan {@code id} {@code FOR UPDATE} (L3) with its current agreement version (`P11-TSK-021`) - the
+     * draw's lock, owner-scoped in the statement: another party's loan is the same empty answer as an absent one, and is
+     * never locked.
+     */
+    Optional<Owned> lockOwnedBy(Connection unitOfWork, LoanId id, UUID party);
+
     // ------------------------------------------------------------------ rows
 
     /** A loan at birth - its status the kind's (a loan {@code PENDING_DISBURSEMENT}, a line {@code ACTIVE}). */

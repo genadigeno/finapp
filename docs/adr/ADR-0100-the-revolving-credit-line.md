@@ -195,5 +195,22 @@ Financial impact: rule 1 per draw, rule 3 per statement, rule 5 with principal p
   cycle's posted accruals summed, a list that is not one chain of the cycle's own refused. Nine probes - eight caught,
   one an equivalent mutant recorded as such - `MUTATION_TESTING.md` §2. The statement row, its posting and the credit-balance application stay
   `P11-TSK-022`'s.
+- **As built by `P11-TSK-021` (2026-10-12) - the draw.** Point 3 as decided, `lending V013` (`credit_line_draw`) and
+  `CreditLineDraws`, with these refinements: (a) the available limit is judged under L3 **before** the capital lock - a draw
+  past its own limit never queues on the currency's hot row - and the wallet is resolved after it (resolving may open the
+  wallet, and no wallet row precedes L6, `PHASE_11_PLAN.md` section 7.3 (c)); (b) the draw row is born whole once its posting exists, naming its entry - "(L5) the draw born"
+  is an insert no other writer can wait on (the same key's other attempt holds the claim and L3 first), so there is no L5
+  lock; (c) a key retried after its claim lapsed **converges** on the draw born under it (`UNIQUE (loan_id, draw_key)`),
+  another amount under it the platform's `409 api.Conflict`; (d) two refusals added - `409 lending.LineNotDrawable` (an
+  instalment loan, a closing or closed line) and `409 lending.WalletUnavailable` (draws go to the wallet only, A25, so a
+  wallet that cannot be had or posted refuses the draw, nothing written, the key unspent); (e) the suspension (point 3's
+  "past due or defaulted") is the derived `DrawSuspension`, read under L3 on the business date - nothing can be past due
+  before statements (`P11-TSK-022`) and nothing defaulted before the condition step (`P11-TSK-024`), so its derivation over
+  what exists is "never suspended"; the check, its place and the `409` are built and proven with a double, and `-024`
+  replaces the derivation with the condition read; (f) the line's read shows the available limit - zero on a line no longer
+  `ACTIVE`; (g) no audit record: a customer's own draw is its row and its entry; the posting carries the request's own
+  correlation. Point 10 holds as decided: the draw consumes headroom at its commit, and exposure does not move (no L0) -
+  an `ACTIVE` line already counts `GREATEST(limit, drawn)` and a draw within the limit leaves that figure the limit
+  (re-proven through the real door in `LendingCreditExposureDatabaseTest`).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

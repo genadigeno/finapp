@@ -2976,6 +2976,28 @@ scheduling instant (`INTERNAL`).
 | `interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `interest_accrual` | `correlation_id` | `INTERNAL` | The account's correlation |
 
+### `lending` - the credit line draw - *added by `P11-TSK-021`*
+
+`lending V013`: one row per draw - the amount `RESTRICTED-FINANCIAL` as every lending amount (a borrower's drawn principal
+can be read from the draws), the line, agreement and entry references `CONFIDENTIAL`, the customer's key `CONFIDENTIAL` (the
+client's own idempotency key, a request handle - never logged, never in an event), dates, versions and stamps `INTERNAL`.
+No available-limit column exists: the limit is derived, never stored (ADR-0100 point 4).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `credit_line_draw` | `id` | `INTERNAL` | Generated - the draw's identity and its ledger key's (`lending.draw:<id>`) |
+| `credit_line_draw` | `loan_id` | `CONFIDENTIAL` | The line drawn on |
+| `credit_line_draw` | `draw_key` | `CONFIDENTIAL` | The customer's Idempotency-Key - one draw per line and key |
+| `credit_line_draw` | `currency` | `INTERNAL` | The line's currency |
+| `credit_line_draw` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `credit_line_draw` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount drawn to the wallet (rule 1) |
+| `credit_line_draw` | `agreement_id` | `CONFIDENTIAL` | The agreement version whose limit the draw was judged against |
+| `credit_line_draw` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `credit_line_draw` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 1's journal entry, by value |
+| `credit_line_draw` | `value_date` | `INTERNAL` | The business date of the database clock in the pinned zone - accrual runs from it |
+| `credit_line_draw` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_line_draw` | `correlation_id` | `INTERNAL` | The draw request's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
