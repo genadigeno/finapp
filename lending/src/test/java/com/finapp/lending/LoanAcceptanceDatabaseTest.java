@@ -104,7 +104,7 @@ class LoanAcceptanceDatabaseTest {
     private static final LoanAcceptances ACCEPTANCES = acceptances(CLOCK, LOAN_STORE, OFFER_STORE, LEDGER_ACCOUNTS,
             new JdbcOutboxWriter(), new JdbcAuditWriter());
     private static final Loans LOANS = new Loans(LOAN_STORE, LEDGER_ACCOUNTS, new JdbcPurposeBalances(),
-            new JdbcLoanPayoutStore());
+            new JdbcLoanPayoutStore(), DisbursementWorld.CONDITIONS);
     private static final Actor SYSTEM = new Actor("lending-origination", ActorType.SYSTEM);
     private static final LoanProduct LOAN = LoanProduct.PERSONAL_LOAN;
     private static final LoanProduct LINE = LoanProduct.CREDIT_LINE;

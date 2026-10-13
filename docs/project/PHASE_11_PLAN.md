@@ -516,6 +516,16 @@ statement date has come and whose dates the accrual reached, oldest first, conti
 date. The statement's drawn principal is the cycle's close (journal lines valued before the statement date), so a draw (L3)
 racing the step at the boundary yields the same statement in either order.)*
 
+*(As built by `P11-TSK-024` - T-svc's condition step, `LoanConditions`: under the same L3, once the step has caught up and
+**after the closure step, only on an account the step did not close** (`-017` had sketched it before the closure; moved so no
+condition is ever written in a closing transaction - a closed account's condition is its closure, however it closed); no L0,
+L5, L6 or L7, no posting. It derives DPD from `InstalmentBillingStore.dueItems` on the business date - the oldest billed item
+unpaid at the end of its due date - the bucket under the pinned bounds and the flag (`DPD >= threshold`, or the latest
+`DEFAULT` row's flag while DPD > 0), and appends a `loan_condition_event` row per changed aspect with its event, at most once
+a business date (`UNIQUE (loan_id, business_date, kind)` beneath L3). The draw reads the same derivation under its L3 (A25);
+the reads derive it in their snapshot. `-025`'s late fee follows the condition step; `-026`'s payoff serialises with it on
+L3 and `lending V020`'s trigger refuses any condition on a `CLOSED` account.)*
+
 *(As built by `P11-TSK-020` - T-rev, the repayment reversal: each act behind the door's claim (`lending.servicing:<type>:<id>`);
 the loan's party (frozen, unlocked) and the actor's through identity - an operator of the loan's own party, or one the
 platform cannot place, `403 lending.SelfDealingRefused`, recorded `FAILED` in a transaction of its own. The proposal: **(L3)**

@@ -2158,6 +2158,17 @@ table refused for every role; scenario 10 (`P11-TSK-026`); the storm's DPD equal
 for every account at rest (`P11-TST-001`).
 **Phase:** 11
 
+*(As built by `P11-TSK-024`, 2026-10-13 - `lending V020`'s `loan_condition_event`, `UNIQUE (loan_id, business_date, kind)`,
+granted `SELECT, INSERT` only, its trigger refusing UPDATE, DELETE and TRUNCATE for every role and holding every row to the
+derivation: `days_past_due = lending.days_past_due(loan, business_date)` (the oldest billed item unpaid at the end of its due
+date), the bucket that DPD's under the governing agreement's pinned bounds, the flag set at the threshold and cleared only at
+cure, a change from the latest row of its kind, dated the transaction's business date, never on a terminal account - so the
+`DB-CONSTRAINT` rank covers the derivation as well as the unique. T-svc records at most once a business date, only on a
+change; every decision derives the condition live. Verified by `DelinquencyDatabaseTest` (eleven cases, among them
+`#currentToEachBucketAndCure`, `#defaultAtNinetyClearedAtCure`, `#reRunningADayWritesNothing`,
+`#aMissedDayComputesFromTheDates`, `#theHistoryIsAppendOnlyForEveryRole`) and `DelinquencyStateTest`; probes in
+`MUTATION_TESTING.md` section 2.)*
+
 ### INV-LND-13 — Lending capital is recognised only from bank evidence and never over-deployed
 **Statement:** The `LENDING_CAPITAL` account of a currency is credited only by bank recognition of a
 statement line matched to a four-eyes capital contribution's expectation; and at every commit, for

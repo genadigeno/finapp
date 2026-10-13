@@ -501,6 +501,15 @@ strategy and placement — none writes lending's rows. **Not built** (each recor
 acceleration, default or penalty interest, interest on interest, arrears notifications, bureau
 reporting, statutory contact limits, insolvency handling.
 
+*(As built by `P11-TSK-024`, 2026-10-13 - `lending V020`, `LoanConditions`, ADR-0098's Follow-up: the condition is derived
+live for every decision - a line's draw under L3, the customer's and operator's reads in their snapshot - and recorded by
+T-svc's condition step, after the closure step on an account the step did not close, once caught up, **at most once a
+business date** (the end-of-day position: an item unpaid at the end of its due date is past due at the next date's first
+step); a cure a repayment brings after that date's change is the next date's row. The default flag's memory is the latest
+`DEFAULT` row: set at the threshold, held while anything is past due, cleared at cure. A partial payment leaves its item past
+due - DPD moves only when the oldest past-due item is paid in full. `lending V020`'s trigger holds every row to the
+derivation for every writer.)*
+
 ---
 
 ## 6. The ranks, per machine (planned)

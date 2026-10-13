@@ -3186,6 +3186,28 @@ the key, outcome and stamps `INTERNAL`.
 | `line_closure_request` | `requested_at` | `INTERNAL` | System time, stamped by the trigger |
 | `line_closure_request` | `correlation_id` | `INTERNAL` | The request's correlation |
 
+### `lending` - the condition history - *added by `P11-TSK-024`*
+
+`lending V020`: one row per change of a loan's or line's delinquency bucket or default flag, appended by the servicing
+step only on a change. No amount; the account's condition - days past due, bucket, default flag - is
+`RESTRICTED-FINANCIAL` (ADR-0098's security impact: never in a log line, a metric tag or a span), the loan and agreement
+references `CONFIDENTIAL`, the kind, date, versions and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_condition_event` | `id` | `INTERNAL` | Generated |
+| `loan_condition_event` | `loan_id` | `CONFIDENTIAL` | The loan or line |
+| `loan_condition_event` | `business_date` | `INTERNAL` | The business date of the database clock in the pinned zone - once per kind |
+| `loan_condition_event` | `kind` | `INTERNAL` | `DELINQUENCY` (the bucket changed) or `DEFAULT` (the flag changed) |
+| `loan_condition_event` | `days_past_due` | `RESTRICTED-FINANCIAL` | Derived from the billed and allocated rows, held to the derivation by the trigger |
+| `loan_condition_event` | `bucket` | `RESTRICTED-FINANCIAL` | `CURRENT` or the days-past-due band after the change |
+| `loan_condition_event` | `previous_bucket` | `RESTRICTED-FINANCIAL` | The band a `DELINQUENCY` change left; null for `DEFAULT` |
+| `loan_condition_event` | `defaulted` | `RESTRICTED-FINANCIAL` | The default flag after the change |
+| `loan_condition_event` | `agreement_id` | `CONFIDENTIAL` | The governing agreement, whose pinned terms judged it |
+| `loan_condition_event` | `agreement_version` | `INTERNAL` | Its version |
+| `loan_condition_event` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_condition_event` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the loan's own flow) |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

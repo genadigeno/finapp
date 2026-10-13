@@ -128,8 +128,22 @@ class LendingVocabulariesTest {
     void theRemainingVocabularies() {
         assertThat(names(LoanKind.values())).containsExactly("INSTALMENT", "REVOLVING");
         assertThat(names(DelinquencyBucket.values())).containsExactly("B1_1_29", "B2_30_59", "B3_60_89", "B4_90_PLUS");
+        // P11-TSK-024: the condition kinds; the servicing hold (A9) is designed, not built - no member for it.
+        assertThat(names(ConditionKind.values())).containsExactly("DELINQUENCY", "DEFAULT");
         assertThat(names(AllocationComponent.values())).containsExactly("FEES", "INTEREST", "PRINCIPAL");
         assertThat(names(OverpaymentTreatment.values())).containsExactly("HOLD_AS_CREDIT", "PAY_DOWN_PRINCIPAL");
+    }
+
+    @Test
+    @DisplayName("the condition kinds are lending V020's CHECK, member for member (P11-TSK-024)")
+    void theConditionKindsAreV020s() throws java.io.IOException {
+        String v020;
+        try (var migration = getClass().getResourceAsStream(
+                "/db/migration/lending/V020__delinquency_and_default_conditions.sql")) {
+            assertThat(migration).as("lending V020 on the classpath").isNotNull();
+            v020 = new String(migration.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        assertThat(v020).contains("kind IN (" + ConditionKind.sqlValueList() + ")");
     }
 
     @Test

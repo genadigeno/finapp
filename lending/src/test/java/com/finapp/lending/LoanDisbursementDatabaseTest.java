@@ -296,7 +296,7 @@ class LoanDisbursementDatabaseTest {
         assertThat(netDebit(loanAccount(loan.loan(), AccountPurpose.LOAN_PRINCIPAL))).isEqualTo(loan.principal());
         assertThat(netDebit(walletOf(loan.party()))).as("the wallet credited P").isEqualTo(loan.principal().negated());
         Loans.Read read = inOneTransaction(uow -> new Loans(DisbursementWorld.LOAN_STORE, LEDGER_ACCOUNTS,
-                DisbursementWorld.BALANCES, DisbursementWorld.PAYOUT_STORE).read(uow, loan.loan(), loan.party()))
+                DisbursementWorld.BALANCES, DisbursementWorld.PAYOUT_STORE, DisbursementWorld.CONDITIONS).read(uow, loan.loan(), loan.party()))
                 .orElseThrow();
         assertThat(read.owned().loan().status()).isEqualTo(LoanStatus.ACTIVE);
         assertThat(read.balances().principalNotDue()).isEqualTo(loan.principal());

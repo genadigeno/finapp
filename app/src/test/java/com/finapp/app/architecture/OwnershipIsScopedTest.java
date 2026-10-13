@@ -1091,10 +1091,15 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "GET /v1/me/loans/{id}/schedule - the identifier from the path, and l.party_id = ? in the statement is the session's own party; another party's loan is the same empty answer as a loan billed nothing (P11-TSK-017).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanConditionStore.latest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-024. The latest recorded condition change of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the condition step), or locked by lockOwnedBy under party_id = ? (the draw's suspension) - or of an account the owner's or the audited operator's read has already found through Loans.read (ownedBy under party_id = ?); the id never reaches it from a request unscoped.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcInstalmentBillingStore.dueItems",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P11-TSK-022. Every billed item (billings, statements) of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the application, the collection), or locked by lockOwnedBy under party_id = ? for the customer's own repayment (P11-TSK-018's due state); the id never reaches it from a request unscoped.")),
+                                    "P11-TSK-022. Every billed item (billings, statements) of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the application, the collection), or locked by lockOwnedBy under party_id = ? for the customer's own repayment (P11-TSK-018's due state) or draw (P11-TSK-024's suspension), or found by the owner's or the audited operator's read through Loans.read (ownedBy under party_id = ?, P11-TSK-024's condition); the id never reaches it from a request unscoped.")),
                     Map.entry(
                             "com.finapp.lending.JdbcCreditLineStatementStore.latestStatementDate",
                             new Entry(

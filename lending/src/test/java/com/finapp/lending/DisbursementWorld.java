@@ -146,6 +146,9 @@ final class DisbursementWorld {
     static final LoanCollections COLLECTIONS = collections(REPAYMENT_STORE, new JdbcOutboxWriter());
     static final JdbcCreditLineStatementStore STATEMENT_STORE = new JdbcCreditLineStatementStore();
     static final CreditLineStatements STATEMENTS = statements(new JdbcOutboxWriter());
+    static final JdbcLoanConditionStore CONDITION_STORE = new JdbcLoanConditionStore();
+    static final LoanConditions CONDITIONS = conditions(new JdbcOutboxWriter());
+    static final Loans LOANS = new Loans(LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, PAYOUT_STORE, CONDITIONS);
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
             TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);
@@ -182,6 +185,11 @@ final class DisbursementWorld {
     static CreditLineStatements statements(OutboxWriter<Connection> outbox) {
         return new CreditLineStatements(STATEMENT_STORE, BILLING_STORE, LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS,
                 outbox, IDS, CLOCK);
+    }
+
+    /** T-svc's condition step, the draw's suspension and the reads' condition, with this outbox (P11-TSK-024). */
+    static LoanConditions conditions(OutboxWriter<Connection> outbox) {
+        return new LoanConditions(BILLING_STORE, CONDITION_STORE, TERMS_STORE, outbox, IDS, CLOCK);
     }
 
     // ------------------------------------------------------------------ the loans
