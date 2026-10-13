@@ -38,7 +38,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -732,8 +731,9 @@ class LoanAcceptanceDatabaseTest {
                 var flow = com.finapp.platform.correlation.CorrelationContext.enter(
                         com.finapp.sharedkernel.correlation.Correlation.startingWith(correlation())
                                 .causing(com.finapp.sharedkernel.correlation.CausationId.of("p11t12-capital")))) {
+            // The database clock's business date in the fixtures' zone (UTC), never the instance's (P11-TSK-032).
+            LocalDate today = LocalDate.parse(scalar("SELECT lending.business_date(statement_timestamp(), 'UTC')::text"));
             inOneTransaction(uow -> {
-                LocalDate today = LocalDate.now(ZoneOffset.UTC);
                 postings.post(uow, new PostingCommand("p11t12-capital:" + UUID.randomUUID(), today, today,
                         "the suite's planted capital", List.of(
                                 new JournalLine(LEDGER_ACCOUNTS.findOperational(uow, AccountPurpose.CASH_AT_BANK,

@@ -367,7 +367,8 @@ class CreditLineDrawDatabaseTest {
         assertThatExceptionOfType(CreditLineDraws.DrawsSuspended.class).isThrownBy(() -> inOneTransaction(uow ->
                 drawAs(uow, suspended, line.party(), line.loan(), key(), 100_00)));
         assertThat(entries(line)).isZero();
-        assertThat(DrawSuspension.BEFORE_ANY_CONDITION.suspended(null, line.loan(), LocalDate.now(CLOCK)))
+        assertThat(DrawSuspension.BEFORE_ANY_CONDITION.suspended(null, line.loan(),
+                DisbursementWorld.businessDate(line.loan())))
                 .as("before statements and the condition step, no line is suspended").isFalse();
         assertThat(draw(line, key(), 100_00).replayed()).isFalse();
     }

@@ -46,7 +46,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -369,8 +368,8 @@ final class DisbursementWorld {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem();
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(correlation()).causing(CausationId.of("p11t14")))) {
+            LocalDate today = businessDate();
             inOneTransaction(uow -> {
-                LocalDate today = LocalDate.now(ZoneOffset.UTC);
                 POSTINGS.post(uow, new PostingCommand(key, today, today, "the suite's fixture", lines));
                 return null;
             });
@@ -444,6 +443,35 @@ final class DisbursementWorld {
 
     static long count(String sql, Object... parameters) {
         return Long.parseLong(scalar(sql, parameters));
+    }
+
+    // ------------------------------------------------------------------ the business date (P11-TSK-032)
+
+    /**
+     * SQL for {@code loan}'s business date now: the database clock in its agreement's pinned servicing zone - exactly
+     * how production derives it ({@code lending.business_date}; {@code LoanServicing} reads the database clock and
+     * takes its date in the pinned zone). A fixture never plants {@code current_date} - the SESSION's zone, which the
+     * JDBC driver takes from this JVM's default zone - nor an instance clock's date: off UTC's date for part of every
+     * day, they put the fixture a day away from the dates production judges (the 20:00-24:00 UTC failures).
+     */
+    static String businessDateSql(LoanId loan) {
+        return "(SELECT lending.business_date(statement_timestamp(), t.servicing_zone) FROM lending.loan l"
+                + " JOIN lending.loan_offer o ON o.id = l.offer_id"
+                + " JOIN lending.loan_terms t ON t.terms_version_id = o.terms_version_id WHERE l.id = '"
+                + loan.value() + "')";
+    }
+
+    /** {@link #businessDateSql}, read. */
+    static LocalDate businessDate(LoanId loan) {
+        return LocalDate.parse(scalar("SELECT " + businessDateSql(loan) + "::text"));
+    }
+
+    /**
+     * The business date now for a fixture that names no loan: the database clock in the zone every fixture terms
+     * version pins ({@code LoanTermsFixtures}: UTC).
+     */
+    static LocalDate businessDate() {
+        return LocalDate.parse(scalar("SELECT lending.business_date(statement_timestamp(), 'UTC')::text"));
     }
 
     static String scalar(String sql, Object... parameters) {

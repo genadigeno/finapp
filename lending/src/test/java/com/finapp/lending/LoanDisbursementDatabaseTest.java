@@ -32,7 +32,6 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -284,10 +283,16 @@ class LoanDisbursementDatabaseTest {
         assertThat(scalar("SELECT reference FROM ledger.journal_entry WHERE id = ?::uuid", entry)).isEqualTo(id.toString());
         assertThat(scalar("SELECT idempotency_scope FROM ledger.journal_entry WHERE id = ?::uuid", entry))
                 .isEqualTo("ledger.post:lending.disbursement:" + id);
-        String today = LocalDate.now(ZoneOffset.UTC).toString();
+        // The business date of the deciding statement on the database clock in the pinned zone - or the day before, when
+        // the step read its date before a midnight its decision crossed (V008's window) - never an instance clock's date
+        // (P11-TSK-032).
+        LocalDate decided = LocalDate.parse(scalar("SELECT lending.business_date(d.decided_at, t.servicing_zone)::text"
+                + " FROM lending.loan_disbursement d JOIN lending.loan l ON l.id = d.loan_id"
+                + " JOIN lending.loan_offer o ON o.id = l.offer_id"
+                + " JOIN lending.loan_terms t ON t.terms_version_id = o.terms_version_id WHERE d.loan_id = ?", id));
         assertThat(scalar("SELECT posting_date::text || '|' || value_date::text FROM ledger.journal_entry"
-                + " WHERE id = ?::uuid", entry)).isIn(today + "|" + today,
-                LocalDate.now(ZoneOffset.UTC).minusDays(1) + "|" + LocalDate.now(ZoneOffset.UTC).minusDays(1));
+                + " WHERE id = ?::uuid", entry)).isIn(decided + "|" + decided,
+                decided.minusDays(1) + "|" + decided.minusDays(1));
         assertThat(netDebit(loanAccount(loan.loan(), AccountPurpose.LOAN_PRINCIPAL))).isEqualTo(loan.principal());
         assertThat(netDebit(walletOf(loan.party()))).as("the wallet credited P").isEqualTo(loan.principal().negated());
         Loans.Read read = inOneTransaction(uow -> new Loans(DisbursementWorld.LOAN_STORE, LEDGER_ACCOUNTS,

@@ -2069,6 +2069,13 @@ clock read after the loan's lock, in the pinned zone - `lending V012`'s trigger 
 (`InstalmentBillingDatabaseTest#billedOnTheDueDateOnce`); rules 3 and 6 are dated the business date of their transaction, never
 back-valued to the due date (ADR-0094 point 8).)*
 
+*(The tests' own time, `P11-TSK-032`, 2026-10-13: the lending database fixtures now derive every date they plant or
+compare from the database clock in the pinned zone, as production does (`DisbursementWorld.businessDate`), never from
+`current_date` (the session's zone, set from the test JVM's) or an instance clock - two suites had failed from 20:00 to
+24:00 UTC on a UTC+4 machine for it. `:lending:databaseTest` runs date-shifted at every hour, so a fixture that dates by
+the session or the machine is red whenever it runs (`TESTING.md` §5; `MUTATION_TESTING.md` §2's `P11-TSK-032` row). No
+production rule changed.)*
+
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
 carry a reason, are proposed by one person and approved by another — never the proposer, never an

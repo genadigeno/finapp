@@ -5,6 +5,7 @@ import static com.finapp.lending.DisbursementWorld.PAYMENTS;
 import static com.finapp.lending.DisbursementWorld.PAYOUT_STEPS;
 import static com.finapp.lending.DisbursementWorld.acceptedLoan;
 import static com.finapp.lending.DisbursementWorld.available;
+import static com.finapp.lending.DisbursementWorld.businessDateSql;
 import static com.finapp.lending.DisbursementWorld.claimPayouts;
 import static com.finapp.lending.DisbursementWorld.claimed;
 import static com.finapp.lending.DisbursementWorld.count;
@@ -311,8 +312,11 @@ class LoanPayoutStepsDatabaseTest {
             refused(app, "UPDATE lending.loan_payout SET status = 'DISPATCHED', withdrawal_id = gen_random_uuid()"
                     + " WHERE loan_id = '" + p + "'", "P0001");
             app.rollback();
+            // Dated today's business date in the pinned zone - the date a conclusion now would be born on - so only the
+            // payout's not being terminal refuses it (P11-TSK-032: never current_date, the session's zone).
             refused(app, "INSERT INTO lending.accrual_start (id, loan_id, start_date, origin, created_at, correlation_id)"
-                    + " VALUES (gen_random_uuid(), '" + p + "', current_date, 'PAYOUT_CONCLUDED', now(), 'c')", "P0001");
+                    + " VALUES (gen_random_uuid(), '" + p + "', " + businessDateSql(pending.loan())
+                    + ", 'PAYOUT_CONCLUDED', now(), 'c')", "P0001");
             app.rollback();
             refused(app, "UPDATE lending.loan_payout SET hold_id = gen_random_uuid() WHERE loan_id = '" + p + "'",
                     "42501");
@@ -352,8 +356,14 @@ class LoanPayoutStepsDatabaseTest {
             refused(owner, "UPDATE lending.loan_payout SET next_attempt_at = now() + interval '1 day'"
                     + " WHERE loan_id = '" + p + "'", "P0001");
             owner.rollback();
+            // A second accrual start on exactly the date the trigger admits - the business date of the conclusion in the
+            // pinned zone, as production births it - so only the unique key refuses it (P11-TSK-032).
             refused(owner, "INSERT INTO lending.accrual_start (id, loan_id, start_date, origin, created_at, correlation_id)"
-                    + " VALUES (gen_random_uuid(), '" + p + "', current_date, 'PAYOUT_CONCLUDED', now(), 'c')", "23505");
+                    + " SELECT gen_random_uuid(), p.loan_id, lending.business_date(p.concluded_at, t.servicing_zone),"
+                    + " 'PAYOUT_CONCLUDED', now(), 'c' FROM lending.loan_payout p JOIN lending.loan l ON l.id = p.loan_id"
+                    + " JOIN lending.loan_offer o ON o.id = l.offer_id"
+                    + " JOIN lending.loan_terms t ON t.terms_version_id = o.terms_version_id WHERE p.loan_id = '" + p + "'",
+                    "23505");
             owner.rollback();
         }
     }

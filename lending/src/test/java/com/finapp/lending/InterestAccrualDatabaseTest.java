@@ -12,6 +12,8 @@ import static com.finapp.lending.DisbursementWorld.acceptedLoan;
 import static com.finapp.lending.DisbursementWorld.activate;
 import static com.finapp.lending.DisbursementWorld.asOwner;
 import static com.finapp.lending.DisbursementWorld.awaitBlockedBy;
+import static com.finapp.lending.DisbursementWorld.businessDate;
+import static com.finapp.lending.DisbursementWorld.businessDateSql;
 import static com.finapp.lending.DisbursementWorld.cashAtBank;
 import static com.finapp.lending.DisbursementWorld.correlation;
 import static com.finapp.lending.DisbursementWorld.count;
@@ -375,7 +377,7 @@ class InterestAccrualDatabaseTest {
         assertThat(scalar("SELECT (next_servicing_at > statement_timestamp())::text FROM lending.loan WHERE id = ?",
                 loan.value())).isEqualTo("true");
         try (Connection app = DatabaseRoles.application()) {
-            refused(app, rawAccrual(loan, "current_date - 2"), "P0001", "accrual start");
+            refused(app, rawAccrual(loan, businessDateSql(loan) + " - 2"), "P0001", "accrual start");
         }
     }
 
@@ -417,7 +419,9 @@ class InterestAccrualDatabaseTest {
             + " is zero, each rounded within its statement cycle - the cumulative figure resetting at a cycle's start")
     void aLinesAccrualFollowsItsDrawnPrincipal() {
         LoanId line = acceptedLine(10_000_00).loan();
-        LocalDate today = LocalDate.parse(scalar("SELECT current_date::text"));
+        // Today as the servicing step judges it - the database clock in the line's pinned zone - so the dates planted
+        // below sit where backdateOpening put the opening (P11-TSK-032: never current_date, the session's zone).
+        LocalDate today = businessDate(line);
         backdateOpening(line, 40);
         // An owner-role journal fixture standing in for draws and a paydown (re-asserted through real draws by -021).
         LocalDate opened = today.minusDays(40);
@@ -519,7 +523,7 @@ class InterestAccrualDatabaseTest {
                     "P0001", "immutable");
             refused(migrator, "DELETE FROM lending.interest_accrual WHERE loan_id = '" + id + "'", "P0001", "immutable");
             refused(migrator, "TRUNCATE lending.interest_accrual", "P0001", "");
-            refused(app, rawAccrual(loan, "current_date - 3"), "P0001", "oldest first");
+            refused(app, rawAccrual(loan, businessDateSql(loan) + " - 3"), "P0001", "oldest first");
             // The permit alone, on an account in servicing.
             execute(app, "UPDATE lending.loan SET next_servicing_at = statement_timestamp() WHERE id = '" + id + "'");
             refused(app, "UPDATE lending.loan SET next_servicing_at = statement_timestamp(), status = 'CLOSED' WHERE id = '"

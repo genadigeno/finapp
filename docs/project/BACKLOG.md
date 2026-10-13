@@ -17984,6 +17984,61 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   (the agreement format 1); format 1 re-renders byte for byte; raw SQL holds every writer to the format `CHECK`.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
 
+**P11-TSK-032 — Remediation: date-window-safe lending fixtures** — `COMPLETE` (2026-10-13) *(added out of turn on the owner's instruction, 2026-10-13 - a Phase 11 remediation item, run beside `-022`; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TSK-022` is in progress and `P11-TSK-023` stays next; found by `P11-TSK-018`, recorded as "found, not caused" by `-018`, `-019` and `-020`)*
+- **The defect**: `InterestAccrualDatabaseTest#aLinesAccrualFollowsItsDrawnPrincipal` (`-016`/`-021`) and
+  `LoanPayoutStepsDatabaseTest#theEdgesAreHeldForEveryWriter` (`-015`) failed only from 20:00 to 24:00 UTC, when the
+  machine's date (GST, UTC+4) is a day ahead of UTC's. Production judges every date on the database clock in the
+  agreement's pinned zone (`lending.business_date(statement_timestamp(), zone)`, `INV-LND-10`); the fixtures planted
+  `current_date` - the SESSION's date, and the JDBC driver sets the session zone from the test JVM's default - beside
+  dates the database derived in UTC. The line case dated its draws from `current_date` against an opening planted in UTC
+  (28 accrual dates expected, 29 found); the payout case's duplicate accrual start, dated `current_date`, met the
+  trigger's date rule (`P0001`) before the unique key (`23505`) it exists to prove. Severity IMPORTANT for the build (a
+  red tier four hours a day, misread by three tasks as flakes); no production defect - every production date was right.
+- **Reproduced first**: an init script (scratchpad) running `:lending:databaseTest` in `Etc/GMT+12` (the local date UTC's
+  yesterday before 12:00 UTC) - both cases red at 08:20 UTC, deterministically, with the evening's two failures; the
+  whole tier so run on the unfixed tree found a third, `InterestAccrualDatabaseTest#theRowsAndThePermitAreHeldForEveryWriter`
+  (its raw `current_date - 3` met "accrues from the account's accrual start" for "oldest first") - 168 tests, 3 failed.
+- **As built** (2026-10-13): `DisbursementWorld.businessDateSql(loan)` / `businessDate(loan)` (the database clock in the
+  loan's pinned zone, through the offer's terms - as the triggers read it) and `businessDate()` (the fixtures' UTC zone);
+  every planted or compared date in the lending database suites derived from them - `InterestAccrualDatabaseTest` (the
+  line case's today; the raw `current_date - 2` and `- 3`), `LoanPayoutStepsDatabaseTest` (the accrual start before the
+  conclusion dated today's business date; the duplicate dated `lending.business_date(concluded_at, zone)`, the date the
+  trigger admits, so only the key refuses it), and the instance-clock dates (`LocalDate.now(UTC)`): `DisbursementWorld.post`
+  (its entries on loan accounts are read by date), `LoanAcceptanceDatabaseTest`'s planted capital,
+  `RepaymentReversalDatabaseTest#reverseDirectly`, `CreditLineDrawDatabaseTest`'s suspension call, and
+  `LoanDisbursementDatabaseTest#theEntryBalancesAndNamesTheLoan` - its entry dates now asserted against the business date
+  of the disbursement's own `decided_at` in the pinned zone (or the day before, V008's window) instead of the instance
+  clock's today. No assertion weakened, no production code or trigger touched. **The guard**: `:lending:databaseTest`
+  runs its JVM in a zone whose date is not UTC's at the hour it starts (`Etc/GMT+12` before 11:00 UTC, `Etc/GMT-14`
+  from then; `lending/build.gradle.kts`, printed at the start), so the class is caught at every hour, not four; `-Pfinapp.db.zone=<id>`
+  pins another (`UTC` for a diagnosis). `TESTING.md` §5 states the rule and the shift.
+- **Swept, left** (each reviewed): `AutoCollectionDatabaseTest`, `InstalmentBillingDatabaseTest`, `RepaymentDatabaseTest`,
+  `CreditLineDrawDatabaseTest#theDatabaseHoldsEveryWriter` and `InterestAccrualDatabaseTest`'s skew case already read
+  `lending.business_date(statement_timestamp(), <the loan's zone>)`; `LoanPayoutStepsDatabaseTest`'s and
+  `LoanOriginationDatabaseTest`'s UTC dates of database-stamped instants are the pinned zone's (UTC); the `Instant.now()`
+  payout conclusions are provider instants, as production receives them. `app`: `LendingCreditExposureDatabaseTest`,
+  `LoanAccountDatabaseTest` and `LoanPayoutDatabaseTest` date fixture postings `LocalDate.now(UTC)` - zone-independent
+  (so no shifted run moves them) and read by nothing date-sensitive (exposure sums every line; capital and cash have no
+  date rule) - left, to keep `app` (where `-022` works) untouched; `LendingCapitalDatabaseTest`'s statement and expectation
+  dates and its `current_date` are reconciliation's and settlement's own dates, not a lending business date. `app`'s tier
+  is not shifted.
+- **Objective**: the lending database tier green at every hour, and a fixture that dates by the session, the machine or
+  an instance red at every hour.
+- **Bounded context**: Lending (test fixtures and the tier's configuration). **Dependencies**: none.
+- **Domain changes**: none. **Persistence**: none. **APIs**: none. **Events**: none. **Financial impact**: none.
+  **Invariants**: `INV-LND-10` (servicing time is the database's - now the fixtures' too), `INV-LND-02`, `INV-LND-07`.
+- **Distributed-system concerns**: none new - fixtures only; the dates are read from the one database clock the instances
+  share, as production reads them. **Security**, **Audit**, **Observability**, **Reconciliation implications**: none.
+- **Probe**: the line case's today and the payout case's duplicate put back on `current_date` - both red under the
+  shift; the same two with the shift removed from the build - both green at that hour (the guard is what catches them).
+- **Acceptance criteria**: both cases red under a shifted zone before the fix and green after; the whole lending tier
+  green normally and shifted; the probe caught; the sweep listed.
+- **Definition of done**: `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Verified** (fresh): lending hermetic 170 across 21; lending databaseTest 168 across 15, 0 failures - shifted by the
+  build (`Etc/GMT+12`, 08:27 UTC) and normally (`-Pfinapp.db.zone=Asia/Tbilisi`, the machine's zone, 08:33 UTC). The
+  fleet hermetic and architecture tiers are the coordinator's post-merge run; build, fleet database and kafka tiers not
+  run (the standing criterion-7 deviation).
+
 **P11-TST-001 — The lending storm** — `PLANNED`
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
   end to end from application to closure, for both products — every mandatory scenario exercised.
