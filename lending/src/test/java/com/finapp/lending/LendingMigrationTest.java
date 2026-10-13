@@ -117,13 +117,14 @@ class LendingMigrationTest {
         // payout), P11-TSK-016's (V010, the interest accrual), P11-TSK-017's (V012, the billing and the credit-balance
         // application with its allocation rows), P11-TSK-021's (V013, the credit line draw) and P11-TSK-018's (V014, the
         // repayment, its allocation rows and the loan's closure), P11-TSK-019's (V015, the collection attempt) and
-        // P11-TSK-020's (V016, the repayment reversal and its negating rows) and P11-TSK-022's (V017, the credit line
-        // statement); each later task rewrites this list with its own.
+        // P11-TSK-020's (V016, the repayment reversal and its negating rows), P11-TSK-022's (V017, the credit line
+        // statement) and P11-TSK-023's (V018, the line closure request); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly("accrual_start", "capital_contribution", "capital_contribution_event",
                         "collection_attempt", "credit_balance_allocation", "credit_balance_application", "credit_line_draw",
                         "credit_line_statement",
-                        "flyway_schema_history", "instalment_billing", "interest_accrual", "loan", "loan_acceptance",
+                        "flyway_schema_history", "instalment_billing", "interest_accrual", "line_closure_request", "loan",
+                        "loan_acceptance",
                         "loan_agreement",
                         "loan_application",
                         "loan_application_event", "loan_closure", "loan_disbursement", "loan_event", "loan_instalment",

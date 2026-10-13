@@ -4217,6 +4217,41 @@
           }
         }
       },
+      "lending.LineNotClosable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.LineNotClosable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.LineNotClosable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account is not a credit line that can be closed by request; nothing was done.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.LineNotDrawable": {
         "content": {
           "application/problem+json": {
@@ -11762,6 +11797,37 @@
         ],
         "type": "object"
       },
+      "LineClosureClosedView": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "refunded": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LineClosureView": {
+        "properties": {
+          "closure": {
+            "$ref": "#/components/schemas/LineClosureClosedView"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LineView": {
         "properties": {
           "accountId": {
@@ -19218,6 +19284,41 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}/closure": {
+      "post": {
+        "operationId": "requestLineClosure",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineClosureView"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

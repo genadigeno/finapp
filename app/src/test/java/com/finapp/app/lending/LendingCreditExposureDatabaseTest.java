@@ -277,14 +277,19 @@ class LendingCreditExposureDatabaseTest {
     }
 
     @Test
-    @DisplayName("a closing line counts its drawn principal, no longer its limit")
+    @DisplayName("a closing line counts its drawn principal, no longer its limit - re-asserted through the real closure"
+            + " door (P11-TSK-023): the request moves the line CLOSING without the profile lock, the figure falls, the census"
+            + " holds")
     void aClosingLineCountsItsDrawnPrincipal() throws Exception {
         CreditFixtures.Customer customer = customers.consentingCustomer();
         UUID line = acceptedLoan(customer, line("2500.00"));
         draw(customer, line, "700.00");
         assertThat(v2(customer.party())).isEqualTo(eur(2_500_00));
-        asOwner(owner -> update(owner, "UPDATE lending.loan SET status = 'CLOSING' WHERE id = ?", line));
+        HttpResponse<String> closing = post("/v1/me/loans/" + line + "/closure", "", customer.token());
+        assertThat(closing.statusCode()).as(closing.body()).isEqualTo(201);
+        assertThat(closing.body()).contains("\"outcome\":\"CLOSING\"");
         assertThat(v2(customer.party())).as("no draw is possible: the promise is what is drawn").isEqualTo(eur(700_00));
+        assertThat(census.readNow().failingParties()).doesNotContain(customer.party());
     }
 
     @Test
