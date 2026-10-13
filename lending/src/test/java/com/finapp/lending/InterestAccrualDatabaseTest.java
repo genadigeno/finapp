@@ -776,5 +776,10 @@ class InterestAccrualDatabaseTest {
         public Optional<Duration> oldestUnaccruedLag(Connection unitOfWork) {
             return delegate.oldestUnaccruedLag(unitOfWork);
         }
+
+        @Override
+        public List<LineAwaitingAccrual> linesAwaitingAccrual(Connection unitOfWork) {
+            return delegate.linesAwaitingAccrual(unitOfWork);
+        }
     }
 }

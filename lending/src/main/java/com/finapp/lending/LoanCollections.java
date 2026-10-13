@@ -20,6 +20,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -44,8 +45,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <ol>
  *   <li>Only an {@code ACTIVE} account whose pinned terms collect automatically - an instalment loan's billings, and a
- *       credit line's statements (`P11-TSK-022`: each statement's minimum payment, due on its due date; a {@code CLOSING}
- *       line's collection is `P11-TSK-023`'s, beside its closure).
+ *       credit line's statements (`P11-TSK-022`: each statement's minimum payment, due on its due date) - or a
+ *       {@code CLOSING} line's statements (`P11-TSK-023`): the collection that settles a closing line closes it.
  *   <li>The candidates: every billed item due on or before today, oldest first, not yet attempted today
  *       ({@code UNIQUE (due_item_id, attempt_date)} beneath L3) - an item on its due date always (a settled one records
  *       {@code NOTHING_DUE}), a past-due one while it still has something due (retried on each later business date).
@@ -114,7 +115,10 @@ public final class LoanCollections {
         Objects.requireNonNull(now, "now");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        if (!pinned.autoCollection() || loan.status() != LoanStatus.ACTIVE) {
+        // An ACTIVE account, or a CLOSING line still owing its statements (P11-TSK-023): its collection is what closes it.
+        if (!pinned.autoCollection()
+                || !(loan.status() == LoanStatus.ACTIVE
+                        || (loan.kind() == LoanKind.REVOLVING && loan.status() == LoanStatus.CLOSING))) {
             return Collected.NOTHING;
         }
         Set<DueItemId> attempted = store.attemptedOn(unitOfWork, loan.id(), today);
@@ -178,8 +182,8 @@ public final class LoanCollections {
                 }
             }
             Repayments.Repaid repaid = repayments.receive(unitOfWork, loan, agreement, RepaymentKind.AUTO_COLLECTION,
-                    CollectionAttempt.requestKey(id, today), amount, lines, accounts, wallet.get().get(), today, now, actor,
-                    correlation);
+                    CollectionAttempt.requestKey(id, today), amount, lines, accounts, wallet.get().get(),
+                    ZoneId.of(pinned.servicingZone()), today, now, actor, correlation);
             CollectionOutcome outcome = amount.equals(owed) ? CollectionOutcome.COLLECTED : CollectionOutcome.PARTIAL;
             blocked |= outcome == CollectionOutcome.PARTIAL;
             record(unitOfWork, loan, id, today, outcome, owed, amount, Optional.of(repaid.repayment().id()), correlation,

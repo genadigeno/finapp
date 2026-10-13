@@ -2006,6 +2006,15 @@ to the wallet (L7 after L3) before `CLOSED (REPAID)`, so all six balances are ze
 and paid schedule and to its loan `CLOSED` at commit; a repayment on a closed loan `409 lending.LoanNotRepayable`, nothing
 posted (`#aClosedLoanRefuses`), and refused by the repayment trigger for every writer (`#theRowsAreHeldForEveryWriter`).)*
 
+*(As built by `P11-TSK-023`, 2026-10-13 - a credit line's closure: the same `LoanClosures` closes a `CLOSING` line
+`CLOSED_BY_CUSTOMER` in any transaction that settles it - the customer's repayment, its automatic collection, or the servicing
+step after rule 6 at a statement - and an `ACTIVE` line at its closure request when nothing is outstanding then; "settled"
+again includes every elapsed date accrued (`CreditLineRepaymentDatabaseTest#theLastPaymentClosesAClosingLine`,
+`#aClosingLineClosesAtServicingWhenItsStatementIsSettled`, `#aLineWithNothingOutstandingClosesAtTheRequest` - all six
+balances zero, the excess refunded - and `#aLineIsNotClosedOverAnUnaccruedDay`); `lending V018` holds a line's closure to
+its request and every statement paid, for every writer (`#theRowsAreHeldForEveryWriter`); a closed line refuses a repayment
+(`LoanNotRepayable`), a draw and a second request (`LoanClosed`).)*
+
 ### INV-LND-09 — Interest arithmetic is exact and its conventions declared
 **Statement:** Interest is computed in exact decimal under the day count, servicing zone and rounding
 modes the agreement version declares (`ACT_365F`, simple daily interest on principal outstanding,
@@ -2197,6 +2206,12 @@ governing agreement version and an amount within the limit; verified by `CreditL
 (two for one limit, one admitted; ten for its last 300.00, exactly three), `#aDrawBeyondTheAvailableLimitIsRefused`,
 `#interestAndFeesNeverConsumeTheLimit` and `#tenDrawsOneKey`; the suspension check built over its derived condition, brought
 into force and tested biting by `P11-TSK-024`.)*
+*(As built by `P11-TSK-023`, 2026-10-13 - the restoring side: a line's repayment pays what is due, then principal not yet
+due (`CR LOAN_PRINCIPAL`), so the limit the next draw derives under L3 is restored at the repayment's commit with no stored
+figure moving (`CreditLineRepaymentDatabaseTest#aPaydownRestoresTheAvailableLimit` - a paydown racing a draw for the restored
+limit admits the draw only after it, never beyond the limit); a closing line takes no draw (`#closureStopsDraws`,
+`#closureRacingADrawSerialises`); a paydown reversed after a re-draw is admitted and leaves drawn principal above the limit
+with the available limit zero (`#aLinePaydownReversedAfterARedrawIsAdmitted`).)*
 **Phase:** 11
 
 *`INV-LND-01`…`INV-LND-14` catalogued by the Phase 10 → 11 transition (2026-10-10), the `INV-CRD`

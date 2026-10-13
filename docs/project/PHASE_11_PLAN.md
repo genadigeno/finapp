@@ -533,6 +533,24 @@ lending.CapitalUnavailable`); **(L7)** the wallet rule 5 debited, `ACTIVE` (`409
 proposal `APPROVED` naming the entry, one negating row per allocation, `lending.RepaymentReversed`, the audit record. Every
 refusal leaves the proposal `PROPOSED`, nothing posted. The rejection: L3, L5.)*
 
+*(As built by `P11-TSK-023` - T-rep for a credit line: `-018`'s order unchanged - the claim, **(L3)** the line owner-scoped,
+the key's convergence, a line `ACTIVE` or `CLOSING` (`LoanNotRepayable` otherwise), the clock, the due state under L3, the
+allocation by the pinned `PAY_DOWN_PRINCIPAL`, **(L7)** the wallet, **(L8)**, rule 5 with its `CR LOAN_PRINCIPAL` paydown
+line, the rows, and the closure when a `CLOSING` line is now settled (`CLOSED_BY_CUSTOMER`); an `ACTIVE` line paid to zero
+stays open. No L0 (exposure falls), no L6 (capital headroom rises at commit). **T-clo**, the closure request
+(`LineClosures`): the door's claim (`lending.closure:<type>:<id>`, `MULTI_FACTOR`); **(L3)** the line owner-scoped; the
+line's request converged on (`UNIQUE (loan_id)`: the same key replays, another key on a `CLOSING` line is answered with the
+one request, a `CLOSED` line `409 lending.LoanClosed`); an instalment loan `409 lending.LineNotClosable`; the clock after the
+lock; `LoanClosures.settlement` - every receivable zero and every elapsed date accrued, and for a positive credit balance
+**(L7)** the wallet's row; settled: the request born `CLOSED`, the refund **(L8)**, `loan_closure`, `ACTIVE -> CLOSED
+(CLOSED_BY_CUSTOMER)`; otherwise the request born `CLOSING` and `ACTIVE -> CLOSING`; the history row and
+`lending.LineClosureRequested` (and `lending.LoanClosed`). No L0 - a closing line's exposure falls to its drawn principal;
+no L6. T-svc and the collection step serve a `CLOSING` line as an `ACTIVE` one (accrual, statement, rule 6, collection) and
+close it when it is settled. **No cycle** (section 7.3): every new path takes only L3 → L7 → L8, the order T-svc, T-drw (L3,
+L6 - a draw never waits on a wallet row before L6, and a closure never takes L6), T-rev (L0, L3, L5, L6, L7 - the closure
+takes no L0 or L5, so it only ever waits on L3 behind them) and T-acc (L0, L2, L6 - no lending row of a born line) already
+share.)*
+
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
 One order for every lending writer holding more than one of them:
@@ -597,6 +615,9 @@ capital line's foreign-key share is what may wait on L6. Still one-way: no lendi
 | Duplicate schedule generation | `UNIQUE (loan_id, schedule_version)` | one schedule | `-014`, `-027` |
 | Two draws racing for the available limit | L3 line lock; available derived under it | one admitted; `422 lending.LimitExceeded` | `-021` |
 | Statement produced twice | `UNIQUE (loan_id, cycle_end)` + ledger key | one statement | `-022` |
+| A line's closure racing a draw | L3; the draw admits only `ACTIVE`, the request moves it `CLOSING` | one order: the draw before `CLOSING` or `409 lending.LineNotDrawable` after | `-023` |
+| Ten closure requests, one line | claim (same key); L3 + `line_closure_request UNIQUE (loan_id)` (other keys) | one request answered to all; a closed line `409 lending.LoanClosed` | `-023` |
+| A paydown racing a draw for the restored limit | L3; the available limit derived under it | the draw admitted only after the paydown, never beyond the limit | `-023` |
 | **Scenario 6** — a reversal after allocation | proposal row conditional; L0, L3; `ReversalService` bound | one reversal; allocations negated by rows, later allocations untouched | `-020` |
 | **Scenario 7** — payoff while a repayment is processing | L3; the quote recomputed under it | `409 lending.PayoffQuoteStale`, never a wrong payoff | `-026` |
 | **Scenario 8** — schedule changed under an approved amendment | L3; acceptance conditional on the agreement version | agreement and schedule v n+1 once; a moved agreement lapses it | `-027` |
@@ -1184,7 +1205,14 @@ with the request's own correlation, not the acceptance's - each draw is the cust
 records the refinements.)*
 
 **Closure.** The customer requests closure (`ACTIVE → CLOSING`, no further draws); the line closes in
-the transaction that zeroes its last receivable; a line with nothing outstanding closes at the request.
+the transaction that zeroes its last receivable; a line with nothing outstanding closes at the request. *(As built by
+`P11-TSK-023`, 2026-10-13 - `lending V018`'s `line_closure_request` and `LineClosures` (T-clo, section 7.1): "nothing
+outstanding" is every receivable zero **and every elapsed date accrued** (`LoanClosures`, one closure for both kinds), so a
+line repaid over days not yet accrued moves `CLOSING`; a `CLOSING` line closes `CLOSED_BY_CUSTOMER` in the repayment, the
+automatic collection or the servicing step (after rule 6 at a statement) that settles it, its credit balance refunded. A
+line's repayment pays what is due, then principal (`CR LOAN_PRINCIPAL`, restoring the limit at commit), and holds only a true
+excess; accrued, unstated interest is not a target, so a closing line paid off between statements closes at the next one.
+ADR-0100's Follow-up records the refinements and owner judgements.)*
 
 **Exposure — the committed limit, not the drawn balance** (§12.10): while a line is `ACTIVE`, a party
 can draw to `L` at any moment without a new decision, so a decision that counted only the drawn
@@ -1510,9 +1538,9 @@ scenario 5 red).
 | `finapp.lending.payout.dispatched.age` | gauge (seconds, oldest awaiting an outcome) | — | above payments' outcome objective |
 | `finapp.lending.draw` | counter | outcome | — |
 | `finapp.lending.accrual` | counter | outcome | — |
-| `finapp.lending.accrual.lag` | gauge (seconds since the oldest unaccrued elapsed date) | — | above one day |
+| `finapp.lending.accrual.lag` | gauge (seconds since the oldest unaccrued elapsed date) *(a line's arm built by `P11-TSK-023`: only dates that ended with principal drawn count)* | — | above one day |
 | `finapp.lending.billing` | counter | kind (instalment/statement), outcome | — |
-| `finapp.lending.repayment` | counter | kind, outcome | — |
+| `finapp.lending.repayment` | counter | kind, outcome *(`paid_down` added by `P11-TSK-023` - the paydown component counted)* | — |
 | `finapp.lending.collection` | counter | outcome | — |
 | `finapp.lending.allocation.anomaly` | counter | — | above 0 |
 | `finapp.lending.reversal` | counter | outcome | — |
@@ -1522,7 +1550,7 @@ scenario 5 red).
 | `finapp.lending.amendment` | counter | outcome | — |
 | `finapp.lending.delinquency` | gauge (account counts) | product, bucket | — |
 | `finapp.lending.default` | gauge (count) | product | — |
-| `finapp.lending.loans` | gauge (counts) | product, status | — |
+| `finapp.lending.loans` | gauge (counts) | product, status *(built by `P11-TSK-023`: one series per product and each state its kind can hold, read from the database behind a 15 s refresh floor, NaN when unreadable)* | — |
 | `finapp.lending.subledger.proof` | gauge | verdict | any failure |
 | `finapp.lending.replay` | gauge | verdict | any `DIVERGED` |
 | `finapp.lending.capital.proof` | gauge | verdict | any failure |

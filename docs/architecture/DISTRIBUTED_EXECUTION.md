@@ -207,7 +207,12 @@ draw (L3, L6, L7, L8), the acceptance (L0, L2, L6) or the disbursement (L0, L3, 
 of the one order, and namespace 2 on a repayment's entry is taken only under that loan's L3. Lock-waits proven by
 `RepaymentReversalDatabaseTest#reversalTakesTheProfileFirst` (L0 before L3, holding L0 at L3) and
 `#aReversalNeverOverDeploysCapital` (waiting on L6 holding L3); ten approvers and reversals racing acceptances for the
-last capital run without a `40P01`.)* | n/a |
+last capital run without a `40P01`.)* *(`P11-TSK-023`: a line's repayment keeps T-rep's L3 → L7 → L8 (its paydown one more
+credit line in rule 5's entry); the closure request (T-clo) takes L3, then L7 only for a refund at the request, then L8 - no
+L0 (a closing line's exposure falls), no L5, no L6 - so it waits only on L3 behind a draw (L3 → L6 → L7), a reversal
+(L0 → L3 → L5 → L6 → L7) or a servicing step, and holds nothing they take before L3. Lock-wait proven by
+`CreditLineRepaymentDatabaseTest#closureRacingADrawSerialises` (the request waiting on the line's row); ten requests, draws
+racing requests and paydowns racing draws counted without a `40P01`.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 

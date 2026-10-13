@@ -235,5 +235,37 @@ Financial impact: rule 1 per draw, rule 3 per statement, rule 5 with principal p
   minimum can be past due, but the backlog gives the suspension's derivation to `-024` (both conditions, proven biting), so
   `DrawSuspension.BEFORE_ANY_CONDITION` remains wired and a line whose minimum is past due can draw until `-024` lands - the
   seam is `InstalmentBillingStore.dueItems` under L3; recorded for the owner.
+- **As built by `P11-TSK-023` (2026-10-13) - repayment and closure (points 7, 8, 9).** `lending V018`:
+  `line_closure_request` (INSERT-only, `UNIQUE (loan_id)`, born only for an `ACTIVE` line, its outcome `CLOSING` or
+  `CLOSED` held to the line's state at commit by a deferred check); the repayment, collection-attempt and closure triggers
+  and the loan's edge function replaced - a line `ACTIVE` or `CLOSING` takes the customer's repayment and its automatic
+  collection; `ACTIVE -> CLOSING` only beside its request; `ACTIVE -> CLOSED` (at the request) and `CLOSING -> CLOSED`
+  only `CLOSED_BY_CUSTOMER` beside `loan_closure` and the request, every statement paid in full; `CLOSING -> ACTIVE` and
+  anything out of `CLOSED` refused for every role. **Point 7**: `-018`'s one posting half (`Repayments.receive`) serves
+  the line - `AllocationEngineV1` under the pinned `PAY_DOWN_PRINCIPAL` (billed statements oldest first, then principal not
+  yet due, then the excess held), rule 5 gaining its `CR LOAN_PRINCIPAL` line; the paydown restores the available limit at
+  commit with no change to `AvailableLimit` (`-021`'s carry). **Point 8**: T-clo (`LineClosures`) - (L3) the line, the
+  request converging (same key: replay; another key on a `CLOSING` line: the one request; a `CLOSED` line:
+  `409 lending.LoanClosed`), `409 lending.LineNotClosable` for an instalment loan (a new code - the plan named none), then
+  `LoanClosures.settlement` (every receivable zero **and every elapsed date accrued**, the refund's wallet under L7): settled
+  closes at the request, otherwise `CLOSING`. `LoanClosures` is the one closure for both kinds - a `CLOSING` line closes in
+  any transaction that settles it: the customer's repayment, an automatic collection (`LoanCollections` now collects a
+  `CLOSING` line), or the servicing step after a statement's credit-balance application. "Nothing outstanding" includes
+  the accrual: a line repaid to zero over days not yet accrued moves `CLOSING`, never `CLOSED`, and closes once those
+  days' interest is stated and paid. **Point 9**: the request takes no L0 - exposure falls (`GREATEST(limit, drawn)` to the
+  drawn principal), proven end to end with the census holding. **Refinements** (each for its reason): the migration is
+  `V018`; the request's outcome is recorded (`CLOSING`/`CLOSED`) rather than updated later - the later closure is
+  `loan_closure`'s fact, so the request stays INSERT-only; `lending.LineClosureRequested` is published for every request
+  beside `lending.LoanClosed` when it closes (the backlog named only the latter - a `CLOSING` edge without an event would
+  be invisible downstream); the accrual lag's line arm (carried from `-016` via `-021`) is `AccrualLags` - a line's dates
+  count only when they ended with principal drawn, one ledger read per candidate line. **Owner judgements recorded**: (1)
+  rule 6 at a statement still holds a credit balance's remainder rather than paying principal down (`-022`'s question) - a
+  credit balance beside drawn principal arises only from a re-draw over held credit, and paying it down there needs a
+  paydown target on `credit_balance_allocation` and a subledger arm; left as is, recommended for the owner; (2) a repayment
+  reversal on a `CLOSING` line keeps `-020`'s rule (only an `ACTIVE` account - `LoanClosed`), so an operator's mistake on a
+  closing line's repayment is corrected by a later waiver or amendment; (3) a closing line cannot close in one payment
+  while interest is accrued and not yet stated - accrued interest is not an allocation target (ADR-0095); it closes at its
+  next statement (the held excess applied by rule 6, or the minimum paid), and the line's payoff (`-026`) is the
+  one-payment path.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

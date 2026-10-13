@@ -58,8 +58,8 @@ import lombok.RequiredArgsConstructor;
  *   <li>the steps later tasks add, in this order: the condition (`-024`), the late fee (`-025`) - each after collection,
  *       each under the same lock;
  *   <li><strong>close</strong> (`P11-TSK-018`, {@link LoanClosures}): a caught-up instalment loan whose every receivable
- *       is zero closes {@code REPAID}, its credit balance refunded to the wallet - (L7) the wallet's row after L3 - and is
- *       not re-permitted;
+ *       is zero closes {@code REPAID} - and a caught-up {@code CLOSING} line {@code CLOSED_BY_CUSTOMER} (`P11-TSK-023`) -
+ *       its credit balance refunded to the wallet - (L7) the wallet's row after L3 - and is not re-permitted;
  *   <li>the permit: the start of the next business date in the pinned zone - or now, when a long catch-up stopped at its
  *       bound and the rest is due at once.
  * </ol>
@@ -215,7 +215,7 @@ public final class LoanServicing {
             // Last, the closure (P11-TSK-018): a loan the step's credit-balance application settled - or one settled
             // earlier whose refund could not be credited then - closes here, its credit balance refunded (L7 after L3).
             if (accrued.caughtUp() && closure.isEmpty()) {
-                closure = closures.closeIfSettled(unitOfWork, loan, agreement, today, Optional.empty(),
+                closure = closures.closeIfSettled(unitOfWork, loan, agreement, zone, today, Optional.empty(),
                         com.finapp.platform.security.SecurityContext::require, loan.correlation());
             }
         }
@@ -236,6 +236,14 @@ public final class LoanServicing {
         return status == LoanStatus.ACTIVE || status == LoanStatus.CLOSING;
     }
 
+    /**
+     * A credit line's accrual start: its opening business date in the agreement's pinned zone (`P11-TSK-016`) - one rule
+     * for the accrual step, the closure's "every elapsed date accrued" (`P11-TSK-023`) and the accrual lag's line arm.
+     */
+    static LocalDate lineAccrualStart(Loan line, ZoneId zone) {
+        return LocalDate.ofInstant(line.openedAt(), zone);
+    }
+
     // ------------------------------------------------------------------ the accrual step
 
     /**
@@ -250,7 +258,7 @@ public final class LoanServicing {
         LoanId id = loan.id();
         Optional<LocalDate> accrualStart = loan.kind() == LoanKind.INSTALMENT
                 ? store.accrualStartOf(unitOfWork, id)
-                : Optional.of(LocalDate.ofInstant(loan.openedAt(), zone));
+                : Optional.of(lineAccrualStart(loan, zone));
         if (accrualStart.isEmpty()) {
             // Path X awaiting its payout's terminal outcome (A30): no accrual start, nothing accrues - never a guess.
             return new Accrued(0, 0, true, Optional.empty());

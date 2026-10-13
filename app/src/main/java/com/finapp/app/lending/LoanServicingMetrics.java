@@ -1,8 +1,8 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.AccrualLags;
 import com.finapp.lending.CollectionOutcome;
 import com.finapp.lending.LoanServicing;
-import com.finapp.lending.LoanServicingStore;
 import com.finapp.lending.RepaymentKind;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -26,9 +26,10 @@ import lombok.extern.slf4j.Slf4j;
  *       transaction committed: {@code posted} (the row and its entry) or {@code zero} (the row alone - a zero day); and
  *       each servicing step that failed ({@code failed} - rolled back, retried at the claim's cadence). Registered eagerly
  *       for every outcome.
- *   <li>{@code finapp.lending.accrual.lag} - seconds since the end of the oldest elapsed date an instalment loan in
- *       servicing has not accrued, on the database clock in its pinned zone; 0 when every elapsed date is accrued, NaN
- *       when unreadable - never zero for a read that failed. The alert sits above one day (`P11-TSK-030`). Read from the
+ *   <li>{@code finapp.lending.accrual.lag} - seconds since the end of the oldest elapsed date an account in servicing has
+ *       not accrued, on the database clock in its pinned zone - an instalment loan's every date, a credit line's every
+ *       date that ended with principal drawn ({@link AccrualLags}, the line arm `P11-TSK-023`'s); 0 when every such date is
+ *       accrued, NaN when unreadable - never zero for a read that failed. The alert sits above one day (`P11-TSK-030`). Read from the
  *       database, so every instance reports the same value - aggregate with {@code max()}, never {@code sum()}; cached
  *       15 s behind a per-instance refresh floor - never truth.
  *   <li>{@code finapp.lending.billing{kind, outcome}} (`P11-TSK-017`) - each billed item of a committed servicing step
@@ -98,16 +99,16 @@ public final class LoanServicingMetrics {
 
     private final MeterRegistry registry;
     private final RepaymentMetrics repayments;
-    private final LoanServicingStore store;
+    private final AccrualLags lags;
     private final Connections connections;
     private final Clock clock;
     private final AtomicReference<Cached> cached = new AtomicReference<>(new Cached(Instant.EPOCH, Optional.empty()));
 
     private record Cached(Instant takenAt, Optional<Optional<Duration>> lag) {}
 
-    public LoanServicingMetrics(LoanServicingStore store, Connections connections, Clock clock, MeterRegistry registry,
+    public LoanServicingMetrics(AccrualLags lags, Connections connections, Clock clock, MeterRegistry registry,
             RepaymentMetrics repayments) {
-        this.store = Objects.requireNonNull(store, "store");
+        this.lags = Objects.requireNonNull(lags, "lags");
         this.repayments = Objects.requireNonNull(repayments, "repayments");
         this.connections = Objects.requireNonNull(connections, "connections");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -123,9 +124,10 @@ public final class LoanServicingMetrics {
             collection(outcome);
         }
         Gauge.builder(LAG, this, LoanServicingMetrics::lagSeconds)
-                .description("Seconds since the end of the oldest elapsed date an instalment loan in servicing has not"
-                        + " accrued, on the database clock in its pinned zone - 0 when none, NaN when unreadable. Alert"
-                        + " above one day. Fleet-wide from every instance: aggregate with max(), never sum()")
+                .description("Seconds since the end of the oldest elapsed date an account in servicing has not accrued -"
+                        + " an instalment loan's every date, a credit line's dates with principal drawn - on the database"
+                        + " clock in its pinned zone; 0 when none, NaN when unreadable. Alert above one day. Fleet-wide"
+                        + " from every instance: aggregate with max(), never sum()")
                 .baseUnit("seconds")
                 .strongReference(true)
                 .register(registry);
@@ -197,7 +199,7 @@ public final class LoanServicingMetrics {
         Cached fresh;
         try (Connection connection = connections.open()) {
             connection.setReadOnly(true);
-            fresh = new Cached(clock.instant(), Optional.of(store.oldestUnaccruedLag(connection)));
+            fresh = new Cached(clock.instant(), Optional.of(lags.oldest(connection)));
         } catch (SQLException | RuntimeException unreadable) {
             log.warn("The accrual lag could not be read: {}", unreadable.getClass().getSimpleName());
             fresh = new Cached(clock.instant(), Optional.empty());

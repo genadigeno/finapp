@@ -77,12 +77,25 @@ public interface LoanStore {
     Optional<Owned> lockOwnedBy(Connection unitOfWork, LoanId id, UUID party);
 
     /**
-     * Closes an {@code ACTIVE} instalment loan (`P11-TSK-018`): births {@code closure}'s {@code loan_closure} row, then
-     * moves the loan {@code ACTIVE -> CLOSED} for its reason, conditional - in this order, which the edge function
-     * requires. Whether the loan moved; called only under the loan's row lock (L3), in the transaction that zeroed its
-     * last receivable and refunded its credit balance.
+     * Closes a loan (`P11-TSK-018`; a credit line's, `P11-TSK-023`): births {@code closure}'s {@code loan_closure} row, then
+     * moves the loan {@code from -> CLOSED} for its reason, conditional on {@code from} - in this order, which the edge
+     * function requires. Whether the loan moved; called only under the loan's row lock (L3), in the transaction that zeroed
+     * its last receivable and refunded its credit balance - an instalment loan from {@code ACTIVE}, a line from
+     * {@code ACTIVE} (at its closure request) or {@code CLOSING}.
      */
-    boolean close(Connection unitOfWork, LoanClosure closure, CorrelationId correlation);
+    boolean close(Connection unitOfWork, LoanClosure closure, LoanStatus from, CorrelationId correlation);
+
+    /**
+     * A credit line {@code ACTIVE -> CLOSING} (`P11-TSK-023`), conditional - beside the customer's closure request born in
+     * this transaction, which the edge function requires. Whether it moved; called only under the line's row lock (L3).
+     */
+    boolean beginClosing(Connection unitOfWork, LoanId id);
+
+    /**
+     * How many loan accounts are in each (product, status) - the {@code finapp.lending.loans} gauge's read (`P11-TSK-023`);
+     * a pair with none is absent.
+     */
+    java.util.Map<LoanProduct, java.util.Map<LoanStatus, Long>> countsByProductAndStatus(Connection unitOfWork);
 
     // ------------------------------------------------------------------ rows
 

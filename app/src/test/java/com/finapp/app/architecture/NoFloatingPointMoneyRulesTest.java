@@ -332,6 +332,10 @@ class NoFloatingPointMoneyRulesTest {
                     // ADR-0072).
                     "com.finapp.app.lending.LoanServicingMetrics",
                     "com.finapp.app.lending.LoanServicingMetrics$Cached",
+                    // P11-TSK-023. The SAME case again: loan account COUNTS per product and state through the
+                    // ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - counts, never an amount (ADR-0072).
+                    "com.finapp.app.lending.LoanCountMetrics",
+                    "com.finapp.app.lending.LoanCountMetrics$Cached",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

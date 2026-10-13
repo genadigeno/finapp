@@ -358,6 +358,9 @@ class OpenApiContractTest {
                         // P11-TSK-018: a loan's repayments - the repayment from the wallet (keyed, the platform's
                         // conditional step-up, 201) and the owner's read of its repayments and their allocations.
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/repayments",
+                        // P11-TSK-023: a line's closure request - MULTI_FACTOR, keyed, 201 with its outcome (CLOSING, or
+                        // CLOSED at once when nothing is outstanding).
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/closure",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

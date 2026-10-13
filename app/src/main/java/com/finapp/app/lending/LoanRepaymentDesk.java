@@ -87,7 +87,10 @@ public final class LoanRepaymentDesk {
             List<RepaymentAllocationView> allocations,
             RepaymentClosureView closure) {}
 
-    /** One allocation line: what it paid - a billed item's component, or the amount held as the credit balance. */
+    /**
+     * One allocation line: what it paid - a billed item's component, a credit line's principal not yet due
+     * ({@code NOT_DUE_PRINCIPAL}, `P11-TSK-023`), or the amount held as the credit balance.
+     */
     public record RepaymentAllocationView(String target, String billingId, String component, String amount) {}
 
     /** The closure a repayment brought: its reason and the credit balance refunded to the wallet. */
@@ -113,6 +116,7 @@ public final class LoanRepaymentDesk {
         Repayments.Request request = new Repayments.Request(idempotencyKey, amount);
         AtomicBoolean converged = new AtomicBoolean();
         AtomicBoolean closed = new AtomicBoolean();
+        AtomicBoolean paidDown = new AtomicBoolean();
         IdempotentExecutor.ExecutionOutcome outcome;
         try {
             outcome = transactions.inTransaction(unitOfWork -> {
@@ -122,6 +126,7 @@ public final class LoanRepaymentDesk {
                     Repayments.Repaid repaid = repayments.repay(claimed, id, party, request, actor, correlation);
                     converged.set(repaid.replayed());
                     closed.set(repaid.closure().isPresent());
+                    paidDown.set(repaid.repayment().to(AllocationLine.Target.NOT_DUE_PRINCIPAL).isPositive());
                     return CommandResult.succeeded(stored(view(repaid.repayment(), repaid.closure())));
                 });
             });
@@ -136,7 +141,7 @@ public final class LoanRepaymentDesk {
         } catch (Repayments.LoanNotRepayable notRepayable) {
             metrics.record(RepaymentKind.CUSTOMER, RepaymentMetrics.Outcome.NOT_REPAYABLE);
             throw new ApiException(LendingErrorCode.LOAN_NOT_REPAYABLE, "The loan cannot be repaid",
-                    "the loan is closed, cancelled, not yet disbursed, or a credit line; nothing was posted.");
+                    "the loan is closed, cancelled or not yet disbursed; nothing was posted.");
         } catch (Repayments.InsufficientFunds insufficient) {
             metrics.record(RepaymentKind.CUSTOMER, RepaymentMetrics.Outcome.INSUFFICIENT_FUNDS);
             throw new ApiException(LendingErrorCode.INSUFFICIENT_FUNDS, "The repayment cannot be funded",
@@ -155,8 +160,8 @@ public final class LoanRepaymentDesk {
         RepaymentView repaid =
                 replayed(outcome.body().orElseThrow(() -> new IllegalStateException("a repayment stores its receipt")));
         if (outcome.executed() && !converged.get()) {
-            metrics.record(RepaymentKind.CUSTOMER,
-                    closed.get() ? RepaymentMetrics.Outcome.CLOSED : RepaymentMetrics.Outcome.REPAID);
+            metrics.record(RepaymentKind.CUSTOMER, closed.get() ? RepaymentMetrics.Outcome.CLOSED
+                    : paidDown.get() ? RepaymentMetrics.Outcome.PAID_DOWN : RepaymentMetrics.Outcome.REPAID);
         }
         return repaid;
     }

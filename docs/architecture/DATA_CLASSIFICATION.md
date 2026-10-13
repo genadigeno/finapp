@@ -3171,6 +3171,21 @@ amount, the line, agreement and entry references `CONFIDENTIAL`, dates, versions
 | `credit_line_statement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `credit_line_statement` | `correlation_id` | `INTERNAL` | The line's correlation |
 
+### `lending` - the credit line closure request - *added by `P11-TSK-023`*
+
+`lending V018`: the customer's request to close their line, born once per line while it is `ACTIVE`, with the outcome at
+the request. No amount (the refund at a closure is `loan_closure`'s, `P11-TSK-018`); the line reference `CONFIDENTIAL`,
+the key, outcome and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `line_closure_request` | `id` | `INTERNAL` | Generated |
+| `line_closure_request` | `loan_id` | `CONFIDENTIAL` | The credit line - one request per line |
+| `line_closure_request` | `request_key` | `INTERNAL` | The customer's idempotency key - the arbiter a retried key converges on |
+| `line_closure_request` | `outcome` | `INTERNAL` | `CLOSING` or `CLOSED` at the request |
+| `line_closure_request` | `requested_at` | `INTERNAL` | System time, stamped by the trigger |
+| `line_closure_request` | `correlation_id` | `INTERNAL` | The request's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

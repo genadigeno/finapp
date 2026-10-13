@@ -655,7 +655,9 @@ class CreditLineStatementDatabaseTest {
     /**
      * The line's subledger arms: each due account is what its statements billed less every payer's allocations plus what
      * reversals re-opened; the accrued interest the accruals less what statements billed; principal not yet due the draws
-     * less what statements billed; the credit balance the fixture's credit less the applications.
+     * less what statements billed and what repayments paid down, plus what reversals re-opened of a paydown
+     * (`P11-TSK-023`); the credit balance the fixture's credit plus what repayments held, less what reversals re-opened of
+     * it, the applications and the closure's refund (`P11-TSK-023`).
      */
     static void assertLineSubledgerProves(DisbursementWorld.Accepted line, long creditFixture) {
         UUID id = line.loan().value();
@@ -685,16 +687,32 @@ class CreditLineStatementDatabaseTest {
                         - count("SELECT coalesce(sum(interest_billed_minor), 0) FROM lending.credit_line_statement"
                                 + " WHERE loan_id = ?", id));
         assertThat(netDebit(loanAccount(line.loan(), AccountPurpose.LOAN_PRINCIPAL)).minorUnits())
+                .as("principal not yet due: draws less statements' principal and paydowns, plus reversed paydowns")
                 .isEqualTo(count("SELECT coalesce(sum(amount_minor), 0) FROM lending.credit_line_draw WHERE loan_id = ?", id)
                         - count("SELECT coalesce(sum(principal_billed_minor), 0) FROM lending.credit_line_statement"
-                                + " WHERE loan_id = ?", id));
-        assertThat(held(line.loan())).isEqualTo(creditFixture
+                                + " WHERE loan_id = ?", id)
+                        - target(id, "NOT_DUE_PRINCIPAL", false) + target(id, "NOT_DUE_PRINCIPAL", true));
+        assertThat(held(line.loan())).as("the credit balance: the fixture's and the repayments' excess, less reversals,"
+                + " applications and the closure's refund").isEqualTo(creditFixture
+                + target(id, "CREDIT_BALANCE", false) - target(id, "CREDIT_BALANCE", true)
                 - count("SELECT coalesce(sum(amount_minor), 0) FROM lending.credit_balance_application WHERE loan_id = ?",
-                        id));
+                        id)
+                - count("SELECT coalesce(sum(refund_minor), 0) FROM lending.loan_closure WHERE loan_id = ?", id));
         assertThat(count("SELECT count(*) FROM lending.credit_line_statement s WHERE s.loan_id = ?"
                 + " AND s.journal_entry_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ledger.journal_entry e"
                 + " WHERE e.id = s.journal_entry_id AND e.idempotency_scope = 'ledger.post:lending.statement:'"
                 + " || s.loan_id || ':' || s.cycle_end)", id)).as("each statement's entry under its natural key").isZero();
+    }
+
+    /** The line's repayment rows of {@code target} - or, {@code reversed}, their negating rows (`P11-TSK-020`). */
+    private static long target(UUID loan, String target, boolean reversed) {
+        return count(reversed
+                ? "SELECT coalesce(sum(n.amount_minor), 0) FROM lending.repayment_allocation_reversal n"
+                        + " JOIN lending.repayment_allocation a ON a.id = n.allocation_id"
+                        + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.target = ?"
+                : "SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"
+                        + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.target = ?",
+                loan, target);
     }
 
     private static List<String> columns() {

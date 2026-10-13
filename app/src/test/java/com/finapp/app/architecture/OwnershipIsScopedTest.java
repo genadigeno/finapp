@@ -917,6 +917,23 @@ class OwnershipIsScopedTest {
                                         + " UPDATE under party_id = ? (L3); the key is the session's own Idempotency-Key"
                                         + " under that loan - UNIQUE (loan_id, kind, request_key), lending V014.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLineClosureStore.findByLoan",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-023. The line id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); one closure request per line - UNIQUE"
+                                        + " (loan_id), lending V018.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.beginClosing",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-023. The line id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); conditional on ACTIVE and REVOLVING, lending"
+                                        + " V018's edge function admitting ACTIVE -> CLOSING only beside the request born"
+                                        + " in this transaction.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcRepaymentStore.ownedBy",
                             new Entry(
                                     Scope.OWNER_SCOPED,

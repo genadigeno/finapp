@@ -222,6 +222,33 @@ public final class JdbcLoanServicingStore implements LoanServicingStore {
         }
     }
 
+    @Override
+    public List<LineAwaitingAccrual> linesAwaitingAccrual(Connection unitOfWork) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT x.id, x.currency, x.next_date, x.today, x.zone FROM (SELECT l.id, l.currency,"
+                        + " GREATEST(COALESCE((SELECT max(a.accrual_date) + 1 FROM lending.interest_accrual a"
+                        + " WHERE a.loan_id = l.id), lending.business_date(l.opened_at, t.servicing_zone)),"
+                        + " lending.business_date(l.opened_at, t.servicing_zone)) AS next_date,"
+                        + " lending.business_date(statement_timestamp(), t.servicing_zone) AS today,"
+                        + " t.servicing_zone AS zone"
+                        + " FROM lending.loan l JOIN lending.loan_offer o ON o.id = l.offer_id"
+                        + " JOIN lending.loan_terms t ON t.terms_version_id = o.terms_version_id"
+                        + " WHERE l.kind = 'REVOLVING' AND l.status IN ('ACTIVE', 'CLOSING')"
+                        + " AND EXISTS (SELECT 1 FROM lending.credit_line_draw d WHERE d.loan_id = l.id)) x"
+                        + " WHERE x.next_date < x.today ORDER BY x.next_date, x.id");
+                ResultSet rows = select.executeQuery()) {
+            List<LineAwaitingAccrual> lines = new ArrayList<>();
+            while (rows.next()) {
+                lines.add(new LineAwaitingAccrual(LoanId.of(rows.getObject(1, UUID.class)),
+                        CurrencyCode.of(rows.getString(2).strip()), rows.getObject(3, LocalDate.class),
+                        rows.getObject(4, LocalDate.class), rows.getString(5)));
+            }
+            return lines;
+        } catch (SQLException failure) {
+            throw failed("reading the lines awaiting accrual", failure);
+        }
+    }
+
     private static LendingStorageException failed(String operation, SQLException failure) {
         Objects.requireNonNull(failure, "failure");
         return new LendingStorageException("lending storage failed " + operation + ": SQLSTATE " + failure.getSQLState());

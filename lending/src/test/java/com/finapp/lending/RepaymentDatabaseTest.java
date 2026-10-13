@@ -7,7 +7,6 @@ import static com.finapp.lending.DisbursementWorld.REPAYMENTS;
 import static com.finapp.lending.DisbursementWorld.REPAYMENT_STORE;
 import static com.finapp.lending.DisbursementWorld.STANDING;
 import static com.finapp.lending.DisbursementWorld.UNREACHABLE_WALLETS;
-import static com.finapp.lending.DisbursementWorld.acceptedLine;
 import static com.finapp.lending.DisbursementWorld.acceptedLoan;
 import static com.finapp.lending.DisbursementWorld.asOwner;
 import static com.finapp.lending.DisbursementWorld.awaitBlockedBy;
@@ -441,8 +440,8 @@ class RepaymentDatabaseTest {
 
     @Test
     @DisplayName("a closed loan refuses: a repayment to a loan closed a moment earlier is 409 lending.LoanNotRepayable with"
-            + " nothing posted - as is one awaiting its disbursement and (until -023) a credit line; another party's loan"
-            + " is not found and never locked")
+            + " nothing posted - as is one awaiting its disbursement (a closed credit line's refusal is"
+            + " CreditLineRepaymentDatabaseTest's, P11-TSK-023); another party's loan is not found and never locked")
     void aClosedLoanRefuses() {
         LoanId loan = disbursed(3_300_00, 6);
         topUp(partyOf(loan), 500_00);
@@ -455,15 +454,11 @@ class RepaymentDatabaseTest {
         DisbursementWorld.Accepted pending = acceptedLoan(1_000_00, 12);
         assertThatExceptionOfType(Repayments.LoanNotRepayable.class)
                 .isThrownBy(() -> repayAs(REPAYMENTS, pending.party(), pending.loan(), key(), 10_00));
-        DisbursementWorld.Accepted line = acceptedLine(1_000_00);
-        assertThatExceptionOfType(Repayments.LoanNotRepayable.class)
-                .isThrownBy(() -> repayAs(REPAYMENTS, line.party(), line.loan(), key(), 10_00));
         LoanId active = billedLoan(3_400_00);
         assertThatExceptionOfType(Repayments.LoanNotFound.class)
                 .isThrownBy(() -> repayAs(REPAYMENTS, UUID.randomUUID(), active, key(), 10_00));
         assertThat(repayments(active)).isEmpty();
-        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id IN (?, ?)", pending.loan().value(),
-                line.loan().value())).isZero();
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?", pending.loan().value())).isZero();
     }
 
     @Test
