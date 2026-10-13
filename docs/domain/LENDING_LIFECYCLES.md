@@ -359,7 +359,10 @@ observation at once); `DISPATCHING → NOT_DISPATCHED` names its reason (`NO_ELI
 refusal; `DESTINATION_UNAVAILABLE` - the method no longer the borrower's own active bank account; `CUSTOMER_UNAVAILABLE`
 - no active customer) and the hold is released in that transaction; `DISPATCHED → DISPATCHED` stamps an observation
 (`last_observed_at`) and nothing else; `DISPATCHED → PAID_OUT | FAILED` carries payments' conclusion instant, held by the
-trigger within `[created_at, statement_timestamp()]`. A terminal payout commits only beside its accrual start
+trigger within `[created_at, statement_timestamp()]` - and on a database clock stepped back behind the payout's birth,
+where that interval is empty, at the birth: `GREATEST(LEAST(instant, statement_timestamp()), created_at)`, the order of
+facts winning over the clock's reading (`lending V019`, `P11-TSK-033`; ADR-0063 decision 2); `NOT_DISPATCHED` is
+stamped `GREATEST(statement_timestamp(), created_at)`. A terminal payout commits only beside its accrual start
 (`PAYOUT_CONCLUDED`, the conclusion's business date in the pinned zone) and schedule version 1 (a deferred check).
 **Refinement: `RETURNED` is not a state.** Payments keeps no return record for an instant withdrawal - the instant rail
 is final on acceptance (`INV-REV-03`) and recalls and return windows are deferred by ADR-0062 - so a `RETURNED` edge

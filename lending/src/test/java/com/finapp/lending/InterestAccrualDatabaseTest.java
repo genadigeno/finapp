@@ -220,8 +220,13 @@ class InterestAccrualDatabaseTest {
         LoanServicing.Outcome step = service(loan);
         assertThat(step.posted()).isEqualTo(3);
         assertThat(step.caughtUp()).isTrue();
-        assertThat(dates(loan, "created_at, accrual_date"))
-                .as("oldest first").containsExactly(start, start.plusDays(1), start.plusDays(2));
+        // Oldest first is the trigger's: a date at or before one already accrued is refused for every writer (asserted in
+        // theRowsAndThePermitAreHeldForEveryWriter), so three dates posted in one step were written oldest first. Read by
+        // the domain key, not created_at - the database clock steps back, and a later row can be stamped earlier
+        // (P11-TSK-033).
+        assertThat(dates(loan, "accrual_date"))
+                .as("one row a date, consecutive from the start").containsExactly(start, start.plusDays(1),
+                        start.plusDays(2));
         assertChain(loan, RATE);
         assertAccruedOnce(loan, 3);
         assertThat(scalar("SELECT (next_servicing_at = (lending.business_date(statement_timestamp(), 'UTC') + 1)"

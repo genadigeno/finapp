@@ -499,11 +499,12 @@ class LoanPayoutDatabaseTest {
     }
 
     /** Interest from payments' conclusion: the accrual start the business date of the withdrawal's terminal move, held
-     * within the payout's life, in the pinned zone; schedule v1 from it. */
+     * within the payout's life - never after the recording clock (decided_at), never before the birth, the birth winning
+     * (lending V019, P11-TSK-033) - in the pinned zone; schedule v1 from it. */
     private static void assertAccrualFromPaymentsConclusion(Disbursed loan) throws Exception {
-        assertThat(scalar("SELECT (s.start_date = lending.business_date(LEAST(GREATEST(e.occurred_at, p.created_at),"
-                + " p.decided_at), t.servicing_zone) AND s.origin = 'PAYOUT_CONCLUDED'"
-                + " AND p.concluded_at = LEAST(GREATEST(e.occurred_at, p.created_at), p.decided_at))::text"
+        assertThat(scalar("SELECT (s.start_date = lending.business_date(GREATEST(LEAST(e.occurred_at, p.decided_at),"
+                + " p.created_at), t.servicing_zone) AND s.origin = 'PAYOUT_CONCLUDED'"
+                + " AND p.concluded_at = GREATEST(LEAST(e.occurred_at, p.decided_at), p.created_at))::text"
                 + " FROM lending.accrual_start s JOIN lending.loan_payout p ON p.loan_id = s.loan_id"
                 + " JOIN payments.withdrawal_event e ON e.withdrawal_id = p.withdrawal_id"
                 + " AND e.to_status IN ('COMPLETED', 'FAILED')"

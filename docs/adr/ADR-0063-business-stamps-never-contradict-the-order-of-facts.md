@@ -177,3 +177,11 @@ Financial impact:
   birth `GREATEST(statement_timestamp(), the decision request's latest requested_at + 1 µs)`, every
   birth serialised by the decision request's row lock - the same permit form, no instance clock, no
   domain change.
+- *2026-10-13, `P11-TSK-033`*: a fourth database-own stamp - a loan payout's `concluded_at` (`lending V009`), which a
+  clamp bounded both ways: never before the payout's birth, never after the recording statement's clock. V009 applied
+  the ceiling last, so on a database clock stepped back behind the birth the conclusion landed before it (and the
+  accrual start was dated by it). `lending V019` applies the birth's floor last, `GREATEST(LEAST(instant,
+  statement_timestamp()), created_at)`: where a floor from the order of facts and a ceiling from a clock reading
+  disagree, the order of facts wins - this ADR's decision 2 - and the stamp is later than the clock by at most the step.
+  The ceiling's consumer (the accrual start's "never after today") takes the same reference, `GREATEST(the clock, the
+  birth)`, so it does not refuse what the clamp produced. No instance clock, no domain change.

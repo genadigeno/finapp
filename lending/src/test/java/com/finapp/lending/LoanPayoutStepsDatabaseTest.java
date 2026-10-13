@@ -4,6 +4,7 @@ import static com.finapp.lending.DisbursementWorld.HOLDS;
 import static com.finapp.lending.DisbursementWorld.PAYMENTS;
 import static com.finapp.lending.DisbursementWorld.PAYOUT_STEPS;
 import static com.finapp.lending.DisbursementWorld.acceptedLoan;
+import static com.finapp.lending.DisbursementWorld.asOwner;
 import static com.finapp.lending.DisbursementWorld.available;
 import static com.finapp.lending.DisbursementWorld.businessDateSql;
 import static com.finapp.lending.DisbursementWorld.claimPayouts;
@@ -259,12 +260,60 @@ class LoanPayoutStepsDatabaseTest {
         assertThat(effects.get(late.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
         assertThat(scalar("SELECT (concluded_at = created_at)::text FROM lending.loan_payout WHERE loan_id = ?",
                 early.loan().value())).isEqualTo("true");
-        assertThat(scalar("SELECT (concluded_at <= now() AND concluded_at > created_at)::text FROM lending.loan_payout"
-                + " WHERE loan_id = ?", late.loan().value())).isEqualTo("true");
+        // The recording statement's clock is decided_at (the same statement_timestamp()): read against it and the birth,
+        // never against a later now() or a separate clock reading, which a database clock stepping back would contradict.
+        assertThat(scalar("SELECT (concluded_at = GREATEST(decided_at, created_at))::text FROM lending.loan_payout"
+                + " WHERE loan_id = ?", late.loan().value())).as("the future instant becomes the recording clock")
+                .isEqualTo("true");
         for (DisbursementWorld.Accepted loan : List.of(early, late)) {
             assertThat(scalar("SELECT (s.start_date = d.value_date)::text FROM lending.accrual_start s"
                     + " JOIN lending.loan_disbursement d ON d.loan_id = s.loan_id WHERE s.loan_id = ?",
                     loan.loan().value())).as("today, the disbursement's value date").isEqualTo("true");
+        }
+    }
+
+    @Test
+    @DisplayName("a conclusion recorded on a database clock behind the payout's birth is held at the birth"
+            + " (P11-TSK-033): payments' instant before it, at the instance's now and in the future, and a refusal on"
+            + " the clock itself, each concluded at created_at - never before the payout - with the accrual start the"
+            + " birth's business date, admitted though the recording clock's own date is earlier")
+    void aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth() {
+        DisbursementWorld.Accepted early = dispatched(1_360_00);
+        DisbursementWorld.Accepted present = dispatched(1_370_00);
+        DisbursementWorld.Accepted late = dispatched(1_380_00);
+        DisbursementWorld.Accepted refused = disbursedExternally(1_390_00, 12);
+        List<DisbursementWorld.Accepted> all = List.of(early, present, late, refused);
+        // The database clock stepped back below each payout's birth, deterministically: the birth moved a day ahead of
+        // the clock (so into the pinned zone's next business date too), the permit made due - as the bootstrap superuser
+        // with the triggers suspended, since no writer can move a birth.
+        for (DisbursementWorld.Accepted loan : all) {
+            asOwner("UPDATE lending.loan_payout SET created_at = statement_timestamp() + interval '1 day',"
+                    + " next_attempt_at = statement_timestamp() - interval '1 hour' WHERE loan_id = '"
+                    + loan.loan().value() + "'");
+        }
+        PAYMENTS.outcomes.put(early.loan(), new LoanPayouts.Outcome.Concluded(PayoutStatus.FAILED,
+                Instant.parse("2001-01-01T00:00:00Z")));
+        PAYMENTS.outcomes.put(present.loan(), new LoanPayouts.Outcome.Concluded(PayoutStatus.PAID_OUT, Instant.now()));
+        PAYMENTS.outcomes.put(late.loan(), new LoanPayouts.Outcome.Concluded(PayoutStatus.PAID_OUT,
+                Instant.parse("2999-01-01T00:00:00Z")));
+        PAYMENTS.answers.put(refused.loan(), new LoanPayouts.Dispatch.Refused(NotDispatchedReason.NO_ELIGIBLE_RAIL));
+        var effects = sweepPayouts(AT_ONCE);
+        assertThat(effects.get(early.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.FAILED);
+        assertThat(effects.get(present.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
+        assertThat(effects.get(late.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
+        assertThat(effects.get(refused.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.NOT_DISPATCHED);
+        for (DisbursementWorld.Accepted loan : all) {
+            assertThat(scalar("SELECT (decided_at < created_at)::text || '|' || (concluded_at = created_at)::text"
+                    + " FROM lending.loan_payout WHERE loan_id = ?", loan.loan().value()))
+                    .as("recorded on a clock behind the birth, concluded at the birth").isEqualTo("true|true");
+            assertThat(scalar("SELECT (s.start_date = lending.business_date(p.created_at, 'UTC')"
+                    + " AND s.start_date > lending.business_date(p.decided_at, 'UTC')"
+                    + " AND r.start_date = s.start_date)::text FROM lending.accrual_start s"
+                    + " JOIN lending.loan_payout p ON p.loan_id = s.loan_id JOIN lending.repayment_schedule r"
+                    + " ON r.loan_id = s.loan_id AND r.schedule_version = 1 WHERE s.loan_id = ?"
+                    + " AND s.origin = 'PAYOUT_CONCLUDED'", loan.loan().value()))
+                    .as("interest from the birth's business date, never before it, schedule v1 from it (A30)")
+                    .isEqualTo("true");
         }
     }
 
