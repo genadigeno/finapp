@@ -450,9 +450,12 @@ class InterestAccrualDatabaseTest {
         }
         assertChain(line, new BigDecimal(scalar("SELECT nominal_annual_rate::text FROM lending.loan_agreement"
                 + " WHERE loan_id = ?", line.value())));
+        // The accrued account is the rows' postings less what the line's statements made due (P11-TSK-022: the step
+        // states every cycle whose statement date has come).
         assertThat(netDebit(loanAccount(line, AccountPurpose.LOAN_INTEREST_ACCRUED)).minorUnits())
-                .isEqualTo(Long.parseLong(scalar("SELECT sum(posted_minor)::text FROM lending.interest_accrual"
-                        + " WHERE loan_id = ?", line.value())));
+                .isEqualTo(Long.parseLong(scalar("SELECT (sum(posted_minor) - (SELECT coalesce(sum(interest_billed_minor), 0)"
+                        + " FROM lending.credit_line_statement WHERE loan_id = ?))::text FROM lending.interest_accrual"
+                        + " WHERE loan_id = ?", line.value(), line.value())));
     }
 
     // ------------------------------------------------------------------ failure and locking
@@ -536,7 +539,8 @@ class InterestAccrualDatabaseTest {
 
     static LoanServicing servicing(LoanServicingStore store) {
         return new LoanServicing(LOAN_STORE, store, TERMS_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS, IDS,
-                DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS);
+                DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS,
+                DisbursementWorld.STATEMENTS);
     }
 
     /** A fresh wallet loan disbursed by the real T-dis. */

@@ -67,6 +67,15 @@ public class LoanController {
     }
 
     /**
+     * The caller's own credit line's statements, oldest first (`P11-TSK-022`): each cycle's interest, the minimum payment's
+     * principal part, the minimum payment and its due date, what has been paid and the balances derived from the ledger.
+     */
+    @GetMapping("/{id}/statements")
+    public LoanAccountDesk.StatementListView listStatements(@PathVariable("id") String id, HttpServletRequest request) {
+        return desk.statements(current(request), id);
+    }
+
+    /**
      * Draws on the caller's own credit line to their wallet (`P11-TSK-021`) - only while the line is active, its draws
      * not suspended, within its available limit and the platform's lending capital.
      */

@@ -566,7 +566,16 @@ less the negating rows), `RepaymentReversals` (T-rev: L0, L3, L5, L6 when princi
 `RepaymentReversalStatus`, `RepaymentReversalStore`/`JdbcRepaymentReversalStore`, `LoanActingParty` (served by `app`'s
 `IdentityActingParty`, credit's one read), `RepaymentStore.findById`, and `app`'s `LoanServicingDesk` and
 `LoanServicingController` (`GET /v1/operator/loans/{id}`, the reversal's three doors) and
-`finapp.lending.reversal{outcome}`; every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
+`finapp.lending.reversal{outcome}`; `P11-TSK-022` (2026-10-13) - the credit line's statement and minimum payment in
+T-svc's billing slot: `lending V017` (`credit_line_statement` - `UNIQUE (loan_id, cycle_end)`, `UNIQUE (loan_id, due_date)`,
+only what it billed, its trigger holding the cycle, the due date, the interest and the versions; the four foreign keys to
+`instalment_billing` replaced by the born-once triggers' billed-item check - a billing or a statement of the row's own loan;
+the repayment, collection and accrual triggers replaced to admit a line's statement), `CreditLineStatements` (L3 only, rule 3
+under `lending.statement:<line>:<statement date>`, rule 6 through `CreditBalanceApplications` - lifted out of `-017`'s
+billing step - `lending.CreditLineStatementIssued`, and the owner's statements read with balances derived from the ledger),
+`CreditLineStatement`, `CreditLineStatementStore`/`JdbcCreditLineStatementStore`, `InstalmentBillingStore.dueItems` (both
+kinds of billed item - `LoanReceivables` and `LoanCollections` read it), and `app`'s `GET /v1/me/loans/{id}/statements` and
+`finapp.lending.billing{kind=statement}`; every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
 - **Responsibility:** originating and servicing credit — the amortising `PERSONAL_LOAN` and the revolving `CREDIT_LINE` — on Phase 10's credit decisions, including the time-based mechanics (accrual, billing, statements, delinquency) as scheduled, idempotent, replayable financial processes. **It owns the contract and its servicing facts and none of the money**: every principal, interest, fee and credit-balance figure is a balance of a per-loan ledger account, derived from postings made through `PostingService` / `ReversalService` in lending's own transaction (ADR-0090, ADR-0096).
 - **Owns:** Loan Application, Loan Product Terms Version, Loan Offer, Loan Agreement, Acceptance Evidence, Loan, Repayment Schedule, Loan Instalment, Instalment Billing, Credit Line Draw, Credit Line Statement, Interest Accrual, Fee Assessment, Disbursement, Loan Payout, Repayment, Allocation, Collection Attempt, Delinquency State, Payoff Quote, Loan Amendment, Lending Capital Contribution.
 - **Does not own:** the credit decision, its consumption fact or the exposure judgement (`credit` — lending takes a decision up only through credit's `CreditDecisionConsumptions` port, `P11-TSK-001`, and never writes credit's tables); any balance (`ledger`); the wallet (`accounts`); the external payout's withdrawal, its ambiguity, return and expectation (`payments`, `reconciliation`); write-off and the GL (Phase 14, `accounting`); collections (Phase 13).

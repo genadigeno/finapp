@@ -505,7 +505,7 @@ class InstalmentBillingDatabaseTest {
                 new com.finapp.platform.outbox.JdbcOutboxWriter(), IDS, DisbursementWorld.CLOCK);
         LoanServicing crashingServicing = new LoanServicing(DisbursementWorld.LOAN_STORE, SERVICING_STORE, TERMS_STORE,
                 DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES, DisbursementWorld.POSTINGS, IDS, crashing,
-                DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS);
+                DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS, DisbursementWorld.STATEMENTS);
         assertThatThrownBy(() -> InterestAccrualDatabaseTest.service(crashingServicing, crashed)).hasMessageContaining("crash");
         assertThat(billings(crashed)).isEmpty();
         assertThat(billingEntries(crashed)).isZero();
@@ -829,6 +829,11 @@ class InstalmentBillingDatabaseTest {
         @Override
         public List<BilledItem> billedItemsOwnedBy(Connection unitOfWork, LoanId loan, UUID party) {
             return delegate.billedItemsOwnedBy(unitOfWork, loan, party);
+        }
+
+        @Override
+        public List<DueState.DueItem> dueItems(Connection unitOfWork, LoanId loan) {
+            return delegate.dueItems(unitOfWork, loan);
         }
 
         @Override

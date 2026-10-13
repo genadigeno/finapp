@@ -352,6 +352,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/schedule",
                         // P11-TSK-021: a line's draw to the wallet (a MULTI_FACTOR act, keyed, 201 with the draw).
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/draws",
+                        // P11-TSK-022: a line's statements - each cycle's interest, the minimum payment, its due date,
+                        // what has been paid and the balances derived from the ledger.
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/statements",
                         // P11-TSK-018: a loan's repayments - the repayment from the wallet (keyed, the platform's
                         // conditional step-up, 201) and the owner's read of its repayments and their allocations.
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/repayments",

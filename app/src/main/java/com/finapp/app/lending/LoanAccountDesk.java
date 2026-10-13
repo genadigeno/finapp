@@ -7,6 +7,8 @@ import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.lending.AcceptanceEvidence;
 import com.finapp.lending.BillingKind;
+import com.finapp.lending.CreditLineStatementStore;
+import com.finapp.lending.CreditLineStatements;
 import com.finapp.lending.InstalmentBilling;
 import com.finapp.lending.InstalmentBillingStore;
 import com.finapp.lending.LendingErrorCode;
@@ -71,6 +73,7 @@ public final class LoanAccountDesk {
     @NonNull private final LendingTransactions transactions;
     @NonNull private final LoanAcceptanceMetrics metrics;
     @NonNull private final LoanSchedules schedules;
+    @NonNull private final CreditLineStatements statements;
 
     /** What an acceptance answers - and replays: the account opened. */
     public record LoanAcceptedView(
@@ -189,6 +192,34 @@ public final class LoanAccountDesk {
             String principalPaid,
             String outstanding) {}
 
+    /** A credit line's statements as its customer reads them (`P11-TSK-022`), oldest first. */
+    public record StatementListView(String loanId, List<StatementView> statements) {}
+
+    /**
+     * One statement (`P11-TSK-022`; A23, A24): its cycle ({@code [cycleStart, statementDate)}), what it billed - the cycle's
+     * accrued interest, the minimum payment's principal part, the fees it carries - the minimum payment and its due date,
+     * what has been paid of it and what is still due ({@code status} {@code DUE}, {@code PARTIALLY_PAID} or {@code PAID}),
+     * and the line's balance - every receivable less any credit balance - at the cycle's opening and close, derived from the
+     * ledger, never stored. Amounts exact decimal strings, dates ISO.
+     */
+    public record StatementView(
+            String statementId,
+            String cycleStart,
+            String statementDate,
+            String dueDate,
+            String status,
+            String currency,
+            String interestBilled,
+            String principalBilled,
+            String feesCarried,
+            String minimumPayment,
+            String paid,
+            String outstanding,
+            String openingBalance,
+            String closingBalance,
+            int agreementVersion,
+            int statementEngineVersion) {}
+
     /**
      * Accepts the caller's offer: the agreement, the consumption, the commitment and the account in one transaction.
      */
@@ -273,7 +304,44 @@ public final class LoanAccountDesk {
                 .orElseThrow(() -> notFound("loan schedule"));
     }
 
+    /**
+     * The caller's own credit line's statements, oldest first (`P11-TSK-022`); another party's loan, an instalment loan and an
+     * unknown or malformed id are the same {@code 404}. A line not yet stated answers an empty list.
+     */
+    public StatementListView statements(Session current, String rawId) {
+        LoanId id = loanId(rawId);
+        return transactions.inSnapshot(unitOfWork -> statements.read(unitOfWork, id, partyOf(unitOfWork, current))
+                        .map(reads -> new StatementListView(id.value().toString(),
+                                reads.stream().map(LoanAccountDesk::view).toList())))
+                .orElseThrow(() -> notFound("credit line"));
+    }
+
     // ------------------------------------------------------------------ the views
+
+    private static StatementView view(CreditLineStatements.StatementRead read) {
+        CreditLineStatementStore.StatedItem item = read.item();
+        var statement = item.statement();
+        var figures = statement.statement();
+        Money outstanding = item.outstanding();
+        String status = outstanding.isZero() ? "PAID" : item.paid().isZero() ? "DUE" : "PARTIALLY_PAID";
+        return new StatementView(
+                statement.id().toString(),
+                figures.cycle().start().toString(),
+                figures.statementDate().toString(),
+                figures.dueDate().toString(),
+                status,
+                figures.interestBilled().currency().code(),
+                decimal(figures.interestBilled()),
+                decimal(figures.principalBilled()),
+                decimal(figures.feesCarried()),
+                decimal(figures.minimumPayment()),
+                decimal(item.paid()),
+                decimal(outstanding),
+                decimal(read.openingBalance()),
+                decimal(read.closingBalance()),
+                statement.agreementVersion(),
+                figures.engine().number());
+    }
 
     static ScheduleView view(LoanSchedules.Read read) {
         RepaymentSchedule recorded = read.schedule();

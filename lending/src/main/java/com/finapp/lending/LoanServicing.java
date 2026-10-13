@@ -48,9 +48,11 @@ import lombok.RequiredArgsConstructor;
  *   <li><strong>accrue</strong> (this task): every elapsed date not yet accrued, oldest first;
  *   <li><strong>bill</strong> (`P11-TSK-017`, {@link InstalmentBillings}): an instalment loan's instalments due by
  *       today whose periods the accrual has reached, oldest first - posting rule 3 - each followed by the credit-balance
- *       application, rule 6 (a line's statement is `-022`'s);
+ *       application, rule 6; in the same slot, <strong>state</strong> (`P11-TSK-022`, {@link CreditLineStatements}): a
+ *       line's cycles whose statement dates have come and whose dates the accrual has reached, oldest first - rule 3 for
+ *       the cycle's interest and the minimum payment's principal part - each followed by rule 6;
  *   <li><strong>collect</strong> (`P11-TSK-019`, {@link LoanCollections}): once caught up, when the pinned terms say so,
- *       each billed item due by today and not yet attempted today, oldest first - (L7) the wallet's row after L3 - through
+ *       each billed item (an instalment's billing, a line's statement) due by today and not yet attempted today, oldest first - (L7) the wallet's row after L3 - through
  *       the repayment's one posting half (rule 5, kind {@code AUTO_COLLECTION}); a collection that settles the loan closes
  *       it there;
  *   <li>the steps later tasks add, in this order: the condition (`-024`), the late fee (`-025`) - each after collection,
@@ -114,26 +116,28 @@ public final class LoanServicing {
     @NonNull private final InstalmentBillings billings;
     @NonNull private final LoanClosures closures;
     @NonNull private final LoanCollections collections;
+    @NonNull private final CreditLineStatements statements;
 
     /**
      * What one servicing step did - for the meter; never a figure or a date: {@code posted} and {@code zero} accrued
-     * dates, {@code billed} items made due and credit-balance applications {@code applied} (`P11-TSK-017`), and whether
+     * dates, {@code billed} items made due and credit-balance applications {@code applied} at them (`P11-TSK-017`), a line's
+     * statements {@code stated} and the applications {@code statedApplied} at them (`P11-TSK-022`), and whether
      * the step {@code closed} the loan - its last receivable settled by an application (`P11-TSK-018`) or a collection - and
      * its collection attempts counted by outcome (`P11-TSK-019`).
      */
-    public record Outcome(Kind kind, int posted, int zero, boolean caughtUp, int billed, int applied, boolean closed,
-            Map<CollectionOutcome, Integer> collections) {
+    public record Outcome(Kind kind, int posted, int zero, boolean caughtUp, int billed, int applied, int stated,
+            int statedApplied, boolean closed, Map<CollectionOutcome, Integer> collections) {
 
         public Outcome {
             Objects.requireNonNull(kind, "kind must not be null");
-            if (posted < 0 || zero < 0 || billed < 0 || applied < 0) {
+            if (posted < 0 || zero < 0 || billed < 0 || applied < 0 || stated < 0 || statedApplied < 0) {
                 throw new IllegalArgumentException("counts are not negative");
             }
             collections = Map.copyOf(Objects.requireNonNull(collections, "collections must not be null"));
         }
 
         static Outcome notServiced() {
-            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0, false, Map.of());
+            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0, 0, 0, false, Map.of());
         }
 
         /** The step's collection attempts of {@code outcome}. */
@@ -183,15 +187,21 @@ public final class LoanServicing {
         Correlation flow = Correlation.startingWith(loan.correlation()).causing(CausationId.of(loan.correlation().value()));
         Accrued accrued;
         InstalmentBillings.Billed billed = InstalmentBillings.Billed.NOTHING;
+        CreditLineStatements.Stated stated = CreditLineStatements.Stated.NOTHING;
         Optional<LoanClosure> closure = Optional.empty();
         LoanCollections.Collected collected = LoanCollections.Collected.NOTHING;
         try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
             accrued = accrue(unitOfWork, loan, agreement, pinned, zone, today);
             // Then billing (P11-TSK-017): an instalment loan's instalments due by today whose periods the accrual has
-            // reached, oldest first, each followed by the credit-balance application - under the same lock. A line's
-            // statement is P11-TSK-022's.
+            // reached, oldest first, each followed by the credit-balance application - under the same lock. In the same
+            // slot a line's statements (P11-TSK-022): every cycle whose statement date has come and whose dates the accrual
+            // has reached, oldest first, each followed by the credit-balance application.
             if (accrued.accruedThrough().isPresent()) {
-                billed = billings.bill(unitOfWork, loan, agreement, pinned, today, accrued.accruedThrough().get());
+                if (loan.kind() == LoanKind.INSTALMENT) {
+                    billed = billings.bill(unitOfWork, loan, agreement, pinned, today, accrued.accruedThrough().get());
+                } else {
+                    stated = statements.state(unitOfWork, loan, agreement, pinned, today, accrued.accruedThrough().get());
+                }
             }
             // Then auto-collection (P11-TSK-019), once every elapsed date is accrued and everything due is billed: what
             // each billed item has due, from the wallet (L7 after L3), when the pinned terms say so. A collection that
@@ -212,14 +222,14 @@ public final class LoanServicing {
         if (closure.isPresent()) {
             // A CLOSED account leaves servicing: no permit moves on a terminal account (the edge function's rule).
             return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), true, billed.billed(),
-                    billed.applied(), true, collected.attempts());
+                    billed.applied(), stated.stated(), stated.applied(), true, collected.attempts());
         }
         Instant permit = accrued.caughtUp() ? today.plusDays(1).atStartOfDay(zone).toInstant() : now;
         if (!store.restamp(unitOfWork, id, permit)) {
             throw new IllegalStateException("the locked account left servicing under its own row lock");
         }
         return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), accrued.caughtUp(), billed.billed(),
-                billed.applied(), false, collected.attempts());
+                billed.applied(), stated.stated(), stated.applied(), false, collected.attempts());
     }
 
     private static boolean inServicing(LoanStatus status) {

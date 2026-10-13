@@ -30,6 +30,15 @@ public interface InstalmentBillingStore {
     List<BilledItem> billedItems(Connection unitOfWork, LoanId loan);
 
     /**
+     * Every billed item of {@code loan} - an instalment loan's billings or a line's statements ({@code P11-TSK-022}) - with
+     * what it still has due per component (billed less every payer's allocations, through
+     * {@code lending.billing_component_paid}), oldest due date first: the one derivation every payer allocates against and
+     * the collection step collects ({@link LoanReceivables}, {@link LoanCollections}). A statement falls due on its minimum
+     * payment's due date.
+     */
+    List<DueState.DueItem> dueItems(Connection unitOfWork, LoanId loan);
+
+    /**
      * Every billed item of {@code party}'s loan {@code loan}, oldest due date first, with what has been paid of each -
      * owner-scoped in the statement: another party's loan is the same empty answer as a loan billed nothing.
      */

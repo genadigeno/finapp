@@ -413,9 +413,10 @@ public class LendingBeans {
             IdempotentExecutor idempotentExecutor,
             LendingTransactions lendingTransactions,
             LoanAcceptanceMetrics loanAcceptanceMetrics,
-            LoanSchedules loanSchedules) {
+            LoanSchedules loanSchedules,
+            com.finapp.lending.CreditLineStatements creditLineStatements) {
         return new LoanAccountDesk(loanAcceptances, loans, identityStore, idempotentExecutor, lendingTransactions,
-                loanAcceptanceMetrics, loanSchedules);
+                loanAcceptanceMetrics, loanSchedules, creditLineStatements);
     }
 
     /** The origination sweep - every instance, no lease, off in test contexts. */
@@ -611,10 +612,35 @@ public class LendingBeans {
                 outboxWriter, idGenerator, clock);
     }
 
+    /** The line's statement store (P11-TSK-022, lending V017). */
+    @Bean
+    com.finapp.lending.CreditLineStatementStore creditLineStatementStore() {
+        return new com.finapp.lending.JdbcCreditLineStatementStore();
+    }
+
     /**
-     * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing and the
-     * credit-balance application (rules 3 and 6, P11-TSK-017), then auto-collection (rule 5, P11-TSK-019), then the
-     * closure of a settled loan (P11-TSK-018).
+     * T-svc's statement step for a credit line (P11-TSK-022) - posting rules 3 and 6 through the ledger, under the step's
+     * L3 - and the customer's statements read.
+     */
+    @Bean
+    com.finapp.lending.CreditLineStatements creditLineStatements(
+            com.finapp.lending.CreditLineStatementStore creditLineStatementStore,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanStore loanStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.CreditLineStatements(creditLineStatementStore, instalmentBillingStore, loanStore,
+                ledgerAccountStore, purposeBalances, postingService, outboxWriter, idGenerator, clock);
+    }
+
+    /**
+     * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing - or a line's
+     * statement (P11-TSK-022) - and the credit-balance application (rules 3 and 6, P11-TSK-017), then auto-collection
+     * (rule 5, P11-TSK-019), then the closure of a settled loan (P11-TSK-018).
      */
     @Bean
     LoanServicing loanServicing(
@@ -627,9 +653,10 @@ public class LendingBeans {
             IdGenerator idGenerator,
             InstalmentBillings instalmentBillings,
             com.finapp.lending.LoanClosures loanClosures,
-            com.finapp.lending.LoanCollections loanCollections) {
+            com.finapp.lending.LoanCollections loanCollections,
+            com.finapp.lending.CreditLineStatements creditLineStatements) {
         return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
-                postingService, idGenerator, instalmentBillings, loanClosures, loanCollections);
+                postingService, idGenerator, instalmentBillings, loanClosures, loanCollections, creditLineStatements);
     }
 
     /**

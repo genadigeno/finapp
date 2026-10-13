@@ -478,9 +478,12 @@ class CreditLineDrawDatabaseTest {
                 .isEqualTo(28);
         assertThat(count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ? AND base_minor = 150000"
                 + " AND accrual_date >= ?", id, today.minusDays(10))).as("the second draw from its own date").isEqualTo(10);
+        // The accrued account is the rows' postings less what the line's statements made due (P11-TSK-022: the step
+        // states every cycle whose statement date has come; billed principal is still drawn).
         assertThat(netDebit(loanAccount(line.loan(), AccountPurpose.LOAN_INTEREST_ACCRUED)).minorUnits())
-                .isEqualTo(Long.parseLong(scalar("SELECT sum(posted_minor)::text FROM lending.interest_accrual"
-                        + " WHERE loan_id = ?", id)));
+                .isEqualTo(Long.parseLong(scalar("SELECT (sum(posted_minor) - (SELECT coalesce(sum(interest_billed_minor), 0)"
+                        + " FROM lending.credit_line_statement WHERE loan_id = ?))::text FROM lending.interest_accrual"
+                        + " WHERE loan_id = ?", id, id)));
         assertThat(available(line)).as("accrued interest consumes nothing").isEqualTo(eur(8_500_00));
     }
 

@@ -6,7 +6,6 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PurposeBalances;
-import com.finapp.lending.InstalmentBillingStore.BilledItem;
 import com.finapp.lending.LoanReceivables.Accounts;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
@@ -44,8 +43,9 @@ import lombok.RequiredArgsConstructor;
  * <h2>The rule</h2>
  *
  * <ol>
- *   <li>Only an {@code ACTIVE} instalment loan whose pinned terms collect automatically (a line's statement minimum joins with
- *       `P11-TSK-022`).
+ *   <li>Only an {@code ACTIVE} account whose pinned terms collect automatically - an instalment loan's billings, and a
+ *       credit line's statements (`P11-TSK-022`: each statement's minimum payment, due on its due date; a {@code CLOSING}
+ *       line's collection is `P11-TSK-023`'s, beside its closure).
  *   <li>The candidates: every billed item due on or before today, oldest first, not yet attempted today
  *       ({@code UNIQUE (due_item_id, attempt_date)} beneath L3) - an item on its due date always (a settled one records
  *       {@code NOTHING_DUE}), a past-due one while it still has something due (retried on each later business date).
@@ -114,12 +114,13 @@ public final class LoanCollections {
         Objects.requireNonNull(now, "now");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        if (!pinned.autoCollection() || loan.kind() != LoanKind.INSTALMENT || loan.status() != LoanStatus.ACTIVE) {
+        if (!pinned.autoCollection() || loan.status() != LoanStatus.ACTIVE) {
             return Collected.NOTHING;
         }
         Set<DueItemId> attempted = store.attemptedOn(unitOfWork, loan.id(), today);
-        List<BilledItem> due = billings.billedItems(unitOfWork, loan.id()).stream()
-                .filter(item -> !item.billing().dueDate().isAfter(today))
+        // Every billed item due by today - an instalment's billing, a line's statement (P11-TSK-022) - oldest first.
+        List<DueState.DueItem> due = billings.dueItems(unitOfWork, loan.id()).stream()
+                .filter(item -> !item.dueDate().isAfter(today))
                 .toList();
         if (due.stream().noneMatch(item -> candidate(item, attempted, today))) {
             return Collected.NOTHING;
@@ -135,11 +136,11 @@ public final class LoanCollections {
         Map<CollectionOutcome, Integer> counts = new EnumMap<>(CollectionOutcome.class);
         Optional<Optional<LedgerAccountId>> wallet = Optional.empty();
         boolean blocked = false;
-        for (BilledItem item : due) {
-            DueItemId id = DueItemId.of(item.billing().id());
+        for (DueState.DueItem item : due) {
+            DueItemId id = item.id();
             if (!candidate(item, attempted, today)) {
                 // An older item attempted earlier today and still due keeps its priority: nothing younger is collected.
-                blocked |= item.outstanding().isPositive();
+                blocked |= item.total().isPositive();
                 continue;
             }
             // The due state re-derived under L3 for every attempt, explained by the ledger (INV-LND-01, INV-BAL-05).
@@ -193,9 +194,8 @@ public final class LoanCollections {
     }
 
     /** An item on its due date always; a past-due one while it has something due - each once a business date. */
-    private static boolean candidate(BilledItem item, Set<DueItemId> attempted, LocalDate today) {
-        return !attempted.contains(DueItemId.of(item.billing().id()))
-                && (item.billing().dueDate().equals(today) || item.outstanding().isPositive());
+    private static boolean candidate(DueState.DueItem item, Set<DueItemId> attempted, LocalDate today) {
+        return !attempted.contains(item.id()) && (item.dueDate().equals(today) || item.total().isPositive());
     }
 
     /**
