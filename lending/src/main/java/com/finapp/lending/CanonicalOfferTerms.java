@@ -45,6 +45,13 @@ public final class CanonicalOfferTerms {
     /** The format this class writes - stored beside the terms. */
     public static final int FORMAT = 2;
 
+    /**
+     * The format of an AMENDED agreement version's canonical terms (`P11-TSK-027`, {@code lending V023}): format 2's
+     * content with the offer's illustration replaced by the amendment that made the version - its identity, the version
+     * and hash it amended, its effective date and the schedule it fixed. Admitted only for a version after the first.
+     */
+    public static final int AMENDED_FORMAT = 3;
+
     /** Format 1's token set: every format-1 row ever stored is in it ({@code lending V005}, {@code V006}). */
     private static final Pattern FORMAT_1_VALUE = Pattern.compile("[A-Za-z0-9_.:-]{1,64}");
 
@@ -93,6 +100,52 @@ public final class CanonicalOfferTerms {
         }
     }
 
+    /**
+     * What makes an amended version (`P11-TSK-027`): the amendment, the agreement version it amended and that version's
+     * terms hash, the new version's number, the business date it took effect, and the schedule it fixed - its start (the
+     * open period's), first due date, instalments, the principal it amortises and the arrears re-scheduled into it.
+     */
+    public record Amendment(
+            UUID amendment,
+            int amendsVersion,
+            String amendsTermsSha256,
+            int agreementVersion,
+            java.time.LocalDate effectiveDate,
+            java.time.LocalDate scheduleStart,
+            java.time.LocalDate firstDueDate,
+            int remainingInstalments,
+            Money schedulePrincipal,
+            Money arrearsRescheduled) {
+
+        public Amendment {
+            Objects.requireNonNull(amendment, "amendment must not be null");
+            Objects.requireNonNull(amendsTermsSha256, "amendsTermsSha256 must not be null");
+            Objects.requireNonNull(effectiveDate, "effectiveDate must not be null");
+            Objects.requireNonNull(scheduleStart, "scheduleStart must not be null");
+            Objects.requireNonNull(firstDueDate, "firstDueDate must not be null");
+            Objects.requireNonNull(schedulePrincipal, "schedulePrincipal must not be null");
+            Objects.requireNonNull(arrearsRescheduled, "arrearsRescheduled must not be null");
+            if (amendsVersion < 1 || agreementVersion != amendsVersion + 1 || remainingInstalments < 1) {
+                throw new IllegalArgumentException("an amendment makes the next version over at least one instalment");
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "Amendment[" + amendment + ", v" + agreementVersion + ", redacted]";
+        }
+    }
+
+    /**
+     * The canonical form of an amended agreement version (format 3, `P11-TSK-027`): {@code content} - the loan's origin
+     * (its offer, application and decision), its principal, the version's term and day, the pinned terms version with the
+     * AMENDED rate in its term set - and {@code amendment} in place of the illustration.
+     */
+    public static String renderAmendment(Content content, Amendment amendment) {
+        Objects.requireNonNull(amendment, "amendment");
+        return render(content, AMENDED_FORMAT, Optional.of(amendment));
+    }
+
     /** The canonical form of {@code content}, in the format this class writes ({@link #FORMAT}). */
     public static String render(Content content) {
         return render(content, FORMAT);
@@ -103,11 +156,18 @@ public final class CanonicalOfferTerms {
      * it wrote. Content a format cannot spell (a {@code +} under format 1) is refused, never re-spelled.
      */
     public static String render(Content content, int format) {
+        if (format == AMENDED_FORMAT) {
+            throw new IllegalArgumentException("format 3 is an amended version's: renderAmendment");
+        }
+        return render(content, format, Optional.empty());
+    }
+
+    private static String render(Content content, int format, Optional<Amendment> amended) {
         Objects.requireNonNull(content, "content");
         LoanTerms terms = content.terms();
         Canonical out = new Canonical(switch (format) {
             case 1 -> FORMAT_1_VALUE;
-            case 2 -> FORMAT_2_VALUE;
+            case 2, AMENDED_FORMAT -> FORMAT_2_VALUE;
             default -> throw new IllegalArgumentException("the canonical offer terms are format 1 or 2");
         });
         out.append('{');
@@ -168,6 +228,22 @@ public final class CanonicalOfferTerms {
         out.append("},\"template\":{");
         field(out, "id", terms.agreementTemplate().id()).append(',');
         field(out, "version", Integer.toString(terms.agreementTemplate().version()));
+        if (amended.isPresent()) {
+            Amendment amendment = amended.get();
+            out.append("},\"amendment\":{");
+            field(out, "amendment", amendment.amendment().toString()).append(',');
+            field(out, "amendsVersion", Integer.toString(amendment.amendsVersion())).append(',');
+            field(out, "amendsTermsSha256", amendment.amendsTermsSha256()).append(',');
+            field(out, "agreementVersion", Integer.toString(amendment.agreementVersion())).append(',');
+            field(out, "effectiveDate", amendment.effectiveDate().toString()).append(',');
+            field(out, "scheduleStart", amendment.scheduleStart().toString()).append(',');
+            field(out, "firstDueDate", amendment.firstDueDate().toString()).append(',');
+            field(out, "remainingInstalments", Integer.toString(amendment.remainingInstalments())).append(',');
+            field(out, "schedulePrincipal", minor(amendment.schedulePrincipal())).append(',');
+            field(out, "arrearsRescheduled", minor(amendment.arrearsRescheduled()));
+            out.append("}}");
+            return out.toString();
+        }
         out.append("},\"illustration\":{");
         Optional<LoanOffer.Illustration> illustration = content.illustration();
         field(out, "basis", illustration.isPresent() ? "ILLUSTRATIVE_FROM_OFFERING_DAY" : NONE).append(',');
@@ -192,8 +268,8 @@ public final class CanonicalOfferTerms {
             throw new IllegalArgumentException("canonical offer terms open with their format token");
         }
         int format = Integer.parseInt(token.group(1));
-        if (format != 1 && format != 2) {
-            throw new IllegalArgumentException("the canonical offer terms are format 1 or 2");
+        if (format != 1 && format != 2 && format != AMENDED_FORMAT) {
+            throw new IllegalArgumentException("the canonical offer terms are format 1, 2 or 3");
         }
         return format;
     }

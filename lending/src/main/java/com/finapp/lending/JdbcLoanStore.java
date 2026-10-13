@@ -26,7 +26,7 @@ public final class JdbcLoanStore implements LoanStore {
 
     private static final String COLUMNS =
             "l.id, l.party_id, l.product, l.status, l.currency, l.offer_id, l.decision_id, l.opened_at, l.closed_at,"
-                    + " l.correlation_id, a.id AS agreement_id, a.version, a.offer_id AS agreement_offer_id,"
+                    + " l.correlation_id, a.id AS agreement_id, a.version, a.offer_id AS agreement_offer_id, a.amendment_id,"
                     + " a.decision_id AS agreement_decision_id, a.terms_version_id, a.scale, a.amount_minor,"
                     + " a.term_months, a.nominal_annual_rate, a.repayment_day, a.schedule_engine_version,"
                     + " a.accrual_engine_version, a.allocation_engine_version, a.statement_engine_version,"
@@ -94,13 +94,14 @@ public final class JdbcLoanStore implements LoanStore {
                         + " statement_engine_version, agreement_template_id, agreement_template_version,"
                         + " canonical_format, canonical_terms, terms_sha256, effective_from, created_at)"
                         // The two instants are the trigger's; the placeholders are overwritten.
-                        + " VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
                         + " statement_timestamp(), statement_timestamp()) RETURNING effective_from")) {
             int i = 0;
             insert.setObject(++i, agreement.id().value());
             insert.setObject(++i, agreement.loan().value());
             insert.setInt(++i, agreement.version());
             insert.setObject(++i, agreement.offer().map(LoanOfferId::value).orElse(null));
+            insert.setObject(++i, agreement.amendment().orElse(null));
             insert.setObject(++i, agreement.decision());
             insert.setObject(++i, agreement.termsVersionId().value());
             insert.setString(++i, agreement.product().name());
@@ -415,6 +416,7 @@ public final class JdbcLoanStore implements LoanStore {
                 loanId,
                 row.getInt("version"),
                 Optional.ofNullable(agreementOffer).map(LoanOfferId::of),
+                Optional.ofNullable(row.getObject("amendment_id", UUID.class)),
                 row.getObject("agreement_decision_id", UUID.class),
                 LoanTermsVersionId.of(row.getObject("terms_version_id", UUID.class)),
                 product,

@@ -233,7 +233,16 @@ public enum LendingErrorCode implements ErrorCode {
      * posted; request a new quote.
      */
     PAYOFF_QUOTE_STALE(
-            "lending.PayoffQuoteStale", 409, "The payoff quote no longer ends the account; nothing was posted.");
+            "lending.PayoffQuoteStale", 409, "The payoff quote no longer ends the account; nothing was posted."),
+
+    /**
+     * The amendment can no longer be approved or accepted (`P11-TSK-027`; ADR-0099 point 5, scenario 8, {@code INV-LND-05}):
+     * the agreement version it amends is no longer the loan's - another amendment or a prepayment moved it - the loan is
+     * no longer {@code ACTIVE} (a payoff closed it), or its offer expired unaccepted. Nothing was written; a new proposal
+     * against the agreement in force is the act that fits.
+     */
+    AMENDMENT_LAPSED(
+            "lending.AmendmentLapsed", 409, "The amendment has lapsed; nothing was amended.");
 
     private final String code;
     private final int status;
