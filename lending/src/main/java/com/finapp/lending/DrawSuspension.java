@@ -10,19 +10,22 @@ import java.time.LocalDate;
  * business date of the database clock read after it, so a condition committed by the servicing step (which takes the same
  * lock) is always seen.
  *
- * <p><strong>The two conditions it derives from have no producer yet.</strong> "Past due" needs a line's statement - its
- * minimum payment and due date (`P11-TSK-022`) - and "defaulted" the condition step (`P11-TSK-024`); before them nothing
- * can be past due and no line can be defaulted, so {@link #BEFORE_ANY_CONDITION} is the condition derived over what exists:
- * never suspended. The check, its place under L3 and the refusal ({@code 409 lending.DrawsSuspended}, nothing written) are
- * built here; `P11-TSK-024` replaces the derivation with the condition read and proves it bites
- * ({@code PHASE_11_PLAN.md} section 5.5, the backlog's `-021` scope).
+ * <p><strong>Where the conditions stand.</strong> "Past due" is a statement's minimum payment unpaid at the end of its due
+ * date: since `P11-TSK-022` a line's statements exist, and the seam a derivation reads is the billed-item model -
+ * {@link InstalmentBillingStore#dueItems} under L3, any item whose due date is before the business date with something
+ * still due. "Defaulted" is the condition step's (`P11-TSK-024`). The backlog gives the suspension's derivation - both
+ * conditions, proven biting through the real path ({@code DelinquencyDatabaseTest#aPastDueLineRefusesDraws}) - to
+ * `P11-TSK-024`, so {@link #BEFORE_ANY_CONDITION} stays the wired derivation until then: <strong>between `-022` and
+ * `-024` a line whose minimum payment is past due can still draw</strong> (A25 not yet enforced) - recorded for the owner
+ * by `P11-TSK-022`'s gate. The check, its place under L3 and the refusal ({@code 409 lending.DrawsSuspended}, nothing
+ * written) are `P11-TSK-021`'s ({@code PHASE_11_PLAN.md} section 5.5).
  */
 @FunctionalInterface
 public interface DrawSuspension {
 
     /**
-     * Over the conditions that exist before statements (`-022`) and the condition step (`-024`): nothing is past due and
-     * nothing defaulted, so no line is suspended.
+     * Never suspended - the wired derivation until the condition step (`-024`) replaces it with the condition read (a
+     * past-due item or the default flag). Since statements (`-022`) a minimum can be past due; this does not yet see it.
      */
     DrawSuspension BEFORE_ANY_CONDITION = (unitOfWork, line, businessDate) -> false;
 

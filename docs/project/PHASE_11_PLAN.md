@@ -508,6 +508,14 @@ nothing; once an item is not collected in full every younger one that day is `IN
 when nothing could be taken. A collection that settles the loan closes it there and the step's own closure step is skipped.
 No L0 (exposure only falls), no L5, no L6; no new schedule - the servicing sweep drives it.)*
 
+*(As built by `P11-TSK-022` - T-svc's statement step for a line, `CreditLineStatements`, in the billing slot: after the accrual
+and before the collection, under the same L3 (no L0 - billed principal is still drawn; no L6, no L7): every cycle whose
+statement date has come and whose dates the accrual reached, oldest first, contiguous from the opening - the
+`credit_line_statement` row and rule 3 under `lending.statement:<line>:<statement date>`, then rule 6 through the one
+`CreditBalanceApplications`, then `lending.CreditLineStatementIssued`; the collection then takes each statement on its due
+date. The statement's drawn principal is the cycle's close (journal lines valued before the statement date), so a draw (L3)
+racing the step at the boundary yields the same statement in either order.)*
+
 *(As built by `P11-TSK-020` - T-rev, the repayment reversal: each act behind the door's claim (`lending.servicing:<type>:<id>`);
 the loan's party (frozen, unlocked) and the actor's through identity - an operator of the loan's own party, or one the
 platform cannot place, `403 lending.SelfDealingRefused`, recorded `FAILED` in a transaction of its own. The proposal: **(L3)**
@@ -1159,7 +1167,13 @@ figures that could drift (the statement row stores only what it billed).
 end the statement date and the next cycle's first day, the first cycle running from the opening to the first statement
 date strictly after it; "drawn principal" in the ratio is `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` and the cap
 `LOAN_PRINCIPAL`; the minimum never exceeds what the statement can bill - its interest, fees and principal not yet due;
-the interest is the cycle's posted accruals summed. ADR-0100's Follow-up records the refinements.)*
+the interest is the cycle's posted accruals summed. ADR-0100's Follow-up records the refinements.)* *(As built by `P11-TSK-022`,
+2026-10-13 - `lending V017`'s `credit_line_statement` and `CreditLineStatements` in T-svc: a cycle stated once its statement date
+has come and every date of it is accrued, oldest first; `D` and the cap folded from the journal lines valued before the
+statement date (the cap also never beyond `LOAN_PRINCIPAL` now), so a draw on the statement date is the next cycle's; key
+`lending.statement:<line>:<statement date>`; `UNIQUE (loan_id, cycle_end)` and `UNIQUE (loan_id, due_date)`; fees carried zero by
+`CHECK` until `-025`; the statement a billed item - the credit balance applied at it, auto-collected on its due date; the
+owner's read derives opening and closing balances from journal lines. ADR-0100's Follow-up records the refinements.)*
 
 **Available limit recomputation** is never a stored number: every draw derives it under L3; a
 principal repayment (due or not-due) restores it at commit; interest and fees never consume it. *(As built by

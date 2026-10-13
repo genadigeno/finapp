@@ -131,19 +131,7 @@ public final class JdbcLoanServicingStore implements LoanServicingStore {
                 if (!row.next()) {
                     return Optional.empty();
                 }
-                CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());
-                int scale = row.getInt("scale");
-                EngineVersion engine = EngineVersion.of(LendingEngine.ACCRUAL, row.getInt("accrual_engine_version"))
-                        .orElseThrow(() -> new IllegalStateException("an accrual names an engine version this build holds"));
-                BigDecimal cumulative = row.getBigDecimal("cumulative_exact").setScale(Act365Fixed.EXACT_SCALE);
-                InterestAccrual accrual = new InterestAccrual(
-                        row.getObject("accrual_date", LocalDate.class),
-                        new AccrualPeriod(row.getObject("period_start", LocalDate.class),
-                                row.getObject("period_end", LocalDate.class)),
-                        Money.ofPersisted(row.getLong("base_minor"), currency, scale),
-                        cumulative,
-                        Money.ofPersisted(row.getLong("posted_minor"), currency, scale),
-                        engine);
+                InterestAccrual accrual = accrual(row);
                 UUID entry = row.getObject("journal_entry_id", UUID.class);
                 return Optional.of(new RecordedAccrual(
                         row.getObject("id", UUID.class),
@@ -156,6 +144,26 @@ public final class JdbcLoanServicingStore implements LoanServicingStore {
         } catch (SQLException failure) {
             throw failed("reading an account's latest accrual", failure);
         }
+    }
+
+    /**
+     * An {@code interest_accrual} row's figures - its date, period, base, cumulative figure, posting and engine; shared with
+     * the statement's read of a cycle's accruals ({@link JdbcCreditLineStatementStore}, `P11-TSK-022`).
+     */
+    static InterestAccrual accrual(ResultSet row) throws SQLException {
+        CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());
+        int scale = row.getInt("scale");
+        EngineVersion engine = EngineVersion.of(LendingEngine.ACCRUAL, row.getInt("accrual_engine_version"))
+                .orElseThrow(() -> new IllegalStateException("an accrual names an engine version this build holds"));
+        BigDecimal cumulative = row.getBigDecimal("cumulative_exact").setScale(Act365Fixed.EXACT_SCALE);
+        return new InterestAccrual(
+                row.getObject("accrual_date", LocalDate.class),
+                new AccrualPeriod(row.getObject("period_start", LocalDate.class),
+                        row.getObject("period_end", LocalDate.class)),
+                Money.ofPersisted(row.getLong("base_minor"), currency, scale),
+                cumulative,
+                Money.ofPersisted(row.getLong("posted_minor"), currency, scale),
+                engine);
     }
 
     @Override

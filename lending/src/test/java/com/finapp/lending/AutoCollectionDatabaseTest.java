@@ -458,7 +458,7 @@ class AutoCollectionDatabaseTest {
         LoanServicing dying = new LoanServicing(DisbursementWorld.LOAN_STORE, new JdbcLoanServicingStore(),
                 DisbursementWorld.TERMS_STORE, DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES,
                 DisbursementWorld.POSTINGS, DisbursementWorld.IDS, DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES,
-                DisbursementWorld.collections(REPAYMENT_STORE, crashing));
+                DisbursementWorld.collections(REPAYMENT_STORE, crashing), DisbursementWorld.STATEMENTS);
         assertThatThrownBy(() -> service(dying, loan)).hasMessageContaining("instance died");
         assertThat(attempts(loan)).isEmpty();
         assertThat(autoRepayments(loan)).isZero();

@@ -1266,8 +1266,11 @@ never by an undrawn limit.
 **Is:** the born-once fact of one Credit Line's cycle, on the agreement's statement day after the
 cycle's accruals — billing the cycle's accrued interest, carrying assessed fees, billing the Minimum
 Payment's principal part and stating the minimum payment and its due date (25 days later). It
-stores only what it billed: its opening and closing balances are derived from the ledger. Planned
-(`P11-TSK-022`).
+stores only what it billed: its opening and closing balances are derived from the ledger. Built by
+`P11-TSK-022` (`lending V017`, `CreditLineStatements` in T-svc's billing slot): a billed item beside an Instalment
+Billing - the credit balance applied at it, auto-collected on its due date - its principal part taken of the drawn
+principal at the cycle's close (journal lines valued before the statement date), so a draw on the statement date
+belongs to the next cycle.
 **Not:** a balance report that could drift, and not an Instalment Billing (a line has no schedule).
 Nor the whole amount owed: paying only the minimum leaves the rest drawn and accruing.
 **Owned by:** `lending`

@@ -288,6 +288,8 @@ attempt's repayment born under the key `<item>:<date>` (`repayment UNIQUE (loan_
 (scenario 2's sweeper half: two and ten racing steps - one attempt, one repayment, one entry, one event) and
 `#aCrashMidStepLeavesNothing`. The probe drops the unique - `MUTATION_TESTING.md` section 2.)*
 
+*(As built by `P11-TSK-022`, 2026-10-13 - the statement, per (line, cycle end): `credit_line_statement UNIQUE (loan_id, cycle_end)` beneath the line's lock and the ledger key `lending.statement:<line>:<statement date>`, whose replay the step refuses as a defect; the credit balance applied at it once (`credit_balance_application UNIQUE (billing_id)`); its minimum auto-collected once per business date (`-019`'s unique). `CreditLineStatementDatabaseTest#tenSweepersOneStatement` (thirty racing steps over three lines, the unique proven with the triggers suspended) and `#theMinimumPaymentIsAutoCollectedOnItsDueDate` (ten racing steps, one collection).)*
+
 ### INV-IDEM-03 — Key reuse with a different request is rejected
 **Statement:** Presenting a known idempotency key with a materially different request is an
 error, never a silent success and never a second effect.
@@ -1710,6 +1712,8 @@ the billed interest. The credit-balance application derives its due state from t
 unless they explain the due accounts' ledger balances exactly - a difference is an alert, never allocated over
 (`InstalmentBillingDatabaseTest#aCreditBalancePaysTheBill`); every case of the suite asserts the arms.)*
 
+*(As built by `P11-TSK-022`, 2026-10-13 - the statement arms: every `credit_line_statement` is born with posting rule 3's entry (or none, for a statement of nothing) in the servicing step's transaction, its interest exactly the cycle's accrual rows (`lending V017`'s trigger, for every writer) and the accrual's trigger refusing any date inside a stated cycle, so a line's `LOAN_INTEREST_DUE` and `LOAN_PRINCIPAL_DUE` are its statements less every payer's allocations, `LOAN_INTEREST_ACCRUED` the accruals less what statements billed and `LOAN_PRINCIPAL` the draws less what statements billed (`CreditLineStatementDatabaseTest#assertLineSubledgerProves`, every case). The statement stores only what it billed; the owner's read derives opening and closing balances from journal lines (`#balancesAreDerivedNotStored`).)*
+
 ### INV-LND-02 — Interest accrues once per account per date
 **Statement:** For each loan or credit line and each accrual date at most one accrual row exists and
 at most one journal entry records it, whatever reruns, instances, crashes, restarts or clock skew
@@ -1841,6 +1845,8 @@ repayment holding credit or paying another item refused; what was due less what 
 has due). `AutoCollectionDatabaseTest#neverMoreThanDue` and `#theDueDateCollectsOnceWhateverRaces` (steps racing the
 borrower's repayment: the bill paid exactly, never over-allocated, the rest held). Probes in `MUTATION_TESTING.md` section
 2.)*
+
+*(As built by `P11-TSK-022`, 2026-10-13 - a line's statement is a billed item: `lending.billing_component_billed` reads its interest and principal, so `-017`'s, `-018`'s and `-019`'s never-over-paid rules hold for statements unchanged (`CreditLineStatementDatabaseTest#theRowsAreHeldForEveryWriter`: an over-paying application refused at commit). Rule 6 - one implementation for billings and statements (`CreditBalanceApplications`) - settles only what became due: its remainder stays held whatever the agreement's overpayment treatment (the treatment is a repayment's), proven by `#aCreditBalancePaysTheStatement`.)*
 
 ### INV-LND-05 — Terms are pinned and immutable
 **Statement:** A loan agreement version never changes once written; it carries the full,
@@ -2036,6 +2042,8 @@ engine version or rate the version does not implement is refused at computation 
 half of `INV-LND-02`: a predecessor must be an earlier accrual of the same period, so a date accrued twice
 computes nothing.)*
 
+*(As built by `P11-TSK-022`, 2026-10-13 - each statement names the governing agreement version, `STATEMENT_ENGINE_V1` and the accrual engine whose rows it bills; the step refuses terms and an agreement pinning different statement or allocation engines, and `lending V017`'s trigger refuses, for every writer, a statement naming any but the agreement's pinned engines (`CreditLineStatementDatabaseTest#theRowsAreHeldForEveryWriter`); the minimum follows A24 exactly (`#theMinimumPaymentFollowsTheRule`).)*
+
 ### INV-LND-10 — Servicing time is the database's
 **Statement:** Every business date or instant that decides an accrual, a billing, a statement, a
 delinquency condition, a fee, an offer's expiry, an acceptance window or a posting's value date is
@@ -2068,6 +2076,8 @@ offer terms' escape-free character set and `lending V005`/`V006`'s `CHECK`s excl
 clock read after the loan's lock, in the pinned zone - `lending V012`'s trigger refuses an earlier billing for every writer
 (`InstalmentBillingDatabaseTest#billedOnTheDueDateOnce`); rules 3 and 6 are dated the business date of their transaction, never
 back-valued to the due date (ADR-0094 point 8).)*
+
+*(As built by `P11-TSK-022`, 2026-10-13 - the statement: a cycle is stated only once its statement date has come on the database clock read after the line's lock, in the pinned zone - `lending V017`'s trigger refuses an earlier statement for every writer - and only once every date of it is accrued; rule 3 is dated the business date of its transaction. A draw on the statement date belongs to the next cycle whichever order it and the step meet the line's lock in (`CreditLineStatementDatabaseTest#aStatementRacingADrawAtTheCycleEndSerialises`).)*
 
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)

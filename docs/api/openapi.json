@@ -16554,6 +16554,20 @@
         },
         "type": "object"
       },
+      "StatementListView": {
+        "properties": {
+          "loanId": {
+            "type": "string"
+          },
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/StatementView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "StatementResponse": {
         "properties": {
           "accountId": {
@@ -16592,6 +16606,61 @@
             "type": "array"
           },
           "opening": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StatementView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "closingBalance": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "cycleStart": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "feesCarried": {
+            "type": "string"
+          },
+          "interestBilled": {
+            "type": "string"
+          },
+          "minimumPayment": {
+            "type": "string"
+          },
+          "openingBalance": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "string"
+          },
+          "paid": {
+            "type": "string"
+          },
+          "principalBilled": {
+            "type": "string"
+          },
+          "statementDate": {
+            "type": "string"
+          },
+          "statementEngineVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "statementId": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -19296,6 +19365,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}/statements": {
+      "get": {
+        "operationId": "listStatements",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementListView"
                 }
               }
             },
