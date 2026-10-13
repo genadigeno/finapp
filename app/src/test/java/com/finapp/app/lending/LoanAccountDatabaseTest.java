@@ -84,8 +84,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw, the repayment and auto-collection end"
-        + " to end (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-018, P11-TSK-019)")
+@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw, the statement, the repayment and"
+        + " auto-collection end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-022,"
+        + " P11-TSK-018, P11-TSK-019)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -571,6 +572,81 @@ class LoanAccountDatabaseTest {
         assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
         assertThat(foreign.body()).contains("lending.NotFound");
         assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a line is stated through the wired servicing sweep (P11-TSK-022): drawn over the door, its statement date"
+            + " come, the sweep states the cycle once under the system actor - the cycle's accrued interest and the"
+            + " minimum payment's principal part made due by rule 3 under lending.statement:<line>:<date> in the line's"
+            + " own correlation, lending.CreditLineStatementIssued in the outbox, counted after the commit"
+            + " (finapp.lending.billing{kind=statement}); the borrower's statements read shows it with the balances derived"
+            + " from the ledger; another party's line and an instalment loan are the uniform 404; a second sweep states"
+            + " nothing")
+    void aLineIsStatedThroughTheWiredSweep() throws Exception {
+        CreditFixtures.Customer owner = customers.consentingCustomer();
+        String offer = offered(owner, line("2500.00"));
+        String hash = field(client.get(OFFERS + "/" + offer, owner.token()).body(), "termsSha256");
+        String loanId = field(accept(owner.token(), offer, hash, null, key()).body(), "loanId");
+        assertThat(draw(owner.token(), loanId, "1000.00", key()).statusCode()).isEqualTo(201);
+        assertThat(client.get(LOANS + "/" + loanId + "/statements", owner.token()).body())
+                .as("not yet stated").contains("\"statements\":[]");
+        // The fixture's clock: the line opened twenty days before its latest statement date (day 5), drawn the next day.
+        LocalDate today = LocalDate.parse(scalar("SELECT lending.business_date(statement_timestamp(), 'UTC')::text"));
+        LocalDate statementDate = today.getDayOfMonth() >= 5 ? today.withDayOfMonth(5)
+                : today.minusMonths(1).withDayOfMonth(5);
+        try (Connection bootstrap = DatabaseRoles.bootstrap()) {
+            bootstrap.setAutoCommit(false);
+            try (Statement statement = bootstrap.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE lending.loan SET opened_at = TIMESTAMPTZ '" + statementDate.minusDays(20)
+                        + " 01:00:00+00' WHERE id = '" + loanId + "'; UPDATE ledger.journal_entry SET posting_date = DATE '"
+                        + statementDate.minusDays(19) + "', value_date = DATE '" + statementDate.minusDays(19)
+                        + "' WHERE id = (SELECT journal_entry_id FROM lending.credit_line_draw WHERE loan_id = '" + loanId
+                        + "'); UPDATE lending.credit_line_draw SET value_date = DATE '" + statementDate.minusDays(19)
+                        + "' WHERE loan_id = '" + loanId + "'");
+            }
+            bootstrap.commit();
+        }
+        double before = stated();
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        assertThat(count("SELECT count(*) FROM lending.credit_line_statement WHERE loan_id = ?::uuid", loanId))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.credit_line_statement s JOIN ledger.journal_entry e"
+                + " ON e.id = s.journal_entry_id JOIN lending.loan l ON l.id = s.loan_id WHERE s.loan_id = ?::uuid"
+                + " AND e.idempotency_scope = 'ledger.post:lending.statement:' || s.loan_id || ':' || s.cycle_end"
+                + " AND e.correlation_id = l.correlation_id AND s.cycle_end = ?::date AND s.principal_billed_minor = 3000"
+                + " AND s.interest_billed_minor = (SELECT sum(a.posted_minor) FROM lending.interest_accrual a"
+                + " WHERE a.loan_id = s.loan_id AND a.period_end = s.cycle_end)", loanId, statementDate.toString()))
+                .as("rule 3 under the statement's key in the line's own flow: the cycle's interest and 3 % of 1,000.00")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?::uuid AND event_type ="
+                + " 'lending.CreditLineStatementIssued'", loanId)).isEqualTo(1);
+        assertThat(stated()).as("counted after the commit").isGreaterThanOrEqualTo(before + 1);
+        String statements = client.get(LOANS + "/" + loanId + "/statements", owner.token()).body();
+        String interest = scalar("SELECT to_char(interest_billed_minor / 100.0, 'FM999990.00')"
+                + " FROM lending.credit_line_statement WHERE loan_id = ?::uuid", loanId);
+        assertThat(statements).contains("\"statementDate\":\"" + statementDate + "\"",
+                "\"dueDate\":\"" + statementDate.plusDays(25) + "\"", "\"status\":\"DUE\"",
+                "\"interestBilled\":\"" + interest + "\"", "\"principalBilled\":\"30.00\"",
+                "\"openingBalance\":\"0.00\"", "\"feesCarried\":\"0.00\"", "\"statementEngineVersion\":1");
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> foreign = client.get(LOANS + "/" + loanId + "/statements", stranger.token());
+        assertThat(foreign.statusCode()).as("another party's line: the same 404 as an unknown one").isEqualTo(404);
+        assertThat(foreign.body()).contains("lending.NotFound").doesNotContain(interest);
+        assertThat(client.get(LOANS + "/" + UUID.randomUUID() + "/statements", owner.token()).statusCode())
+                .isEqualTo(404);
+        servicing.sweepOnce();
+        assertThat(count("SELECT count(*) FROM lending.credit_line_statement WHERE loan_id = ?::uuid", loanId))
+                .as("stated once, however often swept").isEqualTo(1);
+    }
+
+    private double stated() {
+        return meterRegistry.find(LoanServicingMetrics.BILLING).tag("kind", "statement").tag("outcome", "billed")
+                .counter().count();
     }
 
     @Test

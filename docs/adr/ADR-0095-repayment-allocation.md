@@ -250,5 +250,21 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   (`collection_attempt`), `lending.CollectionFailed` when nothing could be taken; an `AUTO_COLLECTION` repayment without its
   attempt is refused at commit. The suites' fixture terms default to auto-collection off (every suite before it bills
   against a wallet holding the disbursed principal); `AutoCollectionDatabaseTest` activates its own.
+- **As built by `P11-TSK-022` (2026-10-13) - a line's statement minimum as a billed item, points 2, 5 and 6.** A
+  `credit_line_statement` is a billed item beside an instalment's billing (`lending V017`): every row that names a billed
+  item - `credit_balance_allocation`, `repayment_allocation`, `collection_attempt`, and `credit_balance_application` -
+  names a billing or a statement, the four foreign keys to `instalment_billing` replaced by the born-once triggers' check
+  that the item is one of the row's own loan (`lending.billed_item_loan`), and `lending.billing_component_billed` reads a
+  statement's interest and principal. The due state (`LoanReceivables`) and the collection (`LoanCollections`) read
+  `InstalmentBillingStore.dueItems` - both kinds, billed less every payer, oldest due date first; a statement falls due on
+  its minimum payment's due date. **Point 5 is one implementation for both**: `CreditBalanceApplications`, lifted out of
+  `-017`'s billing step, applies at a billing or a statement (`UNIQUE (billing_id)`, `lending.credit-application:<item>`)
+  and **settles only what became due** - whatever the agreement's treatment, its remainder stays held (rule 6's entry
+  credits due accounts only; a line's `PAY_DOWN_PRINCIPAL` is a repayment's, `-023`'s) - an owner judgement recorded.
+  **Point 6 on a line**: an `ACTIVE` line whose pinned terms collect automatically is collected as an instalment loan is -
+  each statement on its due date and daily while past due, every line of the `AUTO_COLLECTION` repayment on the statement,
+  so the line's `PAY_DOWN_PRINCIPAL` (the pinned rules, unchanged) never comes into play; `lending V017` admits a line's
+  repayment only as an automatic collection (its customer repayment stays `-023`'s) and a `CLOSING` line's collection is
+  `-023`'s, beside its closure.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

@@ -5,7 +5,6 @@ import com.finapp.ledger.Direction;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PurposeBalances;
-import com.finapp.lending.InstalmentBillingStore.BilledItem;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
@@ -110,8 +109,8 @@ final class LoanReceivables {
         Money fees = zero;
         Money interest = zero;
         Money principal = zero;
-        for (BilledItem item : billings.billedItems(unitOfWork, loan)) {
-            DueState.DueItem due = item.dueItem();
+        // Every billed item - an instalment loan's billings, a line's statements (P11-TSK-022) - billed less paid.
+        for (DueState.DueItem due : billings.dueItems(unitOfWork, loan)) {
             fees = fees.plus(due.fees());
             interest = interest.plus(due.interest());
             principal = principal.plus(due.principal());

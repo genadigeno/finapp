@@ -212,5 +212,28 @@ Financial impact: rule 1 per draw, rule 3 per statement, rule 5 with principal p
   correlation. Point 10 holds as decided: the draw consumes headroom at its commit, and exposure does not move (no L0) -
   an `ACTIVE` line already counts `GREATEST(limit, drawn)` and a draw within the limit leaves that figure the limit
   (re-proven through the real door in `LendingCreditExposureDatabaseTest`).
+- **As built by `P11-TSK-022` (2026-10-13) - the statement (point 6).** `lending V017` (`credit_line_statement`; the
+  backlog's `V015` stale) and `CreditLineStatements`, T-svc's step in the billing slot - after the accrual, before the
+  collection, under the line's L3 only (no L0: billed principal is still drawn, exposure and the available limit do not move;
+  no L6) - with these refinements: (a) **when**: a cycle is stated once its statement date has come on the database clock
+  in the pinned zone and every date of it has been accrued or found with no principal (the accrual step's horizon - a line's
+  zero-principal date writes no row, so completeness is the step's, and the accrual's trigger then refuses any date inside a
+  stated cycle); oldest first, contiguous from the opening business date, several after an outage; an empty cycle is a
+  statement of nothing (its row and its event, no entry); (b) **the drawn principal is the cycle's close**: `D` and the cap
+  are folded from the journal lines valued before the statement date in ONE read, the cap also never beyond `LOAN_PRINCIPAL`
+  now - so a draw on the statement date belongs to the next cycle whichever order it and the step meet L3 in (the statement
+  is a function of the cycle, not of the race), and a late statement never bills principal drawn after its cycle; (c) **the
+  key is the statement's natural identity**, `lending.statement:<line>:<statement date>` - the plan's "per statement" - its
+  reference the line, so a second attempt at a cycle is a replay the step refuses as a defect (the `-017` gate's lesson);
+  (d) `UNIQUE (loan_id, due_date)` beside `UNIQUE (loan_id, cycle_end)` - one billed item per due date, the allocation
+  engine's total order; (e) fees carried are zero by `CHECK` until `-025` widens it, a carried fee being due on the item it
+  was assessed on (`billing_component_billed` bills no fee on a statement); (f) the credit balance is applied at the
+  statement through `-017`'s one application, settling only what became due; (g) the statement's minimum is
+  auto-collected on its due date by `-019`'s step (ADR-0095's Follow-up); (h) `GET /v1/me/loans/{id}/statements` - the
+  owner's statements with what has been paid and the balance (every receivable less the credit balance) at the cycle's
+  opening and close, derived from journal lines, never stored; (i) **the draw suspension stays inert**: since statements a
+  minimum can be past due, but the backlog gives the suspension's derivation to `-024` (both conditions, proven biting), so
+  `DrawSuspension.BEFORE_ANY_CONDITION` remains wired and a line whose minimum is past due can draw until `-024` lands - the
+  seam is `InstalmentBillingStore.dueItems` under L3; recorded for the owner.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

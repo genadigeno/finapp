@@ -34,7 +34,8 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>{@code finapp.lending.billing{kind, outcome}} (`P11-TSK-017`) - each billed item of a committed servicing step
  *       ({@code kind = instalment}, {@code outcome = billed}) and each credit-balance application at one
  *       ({@code outcome = credit_applied}), counted once after the step's transaction committed. Registered eagerly for
- *       every outcome; a line's statement ({@code kind = statement}) is {@code P11-TSK-022}'s to add.
+ *       every outcome and both kinds - a line's statement ({@code kind = statement}, `P11-TSK-022`) counted as the
+ *       instalment's billing is: each statement {@code billed}, each application at one {@code credit_applied}.
  *   <li>{@code finapp.lending.collection{outcome}} (`P11-TSK-019`) - each automatic collection attempt of a committed
  *       servicing step, by its outcome ({@code collected}, {@code partial}, {@code insufficient_funds},
  *       {@code wallet_not_postable}, {@code nothing_due}), counted once after the step's transaction committed. Registered
@@ -60,6 +61,11 @@ public final class LoanServicingMetrics {
 
     /** Exported as {@code finapp_lending_collection} (`P11-TSK-019`), the plan's name. */
     public static final String COLLECTION = "finapp.lending.collection";
+
+    /** The billing series' closed set of kinds: an instalment loan's billing, a credit line's statement. */
+    static final String INSTALMENT = "instalment";
+
+    static final String STATEMENT = "statement";
 
     /** The billing series' closed set of outcomes. */
     public enum BillingOutcome {
@@ -110,7 +116,8 @@ public final class LoanServicingMetrics {
             counter(outcome);
         }
         for (BillingOutcome outcome : BillingOutcome.values()) {
-            billing(outcome);
+            billing(INSTALMENT, outcome);
+            billing(STATEMENT, outcome);
         }
         for (CollectionOutcome outcome : CollectionOutcome.values()) {
             collection(outcome);
@@ -134,10 +141,16 @@ public final class LoanServicingMetrics {
             counter(Outcome.ZERO).increment(step.zero());
         }
         if (step.billed() > 0) {
-            billing(BillingOutcome.BILLED).increment(step.billed());
+            billing(INSTALMENT, BillingOutcome.BILLED).increment(step.billed());
         }
         if (step.applied() > 0) {
-            billing(BillingOutcome.CREDIT_APPLIED).increment(step.applied());
+            billing(INSTALMENT, BillingOutcome.CREDIT_APPLIED).increment(step.applied());
+        }
+        if (step.stated() > 0) {
+            billing(STATEMENT, BillingOutcome.BILLED).increment(step.stated());
+        }
+        if (step.statedApplied() > 0) {
+            billing(STATEMENT, BillingOutcome.CREDIT_APPLIED).increment(step.statedApplied());
         }
         int moved = 0;
         for (CollectionOutcome outcome : CollectionOutcome.values()) {
@@ -193,11 +206,12 @@ public final class LoanServicingMetrics {
         return fresh;
     }
 
-    private Counter billing(BillingOutcome outcome) {
+    private Counter billing(String kind, BillingOutcome outcome) {
         return Counter.builder(BILLING)
                 .description("Billed items of committed servicing steps (billed) and the credit-balance applications at"
-                        + " them (credit_applied) - an instalment loan's instalments and post-maturity periods")
-                .tags("kind", "instalment", "outcome", outcome.tag())
+                        + " them (credit_applied) - an instalment loan's instalments and post-maturity periods"
+                        + " (kind=instalment), a credit line's statements (kind=statement)")
+                .tags("kind", kind, "outcome", outcome.tag())
                 .register(registry);
     }
 

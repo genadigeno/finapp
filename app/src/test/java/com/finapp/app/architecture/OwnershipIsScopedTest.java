@@ -1074,6 +1074,26 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "GET /v1/me/loans/{id}/schedule - the identifier from the path, and l.party_id = ? in the statement is the session's own party; another party's loan is the same empty answer as a loan billed nothing (P11-TSK-017).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcInstalmentBillingStore.dueItems",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-022. Every billed item (billings, statements) of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the application, the collection), or locked by lockOwnedBy under party_id = ? for the customer's own repayment (P11-TSK-018's due state); the id never reaches it from a request unscoped.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcCreditLineStatementStore.latestStatementDate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-022. The latest statement date of the line the servicing sweep claimed and this transaction holds FOR UPDATE (L3), read by the statement step after the accrual; never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcCreditLineStatementStore.accrualsIn",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-022. The accruals of one cycle of the line the servicing sweep claimed and this transaction holds FOR UPDATE (L3) - the interest a statement makes due; never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcCreditLineStatementStore.statementsOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/loans/{id}/statements - the identifier from the path, and l.party_id = ? in the statement is the session's own party; another party's line is the same empty answer as a line stated nothing (P11-TSK-022).")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanServicingStore.latestAccrual",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3239,6 +3259,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.lending.JdbcInstalmentBillingStore.billedItemsOwnedBy",
                             "com.finapp.app.lending.LoanAccountDatabaseTest.aLoanIsBilledOnItsDueDateThroughTheWiredSweep"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcCreditLineStatementStore.statementsOwnedBy",
+                            "com.finapp.app.lending.LoanAccountDatabaseTest.aLineIsStatedThroughTheWiredSweep"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanPayoutStore.statusOwnedBy",
                             "com.finapp.app.lending.LoanPayoutDatabaseTest.interestStartsAtTheTerminalOutcome"),

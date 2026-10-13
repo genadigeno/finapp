@@ -3144,6 +3144,33 @@ versions and stamps `INTERNAL`.
 | `repayment_allocation_reversal` | `scale` | `INTERNAL` | The amount's persisted scale |
 | `repayment_allocation_reversal` | `amount_minor` | `RESTRICTED-FINANCIAL` | The allocation's amount, negated |
 
+### `lending` - the credit line statement - *added by `P11-TSK-022`*
+
+`lending V017`: the line's billed item - what one cycle made due and the minimum payment - and only that: no balance is
+stored (opening and closing balances are derived from the ledger). The amounts `RESTRICTED-FINANCIAL` as every lending
+amount, the line, agreement and entry references `CONFIDENTIAL`, dates, versions and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `credit_line_statement` | `id` | `INTERNAL` | Generated - the billed item's identity (a collection's `due_item_id`, an application's `billing_id`) |
+| `credit_line_statement` | `loan_id` | `CONFIDENTIAL` | The credit line stated |
+| `credit_line_statement` | `cycle_start` | `INTERNAL` | The cycle's first date - the opening or the previous statement date |
+| `credit_line_statement` | `cycle_end` | `INTERNAL` | The statement date - one statement per line and cycle |
+| `credit_line_statement` | `due_date` | `INTERNAL` | The minimum payment's due date - the statement date plus the pinned payment-due days |
+| `credit_line_statement` | `currency` | `INTERNAL` | The line's currency |
+| `credit_line_statement` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `credit_line_statement` | `interest_billed_minor` | `RESTRICTED-FINANCIAL` | Interest made due - exactly the cycle's accrued interest |
+| `credit_line_statement` | `fees_carried_minor` | `RESTRICTED-FINANCIAL` | Fees carried into the minimum - zero until `P11-TSK-025` |
+| `credit_line_statement` | `principal_billed_minor` | `RESTRICTED-FINANCIAL` | The minimum payment's principal part (A24), made due |
+| `credit_line_statement` | `minimum_payment_minor` | `RESTRICTED-FINANCIAL` | Interest + fees + principal billed |
+| `credit_line_statement` | `agreement_id` | `CONFIDENTIAL` | The governing agreement version it was stated under |
+| `credit_line_statement` | `agreement_version` | `INTERNAL` | That agreement version's number |
+| `credit_line_statement` | `statement_engine_version` | `INTERNAL` | The pinned statement engine version |
+| `credit_line_statement` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine version whose rows it bills |
+| `credit_line_statement` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 3's journal entry, by value - null for a statement of nothing |
+| `credit_line_statement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_line_statement` | `correlation_id` | `INTERNAL` | The line's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

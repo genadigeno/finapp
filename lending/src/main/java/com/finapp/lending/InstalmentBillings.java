@@ -23,10 +23,8 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -87,7 +85,7 @@ public final class InstalmentBillings {
     public static final String POSTING_KEY_PREFIX = "lending.billing:";
 
     /** Rule 6's key prefix: {@code lending.credit-application:<billing>}. */
-    public static final String APPLICATION_KEY_PREFIX = "lending.credit-application:";
+    public static final String APPLICATION_KEY_PREFIX = CreditBalanceApplications.KEY_PREFIX;
 
     /** The event a billing publishes - one per billed item. */
     public static final String BILLED_EVENT = "lending.InstalmentBilled";
@@ -271,54 +269,13 @@ public final class InstalmentBillings {
     // ------------------------------------------------------------------ rule 6
 
     /**
-     * Applies the loan's credit balance over its billed items, oldest first, if both exist: the due state derived from
-     * the rows under L3 and checked against the ledger, the engine's lines on billed items recorded and posted.
+     * Applies the loan's credit balance over its billed items, oldest first, if both exist - rule 6's one implementation,
+     * shared with the line's statement ({@link CreditBalanceApplications}, lifted out of this step by `P11-TSK-022`).
      */
     private Optional<CreditBalanceApplication> apply(Connection unitOfWork, Loan loan, LoanAgreement agreement,
             AllocationRules rules, InstalmentBilling billing, LocalDate today, Accounts accounts, Money zero) {
-        Money credit = receivables().netDebit(unitOfWork, accounts.creditBalance(), zero).negated();
-        if (!credit.isPositive()) {
-            return Optional.empty();
-        }
-        DueState dueState = receivables().dueState(unitOfWork, loan.id(), accounts, zero);
-        if (!dueState.anythingBilledDue()) {
-            return Optional.empty();
-        }
-        List<CreditBalanceApplication.Line> lines = new ArrayList<>();
-        Map<AllocationComponent, Money> perComponent = new EnumMap<>(AllocationComponent.class);
-        Money amount = zero;
-        for (AllocationLine line : AllocationEngineV1.allocate(credit, dueState, rules)) {
-            switch (line.target()) {
-                case DUE_ITEM -> {
-                    lines.add(new CreditBalanceApplication.Line(ids.next(), line));
-                    perComponent.merge(line.component().orElseThrow(), line.amount(), Money::plus);
-                    amount = amount.plus(line.amount());
-                }
-                case CREDIT_BALANCE -> {
-                    // What stays held - nothing to record.
-                }
-                case NOT_DUE_PRINCIPAL -> throw new IllegalStateException(
-                        "an instalment loan's credit balance never pays principal not yet due (HOLD_AS_CREDIT, ADR-0095)");
-            }
-        }
-        if (lines.isEmpty()) {
-            return Optional.empty();
-        }
-        UUID applicationId = ids.next();
-        List<JournalLine> entryLines = new ArrayList<>();
-        entryLines.add(new JournalLine(accounts.creditBalance(), Direction.DEBIT, amount));
-        for (Map.Entry<AllocationComponent, Money> component : perComponent.entrySet()) {
-            entryLines.add(new JournalLine(accounts.due(component.getKey()), Direction.CREDIT, component.getValue()));
-        }
-        PostingResult result = postings.post(unitOfWork, new PostingCommand(APPLICATION_KEY_PREFIX + billing.id(),
-                today, today, applicationId.toString(), entryLines));
-        if (result.replayed()) {
-            throw new IllegalStateException("an application entry exists for a billing with no application (INV-LND-04)");
-        }
-        CreditBalanceApplication application = new CreditBalanceApplication(applicationId, billing.id(), loan.id(),
-                amount, agreement.id(), agreement.version(), agreement.allocationEngine(), lines, result.entryId());
-        store.insertApplication(unitOfWork, application, loan.correlation());
-        return Optional.of(application);
+        return new CreditBalanceApplications(store, ledgerAccounts, balances, postings, ids)
+                .apply(unitOfWork, loan, agreement, rules, billing.id(), today, accounts, zero);
     }
 
     // ------------------------------------------------------------------ the event

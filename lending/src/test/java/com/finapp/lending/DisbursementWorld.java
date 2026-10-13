@@ -145,6 +145,8 @@ final class DisbursementWorld {
     static final JdbcRepaymentStore REPAYMENT_STORE = new JdbcRepaymentStore();
     static final Repayments REPAYMENTS = repayments(REPAYMENT_STORE, new JdbcOutboxWriter());
     static final LoanCollections COLLECTIONS = collections(REPAYMENT_STORE, new JdbcOutboxWriter());
+    static final JdbcCreditLineStatementStore STATEMENT_STORE = new JdbcCreditLineStatementStore();
+    static final CreditLineStatements STATEMENTS = statements(new JdbcOutboxWriter());
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
             TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);
@@ -177,6 +179,12 @@ final class DisbursementWorld {
                 BALANCES, outbox, IDS, CLOCK);
     }
 
+    /** T-svc's statement step and the statements read over the real stores and ledger, with this outbox (P11-TSK-022). */
+    static CreditLineStatements statements(OutboxWriter<Connection> outbox) {
+        return new CreditLineStatements(STATEMENT_STORE, BILLING_STORE, LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS,
+                outbox, IDS, CLOCK);
+    }
+
     // ------------------------------------------------------------------ the loans
 
     /** An accepted loan awaiting its disbursement; path X's payout method when it has one. */
@@ -194,7 +202,7 @@ final class DisbursementWorld {
     static Accepted acceptedLoan(long minor, int term, PayoutPreference payout) {
         ensureActive();
         fund(Money.ofMinorUnits(minor, EUR));
-        return accepted(LoanProduct.PERSONAL_LOAN, minor, Optional.of(term), payout);
+        return accepted(LoanProduct.PERSONAL_LOAN, minor, Optional.of(term), payout, 10);
     }
 
     /**
@@ -206,10 +214,19 @@ final class DisbursementWorld {
         if (!active) {
             activate(LoanTermsFixtures.of(LoanProduct.CREDIT_LINE, "0.1299").build());
         }
-        return accepted(LoanProduct.CREDIT_LINE, minor, Optional.empty(), PayoutPreference.WALLET);
+        return accepted(LoanProduct.CREDIT_LINE, minor, Optional.empty(), PayoutPreference.WALLET, 10);
     }
 
-    private static Accepted accepted(LoanProduct product, long minor, Optional<Integer> term, PayoutPreference payout) {
+    /**
+     * A fresh party's credit line of limit {@code minor} with statement day {@code statementDay}, offered and accepted under
+     * the line's terms in force - the caller activated them, their allowed days naming the day (`P11-TSK-022`).
+     */
+    static Accepted acceptedLineOnDay(long minor, int statementDay) {
+        return accepted(LoanProduct.CREDIT_LINE, minor, Optional.empty(), PayoutPreference.WALLET, statementDay);
+    }
+
+    private static Accepted accepted(LoanProduct product, long minor, Optional<Integer> term, PayoutPreference payout,
+            int repaymentDay) {
         Money amount = Money.ofMinorUnits(minor, EUR);
         LoanApplicationId application = LoanApplicationId.next(IDS);
         UUID party = UUID.randomUUID();
@@ -219,7 +236,7 @@ final class DisbursementWorld {
             Actor customer = customer(party);
             CorrelationId correlation = correlation();
             APPLICATIONS.insert(uow, new LoanApplicationStore.NewApplication(application, party,
-                    product, request, version.row().id(), 10, RepaymentMethod.WALLET,
+                    product, request, version.row().id(), repaymentDay, RepaymentMethod.WALLET,
                     payout, customer, correlation));
             APPLICATIONS.appendEvent(uow, new LoanApplicationStore.HistoryRow(IDS.next(), application,
                     Optional.empty(), LoanApplicationStatus.SUBMITTED, "APPLICATION_SUBMITTED", customer, correlation));
