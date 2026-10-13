@@ -3091,6 +3091,27 @@ wallet identifier is stored: the wallet is the party's, resolved through account
 | `loan_closure` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `loan_closure` | `correlation_id` | `INTERNAL` | The closing transaction's correlation |
 
+### `lending` - the collection attempt - *added by `P11-TSK-019`*
+
+`lending V015`: one row per automatic collection attempt (billed item and business date) - the amounts
+`RESTRICTED-FINANCIAL` as every lending amount (what a borrower owed and what was taken from their wallet), the loan, billed
+item and repayment references `CONFIDENTIAL`, the outcome, date and stamps `INTERNAL`. No wallet identifier is stored.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `collection_attempt` | `id` | `INTERNAL` | Generated |
+| `collection_attempt` | `loan_id` | `CONFIDENTIAL` | The loan collected for |
+| `collection_attempt` | `due_item_id` | `CONFIDENTIAL` | The billed item attempted - once per business date |
+| `collection_attempt` | `attempt_date` | `INTERNAL` | The business date of the database clock in the pinned zone |
+| `collection_attempt` | `outcome` | `INTERNAL` | `COLLECTED`, `PARTIAL`, `INSUFFICIENT_FUNDS`, `WALLET_NOT_POSTABLE` or `NOTHING_DUE` |
+| `collection_attempt` | `currency` | `INTERNAL` | The loan's currency |
+| `collection_attempt` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `collection_attempt` | `due_minor` | `RESTRICTED-FINANCIAL` | What the item had due when attempted |
+| `collection_attempt` | `collected_minor` | `RESTRICTED-FINANCIAL` | What was taken from the wallet - zero unless money moved |
+| `collection_attempt` | `repayment_id` | `CONFIDENTIAL` | The `AUTO_COLLECTION` repayment that moved it - null when nothing moved |
+| `collection_attempt` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `collection_attempt` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the loan's own flow) |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

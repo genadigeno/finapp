@@ -12,10 +12,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -153,6 +155,55 @@ public final class JdbcRepaymentStore implements RepaymentStore {
             }
         } catch (SQLException failure) {
             throw failed("reading a repayment's closure", failure);
+        }
+    }
+
+    // ------------------------------------------------------------------ the collection attempts (P11-TSK-019)
+
+    @Override
+    public Set<DueItemId> attemptedOn(Connection unitOfWork, LoanId loan, LocalDate attemptDate) {
+        Objects.requireNonNull(loan, "loan");
+        Objects.requireNonNull(attemptDate, "attemptDate");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT due_item_id FROM lending.collection_attempt"
+                + " WHERE loan_id = ? AND attempt_date = ?")) {
+            select.setObject(1, loan.value());
+            select.setObject(2, attemptDate);
+            Set<DueItemId> attempted = new HashSet<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    attempted.add(DueItemId.of(row.getObject(1, UUID.class)));
+                }
+            }
+            return attempted;
+        } catch (SQLException failure) {
+            throw failed("reading a loan's collection attempts of a date", failure);
+        }
+    }
+
+    @Override
+    public void insertAttempt(Connection unitOfWork, CollectionAttempt attempt, CorrelationId correlation) {
+        Objects.requireNonNull(attempt, "attempt");
+        Objects.requireNonNull(correlation, "correlation");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO lending.collection_attempt (id, loan_id, due_item_id, attempt_date, outcome, currency, scale,"
+                        + " due_minor, collected_minor, repayment_id, created_at, correlation_id)"
+                        // The instant is the trigger's; the placeholder is overwritten.
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, statement_timestamp(), ?)")) {
+            int i = 0;
+            insert.setObject(++i, attempt.id());
+            insert.setObject(++i, attempt.loan().value());
+            insert.setObject(++i, attempt.dueItem().value());
+            insert.setObject(++i, attempt.attemptDate());
+            insert.setString(++i, attempt.outcome().name());
+            insert.setString(++i, attempt.due().currency().code());
+            insert.setInt(++i, attempt.due().scale());
+            insert.setLong(++i, attempt.due().minorUnits());
+            insert.setLong(++i, attempt.collected().minorUnits());
+            insert.setObject(++i, attempt.repayment().orElse(null));
+            insert.setString(++i, correlation.value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw failed("inserting a collection attempt", failure);
         }
     }
 

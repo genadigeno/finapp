@@ -64,7 +64,10 @@ final class LoanTermsFixtures {
                 .defaultThresholdDays(90)
                 .allocationSequence(AllocationSequence.OLDEST_DUE_FIRST)
                 .allocationOrder(List.of(AllocationComponent.FEES, AllocationComponent.INTEREST, AllocationComponent.PRINCIPAL))
-                .autoCollection(true)
+                // Auto-collection off by default (P11-TSK-019): every suite written before it bills against a wallet
+                // holding the disbursed principal and expects the bill to stay due; AutoCollectionDatabaseTest activates
+                // its own terms with it on (A21's plan default).
+                .autoCollection(false)
                 .partialCollection(true)
                 .instalmentRounding(RoundingMode.UP)
                 .interestRounding(RoundingMode.HALF_EVEN)
