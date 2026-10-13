@@ -1867,7 +1867,9 @@ schedule version n+1 written once and a moved agreement lapsing the amendment.
 *(The agreement half built by `P11-TSK-012`, 2026-10-11 - `lending V006`'s `loan_agreement` and `loan_acceptance`, INSERT-only by grant and immutable by trigger for every role, version 1 held to an exact copy of its offer's terms (canonical `text`, its hash by `CHECK`); verified by `LoanAcceptanceDatabaseTest#theAgreementIsNeverUpdatedByAnyRole` and `#aMismatchedHashRefuses` (`409 lending.TermsChanged`, nothing written); probes in `MUTATION_TESTING.md` §2.)*
 *(Canonical format 2 by `P11-TSK-031`, 2026-10-12 - `lending V011`: the canonical terms' stored format is the bytes' own
 first token, held by `CHECK` with each format's token set for every writer; format 1 rows unchanged and re-renderable
-byte for byte, so replay re-verifies every hash in the format it was written in.)*
+byte for byte, so replay re-verifies every hash in the format it was written in. Its gate, 2026-10-13: the agreement's
+`CHECK` proven alone (`LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted`, the triggers suspended), and the four
+probes performed - `MUTATION_TESTING.md` §2's `P11-TSK-031` rows.)*
 **Phase:** 11
 
 *(As built by `P11-TSK-005`, 2026-10-11 - the terms half: `lending V003` splits a version into the money-free machine

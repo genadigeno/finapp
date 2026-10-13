@@ -17942,7 +17942,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   states the production gate and every lending procedure.
 - **Definition of done**: `DOD-OBS`, `DOD-API`, `DOD-SEC`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
 
-**P11-TSK-031 — Remediation: canonical offer terms format 2 (a servicing zone east of UTC)** — `READY` *(added and marked `READY` out of turn on the owner's instruction, 2026-10-12 - a Phase 11 remediation item, run beside `-015` and `-016`; it belongs to no milestone and reopens none; found by `P11-TSK-016` writing `InterestAccrualDatabaseTest`'s skew case, which used `-14:00` around it)*
+**P11-TSK-031 — Remediation: canonical offer terms format 2 (a servicing zone east of UTC)** — `COMPLETE` (gate 2026-10-13; implemented and merged 2026-10-12, `e4e54cad` / `9f1904da`; follow-up `ac62949b` renamed `CanonicalOfferTerms.FORMAT_TOKEN` to `FORMAT_LEAD` after `NoUnwrappedSecretRulesTest` read it as a secret and turned master's app tiers red; marks no task `READY`) *(added and marked `READY` out of turn on the owner's instruction, 2026-10-12 - a Phase 11 remediation item, run beside `-015` and `-016`; it belongs to no milestone and reopens none; found by `P11-TSK-016` writing `InterestAccrualDatabaseTest`'s skew case, which used `-14:00` around it)*
 - **As built** (2026-10-12, gate pending): `CanonicalOfferTerms` writes format 2 (`FORMAT = 2`; format 1's token set `[A-Za-z0-9_.:-]` with `+` added, nothing else changed) and keeps format 1 as `render(content, 1)` - byte-identical to `P11-TSK-011`'s renderer, compared against it at commit `1a4c8575` over three zones and pinned by a golden hash; `formatOf` reads the bytes' own first token, and `JdbcLoanOfferStore.insertTerms` and `JdbcLoanStore.insertAgreement` write it instead of the build's constant (an agreement copies its offer's format - before this, raising the constant alone would have made every format-1 offer still `OFFERED` at deploy unacceptable under `V006`'s exact-copy trigger); `lending V011` replaces `loan_offer_terms_canonical_shape` and `loan_agreement_canonical_shape` (the column equal to the bytes' `{"format":"N",` token by `starts_with`, format 1 its own set, format 2 that set and `+`, any other format refused) and restates both table comments. **V011, not V009**: `-015` holds `V009` and `-016` `V010` on their branches; this merges after both (lending's Flyway `outOfOrder` is false). Tests: `CanonicalOfferTermsTest` (`format2SpellsAZoneEastOfUtc`, `format1IsKeptByteForByte`, the first case's prefix and set updated), `LoanTermsTest#thePlanTermsAreAdmitted` (`+14:00`, `-14:00`, `+05:30` admitted) and `#unimplementedConventionsAreRefused` (`+14:01` refused), `LoanOriginationDatabaseTest#aVersionEastOfUtcIsOfferable`, `LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted` and `#aFormat1OfferIsStillAccepted`.
 - **Objective**: a terms version whose servicing zone lies east of UTC - admitted by `LoanTerms` and `lending V003` - is
   offerable and acceptable end to end, instead of activating cleanly and then failing every offer under it.
@@ -17983,6 +17983,17 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   bytes') and a `+05:30` offer is accepted (the agreement format 2, byte-identical); a format-1 offer is still accepted
   (the agreement format 1); format 1 re-renders byte for byte; raw SQL holds every writer to the format `CHECK`.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Gate** (2026-10-13, on master as merged with `ac62949b`): `COMPLETE`. Every criterion held by its test, run fresh.
+  **IMPORTANT, fixed**: the last criterion held for the offer's terms only - `loan_agreement_canonical_shape` was exercised
+  by nothing, every raw agreement insert meeting `V006`'s exact-copy trigger first; `LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted`
+  now holds it alone (the bootstrap superuser, triggers suspended, the hash recomputed): the stored shape admitted (`23505`
+  at the key), a `+` under format 1, the column disagreeing with its bytes, format 3 and a character outside format 2's
+  set each `23514`. **Probes**: none had been performed (the commit left them to the gate) - the backlog's four
+  performed, all caught, restores sha256-verified, `MUTATION_TESTING.md` §2 +4 rows (the third caught on both tables by
+  the new case). **Multi-instance `PASS`**: a pure renderer and a once-run migration under Flyway's lock; the offer's and
+  the acceptance's transactions unchanged - `tenSweepersOneOffer`, `aDecisionEventTwiceOffersOnce`,
+  `declineAndExpiryAtTheBoundaryLeaveExactlyOne`, `tenAcceptancesOneLoan` and `expiryAndAcceptanceLeaveExactlyOne` green
+  in the same fresh run. Security, audit, observability, reconciliation: none (no new input, door or figure).
 
 **P11-TSK-032 — Remediation: date-window-safe lending fixtures** — `COMPLETE` (2026-10-13) *(added out of turn on the owner's instruction, 2026-10-13 - a Phase 11 remediation item, run beside `-022`; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TSK-022` is in progress and `P11-TSK-023` stays next; found by `P11-TSK-018`, recorded as "found, not caused" by `-018`, `-019` and `-020`)*
 - **The defect**: `InterestAccrualDatabaseTest#aLinesAccrualFollowsItsDrawnPrincipal` (`-016`/`-021`) and
