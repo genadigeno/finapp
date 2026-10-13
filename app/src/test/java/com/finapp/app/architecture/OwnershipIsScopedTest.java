@@ -925,6 +925,39 @@ class OwnershipIsScopedTest {
                                         + " UPDATE under party_id = ? (L3); one closure request per line - UNIQUE"
                                         + " (loan_id), lending V018.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcPayoffStore.findQuoteByKey",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-026. The loan id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); the key is the session's own Idempotency-Key"
+                                        + " under that loan - UNIQUE (loan_id, request_key), lending V022.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcPayoffStore.findQuote",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-026. The loan id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); the quote id from the body is held to that"
+                                        + " loan in the statement (loan_id = ? AND id = ?) - another loan's quote is the"
+                                        + " same 404 as none.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcPayoffStore.findExecution",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-026. The loan id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); one execution per loan - UNIQUE (loan_id),"
+                                        + " lending V022.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcPayoffStore.closureOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-026. The loan id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3); one closure per loan - UNIQUE (loan_id),"
+                                        + " lending V014.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanStore.beginClosing",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

@@ -485,6 +485,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // P11-TSK-018: the customer's repayment of their own loan - an amount and its currency code as
                         // strings. No secret; closed: never a source (the borrower's own wallet), never a party.
                         "LoanRepaymentBody",
+                        // P11-TSK-026: the customer's payoff quote - an optional good-through date as an ISO string -
+                        // and their payoff - the quote's identifier. No secret; closed: never an amount (the domain
+                        // computes it), never a source (the borrower's own wallet), never a party.
+                        "PayoffQuoteBody",
+                        "PayoffBody",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's

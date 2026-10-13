@@ -712,6 +712,11 @@ class InstalmentBillingDatabaseTest {
                 // P11-TSK-025: a fee's business date moves (its unique names the item, not the date).
                 + " UPDATE lending.fee_assessment SET business_date = business_date - " + days + " WHERE loan_id = '" + id
                 + "';"
+                // P11-TSK-026: a payoff quote's dates (made on, good through) and an execution's move with the loan.
+                + " UPDATE lending.payoff_quote SET business_date = business_date - " + days + ", good_through ="
+                + " good_through - " + days + " WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.payoff_execution SET business_date = business_date - " + days + " WHERE loan_id = '"
+                + id + "';"
                 + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days' WHERE id = '" + id + "'");
     }
 

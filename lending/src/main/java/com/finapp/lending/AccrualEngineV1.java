@@ -104,9 +104,37 @@ public final class AccrualEngineV1 {
     public static Projection project(
             AccrualTerms terms, List<AccrualPeriod> periods, Optional<InterestAccrual> last, LocalDate through,
             Money base) {
+        Objects.requireNonNull(periods, "periods");
+        Objects.requireNonNull(last, "last");
+        List<AccrualPeriod> spans = List.copyOf(periods);
+        if (spans.isEmpty()) {
+            throw new AccrualRefused(AccrualRefused.Reason.PERIOD_INVALID, "a projection runs over at least one period");
+        }
+        return project(terms, spans, last, last.map(prior -> prior.date().plusDays(1)).orElse(spans.get(0).start()),
+                through, base);
+    }
+
+    /**
+     * The accrual a payoff projects from {@code from} (`P11-TSK-026`): every date of {@code [from, through]} on the current
+     * {@code base}, each period resetting at its start, after {@code last} - the account's latest accrual, which may lie
+     * before {@code from} with dates between that accrued nothing (no principal outstanding at their end - a line at zero
+     * drawn: no row, so nothing in the period's figure, exactly as {@link #accrue} chains a period's next accrual onto its
+     * latest). The figures are those {@link #accrue} posts for these dates if the base does not change - the same chain,
+     * the same reset - so a quote made on a caught-up account projects exactly what the payoff's own accrual will post.
+     * {@link #project(AccrualTerms, List, Optional, LocalDate, Money)} is this with {@code from} the date after
+     * {@code last}.
+     *
+     * @param periods ascending, non-overlapping, holding every projected date (and {@code last}'s period, if any)
+     * @param from the first projected date - after {@code last}'s date
+     * @throws AccrualRefused when the terms, the base, the periods, {@code from} or {@code last} are refused
+     */
+    public static Projection project(
+            AccrualTerms terms, List<AccrualPeriod> periods, Optional<InterestAccrual> last, LocalDate from,
+            LocalDate through, Money base) {
         Objects.requireNonNull(terms, "terms");
         Objects.requireNonNull(periods, "periods");
         Objects.requireNonNull(last, "last");
+        Objects.requireNonNull(from, "from");
         Objects.requireNonNull(through, "through");
         Objects.requireNonNull(base, "base");
         judge(terms);
@@ -121,10 +149,14 @@ public final class AccrualEngineV1 {
                         "a projection's periods ascend without overlapping");
             }
         }
+        if (last.isPresent() && !last.get().date().isBefore(from)) {
+            throw new AccrualRefused(AccrualRefused.Reason.OUT_OF_ORDER,
+                    "a projection starts after the account's latest accrual");
+        }
         List<InterestAccrual> accruals = new ArrayList<>();
         Money interest = Money.zero(terms.currency());
         Optional<InterestAccrual> previous = last;
-        LocalDate date = last.map(prior -> prior.date().plusDays(1)).orElse(spans.get(0).start());
+        LocalDate date = from;
         while (!date.isAfter(through)) {
             AccrualPeriod period = periodOf(spans, date);
             if (previous.isPresent() && previous.get().period().contains(date) && !previous.get().period().equals(period)) {

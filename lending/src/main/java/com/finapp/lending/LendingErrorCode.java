@@ -224,7 +224,16 @@ public enum LendingErrorCode implements ErrorCode {
      * proposal is not born; an approval posts nothing and leaves the proposal {@code PROPOSED}.
      */
     WAIVER_EXCEEDS_DUE(
-            "lending.WaiverExceedsDue", 422, "The waiver exceeds what is due now; nothing was posted.");
+            "lending.WaiverExceedsDue", 422, "The waiver exceeds what is due now; nothing was posted."),
+
+    /**
+     * The payoff quote no longer ends the account (`P11-TSK-026`; ADR-0095 point 8, scenario 7, {@code INV-LND-08}): it is
+     * executed on a date other than its good-through date, or what the account owes moved since it was made - a repayment,
+     * an automatic collection, a draw, a reversal or a fee committed first. The amount is never adjusted: nothing was
+     * posted; request a new quote.
+     */
+    PAYOFF_QUOTE_STALE(
+            "lending.PayoffQuoteStale", 409, "The payoff quote no longer ends the account; nothing was posted.");
 
     private final String code;
     private final int status;

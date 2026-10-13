@@ -127,7 +127,8 @@ public final class LineClosures {
         }
         if (loan.status() != LoanStatus.ACTIVE) {
             // A line leaves ACTIVE only beside its request (lending V018's edge function), so a line without one that is
-            // not ACTIVE is closed by another path (P11-TSK-026's payoff).
+            // not ACTIVE is closed by another path (P11-TSK-026's payoff births the request it closes beside, so in practice
+            // a CLOSED line always has its request - answered LoanClosed above).
             throw new LoanClosed();
         }
         // The database clock, read after the lock, in the agreement's pinned zone.
@@ -157,6 +158,27 @@ public final class LineClosures {
         }
         publish(unitOfWork, loan, request, correlation);
         return new Requested(request, closure, false);
+    }
+
+    /**
+     * A line's payoff is its customer's request to end it (`P11-TSK-026`, ADR-0100 point 8): on an {@code ACTIVE} line the
+     * payoff births the line's one closure request, outcome {@code CLOSED}, and publishes {@code lending.LineClosureRequested}
+     * - so the payoff closes the line {@code CLOSED_BY_CUSTOMER} through the closure's own edges in the same transaction; a
+     * {@code CLOSING} line's request already stands. On the caller's unit of work, under the caller's L3.
+     *
+     * @param requestKey the payoff's key for the request - its quote's
+     */
+    void requestForPayoff(Connection unitOfWork, Loan line, String requestKey, CorrelationId correlation) {
+        Objects.requireNonNull(line, "line");
+        if (line.kind() != LoanKind.REVOLVING || line.status() != LoanStatus.ACTIVE) {
+            return;
+        }
+        LineClosureRequest unstamped =
+                new LineClosureRequest(ids.next(), line.id(), requestKey, LineClosureOutcome.CLOSED, requests.databaseNow(
+                        unitOfWork));
+        Instant requestedAt = requests.insert(unitOfWork, unstamped, correlation);
+        publish(unitOfWork, line, new LineClosureRequest(unstamped.id(), line.id(), requestKey, LineClosureOutcome.CLOSED,
+                requestedAt), correlation);
     }
 
     /** {@code lending.LineClosureRequested} - the line, the request and its outcome; never the key. */

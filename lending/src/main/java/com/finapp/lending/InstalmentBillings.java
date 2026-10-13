@@ -140,7 +140,41 @@ public final class InstalmentBillings {
         // Dj is billable once it has come and every date through Dj - 1 is accrued.
         LocalDate limit = today.isBefore(accruedThrough.plusDays(1)) ? today : accruedThrough.plusDays(1);
         List<BilledItem> items = store.billedItems(unitOfWork, loan.id());
-        List<Candidate> candidates = candidates(schedule, items, limit);
+        return bill(unitOfWork, loan, agreement, pinned, today, schedule, candidates(schedule, items, limit));
+    }
+
+    /**
+     * Bills <em>everything</em> {@code loan} has not yet billed, oldest first, each followed by the credit-balance
+     * application - a payoff's billing (`P11-TSK-026`, posting rule 7's rule 3): every unbilled instalment of the latest
+     * schedule version whatever its due date (a period not yet begun bills no interest and its principal portion, the final
+     * instalment all remaining principal), then - once every instalment is billed - each post-maturity period that has
+     * begun and holds an accrual. On the caller's unit of work, under the caller's L3, after the caller has accrued every
+     * elapsed date and beside the loan's {@code payoff_execution} (the billing trigger admits an early billing only there).
+     * Afterwards {@code LOAN_PRINCIPAL} and {@code LOAN_INTEREST_ACCRUED} are zero: what the loan owes is all billed.
+     *
+     * @param today the business date of the database clock in the pinned zone, read after L3 - the payoff's date
+     */
+    Billed billForPayoff(Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, LocalDate today) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(loan, "loan");
+        Objects.requireNonNull(agreement, "agreement");
+        Objects.requireNonNull(pinned, "pinned");
+        Objects.requireNonNull(today, "today");
+        if (loan.kind() != LoanKind.INSTALMENT) {
+            return Billed.NOTHING;
+        }
+        Optional<BillableSchedule> latest = store.latestSchedule(unitOfWork, loan.id());
+        if (latest.isEmpty()) {
+            return Billed.NOTHING;
+        }
+        BillableSchedule schedule = latest.get();
+        List<BilledItem> items = store.billedItems(unitOfWork, loan.id());
+        return bill(unitOfWork, loan, agreement, pinned, today, schedule, everythingUnbilled(schedule, items, today));
+    }
+
+    /** Bills {@code candidates}, oldest first, each followed by the credit-balance application. */
+    private Billed bill(Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
+            BillableSchedule schedule, List<Candidate> candidates) {
         if (candidates.isEmpty()) {
             return Billed.NOTHING;
         }
@@ -213,6 +247,39 @@ public final class InstalmentBillings {
         int sequence = schedule.instalments().size();
         AccrualPeriod period = calendar.periodOf(schedule.last().period().endExclusive());
         while (!period.endExclusive().isAfter(limit)) {
+            sequence++;
+            if (lastDue == null || period.endExclusive().isAfter(lastDue)) {
+                candidates.add(new Candidate(BillingKind.POST_MATURITY, Optional.empty(), sequence, period));
+            }
+            period = calendar.periodOf(period.endExclusive());
+        }
+        return candidates;
+    }
+
+    /**
+     * A payoff's candidates: every unbilled instalment of the latest version, oldest first, whatever its due date; then -
+     * every instalment billed or about to be - the post-maturity periods after the latest billed due date that have begun
+     * by {@code today} (those holding no accrual are skipped by the billing itself).
+     */
+    private static List<Candidate> everythingUnbilled(BillableSchedule schedule, List<BilledItem> items, LocalDate today) {
+        Set<UUID> billedInstalments = new HashSet<>();
+        LocalDate lastDue = null;
+        for (BilledItem item : items) {
+            item.billing().instalment().ifPresent(billedInstalments::add);
+            LocalDate due = item.billing().dueDate();
+            lastDue = lastDue == null || due.isAfter(lastDue) ? due : lastDue;
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        for (BillableSchedule.Instalment instalment : schedule.instalments()) {
+            if (!billedInstalments.contains(instalment.id())) {
+                candidates.add(new Candidate(BillingKind.INSTALMENT, Optional.of(instalment.id()), instalment.sequence(),
+                        instalment.period()));
+            }
+        }
+        InstalmentCalendar calendar = schedule.calendar();
+        int sequence = schedule.instalments().size();
+        AccrualPeriod period = calendar.periodOf(schedule.last().period().endExclusive());
+        while (period.start().isBefore(today)) {
             sequence++;
             if (lastDue == null || period.endExclusive().isAfter(lastDue)) {
                 candidates.add(new Candidate(BillingKind.POST_MATURITY, Optional.empty(), sequence, period));

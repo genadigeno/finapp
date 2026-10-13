@@ -1743,6 +1743,11 @@ accounts, a crash mid-run; the unique proven beneath L3 with the triggers suspen
 oldest first by `#threeMissedDaysAreCaughtUpOldestFirst`; zero days by `#zeroDaysWriteARowAndNoEntry`. The lag gauge reads
 instalment loans - a line's zero-principal days write no row, so its arm waits for `-021`.)*
 
+*(As built by `P11-TSK-026`, 2026-10-13 - a payoff accrues for itself (ADR-0094 point 10): its quote and its execution run
+`LoanServicing`'s own accrual under L3, with the same rows, uniques and keys, so the sweep and a payoff racing on the same
+date accrue it once (`PayoffDatabaseTest#theSweepAndThePayoffAccrueTheSameDateOnce`); the quote's projection for
+`[today, G - 1]` is exactly what the payoff's accrual then posts (`#aQuoteIsExecutableOnlyOnItsDate`).)*
+
 ### INV-LND-03 — A schedule conserves principal exactly
 **Statement:** Every repayment schedule version's principal portions sum to its principal exactly,
 and its instalment amounts to that principal plus the sum of its period interest, every rounding at a
@@ -2014,6 +2019,17 @@ again includes every elapsed date accrued (`CreditLineRepaymentDatabaseTest#theL
 balances zero, the excess refunded - and `#aLineIsNotClosedOverAnUnaccruedDay`); `lending V018` holds a line's closure to
 its request and every statement paid, for every writer (`#theRowsAreHeldForEveryWriter`); a closed line refuses a repayment
 (`LoanNotRepayable`), a draw and a second request (`LoanClosed`).)*
+
+*(As built by `P11-TSK-026`, 2026-10-13 - the payoff: T-pay accrues every elapsed date, bills everything unbilled (a line's
+current cycle stated early), recomputes under L3 and, only when the figure is the quote's, repays everything receivable and
+closes through the same `LoanClosures` - `CLOSED (PAID_OFF_EARLY)`, a line `CLOSED (CLOSED_BY_CUSTOMER)` - all six balances
+zero and the credit balance refunded (`PayoffDatabaseTest#payoffZeroesEveryBalance`, `#aLinesPayoffClosesIt`,
+`#aCreditBalanceThatCoversEverythingIsRefunded`); a figure that moved is `PayoffQuoteStale` with nothing posted, a loan closed
+first refuses the racing repayment (`#payoffDuringARepaymentIsStaleOrClosedNeverWrong`, scenario 7); ten executions close it
+once (`#tenExecutionsOneClosure`); no condition is written after the closure and the database refuses one
+(`#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure`, scenario 10); `lending V022` admits the early billing,
+the `PAYOFF` repayment and the `PAID_OFF_EARLY` closure only beside the loan's `payoff_execution`, which cannot commit
+without its loan `CLOSED` (`#theRowsAreHeldForEveryWriter`).)*
 
 ### INV-LND-09 — Interest arithmetic is exact and its conventions declared
 **Statement:** Interest is computed in exact decimal under the day count, servicing zone and rounding

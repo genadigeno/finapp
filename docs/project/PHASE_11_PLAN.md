@@ -585,6 +585,30 @@ by `ReversalService` (namespace 2 and L8 inside), or rule 8a / 9 by `PostingServ
 decision `REJECTED`. No L0 (no principal moves), no L6. `lending V021`'s three triggers each take the loan's row lock
 themselves, so the cap and every bound hold under L3 for every writer.)*
 
+*(As built by `P11-TSK-026` - T-pay, both products: the door's claim (`lending.payoff:<type>:<id>`, `MULTI_FACTOR`); **(L3)**
+the account owner-scoped; an execution of the same quote converged on (another quote: `LoanNotRepayable` - the account is
+closed); the quote read plainly - immutable and INSERT-only, so the plan's "(L5) the quote" is no lock: `payoff_execution
+UNIQUE (quote_id)` and `UNIQUE (loan_id)` beneath L3 are the arbiters (T-drw's precedent); the database clock after the
+lock - today must be `G` and the agreement version the quote's (`409 lending.PayoffQuoteStale`); the `payoff_execution` row
+born first (it admits the early billing, the `PAYOFF` repayment and the `PAID_OFF_EARLY` closure in this transaction only;
+a deferred check holds it to its loan `CLOSED`); every elapsed date through `G - 1` accrued (rule 2 - `LoanServicing`'s own
+accrual, its uniques and keys, so the sweep and the payoff accrue a date once); every unbilled instalment billed whatever its
+due date, each with rule 6 - a line's current cycle stated early (rule 3); the outstanding recomputed from journal lines and
+compared with the quote's - different, `PayoffQuoteStale`, and everything above rolls back with the claim; a line's closure
+request born when the line is `ACTIVE`; **(L7)** the wallet's row and `AvailableBalance.underLock` at least the net amount
+- **after** the step's own postings, exactly as T-svc takes L7 after its accrual: those postings lock the currency's
+`LOAN_INTEREST_INCOME` projection row (L8), and no transaction holding a wallet row ever waits on that row (T-rep, T-rev,
+T-clo and the collection post nothing to it), so taking L7 first could wait on a wallet behind a step holding the income
+row - the plan's "L7 funds" before the catch-up would have been a cycle risk; **(L8)** and rule 5 through `Repayments`' one
+posting half (kind `PAYOFF`, keyed by the quote; none when the credit balance paid everything); the closure through the
+one `LoanClosures` (the refund, `loan_closure`, the edge, `lending.LoanClosed`). No L0 (exposure only falls), no L6
+(headroom rises at commit), no standing check. **No cycle**: T-pay takes L3 → (its own postings' L8) → L7 → L8, the order
+T-svc already holds; T-rep and T-clo (L3, L7, L8), T-rev (L0, L3, L5, L6, L7, L8 - never the income row), T-drw (L3, L6, L8 -
+T-pay never takes L6) and the condition step (inside T-svc, L3 only) all wait on L3 first for one account, and across a
+party's accounts the wallet row is always taken after every income-row lock of the same transaction. **The quote** (claim
+`lending.payoff-quote:<type>:<id>`, the platform's conditional step-up): L3, the catch-up accrual (rule 2, L8 on the income
+row), the row; no L7.)*
+
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
 One order for every lending writer holding more than one of them:
@@ -1208,6 +1232,25 @@ unbilled, recompute; ≠ the quote → `409 lending.PayoffQuoteStale`, nothing p
 a repayment that committed first moved the balance; one that waits sees `CLOSED`); else one repayment
 of the amount allocated to every component, the credit balance refunded, `CLOSED (PAID_OFF_EARLY)`,
 `payoff_execution` born — one transaction. A line's payoff also closes it (`CLOSED_BY_CUSTOMER`).
+
+*(As built by `P11-TSK-026`, 2026-10-13 - `Payoffs` over `lending V022`. **The quote** is made on a caught-up account: under
+L3 every elapsed date is accrued first (the servicing step's own accrual - a quote writes rule 2 entries), so its projection
+covers exactly `[today, G - 1]` - `AccrualEngineV1.project` on the current base, chained onto the latest accrual (a `from`
+overload added beside the original signature for dates after a gap with no principal outstanding - no figure of the
+original changed). Its figure is `P + PD + IA + ID + FD - CB + projected`, each balance folded from journal lines, born with
+its inputs; negative when the credit balance exceeds everything owed (the payoff then pays nothing and refunds the excess).
+**The execution**, on `G` only: **every unbilled instalment billed** whatever its due date (`InstalmentBillings.billForPayoff`
+- a period not yet begun bills no interest and its principal portion, the final one all remaining principal; post-maturity
+periods begun and holding an accrual) and a line's **current cycle stated early** (`CreditLineStatements.stateForPayoff` -
+the same engine on the accruals through yesterday), each followed by rule 6; the billing and statement triggers admit an
+early item only beside the loan's `payoff_execution`. **Stale** means the recomputed outstanding (receivables less credit
+balance, invariant under billing and rule 6) differs from the quote's, or today is not `G`, or the agreement moved - one
+`409 lending.PayoffQuoteStale`; a billing between the quote and `G` keeps it valid (no money moved), a repayment, collection,
+draw, reversal or fee makes it stale. **The repayment** is everything receivable after the billing - the quote's amount
+whenever no credit balance remains; when a line's credit balance exceeded its statements (rule 6 never pays principal not
+yet due), the repayment pays the whole receivable and the closure refunds the balance, the wallet judged on the net amount.
+`ScheduleEngineV1`'s full-period interest is never charged: interest stops the day the payoff is made - no rebate exists to
+compute (`PayoffDatabaseTest#noRebateArithmeticExists`).)*
 
 **Partial prepayment** (cut candidate `-028`): a repayment kind `PREPAYMENT` crediting
 `LOAN_PRINCIPAL`, with agreement and schedule version n+1 (shorter term, same instalment) in one

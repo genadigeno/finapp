@@ -267,5 +267,12 @@ Financial impact: rule 1 per draw, rule 3 per statement, rule 5 with principal p
   while interest is accrued and not yet stated - accrued interest is not an allocation target (ADR-0095); it closes at its
   next statement (the held excess applied by rule 6, or the minimum paid), and the line's payoff (`-026`) is the
   one-payment path.
+- **As built by `P11-TSK-026` (2026-10-13) - the line's payoff (point 8).** A line `ACTIVE` or `CLOSING` is paid off in
+  one payment: the execution states its current cycle early (`CreditLineStatements.stateForPayoff` - the same engine on the
+  accruals through yesterday, the cycle's own statement and due dates, `lending V022`'s statement trigger admitting it only
+  beside the line's `payoff_execution`), applies rule 6, and the payoff's one repayment pays the statements and pays down the
+  principal not yet due; the line closes `CLOSED_BY_CUSTOMER` through `-023`'s own edges - an `ACTIVE` line's closure
+  request (outcome `CLOSED`, `lending.LineClosureRequested`) born by the payoff, a `CLOSING` line's already standing. So the
+  Follow-up's judgement (3) has its one-payment path.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

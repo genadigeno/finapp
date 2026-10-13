@@ -366,6 +366,10 @@ class OpenApiContractTest {
                         // P11-TSK-023: a line's closure request - MULTI_FACTOR, keyed, 201 with its outcome (CLOSING, or
                         // CLOSED at once when nothing is outstanding).
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/closure",
+                        // P11-TSK-026: the payoff of either kind - its quote (keyed, the platform's conditional
+                        // step-up, 201) and its execution (MULTI_FACTOR, keyed, 201 with the payoff and its closure).
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/payoff-quotes",
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/payoff",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",
