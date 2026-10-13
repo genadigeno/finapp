@@ -752,9 +752,17 @@ class RepaymentDatabaseTest {
      */
     static void assertSubledgerProves(LoanId loan) {
         UUID id = loan.value();
-        for (String component : List.of("INTEREST", "PRINCIPAL")) {
-            long billed = count("SELECT coalesce(sum(" + component.toLowerCase(java.util.Locale.ROOT) + "_due_minor), 0)"
-                    + " FROM lending.instalment_billing WHERE loan_id = ?", id);
+        for (String component : List.of("FEES", "INTEREST", "PRINCIPAL")) {
+            // P11-TSK-025: fees are what was assessed on the billed items; fee and interest waivers forgive what they billed.
+            long billed = component.equals("FEES")
+                    ? count("SELECT coalesce(sum(amount_minor), 0) FROM lending.fee_assessment WHERE loan_id = ?", id)
+                    : count("SELECT coalesce(sum(" + component.toLowerCase(java.util.Locale.ROOT) + "_due_minor), 0)"
+                            + " FROM lending.instalment_billing WHERE loan_id = ?", id);
+            if (!component.equals("PRINCIPAL")) {
+                billed -= count("SELECT coalesce(sum(w.amount_minor), 0) FROM lending.waiver w JOIN lending.waiver_decision d"
+                        + " ON d.waiver_id = w.id AND d.outcome = 'APPROVED' WHERE w.loan_id = ? AND w.kind = ?", id,
+                        component.equals("FEES") ? "FEE" : "INTEREST");
+            }
             long applied = count("SELECT coalesce(sum(a.amount_minor), 0) FROM lending.credit_balance_allocation a"
                     + " JOIN lending.instalment_billing b ON b.id = a.billing_id WHERE b.loan_id = ? AND a.component = ?",
                     id, component);
@@ -766,14 +774,16 @@ class RepaymentDatabaseTest {
                     + " JOIN lending.repayment_allocation a ON a.id = n.allocation_id"
                     + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.component = ?",
                     id, component);
-            AccountPurpose due = component.equals("INTEREST") ? AccountPurpose.LOAN_INTEREST_DUE
-                    : AccountPurpose.LOAN_PRINCIPAL_DUE;
+            AccountPurpose due = switch (component) {
+                case "FEES" -> AccountPurpose.LOAN_FEES_DUE;
+                case "INTEREST" -> AccountPurpose.LOAN_INTEREST_DUE;
+                default -> AccountPurpose.LOAN_PRINCIPAL_DUE;
+            };
             long balance = netDebit(loanAccount(loan, due)).minorUnits();
-            assertThat(balance).as(due + ": billed less every payer, plus what reversals re-opened")
+            assertThat(balance).as(due + ": billed less waived, less every payer, plus what reversals re-opened")
                     .isEqualTo(billed - applied - repaid + reversed);
             assertThat(balance).as(due + " never negative").isGreaterThanOrEqualTo(0);
         }
-        assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_FEES_DUE)).minorUnits()).isZero();
         long accrued = count("SELECT coalesce(sum(posted_minor), 0) FROM lending.interest_accrual WHERE loan_id = ?", id);
         long billedInterest = count("SELECT coalesce(sum(interest_due_minor), 0) FROM lending.instalment_billing"
                 + " WHERE loan_id = ?", id);
@@ -792,9 +802,12 @@ class RepaymentDatabaseTest {
         long heldReversed = count("SELECT coalesce(sum(n.amount_minor), 0) FROM lending.repayment_allocation_reversal n"
                 + " JOIN lending.repayment_allocation a ON a.id = n.allocation_id JOIN lending.repayment r"
                 + " ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.target = 'CREDIT_BALANCE'", id);
+        // P11-TSK-025: a paid fee refunded to the credit balance (rule 8a) is held like an overpayment.
+        long feeRefunds = count("SELECT coalesce(sum(w.amount_minor), 0) FROM lending.waiver w JOIN lending.waiver_decision d"
+                + " ON d.waiver_id = w.id AND d.outcome = 'APPROVED' WHERE w.loan_id = ? AND w.kind = 'FEE_REFUND'", id);
         long credit = held(loan);
-        assertThat(credit).as("the credit balance: overpayments less reversed overpayments, applications and refunds")
-                .isEqualTo(heldLines - heldReversed - applications - refunds);
+        assertThat(credit).as("the credit balance: overpayments and fee refunds less reversed overpayments, applications"
+                + " and refunds").isEqualTo(heldLines + feeRefunds - heldReversed - applications - refunds);
         assertThat(credit).isGreaterThanOrEqualTo(0);
         assertThat(count("SELECT count(*) FROM lending.repayment r WHERE r.loan_id = ? AND r.amount_minor <>"
                 + " (SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"

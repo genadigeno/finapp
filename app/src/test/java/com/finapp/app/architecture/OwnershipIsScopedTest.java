@@ -1116,6 +1116,36 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "GET /v1/me/loans/{id}/statements - the identifier from the path, and l.party_id = ? in the statement is the session's own party; another party's line is the same empty answer as a line stated nothing (P11-TSK-022).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcCreditLineStatementStore.feesCarriedIn",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-025. The fees one cycle of the line carries - the line the servicing sweep claimed and this transaction holds FOR UPDATE (L3), read by the statement step; never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcFeeAssessmentStore.ofLoan",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-025. The fees of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the late-fee step's cap and once-per-item reads) - or of a loan named by the path of GET /v1/operator/loans/{id} behind LOAN_SERVICE, which reads any loan by design, each serving audited (lending.LoanRead); no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcFeeAssessmentStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-025. A servicing agent names the fee from the body of a waiver door behind LOAN_SERVICE; the statement holds it to the loan the transaction locked (id = ? AND loan_id = ?), another loan's fee the same 404; the operator's own party's loan is refused first (SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcWaiverStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-025. A servicing agent names the waiver from the path of a door behind LOAN_SERVICE / LOAN_SERVICE_APPROVE; the statement holds it to the loan the transaction locked (w.id = ? AND w.loan_id = ?), another loan's waiver the same 404; the operator's own party's loan is refused first (SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcWaiverStore.ofLoan",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-025. GET /v1/operator/loans/{id} behind LOAN_SERVICE - an operator reads any loan by design, each serving audited (lending.LoanRead); no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcWaiverStore.pending",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-025. Whether a waiver of the kind on the item awaits a decision - on the loan a waiver door behind LOAN_SERVICE locked FOR UPDATE (L3), the item resolved under it; the operator's own party's loan is refused first (SelfDealingRefused).")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanServicingStore.latestAccrual",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -61,8 +61,10 @@ import lombok.RequiredArgsConstructor;
  *   <li><strong>the condition</strong> (`P11-TSK-024`, {@link LoanConditions}): on a caught-up account the step did not
  *       close, DPD, bucket and default derived from the billed items on today, a change appended and published - placed
  *       after the closure (`-017` had sketched it before), so no condition is ever written in the transaction that closes
- *       an account: a closed account's condition is its closure, whichever transaction closed it (INV-LND-08); then the
- *       late fee (`-025`), under the same lock;
+ *       an account: a closed account's condition is its closure, whichever transaction closed it (INV-LND-08);
+ *   <li><strong>the late fee</strong> (`P11-TSK-025`, {@link LateFees}): after the condition, on the same caught-up account the
+ *       step did not close, under the same lock - once per billed item whose own age reached the pinned late-fee day while
+ *       it still owes, capped per account; posting rule 4;
  *   <li>the permit: the start of the next business date in the pinned zone - or now, when a long catch-up stopped at its
  *       bound and the rest is due at once.
  * </ol>
@@ -121,6 +123,7 @@ public final class LoanServicing {
     @NonNull private final LoanCollections collections;
     @NonNull private final CreditLineStatements statements;
     @NonNull private final LoanConditions conditions;
+    @NonNull private final LateFees fees;
 
     /**
      * What one servicing step did - for the meter; never a figure or a date: {@code posted} and {@code zero} accrued
@@ -128,22 +131,24 @@ public final class LoanServicing {
      * statements {@code stated} and the applications {@code statedApplied} at them (`P11-TSK-022`), and whether
      * the step {@code closed} the loan - its last receivable settled by an application (`P11-TSK-018`) or a collection - and
      * its collection attempts counted by outcome (`P11-TSK-019`), and the condition changes it recorded - {@code conditions},
-     * a bucket's and the default flag's (`P11-TSK-024`).
+     * a bucket's and the default flag's (`P11-TSK-024`), and the late {@code fees} it assessed - {@code feesCapped} of them
+     * at less than the pinned fee because of the cap (`P11-TSK-025`).
      */
     public record Outcome(Kind kind, int posted, int zero, boolean caughtUp, int billed, int applied, int stated,
-            int statedApplied, boolean closed, Map<CollectionOutcome, Integer> collections, int conditions) {
+            int statedApplied, boolean closed, Map<CollectionOutcome, Integer> collections, int conditions, int fees,
+            int feesCapped) {
 
         public Outcome {
             Objects.requireNonNull(kind, "kind must not be null");
             if (posted < 0 || zero < 0 || billed < 0 || applied < 0 || stated < 0 || statedApplied < 0
-                    || conditions < 0) {
+                    || conditions < 0 || fees < 0 || feesCapped < 0) {
                 throw new IllegalArgumentException("counts are not negative");
             }
             collections = Map.copyOf(Objects.requireNonNull(collections, "collections must not be null"));
         }
 
         static Outcome notServiced() {
-            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0, 0, 0, false, Map.of(), 0);
+            return new Outcome(Kind.NOT_SERVICED, 0, 0, true, 0, 0, 0, 0, false, Map.of(), 0, 0, 0);
         }
 
         /** The step's collection attempts of {@code outcome}. */
@@ -197,6 +202,7 @@ public final class LoanServicing {
         Optional<LoanClosure> closure = Optional.empty();
         LoanCollections.Collected collected = LoanCollections.Collected.NOTHING;
         int conditionChanges = 0;
+        LateFees.Assessed assessed = LateFees.Assessed.NOTHING;
         try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
             accrued = accrue(unitOfWork, loan, agreement, pinned, zone, today);
             // Then billing (P11-TSK-017): an instalment loan's instalments due by today whose periods the accrual has
@@ -227,22 +233,25 @@ public final class LoanServicing {
             }
             // Then the condition (P11-TSK-024) - once caught up (everything due billed, so DPD is judged on every item that
             // should be), after collection, and only on an account the step did not close: a closed account's condition is
-            // its closure, and nothing is evaluated on it (INV-LND-08, scenario 10). The late fee (-025) follows it.
+            // its closure, and nothing is evaluated on it (INV-LND-08, scenario 10). Then the late fee (P11-TSK-025), on
+            // the same account under the same guard: everything due is billed, so every item that should be is aged.
             if (accrued.caughtUp() && closure.isEmpty()) {
                 conditionChanges = conditions.evaluate(unitOfWork, loan, agreement, pinned, today, loan.correlation());
+                assessed = fees.assess(unitOfWork, loan, agreement, pinned, today, loan.correlation());
             }
         }
         if (closure.isPresent()) {
             // A CLOSED account leaves servicing: no permit moves on a terminal account (the edge function's rule).
             return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), true, billed.billed(),
-                    billed.applied(), stated.stated(), stated.applied(), true, collected.attempts(), 0);
+                    billed.applied(), stated.stated(), stated.applied(), true, collected.attempts(), 0, 0, 0);
         }
         Instant permit = accrued.caughtUp() ? today.plusDays(1).atStartOfDay(zone).toInstant() : now;
         if (!store.restamp(unitOfWork, id, permit)) {
             throw new IllegalStateException("the locked account left servicing under its own row lock");
         }
         return new Outcome(Outcome.Kind.SERVICED, accrued.posted(), accrued.zero(), accrued.caughtUp(), billed.billed(),
-                billed.applied(), stated.stated(), stated.applied(), false, collected.attempts(), conditionChanges);
+                billed.applied(), stated.stated(), stated.applied(), false, collected.attempts(), conditionChanges,
+                assessed.assessed(), assessed.capped());
     }
 
     private static boolean inServicing(LoanStatus status) {

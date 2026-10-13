@@ -506,7 +506,7 @@ class InstalmentBillingDatabaseTest {
         LoanServicing crashingServicing = new LoanServicing(DisbursementWorld.LOAN_STORE, SERVICING_STORE, TERMS_STORE,
                 DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES, DisbursementWorld.POSTINGS, IDS, crashing,
                 DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS, DisbursementWorld.STATEMENTS,
-                DisbursementWorld.CONDITIONS);
+                DisbursementWorld.CONDITIONS, DisbursementWorld.LATE_FEES);
         assertThatThrownBy(() -> InterestAccrualDatabaseTest.service(crashingServicing, crashed)).hasMessageContaining("crash");
         assertThat(billings(crashed)).isEmpty();
         assertThat(billingEntries(crashed)).isZero();
@@ -709,6 +709,9 @@ class InstalmentBillingDatabaseTest {
                 + id + "';"
                 + " UPDATE lending.loan_condition_event SET business_date = business_date + " + (1_000_000 - days)
                 + " WHERE loan_id = '" + id + "';"
+                // P11-TSK-025: a fee's business date moves (its unique names the item, not the date).
+                + " UPDATE lending.fee_assessment SET business_date = business_date - " + days + " WHERE loan_id = '" + id
+                + "';"
                 + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days' WHERE id = '" + id + "'");
     }
 

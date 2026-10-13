@@ -445,6 +445,22 @@ wallet not `ACTIVE`), `403 lending.SelfDealingRefused` (recorded `FAILED`) at ev
 principal would have earned between the repayment and its reversal is not recharged (A10); it accrues from the reversal's
 value date.*
 
+*As built by `P11-TSK-025` (2026-10-13) - the waiver: the proposal carries money, so it is INSERT-only for every role -
+`lending V021`'s `waiver` (born `PROPOSED`, no status column) and `waiver_decision` (born once - `UNIQUE (waiver_id)` - its
+outcome `APPROVED` or `REJECTED`); the status is derived (no decision: `PROPOSED`), the four eyes a `CHECK` over the
+proposer copied into the decision and pinned by the composite key `(waiver_id, proposed_by)` (P11-TSK-004's capital pattern,
+not -020's column-scoped `UPDATE`, which only a money-free row may take). So "L5" is the proposal read under L3 with its
+decision's unique beneath - no row lock exists to take. The proposal takes L3 only; the approval L3, then **L7 (the
+borrower's existing wallet) before any posting** - its rules post to a shared income account, and a closure's refund must
+never take the wallet after them - then rule 8 (`ReversalService` of the fee's rule 4 entry), 8a or 9 under
+`lending.waiver:<waiver>`, then the closure when the account is settled (`REPAID`, or a `CLOSING` line
+`CLOSED_BY_CUSTOMER` - the existing edges); the rejection L3 (any holder of `LOAN_SERVICE`, the proposer's withdrawal
+included, on a closed account too). The approval names the waiver by the path. One waiver of a kind on an item awaits a
+decision at a time (`409 lending.ProposalPending`, the trigger beneath L3); the bound - what is due now, from the rows the
+ledger is proven against - is judged at the proposal and again at the approval (`422 lending.WaiverExceedsDue`, the
+proposal still `PROPOSED`, nothing posted) and once more by the decision trigger, which takes L3 itself, for every writer.
+An interest waiver releases billed interest only (`LOAN_INTEREST_DUE`); accrued interest not yet billed is never waived.*
+
 ### 4.10 Payoff quote and execution — `P11-TSK-026`
 
 The **quote** is an immutable born-once fact (C, `POST …/payoff-quotes`, keyed, either kind, any
@@ -475,7 +491,7 @@ repayment kind with agreement and schedule v n+1, refused while past due (`409 l
 | Statement | `credit_line_statement` | T-svc at the cycle end, after every accrual of the cycle, oldest first, contiguous from the opening; the credit balance applied at it; collected on its due date when the pinned terms say so (`P11-TSK-022`) | `UNIQUE (loan_id, cycle_end)`, `UNIQUE (loan_id, due_date)` + ledger key `lending.statement:<line>:<statement date>`; never before the statement date, interest exactly the cycle's accruals, no accrual into a stated cycle; `UNIQUE (billing_id)` + `lending.credit-application:<statement>` |
 | Line closure request | `line_closure_request` | `ACTIVE → CLOSING` | `UNIQUE (loan_id)` |
 | Collection attempt | `collection_attempt` | T-svc after the billing, once caught up, when the pinned terms collect automatically: one per billed item and business date, whatever happened (`P11-TSK-019`) | `UNIQUE (due_item_id, attempt_date)` + `UNIQUE (repayment_id)` + the repayment's `UNIQUE (loan_id, kind, request_key)` under the key `<item>:<date>`; the trigger holds the authority, the date, the figures and the repayment; an `AUTO_COLLECTION` repayment without its attempt refused at commit |
-| Fee assessment | `fee_assessment` | T-svc, on the day DPD reaches `late_fee_day` (> grace) | `UNIQUE (due_item_id, kind)`, capped per account |
+| Fee assessment | `fee_assessment` | T-svc, after the condition step, on the day the billed item's own age reaches `late_fee_day` (> grace) while it owes interest or principal - a missed day caught up while it still owes; rule 4 under `lending.fee:<item>:LATE` (`P11-TSK-025`) | `UNIQUE (due_item_id, kind)` + ledger key; capped per account (the sum never above the pinned cap - a fee the cap partly admits charged at what it admits); the trigger takes L3 and holds the day, the fee, the cap, the owing item and a line's cycle (every writer) |
 | Condition change | `loan_condition_event` | T-svc, only on a change | `UNIQUE (loan_id, business_date, kind)` |
 
 ---
@@ -523,7 +539,7 @@ derivation for every writer.)*
 | Loan | `loan` (`-012`) | its edge history (§8, open) | `UNIQUE (offer_id)`; kind frozen; kind-specific edges; `→ ACTIVE` / `→ CANCELLED` only beside the disbursement's matching state; closure reason `CHECK` |
 | Disbursement | `loan_disbursement` (`-012`, moved `-014`) | — | `UNIQUE (loan_id)`; moves only beside the loan's edge |
 | Loan payout | `loan_payout` (`-015`) | — | `UNIQUE (loan_id)`; payments' reference required from `DISPATCHED` |
-| Repayment reversal · waiver · amendment | `repayment_reversal` (`-020`), `waiver` (`-025`), `loan_amendment` (`-027`) | the proposal rows' decided columns | four-eyes `CHECK`; amendment acceptance conditional on the agreement version |
+| Repayment reversal · waiver · amendment | `repayment_reversal` (`-020`), `waiver` and its born-once `waiver_decision` (`-025` - a money row takes no `UPDATE`), `loan_amendment` (`-027`) | the proposal rows' decided columns (a waiver's decision row) | four-eyes `CHECK`; amendment acceptance conditional on the agreement version |
 
 Every trigger is `<table>_permits_only_machine_edges`, written by hand; every status `CHECK` a
 membership list; raw-SQL terminal edges are refused for every role in each task's database tests.

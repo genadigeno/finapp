@@ -3208,6 +3208,53 @@ references `CONFIDENTIAL`, the kind, date, versions and stamps `INTERNAL`.
 | `loan_condition_event` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `loan_condition_event` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the loan's own flow) |
 
+### `lending` - late fees and waivers - *added by `P11-TSK-025`*
+
+`lending V021`: the fee assessed on a billed item, the waiver's proposal and its decision. Every amount is
+`RESTRICTED-FINANCIAL` as every lending amount; the operators' ids are `CONFIDENTIAL` (a person), their reasons
+`CONFIDENTIAL` (free prose by a person - screened for instrument shapes by the domain and by twin `CHECK`s), the loan, item,
+assessment, agreement and entry references `CONFIDENTIAL`, kinds, outcomes, types, versions, dates and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `fee_assessment` | `id` | `INTERNAL` | Generated - the assessment's identity |
+| `fee_assessment` | `loan_id` | `CONFIDENTIAL` | The loan or line charged |
+| `fee_assessment` | `due_item_id` | `CONFIDENTIAL` | The billed item it is on - one fee per item and kind |
+| `fee_assessment` | `kind` | `INTERNAL` | `LATE` |
+| `fee_assessment` | `business_date` | `INTERNAL` | The business date of the assessing transaction in the pinned zone |
+| `fee_assessment` | `currency` | `INTERNAL` | The loan's currency |
+| `fee_assessment` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `fee_assessment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The fee - the pinned late fee, or what the per-account cap still admitted |
+| `fee_assessment` | `agreement_id` | `CONFIDENTIAL` | The governing agreement, whose pinned terms decided it |
+| `fee_assessment` | `agreement_version` | `INTERNAL` | Its version |
+| `fee_assessment` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 4's journal entry, by value |
+| `fee_assessment` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `fee_assessment` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the loan's own flow) |
+| `waiver` | `id` | `INTERNAL` | Generated - the waiver's identity and its ledger key's (`lending.waiver:<id>`) |
+| `waiver` | `loan_id` | `CONFIDENTIAL` | The loan whose fee or interest it waives |
+| `waiver` | `kind` | `INTERNAL` | `FEE`, `FEE_REFUND` or `INTEREST` |
+| `waiver` | `fee_assessment_id` | `CONFIDENTIAL` | The fee a fee's waiver or refund names; null for interest |
+| `waiver` | `due_item_id` | `CONFIDENTIAL` | The billed item the fee is on, or whose interest is waived |
+| `waiver` | `currency` | `INTERNAL` | The loan's currency |
+| `waiver` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `waiver` | `amount_minor` | `RESTRICTED-FINANCIAL` | What it forgives - bounded by what is due at the proposal and the approval |
+| `waiver` | `agreement_version` | `INTERNAL` | The governing agreement version at the proposal |
+| `waiver` | `proposed_by` | `CONFIDENTIAL` | The servicing agent who proposed it |
+| `waiver` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `waiver` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `waiver` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `waiver` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `waiver_decision` | `id` | `INTERNAL` | Generated |
+| `waiver_decision` | `waiver_id` | `CONFIDENTIAL` | The waiver decided - once |
+| `waiver_decision` | `proposed_by` | `CONFIDENTIAL` | The proposer, copied and pinned by the composite key - the four-eyes `CHECK`'s subject |
+| `waiver_decision` | `outcome` | `INTERNAL` | `APPROVED` or `REJECTED` |
+| `waiver_decision` | `decided_by` | `CONFIDENTIAL` | The agent who approved or rejected it - never its proposer for an approval |
+| `waiver_decision` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `waiver_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `waiver_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `waiver_decision` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 8's, 8a's or 9's journal entry, by value - exactly when approved |
+| `waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

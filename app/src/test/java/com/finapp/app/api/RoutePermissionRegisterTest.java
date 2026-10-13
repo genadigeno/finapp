@@ -246,6 +246,11 @@ class RoutePermissionRegisterTest {
                             PermissionName.LOAN_SERVICE_APPROVE),
                     entry("POST /v1/operator/loans/{id}/repayments/{repaymentId}/reversal/rejection",
                             PermissionName.LOAN_SERVICE),
+                    // P11-TSK-025: the waiver doors under four eyes - LOAN_SERVICE proposes and rejects, LOAN_SERVICE_APPROVE
+                    // approves (never one's own - the domain and lending V021's CHECK); the negatives are WaiverApiTest's.
+                    entry("POST /v1/operator/loans/{id}/waivers", PermissionName.LOAN_SERVICE),
+                    entry("POST /v1/operator/loans/{id}/waivers/{waiverId}/approval", PermissionName.LOAN_SERVICE_APPROVE),
+                    entry("POST /v1/operator/loans/{id}/waivers/{waiverId}/rejection", PermissionName.LOAN_SERVICE),
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),

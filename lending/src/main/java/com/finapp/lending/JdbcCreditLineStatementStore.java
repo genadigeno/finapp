@@ -61,6 +61,35 @@ public final class JdbcCreditLineStatementStore implements CreditLineStatementSt
     }
 
     @Override
+    public Money feesCarriedIn(Connection unitOfWork, LoanId line, AccrualPeriod cycle, Money zero) {
+        Objects.requireNonNull(line, "line");
+        Objects.requireNonNull(cycle, "cycle");
+        Objects.requireNonNull(zero, "zero");
+        // lending V021's credit_line_statement_carries_its_fees, statement for statement.
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT (coalesce((SELECT sum(f.amount_minor) FROM lending.fee_assessment f"
+                        + " WHERE f.loan_id = ? AND f.business_date >= ? AND f.business_date < ?), 0)"
+                        + " - coalesce((SELECT sum(w.amount_minor) FROM lending.waiver w"
+                        + " JOIN lending.waiver_decision d ON d.waiver_id = w.id AND d.outcome = 'APPROVED'"
+                        + " JOIN lending.fee_assessment x ON x.id = w.fee_assessment_id"
+                        + " WHERE w.kind = 'FEE' AND x.loan_id = ? AND x.business_date >= ? AND x.business_date < ?), 0)"
+                        + ")::bigint")) {
+            int i = 0;
+            for (int arm = 0; arm < 2; arm++) {
+                select.setObject(++i, line.value());
+                select.setObject(++i, cycle.start());
+                select.setObject(++i, cycle.endExclusive());
+            }
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return Money.ofPersisted(row.getLong(1), zero.currency(), zero.scale());
+            }
+        } catch (SQLException failure) {
+            throw failed("reading the fees a cycle carries", failure);
+        }
+    }
+
+    @Override
     public void insert(Connection unitOfWork, CreditLineStatement statement, CorrelationId correlation) {
         Objects.requireNonNull(statement, "statement");
         Objects.requireNonNull(correlation, "correlation");
@@ -105,6 +134,8 @@ public final class JdbcCreditLineStatementStore implements CreditLineStatementSt
                         + " s.interest_billed_minor, s.fees_carried_minor, s.principal_billed_minor,"
                         + " s.minimum_payment_minor, s.agreement_id, s.agreement_version, s.statement_engine_version,"
                         + " s.accrual_engine_version, s.journal_entry_id,"
+                        + " lending.billing_component_billed(s.id, 'FEES') AS fees_billed,"
+                        + " s.interest_billed_minor - lending.billing_component_billed(s.id, 'INTEREST') AS interest_waived,"
                         + " lending.billing_component_paid(s.id, 'FEES') AS fees_paid,"
                         + " lending.billing_component_paid(s.id, 'INTEREST') AS interest_paid,"
                         + " lending.billing_component_paid(s.id, 'PRINCIPAL') AS principal_paid"
@@ -148,6 +179,8 @@ public final class JdbcCreditLineStatementStore implements CreditLineStatementSt
                         .orElseThrow(() -> new IllegalStateException("a statement names an engine version this build holds")),
                 Optional.ofNullable(entry).map(JournalEntryId::of));
         return new StatedItem(statement,
+                Money.ofPersisted(row.getLong("fees_billed"), currency, scale),
+                Money.ofPersisted(row.getLong("interest_waived"), currency, scale),
                 Money.ofPersisted(row.getLong("fees_paid"), currency, scale),
                 Money.ofPersisted(row.getLong("interest_paid"), currency, scale),
                 Money.ofPersisted(row.getLong("principal_paid"), currency, scale));

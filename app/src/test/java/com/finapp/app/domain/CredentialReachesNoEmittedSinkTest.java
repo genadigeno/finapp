@@ -465,6 +465,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // for card-number and account shapes at the domain and by lending V016's CHECKs.
                         "ReversalProposalRequest",
                         "ReversalDecisionRequest",
+                        // P11-TSK-025: the waiver doors. No secret in either. A proposal carries a kind CODE, a target
+                        // identifier, an amount and currency and a REASON; a decision carries a REASON. Every reason is
+                        // screened for card-number and account shapes at the domain and by lending V021's CHECKs.
+                        "WaiverProposalRequest",
+                        "WaiverDecisionRequest",
                         // P11-TSK-010: the customer's loan application - a product, an amount and currency, a term, a
                         // repayment day, a repayment method and payout preference CODE, and the declared monthly figures
                         // as decimal strings passed to credit (never stored, evented or answered by lending). No secret;

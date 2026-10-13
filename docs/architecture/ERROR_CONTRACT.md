@@ -1007,6 +1007,7 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.SelfDealingRefused` | 403 | An employee never services a loan of their own party; nothing was done. |
 | `lending.RepaymentNotReversible` | 409 | The repayment cannot be reversed; nothing was posted. |
 | `lending.LineNotClosable` | 409 | The account is not a credit line that can be closed by request; nothing was done. |
+| `lending.WaiverExceedsDue` | 422 | The waiver exceeds what is due now; nothing was posted. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1161,6 +1162,28 @@ line is answered with the one request (`UNIQUE (loan_id)` beneath the line's row
 account exactly as an unknown or malformed id. `LineNotClosable` (catalogued here - absent from `PHASE_11_PLAN.md` section
 9's list) refuses an instalment loan, which closes only by being repaid. `LoanClosed` (its second subject) refuses a
 request for a line already `CLOSED` (a second key after a closure at the request included); nothing is written.
+
+The waiver doors (`P11-TSK-025`, A14, ADR-0099 points 1, 2 and 4): `POST /v1/operator/loans/{id}/waivers` (`LOAN_SERVICE`,
+`201`; a body naming the `kind` - `FEE`, `FEE_REFUND` or `INTEREST` - the `targetId` - the fee assessment for a fee's kinds,
+the billed item for interest - the `amount` and `currency`, and the `reason`), `…/waivers/{waiverId}/approval`
+(`LOAN_SERVICE_APPROVE`) and `…/waivers/{waiverId}/rejection` (`LOAN_SERVICE`, the proposer's withdrawal included), each
+keyed per principal under the servicing doors' scope (`lending.servicing:<type>:<id>`), so a lost response replays its
+receipt and a refusal stores nothing. `NotFound` answers an unknown or malformed loan (a UUIDv4 included), an assessment
+or billed item not of that loan, or a waiver not of it. A kind outside the closed set, or an amount that is not an exact
+decimal at the currency's minor units, is `api.ValidationFailed` (`422`) before the domain; an amount not positive or not in
+the loan's currency and scale the same, from the domain. **`WaiverExceedsDue`** (`422`, new) refuses a proposal or an
+approval above what is due now, derived under the loan's row lock from the rows the ledger is proven against: a fee waiver
+above the fee's unpaid remainder, a refund above what was paid of the fee less what was refunded, an interest waiver above
+the billed item's unpaid interest - a proposal is not born, an approval posts nothing and leaves the proposal `PROPOSED`
+(a repayment of the fee that committed first makes its waiver this, and the paid fee is then refunded - `FEE_REFUND`);
+`lending V021`'s decision trigger re-judges the bound for every writer. The reused codes, each with its rule:
+`SelfDealingRefused` (an operator of the loan's own party, or one the platform cannot place - recorded `FAILED`),
+`ReasonRequired` (no reason, one past 1,000 characters, or one holding a card-number or bank-account shape - `lending
+V021`'s twin `CHECK`s beneath), `ProposalPending` (another waiver of the kind on the item awaits a decision),
+`ProposalNotPending` (the waiver already decided - the nine losers of ten racing approvers; the same person's retry of
+their own decision converges), `SelfApprovalRefused` (the proposer's approval - `lending V021`'s four-eyes `CHECK` beneath;
+the proposer may reject) and `LoanClosed` (a proposal or an approval on an account not `ACTIVE` or `CLOSING`; a proposal
+left standing may still be rejected).
 
 ## 3a. Rejection at the boundary
 

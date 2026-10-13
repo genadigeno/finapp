@@ -592,7 +592,20 @@ closure step on an account the step did not close, once a business date; the dra
 condition), `DelinquencyState` (the derivation), `LoanConditionEvent`, `ConditionKind`,
 `LoanConditionStore`/`JdbcLoanConditionStore`, `lending.LoanDelinquencyChanged`/`LoanDefaulted`/`LoanDefaultCleared`; and
 `app`'s `condition` on both loan reads and `finapp.lending.delinquency{product, bucket}` / `finapp.lending.default{product}`
-(`LoanConditionMetrics`); every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
+(`LoanConditionMetrics`); `P11-TSK-025` (2026-10-13) - late fees and waivers: `lending V021` (`fee_assessment` -
+`UNIQUE (due_item_id, kind)`, its trigger taking L3 and holding the day, the pinned fee, the per-account cap, the owing item
+and a line's cycle for every writer; `waiver` and `waiver_decision` - both INSERT-only, decided once by `UNIQUE (waiver_id)`,
+four eyes by `CHECK` over the proposer copied under a composite key, the bound by what is due re-judged under L3;
+`lending.billing_component_billed` with the item's fees less fee waivers and its interest less interest waivers;
+`credit_line_statement_carries_its_fees`), `LateFees` (T-svc's fee step after the condition step, rule 4 under
+`lending.fee:<item>:LATE`), `Waivers` (T-wvr: L3, L7 before posting, rule 8 by `ReversalService`, 8a and 9 by
+`PostingService` under `lending.waiver:<id>`, the closure through `LoanClosures`), `FeeAssessment`, `FeeKind`, `Waiver`,
+`WaiverKind`, `WaiverStatus`, `FeeAssessmentStore`/`JdbcFeeAssessmentStore`, `WaiverStore`/`JdbcWaiverStore`,
+`LoanSelfDealing` (the one self-dealing judgement, lifted out of `RepaymentReversals`), `lending.LoanFeeAssessed`/
+`LoanFeeWaived`/`LoanInterestWaived`; and `app`'s `LoanWaiverDesk` and the three waiver doors on
+`LoanServicingController`, the fees and waivers on the operator's loan read, the fees on the customer's schedule and
+statements, `finapp.lending.fee{kind, outcome}` (`LoanServicingMetrics`) and `finapp.lending.waiver{kind, outcome}`
+(`LoanWaiverMetrics`); every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
 - **Responsibility:** originating and servicing credit — the amortising `PERSONAL_LOAN` and the revolving `CREDIT_LINE` — on Phase 10's credit decisions, including the time-based mechanics (accrual, billing, statements, delinquency) as scheduled, idempotent, replayable financial processes. **It owns the contract and its servicing facts and none of the money**: every principal, interest, fee and credit-balance figure is a balance of a per-loan ledger account, derived from postings made through `PostingService` / `ReversalService` in lending's own transaction (ADR-0090, ADR-0096).
 - **Owns:** Loan Application, Loan Product Terms Version, Loan Offer, Loan Agreement, Acceptance Evidence, Loan, Repayment Schedule, Loan Instalment, Instalment Billing, Credit Line Draw, Credit Line Statement, Interest Accrual, Fee Assessment, Disbursement, Loan Payout, Repayment, Allocation, Collection Attempt, Delinquency State, Payoff Quote, Loan Amendment, Lending Capital Contribution.
 - **Does not own:** the credit decision, its consumption fact or the exposure judgement (`credit` — lending takes a decision up only through credit's `CreditDecisionConsumptions` port, `P11-TSK-001`, and never writes credit's tables); any balance (`ledger`); the wallet (`accounts`); the external payout's withdrawal, its ambiguity, return and expectation (`payments`, `reconciliation`); write-off and the GL (Phase 14, `accounting`); collections (Phase 13).

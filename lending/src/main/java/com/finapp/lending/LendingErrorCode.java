@@ -215,7 +215,16 @@ public enum LendingErrorCode implements ErrorCode {
      * command. A closed line answers {@link #LOAN_CLOSED}. Nothing was done.
      */
     LINE_NOT_CLOSABLE(
-            "lending.LineNotClosable", 409, "The account is not a credit line that can be closed by request; nothing was done.");
+            "lending.LineNotClosable", 409, "The account is not a credit line that can be closed by request; nothing was done."),
+
+    /**
+     * The waiver exceeds what is due now (`P11-TSK-025`; A14, ADR-0099, {@code INV-LND-11}, {@code INV-REV-02}): a fee waiver
+     * above the fee's unpaid remainder, a refund above what was paid of it less what was refunded, an interest waiver above
+     * the item's unpaid billed interest - derived under the loan's row lock from the rows the ledger is proven against. A
+     * proposal is not born; an approval posts nothing and leaves the proposal {@code PROPOSED}.
+     */
+    WAIVER_EXCEEDS_DUE(
+            "lending.WaiverExceedsDue", 422, "The waiver exceeds what is due now; nothing was posted.");
 
     private final String code;
     private final int status;

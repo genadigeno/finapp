@@ -290,7 +290,8 @@ class DelinquencyDatabaseTest {
         LoanServicing dying = new LoanServicing(DisbursementWorld.LOAN_STORE, new JdbcLoanServicingStore(),
                 DisbursementWorld.TERMS_STORE, DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES,
                 DisbursementWorld.POSTINGS, DisbursementWorld.IDS, DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES,
-                DisbursementWorld.COLLECTIONS, DisbursementWorld.STATEMENTS, DisbursementWorld.conditions(crashing));
+                DisbursementWorld.COLLECTIONS, DisbursementWorld.STATEMENTS, DisbursementWorld.conditions(crashing),
+                DisbursementWorld.LATE_FEES);
         assertThatThrownBy(() -> service(dying, loan)).hasMessageContaining("instance died");
         assertThat(rows(loan)).isEmpty();
         assertThat(events(loan, LoanConditions.DELINQUENCY_CHANGED_EVENT)).isZero();
@@ -420,7 +421,8 @@ class DelinquencyDatabaseTest {
                     false));
             assertThat(read(loan).orElseThrow().daysPastDue()).isEqualTo(1);
             assertThat(DisbursementWorld.netDebit(DisbursementWorld.loanAccount(loan,
-                    com.finapp.ledger.AccountPurpose.LOAN_FEES_DUE)).isZero()).as("no fee - the late fee is -025's").isTrue();
+                    com.finapp.ledger.AccountPurpose.LOAN_FEES_DUE)).isZero())
+                    .as("no fee at DPD 1 - the late fee waits for its day (P11-TSK-025)").isTrue();
         }
     }
 

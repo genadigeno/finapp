@@ -1157,7 +1157,29 @@ the wallet credited back - and negates each of its allocation rows by a `repayme
 paid is due again, every later allocation untouched. The Repayment's `REVERSED` status is derived from it
 (`repayment_reversal`, `RepaymentReversals`, `POST /v1/operator/loans/{id}/repayments/{rid}/reversal`).
 **Not:** an edit or a re-allocation (nothing committed is re-cut), a refund of a closed loan (a closed loan is terminal,
-A12), a partial reversal (a reversal is whole), or a fee or interest waiver (`-025`).
+A12), a partial reversal (a reversal is whole), or a Waiver (`P11-TSK-025`).
+**Owned by:** `lending`
+
+### Fee Assessment
+**Is:** a fee charged to a loan or line on one billed item after origination (`P11-TSK-025`, A18): kind `LATE` - the
+pinned late fee, once per item, on the business date its own age reaches the pinned late-fee day (beyond grace) while it
+still owes interest or principal, capped per account (the sum never above the pinned cap; a fee the cap partly admits is
+charged at what it admits). Posts rule 4 (`DR LOAN_FEES_DUE / CR LOAN_FEE_INCOME`, key `lending.fee:<item>:LATE`) and joins
+its item's fees, so it is allocated first by the pinned order and an unpaid fee keeps its item past due; a line's next
+statement carries it into the minimum payment (`fee_assessment`, `LateFees`).
+**Not:** penalty or default interest (none exists, L8), the origination fee (rule 1, deducted at disbursement), or a
+figure anyone edits - a fee is forgiven only by a Waiver.
+**Owned by:** `lending`
+
+### Waiver
+**Is:** the reasoned, four-eyes forgiveness of an amount a borrower owes (`P11-TSK-025`, A14, ADR-0099): one person
+holding `LOAN_SERVICE` proposes, a different person holding `LOAN_SERVICE_APPROVE` approves, which posts - kind `FEE` the
+`ReversalService` of the fee's rule 4 entry for at most its unpaid remainder (rule 8), `FEE_REFUND` a paid fee owed back to
+the Loan Credit Balance (rule 8a), `INTEREST` billed interest released (rule 9) - each bounded by what is due now under the
+loan's lock, the account closed in the same transaction when it settled the last receivable (`waiver`, `waiver_decision`,
+`Waivers`, `POST /v1/operator/loans/{id}/waivers`).
+**Not:** an edit of a fee or a balance, a Repayment Reversal (which undoes money applied), a write-off (Phase 14), or a
+waiver of accrued interest not yet billed (a billing's interest is exactly its period's accruals - refined out).
 **Owned by:** `lending`
 
 ### Repayment Allocation
