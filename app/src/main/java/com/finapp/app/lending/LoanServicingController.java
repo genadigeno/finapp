@@ -27,7 +27,10 @@ import org.springframework.web.bind.annotation.RestController;
  * holder of {@code LOAN_SERVICE} proposes it with a reason, a DIFFERENT holder of {@code LOAN_SERVICE_APPROVE} approves it
  * (posting rule 10, the exact swap of the repayment's entry), a holder of {@code LOAN_SERVICE} - the proposer's withdrawal
  * included - rejects it. Each act keyed per principal ({@code lending.servicing:<type>:<id>}); an operator never acts on
- * a loan of their own party ({@code 403 lending.SelfDealingRefused}, recorded). Role {@code LOAN_SERVICING_AGENT}.
+ * a loan of their own party ({@code 403 lending.SelfDealingRefused}, recorded). Role {@code LOAN_SERVICING_AGENT}. Since
+ * `P11-TSK-025` the fee and interest waivers under the same four eyes (A14): a holder of {@code LOAN_SERVICE} proposes a
+ * waiver of an amount with a reason, a DIFFERENT holder of {@code LOAN_SERVICE_APPROVE} approves it - posted within what is
+ * due now ({@code 422 lending.WaiverExceedsDue} otherwise) - and the loan read lists the account's fees and waivers.
  */
 @RestController
 @RequestMapping(path = "/operator/loans", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -35,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LoanServicingController {
 
     @NonNull private final LoanServicingDesk desk;
+    @NonNull private final LoanWaiverDesk waivers;
 
     /** Any loan: the account, its repayments with their derived status, its reversals - audited per serving. */
     @GetMapping(path = "/{id}")
@@ -83,6 +87,49 @@ public class LoanServicingController {
         return desk.reject(id, repaymentId, idempotencyKey, body);
     }
 
+    /**
+     * Proposes a waiver of an amount of one of the loan's fees ({@code FEE} - its unpaid remainder; {@code FEE_REFUND} - its
+     * paid part, to the credit balance) or of a billed item's interest ({@code INTEREST}), with a reason; nothing is posted
+     * (`P11-TSK-025`).
+     */
+    @PostMapping(path = "/{id}/waivers", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LOAN_SERVICE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanWaiverDesk.WaiverView proposeWaiver(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @Valid @RequestBody WaiverProposalRequest body) {
+        return waivers.propose(id, idempotencyKey, body);
+    }
+
+    /**
+     * Approves the named pending waiver - someone other than its proposer: posted (rule 8, 8a or 9) within what is due now,
+     * the account closed when it settled the last receivable.
+     */
+    @PostMapping(path = "/{id}/waivers/{waiverId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LOAN_SERVICE_APPROVE)
+    @RequiresIdempotencyKey
+    public LoanWaiverDesk.WaiverView approveWaiver(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @PathVariable("waiverId") String waiverId,
+            @Valid @RequestBody WaiverDecisionRequest body) {
+        return waivers.approve(id, waiverId, idempotencyKey, body);
+    }
+
+    /** Rejects the named pending waiver - the proposer's withdrawal included; a reason is required. */
+    @PostMapping(path = "/{id}/waivers/{waiverId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LOAN_SERVICE)
+    @RequiresIdempotencyKey
+    public LoanWaiverDesk.WaiverView rejectWaiver(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @PathVariable("waiverId") String waiverId,
+            @Valid @RequestBody WaiverDecisionRequest body) {
+        return waivers.reject(id, waiverId, idempotencyKey, body);
+    }
+
     // -----------------------------------------------------------------
 
     /** A proposal's reason - required, judged by the domain ({@code lending.ReasonRequired}). */
@@ -95,4 +142,21 @@ public class LoanServicingController {
      */
     @ClosedBody
     public record ReversalDecisionRequest(@NotBlank @Size(max = 36) String reversalId, @Size(max = 1000) String reason) {}
+
+    /**
+     * A waiver's proposal (`P11-TSK-025`): its kind (`FEE`, `FEE_REFUND` or `INTEREST`), what it names - the fee
+     * assessment for a fee's kinds, the billed item for interest - the amount and its currency (an exact decimal at the
+     * currency's minor units) and the reason, judged by the domain ({@code lending.ReasonRequired}).
+     */
+    @ClosedBody
+    public record WaiverProposalRequest(
+            @NotBlank @Size(max = 16) String kind,
+            @NotBlank @Size(max = 36) String targetId,
+            @NotBlank @Size(max = 32) String amount,
+            @NotBlank @Size(max = 3) String currency,
+            @Size(max = 1000) String reason) {}
+
+    /** A waiver's decision - the waiver is named by the path; the decider's reason. */
+    @ClosedBody
+    public record WaiverDecisionRequest(@Size(max = 1000) String reason) {}
 }

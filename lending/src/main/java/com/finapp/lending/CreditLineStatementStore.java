@@ -26,6 +26,14 @@ public interface CreditLineStatementStore {
      */
     List<InterestAccrual> accrualsIn(Connection unitOfWork, LoanId line, AccrualPeriod cycle);
 
+    /**
+     * The fees {@code line} carries into a statement of {@code cycle} (A24, `P11-TSK-025`): its assessments dated in the cycle
+     * - {@code [start, endExclusive)} - less what approved fee waivers forgave of them, in {@code zero}'s currency and scale.
+     * Each fee is carried once: cycles tile the calendar, and no fee is dated inside a cycle already stated.
+     * {@code lending V021}'s trigger holds the statement to the same sum.
+     */
+    Money feesCarriedIn(Connection unitOfWork, LoanId line, AccrualPeriod cycle, Money zero);
+
     /** Births one statement; the database stamps the instant. */
     void insert(Connection unitOfWork, CreditLineStatement statement, CorrelationId correlation);
 
@@ -35,11 +43,22 @@ public interface CreditLineStatementStore {
      */
     List<StatedItem> statementsOwnedBy(Connection unitOfWork, LoanId line, UUID party);
 
-    /** One statement and what has been paid of it, per component - every payer's allocations less reversed ones. */
-    record StatedItem(CreditLineStatement statement, Money feesPaid, Money interestPaid, Money principalPaid) {
+    /**
+     * One statement and what has been paid of it, per component - every payer's allocations less reversed ones. A statement
+     * bills no fee itself (its carried fees are due on the items they were assessed on): its fees are the late fees assessed
+     * on it less approved fee waivers, its interest its figure less approved interest waivers ({@code P11-TSK-025},
+     * {@code lending.billing_component_billed}).
+     *
+     * @param feesBilled the fees assessed on the statement as an item, less approved fee waivers
+     * @param interestWaived the interest approved waivers forgave of its billed interest
+     */
+    record StatedItem(CreditLineStatement statement, Money feesBilled, Money interestWaived, Money feesPaid,
+            Money interestPaid, Money principalPaid) {
 
         public StatedItem {
             Objects.requireNonNull(statement, "statement must not be null");
+            Objects.requireNonNull(feesBilled, "feesBilled must not be null");
+            Objects.requireNonNull(interestWaived, "interestWaived must not be null");
             Objects.requireNonNull(feesPaid, "feesPaid must not be null");
             Objects.requireNonNull(interestPaid, "interestPaid must not be null");
             Objects.requireNonNull(principalPaid, "principalPaid must not be null");
@@ -48,9 +67,9 @@ public interface CreditLineStatementStore {
         /** What the statement's item still has due, per component - billed less paid. */
         public DueState.DueItem dueItem() {
             Statement figures = statement.statement();
-            Money zero = Money.ofPersisted(0, figures.interestBilled().currency(), figures.interestBilled().scale());
-            return new DueState.DueItem(DueItemId.of(statement.id()), statement.dueDate(), zero.minus(feesPaid),
-                    figures.interestBilled().minus(interestPaid), figures.principalBilled().minus(principalPaid));
+            return new DueState.DueItem(DueItemId.of(statement.id()), statement.dueDate(), feesBilled.minus(feesPaid),
+                    figures.interestBilled().minus(interestWaived).minus(interestPaid),
+                    figures.principalBilled().minus(principalPaid));
         }
 
         /** Everything still due on it. */

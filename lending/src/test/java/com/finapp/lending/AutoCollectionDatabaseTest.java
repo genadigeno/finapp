@@ -459,7 +459,7 @@ class AutoCollectionDatabaseTest {
                 DisbursementWorld.TERMS_STORE, DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES,
                 DisbursementWorld.POSTINGS, DisbursementWorld.IDS, DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES,
                 DisbursementWorld.collections(REPAYMENT_STORE, crashing), DisbursementWorld.STATEMENTS,
-                DisbursementWorld.CONDITIONS);
+                DisbursementWorld.CONDITIONS, DisbursementWorld.LATE_FEES);
         assertThatThrownBy(() -> service(dying, loan)).hasMessageContaining("instance died");
         assertThat(attempts(loan)).isEmpty();
         assertThat(autoRepayments(loan)).isZero();

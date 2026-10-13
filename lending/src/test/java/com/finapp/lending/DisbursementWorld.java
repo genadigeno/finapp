@@ -148,6 +148,8 @@ final class DisbursementWorld {
     static final CreditLineStatements STATEMENTS = statements(new JdbcOutboxWriter());
     static final JdbcLoanConditionStore CONDITION_STORE = new JdbcLoanConditionStore();
     static final LoanConditions CONDITIONS = conditions(new JdbcOutboxWriter());
+    static final JdbcFeeAssessmentStore FEE_STORE = new JdbcFeeAssessmentStore();
+    static final LateFees LATE_FEES = lateFees(new JdbcOutboxWriter());
     static final Loans LOANS = new Loans(LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, PAYOUT_STORE, CONDITIONS);
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
@@ -190,6 +192,11 @@ final class DisbursementWorld {
     /** T-svc's condition step, the draw's suspension and the reads' condition, with this outbox (P11-TSK-024). */
     static LoanConditions conditions(OutboxWriter<Connection> outbox) {
         return new LoanConditions(BILLING_STORE, CONDITION_STORE, TERMS_STORE, outbox, IDS, CLOCK);
+    }
+
+    /** T-svc's late-fee step over the real stores and ledger, with this outbox (P11-TSK-025). */
+    static LateFees lateFees(OutboxWriter<Connection> outbox) {
+        return new LateFees(FEE_STORE, BILLING_STORE, STATEMENT_STORE, LEDGER_ACCOUNTS, POSTINGS, outbox, IDS, CLOCK);
     }
 
     // ------------------------------------------------------------------ the loans

@@ -364,8 +364,8 @@ class PayoffDatabaseTest {
 
     @Test
     @DisplayName("scenario 10 - a payoff beside the delinquency worker writes no condition after closure: a loan 35 days past"
-            + " due; the servicing step first (holding L3) records its condition and the payoff, waiting, closes after it; the"
-            + " payoff first (holding L3) closes and the step, waiting, finds the account CLOSED and evaluates nothing - in"
+            + " due; the servicing step first (holding L3) records its condition and its late fee, and the payoff waiting on"
+            + " it finds its quote stale (the fee moved the figure) - a fresh quote then closes it; the payoff first (holding L3) closes and the step, waiting, finds the account CLOSED and evaluates nothing - in"
             + " neither order a condition row after the closure, and the database refuses one on a closed account")
     void payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure() throws Exception {
         // The worker first: its condition, then the closure.
@@ -379,10 +379,17 @@ class PayoffDatabaseTest {
             Future<Payoffs.Executed> payoff = pool.submit(() -> execute(workerFirst, quote, key()));
             awaitBlockedBy(pid(worker));
             worker.commit();
-            assertThat(payoff.get(30, TimeUnit.SECONDS).closure().reason()).isEqualTo(ClosureReason.PAID_OFF_EARLY);
+            // The worker's step also assessed the late fee due at 35 days (P11-TSK-025, after the condition step): what the
+            // loan owes moved under the waiting payoff, which therefore finds its quote stale - scenario 7's rule, never a
+            // wrong payoff.
+            assertThatThrownBy(() -> payoff.get(30, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
+                    .hasCauseInstanceOf(Payoffs.PayoffQuoteStale.class);
         } finally {
             pool.shutdownNow();
         }
+        assertThat(count("SELECT count(*) FROM lending.fee_assessment WHERE loan_id = ?", workerFirst.value()))
+                .as("the fees that moved the figure").isPositive();
+        execute(workerFirst, quote(workerFirst, key(), Optional.empty()).quote(), key());
         assertPaidOff(workerFirst, ClosureReason.PAID_OFF_EARLY);
         assertNoConditionAfterClosure(workerFirst);
         assertThat(conditions(workerFirst)).isPositive();
@@ -413,7 +420,7 @@ class PayoffDatabaseTest {
             + " entry per date in either order, and the payoff exact")
     void theSweepAndThePayoffAccrueTheSameDateOnce() throws Exception {
         for (int round = 0; round < 4; round++) {
-            LoanId loan = midLife(3_300_00 + round * 10_00);
+            LoanId loan = midLife(3_300_00 + round * 10_00, true);
             PayoffQuote quote = quote(loan, key(), Optional.of(businessDate(loan).plusDays(4))).quote();
             advance(loan, 4);
             List<String> outcomes = race(2, index -> {
@@ -614,11 +621,16 @@ class PayoffDatabaseTest {
      * into its second period with those days unaccrued; the wallet topped up beyond what the loan owes.
      */
     static LoanId midLife(long minor) {
+        return midLife(minor, false);
+    }
+
+    /** As {@link #midLife(long)}, its first instalment paid in full when {@code current} - nothing past due, no late fee. */
+    static LoanId midLife(long minor, boolean current) {
         LoanId loan = disbursed(minor, 12);
         backdate(loan, daysTo(loan, 1));
         assertThat(service(loan).billed()).isEqualTo(1);
         long bill = billings(loan).get(0).billing().billed().minorUnits();
-        repay(loan, key(), bill / 2);
+        repay(loan, key(), current ? bill : bill / 2);
         advance(loan, 10);
         topUp(partyOf(loan), minor / 5);
         return loan;

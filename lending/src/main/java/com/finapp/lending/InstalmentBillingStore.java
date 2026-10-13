@@ -68,13 +68,20 @@ public interface InstalmentBillingStore {
 
     /**
      * One billed item and what has been paid of it, per component - every allocation that pays a billed item (the
-     * credit-balance applications here; {@code P11-TSK-018}'s repayments when they land). A billing bills no fee, so its
-     * fees due are what a later assessment adds ({@code P11-TSK-025}) less what was paid.
+     * credit-balance applications, {@code P11-TSK-018}'s repayments, less what a reversal undid). A billing bills no fee
+     * itself: its fees are the late fees assessed on it less the fee waivers approved of them ({@code P11-TSK-025}), and its
+     * interest the billing's figure less the interest waivers approved on it - {@code lending.billing_component_billed}.
+     *
+     * @param feesBilled the fees assessed on the item, less approved fee waivers
+     * @param interestWaived the interest approved waivers forgave of the item's billed interest
      */
-    record BilledItem(InstalmentBilling billing, Money feesPaid, Money interestPaid, Money principalPaid) {
+    record BilledItem(InstalmentBilling billing, Money feesBilled, Money interestWaived, Money feesPaid,
+            Money interestPaid, Money principalPaid) {
 
         public BilledItem {
             Objects.requireNonNull(billing, "billing must not be null");
+            Objects.requireNonNull(feesBilled, "feesBilled must not be null");
+            Objects.requireNonNull(interestWaived, "interestWaived must not be null");
             Objects.requireNonNull(feesPaid, "feesPaid must not be null");
             Objects.requireNonNull(interestPaid, "interestPaid must not be null");
             Objects.requireNonNull(principalPaid, "principalPaid must not be null");
@@ -82,9 +89,9 @@ public interface InstalmentBillingStore {
 
         /** What the item still has due, per component - billed less paid; the allocation engine's input. */
         public DueState.DueItem dueItem() {
-            Money zero = Money.ofPersisted(0, billing.interestDue().currency(), billing.interestDue().scale());
-            return new DueState.DueItem(DueItemId.of(billing.id()), billing.dueDate(), zero.minus(feesPaid),
-                    billing.interestDue().minus(interestPaid), billing.principalDue().minus(principalPaid));
+            return new DueState.DueItem(DueItemId.of(billing.id()), billing.dueDate(), feesBilled.minus(feesPaid),
+                    billing.interestDue().minus(interestWaived).minus(interestPaid),
+                    billing.principalDue().minus(principalPaid));
         }
 
         /** Everything still due on it. */

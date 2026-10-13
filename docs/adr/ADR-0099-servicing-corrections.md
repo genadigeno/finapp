@@ -193,5 +193,22 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   approval and the rejection - not at the operator's read, which is audited (`lending.LoanRead`) and shows nothing the
   customer's own read does not. Whose party an operator is comes from credit's `IdentityActingParty`, which now serves
   lending's `LoanActingParty` too (one read).
+- **As built by `P11-TSK-025` (2026-10-13) - points 1, 2 and the waivers, with these refinements:** the migration is
+  `lending V021` (the wave 5 board's reservation; the backlog's `V018` was stale); **the waiver is two INSERT-only rows** -
+  `waiver` (the proposal, carrying the amount) and `waiver_decision` (born once, `UNIQUE (waiver_id)`) - not -020's
+  money-free machine row with a column-scoped `UPDATE`: a row carrying money takes no `UPDATE` in this schema
+  (`LendingSchemaHasNoMutableMoneyTest`), so the four eyes are a `CHECK` over the proposer copied into the decision and pinned
+  by the composite key (P11-TSK-004's capital contribution pattern), the status is derived, and "L5" is the proposal read
+  under L3 with its decision's unique beneath; **the decision names its waiver by the path**
+  (`…/waivers/{waiverId}/approval`), so an approver approves exactly the proposal reviewed; **one waiver of a kind on an item
+  awaits a decision at a time** (`409 lending.ProposalPending`, the trigger beneath L3) - financial safety rests on the
+  bound, not on it; **every waiver is bounded by what is due now at the proposal and again at the approval**
+  (`422 lending.WaiverExceedsDue`, new), derived from the rows the ledger is proven against and re-judged by the decision
+  trigger, which takes L3 itself, for every writer; **an interest waiver releases billed interest only** (rule 9 against
+  `LOAN_INTEREST_DUE`) - accrued interest not yet billed is never waived, because a billing's interest is exactly its period's
+  accruals for every writer (owner judgement recorded); **the approval takes L7 before posting** (its rules post to shared
+  income rows; a closure's refund must not take the wallet after them); a waiver that settles the last receivable closes the
+  account in its transaction through the one `LoanClosures` (`REPAID`, or a `CLOSING` line `CLOSED_BY_CUSTOMER` - no new
+  closure reason); the self-dealing judgement is lifted into `LoanSelfDealing`, one rule for both acts.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

@@ -27,6 +27,8 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
             + " b.instalment_id, b.sequence, b.period_start, b.due_date, b.currency, b.scale, b.interest_due_minor,"
             + " b.principal_due_minor, b.agreement_id, b.agreement_version, b.schedule_engine_version,"
             + " b.accrual_engine_version, b.journal_entry_id,"
+            + " lending.billing_component_billed(b.id, 'FEES') AS fees_billed,"
+            + " b.interest_due_minor - lending.billing_component_billed(b.id, 'INTEREST') AS interest_waived,"
             + " lending.billing_component_paid(b.id, 'FEES') AS fees_paid,"
             + " lending.billing_component_paid(b.id, 'INTEREST') AS interest_paid,"
             + " lending.billing_component_paid(b.id, 'PRINCIPAL') AS principal_paid"
@@ -116,14 +118,18 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
         // Both kinds of billed item in one statement - a loan holds only one kind, but the derivation asks no question of
         // the loan: what it has billed is what it owes on.
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT i.id, i.due_date, i.currency, i.scale, i.interest_billed, i.principal_billed,"
+                // What each component billed is lending.billing_component_billed's - the row's figures with the item's
+                // assessed fees, less its approved waivers (P11-TSK-025) - the one sum the database's rules read too.
+                "SELECT i.id, i.due_date, i.currency, i.scale,"
+                        + " lending.billing_component_billed(i.id, 'FEES') AS fees_billed,"
+                        + " lending.billing_component_billed(i.id, 'INTEREST') AS interest_billed,"
+                        + " lending.billing_component_billed(i.id, 'PRINCIPAL') AS principal_billed,"
                         + " lending.billing_component_paid(i.id, 'FEES') AS fees_paid,"
                         + " lending.billing_component_paid(i.id, 'INTEREST') AS interest_paid,"
                         + " lending.billing_component_paid(i.id, 'PRINCIPAL') AS principal_paid"
-                        + " FROM (SELECT b.id, b.due_date, b.currency, b.scale, b.interest_due_minor AS interest_billed,"
-                        + " b.principal_due_minor AS principal_billed FROM lending.instalment_billing b WHERE b.loan_id = ?"
-                        + " UNION ALL SELECT s.id, s.due_date, s.currency, s.scale, s.interest_billed_minor,"
-                        + " s.principal_billed_minor FROM lending.credit_line_statement s WHERE s.loan_id = ?) i"
+                        + " FROM (SELECT b.id, b.due_date, b.currency, b.scale FROM lending.instalment_billing b"
+                        + " WHERE b.loan_id = ? UNION ALL SELECT s.id, s.due_date, s.currency, s.scale"
+                        + " FROM lending.credit_line_statement s WHERE s.loan_id = ?) i"
                         + " ORDER BY i.due_date")) {
             select.setObject(1, loan.value());
             select.setObject(2, loan.value());
@@ -132,11 +138,10 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
                 while (row.next()) {
                     CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());
                     int scale = row.getInt("scale");
-                    Money zero = Money.ofPersisted(0, currency, scale);
                     items.add(new DueState.DueItem(
                             DueItemId.of(row.getObject("id", UUID.class)),
                             row.getObject("due_date", LocalDate.class),
-                            zero.minus(Money.ofPersisted(row.getLong("fees_paid"), currency, scale)),
+                            Money.ofPersisted(row.getLong("fees_billed") - row.getLong("fees_paid"), currency, scale),
                             Money.ofPersisted(row.getLong("interest_billed") - row.getLong("interest_paid"), currency,
                                     scale),
                             Money.ofPersisted(row.getLong("principal_billed") - row.getLong("principal_paid"), currency,
@@ -197,6 +202,8 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
                         .orElseThrow(() -> new IllegalStateException("a billing names an engine version this build holds")),
                 Optional.ofNullable(entry).map(JournalEntryId::of));
         return new BilledItem(billing,
+                Money.ofPersisted(row.getLong("fees_billed"), currency, scale),
+                Money.ofPersisted(row.getLong("interest_waived"), currency, scale),
                 Money.ofPersisted(row.getLong("fees_paid"), currency, scale),
                 Money.ofPersisted(row.getLong("interest_paid"), currency, scale),
                 Money.ofPersisted(row.getLong("principal_paid"), currency, scale));

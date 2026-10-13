@@ -195,7 +195,9 @@ public final class LoanAccountDesk {
 
     /**
      * A billed item (`P11-TSK-017`): what became due - interest actually accrued, the principal portion - what has been
-     * paid of each, and what is still due; {@code status} {@code DUE}, {@code PARTIALLY_PAID} or {@code PAID}.
+     * paid of each, and what is still due; {@code status} {@code DUE}, {@code PARTIALLY_PAID} or {@code PAID}. Since
+     * `P11-TSK-025`: the late fees assessed on the item (less those waived) and what has been paid of them, and the interest
+     * waived - the outstanding includes the fees.
      */
     public record BillingView(
             String billingId,
@@ -208,7 +210,10 @@ public final class LoanAccountDesk {
             String principalBilled,
             String interestPaid,
             String principalPaid,
-            String outstanding) {}
+            String outstanding,
+            String feesBilled,
+            String feesPaid,
+            String interestWaived) {}
 
     /** A credit line's statements as its customer reads them (`P11-TSK-022`), oldest first. */
     public record StatementListView(String loanId, List<StatementView> statements) {}
@@ -218,7 +223,9 @@ public final class LoanAccountDesk {
      * accrued interest, the minimum payment's principal part, the fees it carries - the minimum payment and its due date,
      * what has been paid of it and what is still due ({@code status} {@code DUE}, {@code PARTIALLY_PAID} or {@code PAID}),
      * and the line's balance - every receivable less any credit balance - at the cycle's opening and close, derived from the
-     * ledger, never stored. Amounts exact decimal strings, dates ISO.
+     * ledger, never stored. Amounts exact decimal strings, dates ISO. Since `P11-TSK-025`: the late fees assessed on this
+     * statement (less those waived) - owed on it, beside the earlier fees it carries into its minimum - and the interest
+     * waived of it.
      */
     public record StatementView(
             String statementId,
@@ -236,7 +243,9 @@ public final class LoanAccountDesk {
             String openingBalance,
             String closingBalance,
             int agreementVersion,
-            int statementEngineVersion) {}
+            int statementEngineVersion,
+            String feesBilled,
+            String interestWaived) {}
 
     /**
      * Accepts the caller's offer: the agreement, the consumption, the commitment and the account in one transaction.
@@ -358,7 +367,9 @@ public final class LoanAccountDesk {
                 decimal(read.openingBalance()),
                 decimal(read.closingBalance()),
                 statement.agreementVersion(),
-                figures.engine().number());
+                figures.engine().number(),
+                decimal(item.feesBilled()),
+                decimal(item.interestWaived()));
     }
 
     static ScheduleView view(LoanSchedules.Read read) {
@@ -423,7 +434,10 @@ public final class LoanAccountDesk {
                 decimal(billing.principalDue()),
                 decimal(item.interestPaid()),
                 decimal(item.principalPaid()),
-                decimal(outstanding));
+                decimal(outstanding),
+                decimal(item.feesBilled()),
+                decimal(item.feesPaid()),
+                decimal(item.interestWaived()));
     }
 
     static LoanView view(Loans.Read read) {

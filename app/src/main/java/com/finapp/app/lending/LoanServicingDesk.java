@@ -72,6 +72,8 @@ public final class LoanServicingDesk {
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final com.finapp.lending.FeeAssessmentStore feeStore;
+    @NonNull private final com.finapp.lending.WaiverStore waiverStore;
 
     /**
      * A repayment reversal as answered - and replayed: its machine, the repayment it reverses and the agreement version
@@ -91,12 +93,15 @@ public final class LoanServicingDesk {
     /**
      * A loan as a servicing agent reads it: the account as its customer sees it - state, agreement, balances derived from
      * journal lines - its repayments with their derived status (newest first, at most {@value RepaymentReversals#HISTORY_LIMIT})
-     * and its reversals (newest first, likewise). Never the party.
+     * and its reversals (newest first, likewise); its fees (oldest first) and its waivers (newest first, at most
+     * {@value com.finapp.lending.Waivers#HISTORY_LIMIT}) (`P11-TSK-025`). Never the party.
      */
     public record OperatorLoanView(
             LoanAccountDesk.LoanView loan,
             List<LoanRepaymentDesk.RepaymentView> repayments,
-            List<ReversalView> reversals) {}
+            List<ReversalView> reversals,
+            List<LoanWaiverDesk.FeeView> fees,
+            List<LoanWaiverDesk.WaiverView> waivers) {}
 
     // ------------------------------------------------------------------ the reversal's acts
 
@@ -165,11 +170,17 @@ public final class LoanServicingDesk {
             }
             List<ReversalView> reversalViews = reversalStore.ofLoan(unitOfWork, loan, RepaymentReversals.HISTORY_LIMIT)
                     .stream().map(LoanServicingDesk::view).toList();
+            List<LoanWaiverDesk.FeeView> feeViews = feeStore.ofLoan(unitOfWork, loan).stream().map(LoanWaiverDesk::view)
+                    .toList();
+            List<LoanWaiverDesk.WaiverView> waiverViews = waiverStore.ofLoan(unitOfWork, loan,
+                    com.finapp.lending.Waivers.HISTORY_LIMIT).stream().map(LoanWaiverDesk::view).toList();
             audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock),
                     LendingAuditAction.LOAN_READ, "loan", loan.value().toString(), Optional.empty(),
                     AuditOutcome.SUCCEEDED, correlation, Optional.of("loan=" + loan.value() + ", repayments="
-                            + repaymentViews.size() + ", reversals=" + reversalViews.size())));
-            return new OperatorLoanView(LoanAccountDesk.view(read), List.copyOf(repaymentViews), reversalViews);
+                            + repaymentViews.size() + ", reversals=" + reversalViews.size() + ", fees=" + feeViews.size()
+                            + ", waivers=" + waiverViews.size())));
+            return new OperatorLoanView(LoanAccountDesk.view(read), List.copyOf(repaymentViews), reversalViews, feeViews,
+                    waiverViews);
         });
     }
 

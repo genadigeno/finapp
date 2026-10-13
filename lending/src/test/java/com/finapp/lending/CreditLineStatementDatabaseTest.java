@@ -661,9 +661,17 @@ class CreditLineStatementDatabaseTest {
      */
     static void assertLineSubledgerProves(DisbursementWorld.Accepted line, long creditFixture) {
         UUID id = line.loan().value();
-        for (String component : List.of("INTEREST", "PRINCIPAL")) {
-            long billed = count("SELECT coalesce(sum(" + component.toLowerCase(java.util.Locale.ROOT) + "_billed_minor),"
-                    + " 0) FROM lending.credit_line_statement WHERE loan_id = ?", id);
+        for (String component : List.of("FEES", "INTEREST", "PRINCIPAL")) {
+            // P11-TSK-025: fees are what was assessed on the statements; fee and interest waivers forgive what they billed.
+            long billed = component.equals("FEES")
+                    ? count("SELECT coalesce(sum(amount_minor), 0) FROM lending.fee_assessment WHERE loan_id = ?", id)
+                    : count("SELECT coalesce(sum(" + component.toLowerCase(java.util.Locale.ROOT) + "_billed_minor),"
+                            + " 0) FROM lending.credit_line_statement WHERE loan_id = ?", id);
+            if (!component.equals("PRINCIPAL")) {
+                billed -= count("SELECT coalesce(sum(w.amount_minor), 0) FROM lending.waiver w JOIN lending.waiver_decision d"
+                        + " ON d.waiver_id = w.id AND d.outcome = 'APPROVED' WHERE w.loan_id = ? AND w.kind = ?", id,
+                        component.equals("FEES") ? "FEE" : "INTEREST");
+            }
             long applied = count("SELECT coalesce(sum(a.amount_minor), 0) FROM lending.credit_balance_allocation a"
                     + " JOIN lending.credit_line_statement s ON s.id = a.billing_id WHERE s.loan_id = ? AND a.component = ?",
                     id, component);
@@ -674,14 +682,16 @@ class CreditLineStatementDatabaseTest {
                     + " JOIN lending.repayment_allocation a ON a.id = n.allocation_id"
                     + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.component = ?",
                     id, component);
-            AccountPurpose due = component.equals("INTEREST") ? AccountPurpose.LOAN_INTEREST_DUE
-                    : AccountPurpose.LOAN_PRINCIPAL_DUE;
+            AccountPurpose due = switch (component) {
+                case "FEES" -> AccountPurpose.LOAN_FEES_DUE;
+                case "INTEREST" -> AccountPurpose.LOAN_INTEREST_DUE;
+                default -> AccountPurpose.LOAN_PRINCIPAL_DUE;
+            };
             long balance = netDebit(loanAccount(line.loan(), due)).minorUnits();
-            assertThat(balance).as(due + ": stated less every payer, plus what reversals re-opened")
+            assertThat(balance).as(due + ": stated less waived, less every payer, plus what reversals re-opened")
                     .isEqualTo(billed - applied - repaid + reversed);
             assertThat(balance).as(due + " never negative").isGreaterThanOrEqualTo(0);
         }
-        assertThat(netDebit(loanAccount(line.loan(), AccountPurpose.LOAN_FEES_DUE)).minorUnits()).isZero();
         assertThat(netDebit(loanAccount(line.loan(), AccountPurpose.LOAN_INTEREST_ACCRUED)).minorUnits())
                 .isEqualTo(count("SELECT coalesce(sum(posted_minor), 0) FROM lending.interest_accrual WHERE loan_id = ?", id)
                         - count("SELECT coalesce(sum(interest_billed_minor), 0) FROM lending.credit_line_statement"
@@ -695,6 +705,9 @@ class CreditLineStatementDatabaseTest {
         assertThat(held(line.loan())).as("the credit balance: the fixture's and the repayments' excess, less reversals,"
                 + " applications and the closure's refund").isEqualTo(creditFixture
                 + target(id, "CREDIT_BALANCE", false) - target(id, "CREDIT_BALANCE", true)
+                + count("SELECT coalesce(sum(w.amount_minor), 0) FROM lending.waiver w JOIN lending.waiver_decision d"
+                        + " ON d.waiver_id = w.id AND d.outcome = 'APPROVED' WHERE w.loan_id = ? AND w.kind = 'FEE_REFUND'",
+                        id)
                 - count("SELECT coalesce(sum(amount_minor), 0) FROM lending.credit_balance_application WHERE loan_id = ?",
                         id)
                 - count("SELECT coalesce(sum(refund_minor), 0) FROM lending.loan_closure WHERE loan_id = ?", id));
@@ -731,7 +744,7 @@ class CreditLineStatementDatabaseTest {
     }
 
     /** An application-role insert of a statement of {@code loan} for {@code [start, end)}, interest {@code interest}. */
-    private static String rawStatement(UUID loan, String agreement, LocalDate start, LocalDate end, long interest) {
+    static String rawStatement(UUID loan, String agreement, LocalDate start, LocalDate end, long interest) {
         return "INSERT INTO lending.credit_line_statement (id, loan_id, cycle_start, cycle_end, due_date, currency, scale,"
                 + " interest_billed_minor, fees_carried_minor, principal_billed_minor, minimum_payment_minor, agreement_id,"
                 + " agreement_version, statement_engine_version, accrual_engine_version, journal_entry_id, created_at,"

@@ -317,12 +317,7 @@ public final class RepaymentReversals {
      * closed). The loan's party is a frozen column, read unlocked so L0 can come first; answers it.
      */
     private UUID notSelfDealing(Connection unitOfWork, LoanId loan, Actor actor, String act) {
-        UUID party = loans.partyOf(unitOfWork, loan).orElseThrow(LoanNotFound::new);
-        Optional<UUID> actorsParty = actingParties.partyOf(unitOfWork, actor);
-        if (actorsParty.isEmpty() || actorsParty.get().equals(party)) {
-            throw new SelfDealingRefused(loan, act);
-        }
-        return party;
+        return LoanSelfDealing.judge(loans, actingParties, unitOfWork, loan, actor, act, LoanNotFound::new);
     }
 
     /** The proposal {@code FOR UPDATE} (L5), only as a proposal for this repayment of this loan. */

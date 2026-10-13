@@ -674,7 +674,7 @@ public class LendingBeans {
      * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing - or a line's
      * statement (P11-TSK-022) - and the credit-balance application (rules 3 and 6, P11-TSK-017), then auto-collection
      * (rule 5, P11-TSK-019), then the closure of a settled loan (P11-TSK-018), then - on an account it did not close - the
-     * condition (P11-TSK-024).
+     * condition (P11-TSK-024), then the late fee (posting rule 4, P11-TSK-025).
      */
     @Bean
     LoanServicing loanServicing(
@@ -689,10 +689,11 @@ public class LendingBeans {
             com.finapp.lending.LoanClosures loanClosures,
             com.finapp.lending.LoanCollections loanCollections,
             com.finapp.lending.CreditLineStatements creditLineStatements,
-            com.finapp.lending.LoanConditions loanConditions) {
+            com.finapp.lending.LoanConditions loanConditions,
+            com.finapp.lending.LateFees lateFees) {
         return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
                 postingService, idGenerator, instalmentBillings, loanClosures, loanCollections, creditLineStatements,
-                loanConditions);
+                loanConditions, lateFees);
     }
 
     /**
@@ -1007,9 +1008,12 @@ public class LendingBeans {
             RepaymentReversalMetrics repaymentReversalMetrics,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.lending.FeeAssessmentStore feeAssessmentStore,
+            com.finapp.lending.WaiverStore waiverStore) {
         return new LoanServicingDesk(repaymentReversals, repaymentReversalStore, loans, loanStore, repaymentStore,
-                idempotentExecutor, lendingTransactions, repaymentReversalMetrics, auditWriter, idGenerator, clock);
+                idempotentExecutor, lendingTransactions, repaymentReversalMetrics, auditWriter, idGenerator, clock,
+                feeAssessmentStore, waiverStore);
     }
 
     /**
@@ -1031,5 +1035,82 @@ public class LendingBeans {
                 new com.finapp.ledger.AvailableBalance<>(new com.finapp.ledger.JdbcBalanceDerivation(),
                         new com.finapp.ledger.JdbcHoldStore()),
                 ledgerAccountStore, purposeBalances, outboxWriter, idGenerator, clock);
+    }
+
+    // ------------------------------------------------------------------ late fees and waivers (P11-TSK-025)
+
+    /** The fee assessments' store - {@code fee_assessment}, INSERT-only (lending V021). */
+    @Bean
+    com.finapp.lending.FeeAssessmentStore feeAssessmentStore() {
+        return new com.finapp.lending.JdbcFeeAssessmentStore();
+    }
+
+    /**
+     * T-svc's late-fee step (P11-TSK-025) - posting rule 4 through the ledger, under the step's L3, after the condition
+     * step: once per billed item at the pinned late-fee day, capped per account.
+     */
+    @Bean
+    com.finapp.lending.LateFees lateFees(
+            com.finapp.lending.FeeAssessmentStore feeAssessmentStore,
+            InstalmentBillingStore instalmentBillingStore,
+            com.finapp.lending.CreditLineStatementStore creditLineStatementStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PostingService postingService,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.LateFees(feeAssessmentStore, instalmentBillingStore, creditLineStatementStore,
+                ledgerAccountStore, postingService, outboxWriter, idGenerator, clock);
+    }
+
+    /** The waivers' store - {@code waiver} and {@code waiver_decision}, both INSERT-only (lending V021). */
+    @Bean
+    com.finapp.lending.WaiverStore waiverStore() {
+        return new com.finapp.lending.JdbcWaiverStore();
+    }
+
+    /**
+     * T-wvr - the four-eyes fee and interest waiver under L3 (and L7 before its posting), posting rule 8 through the
+     * ledger's ReversalService, 8a and 9 through its PostingService; the closure of a settled account through the one
+     * LoanClosures; whose party an operator is read through the identity store (credit's {@code IdentityActingParty}).
+     */
+    @Bean
+    com.finapp.lending.Waivers waivers(
+            LoanStore loanStore,
+            com.finapp.lending.WaiverStore waiverStore,
+            com.finapp.lending.FeeAssessmentStore feeAssessmentStore,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanTermsStore loanTermsStore,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            com.finapp.ledger.ReversalService reversalService,
+            com.finapp.lending.LoanClosures loanClosures,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.Waivers(loanStore, waiverStore, feeAssessmentStore, instalmentBillingStore,
+                loanTermsStore, loanWallets, ledgerAccountStore, purposeBalances, postingService, reversalService,
+                loanClosures, new com.finapp.app.credit.IdentityActingParty(identityStore), outboxWriter, auditWriter,
+                idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.waiver{kind, outcome}}, every series registered at startup. */
+    @Bean
+    LoanWaiverMetrics loanWaiverMetrics(MeterRegistry meterRegistry) {
+        return new LoanWaiverMetrics(meterRegistry);
+    }
+
+    /** The waiver doors' boundary half - keyed per principal under the servicing doors' scope. */
+    @Bean
+    LoanWaiverDesk loanWaiverDesk(
+            com.finapp.lending.Waivers waivers,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            LoanWaiverMetrics loanWaiverMetrics) {
+        return new LoanWaiverDesk(waivers, idempotentExecutor, lendingTransactions, loanWaiverMetrics);
     }
 }

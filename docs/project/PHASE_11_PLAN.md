@@ -561,6 +561,30 @@ L6 - a draw never waits on a wallet row before L6, and a closure never takes L6)
 takes no L0 or L5, so it only ever waits on L3 behind them) and T-acc (L0, L2, L6 - no lending row of a born line) already
 share.)*
 
+*(As built by `P11-TSK-025` - T-svc's late-fee step, `LateFees`: under the same L3, **after the condition step** and on the
+same caught-up account the step did not close (no L0, L5, L6 or L7 - a fee is not principal); per billed item from
+`InstalmentBillingStore.dueItems`, oldest first, once its own age (the business date less its due date) has reached the
+pinned `late_fee_day` while it still owes interest or principal and it has no `LATE` fee yet - the pinned fee, or what the
+pinned per-account cap still admits, nothing once the cap is reached; rule 4 under `lending.fee:<item>:LATE` (the
+assessment's natural identity, its reference the loan), the `fee_assessment` row naming the entry, `lending.LoanFeeAssessed`.
+**T-wvr**, the waiver: each act behind the door's claim (`lending.servicing:<type>:<id>`); the loan's party (frozen,
+unlocked) and the actor's through identity - `403 lending.SelfDealingRefused`, recorded `FAILED` in a transaction of its
+own. The proposal: **(L3)** the loan; an `ACTIVE` or `CLOSING` account (`409 lending.LoanClosed`); the target - a fee
+assessment of the loan for `FEE`/`FEE_REFUND`, a billed item of it for `INTEREST`; the amount in the loan's currency and scale;
+**at most what is due now** (`422 lending.WaiverExceedsDue`) from `LoanReceivables.dueState` - a fee's unpaid remainder,
+its paid part less what was refunded, the item's unpaid billed interest; no other waiver of the kind on the item awaiting a
+decision (`409 lending.ProposalPending`); the `waiver` row born. The approval: **(L3)** the loan; **(L5)** the proposal read
+under it - INSERT-only, its decision born once by `UNIQUE (waiver_id)` beneath L3 - `PROPOSED`, not the approver's own
+(`403 lending.SelfApprovalRefused`; the same approver's retry converges); `ACTIVE`/`CLOSING`; the database clock after the
+locks; the bound re-derived (a repayment of the fee that committed first makes it `WaiverExceedsDue`, nothing posted, the
+proposal still `PROPOSED`); **(L7)** the borrower's existing wallet row **before any posting** (the closure's refund must not
+take it after the shared income row a waiver posts - T-dis path X holds the wallet while it posts `LOAN_FEE_INCOME`); rule 8
+by `ReversalService` (namespace 2 and L8 inside), or rule 8a / 9 by `PostingService`, under `lending.waiver:<waiver>`; the
+`waiver_decision` `APPROVED` naming the entry; `LoanClosures.closeIfSettled` (`REPAID`, or a `CLOSING` line
+`CLOSED_BY_CUSTOMER`); `lending.LoanFeeWaived` / `lending.LoanInterestWaived`; the audit record. The rejection: L3, the
+decision `REJECTED`. No L0 (no principal moves), no L6. `lending V021`'s three triggers each take the loan's row lock
+themselves, so the cap and every bound hold under L3 for every writer.)*
+
 *(As built by `P11-TSK-026` - T-pay, both products: the door's claim (`lending.payoff:<type>:<id>`, `MULTI_FACTOR`); **(L3)**
 the account owner-scoped; an execution of the same quote converged on (another quote: `LoanNotRepayable` - the account is
 closed); the quote read plainly - immutable and INSERT-only, so the plan's "(L5) the quote" is no lock: `payoff_execution
@@ -1048,6 +1072,23 @@ refuses as a defect. **The correction key** `lending.accrual-correction:<loan>:<
 (`LoanServicing.CORRECTION_KEY_PREFIX`); nothing posts under it. `finapp.lending.accrual{outcome}` counts `posted` and `zero` dates and
 `failed` steps; `finapp.lending.accrual.lag` reads instalment loans only - a line's zero-principal days write no row, so its lag needs
 `-021`'s draws to define (recorded).)*
+
+*(As built by `P11-TSK-025`, 2026-10-13 - the late fee and the waivers: `LateFees` (T-svc, after the condition step) over
+`lending V021`'s `fee_assessment` - the pinned late fee once per billed item (`UNIQUE (due_item_id, kind)`) on the day its
+own age reaches `late_fee_day` (grace only ever delays it - `late_fee_day > grace` by the terms - and never DPD), a missed
+day caught up while the item still owes and never on an item since paid, capped per account at the pinned cap (gross: a
+waived fee does not reopen the cap - the borrower's side); rule 4 under `lending.fee:<item>:LATE`. **A fee is part of what
+its item owes**: `lending.billing_component_billed(item, 'FEES')` sums the item's fees less its approved fee waivers, so the
+allocation pays it first by the pinned order, the collection collects it, and `lending.days_past_due` keeps an item with an
+unpaid fee past due (-024's recommendation, adopted). A line's statement carries the fees dated in its cycle, less those
+waived before it, into its minimum payment (`StatementEngineV1`'s `F`) - each stays due on the item it was assessed on.
+**Waivers** (`Waivers`, T-wvr) as above: `FEE` - rule 8, `ReversalService` of the fee's rule 4 entry for at most its unpaid
+remainder; `FEE_REFUND` - rule 8a for at most what was paid of it less what was refunded; `INTEREST` - rule 9 against
+`LOAN_INTEREST_DUE` for at most the billed item's unpaid interest (`billing_component_billed(item, 'INTEREST')` less the
+approved interest waivers). **Refinement:** accrued interest not yet billed (`…ACCRUED`) is never waived - a billing's and a
+statement's interest is exactly its period's accruals for every writer (`lending V012`, `V017`), which an accrued-interest
+waiver would break; accrued interest becomes due at the next billing (a payoff bills everything first) and can be waived
+then.)*
 
 ### 12.4 Disbursement (owner brief 9.6) — the two paths (L2)
 

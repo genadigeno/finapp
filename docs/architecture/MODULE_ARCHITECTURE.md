@@ -592,7 +592,20 @@ closure step on an account the step did not close, once a business date; the dra
 condition), `DelinquencyState` (the derivation), `LoanConditionEvent`, `ConditionKind`,
 `LoanConditionStore`/`JdbcLoanConditionStore`, `lending.LoanDelinquencyChanged`/`LoanDefaulted`/`LoanDefaultCleared`; and
 `app`'s `condition` on both loan reads and `finapp.lending.delinquency{product, bucket}` / `finapp.lending.default{product}`
-(`LoanConditionMetrics`); `P11-TSK-026` (2026-10-13) - the payoff, both products: `lending V022` (`payoff_quote` - immutable,
+(`LoanConditionMetrics`); `P11-TSK-025` (2026-10-13) - late fees and waivers: `lending V021` (`fee_assessment` -
+`UNIQUE (due_item_id, kind)`, its trigger taking L3 and holding the day, the pinned fee, the per-account cap, the owing item
+and a line's cycle for every writer; `waiver` and `waiver_decision` - both INSERT-only, decided once by `UNIQUE (waiver_id)`,
+four eyes by `CHECK` over the proposer copied under a composite key, the bound by what is due re-judged under L3;
+`lending.billing_component_billed` with the item's fees less fee waivers and its interest less interest waivers;
+`credit_line_statement_carries_its_fees`), `LateFees` (T-svc's fee step after the condition step, rule 4 under
+`lending.fee:<item>:LATE`), `Waivers` (T-wvr: L3, L7 before posting, rule 8 by `ReversalService`, 8a and 9 by
+`PostingService` under `lending.waiver:<id>`, the closure through `LoanClosures`), `FeeAssessment`, `FeeKind`, `Waiver`,
+`WaiverKind`, `WaiverStatus`, `FeeAssessmentStore`/`JdbcFeeAssessmentStore`, `WaiverStore`/`JdbcWaiverStore`,
+`LoanSelfDealing` (the one self-dealing judgement, lifted out of `RepaymentReversals`), `lending.LoanFeeAssessed`/
+`LoanFeeWaived`/`LoanInterestWaived`; and `app`'s `LoanWaiverDesk` and the three waiver doors on
+`LoanServicingController`, the fees and waivers on the operator's loan read, the fees on the customer's schedule and
+statements, `finapp.lending.fee{kind, outcome}` (`LoanServicingMetrics`) and `finapp.lending.waiver{kind, outcome}`
+(`LoanWaiverMetrics`); `P11-TSK-026` (2026-10-13) - the payoff, both products: `lending V022` (`payoff_quote` - immutable,
 its inputs and figure `CHECK`ed, `UNIQUE (loan_id, request_key)`; `payoff_execution` - `UNIQUE (quote_id)`, `UNIQUE
 (loan_id)`, on the quote's good-through date only, held to its loan `CLOSED` at commit; the billing, statement, repayment,
 closure and edge functions replaced so an early billing or statement, a `PAYOFF` repayment and a `PAID_OFF_EARLY` closure

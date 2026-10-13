@@ -44,6 +44,9 @@ import lombok.extern.slf4j.Slf4j;
  *       {@code kind = auto_collection} ({@code repaid}, or {@code closed} when the step closed the loan), and one that
  *       could not ({@code insufficient_funds}, {@code wallet_not_postable}) one {@code insufficient_funds} there -
  *       {@link RepaymentMetrics}' series, the customer's door's beside it.
+ *   <li>{@code finapp.lending.fee{kind, outcome}} (`P11-TSK-025`) - each late fee of a committed servicing step
+ *       ({@code kind = late}): {@code assessed} in full, or {@code capped} at what the per-account cap admitted, counted
+ *       once after the step's transaction committed. Registered eagerly for both outcomes.
  * </ul>
  *
  * <p>Never an amount, a party, a loan id or a date in a tag (ADR-0072).
@@ -62,6 +65,22 @@ public final class LoanServicingMetrics {
 
     /** Exported as {@code finapp_lending_collection} (`P11-TSK-019`), the plan's name. */
     public static final String COLLECTION = "finapp.lending.collection";
+
+    /** Exported as {@code finapp_lending_fee} (`P11-TSK-025`), the plan's name. */
+    public static final String FEE = "finapp.lending.fee";
+
+    /** The fee series' closed set of kinds: the late fee ({@code FeeKind.LATE}). */
+    static final String LATE = "late";
+
+    /** The fee series' closed set of outcomes: a fee {@code assessed} in full, or {@code capped} - at what the cap admitted. */
+    public enum FeeOutcome {
+        ASSESSED,
+        CAPPED;
+
+        String tag() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
 
     /** The billing series' closed set of kinds: an instalment loan's billing, a credit line's statement. */
     static final String INSTALMENT = "instalment";
@@ -123,6 +142,9 @@ public final class LoanServicingMetrics {
         for (CollectionOutcome outcome : CollectionOutcome.values()) {
             collection(outcome);
         }
+        for (FeeOutcome outcome : FeeOutcome.values()) {
+            fee(outcome);
+        }
         Gauge.builder(LAG, this, LoanServicingMetrics::lagSeconds)
                 .description("Seconds since the end of the oldest elapsed date an account in servicing has not accrued -"
                         + " an instalment loan's every date, a credit line's dates with principal drawn - on the database"
@@ -153,6 +175,12 @@ public final class LoanServicingMetrics {
         }
         if (step.statedApplied() > 0) {
             billing(STATEMENT, BillingOutcome.CREDIT_APPLIED).increment(step.statedApplied());
+        }
+        if (step.fees() > step.feesCapped()) {
+            fee(FeeOutcome.ASSESSED).increment(step.fees() - step.feesCapped());
+        }
+        if (step.feesCapped() > 0) {
+            fee(FeeOutcome.CAPPED).increment(step.feesCapped());
         }
         int moved = 0;
         for (CollectionOutcome outcome : CollectionOutcome.values()) {
@@ -214,6 +242,14 @@ public final class LoanServicingMetrics {
                         + " them (credit_applied) - an instalment loan's instalments and post-maturity periods"
                         + " (kind=instalment), a credit line's statements (kind=statement)")
                 .tags("kind", kind, "outcome", outcome.tag())
+                .register(registry);
+    }
+
+    private Counter fee(FeeOutcome outcome) {
+        return Counter.builder(FEE)
+                .description("Late fees assessed by committed servicing steps - in full (assessed) or at what the per-account"
+                        + " cap still admitted (capped); a cap reached assesses nothing and counts nothing")
+                .tags("kind", LATE, "outcome", outcome.tag())
                 .register(registry);
     }
 
