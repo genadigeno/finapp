@@ -159,10 +159,13 @@ public enum LendingErrorCode implements ErrorCode {
     /**
      * The borrower's wallet cannot receive the draw now (`P11-TSK-021`; A25 - a line pays out to the wallet only): the
      * wallet cannot be had, or the ledger refuses to post to it. Nothing was drawn and the key is not spent; retry once
-     * the wallet is available.
+     * the wallet is available. Its second subject (`P11-TSK-020`): an approved repayment reversal whose refund the wallet
+     * cannot take now (not {@code ACTIVE}) - nothing was posted and the proposal stays {@code PROPOSED}. The title read
+     * "The wallet cannot receive the draw now; nothing was drawn." until then; the code is unchanged (the
+     * {@code SelfApprovalRefused} precedent).
      */
     WALLET_UNAVAILABLE(
-            "lending.WalletUnavailable", 409, "The wallet cannot receive the draw now; nothing was drawn."),
+            "lending.WalletUnavailable", 409, "The wallet cannot receive the money now; nothing was posted."),
 
     /**
      * The account takes no repayment (`P11-TSK-018`; {@code INV-LND-08}): it is {@code CLOSED} or {@code CANCELLED}, not
@@ -178,7 +181,30 @@ public enum LendingErrorCode implements ErrorCode {
     INSUFFICIENT_FUNDS(
             "lending.InsufficientFunds",
             422,
-            "The wallet's available balance cannot fund the repayment; nothing was posted.");
+            "The wallet's available balance cannot fund the repayment; nothing was posted."),
+
+    /**
+     * The loan is closed (`P11-TSK-020`; A12, {@code INV-LIFE-04}, ADR-0099 point 4): a closed account is terminal, so no
+     * repayment of it - the one that closed it, or any earlier one - is reversed. Nothing was proposed or posted; a
+     * proposal already standing may still be rejected.
+     */
+    LOAN_CLOSED("lending.LoanClosed", 409, "The loan is closed; nothing was done."),
+
+    /**
+     * An operator acted on a loan of their own party (`P11-TSK-020`; ADR-0099 point 2, the Phase 10 to 11 transition's R1,
+     * {@code INV-LND-11}): an employee never services their own party's loan. Refused before anything was written, and
+     * the attempt recorded {@code FAILED} ({@code lending.SelfDealingRefused}).
+     */
+    SELF_DEALING_REFUSED(
+            "lending.SelfDealingRefused", 403, "An employee never services a loan of their own party; nothing was done."),
+
+    /**
+     * The repayment cannot be reversed now (`P11-TSK-020`; ADR-0099 point 4, {@code INV-REV-02}): it is already reversed,
+     * or what it held as the loan's credit balance has since been applied - the exact swap would drive the credit balance
+     * below zero, and later allocations are never re-cut. Nothing was proposed or posted.
+     */
+    REPAYMENT_NOT_REVERSIBLE(
+            "lending.RepaymentNotReversible", 409, "The repayment cannot be reversed; nothing was posted.");
 
     private final String code;
     private final int status;

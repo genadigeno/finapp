@@ -1000,9 +1000,12 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.LimitExceeded` | 422 | The draw exceeds the line's available limit; nothing was drawn. |
 | `lending.DrawsSuspended` | 409 | The line's draws are suspended while an amount is past due or the line is in default; nothing was drawn. |
 | `lending.LineNotDrawable` | 409 | The account is not a credit line open for draws; nothing was drawn. |
-| `lending.WalletUnavailable` | 409 | The wallet cannot receive the draw now; nothing was drawn. |
+| `lending.WalletUnavailable` | 409 | The wallet cannot receive the money now; nothing was posted. |
 | `lending.LoanNotRepayable` | 409 | The loan cannot be repaid; nothing was posted. |
 | `lending.InsufficientFunds` | 422 | The wallet's available balance cannot fund the repayment; nothing was posted. |
+| `lending.LoanClosed` | 409 | The loan is closed; nothing was done. |
+| `lending.SelfDealingRefused` | 403 | An employee never services a loan of their own party; nothing was done. |
+| `lending.RepaymentNotReversible` | 409 | The repayment cannot be reversed; nothing was posted. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1121,6 +1124,29 @@ cannot be debited now (none, or not `ACTIVE`; ADR-0095 point 4 folds the two). N
 still repay. An amount that is not positive, not exact at the currency's minor units, or not in the loan's currency is
 `api.ValidationFailed` (`422`). A refused conservation (the loan's rows not explaining its due accounts) is a defect, not a
 customer's error: a `500`, nothing written, counted by `finapp.lending.allocation.anomaly`.
+
+The loan servicing doors (`P11-TSK-020`, ADR-0099 points 1, 2, 4 and 8): `GET /v1/operator/loans/{id}` behind
+`LOAN_SERVICE` (audited `lending.LoanRead`), and the repayment reversal - `POST /v1/operator/loans/{id}/repayments/{rid}/reversal`
+(`LOAN_SERVICE`, `201`), `…/reversal/approval` (`LOAN_SERVICE_APPROVE`) and `…/reversal/rejection` (`LOAN_SERVICE`, the
+proposer's withdrawal included), each decision naming its `reversalId` - every act keyed per principal
+(`lending.servicing:<type>:<id>`), so a lost response replays its receipt and a refusal stores nothing. `NotFound`
+answers an unknown or malformed loan, a repayment not of that loan, or a proposal not for that repayment.
+`SelfDealingRefused` (`403`, catalogued here - absent from `PHASE_11_PLAN.md` section 9's first list) refuses any act
+by an operator whose own party holds the loan, or whom the platform cannot place in a party (fail closed), before
+anything is written; the attempt is recorded `FAILED` (`lending.SelfDealingRefused`) in a transaction of its own.
+`ReasonRequired` answers an act with no reason, one past 1,000 characters, or one holding a card-number or
+bank-account shape (`lending V016`'s twin `CHECK`s beneath). `ProposalPending` answers a proposal while another for the
+same repayment awaits a decision (one live proposal per repayment - `lending V016`'s partial unique beneath the loan's
+row lock); `ProposalNotPending` an approval or rejection of a proposal already decided - the nine losers of ten racing
+approvers; the same person's retry of their own decision converges on it. `SelfApprovalRefused` (its third subject)
+refuses the proposer the approval (`INV-AUD-04`, `lending V016`'s four-eyes `CHECK` beneath); the proposer may reject.
+`LoanClosed` refuses a proposal or an approval on a loan no longer `ACTIVE` - a closed loan is terminal, so neither its
+closing repayment nor any earlier one is reversed (A12, `INV-LIFE-04`); a proposal left standing may still be rejected.
+`RepaymentNotReversible` refuses a repayment already reversed, and one whose held credit has since been applied (the
+exact swap would drive the credit balance below zero; later allocations are never re-cut). `CapitalUnavailable` refuses
+an approval whose re-instated principal the currency's capital headroom cannot take (judged under L6, `INV-LND-13`), and
+`WalletUnavailable` (its second subject - the title widened from "... the draw now; nothing was drawn.", the code
+unchanged) one whose wallet cannot be credited now; each leaves the proposal `PROPOSED`, nothing posted.
 
 ## 3a. Rejection at the boundary
 

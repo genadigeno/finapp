@@ -1149,6 +1149,17 @@ collection attempt and never a repayment, and not a Transfer — it credits rece
 wallet. External inbound repayment rails are deferred: money arrives as a wallet top-up.
 **Owned by:** `lending`
 
+### Repayment Reversal
+**Is:** the four-eyes correction of an operator's mistake in applying money (`P11-TSK-020`, ADR-0099 point 4): one
+person holding `LOAN_SERVICE` proposes undoing one Repayment with a reason; a different person holding
+`LOAN_SERVICE_APPROVE` approves it, which posts rule 10 - the exact `ReversalService` swap of the repayment's entry,
+the wallet credited back - and negates each of its allocation rows by a `repayment_allocation_reversal` row; what it
+paid is due again, every later allocation untouched. The Repayment's `REVERSED` status is derived from it
+(`repayment_reversal`, `RepaymentReversals`, `POST /v1/operator/loans/{id}/repayments/{rid}/reversal`).
+**Not:** an edit or a re-allocation (nothing committed is re-cut), a refund of a closed loan (a closed loan is terminal,
+A12), a partial reversal (a reversal is whole), or a fee or interest waiver (`-025`).
+**Owned by:** `lending`
+
 ### Repayment Allocation
 **Is:** the split of one Repayment (or one credit-balance application) across due items and
 components, born with it in the pinned order — billed items oldest due date first, fees → interest

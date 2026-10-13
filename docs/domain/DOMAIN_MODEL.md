@@ -96,6 +96,7 @@ Instalment Billing
 Interest Accrual
 Repayment
 Repayment Allocation
+Repayment Reversal
 Loan Credit Balance
 Days Past Due
 Default
@@ -218,7 +219,9 @@ Credit Line Draw, Credit Line Statement, Minimum Payment, Available Limit), cont
 (Restructuring, Refinance) and the deferred ends (Write-off, Collections) — each keeping a
 distinction Phase 11 could collapse. Nothing of Phase 11 is built: each is the planned design,
 defined in the glossary's §7a with the same guard, and the machines are in
-[`LENDING_LIFECYCLES.md`](LENDING_LIFECYCLES.md).)*
+[`LENDING_LIFECYCLES.md`](LENDING_LIFECYCLES.md).)* *(`P11-TSK-020`, 2026-10-13, added Repayment Reversal
+after Repayment Allocation: the four-eyes correction that negates a repayment's allocation by rows and swaps its entry
+exactly - never an edit and never a re-allocation, a distinction a "refund the repayment" verb would collapse.)*
 
 ---
 

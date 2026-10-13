@@ -786,8 +786,68 @@ public class LendingBeans {
             com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             IdempotentExecutor idempotentExecutor,
             LendingTransactions lendingTransactions,
-            RepaymentMetrics repaymentMetrics) {
+            RepaymentMetrics repaymentMetrics,
+            com.finapp.lending.RepaymentReversalStore repaymentReversalStore) {
         return new LoanRepaymentDesk(repayments, identityStore, mfaEnrolmentStore, idempotentExecutor, lendingTransactions,
-                repaymentMetrics);
+                repaymentMetrics, repaymentReversalStore);
+    }
+
+    // ------------------------------------------------------------------ the repayment reversal (P11-TSK-020)
+
+    /** The reversals' store - {@code repayment_reversal} (its decision columns, once) and the INSERT-only negating rows. */
+    @Bean
+    com.finapp.lending.RepaymentReversalStore repaymentReversalStore() {
+        return new com.finapp.lending.JdbcRepaymentReversalStore();
+    }
+
+    /**
+     * T-rev - the four-eyes reversal under L0, L3, L5, L6 and L7, posting rule 10 through the ledger's ReversalService;
+     * whose party an operator is read through the identity store (credit's {@code IdentityActingParty}, one read for both).
+     */
+    @Bean
+    com.finapp.lending.RepaymentReversals repaymentReversals(
+            LoanStore loanStore,
+            com.finapp.lending.RepaymentStore repaymentStore,
+            com.finapp.lending.RepaymentReversalStore repaymentReversalStore,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanTermsStore loanTermsStore,
+            LoanCreditDecisions loanCreditDecisions,
+            LendingCapitalHeadroom lendingCapitalHeadroom,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            com.finapp.ledger.JournalEntryStore<Connection> journalEntryStore,
+            com.finapp.ledger.ReversalService reversalService,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.RepaymentReversals(loanStore, repaymentStore, repaymentReversalStore,
+                instalmentBillingStore, loanTermsStore, loanCreditDecisions, lendingCapitalHeadroom, ledgerAccountStore,
+                purposeBalances, journalEntryStore, reversalService,
+                new com.finapp.app.credit.IdentityActingParty(identityStore), outboxWriter, auditWriter, idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.reversal{outcome}}, every series registered at startup. */
+    @Bean
+    RepaymentReversalMetrics repaymentReversalMetrics(MeterRegistry meterRegistry) {
+        return new RepaymentReversalMetrics(meterRegistry);
+    }
+
+    @Bean
+    LoanServicingDesk loanServicingDesk(
+            com.finapp.lending.RepaymentReversals repaymentReversals,
+            com.finapp.lending.RepaymentReversalStore repaymentReversalStore,
+            Loans loans,
+            LoanStore loanStore,
+            com.finapp.lending.RepaymentStore repaymentStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            RepaymentReversalMetrics repaymentReversalMetrics,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new LoanServicingDesk(repaymentReversals, repaymentReversalStore, loans, loanStore, repaymentStore,
+                idempotentExecutor, lendingTransactions, repaymentReversalMetrics, auditWriter, idGenerator, clock);
     }
 }

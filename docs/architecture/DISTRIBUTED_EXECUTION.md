@@ -194,7 +194,15 @@ cannot affect correctness.
 accounts) - no L0, L5 or L6; the servicing step's closure takes L7 after its L3 too, so every lending writer that touches a
 wallet takes it after the loan, and no wallet writer waits on a lending row. Lock-waits proven both ways by
 `RepaymentDatabaseTest#repaymentTakesTheLoanThenTheWallet`; scenario 3 races two repayments beside a loan-then-wallet writer
-without a `40P01`.)* | n/a |
+without a `40P01`. `P11-TSK-020` (T-rev): the approval takes L0 (credit's profile, first - the reversal raises
+outstanding), L3, L5 (the proposal `FOR UPDATE`, under its loan), L6 only when the reversed repayment paid principal,
+L7 (the wallet the repayment debited), then `ReversalService` - its namespace-2 advisory lock on the original entry and
+L8; the proposal takes L3 only, the rejection L3 then L5. No cycle with T-rep (L3, L7, L8), T-svc (L3, L7, L8), the
+draw (L3, L6, L7, L8), the acceptance (L0, L2, L6) or the disbursement (L0, L3, L5, L7, L8): each takes a sub-sequence
+of the one order, and namespace 2 on a repayment's entry is taken only under that loan's L3. Lock-waits proven by
+`RepaymentReversalDatabaseTest#reversalTakesTheProfileFirst` (L0 before L3, holding L0 at L3) and
+`#aReversalNeverOverDeploysCapital` (waiting on L6 holding L3); ten approvers and reversals racing acceptances for the
+last capital run without a `40P01`.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 

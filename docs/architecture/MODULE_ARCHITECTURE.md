@@ -552,7 +552,15 @@ L7 and `AvailableBalance.underLock`, rule 5 under `lending.repayment:<id>`, `len
 (the refund under `lending.closure-refund:<loan>`, `lending.LoanClosed`; called by T-rep and as T-svc's last step),
 `Repayment`, `RepaymentAllocation`, `RepaymentKind`, `LoanClosure`, `AllocationAnomaly`, `RepaymentStore`/`JdbcRepaymentStore`,
 `LoanWallets.existingWallet`, and `app`'s `LoanRepaymentDesk` (`POST`/`GET /v1/me/loans/{id}/repayments`),
-`finapp.lending.repayment{kind, outcome}` and `finapp.lending.allocation.anomaly`; every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
+`finapp.lending.repayment{kind, outcome}` and `finapp.lending.allocation.anomaly`; `P11-TSK-020` (2026-10-13) - the
+repayment reversal under four eyes: `lending V016` (`repayment_reversal`, money-free, four-eyes `CHECK`, one live proposal
+per repayment; `repayment_allocation_reversal`, INSERT-only negating rows, whole at commit; `lending.billing_component_paid`
+less the negating rows), `RepaymentReversals` (T-rev: L0, L3, L5, L6 when principal is re-instated, L7, rule 10 by
+`ReversalService` under `lending.repayment-reversal:<id>`, `lending.RepaymentReversed`), `RepaymentReversal`,
+`RepaymentReversalStatus`, `RepaymentReversalStore`/`JdbcRepaymentReversalStore`, `LoanActingParty` (served by `app`'s
+`IdentityActingParty`, credit's one read), `RepaymentStore.findById`, and `app`'s `LoanServicingDesk` and
+`LoanServicingController` (`GET /v1/operator/loans/{id}`, the reversal's three doors) and
+`finapp.lending.reversal{outcome}`; every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
 - **Responsibility:** originating and servicing credit — the amortising `PERSONAL_LOAN` and the revolving `CREDIT_LINE` — on Phase 10's credit decisions, including the time-based mechanics (accrual, billing, statements, delinquency) as scheduled, idempotent, replayable financial processes. **It owns the contract and its servicing facts and none of the money**: every principal, interest, fee and credit-balance figure is a balance of a per-loan ledger account, derived from postings made through `PostingService` / `ReversalService` in lending's own transaction (ADR-0090, ADR-0096).
 - **Owns:** Loan Application, Loan Product Terms Version, Loan Offer, Loan Agreement, Acceptance Evidence, Loan, Repayment Schedule, Loan Instalment, Instalment Billing, Credit Line Draw, Credit Line Statement, Interest Accrual, Fee Assessment, Disbursement, Loan Payout, Repayment, Allocation, Collection Attempt, Delinquency State, Payoff Quote, Loan Amendment, Lending Capital Contribution.
 - **Does not own:** the credit decision, its consumption fact or the exposure judgement (`credit` — lending takes a decision up only through credit's `CreditDecisionConsumptions` port, `P11-TSK-001`, and never writes credit's tables); any balance (`ledger`); the wallet (`accounts`); the external payout's withdrawal, its ambiguity, return and expectation (`payments`, `reconciliation`); write-off and the GL (Phase 14, `accounting`); collections (Phase 13).

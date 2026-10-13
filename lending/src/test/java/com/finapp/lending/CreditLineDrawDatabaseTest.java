@@ -585,10 +585,10 @@ class CreditLineDrawDatabaseTest {
 
     // ------------------------------------------------------------------ acceptances for the capital race
 
-    private record Offered(LoanOfferId offer, UUID party, String hash) {}
+    record Offered(LoanOfferId offer, UUID party, String hash) {}
 
     /** A fresh party's personal loan offered by the real origination step, not yet accepted. */
-    private static Offered offeredLoan(long minor) {
+    static Offered offeredLoan(long minor) {
         ensureActive();
         LoanApplicationId application = LoanApplicationId.next(IDS);
         UUID party = UUID.randomUUID();
@@ -618,7 +618,7 @@ class CreditLineDrawDatabaseTest {
                 "SELECT encode(terms_sha256, 'hex') FROM lending.loan_offer_terms WHERE offer_id = ?", offer.value()));
     }
 
-    private static void accept(Offered offered) {
+    static void accept(Offered offered) {
         inOneTransaction(uow -> ACCEPTANCES.accept(uow, offered.offer(), offered.party(),
                 new LoanAcceptances.Acceptance(offered.hash(), Optional.empty(), new AcceptanceEvidence(UUID.randomUUID(),
                         UUID.randomUUID(), "MULTI_FACTOR", Optional.empty(), Optional.empty())),

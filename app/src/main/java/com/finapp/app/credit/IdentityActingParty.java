@@ -16,10 +16,11 @@ import lombok.RequiredArgsConstructor;
  * root's half, because {@code credit} cannot see {@code identity}. A session's actor is its identity
  * ({@code SessionAuthenticationInterceptor}: the actor's id is the identity's), and every identity belongs to a party;
  * an actor id that is no identity - a malformed id, or one never registered - answers empty, which the review refuses.
- * Read on the act's own connection, never cached.
+ * Read on the act's own connection, never cached. Also {@code lending}'s {@link com.finapp.lending.LoanActingParty}
+ * (`P11-TSK-020` - a servicing agent never acts on their own party's loan): one read of whose party a person is, for both.
  */
 @RequiredArgsConstructor
-public final class IdentityActingParty implements CreditActingParty<Connection> {
+public final class IdentityActingParty implements CreditActingParty<Connection>, com.finapp.lending.LoanActingParty {
 
     @NonNull private final IdentityStore<Connection> identities;
 

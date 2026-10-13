@@ -10,6 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.credit.LendingCreditExposure;
+import com.finapp.identity.Authorization;
+import com.finapp.identity.IdentityId;
+import com.finapp.identity.RoleName;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;
@@ -106,6 +109,7 @@ class LoanAccountDatabaseTest {
     @Autowired private com.finapp.lending.LoanServicing loanServicing;
     @Autowired private LoanServicingMetrics servicingMetrics;
     @Autowired private LendingCreditExposure creditExposure;
+    @Autowired private Authorization authorization;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -635,7 +639,109 @@ class LoanAccountDatabaseTest {
         assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a repayment is reversed under four eyes end to end (P11-TSK-020): repaid over the door, then the borrower"
+            + " - granted the servicing role - refused their own loan 403 lending.SelfDealingRefused, recorded FAILED"
+            + " through identity's real read; an agent proposes (201, the key replaying its receipt), is refused their own"
+            + " approval 403, a second agent approves - rule 10 posted, the customer's read shows REVERSED, the platform's"
+            + " credit exposure rises by the principal re-opened, the operator's read lists it and is audited; each act"
+            + " counted after its commit")
+    void aRepaymentIsReversedUnderFourEyesEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3700.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        toFirstDueDate(loanId);
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        long interest = count("SELECT interest_due_minor FROM lending.instalment_billing WHERE loan_id = ?::uuid", loanId);
+        long principal = count("SELECT principal_due_minor FROM lending.instalment_billing WHERE loan_id = ?::uuid",
+                loanId);
+        String amount = Money.ofMinorUnits(interest + principal, EUR).toBigDecimal().toPlainString();
+        HttpResponse<String> repaid = repay(customer.token(), loanId, amount, key());
+        assertThat(repaid.statusCode()).as(repaid.body()).isEqualTo(201);
+        String repaymentId = field(repaid.body(), "repaymentId");
+        Money exposureBefore = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                customer.party(), EUR));
+        String reversalPath = "/v1/operator/loans/" + loanId + "/repayments/" + repaymentId + "/reversal";
+        String reason = "{\"reason\":\"the operator keyed the customer's transfer twice\"}";
+
+        double selfDealingBefore = reversals("self_dealing_refused");
+        assign(UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE party_id = ?::uuid",
+                customer.party().toString())), RoleName.LOAN_SERVICING_AGENT);
+        HttpResponse<String> insider = client.post(reversalPath, reason, customer.token(), key());
+        assertThat(insider.statusCode()).as(insider.body()).isEqualTo(403);
+        assertThat(insider.body()).contains("lending.SelfDealingRefused");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfDealingRefused'"
+                + " AND outcome = 'FAILED' AND target_id = ?", loanId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.repayment_reversal WHERE loan_id = ?::uuid", loanId)).isZero();
+        assertThat(reversals("self_dealing_refused")).isEqualTo(selfDealingBefore + 1);
+
+        String proposer = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        String approver = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        double approvedBefore = reversals("approved");
+        String proposalKey = key();
+        HttpResponse<String> proposed = client.post(reversalPath, reason, proposer, proposalKey);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"", "\"repaymentId\":\"" + repaymentId + "\"")
+                .doesNotContain("keyed the customer");
+        assertThat(client.post(reversalPath, reason, proposer, proposalKey).body()).as("the receipt, byte for byte")
+                .isEqualTo(proposed.body());
+        String decision = "{\"reversalId\":\"" + field(proposed.body(), "reversalId")
+                + "\",\"reason\":\"matched the bank statement\"}";
+        HttpResponse<String> own = client.post(reversalPath + "/approval", decision, proposer, key());
+        assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
+        assertThat(own.body()).contains("lending.SelfApprovalRefused");
+        HttpResponse<String> approved = client.post(reversalPath + "/approval", decision, approver, key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(approved.body()).contains("\"status\":\"APPROVED\"", "\"journalEntryId\":\"");
+        assertThat(reversals("approved")).as("counted after the commit").isEqualTo(approvedBefore + 1);
+
+        assertThat(client.get(LOANS + "/" + loanId + "/repayments", customer.token()).body())
+                .contains("\"status\":\"REVERSED\"");
+        Money exposureAfter = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                customer.party(), EUR));
+        assertThat(exposureAfter).as("-013's read: exposure rises by the principal the reversal re-opened")
+                .isEqualTo(exposureBefore.plus(Money.ofMinorUnits(principal, EUR)));
+        HttpResponse<String> read = client.get("/v1/operator/loans/" + loanId, proposer);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(read.body()).contains("\"status\":\"REVERSED\"", field(proposed.body(), "reversalId"));
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.LoanRead'"
+                + " AND target_id = ?", loanId)).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    private double reversals(String outcome) {
+        return meterRegistry.find(RepaymentReversalMetrics.REVERSAL).tag("outcome", outcome).counter().count();
+    }
+
+    /** {@code role} assigned to {@code identity}, by the system - the fixture's grant. */
+    private void assign(UUID identity, RoleName role) throws Exception {
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(ids)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
+            app.commit();
+        }
+    }
+
+    /** A signed-in operator session holding {@code role}. */
+    private String sessionWith(RoleName role) throws Exception {
+        String login = "la." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String password = "a-perfectly-fine-pw-7";
+        assertThat(client.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Grace"
+                + " Hopper\",\"password\":\"" + password + "\"}", null, key()).statusCode()).isEqualTo(201);
+        assign(UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?", login)), role);
+        return field(client.post("/v1/authentications", "{\"loginIdentifier\":\"" + login + "\",\"password\":\""
+                + password + "\"}", null, key()).body(), "sessionToken");
+    }
 
     /** The fixture's clock: the loan's dated facts moved back until its first due date is today (never a path). */
     static void toFirstDueDate(String loanId) throws Exception {

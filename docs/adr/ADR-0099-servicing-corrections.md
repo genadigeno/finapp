@@ -178,5 +178,20 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   **greater** of its limit and its drawn principal (ADR-0091, `PHASE_11_PLAN.md` §12.10). (3) Point
   5's rule — an amendment never raises principal outstanding or a line's limit; more credit is a new
   decision — is confirmed and stated in `PHASE_11_PLAN.md` §5.4.
+- **As built by `P11-TSK-020` (2026-10-13) - point 4, the repayment reversal, with these refinements:** the migration is
+  `lending V016` (the wave 4 board's reservation; the backlog's `V013` was stale); `repayment_reversal` is a money-free
+  machine row with column-scoped `UPDATE` (the terms version's split - the amount is the repayment's), its proposer,
+  decider, both reasons and instants on the one row (one edge out of `PROPOSED`, nothing overwritten); **each decision
+  names its `reversalId`** in the body, so an approver approves exactly the proposal reviewed; **a reversal is refused on
+  any loan not `ACTIVE`** (`409 lending.LoanClosed` - not only the closing repayment: every repayment of a closed loan, A12
+  read whole) and **when the repayment's held credit has since been applied** (`409 lending.RepaymentNotReversible`, added -
+  the exact swap would drive `LOAN_CREDIT_BALANCE` below zero, and later allocations are not re-cut), also answering a
+  repayment already reversed; the wallet credited is the account rule 5 debited (read from the original entry), its
+  refusal `409 lending.WalletUnavailable` (the draw's code, its second subject); L0 is taken on every approval (raising or
+  not), L6 only when the reversed repayment paid principal; the rejection is `LOAN_SERVICE` (the proposer's withdrawal
+  included) and allowed on a closed loan, to clear a standing proposal; self-dealing is refused at the proposal, the
+  approval and the rejection - not at the operator's read, which is audited (`lending.LoanRead`) and shows nothing the
+  customer's own read does not. Whose party an operator is comes from credit's `IdentityActingParty`, which now serves
+  lending's `LoanActingParty` too (one read).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

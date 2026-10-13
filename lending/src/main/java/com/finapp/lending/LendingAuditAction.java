@@ -92,6 +92,51 @@ public enum LendingAuditAction implements AuditableAction {
                     + " safeguarding term, and each contribution's derived recognition - read in one REPEATABLE READ"
                     + " snapshot and committed with this record, so no report is served without it. Amounts are an"
                     + " audited report, never a metric (ADR-0072). The summary names the report and its row counts.",
+            false),
+
+    /** A loan servicing agent proposed the reversal of one repayment. */
+    REPAYMENT_REVERSAL_PROPOSED(
+            "lending.RepaymentReversalProposed",
+            "A holder of LOAN_SERVICE proposed the exact reversal of one repayment of a loan not of their own party"
+                    + " (P11-TSK-020, ADR-0099 point 4), with a reason screened for card and account numbers, awaiting a"
+                    + " DIFFERENT holder of LOAN_SERVICE_APPROVE (INV-AUD-04, INV-LND-11). Nothing is posted by a proposal."
+                    + " The summary names the loan and the repayment - never an amount.",
+            true),
+
+    /** A different agent approved a repayment reversal: rule 10 posted, the allocations negated. */
+    REPAYMENT_REVERSAL_APPROVED(
+            "lending.RepaymentReversalApproved",
+            "A holder of LOAN_SERVICE_APPROVE other than its proposer (also held by lending V016's four-eyes CHECK)"
+                    + " approved a repayment reversal: posting rule 10 - the exact ReversalService swap of the repayment's"
+                    + " entry, the wallet credited back - its allocations negated by rows, what it paid due again, in one"
+                    + " transaction under the party's credit profile lock and the loan's row lock (INV-REV-02, INV-LND-11)."
+                    + " The summary names the loan, the repayment and both journal entries - never an amount.",
+            true),
+
+    /** A repayment reversal was rejected, or withdrawn by its proposer. */
+    REPAYMENT_REVERSAL_REJECTED(
+            "lending.RepaymentReversalRejected",
+            "A proposed repayment reversal was rejected - or withdrawn by its proposer; nothing was posted and the"
+                    + " repayment may be proposed for reversal again.",
+            true),
+
+    /** A loan servicing agent read a loan account. */
+    LOAN_READ(
+            "lending.LoanRead",
+            "A holder of LOAN_SERVICE read a loan account through the operator door (P11-TSK-020, ADR-0099 point 8): its"
+                    + " state, agreement and balances derived from journal lines, its repayments with their derived status"
+                    + " and its reversals - read in one REPEATABLE READ snapshot and committed with this record, so no read"
+                    + " is served without it. The summary names the loan and the row counts - never an amount.",
+            false),
+
+    /** An operator tried to service a loan of their own party - refused, recorded. */
+    SELF_DEALING_REFUSED(
+            "lending.SelfDealingRefused",
+            "An operator tried to propose, approve or reject a servicing correction on a loan of their own party - or"
+                    + " is no identity the platform can place in a party - and was refused before anything was written"
+                    + " (P11-TSK-020, ADR-0099 point 2, the Phase 10 to 11 transition's R1, INV-LND-11). Recorded FAILED in"
+                    + " a transaction of its own after the act rolled back, so the attempt survives. The summary names the"
+                    + " loan and the act.",
             false);
 
     private final String code;
