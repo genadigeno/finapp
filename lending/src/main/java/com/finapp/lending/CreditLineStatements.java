@@ -58,7 +58,8 @@ import lombok.RequiredArgsConstructor;
  *       step meet L3 in; capped at the principal not yet due both at the cycle's close and now (a statement never bills
  *       principal drawn after its cycle, and never more than {@code LOAN_PRINCIPAL} holds - after an outage an older
  *       statement of the same step has already billed its part);
- *   <li><strong>fees carried</strong>: zero until `P11-TSK-025` assesses any.
+ *   <li><strong>fees carried</strong> (`P11-TSK-025`): the line's late fees dated in the cycle, less those waived before the
+ *       statement - carried into the minimum payment (A24) while each stays due on the item it was assessed on.
  * </ul>
  *
  * <p>Posting rule 3 - {@code DR LOAN_INTEREST_DUE / CR LOAN_INTEREST_ACCRUED}, {@code DR LOAN_PRINCIPAL_DUE / CR
@@ -204,8 +205,11 @@ public final class CreditLineStatements {
         }
         Money drawnAtClose = notDueAtClose.plus(dueAtClose);
         Money cap = notDueAtClose.compareTo(notDueNow) <= 0 ? notDueAtClose : notDueNow;
+        // The fees assessed in the cycle, less those waived (P11-TSK-025): carried into the minimum payment (A24) - each
+        // stays due on the item it was assessed on.
+        Money feesCarried = store.feesCarriedIn(unitOfWork, line.id(), cycle, zero);
         // The engine refuses a negative figure - a history the ledger cannot have, rolled back, never stated.
-        return StatementEngineV1.state(statementTerms, cycle, accruals, zero, cap, drawnAtClose.minus(cap));
+        return StatementEngineV1.state(statementTerms, cycle, accruals, feesCarried, cap, drawnAtClose.minus(cap));
     }
 
     // ------------------------------------------------------------------ rule 3

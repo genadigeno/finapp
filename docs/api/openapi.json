@@ -4847,6 +4847,41 @@
           }
         }
       },
+      "lending.WaiverExceedsDue": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.WaiverExceedsDue"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.WaiverExceedsDue"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The waiver exceeds what is due now; nothing was posted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.WalletUnavailable": {
         "content": {
           "application/problem+json": {
@@ -8686,10 +8721,19 @@
           "dueDate": {
             "type": "string"
           },
+          "feesBilled": {
+            "type": "string"
+          },
+          "feesPaid": {
+            "type": "string"
+          },
           "interestBilled": {
             "type": "string"
           },
           "interestPaid": {
+            "type": "string"
+          },
+          "interestWaived": {
             "type": "string"
           },
           "kind": {
@@ -11401,6 +11445,36 @@
         ],
         "type": "object"
       },
+      "FeeView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "dueItemId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FetchAnswer": {
         "properties": {
           "fileId": {
@@ -13236,6 +13310,12 @@
       },
       "OperatorLoanView": {
         "properties": {
+          "fees": {
+            "items": {
+              "$ref": "#/components/schemas/FeeView"
+            },
+            "type": "array"
+          },
           "loan": {
             "$ref": "#/components/schemas/LoanView"
           },
@@ -13248,6 +13328,12 @@
           "reversals": {
             "items": {
               "$ref": "#/components/schemas/ReversalView"
+            },
+            "type": "array"
+          },
+          "waivers": {
+            "items": {
+              "$ref": "#/components/schemas/WaiverView"
             },
             "type": "array"
           }
@@ -16719,10 +16805,16 @@
           "dueDate": {
             "type": "string"
           },
+          "feesBilled": {
+            "type": "string"
+          },
           "feesCarried": {
             "type": "string"
           },
           "interestBilled": {
+            "type": "string"
+          },
+          "interestWaived": {
             "type": "string"
           },
           "minimumPayment": {
@@ -17369,6 +17461,94 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "WaiverDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WaiverProposalRequest": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "targetId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "kind",
+          "targetId"
+        ],
+        "type": "object"
+      },
+      "WaiverView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "dueItemId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "waiverId": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "WalletView": {
@@ -22201,6 +22381,157 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReversalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/waivers": {
+      "post": {
+        "operationId": "proposeWaiver",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/waivers/{waiverId}/approval": {
+      "post": {
+        "operationId": "approveWaiver",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "waiverId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/waivers/{waiverId}/rejection": {
+      "post": {
+        "operationId": "rejectWaiver",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "waiverId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverView"
                 }
               }
             },

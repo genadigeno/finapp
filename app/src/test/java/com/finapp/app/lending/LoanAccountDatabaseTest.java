@@ -989,6 +989,79 @@ class LoanAccountDatabaseTest {
                 + "\"CURRENT\",\"daysPastDue\":0,\"bucket\":null,\"defaulted\":false,\"drawsSuspended\":null}");
     }
 
+    // ------------------------------------------------------------------ the late fee and its waiver (P11-TSK-025)
+
+    @Test
+    @DisplayName("a late fee is assessed through the wired sweep and waived under four eyes end to end (P11-TSK-025): the"
+            + " first instalment due five days ago and unpaid, the wired sweep bills it and assesses the pinned 15.00 fee"
+            + " once - one lending.LoanFeeAssessed, finapp.lending.fee counted; the operator's read lists it; an agent"
+            + " proposes its waiver over the door (201, the key replaying its receipt), is refused their own approval 403,"
+            + " a second agent approves - rule 8 posted as a reversal of the fee's entry, the item owes no fee, the"
+            + " customer's schedule shows it, finapp.lending.waiver counted; a further waiver of the fee is 422"
+            + " lending.WaiverExceedsDue")
+    void aLateFeeIsAssessedAndWaivedEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3800.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        toFirstDueDate(loanId, 5);
+        double feesBefore = meterRegistry.find(LoanServicingMetrics.FEE).tag("kind", "late").tag("outcome", "assessed")
+                .counter().count();
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        assertThat(scalar("SELECT kind || ':' || amount_minor FROM lending.fee_assessment WHERE loan_id = ?::uuid", loanId))
+                .isEqualTo("LATE:1500");
+        String assessment = scalar("SELECT id::text FROM lending.fee_assessment WHERE loan_id = ?::uuid", loanId);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?::uuid AND event_type ="
+                + " 'lending.LoanFeeAssessed'", loanId)).isEqualTo(1);
+        assertThat(meterRegistry.find(LoanServicingMetrics.FEE).tag("kind", "late").tag("outcome", "assessed").counter()
+                .count()).as("counted after the commit").isEqualTo(feesBefore + 1);
+
+        String proposer = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        String approver = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        HttpResponse<String> listed = client.get("/v1/operator/loans/" + loanId, proposer);
+        assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);
+        assertThat(listed.body()).contains("\"assessmentId\":\"" + assessment + "\"", "\"amount\":\"15.00\"");
+
+        String waivers = "/v1/operator/loans/" + loanId + "/waivers";
+        String proposal = "{\"kind\":\"FEE\",\"targetId\":\"" + assessment + "\",\"amount\":\"15.00\",\"currency\":\"EUR\","
+                + "\"reason\":\"branch outage on the due date, documented\"}";
+        double approvedBefore = meterRegistry.find(LoanWaiverMetrics.WAIVER).tag("kind", "fee").tag("outcome", "approved")
+                .counter().count();
+        String proposalKey = key();
+        HttpResponse<String> proposed = client.post(waivers, proposal, proposer, proposalKey);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"", "\"kind\":\"FEE\"").doesNotContain("branch outage");
+        assertThat(client.post(waivers, proposal, proposer, proposalKey).body()).as("the receipt, byte for byte")
+                .isEqualTo(proposed.body());
+        String waiver = field(proposed.body(), "waiverId");
+        String decision = "{\"reason\":\"matched the outage log\"}";
+        HttpResponse<String> own = client.post(waivers + "/" + waiver + "/approval", decision, proposer, key());
+        assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
+        assertThat(own.body()).contains("lending.SelfApprovalRefused");
+        HttpResponse<String> approved = client.post(waivers + "/" + waiver + "/approval", decision, approver, key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(approved.body()).contains("\"status\":\"APPROVED\"", "\"journalEntryId\":\"");
+        assertThat(scalar("SELECT reverses_entry_id::text FROM ledger.journal_entry WHERE id = ?::uuid",
+                field(approved.body(), "journalEntryId")))
+                .isEqualTo(scalar("SELECT journal_entry_id::text FROM lending.fee_assessment WHERE id = ?::uuid", assessment));
+        assertThat(count("SELECT lending.billing_component_billed(due_item_id, 'FEES') FROM lending.fee_assessment"
+                + " WHERE id = ?::uuid", assessment)).as("the item owes no fee").isZero();
+        assertThat(meterRegistry.find(LoanWaiverMetrics.WAIVER).tag("kind", "fee").tag("outcome", "approved").counter()
+                .count()).isEqualTo(approvedBefore + 1);
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body())
+                .contains("\"feesBilled\":\"0.00\"");
+
+        HttpResponse<String> exceeds = client.post(waivers, proposal.replace("15.00", "0.01"), proposer, key());
+        assertThat(exceeds.statusCode()).as(exceeds.body()).isEqualTo(422);
+        assertThat(exceeds.body()).contains("lending.WaiverExceedsDue");
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private double reversals(String outcome) {

@@ -2140,6 +2140,18 @@ approval posts rule 10 by `ReversalService` (the exact swap, `INV-REV-02`). Veri
 scenario 6, ten approvers one reversal, self-approval at both ranks, self-dealing, the closed loan, the original
 byte-identical, the bound.)*
 
+*(As built by `P11-TSK-025`, 2026-10-13 - fee and interest waivers: `lending V021`'s `waiver` (the proposal, carrying the
+amount, so INSERT-only - no lending money table takes an UPDATE) and `waiver_decision` (born once, `UNIQUE (waiver_id)`;
+four eyes by `CHECK` over the proposer copied and pinned by the composite key `(waiver_id, proposed_by)`; reasons screened by
+twin `CHECK`s); `Waivers` refuses the proposer's approval, an operator of the loan's own party (`SelfDealingRefused`,
+recorded `FAILED`), an account not `ACTIVE` or `CLOSING`, a second proposal of the kind on an item while one awaits, and
+**any amount above what is due now** - `422 lending.WaiverExceedsDue`, at the proposal and again at the approval, from the
+rows the ledger is proven against under L3, and once more by the decision trigger for every writer; the fee waiver posts
+rule 8 by `ReversalService` (bounded by the fee's own entry, `INV-REV-02`), a refund rule 8a, an interest waiver rule 9 -
+figures change only by new entries. Verified by `FeeAndWaiverDatabaseTest` - ten approvers one decision, self-approval at
+both ranks (and a forged proposer copy refused by the composite key), self-dealing, the unpaid remainder only, the refund,
+the interest waiver, a waiver racing a repayment of the fee, a waiver of the last receivable closing.)*
+
 ### INV-LND-12 — Delinquency is derived and its history append-only
 **Statement:** Days past due is the number of days between the oldest past-due item's due date and
 the current business date (the database clock, the agreement's zone), zero when nothing is past due —

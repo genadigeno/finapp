@@ -137,7 +137,35 @@ public enum LendingAuditAction implements AuditableAction {
                     + " (P11-TSK-020, ADR-0099 point 2, the Phase 10 to 11 transition's R1, INV-LND-11). Recorded FAILED in"
                     + " a transaction of its own after the act rolled back, so the attempt survives. The summary names the"
                     + " loan and the act.",
-            false);
+            false),
+
+    /** A loan servicing agent proposed a fee or interest waiver. */
+    WAIVER_PROPOSED(
+            "lending.WaiverProposed",
+            "A holder of LOAN_SERVICE proposed a waiver on a loan not of their own party (P11-TSK-025, A14, ADR-0099) - a"
+                    + " fee's unpaid remainder (FEE), a paid fee refunded to the credit balance (FEE_REFUND) or billed"
+                    + " interest (INTEREST) - with a reason screened for card and account numbers, within what is due now,"
+                    + " awaiting a DIFFERENT holder of LOAN_SERVICE_APPROVE (INV-AUD-04, INV-LND-11). Nothing is posted by a"
+                    + " proposal. The summary names the loan, the kind and the target - never an amount.",
+            true),
+
+    /** A different agent approved a waiver: rule 8, 8a or 9 posted. */
+    WAIVER_APPROVED(
+            "lending.WaiverApproved",
+            "A holder of LOAN_SERVICE_APPROVE other than its proposer (also held by lending V021's four-eyes CHECK) approved"
+                    + " a waiver, bounded by what is due now under the loan's row lock: posting rule 8 (ReversalService of the"
+                    + " fee's rule 4 entry, bounded by it - INV-REV-02), 8a (DR LOAN_FEE_INCOME / CR LOAN_CREDIT_BALANCE) or 9"
+                    + " (DR LOAN_INTEREST_INCOME / CR LOAN_INTEREST_DUE), the account closed in the same transaction when it"
+                    + " zeroed the last receivable (INV-LND-11, INV-LND-08). The summary names the loan, the kind, the target"
+                    + " and the journal entry - never an amount.",
+            true),
+
+    /** A waiver was rejected, or withdrawn by its proposer. */
+    WAIVER_REJECTED(
+            "lending.WaiverRejected",
+            "A proposed waiver was rejected - or withdrawn by its proposer; nothing was posted and the fee or interest may"
+                    + " be proposed for waiver again.",
+            true);
 
     private final String code;
     private final String description;
