@@ -301,6 +301,15 @@ repayment and the servicing step after a credit-balance application (`LoanClosur
 (`-026`) and a line's closure (`-023`) replace both functions beside their facts. History reason `REPAID`; event
 `lending.LoanClosed`.*
 
+*As built by `P11-TSK-026` (2026-10-13): `lending V022` replaces the edge function and the closure trigger once more - an
+instalment loan's `ACTIVE -> CLOSED` admits `PAID_OFF_EARLY` beside its `loan_closure`, and the closure trigger admits
+`PAID_OFF_EARLY` only beside the loan's `payoff_execution` (and `REPAID` never beside one), naming the payoff's `PAYOFF`
+repayment or none; a line's payoff closes it `CLOSED_BY_CUSTOMER` through `-023`'s own edges, its `line_closure_request`
+(outcome `CLOSED`) born by the payoff when the line is `ACTIVE`. The closing transaction is T-pay (section 4.10) - through
+the one `LoanClosures` (`closeOnPayoff`: the same settlement - every receivable zero, every elapsed date accrued - the same
+refund under `lending.closure-refund:<loan>`). History reasons `PAID_OFF_EARLY`, `CLOSED_BY_CUSTOMER`; event
+`lending.LoanClosed`.*
+
 ### 4.6 Disbursement (`lending.loan_disbursement`) — `P11-TSK-014`
 
 `PENDING → POSTED | FAILED`, born `PENDING` once per instalment loan in T-acc (`UNIQUE (loan_id)`),
@@ -397,7 +406,7 @@ balance); a collection that settles the loan closes it in the step (its attempt 
 it closed). Each attempt is one `collection_attempt` row; `lending.CollectionFailed` (the item, the outcome) when nothing
 could be taken from an item with something due. A missed business date (an outage) is not back-filled: the next step makes
 that date's one attempt. A closed loan is never serviced, so never collected.)*
-| Payoff | §4.10 | | | `RepaymentReceived`, `LoanClosed` |
+| Payoff | §4.10 *(as built by `P11-TSK-026`: kind `PAYOFF`, the request key its quote, admitted only beside its `payoff_execution`, for either kind - `lending V022`'s repayment trigger; none when the credit balance paid everything)* | | | `RepaymentReceived`, `LoanClosed` |
 
 The same key replays one answer (scenario 2); two keys serialise on L3, each allocating against what
 it finds (scenario 3). The allocation order is the pinned terms' (L6): oldest due first, fees →
@@ -458,6 +467,25 @@ repayment allocated to every component, the credit balance refunded, the loan `C
 (`PAID_OFF_EARLY`; a line `CLOSED_BY_CUSTOMER`) — one transaction. Daily accrual makes an early
 settlement "rebate" zero by construction. Partial prepayment (`-028`, the cut candidate) is a
 repayment kind with agreement and schedule v n+1, refused while past due (`409 lending.ArrearsFirst`).
+
+*As built by `P11-TSK-026` (2026-10-13) - `lending V022`, `Payoffs`. **The quote** (the claim; **L3** owner-scoped; a key
+retried converges, another good-through date under it `api.Conflict`; an `ACTIVE` instalment loan with an accrual start or
+a line `ACTIVE`/`CLOSING`, else `409 lending.LoanNotRepayable`; the database clock after the lock; `G` today up to the
+pinned horizon, else `422 api.ValidationFailed`): every elapsed date accrued first under the servicing step's own uniques
+and keys (rule 2 - a quote writes accruals), then `payoff_quote` born with the five receivables and the credit balance
+from journal lines, the base, the dates `[today, G - 1]` and the interest `ACCRUAL_ENGINE_V1` projects for them chained onto
+the latest accrual, the versions and the outstanding (its parts, `CHECK`ed; negative when the credit balance exceeds
+everything owed - nothing to pay, the excess refunded). **The execution** (T-pay, in this order: the claim; **L3**; an
+execution of the same quote converges, of another `LoanNotRepayable`; the quote read plainly - immutable, so no L5 lock,
+`payoff_execution UNIQUE (quote_id)` and `UNIQUE (loan_id)` arbitrate beneath L3; today `G` and the agreement version the
+quote's, else `409 lending.PayoffQuoteStale`; **`payoff_execution` born first** - it alone admits the early billing, the
+`PAYOFF` repayment and the `PAID_OFF_EARLY` closure, and a deferred check holds it to its loan `CLOSED` at commit; rule 2
+through `G - 1`; rule 3 for every unbilled instalment whatever its due date - a line's current cycle stated early - each with
+rule 6; the outstanding recomputed from journal lines - different, `PayoffQuoteStale`, everything rolled back; a line's
+closure request born; **L7** the wallet, after the step's own postings as in T-svc, `ACTIVE` and available at least the net
+amount, else `422 lending.InsufficientFunds`; **L8** and rule 5 - one repayment of kind `PAYOFF`, keyed by the quote, of
+everything receivable, allocated to every component; the closure). No standing check, no L0, no L6, no audit record; any
+condition.*
 
 ### 4.11 The born-once facts (not machines)
 

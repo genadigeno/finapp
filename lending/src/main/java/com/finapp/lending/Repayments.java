@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -248,6 +249,20 @@ public final class Repayments {
     Repaid receive(Connection unitOfWork, Loan loan, LoanAgreement agreement, RepaymentKind kind, String requestKey,
             Money amount, List<AllocationLine> lines, Accounts accounts, LedgerAccountId wallet, ZoneId zone,
             LocalDate today, Instant now, Supplier<Actor> actor, CorrelationId correlation) {
+        return receive(unitOfWork, loan, agreement, kind, requestKey, amount, lines, accounts, wallet, today, now,
+                correlation, repaymentId -> closures.closeIfSettled(unitOfWork, loan, agreement, zone, today,
+                        Optional.of(repaymentId), actor, correlation));
+    }
+
+    /**
+     * The posting half with the closure the caller's transaction brings: {@code closer}, given this repayment's id, closes
+     * the loan when it is settled - the customer's repayment and an automatic collection close it {@code REPAID} (or a
+     * closing line {@code CLOSED_BY_CUSTOMER}) by {@link LoanClosures#closeIfSettled}; a payoff's one repayment
+     * (`P11-TSK-026`) closes it by its payoff, always.
+     */
+    Repaid receive(Connection unitOfWork, Loan loan, LoanAgreement agreement, RepaymentKind kind, String requestKey,
+            Money amount, List<AllocationLine> lines, Accounts accounts, LedgerAccountId wallet, LocalDate today,
+            Instant now, CorrelationId correlation, Function<UUID, Optional<LoanClosure>> closer) {
         LoanId id = loan.id();
         UUID repaymentId = ids.next();
         List<RepaymentAllocation> allocations = new ArrayList<>();
@@ -268,8 +283,7 @@ public final class Repayments {
         Repayment repayment = new Repayment(repaymentId, id, kind, requestKey, amount,
                 agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, today,
                 receivedAt);
-        Optional<LoanClosure> closure = closures.closeIfSettled(unitOfWork, loan, agreement, zone, today,
-                Optional.of(repaymentId), actor, correlation);
+        Optional<LoanClosure> closure = closer.apply(repaymentId);
         publish(unitOfWork, loan, repayment, closure.isPresent(), correlation);
         return new Repaid(repayment, closure, false);
     }

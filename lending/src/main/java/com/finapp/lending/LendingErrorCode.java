@@ -215,7 +215,16 @@ public enum LendingErrorCode implements ErrorCode {
      * command. A closed line answers {@link #LOAN_CLOSED}. Nothing was done.
      */
     LINE_NOT_CLOSABLE(
-            "lending.LineNotClosable", 409, "The account is not a credit line that can be closed by request; nothing was done.");
+            "lending.LineNotClosable", 409, "The account is not a credit line that can be closed by request; nothing was done."),
+
+    /**
+     * The payoff quote no longer ends the account (`P11-TSK-026`; ADR-0095 point 8, scenario 7, {@code INV-LND-08}): it is
+     * executed on a date other than its good-through date, or what the account owes moved since it was made - a repayment,
+     * an automatic collection, a draw, a reversal or a fee committed first. The amount is never adjusted: nothing was
+     * posted; request a new quote.
+     */
+    PAYOFF_QUOTE_STALE(
+            "lending.PayoffQuoteStale", 409, "The payoff quote no longer ends the account; nothing was posted.");
 
     private final String code;
     private final int status;

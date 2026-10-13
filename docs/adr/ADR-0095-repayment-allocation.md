@@ -275,5 +275,15 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   while interest is accrued - the next statement bills it and rule 6 applies the held credit. A `CLOSING` line's automatic
   collection is point 6's, unchanged (every line on the statement). `finapp.lending.repayment` gains `outcome=paid_down`
   (the paydown component counted).
+- **As built by `P11-TSK-026` (2026-10-13) - the payoff (point 8).** One repayment of kind `PAYOFF` through `-018`'s one
+  posting half, keyed by its quote, after the execution accrued every elapsed date and billed everything unbilled (each
+  billing followed by rule 6, point 5): the amount is everything then receivable, allocated by the pinned engine to every
+  billed component (and a line's principal not yet due by `PAY_DOWN_PRINCIPAL`), nothing left over; the closure then refunds
+  whatever credit balance remains. That is the quote's amount whenever no credit balance survives the billing - always for an
+  instalment loan unless the credit balance paid everything (then no repayment, the excess refunded); a line whose credit
+  balance exceeded its statements (rule 6 never pays principal not yet due) pays the whole receivable and is refunded the
+  balance in the same transaction, its wallet judged on the net amount. The quote's figure is never paid approximately: a
+  recomputed outstanding that differs is `409 lending.PayoffQuoteStale`, nothing posted (scenario 7). Point 4's wallet rule
+  holds: absent or not `ACTIVE` is `InsufficientFunds`. No prepayment fee (L8, owner-accepted) and no rebate.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

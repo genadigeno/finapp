@@ -124,6 +124,23 @@ public final class CreditLineStatements {
      */
     public Stated state(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
             LocalDate accruedThrough) {
+        return state(unitOfWork, line, agreement, pinned, today, accruedThrough, false);
+    }
+
+    /**
+     * A payoff's statements (`P11-TSK-026`, posting rule 7's rule 3): every cycle {@link #state} would state, then the
+     * line's <em>current</em> cycle, if it has begun before {@code today}, stated early - on its accruals through yesterday,
+     * by the same engine, its statement date and due date its own - so the line's accrued interest is all due. On the
+     * caller's unit of work, under the caller's L3, after the caller has accrued every elapsed date and beside the line's
+     * {@code payoff_execution} (the statement trigger admits an early statement only there). The payoff's repayment then
+     * pays the statements and pays down the principal not yet due.
+     */
+    Stated stateForPayoff(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today) {
+        return state(unitOfWork, line, agreement, pinned, today, today.minusDays(1), true);
+    }
+
+    private Stated state(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
+            LocalDate accruedThrough, boolean currentToo) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(line, "line");
         Objects.requireNonNull(agreement, "agreement");
@@ -146,7 +163,7 @@ public final class CreditLineStatements {
         LocalDate limit = today.isBefore(accruedThrough.plusDays(1)) ? today : accruedThrough.plusDays(1);
         LocalDate start = store.latestStatementDate(unitOfWork, line.id()).orElse(openedOn);
         AccrualPeriod cycle = StatementEngineV1.cycle(statementTerms, openedOn, start);
-        if (cycle.endExclusive().isAfter(limit)) {
+        if (!stateable(cycle, limit, today, currentToo)) {
             return Stated.NOTHING;
         }
         Money zero = Money.ofPersisted(0, line.currency(), agreement.amount().scale());
@@ -158,7 +175,7 @@ public final class CreditLineStatements {
                 new CreditBalanceApplications(billings, ledgerAccounts, balances, postings, ids);
         int stated = 0;
         int applied = 0;
-        while (!cycle.endExclusive().isAfter(limit)) {
+        while (stateable(cycle, limit, today, currentToo)) {
             if (!cycle.start().equals(start)) {
                 throw new IllegalStateException("a line's cycles are contiguous from its opening (A23)");
             }
@@ -182,6 +199,14 @@ public final class CreditLineStatements {
             cycle = StatementEngineV1.cycle(statementTerms, openedOn, start);
         }
         return new Stated(stated, applied);
+    }
+
+    /**
+     * A cycle is stated once its statement date has come and every date before it is accrued ({@code limit}) - or, for a
+     * payoff, when it is the current cycle and has begun before {@code today} (its elapsed dates all accrued by the payoff).
+     */
+    private static boolean stateable(AccrualPeriod cycle, LocalDate limit, LocalDate today, boolean currentToo) {
+        return !cycle.endExclusive().isAfter(limit) || (currentToo && cycle.start().isBefore(today));
     }
 
     /**

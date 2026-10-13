@@ -216,5 +216,15 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   is applied that day too (the outage days accrued on the principal it would have paid; owner judgement recorded). Rule
   3's reference is the item billed, so a second attempt from the same history is a replay refused as a defect. Two
   probes and their companions, `MUTATION_TESTING.md` §2.
+- **As built by `P11-TSK-026` (2026-10-13) - point 10 and the projection.** The payoff's execution accrues every
+  elapsed date through `G - 1` with `LoanServicing`'s own accrual (exposed as `catchUp` - the same rows, uniques and keys, no
+  per-step bound), so the sweep and the payoff accrue a date once. **The quote accrues too** (refinement): it is made on a
+  caught-up account, so its projection covers exactly `[today, G - 1]` on the current base; without it a quote made before
+  the day's sweep would project elapsed dates on today's base, which their dated base need not equal. `AccrualEngineV1`
+  gains `project(terms, periods, last, from, through, base)` beside the original signature (which now delegates with
+  `from` the date after `last`): dates between `last` and `from` that accrued nothing (no principal outstanding - a line at
+  zero drawn) contribute nothing, exactly as `accrue` chains a period's next accrual onto its latest; no figure of the
+  original signature changed (`AccrualEngineV1Test#projectsFromADate`). A projection spanning a billing at which a held
+  credit balance is applied goes stale on `G` (rule 6 lowers the base) - stale, never wrong.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

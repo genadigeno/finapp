@@ -118,8 +118,8 @@ class LendingMigrationTest {
         // application with its allocation rows), P11-TSK-021's (V013, the credit line draw) and P11-TSK-018's (V014, the
         // repayment, its allocation rows and the loan's closure), P11-TSK-019's (V015, the collection attempt) and
         // P11-TSK-020's (V016, the repayment reversal and its negating rows), P11-TSK-022's (V017, the credit line
-        // statement), P11-TSK-023's (V018, the line closure request) and P11-TSK-024's (V020, the condition history); each
-        // later task rewrites this list with its own.
+        // statement), P11-TSK-023's (V018, the line closure request), P11-TSK-024's (V020, the condition history) and
+        // P11-TSK-026's (V022, the payoff quote and its execution); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly("accrual_start", "capital_contribution", "capital_contribution_event",
                         "collection_attempt", "credit_balance_allocation", "credit_balance_application", "credit_line_draw",
@@ -131,7 +131,8 @@ class LendingMigrationTest {
                         "loan_application_event", "loan_closure", "loan_condition_event", "loan_disbursement", "loan_event", "loan_instalment",
                         "loan_offer",
                         "loan_offer_event", "loan_offer_terms", "loan_payout", "loan_terms", "loan_terms_version",
-                        "loan_terms_version_event", "repayment", "repayment_allocation", "repayment_allocation_reversal",
+                        "loan_terms_version_event", "payoff_execution", "payoff_quote", "repayment", "repayment_allocation",
+                        "repayment_allocation_reversal",
                         "repayment_reversal", "repayment_schedule");
 
         assertThatExceptionOfType(SQLException.class)

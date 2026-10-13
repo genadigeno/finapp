@@ -38,15 +38,17 @@ import lombok.RequiredArgsConstructor;
  * A loan's closure - a consequence, never a command (`P11-TSK-018`; a credit line's, `P11-TSK-023`; {@code INV-LND-08},
  * {@code INV-LIFE-04}, ADR-0090, ADR-0100 point 8, {@code LENDING_LIFECYCLES.md} section 4.5, {@code PHASE_11_PLAN.md}
  * sections 5.3, 12.5 and 12.6). Called at the end of the transactions that can bring an account's last receivable to zero -
- * a repayment ({@link Repayments}, the customer's or an automatic collection) and the servicing step after its
- * credit-balance application ({@link LoanServicing}) - and by a line's closure request ({@link LineClosures}), under the
+ * a repayment ({@link Repayments}, the customer's or an automatic collection), the servicing step after its
+ * credit-balance application ({@link LoanServicing}) and a payoff ({@link Payoffs}) - and by a line's closure request
+ * ({@link LineClosures}), under the
  * caller's loan row lock (L3), on the caller's unit of work. When the account is settled it closes in that same
  * transaction; otherwise nothing is written.
  *
  * <h2>Who closes</h2>
  *
  * <ul>
- *   <li>an {@code ACTIVE} instalment loan - {@code REPAID} (a payoff's {@code PAID_OFF_EARLY} is `P11-TSK-026`'s);
+ *   <li>an {@code ACTIVE} instalment loan - {@code REPAID}; by its payoff, {@code PAID_OFF_EARLY} ({@link #closeOnPayoff},
+ *       `P11-TSK-026`) - the same settlement and refund;
  *   <li>a {@code CLOSING} credit line - {@code CLOSED_BY_CUSTOMER}: the customer asked, and the transaction that zeroes its
  *       last receivable closes it (`P11-TSK-023`). An {@code ACTIVE} line whose receivables reach zero stays open - the
  *       customer may draw again; it closes at its closure request when nothing is outstanding then ({@link #settlement}
@@ -148,6 +150,27 @@ public final class LoanClosures {
         }
         return settlement(unitOfWork, loan, agreement, zone, today)
                 .map(settled -> close(unitOfWork, loan, settled, reason, today, repayment, actor, correlation));
+    }
+
+    /**
+     * Closes {@code loan} by its payoff (`P11-TSK-026`): an instalment loan {@code PAID_OFF_EARLY}, a line
+     * {@code CLOSED_BY_CUSTOMER} (its closure request already born, by the payoff or before it) - on the caller's unit of
+     * work, under the caller's L3 and L7, beside its {@code payoff_execution}, after the payoff accrued, billed and repaid.
+     * The same settlement and the same closure as every other closing transaction: every receivable zero and every elapsed
+     * date accrued, the credit balance refunded under {@code lending.closure-refund:<loan>}. A payoff that leaves anything
+     * owed is a defect, never a closure: refused, and the whole transaction with it (INV-LND-08).
+     *
+     * @param repayment the payoff's one repayment, or empty when the credit balance paid everything
+     */
+    LoanClosure closeOnPayoff(Connection unitOfWork, Loan loan, LoanAgreement agreement, ZoneId zone, LocalDate today,
+            Optional<UUID> repayment, Supplier<Actor> actor, CorrelationId correlation) {
+        Objects.requireNonNull(loan, "loan");
+        ClosureReason reason = loan.kind() == LoanKind.INSTALMENT ? ClosureReason.PAID_OFF_EARLY
+                : ClosureReason.CLOSED_BY_CUSTOMER;
+        Settlement settled = settlement(unitOfWork, loan, agreement, zone, today)
+                .orElseThrow(() -> new IllegalStateException(
+                        "a payoff left its account unsettled, or its refund uncreditable (INV-LND-08)"));
+        return close(unitOfWork, loan, settled, reason, today, repayment, actor, correlation);
     }
 
     /**

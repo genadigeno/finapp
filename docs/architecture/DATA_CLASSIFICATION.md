@@ -3186,6 +3186,46 @@ the key, outcome and stamps `INTERNAL`.
 | `line_closure_request` | `requested_at` | `INTERNAL` | System time, stamped by the trigger |
 | `line_closure_request` | `correlation_id` | `INTERNAL` | The request's correlation |
 
+### `lending` - the payoff quote and its execution - *added by `P11-TSK-026`*
+
+`lending V022`: the quote - what ends a loan or line on its good-through date, born with its inputs - and its execution, born
+once per quote and once per loan beside the payoff's repayment and closure. Every amount `RESTRICTED-FINANCIAL` (the loan's
+receivables, as `loan_closure`'s refund); the loan, quote and agreement references `CONFIDENTIAL`; keys, dates, versions and
+stamps `INTERNAL`. The money itself is the payoff's `repayment` (kind `PAYOFF`) and `loan_closure`'s refund.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `payoff_quote` | `id` | `INTERNAL` | Generated |
+| `payoff_quote` | `loan_id` | `CONFIDENTIAL` | The loan or line quoted |
+| `payoff_quote` | `request_key` | `INTERNAL` | The customer's idempotency key - the arbiter a retried key converges on |
+| `payoff_quote` | `business_date` | `INTERNAL` | The business date the quote was made on, in the pinned zone |
+| `payoff_quote` | `good_through` | `INTERNAL` | `G` - the one date the quote can be executed on |
+| `payoff_quote` | `currency` | `INTERNAL` | ISO 4217 - the agreement's |
+| `payoff_quote` | `scale` | `INTERNAL` | The currency's minor units |
+| `payoff_quote` | `principal_minor` | `RESTRICTED-FINANCIAL` | `LOAN_PRINCIPAL` on the quote's date - an input of the figure |
+| `payoff_quote` | `principal_due_minor` | `RESTRICTED-FINANCIAL` | `LOAN_PRINCIPAL_DUE` on the quote's date |
+| `payoff_quote` | `interest_accrued_minor` | `RESTRICTED-FINANCIAL` | `LOAN_INTEREST_ACCRUED` on the quote's date |
+| `payoff_quote` | `interest_due_minor` | `RESTRICTED-FINANCIAL` | `LOAN_INTEREST_DUE` on the quote's date |
+| `payoff_quote` | `fees_due_minor` | `RESTRICTED-FINANCIAL` | `LOAN_FEES_DUE` on the quote's date |
+| `payoff_quote` | `credit_balance_minor` | `RESTRICTED-FINANCIAL` | `LOAN_CREDIT_BALANCE` on the quote's date |
+| `payoff_quote` | `projection_base_minor` | `RESTRICTED-FINANCIAL` | The principal outstanding the projection ran on |
+| `payoff_quote` | `projected_days` | `INTERNAL` | The dates projected - `[business date, G - 1]` |
+| `payoff_quote` | `projected_interest_minor` | `RESTRICTED-FINANCIAL` | The interest `ACCRUAL_ENGINE_V1` projected for them |
+| `payoff_quote` | `outstanding_minor` | `RESTRICTED-FINANCIAL` | What ends the account on `G` - its parts, `CHECK`ed; negative when the credit balance exceeds everything owed |
+| `payoff_quote` | `agreement_id` | `CONFIDENTIAL` | The governing agreement version quoted under |
+| `payoff_quote` | `agreement_version` | `INTERNAL` | Its version |
+| `payoff_quote` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine |
+| `payoff_quote` | `allocation_engine_version` | `INTERNAL` | The pinned allocation engine |
+| `payoff_quote` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `payoff_quote` | `correlation_id` | `INTERNAL` | The quote's correlation |
+| `payoff_execution` | `id` | `INTERNAL` | Generated |
+| `payoff_execution` | `quote_id` | `CONFIDENTIAL` | The quote executed - once |
+| `payoff_execution` | `loan_id` | `CONFIDENTIAL` | The loan or line paid off - once |
+| `payoff_execution` | `request_key` | `INTERNAL` | The executing customer's idempotency key |
+| `payoff_execution` | `business_date` | `INTERNAL` | The quote's good-through date, on which it was executed |
+| `payoff_execution` | `executed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `payoff_execution` | `correlation_id` | `INTERNAL` | The payoff's correlation |
+
 ### `lending` - the condition history - *added by `P11-TSK-024`*
 
 `lending V020`: one row per change of a loan's or line's delinquency bucket or default flag, appended by the servicing

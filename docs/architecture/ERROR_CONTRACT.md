@@ -1007,6 +1007,7 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.SelfDealingRefused` | 403 | An employee never services a loan of their own party; nothing was done. |
 | `lending.RepaymentNotReversible` | 409 | The repayment cannot be reversed; nothing was posted. |
 | `lending.LineNotClosable` | 409 | The account is not a credit line that can be closed by request; nothing was done. |
+| `lending.PayoffQuoteStale` | 409 | The payoff quote no longer ends the account; nothing was posted. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1161,6 +1162,25 @@ line is answered with the one request (`UNIQUE (loan_id)` beneath the line's row
 account exactly as an unknown or malformed id. `LineNotClosable` (catalogued here - absent from `PHASE_11_PLAN.md` section
 9's list) refuses an instalment loan, which closes only by being repaid. `LoanClosed` (its second subject) refuses a
 request for a line already `CLOSED` (a second key after a closure at the request included); nothing is written.
+
+The payoff (`P11-TSK-026`, ADR-0095 point 8, scenario 7, `INV-LND-08`): `POST /v1/me/loans/{id}/payoff-quotes` keyed
+`lending.payoff-quote:<type>:<id>`, the platform's conditional step-up (A19), a closed body naming at most the good-through
+date (today when absent), `201` with the quote - the amount (or, when the credit balance exceeds everything owed, the
+refund), what it is made of and the date it is good through; `POST /v1/me/loans/{id}/payoff` keyed
+`lending.payoff:<type>:<id>`, always a `MULTI_FACTOR` act (A19), a closed body naming the quote, `201` with the payoff (the
+one repayment, what it paid, the credit balance refunded and the closure's reason - `PAID_OFF_EARLY`, a line's
+`CLOSED_BY_CUSTOMER`). A lost response replays its receipt; a quote's key retried after its claim lapsed converges on the
+quote born under it (another good-through date under it is `api.Conflict`); a second key executing the same quote converges
+on the one payoff (`payoff_execution UNIQUE (quote_id)` and `UNIQUE (loan_id)` beneath the loan's row lock). `NotFound`
+answers another party's account exactly as an unknown or malformed id, and a quote that is not the account's or is
+malformed. `PayoffQuoteStale` (new) refuses an execution on a date other than the quote's good-through date, or one whose
+recomputed amount - every elapsed date accrued, everything unbilled billed, under the loan's row lock - differs from the
+quote's: a repayment, an automatic collection, a draw, a reversal or a fee committed first. The amount is never adjusted;
+everything the execution wrote rolls back with its claim - request a new quote. `LoanNotRepayable` (reused) refuses a quote
+or an execution on an account closed (by another payoff included), cancelled, not yet disbursed or awaiting its payout's
+outcome. `InsufficientFunds` (reused) refuses an execution whose wallet cannot fund the net amount, or cannot be posted to
+(absent or not `ACTIVE` - ADR-0095 point 4); nothing is posted. A good-through date before today or past the pinned payoff
+horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 
 ## 3a. Rejection at the boundary
 

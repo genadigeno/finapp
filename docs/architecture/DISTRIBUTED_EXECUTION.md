@@ -212,7 +212,16 @@ credit line in rule 5's entry); the closure request (T-clo) takes L3, then L7 on
 L0 (a closing line's exposure falls), no L5, no L6 - so it waits only on L3 behind a draw (L3 → L6 → L7), a reversal
 (L0 → L3 → L5 → L6 → L7) or a servicing step, and holds nothing they take before L3. Lock-wait proven by
 `CreditLineRepaymentDatabaseTest#closureRacingADrawSerialises` (the request waiting on the line's row); ten requests, draws
-racing requests and paydowns racing draws counted without a `40P01`.)* | n/a |
+racing requests and paydowns racing draws counted without a `40P01`.)* *(`P11-TSK-026`: T-pay takes L3, the execution row (born
+first, nobody else waits on it), its own postings - the catch-up accrual locking the currency's `LOAN_INTEREST_INCOME`
+projection row and the early billing the loan's own rows (L8) - then L7, then L8 for rule 5 and the refund; the quote takes
+L3 and the accrual's L8 only. L7 after the step's own postings exactly as T-svc's collection step: no transaction holding a
+wallet row ever waits on the income row (T-rep, T-rev, T-clo post nothing to it), so no cycle; no L0, no L5 lock (the quote
+is immutable - `payoff_execution UNIQUE (quote_id)`/`(loan_id)` arbitrate), no L6. Lock-waits proven by
+`PayoffDatabaseTest#payoffDuringARepaymentIsStaleOrClosedNeverWrong` (a repayment waiting on the payoff's L3 finds it
+`CLOSED`) and `#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure` (the servicing step and the payoff each
+waiting on the other's L3); ten executions of one quote, the sweep racing a payoff and repayments racing payoffs counted
+without a `40P01`.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 

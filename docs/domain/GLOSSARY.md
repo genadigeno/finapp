@@ -1142,7 +1142,8 @@ scheduled auto-collection or a payoff — born `ALLOCATED`, with its Repayment A
 journal entry debiting the wallet, in a single transaction (a row exists only once its money moved),
 and `REVERSED` only by an approved, four-eyes repayment reversal (`INV-LND-11`). Built for the customer
 (`P11-TSK-018`: `repayment`, `Repayments`, `POST /v1/me/loans/{id}/repayments`) and for auto-collection (`P11-TSK-019`: kind
-`AUTO_COLLECTION`, through the same posting half, named by its collection attempt, `LENDING_LIFECYCLES.md` section 4.8); payoff planned (`-026`).
+`AUTO_COLLECTION`, through the same posting half, named by its collection attempt, `LENDING_LIFECYCLES.md` section 4.8) and
+for the payoff (`P11-TSK-026`: kind `PAYOFF`, the one repayment of a payoff's execution, keyed by its quote).
 **Not:** an Instalment (what was scheduled) or an Instalment Billing (what became due): a repayment
 is an event that may settle several, part of one, or none. Nor a failed collection, which is a
 collection attempt and never a repayment, and not a Transfer — it credits receivables, not a
@@ -1178,7 +1179,8 @@ reversal negates allocations by rows, and later allocations are not re-cut.
 per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing,
 refunded to the wallet at closure, and the destination of a paid fee's refund. The account by
 `P11-TSK-003`; its application at each billing built by `P11-TSK-017` (`credit_balance_application`);
-its refund at closure built by `P11-TSK-018` (`loan_closure`, `lending.closure-refund:<loan>`); a payoff's by `-026`.
+its refund at closure built by `P11-TSK-018` (`loan_closure`, `lending.closure-refund:<loan>`); a payoff's through the same
+closure by `P11-TSK-026`.
 **Not:** a wallet balance, and not a prepayment: an overpayment on an instalment loan does not reduce
 principal (on a line it pays down drawn principal first, and only the excess is held). Nor a
 receivable: it is subtracted from what is outstanding, and a closed loan's credit balance is zero
@@ -1209,7 +1211,14 @@ not Delinquency, the graduated condition of which default is one threshold.
 (good-through date; amount the derived outstanding plus the accrual through the day before) and its
 born-once execution on that date, which under the loan's lock catches up accrual and billing,
 recomputes, and either refuses as stale or posts one repayment to every component, refunds any
-credit balance and closes the account. Planned (`P11-TSK-026`).
+credit balance and closes the account. Built by `P11-TSK-026` (`lending V022`: `payoff_quote`, `payoff_execution`,
+`Payoffs`, `POST /v1/me/loans/{id}/payoff-quotes` and `…/payoff`): the quote made on a caught-up account (every elapsed
+date accrued under the servicing step's uniques), its figure `P + PD + IA + ID + FD - CB` plus the interest
+`ACCRUAL_ENGINE_V1` projects for `[today, G - 1]` on the current base; the execution on `G` only, every unbilled instalment
+billed early beside it (a line's current cycle stated early), stale when the recomputed figure differs; a loan closes
+`PAID_OFF_EARLY`, a line `CLOSED_BY_CUSTOMER` (its closure request born by the payoff). **Payoff Quote**: the immutable
+fact; **Payoff Execution**: its born-once execution (`UNIQUE (quote_id)`, `UNIQUE (loan_id)`), which alone admits the
+early billing and the `PAID_OFF_EARLY` closure.
 **Not:** a partial prepayment (principal paid early while the loan continues under a new agreement
 version — the cut candidate `P11-TSK-028`), and not a Refinance (a new loan paying off the old,
 deferred). No prepayment fee, and no rebate arithmetic: daily accrual makes an early-settlement

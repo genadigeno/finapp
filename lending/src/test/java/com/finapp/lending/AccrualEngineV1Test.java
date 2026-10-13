@@ -254,6 +254,34 @@ class AccrualEngineV1Test {
     }
 
     @Test
+    @DisplayName("a payoff's projection from a date (P11-TSK-026): from the day after the last accrual it is the projection"
+            + " itself; after dates that accrued nothing it chains onto the last accrual exactly as accrual posts them; a"
+            + " start at or before the last accrual is refused")
+    void projectsFromADate() {
+        InterestAccrual last = accrueEvery(terms("0.05"), JANUARY, euros(1000_00)).get(10);
+        assertThat(AccrualEngineV1.project(terms("0.05"), List.of(JANUARY, FEBRUARY), Optional.of(last),
+                last.date().plusDays(1), LocalDate.parse("2027-02-14"), euros(1000_00)))
+                .isEqualTo(AccrualEngineV1.project(terms("0.05"), List.of(JANUARY, FEBRUARY), Optional.of(last),
+                        LocalDate.parse("2027-02-14"), euros(1000_00)));
+        // Five dates with nothing outstanding after the last accrual (no rows), then a base again from 2027-01-26.
+        LocalDate from = last.date().plusDays(6);
+        AccrualEngineV1.Projection gap = AccrualEngineV1.project(terms("0.05"), List.of(JANUARY), Optional.of(last), from,
+                LocalDate.parse("2027-01-29"), euros(2000_00));
+        Optional<InterestAccrual> previous = Optional.of(last);
+        Money expected = euros(0);
+        for (LocalDate date = from; !date.isAfter(LocalDate.parse("2027-01-29")); date = date.plusDays(1)) {
+            InterestAccrual accrual = AccrualEngineV1.accrue(terms("0.05"), JANUARY, previous, date, euros(2000_00));
+            expected = expected.plus(accrual.posted());
+            previous = Optional.of(accrual);
+        }
+        assertThat(gap.accruals()).hasSize(4);
+        assertThat(gap.accruals().get(0).date()).isEqualTo(from);
+        assertThat(gap.interest()).isEqualTo(expected);
+        refused(() -> AccrualEngineV1.project(terms("0.05"), List.of(JANUARY), Optional.of(last), last.date(),
+                LocalDate.parse("2027-01-29"), euros(100)), AccrualRefused.Reason.OUT_OF_ORDER);
+    }
+
+    @Test
     @DisplayName("periods that overlap, miss a date, or disagree with the last accrual are refused")
     void invalidPeriods() {
         refused(() -> AccrualEngineV1.project(terms("0.05"), List.of(FEBRUARY, JANUARY), Optional.empty(),

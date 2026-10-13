@@ -337,6 +337,37 @@ public final class LoanServicing {
         return new Accrued(posted, zero, true, Optional.of(lastElapsed));
     }
 
+    /**
+     * The accrual step alone, run until it has caught up - every elapsed date of the account accrued (or found with no
+     * principal outstanding), oldest first, under the caller's L3 and in the caller's transaction, with the step's own rows,
+     * uniques and keys (`P11-TSK-026`'s quote and execution; ADR-0094 point 10: "a payoff accrues for itself", so a payoff
+     * and the sweep never accrue a date twice). No bound: a payoff is one customer act, and every date is still accrued
+     * oldest first.
+     *
+     * @return the last date accrued through - yesterday - or empty when the account has no accrual start (path X awaiting
+     *     its payout: nothing accrues)
+     */
+    Optional<LocalDate> catchUp(
+            Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, ZoneId zone, LocalDate today) {
+        Accrued accrued;
+        do {
+            accrued = accrue(unitOfWork, loan, agreement, pinned, zone, today);
+        } while (!accrued.caughtUp());
+        return accrued.accruedThrough();
+    }
+
+    /**
+     * The account's accrual periods - its instalment periods continued monthly, or its statement cycles - for a projection
+     * over them (`P11-TSK-026`); empty when the account has no accrual start.
+     */
+    Optional<Function<LocalDate, AccrualPeriod>> periodsOf(
+            Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, ZoneId zone) {
+        Optional<LocalDate> accrualStart = loan.kind() == LoanKind.INSTALMENT
+                ? store.accrualStartOf(unitOfWork, loan.id())
+                : Optional.of(lineAccrualStart(loan, zone));
+        return accrualStart.map(start -> periods(unitOfWork, loan, agreement, pinned, start));
+    }
+
     /** The account's accrual periods: the schedule's instalment periods, or the line's statement cycles. */
     private Function<LocalDate, AccrualPeriod> periods(
             Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, LocalDate accrualStart) {

@@ -897,6 +897,62 @@ public class LendingBeans {
         return new LineClosureDesk(lineClosures, identityStore, idempotentExecutor, lendingTransactions);
     }
 
+    // ------------------------------------------------------------------ the payoff (P11-TSK-026)
+
+    /** The payoffs' store - {@code payoff_quote} and {@code payoff_execution}, INSERT-only. */
+    @Bean
+    com.finapp.lending.PayoffStore payoffStore() {
+        return new com.finapp.lending.JdbcPayoffStore();
+    }
+
+    /**
+     * The payoff - the quote under L3 (its catch-up accrual), and T-pay: L3, the execution, rules 2, 3 (and 6), the
+     * recomputation, L7, rule 5 and the closure through the one {@code LoanClosures}.
+     */
+    @Bean
+    com.finapp.lending.Payoffs payoffs(
+            LoanStore loanStore,
+            com.finapp.lending.PayoffStore payoffStore,
+            LoanTermsStore loanTermsStore,
+            LoanServicing loanServicing,
+            LoanServicingStore loanServicingStore,
+            InstalmentBillings instalmentBillings,
+            com.finapp.lending.CreditLineStatements creditLineStatements,
+            InstalmentBillingStore instalmentBillingStore,
+            com.finapp.lending.RepaymentStore repaymentStore,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            com.finapp.lending.Repayments repayments,
+            com.finapp.lending.LoanClosures loanClosures,
+            com.finapp.lending.LineClosures lineClosures,
+            IdGenerator idGenerator) {
+        return new com.finapp.lending.Payoffs(loanStore, payoffStore, loanTermsStore, loanServicing, loanServicingStore,
+                instalmentBillings, creditLineStatements, instalmentBillingStore, repaymentStore, loanWallets,
+                new com.finapp.ledger.AvailableBalance<>(new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore()),
+                ledgerAccountStore, purposeBalances, repayments, loanClosures, lineClosures, idGenerator);
+    }
+
+    /** {@code finapp.lending.payoff{outcome}}, every series registered at startup. */
+    @Bean
+    PayoffMetrics payoffMetrics(MeterRegistry meterRegistry) {
+        return new PayoffMetrics(meterRegistry);
+    }
+
+    @Bean
+    LoanPayoffDesk loanPayoffDesk(
+            com.finapp.lending.Payoffs payoffs,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            PayoffMetrics payoffMetrics,
+            RepaymentMetrics repaymentMetrics) {
+        return new LoanPayoffDesk(payoffs, identityStore, mfaEnrolmentStore, idempotentExecutor, lendingTransactions,
+                payoffMetrics, repaymentMetrics);
+    }
+
     // ------------------------------------------------------------------ the repayment reversal (P11-TSK-020)
 
     /** The reversals' store - {@code repayment_reversal} (its decision columns, once) and the INSERT-only negating rows. */

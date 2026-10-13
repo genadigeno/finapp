@@ -709,6 +709,11 @@ class InstalmentBillingDatabaseTest {
                 + id + "';"
                 + " UPDATE lending.loan_condition_event SET business_date = business_date + " + (1_000_000 - days)
                 + " WHERE loan_id = '" + id + "';"
+                // P11-TSK-026: a payoff quote's dates (made on, good through) and an execution's move with the loan.
+                + " UPDATE lending.payoff_quote SET business_date = business_date - " + days + ", good_through ="
+                + " good_through - " + days + " WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.payoff_execution SET business_date = business_date - " + days + " WHERE loan_id = '"
+                + id + "';"
                 + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days' WHERE id = '" + id + "'");
     }
 

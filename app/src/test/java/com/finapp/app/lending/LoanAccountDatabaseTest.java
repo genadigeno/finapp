@@ -84,9 +84,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw, the statement, the repayment and"
-        + " auto-collection end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-022,"
-        + " P11-TSK-018, P11-TSK-019, P11-TSK-024)")
+@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw, the statement, the repayment,"
+        + " auto-collection and the payoff end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021,"
+        + " P11-TSK-022, P11-TSK-018, P11-TSK-019, P11-TSK-024, P11-TSK-026)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -112,6 +112,7 @@ class LoanAccountDatabaseTest {
     @Autowired private LendingCreditExposure creditExposure;
     @Autowired private Authorization authorization;
     @Autowired private com.finapp.app.credit.ExposureCensusMetrics exposureCensus;
+    @Autowired private com.finapp.lending.LoanWallets loanWallets;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -793,6 +794,109 @@ class LoanAccountDatabaseTest {
         assertThat(foreign.body()).contains("lending.NotFound");
         assertThat(client.get(LOANS + "/" + loanId + "/repayments", stranger.token()).statusCode()).isEqualTo(404);
         assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------ the payoff (P11-TSK-026)
+
+    @Test
+    @DisplayName("a loan is paid off end to end (P11-TSK-026): billed and ten days into its second period through the wired"
+            + " sweep, quoted over the door - 201, its key replaying byte for byte - then paid off from a MULTI_FACTOR"
+            + " session - 201 CLOSED (PAID_OFF_EARLY), the key replaying, another key on the quote converging on the one"
+            + " payoff; the loan read CLOSED with every balance zero; the platform's credit exposure zero and the capital"
+            + " headroom restored by the principal; a new quote 409 lending.LoanNotRepayable; another party's loan 404; each"
+            + " counted after its commit")
+    void aLoanIsPaidOffEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3650.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        toFirstDueDate(loanId, 10);
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        topUpWallet(customer.party(), Money.ofMinorUnits(500_00, EUR));
+
+        double quotedBefore = payoffs("quoted");
+        double paidOffBefore = payoffs("paid_off");
+        String quoteKey = key();
+        HttpResponse<String> quoted = client.post(LOANS + "/" + loanId + "/payoff-quotes", "{}", customer.token(),
+                quoteKey);
+        assertThat(quoted.statusCode()).as(quoted.body()).isEqualTo(201);
+        assertThat(quoted.body()).contains("\"loanId\":\"" + loanId + "\"", "\"refund\":\"0.00\"", "\"currency\":\"EUR\"",
+                "\"projectedDays\":0");
+        HttpResponse<String> quotedAgain = client.post(LOANS + "/" + loanId + "/payoff-quotes", "{}", customer.token(),
+                quoteKey);
+        assertThat(quotedAgain.body()).as("the receipt, byte for byte").isEqualTo(quoted.body());
+        String quoteId = field(quoted.body(), "quoteId");
+        String amount = field(quoted.body(), "amount");
+        long principal = Money.of(new java.math.BigDecimal(field(quoted.body(), "principal")), EUR).minorUnits()
+                + Money.of(new java.math.BigDecimal(field(quoted.body(), "principalDue")), EUR).minorUnits();
+        Money headroomBefore = lendingTransactions.inTransaction(uow -> headroom.atRest(uow, EUR)).headroom();
+        assertThat(lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow, customer.party(), EUR))
+                .isPositive()).isTrue();
+
+        String payoffKey = key();
+        HttpResponse<String> paidOff = client.post(LOANS + "/" + loanId + "/payoff",
+                "{\"quoteId\":\"" + quoteId + "\"}", customer.token(), payoffKey);
+        assertThat(paidOff.statusCode()).as(paidOff.body()).isEqualTo(201);
+        assertThat(paidOff.body()).contains("\"quoteId\":\"" + quoteId + "\"", "\"closureReason\":\"PAID_OFF_EARLY\"",
+                "\"paid\":\"" + amount + "\"", "\"refunded\":\"0.00\"");
+        HttpResponse<String> replayed = client.post(LOANS + "/" + loanId + "/payoff",
+                "{\"quoteId\":\"" + quoteId + "\"}", customer.token(), payoffKey);
+        assertThat(replayed.body()).as("the receipt, byte for byte").isEqualTo(paidOff.body());
+        HttpResponse<String> converged = client.post(LOANS + "/" + loanId + "/payoff",
+                "{\"quoteId\":\"" + quoteId + "\"}", customer.token(), key());
+        assertThat(converged.statusCode()).as(converged.body()).isEqualTo(201);
+        assertThat(field(converged.body(), "executionId")).as("one payoff").isEqualTo(field(paidOff.body(), "executionId"));
+        assertThat(payoffs("quoted")).as("counted after the commit, the replay not").isEqualTo(quotedBefore + 1);
+        assertThat(payoffs("paid_off")).as("the converged and the replayed not counted").isEqualTo(paidOffBefore + 1);
+
+        assertThat(client.get(LOANS + "/" + loanId, customer.token()).body()).contains("\"status\":\"CLOSED\"");
+        assertThat(count("SELECT count(*) FROM (SELECT a.id FROM ledger.journal_line l JOIN ledger.ledger_account a"
+                + " ON a.id = l.ledger_account_id WHERE a.owner_ref = ?::uuid GROUP BY a.id HAVING sum(CASE l.direction"
+                + " WHEN 'DEBIT' THEN l.amount_minor ELSE -l.amount_minor END) <> 0) unsettled", loanId))
+                .as("every balance of the loan zero").isZero();
+        assertThat(lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow, customer.party(), EUR))
+                .isZero()).as("nothing outstanding for the party").isTrue();
+        assertThat(lendingTransactions.inTransaction(uow -> headroom.atRest(uow, EUR)).headroom())
+                .as("the principal repaid restores the headroom")
+                .isEqualTo(headroomBefore.plus(Money.ofMinorUnits(principal, EUR)));
+        HttpResponse<String> afterwards = client.post(LOANS + "/" + loanId + "/payoff-quotes", "{}", customer.token(),
+                key());
+        assertThat(afterwards.statusCode()).as(afterwards.body()).isEqualTo(409);
+        assertThat(afterwards.body()).contains("lending.LoanNotRepayable");
+
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> foreign = client.post(LOANS + "/" + loanId + "/payoff", "{\"quoteId\":\"" + quoteId + "\"}",
+                stranger.token(), key());
+        assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
+        assertThat(foreign.body()).contains("lending.NotFound");
+    }
+
+    private double payoffs(String outcome) {
+        return meterRegistry.find(PayoffMetrics.PAYOFF).tag("outcome", outcome).counter().count();
+    }
+
+    /** Money paid into the party's wallet - the fixture standing in for payments' pay-in, never a lending path. */
+    private void topUpWallet(UUID party, Money amount) {
+        try (SecurityContext.Scope system = SecurityContext.enterSystem();
+                CorrelationContext.Scope scope = CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.generate(ids)).causing(CausationId.of("p11t26")))) {
+            lendingTransactions.inTransaction(uow -> {
+                LocalDate today = LocalDate.now(ZoneOffset.UTC);
+                return postingService.post(uow, new PostingCommand("p11t26-topup:" + UUID.randomUUID(), today, today,
+                        "the suite's top-up", List.of(
+                                new JournalLine(ledgerAccountStore.findOperational(uow, AccountPurpose.CASH_AT_BANK, EUR)
+                                        .orElseThrow().id(), Direction.DEBIT, amount),
+                                new JournalLine(loanWallets.existingWallet(uow, party, EUR).orElseThrow(),
+                                        Direction.CREDIT, amount))));
+            });
+        }
     }
 
     // ------------------------------------------------------------------ auto-collection (P11-TSK-019)

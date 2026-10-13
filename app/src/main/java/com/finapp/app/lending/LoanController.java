@@ -32,7 +32,10 @@ import org.springframework.web.bind.annotation.RestController;
  * keyed ({@code lending.draw:CUSTOMER:<id>}), {@code 201} with the draw made - and a loan's repayment from the wallet
  * (`P11-TSK-018`), keyed ({@code lending.repayment:CUSTOMER:<id>}), the platform's conditional step-up, {@code 201} - a
  * line's too (`P11-TSK-023`), paying down its principal beyond what is due - and a line's closure request
- * (`P11-TSK-023`), a {@code MULTI_FACTOR} act keyed {@code lending.closure:CUSTOMER:<id>}, {@code 201} with its outcome.
+ * (`P11-TSK-023`), a {@code MULTI_FACTOR} act keyed {@code lending.closure:CUSTOMER:<id>}, {@code 201} with its outcome -
+ * and the payoff of either kind (`P11-TSK-026`): its quote, keyed {@code lending.payoff-quote:CUSTOMER:<id>} under the
+ * platform's conditional step-up, and its execution, a {@code MULTI_FACTOR} act keyed {@code lending.payoff:CUSTOMER:<id>},
+ * each {@code 201}.
  */
 @RestController
 @RequestMapping(path = "/me/loans", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -44,6 +47,7 @@ public class LoanController {
     @NonNull private final CreditLineDrawDesk draws;
     @NonNull private final LoanRepaymentDesk repayments;
     @NonNull private final LineClosureDesk closures;
+    @NonNull private final LoanPayoffDesk payoffs;
 
     /** The caller's loans, newest first. */
     @GetMapping
@@ -127,6 +131,40 @@ public class LoanController {
         return closures.request(current(request), id, idempotencyKey);
     }
 
+    /**
+     * Quotes the payoff of the caller's own loan or line (`P11-TSK-026`): what ends it on the good-through date - today
+     * when the body names none, at most the pinned payoff horizon ahead - with what it is made of. A quote moves no money.
+     * Keyed ({@code lending.payoff-quote:CUSTOMER:<id>}), the platform's conditional step-up, {@code 201} with the quote.
+     */
+    @PostMapping(path = "/{id}/payoff-quotes", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanPayoffDesk.PayoffQuoteView quotePayoff(
+            @PathVariable("id") String id,
+            @Valid @RequestBody PayoffQuoteBody body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return payoffs.quote(current(request), id, idempotencyKey, body);
+    }
+
+    /**
+     * Pays off the caller's own loan or line on its quote's good-through date (`P11-TSK-026`): every elapsed date accrued,
+     * everything unbilled billed, the amount recomputed - a quote no longer ending the account is {@code 409
+     * lending.PayoffQuoteStale}, nothing posted - then one repayment from the wallet allocated to every component, the
+     * credit balance refunded and the account closed ({@code PAID_OFF_EARLY}; a line {@code CLOSED_BY_CUSTOMER}). Keyed
+     * ({@code lending.payoff:CUSTOMER:<id>}), {@code MULTI_FACTOR}, {@code 201} with the payoff.
+     */
+    @PostMapping(path = "/{id}/payoff", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanPayoffDesk.PayoffView payOff(
+            @PathVariable("id") String id,
+            @Valid @RequestBody PayoffBody body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return payoffs.execute(current(request), id, idempotencyKey, body);
+    }
+
     /** The caller's own loan's repayments and their allocations, newest first (`P11-TSK-018`). */
     @GetMapping("/{id}/repayments")
     public LoanRepaymentDesk.RepaymentListView listRepayments(@PathVariable("id") String id, HttpServletRequest request) {
@@ -150,6 +188,17 @@ public class LoanController {
     public record CreditLineDrawBody(
             @NotBlank @Size(max = 32) String amount,
             @NotBlank @Size(max = 3) String currency) {}
+
+    /**
+     * A payoff quote: the good-through date, an ISO date - today when absent. Closed - an unknown field is {@code 422}; the
+     * figure is the domain's to compute, never the body's to name.
+     */
+    @ClosedBody
+    public record PayoffQuoteBody(@Size(max = 10) String goodThrough) {}
+
+    /** A payoff: the quote it executes. Closed - an unknown field is {@code 422}; the amount is the quote's. */
+    @ClosedBody
+    public record PayoffBody(@NotBlank @Size(max = 36) String quoteId) {}
 
     private static Session current(HttpServletRequest request) {
         Object session = request.getAttribute(SessionAuthenticationInterceptor.CURRENT_SESSION);
