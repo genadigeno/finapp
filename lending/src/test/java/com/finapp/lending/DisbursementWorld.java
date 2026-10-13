@@ -144,6 +144,7 @@ final class DisbursementWorld {
             WALLETS, LEDGER_ACCOUNTS, BALANCES, POSTINGS, new JdbcOutboxWriter(), IDS, CLOCK);
     static final JdbcRepaymentStore REPAYMENT_STORE = new JdbcRepaymentStore();
     static final Repayments REPAYMENTS = repayments(REPAYMENT_STORE, new JdbcOutboxWriter());
+    static final LoanCollections COLLECTIONS = collections(REPAYMENT_STORE, new JdbcOutboxWriter());
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
             TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);
@@ -167,6 +168,13 @@ final class DisbursementWorld {
         return new Repayments(LOAN_STORE, store, BILLING_STORE, TERMS_STORE, WALLETS,
                 new com.finapp.ledger.AvailableBalance<>(new JdbcBalanceDerivation(), HOLD_STORE), LEDGER_ACCOUNTS,
                 BALANCES, POSTINGS, CLOSURES, outbox, IDS, CLOCK);
+    }
+
+    /** T-svc's collection step over the real stores, ledger and repayment, with this store and outbox (P11-TSK-019). */
+    static LoanCollections collections(RepaymentStore store, OutboxWriter<Connection> outbox) {
+        return new LoanCollections(store, repayments(store, outbox), BILLING_STORE, WALLETS,
+                new com.finapp.ledger.AvailableBalance<>(new JdbcBalanceDerivation(), HOLD_STORE), LEDGER_ACCOUNTS,
+                BALANCES, outbox, IDS, CLOCK);
     }
 
     // ------------------------------------------------------------------ the loans

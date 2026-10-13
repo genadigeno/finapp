@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -200,15 +201,7 @@ public final class Repayments {
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }
-        List<AllocationLine> lines;
-        try {
-            lines = AllocationEngineV1.allocate(amount, dueState, rules);
-        } catch (AllocationEngineV1.AllocationRefused refused) {
-            // The amount's currency and scale were judged above, and the rules and due state are the system's own.
-            throw new AllocationAnomaly("the allocation engine refused a repayment's own inputs (INV-LND-04)", refused);
-        } catch (IllegalStateException defect) {
-            throw new AllocationAnomaly("the allocation engine broke its own assertion (INV-LND-04)", defect);
-        }
+        List<AllocationLine> lines = allocate(amount, dueState, rules);
 
         // (L7) The wallet's ledger row, then what it can spend, judged under it (INV-BAL-04).
         LedgerAccountId wallet = wallets.existingWallet(unitOfWork, party, loan.currency())
@@ -220,6 +213,26 @@ public final class Repayments {
             throw new InsufficientFunds();
         }
 
+        return receive(unitOfWork, loan, agreement, RepaymentKind.CUSTOMER, request.requestKey(), amount, lines, accounts,
+                wallet, today, now, () -> actor, correlation);
+    }
+
+    /**
+     * The repayment's posting half - one implementation for every kind (`P11-TSK-018`'s T-rep and `P11-TSK-019`'s
+     * auto-collection step): on the caller's unit of work, under the caller's L3 on {@code loan} and L7 on {@code wallet},
+     * with {@code amount} judged against the wallet's available balance under L7 and {@code lines} allocated by
+     * {@link AllocationEngineV1} over the due state the caller derived under L3. (L8) the projection rows of every account
+     * the transaction may post to; posting rule 5 under {@code lending.repayment:<repaymentId>}; then only inserts - the
+     * repayment and its allocation rows, {@code lending.RepaymentReceived} - and the closure when every receivable is now
+     * zero ({@link LoanClosures}), naming this repayment.
+     *
+     * @param requestKey the requester's key - the customer's idempotency key, or a collection attempt's natural key
+     * @param actor the closing act's actor, asked for only when the repayment closes the loan
+     */
+    Repaid receive(Connection unitOfWork, Loan loan, LoanAgreement agreement, RepaymentKind kind, String requestKey,
+            Money amount, List<AllocationLine> lines, Accounts accounts, LedgerAccountId wallet, LocalDate today,
+            Instant now, Supplier<Actor> actor, CorrelationId correlation) {
+        LoanId id = loan.id();
         UUID repaymentId = ids.next();
         List<RepaymentAllocation> allocations = new ArrayList<>();
         for (AllocationLine line : lines) {
@@ -233,16 +246,31 @@ public final class Repayments {
         touched.add(accounts.creditBalance());
         postings.lockBalancesInOrder(unitOfWork, touched);
         JournalEntryId journalEntry = post(unitOfWork, repaymentId, loan, entry, today);
-        Repayment unstamped = new Repayment(repaymentId, id, RepaymentKind.CUSTOMER, request.requestKey(), amount,
+        Repayment unstamped = new Repayment(repaymentId, id, kind, requestKey, amount,
                 agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, today, now);
         Instant receivedAt = repayments.insert(unitOfWork, unstamped, correlation);
-        Repayment repayment = new Repayment(repaymentId, id, RepaymentKind.CUSTOMER, request.requestKey(), amount,
+        Repayment repayment = new Repayment(repaymentId, id, kind, requestKey, amount,
                 agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, today,
                 receivedAt);
         Optional<LoanClosure> closure = closures.closeIfSettled(unitOfWork, loan, agreement, today,
-                Optional.of(repaymentId), () -> actor, correlation);
+                Optional.of(repaymentId), actor, correlation);
         publish(unitOfWork, loan, repayment, closure.isPresent(), correlation);
         return new Repaid(repayment, closure, false);
+    }
+
+    /**
+     * {@link AllocationEngineV1#allocate} over a due state the caller derived under L3 - a refusal of the system's own
+     * inputs, or the engine breaking its assertion, is an {@link AllocationAnomaly} (nothing written), never a customer's
+     * error. The amount's currency and scale are the caller's to have judged.
+     */
+    static List<AllocationLine> allocate(Money amount, DueState dueState, AllocationRules rules) {
+        try {
+            return AllocationEngineV1.allocate(amount, dueState, rules);
+        } catch (AllocationEngineV1.AllocationRefused refused) {
+            throw new AllocationAnomaly("the allocation engine refused a repayment's own inputs (INV-LND-04)", refused);
+        } catch (IllegalStateException defect) {
+            throw new AllocationAnomaly("the allocation engine broke its own assertion (INV-LND-04)", defect);
+        }
     }
 
     /**

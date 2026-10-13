@@ -571,7 +571,9 @@ class LoanApplicationDatabaseTest {
                 .allocationOrder(List.of(AllocationComponent.FEES, AllocationComponent.INTEREST,
                         AllocationComponent.PRINCIPAL))
                 .overpaymentTreatment(loan ? OverpaymentTreatment.HOLD_AS_CREDIT : OverpaymentTreatment.PAY_DOWN_PRINCIPAL)
-                .autoCollection(true)
+                // Off by default (P11-TSK-019): the suites bill against a wallet holding the disbursed principal and
+                // expect the bill to stay due; LoanAccountDatabaseTest's collection case activates terms with it on.
+                .autoCollection(false)
                 .partialCollection(true)
                 .instalmentRounding(RoundingMode.UP)
                 .interestRounding(RoundingMode.HALF_EVEN)

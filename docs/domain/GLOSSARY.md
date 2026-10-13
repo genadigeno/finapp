@@ -1141,8 +1141,8 @@ are the record. Penalty interest and interest on interest are not built.
 scheduled auto-collection or a payoff — born `ALLOCATED`, with its Repayment Allocation and its one
 journal entry debiting the wallet, in a single transaction (a row exists only once its money moved),
 and `REVERSED` only by an approved, four-eyes repayment reversal (`INV-LND-11`). Built for the customer
-(`P11-TSK-018`: `repayment`, `Repayments`, `POST /v1/me/loans/{id}/repayments`); auto-collection and payoff planned (`-019`,
-`-026`).
+(`P11-TSK-018`: `repayment`, `Repayments`, `POST /v1/me/loans/{id}/repayments`) and for auto-collection (`P11-TSK-019`: kind
+`AUTO_COLLECTION`, through the same posting half, named by its collection attempt, `LENDING_LIFECYCLES.md` section 4.8); payoff planned (`-026`).
 **Not:** an Instalment (what was scheduled) or an Instalment Billing (what became due): a repayment
 is an event that may settle several, part of one, or none. Nor a failed collection, which is a
 collection attempt and never a repayment, and not a Transfer — it credits receivables, not a

@@ -233,5 +233,22 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   closure its own fact (`loan_closure`, one per loan). A credit line's repayment answers `409 lending.LoanNotRepayable`
   until `-023`. The probe "wallet before loan → 40P01" is held by scenario 3's racing loan-then-wallet writer and by
   `RepaymentDatabaseTest#repaymentTakesTheLoanThenTheWallet`.
+- **As built by `P11-TSK-019` (2026-10-13) - point 6, auto-collection, with these refinements:** `lending V015` (the board's
+  reservation; the backlog's `V012` stale). The collection is T-svc's step after the billing and its credit-balance
+  application, once the accrual has caught up, under the same L3 - when the governing agreement's pinned terms collect
+  automatically and the repayment method is the wallet. **One attempt per billed item and business date**, oldest first: an
+  item on its due date always (`NOTHING_DUE` when already settled), a past-due one while something is due; a missed date is
+  not back-filled. Point 6's `min(due, wallet available)` is **per item** and only where the pinned terms allow partial
+  collection; otherwise the item's due in full or nothing (`INSUFFICIENT_FUNDS`); and once an item is not collected in full
+  nothing younger is collected that day (a younger collection would be allocated to the older by point 2's order). The
+  money moves through **T-rep's one posting half** (`Repayments.receive`: L8, rule 5, the rows, `RepaymentReceived`, the
+  closure), kind `AUTO_COLLECTION`, under the attempt's natural key `<item>:<date>` - so `repayment UNIQUE (loan_id, kind,
+  request_key)` is a second arbiter of once per item and date - every line on the attempted item, never the credit balance.
+  A wallet absent or not `ACTIVE` is its own outcome, `WALLET_NOT_POSTABLE` (the customer's door folds it into
+  `InsufficientFunds`). A collection that settles the loan closes it in its step, the closure naming it (so `-020`'s A12
+  refusal covers it); `lending V015` admits that one attempt on the loan it closed. Every attempt is born once
+  (`collection_attempt`), `lending.CollectionFailed` when nothing could be taken; an `AUTO_COLLECTION` repayment without its
+  attempt is refused at commit. The suites' fixture terms default to auto-collection off (every suite before it bills
+  against a wallet holding the disbursed principal); `AutoCollectionDatabaseTest` activates its own.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

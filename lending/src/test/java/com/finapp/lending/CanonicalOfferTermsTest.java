@@ -122,7 +122,10 @@ class CanonicalOfferTermsTest {
     @DisplayName("format 1 is kept for replay byte for byte: its golden hash pinned from the renderer that wrote every"
             + " format-1 row, and format 2 the same bytes but for its format token wherever format 1 renders")
     void format1IsKeptByteForByte() {
-        CanonicalOfferTerms.Content content = loan(LoanTermsFixtures.personalLoan("0.0899").build(), 10_000_00, 36);
+        // The golden's content: the fixture as it stood then - auto-collection on (P11-TSK-019 turned the fixture's
+        // default off, which is a different term set and so a different hash).
+        CanonicalOfferTerms.Content content = loan(LoanTermsFixtures.personalLoan("0.0899").autoCollection(true).build(),
+                10_000_00, 36);
         String one = CanonicalOfferTerms.render(content, 1);
         assertThat(one).startsWith("{\"format\":\"1\",").matches("^\\{[A-Za-z0-9_.:\",{}\\[\\]-]*\\}$");
         assertThat(CanonicalOfferTerms.formatOf(one)).isEqualTo(1);
