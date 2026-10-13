@@ -38,7 +38,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -492,6 +491,43 @@ class LoanAcceptanceDatabaseTest {
                         offer.id().value()));
         assertThat(scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_agreement WHERE loan_id = ?", loan))
                 .isEqualTo(offer.termsSha256());
+
+        // V011's CHECK on the agreement ALONE, for every writer (the gate's case, P11-TSK-031): the bootstrap superuser
+        // with the triggers suspended - V006's exact-copy trigger would refuse each first - and the hash recomputed, so
+        // 23505 (the (loan_id, version) key) means the CHECK admitted the row and 23514 that it refused it.
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            for (String[] copy : List.of(
+                    // The stored row's own shape: admitted.
+                    new String[] {"canonical_format", "canonical_terms", "23505"},
+                    // A '+' under format 1, the bytes declaring 1: format 1's token set refuses it.
+                    new String[] {"1::smallint", "replace(canonical_terms, '{\"format\":\"2\"', '{\"format\":\"1\"')",
+                            "23514"},
+                    // The column disagreeing with its bytes - format 1 over bytes declaring 2, with no '+' in them.
+                    new String[] {"1::smallint", "replace(canonical_terms, '+', '-')", "23514"},
+                    // A format this build does not write, declared by both.
+                    new String[] {"3::smallint", "replace(canonical_terms, '{\"format\":\"2\"', '{\"format\":\"3\"')",
+                            "23514"},
+                    // Format 2's token set is format 1's and '+', nothing more.
+                    new String[] {"canonical_format", "replace(canonical_terms, '+', ' ')", "23514"})) {
+                execute(owner, "SET LOCAL session_replication_role = replica");
+                refused(owner, rawAgreementCopy(loan, copy[0], copy[1]), copy[2]);
+                owner.rollback();
+            }
+        }
+    }
+
+    /**
+     * An INSERT copying {@code loan}'s agreement version 1 with {@code format} and {@code canonical} as its canonical
+     * columns and the hash recomputed over {@code canonical}.
+     */
+    private static String rawAgreementCopy(UUID loan, String format, String canonical) {
+        return "INSERT INTO lending.loan_agreement SELECT gen_random_uuid(), loan_id, version, offer_id, amendment_id,"
+                + " decision_id, terms_version_id, product, currency, scale, amount_minor, term_months,"
+                + " nominal_annual_rate, repayment_day, schedule_engine_version, accrual_engine_version,"
+                + " allocation_engine_version, statement_engine_version, agreement_template_id,"
+                + " agreement_template_version, " + format + ", " + canonical + ", sha256(convert_to(" + canonical
+                + ", 'UTF8')), effective_from, created_at FROM lending.loan_agreement WHERE loan_id = '" + loan + "'";
     }
 
     @Test
@@ -732,8 +768,9 @@ class LoanAcceptanceDatabaseTest {
                 var flow = com.finapp.platform.correlation.CorrelationContext.enter(
                         com.finapp.sharedkernel.correlation.Correlation.startingWith(correlation())
                                 .causing(com.finapp.sharedkernel.correlation.CausationId.of("p11t12-capital")))) {
+            // The database clock's business date in the fixtures' zone (UTC), never the instance's (P11-TSK-032).
+            LocalDate today = LocalDate.parse(scalar("SELECT lending.business_date(statement_timestamp(), 'UTC')::text"));
             inOneTransaction(uow -> {
-                LocalDate today = LocalDate.now(ZoneOffset.UTC);
                 postings.post(uow, new PostingCommand("p11t12-capital:" + UUID.randomUUID(), today, today,
                         "the suite's planted capital", List.of(
                                 new JournalLine(LEDGER_ACCOUNTS.findOperational(uow, AccountPurpose.CASH_AT_BANK,

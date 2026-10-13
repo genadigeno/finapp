@@ -1,3 +1,6 @@
+import java.time.Instant
+import java.time.ZoneOffset
+
 // The `lending` module (P11-TSK-002).
 //
 // Originating and servicing credit - the amortising PERSONAL_LOAN and the revolving CREDIT_LINE -
@@ -101,4 +104,21 @@ dependencies {
 // runs, finds no image, and returns (P0-TSK-035).
 tasks.named<Test>("databaseTest") {
     systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
+
+    // Date-shifted, always (P11-TSK-032). Lending judges every date on the database clock in the agreement's pinned
+    // zone; a fixture that plants `current_date` (the session's zone, which the JDBC driver takes from this JVM's
+    // default) or an instance clock's date is a day off whenever the machine's date is not UTC's - on a UTC+4 machine
+    // only from 20:00 to 24:00 UTC, so the defect hid for twenty hours a day. The test JVM therefore runs in a zone
+    // whose date differs from UTC's at the hour it starts: UTC-12 before 11:00 UTC (a day behind until 12:00), UTC+14
+    // from 11:00 (a day ahead from 10:00). A run spanning that hour, or midnight UTC, loses the shift only for its
+    // tail. `-Pfinapp.db.zone=<zone id>` pins another zone - `UTC` turns the shift off for a diagnosis.
+    val pinnedZone = providers.gradleProperty("finapp.db.zone")
+    val test = this
+    doFirst {
+        val zone = pinnedZone.orNull
+            ?: if (Instant.now().atZone(ZoneOffset.UTC).hour < 11) "Etc/GMT+12" else "Etc/GMT-14"
+        test.systemProperty("user.timezone", zone)
+        logger.lifecycle("${test.path}: the test JVM runs in $zone" + (if (pinnedZone.isPresent) " (pinned by"
+            + " -Pfinapp.db.zone)" else " - a date other than UTC's") + " (P11-TSK-032)")
+    }
 }

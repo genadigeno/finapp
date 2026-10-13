@@ -17946,7 +17946,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   states the production gate and every lending procedure.
 - **Definition of done**: `DOD-OBS`, `DOD-API`, `DOD-SEC`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
 
-**P11-TSK-031 — Remediation: canonical offer terms format 2 (a servicing zone east of UTC)** — `READY` *(added and marked `READY` out of turn on the owner's instruction, 2026-10-12 - a Phase 11 remediation item, run beside `-015` and `-016`; it belongs to no milestone and reopens none; found by `P11-TSK-016` writing `InterestAccrualDatabaseTest`'s skew case, which used `-14:00` around it)*
+**P11-TSK-031 — Remediation: canonical offer terms format 2 (a servicing zone east of UTC)** — `COMPLETE` (gate 2026-10-13; implemented and merged 2026-10-12, `e4e54cad` / `9f1904da`; follow-up `ac62949b` renamed `CanonicalOfferTerms.FORMAT_TOKEN` to `FORMAT_LEAD` after `NoUnwrappedSecretRulesTest` read it as a secret and turned master's app tiers red; marks no task `READY`) *(added and marked `READY` out of turn on the owner's instruction, 2026-10-12 - a Phase 11 remediation item, run beside `-015` and `-016`; it belongs to no milestone and reopens none; found by `P11-TSK-016` writing `InterestAccrualDatabaseTest`'s skew case, which used `-14:00` around it)*
 - **As built** (2026-10-12, gate pending): `CanonicalOfferTerms` writes format 2 (`FORMAT = 2`; format 1's token set `[A-Za-z0-9_.:-]` with `+` added, nothing else changed) and keeps format 1 as `render(content, 1)` - byte-identical to `P11-TSK-011`'s renderer, compared against it at commit `1a4c8575` over three zones and pinned by a golden hash; `formatOf` reads the bytes' own first token, and `JdbcLoanOfferStore.insertTerms` and `JdbcLoanStore.insertAgreement` write it instead of the build's constant (an agreement copies its offer's format - before this, raising the constant alone would have made every format-1 offer still `OFFERED` at deploy unacceptable under `V006`'s exact-copy trigger); `lending V011` replaces `loan_offer_terms_canonical_shape` and `loan_agreement_canonical_shape` (the column equal to the bytes' `{"format":"N",` token by `starts_with`, format 1 its own set, format 2 that set and `+`, any other format refused) and restates both table comments. **V011, not V009**: `-015` holds `V009` and `-016` `V010` on their branches; this merges after both (lending's Flyway `outOfOrder` is false). Tests: `CanonicalOfferTermsTest` (`format2SpellsAZoneEastOfUtc`, `format1IsKeptByteForByte`, the first case's prefix and set updated), `LoanTermsTest#thePlanTermsAreAdmitted` (`+14:00`, `-14:00`, `+05:30` admitted) and `#unimplementedConventionsAreRefused` (`+14:01` refused), `LoanOriginationDatabaseTest#aVersionEastOfUtcIsOfferable`, `LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted` and `#aFormat1OfferIsStillAccepted`.
 - **Objective**: a terms version whose servicing zone lies east of UTC - admitted by `LoanTerms` and `lending V003` - is
   offerable and acceptable end to end, instead of activating cleanly and then failing every offer under it.
@@ -17987,6 +17987,81 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   bytes') and a `+05:30` offer is accepted (the agreement format 2, byte-identical); a format-1 offer is still accepted
   (the agreement format 1); format 1 re-renders byte for byte; raw SQL holds every writer to the format `CHECK`.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Gate** (2026-10-13, on master as merged with `ac62949b`): `COMPLETE`. Every criterion held by its test, run fresh.
+  **IMPORTANT, fixed**: the last criterion held for the offer's terms only - `loan_agreement_canonical_shape` was exercised
+  by nothing, every raw agreement insert meeting `V006`'s exact-copy trigger first; `LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted`
+  now holds it alone (the bootstrap superuser, triggers suspended, the hash recomputed): the stored shape admitted (`23505`
+  at the key), a `+` under format 1, the column disagreeing with its bytes, format 3 and a character outside format 2's
+  set each `23514`. **Probes**: none had been performed (the commit left them to the gate) - the backlog's four
+  performed, all caught, restores sha256-verified, `MUTATION_TESTING.md` §2 +4 rows (the third caught on both tables by
+  the new case). **Multi-instance `PASS`**: a pure renderer and a once-run migration under Flyway's lock; the offer's and
+  the acceptance's transactions unchanged - `tenSweepersOneOffer`, `aDecisionEventTwiceOffersOnce`,
+  `declineAndExpiryAtTheBoundaryLeaveExactlyOne`, `tenAcceptancesOneLoan` and `expiryAndAcceptanceLeaveExactlyOne` green
+  in the same fresh run. Security, audit, observability, reconciliation: none (no new input, door or figure).
+
+**P11-TSK-032 — Remediation: date-window-safe lending fixtures** — `COMPLETE` (2026-10-13) *(added out of turn on the owner's instruction, 2026-10-13 - a Phase 11 remediation item, run beside `-022`; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TSK-022` is in progress and `P11-TSK-023` stays next; found by `P11-TSK-018`, recorded as "found, not caused" by `-018`, `-019` and `-020`)*
+- **The defect**: `InterestAccrualDatabaseTest#aLinesAccrualFollowsItsDrawnPrincipal` (`-016`/`-021`) and
+  `LoanPayoutStepsDatabaseTest#theEdgesAreHeldForEveryWriter` (`-015`) failed only from 20:00 to 24:00 UTC, when the
+  machine's date (GST, UTC+4) is a day ahead of UTC's. Production judges every date on the database clock in the
+  agreement's pinned zone (`lending.business_date(statement_timestamp(), zone)`, `INV-LND-10`); the fixtures planted
+  `current_date` - the SESSION's date, and the JDBC driver sets the session zone from the test JVM's default - beside
+  dates the database derived in UTC. The line case dated its draws from `current_date` against an opening planted in UTC
+  (28 accrual dates expected, 29 found); the payout case's duplicate accrual start, dated `current_date`, met the
+  trigger's date rule (`P0001`) before the unique key (`23505`) it exists to prove. Severity IMPORTANT for the build (a
+  red tier four hours a day, misread by three tasks as flakes); no production defect - every production date was right.
+- **Reproduced first**: an init script (scratchpad) running `:lending:databaseTest` in `Etc/GMT+12` (the local date UTC's
+  yesterday before 12:00 UTC) - both cases red at 08:20 UTC, deterministically, with the evening's two failures; the
+  whole tier so run on the unfixed tree found a third, `InterestAccrualDatabaseTest#theRowsAndThePermitAreHeldForEveryWriter`
+  (its raw `current_date - 3` met "accrues from the account's accrual start" for "oldest first") - 168 tests, 3 failed.
+- **As built** (2026-10-13): `DisbursementWorld.businessDateSql(loan)` / `businessDate(loan)` (the database clock in the
+  loan's pinned zone, through the offer's terms - as the triggers read it) and `businessDate()` (the fixtures' UTC zone);
+  every planted or compared date in the lending database suites derived from them - `InterestAccrualDatabaseTest` (the
+  line case's today; the raw `current_date - 2` and `- 3`), `LoanPayoutStepsDatabaseTest` (the accrual start before the
+  conclusion dated today's business date; the duplicate dated `lending.business_date(concluded_at, zone)`, the date the
+  trigger admits, so only the key refuses it), and the instance-clock dates (`LocalDate.now(UTC)`): `DisbursementWorld.post`
+  (its entries on loan accounts are read by date), `LoanAcceptanceDatabaseTest`'s planted capital,
+  `RepaymentReversalDatabaseTest#reverseDirectly`, `CreditLineDrawDatabaseTest`'s suspension call, and
+  `LoanDisbursementDatabaseTest#theEntryBalancesAndNamesTheLoan` - its entry dates now asserted against the business date
+  of the disbursement's own `decided_at` in the pinned zone (or the day before, V008's window) instead of the instance
+  clock's today. No assertion weakened, no production code or trigger touched. **The guard**: `:lending:databaseTest`
+  runs its JVM in a zone whose date is not UTC's at the hour it starts (`Etc/GMT+12` before 11:00 UTC, `Etc/GMT-14`
+  from then; `lending/build.gradle.kts`, printed at the start), so the class is caught at every hour, not four; `-Pfinapp.db.zone=<id>`
+  pins another (`UTC` for a diagnosis). `TESTING.md` §5 states the rule and the shift.
+- **Swept, left** (each reviewed): `AutoCollectionDatabaseTest`, `InstalmentBillingDatabaseTest`, `RepaymentDatabaseTest`,
+  `CreditLineDrawDatabaseTest#theDatabaseHoldsEveryWriter` and `InterestAccrualDatabaseTest`'s skew case already read
+  `lending.business_date(statement_timestamp(), <the loan's zone>)`; `LoanPayoutStepsDatabaseTest`'s and
+  `LoanOriginationDatabaseTest`'s UTC dates of database-stamped instants are the pinned zone's (UTC); the `Instant.now()`
+  payout conclusions are provider instants, as production receives them. `app`: `LendingCreditExposureDatabaseTest`,
+  `LoanAccountDatabaseTest` and `LoanPayoutDatabaseTest` date fixture postings `LocalDate.now(UTC)` - zone-independent
+  (so no shifted run moves them) and read by nothing date-sensitive (exposure sums every line; capital and cash have no
+  date rule) - left, to keep `app` (where `-022` works) untouched; `LendingCapitalDatabaseTest`'s statement and expectation
+  dates and its `current_date` are reconciliation's and settlement's own dates, not a lending business date. `app`'s tier
+  is not shifted.
+- **Objective**: the lending database tier green at every hour, and a fixture that dates by the session, the machine or
+  an instance red at every hour.
+- **Bounded context**: Lending (test fixtures and the tier's configuration). **Dependencies**: none.
+- **Domain changes**: none. **Persistence**: none. **APIs**: none. **Events**: none. **Financial impact**: none.
+  **Invariants**: `INV-LND-10` (servicing time is the database's - now the fixtures' too), `INV-LND-02`, `INV-LND-07`.
+- **Distributed-system concerns**: none new - fixtures only; the dates are read from the one database clock the instances
+  share, as production reads them. **Security**, **Audit**, **Observability**, **Reconciliation implications**: none.
+- **Probe**: the line case's today and the payout case's duplicate put back on `current_date` - both red under the
+  shift; the same two with the shift removed from the build - both green at that hour (the guard is what catches them).
+- **Acceptance criteria**: both cases red under a shifted zone before the fix and green after; the whole lending tier
+  green normally and shifted; the probe caught; the sweep listed.
+- **Definition of done**: `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Verified** (fresh): lending hermetic 170 across 21; lending databaseTest 168 across 15, 0 failures - shifted by the
+  build (`Etc/GMT+12`, 08:27 UTC) and normally (`-Pfinapp.db.zone=Asia/Tbilisi`, the machine's zone, 08:33 UTC). After
+  master's `P11-TSK-022` was merged in: lending hermetic 170 across 21; lending databaseTest 179 across 16 normally
+  (09:45 UTC) and 179 across 16 with the build's shift (`Etc/GMT+12`, 10:09 UTC), 0 failures; and day-ahead
+  (`-Pfinapp.db.zone=Etc/GMT-14` at 10:01 UTC, the evening failures' direction) 179 with one red,
+  `InterestAccrualDatabaseTest#threeMissedDaysAreCaughtUpOldestFirst` - its rows ordered by `created_at`, the third
+  stamped before the first two: the database clock stepping back (`X-TSK-017`'s class), not a date - green on the
+  suites' re-run under the same shift (accrual 14, payout steps 10, statements 11). **Found, not caused** (for the
+  owner): two such clock-step reds in this task's runs - that one, and `LoanPayoutStepsDatabaseTest#theConclusionInstantIsHeldWithinThePayoutsLife`
+  once (`lending V009` clamps a conclusion `LEAST(GREATEST(instant, created_at), statement_timestamp())`, so on a clock
+  behind the payout's birth it lands before `created_at`; the clamp's order, not a fixture). The
+  fleet hermetic and architecture tiers are the coordinator's post-merge run; build, fleet database and kafka tiers not
+  run (the standing criterion-7 deviation).
 
 **P11-TST-001 — The lending storm** — `PLANNED`
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
