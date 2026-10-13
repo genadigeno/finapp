@@ -218,9 +218,21 @@ outcome creates, duplicates or undoes it), `INV-RAIL-02`, `INV-RAIL-03`, `INV-PA
   hold in the recording transaction. **Each claim's permit is its token**: a dispatcher whose permit lapsed and was
   re-claimed writes nothing (it cannot undo a faster one's `DISPATCHED`, nor release a hold a live withdrawal adopted).
   **The conclusion instant** is payments' withdrawal history's terminal move, held by `lending V009`'s trigger within
-  `[payout created_at, the recording statement's clock]` against another process's clock skew; the payout carries no
+  `[payout created_at, the recording statement's clock]` against another process's clock skew (the birth winning when
+  that clock stands behind it - `P11-TSK-033`, below); the payout carries no
   amount column (the schema's no-mutable-money rule) - the instruction's amount is re-derived (principal less the pinned
   fee) and judged against the hold by the adoption. Scenarios 1 (payout half) and 5: `LoanPayoutDatabaseTest`,
   `LoanPayoutStepsDatabaseTest`; the entry: `SystemWithdrawalDatabaseTest`.
+- *2026-10-13, `P11-TSK-033` (a remediation)*: **the conclusion clamp's precedence.** `V009` clamped
+  `LEAST(GREATEST(instant, created_at), statement_timestamp())` - the ceiling last - so a conclusion recorded on a
+  database clock stepped back behind the payout's birth landed **before** `created_at`, and the accrual start (A30) was
+  dated by it; `NOT_DISPATCHED` stamped the bare clock. `lending V019` applies the birth's floor last:
+  `GREATEST(LEAST(instant, statement_timestamp()), created_at)`, and `GREATEST(statement_timestamp(), created_at)` for
+  `NOT_DISPATCHED` - the order of facts wins over the clock's reading (ADR-0063 decision 2, credit `V014`'s form). The
+  ceiling binds payments' instant (another process's clock), never the payout's own birth; on a clock not behind the
+  birth nothing changes. The accrual start's "never after today" rank takes the same reference,
+  `business_date(GREATEST(statement_timestamp(), payout.created_at))`, so a conclusion within a step across midnight is
+  admitted instead of refused and re-observed until the clock catches up. Proven by
+  `LoanPayoutStepsDatabaseTest#aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth`; protects `INV-LND-10`.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

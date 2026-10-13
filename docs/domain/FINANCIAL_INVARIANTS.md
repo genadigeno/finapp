@@ -2088,6 +2088,16 @@ compare from the database clock in the pinned zone, as production does (`Disburs
 the session or the machine is red whenever it runs (`TESTING.md` §5; `MUTATION_TESTING.md` §2's `P11-TSK-032` row). No
 production rule changed.)*
 
+*(The accrual start under a backward clock, `P11-TSK-033`, 2026-10-13: a path X accrual start is the business date of the
+payout's conclusion, and `lending V009` clamped that instant with the recording clock's ceiling last - so on a database
+clock stepped back behind the payout's birth the conclusion, and the date interest starts, could precede the payout.
+`lending V019` applies the birth's floor last (`GREATEST(LEAST(instant, statement_timestamp()), created_at)`; the
+`NOT_DISPATCHED` stamp `GREATEST(statement_timestamp(), created_at)`), and the accrual start's "never after today" rank
+reads `GREATEST(the clock, the payout's birth)` - the order of facts wins over a clock reading (ADR-0063 decision 2).
+Still the database's time, still never an instance's. Verified by
+`LoanPayoutStepsDatabaseTest#aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth`; three probes,
+`MUTATION_TESTING.md` §2's `P11-TSK-033` rows.)*
+
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
 carry a reason, are proposed by one person and approved by another — never the proposer, never an

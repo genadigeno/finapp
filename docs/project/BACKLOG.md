@@ -18063,6 +18063,90 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   fleet hermetic and architecture tiers are the coordinator's post-merge run; build, fleet database and kafka tiers not
   run (the standing criterion-7 deviation).
 
+**P11-TSK-033 — Remediation: the payout conclusion clamp under a backward database clock** — `COMPLETE` (2026-10-13) *(added out of turn on the owner's instruction, 2026-10-13 - a Phase 11 remediation item, run beside `-023`; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TSK-023` is in progress and stays the current task; found by `P11-TSK-032`'s runs, recorded there as "found, not caused")*
+- **The defect**: `lending V009` (`P11-TSK-015`) held payments' conclusion instant "within the payout's life" as
+  `LEAST(GREATEST(instant, created_at), statement_timestamp())` - the birth's floor first, the recording clock's ceiling
+  last. The database clock is not monotonic (an NTP or hypervisor correction steps it back - measured on the local VM
+  about every 30 s by 1.6-1.7 s, ADR-0063, `X-TSK-017`), so a conclusion recorded while the clock stood behind the
+  payout's birth had `statement_timestamp() < created_at` and the outer `LEAST` put `concluded_at` **before** `created_at`:
+  a payout concluded before it existed, and its accrual start (A30: the conclusion's business date) dated by that
+  instant - across a midnight, the business date before the payout's. `NOT_DISPATCHED` stamped `statement_timestamp()`
+  unclamped - the same defect on the same column. `LoanPayoutStepsDatabaseTest#theConclusionInstantIsHeldWithinThePayoutsLife`
+  met it once, green on re-run. Severity IMPORTANT (a dating defect on interest's start, intermittent; no amount wrong).
+  Second, narrow part: tests that ordered or compared by a database-stamped instant were exposed to the same step -
+  `InterestAccrualDatabaseTest#threeMissedDaysAreCaughtUpOldestFirst` ordered its rows by `created_at` and failed once.
+- **Reproduced first**: `LoanPayoutStepsDatabaseTest#aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth` - four
+  path X payouts (payments' instant in 2001 / `FAILED`, at the instance's now / `PAID_OUT`, in 2999 / `PAID_OUT`, and a
+  routing refusal / `NOT_DISPATCHED`) whose birth is moved a day ahead of the database clock (`DisbursementWorld.asOwner`,
+  the bootstrap superuser with the triggers suspended - no writer can move a birth; the permit made due in the same
+  plant, so no sleep races the clock): on the unfixed tree **red** - every conclusion committed with
+  `concluded_at < created_at` ("expected true|true but was true|false").
+- **As built** (2026-10-13): lending **`V019`** (reserved beside `-023`'s `V018`) `CREATE OR REPLACE`s two `V009`
+  functions, otherwise verbatim (migrator-owned; like `V009`'s, schema-qualified throughout and invoker's rights, so no
+  `search_path` is set): `loan_payout_permits_only_machine_edges` - `PAID_OUT | FAILED`:
+  `concluded_at := GREATEST(LEAST(instant, statement_timestamp()), created_at)`; `NOT_DISPATCHED`:
+  `concluded_at := GREATEST(statement_timestamp(), created_at)` - and `accrual_start_is_born_once`, whose "never after
+  this statement's business date" rank for path X now reads `business_date(GREATEST(statement_timestamp(),
+  payout.created_at), zone)`; the column comment restated. **The precedence, decided**: the order of facts wins over the
+  clock's reading (ADR-0063 decision 2, in credit `V014`'s database-stamp form, `GREATEST(the clock, the predecessor's
+  stamp)`). The ceiling binds payments' instant only - another process's clock never puts a conclusion in the database's
+  future - and never the payout's own birth, which the database already recorded. On a clock not behind the birth the two
+  forms are the same clamp, so nothing changes; on a clock behind it the conclusion is the birth, later than the clock's
+  reading by at most the step - ADR-0063's stated consequence. **The consumer**: left at the bare clock, the accrual
+  start's ceiling would refuse (`P0001`) a conclusion recorded within a step across midnight in the pinned zone - the
+  conclusion rolled back and re-observed until the clock caught up: credit `V014`'s lesson, a legitimate transition lost
+  to an opaque storage failure for as long as the clock stands behind. It takes the conclusion's own reference. The rank
+  keeps its force: `created_at` is the trigger's `statement_timestamp()` at birth and frozen for every writer, so no writer
+  can date an accrual start past the latest instant the database has recorded for the payout. No Java change: the step
+  already dates the accrual start and schedule v1 from the trigger's `RETURNING concluded_at`. `app`'s
+  `LoanPayoutDatabaseTest#assertAccrualFromPaymentsConclusion`, which restated `V009`'s formula, restates `V019`'s.
+- **The `created_at` sweep** (lending's database suites - every `ORDER BY` and every comparison of a database-stamped
+  instant reviewed): **changed** - `InterestAccrualDatabaseTest#threeMissedDaysAreCaughtUpOldestFirst` reads the dates by
+  `accrual_date` (the domain key); "oldest first" is the every-writer trigger's refusal of a date at or before one already
+  accrued (`theRowsAndThePermitAreHeldForEveryWriter` asserts it), so three dates posted in one step were written oldest
+  first - nothing it proved is lost. `LoanPayoutStepsDatabaseTest#theConclusionInstantIsHeldWithinThePayoutsLife` asserted
+  `concluded_at <= now() AND concluded_at > created_at` for the future instant - a later `now()` and a sane clock, both
+  contradicted by a step - and now asserts the exact clamp against the recording statement's own clock,
+  `concluded_at = GREATEST(decided_at, created_at)` (`decided_at` is that statement's `statement_timestamp()`). **Left,
+  reviewed**: `AutoCollectionDatabaseTest#attempts` (`attempt_date, due_date`), the statement, billing and accrual reads
+  (domain keys), `InterestAccrualDatabaseTest`'s `next_servicing_at > statement_timestamp()` (a permit hours ahead, not an
+  order of rows), the `awaitDatabase` polls, and equalities of instants one statement stamped. **For the coordinator, not
+  edited** (`-023`'s suites, and production): `RepaymentDatabaseTest#twoRepaymentsOnOneInstalmentSerialiseAndConserve`
+  takes `first = both.get(1)`, `second = both.get(0)` from `JdbcRepaymentStore.ownedBy`, which orders
+  `created_at DESC, id DESC` - on a step the two flip; the borrower's repayment history (`GET /v1/me/loans/{id}/repayments`)
+  carries the same order (presentation only, no money). And a neighbouring clock-step class, not `created_at`: the payout
+  suites' `Thread.sleep(20)` before re-claiming a permit stamped `statement_timestamp() + 1 ms`
+  (`aLapsedClaimReDrivesAndAnOvertakenStepWritesNothing` - and its `isAfter` on the two permits - and the conclusion
+  cases' second sweep) races the same step; `X-TSK-013`'s `AgedPermits` form is the fix - left, outside this item.
+- **Objective**: a payout's conclusion is never before its birth, and its accrual start is admitted, whatever the database
+  clock does. **Bounded context**: Lending (the payout trigger and the accrual start's rank). **Dependencies**: none.
+- **Domain changes**: none. **Persistence**: `lending V019` (two trigger functions replaced, a column comment). **APIs**,
+  **Events**: none. **Financial impact**: interest starts at the business date of the payout's birth - never the day
+  before it - when a conclusion is recorded behind the birth; no amount, entry or balance changes. **Invariants**:
+  `INV-LND-10`, `INV-LND-07`, `INV-HIST-01` (history reads in order). **Distributed-system concerns**: none new - the clamp
+  is a pure function of the locked row's frozen birth and the one database clock the instances share. **Security**,
+  **Audit**, **Observability**, **Reconciliation implications**: none.
+- **Probe**: `V009`'s precedence restored in `V019`; separately `NOT_DISPATCHED` back on the bare clock; separately the
+  accrual start's ceiling back on the bare clock - the new case red each time (`MUTATION_TESTING.md` §2).
+- **Acceptance criteria**: the new case red on `V009`'s clamp and green on `V019`'s; the probes caught; the sweep listed;
+  the lending tiers and the app's payout suites green.
+- **Definition of done**: `DOD-FIN` (the dating rank), `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Gate** (2026-10-13, `COMPLETE`; multi-instance `PASS`): One IMPORTANT finding, fixed - `LENDING_LIFECYCLES.md`
+  section 4.7 still stated the conclusion "held within `[created_at, statement_timestamp()]`", an interval that is empty
+  on a clock behind the birth: it now states the precedence and the `NOT_DISPATCHED` stamp (and ADR-0097's as-built
+  sentence points to its follow-up); MINOR - the `V009` comment carried into `V019`'s function ("nor follow now")
+  amended to the precedence; MINOR, left by design - the payout's other stamps (`dispatched_at`, `decided_at`,
+  `last_observed_at`) remain the bare clock: no `CHECK` orders them and nothing dates money by them, so they are
+  `X-TSK-006`'s reading of the class, not this defect.
+- **Owner judgements**: (1) the precedence - the order of facts wins, so a conclusion can be later than the recording
+  clock's reading by at most the step (ADR-0063's consequence); (2) the accrual start's "never after today" rank reads
+  `GREATEST(the clock, the payout's birth)` rather than refusing and re-observing until the clock catches up; (3)
+  `NOT_DISPATCHED` clamped in the same item (same column, same consumer); (4) `V019` sets no `search_path`, as `V009`'s
+  functions set none (schema-qualified, invoker's rights) - the brief's "pinned like V009" read as "as V009"; (5) Flyway
+  runs `outOfOrder = false`: `V019` must not reach a persistent database before `-023`'s `V018` - merge `-023` first, or
+  both together (fresh test databases are unaffected).
+- **Verified** (fresh): the new case red on the unfixed tree (`LoanPayoutStepsDatabaseTest`, 11 tests, 1 failed), then green; lending hermetic (`:lending:test --rerun`) 170 across 21; lending databaseTest (whole, the build's shift `Etc/GMT+12`) 180 across 16, 0 failures (10:48 UTC; `LoanPayoutStepsDatabaseTest` 11, `InterestAccrualDatabaseTest` 14 inside it) - the first whole run (10:37 UTC) 180 with one red not this item's, `InstalmentBillingDatabaseTest#lateRepaymentRaisesTheNextInterestDue` failing in its fixture's origination (`inserting a loan offer: SQLSTATE P0001` - no payout, no accrual start on its path; read as `lending V005`'s `offered_at <= statement_timestamp()` rank meeting a backward step, found not caused, below) - green in the re-run; app own-container `LoanPayoutDatabaseTest` 9 and `LoanAccountDatabaseTest` 14 (23, 0 failures, their own invocation); platform `ColumnClassificationTest` 5 and `ApplicationRoleGrantsTest` 6; app `MutationDemonstrationTest` 9 after the rows were written. Fleet hermetic and architecture tiers deferred to the coordinator's post-merge run; build, fleet database and kafka tiers not run (the standing criterion-7 deviation). **Found, not caused** (for the owner): `lending V005`'s offer trigger refuses `offered_at > statement_timestamp()`, with `offered_at` read by an earlier statement of the same transaction - a backward step between the two refuses an origination (`P0001`, retried by the sweep): the same class, a candidate remediation; and the two clock-step test exposures above.
+
 **P11-TST-001 — The lending storm** — `PLANNED`
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
   end to end from application to closure, for both products — every mandatory scenario exercised.
