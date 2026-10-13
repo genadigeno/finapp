@@ -1873,7 +1873,9 @@ schedule version n+1 written once and a moved agreement lapsing the amendment.
 *(The agreement half built by `P11-TSK-012`, 2026-10-11 - `lending V006`'s `loan_agreement` and `loan_acceptance`, INSERT-only by grant and immutable by trigger for every role, version 1 held to an exact copy of its offer's terms (canonical `text`, its hash by `CHECK`); verified by `LoanAcceptanceDatabaseTest#theAgreementIsNeverUpdatedByAnyRole` and `#aMismatchedHashRefuses` (`409 lending.TermsChanged`, nothing written); probes in `MUTATION_TESTING.md` §2.)*
 *(Canonical format 2 by `P11-TSK-031`, 2026-10-12 - `lending V011`: the canonical terms' stored format is the bytes' own
 first token, held by `CHECK` with each format's token set for every writer; format 1 rows unchanged and re-renderable
-byte for byte, so replay re-verifies every hash in the format it was written in.)*
+byte for byte, so replay re-verifies every hash in the format it was written in. Its gate, 2026-10-13: the agreement's
+`CHECK` proven alone (`LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted`, the triggers suspended), and the four
+probes performed - `MUTATION_TESTING.md` §2's `P11-TSK-031` rows.)*
 **Phase:** 11
 
 *(As built by `P11-TSK-005`, 2026-10-11 - the terms half: `lending V003` splits a version into the money-free machine
@@ -2078,6 +2080,13 @@ clock read after the loan's lock, in the pinned zone - `lending V012`'s trigger 
 back-valued to the due date (ADR-0094 point 8).)*
 
 *(As built by `P11-TSK-022`, 2026-10-13 - the statement: a cycle is stated only once its statement date has come on the database clock read after the line's lock, in the pinned zone - `lending V017`'s trigger refuses an earlier statement for every writer - and only once every date of it is accrued; rule 3 is dated the business date of its transaction. A draw on the statement date belongs to the next cycle whichever order it and the step meet the line's lock in (`CreditLineStatementDatabaseTest#aStatementRacingADrawAtTheCycleEndSerialises`).)*
+
+*(The tests' own time, `P11-TSK-032`, 2026-10-13: the lending database fixtures now derive every date they plant or
+compare from the database clock in the pinned zone, as production does (`DisbursementWorld.businessDate`), never from
+`current_date` (the session's zone, set from the test JVM's) or an instance clock - two suites had failed from 20:00 to
+24:00 UTC on a UTC+4 machine for it. `:lending:databaseTest` runs date-shifted at every hour, so a fixture that dates by
+the session or the machine is red whenever it runs (`TESTING.md` §5; `MUTATION_TESTING.md` §2's `P11-TSK-032` row). No
+production rule changed.)*
 
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)

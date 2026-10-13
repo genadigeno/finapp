@@ -741,9 +741,9 @@ class RepaymentReversalDatabaseTest {
     /** A second reversal of the repayment's entry under another key, straight through the ledger. */
     private static void reverseDirectly(Repayment repayment, List<JournalLine> lines) {
         Actor actor = employee();
+        LocalDate today = DisbursementWorld.businessDate(); // the database clock's, never the instance's (P11-TSK-032)
         as(actor, correlation -> inOneTransaction(uow -> REVERSAL_SERVICE.reverse(uow, new ReversalCommand(
-                "p11t20-probe:" + UUID.randomUUID(), repayment.journalEntry(), LocalDate.now(java.time.ZoneOffset.UTC),
-                LocalDate.now(java.time.ZoneOffset.UTC), "probe", lines))));
+                "p11t20-probe:" + UUID.randomUUID(), repayment.journalEntry(), today, today, "probe", lines))));
     }
 
     // ------------------------------------------------------------------ the assertions

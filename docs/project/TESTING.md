@@ -202,6 +202,23 @@ To judge one suite's residue, run it with the sentinel — the orderer still put
 ./gradlew :app:databaseTest --tests '*MerchantPayoutDatabaseTest' --tests '*ReconciledPositionResidueDatabaseTest'
 ```
 
+### A planted date is the database's business date — and lending's tier runs date-shifted
+
+Lending judges every date on the database clock in the agreement's pinned servicing zone
+(`lending.business_date(statement_timestamp(), zone)`; `LoanServicing` takes the database clock's
+date in that zone). A fixture that plants `current_date` gets the *session's* date, and the JDBC
+driver sets the session zone from the test JVM's default; `LocalDate.now()` is the machine's date;
+`LocalDate.now(UTC)` is an instance clock. On a UTC+4 machine the first two are a day ahead of the
+business date from 20:00 to 24:00 UTC, which is how two lending suites failed only in the evening
+for five tasks (`P11-TSK-032`). The rule: a lending fixture derives every date it plants or
+compares from the database clock in the pinned zone — `DisbursementWorld.businessDate(loan)` /
+`businessDateSql(loan)`, or `businessDate()` for the fixtures' UTC zone.
+
+So the class cannot hide again, `:lending:databaseTest` runs its JVM in a zone whose date is not
+UTC's at the hour it starts (UTC-12 before 11:00 UTC, UTC+14 from then; `lending/build.gradle.kts`),
+and prints the zone. `-Pfinapp.db.zone=<zone id>` pins another — `UTC` turns the shift off for a
+diagnosis. The other modules' tiers are not shifted.
+
 ### A suite that needs a database of its own
 
 The three rules are the default, and a few suites cannot meet them without losing what they
