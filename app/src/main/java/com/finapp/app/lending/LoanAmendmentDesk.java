@@ -342,7 +342,7 @@ public final class LoanAmendmentDesk {
         if (raw == null || !RATE.matcher(raw).matches()) {
             throw invalid("the nominal annual rate must be a decimal fraction from 0 to 1 - 0.05 for 5 %.");
         }
-        return new BigDecimal(raw);
+        return com.finapp.app.api.DecimalText.parse(raw);
     }
 
     /** A {@code MULTI_FACTOR} session, always - the acceptance changes the borrower's contract (A19). */

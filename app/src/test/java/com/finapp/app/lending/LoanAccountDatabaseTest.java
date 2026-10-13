@@ -1166,6 +1166,79 @@ class LoanAccountDatabaseTest {
         assertThat(exceeds.body()).contains("lending.WaiverExceedsDue");
     }
 
+    @Test
+    @DisplayName("a loan is restructured under four eyes and the customer's acceptance end to end (P11-TSK-027): a freshly"
+            + " disbursed loan - an agent proposes a lower rate over a longer term over the door (201, the key replaying its"
+            + " receipt), is refused their own approval 403, a second agent approves (200, APPROVED with its expiry); the"
+            + " customer reads it with its document, an acceptance echoing another hash is 409 lending.TermsChanged and"
+            + " one from a session below MULTI_FACTOR 403, the acceptance is 201 - agreement version 2 and schedule"
+            + " version 2, the key replaying its receipt; the operator's read lists it ACCEPTED, the customer's schedule"
+            + " door answers version 2, finapp.lending.amendment counted once per act")
+    void aLoanIsRestructuredEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("4200.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        String rate = new java.math.BigDecimal(scalar("SELECT nominal_annual_rate FROM lending.loan_agreement"
+                + " WHERE loan_id = ?::uuid", loanId)).divide(java.math.BigDecimal.valueOf(2), 4,
+                java.math.RoundingMode.DOWN).stripTrailingZeros().toPlainString();
+
+        String proposer = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        String approver = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        String amendments = "/v1/operator/loans/" + loanId + "/amendments";
+        String proposal = "{\"nominalAnnualRate\":\"" + rate + "\",\"remainingInstalments\":18,"
+                + "\"rescheduleArrears\":false,\"reason\":\"hardship after a documented job loss\"}";
+        double proposedBefore = amended("proposed");
+        double acceptedBefore = amended("accepted");
+        String proposalKey = key();
+        HttpResponse<String> proposed = client.post(amendments, proposal, proposer, proposalKey);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"", "\"amendsVersion\":1")
+                .doesNotContain("job loss");
+        assertThat(client.post(amendments, proposal, proposer, proposalKey).body()).as("the receipt, byte for byte")
+                .isEqualTo(proposed.body());
+        assertThat(amended("proposed")).isEqualTo(proposedBefore + 1);
+        String amendment = field(proposed.body(), "amendmentId");
+        String decision = "{\"reason\":\"affordability reviewed\"}";
+        HttpResponse<String> own = client.post(amendments + "/" + amendment + "/approval", decision, proposer, key());
+        assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
+        assertThat(own.body()).contains("lending.SelfApprovalRefused");
+        HttpResponse<String> approved = client.post(amendments + "/" + amendment + "/approval", decision, approver, key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(approved.body()).contains("\"status\":\"APPROVED\"", "\"expiresAt\":\"");
+
+        String mine = LOANS + "/" + loanId + "/amendments/" + amendment;
+        HttpResponse<String> offered = client.get(mine, customer.token());
+        assertThat(offered.statusCode()).as(offered.body()).isEqualTo(200);
+        assertThat(offered.body()).contains("LOAN AMENDMENT " + amendment).doesNotContain("job loss");
+        String document = field(offered.body(), "documentSha256");
+        HttpResponse<String> changed = client.post(mine + "/acceptance", "{\"documentSha256\":\"" + "ab".repeat(32)
+                + "\"}", customer.token(), key());
+        assertThat(changed.statusCode()).as(changed.body()).isEqualTo(409);
+        assertThat(changed.body()).contains("lending.TermsChanged");
+        String acceptanceKey = key();
+        String acceptance = "{\"documentSha256\":\"" + document + "\"}";
+        HttpResponse<String> accepted = client.post(mine + "/acceptance", acceptance, customer.token(), acceptanceKey);
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        assertThat(accepted.body()).contains("\"status\":\"ACCEPTED\"", "\"agreementVersion\":2",
+                "\"scheduleVersion\":2");
+        assertThat(client.post(mine + "/acceptance", acceptance, customer.token(), acceptanceKey).body())
+                .as("the receipt, byte for byte").isEqualTo(accepted.body());
+        assertThat(amended("accepted")).isEqualTo(acceptedBefore + 1);
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", loanId)).isEqualTo(2);
+        assertThat(client.get("/v1/operator/loans/" + loanId, proposer).body())
+                .contains("\"amendmentId\":\"" + amendment + "\"", "\"status\":\"ACCEPTED\"");
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body())
+                .contains("\"scheduleVersion\":2", "\"agreementVersion\":2");
+    }
+
+    private double amended(String outcome) {
+        return meterRegistry.find(LoanAmendmentMetrics.AMENDMENT).tag("outcome", outcome).counter().count();
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private double reversals(String outcome) {

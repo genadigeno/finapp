@@ -1174,6 +1174,26 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P11-TSK-025. GET /v1/operator/loans/{id} behind LOAN_SERVICE - an operator reads any loan by design, each serving audited (lending.LoanRead); no customer door reaches it.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanAmendmentStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-027. The amendment named by the path of a door - an operator's behind LOAN_SERVICE / LOAN_SERVICE_APPROVE (the operator's own party's loan refused first, SelfDealingRefused), or the customer's, whose loan is read or locked owner-scoped first (LoanStore.ownedBy / lockOwnedBy, party_id = ?) - and the statement holds it to that loan (m.id = ? AND m.loan_id = ?): another loan's amendment is the same 404.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanAmendmentStore.ofLoan",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-027. GET /v1/operator/loans/{id} behind LOAN_SERVICE - an operator reads any loan by design, each serving audited (lending.LoanRead); no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanAmendmentStore.open",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-027. Whether an amendment of the loan is open - on the loan an amendment door behind LOAN_SERVICE locked FOR UPDATE (L3); the operator's own party's loan is refused first (SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanAmendmentStore.scheduleVersionOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-027. The schedule version of an accepted amendment's agreement version - on the loan the customer's acceptance locked owner-scoped first (LoanStore.lockOwnedBy, party_id = ?); never a request value beyond that loan.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcWaiverStore.pending",
                             new Entry(
                                     Scope.ADMINISTERED,

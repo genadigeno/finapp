@@ -283,7 +283,8 @@ class AmendmentDatabaseTest {
             + " the amendment re-scheduling arrears posts rule 13 once (DR LOAN_PRINCIPAL / CR LOAN_PRINCIPAL_DUE of exactly"
             + " the item's unpaid principal, lending.amendment:<id>), one re-scheduling row naming it; LOAN_PRINCIPAL_DUE is"
             + " left with no principal, LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE unchanged, schedule version 2 amortises exactly"
-            + " the new LOAN_PRINCIPAL (its portions summing to it), and the subledger proof's principal arms hold")
+            + " the new LOAN_PRINCIPAL (its portions summing to it), and the subledger proof's principal arms hold; paid off,"
+            + " the principal billed net of re-scheduling over the loan's life is exactly its principal")
     void arrearsRescheduledConservePrincipal() throws SQLException {
         LoanId loan = inArrears(6_400_00);
         long principalDue = netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL_DUE)).minorUnits();
@@ -312,6 +313,16 @@ class AmendmentDatabaseTest {
                 + " s.final_instalment_minor, s.total_interest_minor, s.term_months, s.start_date, s.intended_day, now(),"
                 + " 'p11t27-raw' FROM lending.repayment_schedule s WHERE s.loan_id = '" + loan.value()
                 + "' AND s.schedule_version = 2", "P0001", "principal outstanding not yet billed");
+        assertSubledgerProves(loan);
+
+        // Over the loan's whole life: a payoff bills every instalment of version 2 - the final one all remaining principal
+        // - so the principal billed net of re-scheduling is exactly the principal (P11-TSK-017's rank), and the loan closes.
+        PayoffQuote quote = PayoffDatabaseTest.quote(loan, key(), Optional.empty()).quote();
+        RepaymentDatabaseTest.topUp(partyOf(loan), quote.amount().minorUnits());
+        PayoffDatabaseTest.execute(loan, quote, key());
+        assertThat(loanStatus(loan)).isEqualTo("CLOSED");
+        assertThat(count("SELECT coalesce(sum(lending.billing_component_billed(id, 'PRINCIPAL')), 0) FROM"
+                + " lending.instalment_billing WHERE loan_id = ?", loan.value())).isEqualTo(6_400_00);
         assertSubledgerProves(loan);
     }
 
