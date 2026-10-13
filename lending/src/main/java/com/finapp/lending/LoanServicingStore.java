@@ -1,6 +1,7 @@
 package com.finapp.lending;
 
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
@@ -47,4 +48,24 @@ public interface LoanServicingStore {
      * clock in its pinned zone - from the end of that date; empty when every elapsed date is accrued.
      */
     Optional<Duration> oldestUnaccruedLag(Connection unitOfWork);
+
+    /**
+     * The credit lines in servicing ({@code ACTIVE} or {@code CLOSING}) ever drawn whose next accrual date - the day after
+     * the latest accrual, or the opening business date - has elapsed on the database clock in the pinned zone: the
+     * candidates of the accrual lag's line arm (`P11-TSK-023`). Whether principal was outstanding on those dates is a
+     * journal-line question this store does not ask ({@link AccrualLags} does, through the ledger's port).
+     */
+    List<LineAwaitingAccrual> linesAwaitingAccrual(Connection unitOfWork);
+
+    /** A line whose dates from {@code nextDate} up to (excluding) {@code today} have not been accrued. */
+    record LineAwaitingAccrual(LoanId loan, CurrencyCode currency, LocalDate nextDate, LocalDate today, String zone) {
+
+        public LineAwaitingAccrual {
+            java.util.Objects.requireNonNull(loan, "loan must not be null");
+            java.util.Objects.requireNonNull(currency, "currency must not be null");
+            java.util.Objects.requireNonNull(nextDate, "nextDate must not be null");
+            java.util.Objects.requireNonNull(today, "today must not be null");
+            java.util.Objects.requireNonNull(zone, "zone must not be null");
+        }
+    }
 }

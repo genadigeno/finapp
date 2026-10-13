@@ -57,25 +57,29 @@ import lombok.RequiredArgsConstructor;
  *       here, and each derives after the other's commit (scenario 3);
  *   <li>a repayment already born under the customer's key converges - the same amount answers it as a replay, another
  *       amount is the key reused ({@code UNIQUE (loan_id, kind, request_key)}, the arbiter behind a claim that lapsed);
- *   <li>an {@code ACTIVE} instalment loan - a {@code CLOSED} or {@code CANCELLED} one, one not yet disbursed and (until
- *       `P11-TSK-023`) a credit line are {@code LoanNotRepayable}, nothing posted;
+ *   <li>an {@code ACTIVE} instalment loan, or a credit line {@code ACTIVE} or {@code CLOSING} (`P11-TSK-023`) - a
+ *       {@code CLOSED} or {@code CANCELLED} account and one not yet disbursed are {@code LoanNotRepayable}, nothing
+ *       posted;
  *   <li>the database clock, read after the lock: the value date is its business date in the pinned zone;
  *   <li><strong>the due state</strong>, derived under L3 from the billed items (billed less paid by every payer) and
  *       refused unless they explain the due accounts' ledger balances ({@link LoanReceivables}, {@code INV-LND-01}) -
  *       never the projection ({@code INV-BAL-05}); then {@link AllocationEngineV1#allocate} by the agreement's pinned
- *       rules: billed items oldest first, {@code FEES -> INTEREST -> PRINCIPAL} within each, the rest held as credit
- *       ({@code HOLD_AS_CREDIT});
+ *       rules: billed items oldest first, {@code FEES -> INTEREST -> PRINCIPAL} within each, then the remainder by the
+ *       pinned treatment - an instalment loan holds it all as credit ({@code HOLD_AS_CREDIT}); a line pays down its
+ *       principal not yet due and holds only what exceeds every receivable it reaches ({@code PAY_DOWN_PRINCIPAL}, A26);
  *   <li><strong>(L7)</strong> the borrower's wallet ledger row {@code FOR UPDATE}, and {@link AvailableBalance#underLock}
  *       at least the amount ({@code INV-BAL-04}) - the wallet always after the loan. A wallet that is absent or not
  *       {@code ACTIVE} cannot fund the repayment: {@code InsufficientFunds} (ADR-0095 point 4), nothing written;
  *   <li>(L8) the projection rows of every account the transaction will post to, in the ledger's one order, when a closure
  *       will follow ({@code lockBalancesInOrder} - more than one entry); then posting rule 5 under
  *       {@code lending.repayment:<repaymentId>} - {@code DR CUSTOMER_WALLET A / CR LOAN_FEES_DUE / LOAN_INTEREST_DUE /
- *       LOAN_PRINCIPAL_DUE} per allocation, aggregated per account, {@code CR LOAN_CREDIT_BALANCE} the rest;
+ *       LOAN_PRINCIPAL_DUE} per allocation, aggregated per account, {@code CR LOAN_PRINCIPAL} a line's paydown (restoring
+ *       its available limit at commit), {@code CR LOAN_CREDIT_BALANCE} the rest;
  *   <li>then only inserts: the {@code repayment} row naming its entry and its allocation rows (the database holds them to
  *       the amount and no billed component above what it billed, at commit), {@code lending.RepaymentReceived};
  *   <li>and the closure, when every receivable is now zero ({@link LoanClosures}): the credit balance refunded to the
- *       wallet, {@code CLOSED (REPAID)}, {@code lending.LoanClosed} - in this same transaction.
+ *       wallet, {@code CLOSED (REPAID)} - or a {@code CLOSING} line's {@code CLOSED (CLOSED_BY_CUSTOMER)} -
+ *       {@code lending.LoanClosed}, in this same transaction. An {@code ACTIVE} line paid to zero stays open.
  * </ol>
  *
  * <p><strong>No standing check</strong>: a suspended customer may still repay. <strong>No L0</strong>: a repayment only
@@ -150,7 +154,8 @@ public final class Repayments {
      *
      * @throws LoanNotFound the party has no loan with this id (another party's included)
      * @throws RepaymentKeyReused a repayment under this key exists for another amount
-     * @throws LoanNotRepayable the loan is not an {@code ACTIVE} instalment loan
+     * @throws LoanNotRepayable the account is neither an {@code ACTIVE} instalment loan nor a credit line {@code ACTIVE}
+     *     or {@code CLOSING}
      * @throws AmountInvalid the amount is not positive, or not in the loan's currency and scale
      * @throws InsufficientFunds the wallet's available balance cannot cover the amount, or the wallet cannot be debited
      * @throws AllocationAnomaly the loan's rows do not explain its due accounts, or the engine broke its assertion
@@ -176,7 +181,7 @@ public final class Repayments {
             }
             return new Repaid(born.get(), repayments.closedBy(unitOfWork, born.get().id()), true);
         }
-        if (loan.kind() != LoanKind.INSTALMENT || loan.status() != LoanStatus.ACTIVE) {
+        if (!repayable(loan)) {
             throw new LoanNotRepayable(loan.product());
         }
         Money amount = request.amount();
@@ -190,7 +195,8 @@ public final class Repayments {
         LoanTerms pinned = terms.version(unitOfWork, agreement.termsVersionId())
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
-        LocalDate today = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
+        ZoneId zone = ZoneId.of(pinned.servicingZone());
+        LocalDate today = LocalDate.ofInstant(now, zone);
 
         // The due state under L3, explained by the ledger; the allocation by the pinned rules (INV-LND-01, INV-LND-04).
         Money zero = Money.ofPersisted(0, loan.currency(), principal.scale());
@@ -214,7 +220,17 @@ public final class Repayments {
         }
 
         return receive(unitOfWork, loan, agreement, RepaymentKind.CUSTOMER, request.requestKey(), amount, lines, accounts,
-                wallet, today, now, () -> actor, correlation);
+                wallet, zone, today, now, () -> actor, correlation);
+    }
+
+    /**
+     * Whether the account takes a repayment: an {@code ACTIVE} instalment loan, or a credit line {@code ACTIVE} or
+     * {@code CLOSING} (`P11-TSK-023` - a closing line is repaid until it closes).
+     */
+    static boolean repayable(Loan loan) {
+        return loan.kind() == LoanKind.INSTALMENT
+                ? loan.status() == LoanStatus.ACTIVE
+                : loan.status() == LoanStatus.ACTIVE || loan.status() == LoanStatus.CLOSING;
     }
 
     /**
@@ -230,8 +246,8 @@ public final class Repayments {
      * @param actor the closing act's actor, asked for only when the repayment closes the loan
      */
     Repaid receive(Connection unitOfWork, Loan loan, LoanAgreement agreement, RepaymentKind kind, String requestKey,
-            Money amount, List<AllocationLine> lines, Accounts accounts, LedgerAccountId wallet, LocalDate today,
-            Instant now, Supplier<Actor> actor, CorrelationId correlation) {
+            Money amount, List<AllocationLine> lines, Accounts accounts, LedgerAccountId wallet, ZoneId zone,
+            LocalDate today, Instant now, Supplier<Actor> actor, CorrelationId correlation) {
         LoanId id = loan.id();
         UUID repaymentId = ids.next();
         List<RepaymentAllocation> allocations = new ArrayList<>();
@@ -252,7 +268,7 @@ public final class Repayments {
         Repayment repayment = new Repayment(repaymentId, id, kind, requestKey, amount,
                 agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, today,
                 receivedAt);
-        Optional<LoanClosure> closure = closures.closeIfSettled(unitOfWork, loan, agreement, today,
+        Optional<LoanClosure> closure = closures.closeIfSettled(unitOfWork, loan, agreement, zone, today,
                 Optional.of(repaymentId), actor, correlation);
         publish(unitOfWork, loan, repayment, closure.isPresent(), correlation);
         return new Repaid(repayment, closure, false);
@@ -290,26 +306,29 @@ public final class Repayments {
     // ------------------------------------------------------------------ rule 5
 
     /**
-     * {@code DR CUSTOMER_WALLET A}; per due account the sum of the lines paying its component; {@code CR
-     * LOAN_CREDIT_BALANCE} what is held. A line's paydown ({@code LOAN_PRINCIPAL}) is `P11-TSK-023`'s - an instalment loan's
-     * treatment never produces one.
+     * {@code DR CUSTOMER_WALLET A}; per due account the sum of the lines paying its component; {@code CR LOAN_PRINCIPAL}
+     * a line's paydown of principal not yet due (`P11-TSK-023`, A26 - an instalment loan's treatment never produces one,
+     * and {@code lending V014}'s trigger refuses its row); {@code CR LOAN_CREDIT_BALANCE} what is held.
      */
     private static List<JournalLine> entryLines(Money amount, List<AllocationLine> lines, Accounts accounts,
             LedgerAccountId wallet) {
         Map<AllocationComponent, Money> perComponent = new EnumMap<>(AllocationComponent.class);
         Money held = Money.ofPersisted(0, amount.currency(), amount.scale());
+        Money paidDown = held;
         for (AllocationLine line : lines) {
             switch (line.target()) {
                 case DUE_ITEM -> perComponent.merge(line.component().orElseThrow(), line.amount(), Money::plus);
                 case CREDIT_BALANCE -> held = held.plus(line.amount());
-                case NOT_DUE_PRINCIPAL -> throw new IllegalStateException(
-                        "an instalment loan's repayment never pays principal not yet due (HOLD_AS_CREDIT, ADR-0095)");
+                case NOT_DUE_PRINCIPAL -> paidDown = paidDown.plus(line.amount());
             }
         }
         List<JournalLine> entry = new ArrayList<>();
         entry.add(new JournalLine(wallet, Direction.DEBIT, amount));
         for (Map.Entry<AllocationComponent, Money> component : perComponent.entrySet()) {
             entry.add(new JournalLine(accounts.due(component.getKey()), Direction.CREDIT, component.getValue()));
+        }
+        if (paidDown.isPositive()) {
+            entry.add(new JournalLine(accounts.principal(), Direction.CREDIT, paidDown));
         }
         if (held.isPositive()) {
             entry.add(new JournalLine(accounts.creditBalance(), Direction.CREDIT, held));
@@ -396,7 +415,7 @@ public final class Repayments {
         }
     }
 
-    /** The account takes no repayment here: closed, cancelled, not yet disbursed, or a credit line (`P11-TSK-023`). */
+    /** The account takes no repayment: closed, cancelled or not yet disbursed. */
     public static final class LoanNotRepayable extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 

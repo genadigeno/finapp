@@ -111,6 +111,7 @@ class LoanAccountDatabaseTest {
     @Autowired private LoanServicingMetrics servicingMetrics;
     @Autowired private LendingCreditExposure creditExposure;
     @Autowired private Authorization authorization;
+    @Autowired private com.finapp.app.credit.ExposureCensusMetrics exposureCensus;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -572,6 +573,85 @@ class LoanAccountDatabaseTest {
         assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
         assertThat(foreign.body()).contains("lending.NotFound");
         assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a line is repaid and closed end to end (P11-TSK-023): over the door a payment beyond what is due pays"
+            + " principal down (NOT_DUE_PRINCIPAL), restoring the available limit, counted paid_down; the closure door from"
+            + " a MULTI_FACTOR session moves the line CLOSING (201, outcome CLOSING), its key replaying the receipt - the"
+            + " credit exposure falls from the limit to the drawn principal without the profile lock and the census holds;"
+            + " a draw is then 409 lending.LineNotDrawable; the last payment closes it CLOSED_BY_CUSTOMER and refunds the"
+            + " excess, counted closed; a second request is 409 lending.LoanClosed, another party's the uniform 404, an"
+            + " instalment loan's 409 lending.LineNotClosable")
+    void aLineIsRepaidAndClosedEndToEnd() throws Exception {
+        CreditFixtures.Customer owner = customers.consentingCustomer();
+        String offer = offered(owner, line("2500.00"));
+        String hash = field(client.get(OFFERS + "/" + offer, owner.token()).body(), "termsSha256");
+        String loanId = field(accept(owner.token(), offer, hash, null, key()).body(), "loanId");
+        assertThat(draw(owner.token(), loanId, "1000.00", key()).statusCode()).isEqualTo(201);
+
+        double paidDownBefore = repayments("paid_down");
+        HttpResponse<String> paidDown = repay(owner.token(), loanId, "400.00", key());
+        assertThat(paidDown.statusCode()).as(paidDown.body()).isEqualTo(201);
+        assertThat(paidDown.body()).contains("\"target\":\"NOT_DUE_PRINCIPAL\"", "\"amount\":\"400.00\"",
+                "\"closure\":null");
+        assertThat(repayments("paid_down")).as("the paydown component counted").isEqualTo(paidDownBefore + 1);
+        assertThat(client.get(LOANS + "/" + loanId, owner.token()).body())
+                .contains("\"availableLimit\":\"1900.00\"", "\"status\":\"ACTIVE\"");
+        Money exposureOpen = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow, owner.party(),
+                EUR));
+        assertThat(exposureOpen).as("an open line counts its limit").isEqualTo(Money.ofMinorUnits(2_500_00, EUR));
+
+        String key = key();
+        HttpResponse<String> closing = client.post(LOANS + "/" + loanId + "/closure", null, owner.token(), key);
+        assertThat(closing.statusCode()).as(closing.body()).isEqualTo(201);
+        assertThat(closing.body()).contains("\"loanId\":\"" + loanId + "\"", "\"outcome\":\"CLOSING\"",
+                "\"closure\":null");
+        HttpResponse<String> replay = client.post(LOANS + "/" + loanId + "/closure", null, owner.token(), key);
+        assertThat(replay.statusCode()).isEqualTo(201);
+        assertThat(replay.body()).as("the receipt, byte for byte").isEqualTo(closing.body());
+        assertThat(client.get(LOANS + "/" + loanId, owner.token()).body())
+                .contains("\"status\":\"CLOSING\"", "\"availableLimit\":\"0.00\"");
+        Money exposureClosing = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                owner.party(), EUR));
+        assertThat(exposureClosing).as("a closing line counts its drawn principal").isEqualTo(Money.ofMinorUnits(600_00,
+                EUR));
+        assertThat(exposureCensus.readNow().failingParties()).as("the census holds the fallen figure")
+                .doesNotContain(owner.party());
+        HttpResponse<String> refused = draw(owner.token(), loanId, "10.00", key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("lending.LineNotDrawable");
+
+        double closedBefore = repayments("closed");
+        HttpResponse<String> last = repay(owner.token(), loanId, "600.00", key());
+        assertThat(last.statusCode()).as(last.body()).isEqualTo(201);
+        assertThat(last.body()).contains("\"reason\":\"CLOSED_BY_CUSTOMER\"", "\"refunded\":\"0.00\"");
+        assertThat(repayments("closed")).isEqualTo(closedBefore + 1);
+        assertThat(client.get(LOANS + "/" + loanId, owner.token()).body()).contains("\"status\":\"CLOSED\"");
+        Money exposureClosed = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                owner.party(), EUR));
+        assertThat(exposureClosed).isEqualTo(Money.ofMinorUnits(0, EUR));
+        HttpResponse<String> again = client.post(LOANS + "/" + loanId + "/closure", null, owner.token(), key());
+        assertThat(again.statusCode()).as(again.body()).isEqualTo(409);
+        assertThat(again.body()).contains("lending.LoanClosed");
+        HttpResponse<String> closedRepay = repay(owner.token(), loanId, "1.00", key());
+        assertThat(closedRepay.statusCode()).as(closedRepay.body()).isEqualTo(409);
+        assertThat(closedRepay.body()).contains("lending.LoanNotRepayable");
+
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> foreign = client.post(LOANS + "/" + loanId + "/closure", null, stranger.token(), key());
+        assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
+        assertThat(foreign.body()).contains("lending.NotFound");
+        String loanOffer = offered(owner, loan("1500.00", 12, 10));
+        String loanHash = field(client.get(OFFERS + "/" + loanOffer, owner.token()).body(), "termsSha256");
+        String instalment = field(accept(owner.token(), loanOffer, loanHash, null, key()).body(), "loanId");
+        HttpResponse<String> notALine = client.post(LOANS + "/" + instalment + "/closure", null, owner.token(), key());
+        assertThat(notALine.statusCode()).as(notALine.body()).isEqualTo(409);
+        assertThat(notALine.body()).contains("lending.LineNotClosable");
+        assertThat(count("SELECT count(*) FROM lending.line_closure_request WHERE loan_id = ?::uuid", loanId))
+                .isEqualTo(1);
+        assertThat(meterRegistry.find(LoanCountMetrics.LOANS).tag("product", "credit_line").tag("status", "closing")
+                .gauge()).as("finapp.lending.loans registered for a closing line").isNotNull();
     }
 
     @Test

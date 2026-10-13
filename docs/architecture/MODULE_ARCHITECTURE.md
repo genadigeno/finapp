@@ -575,7 +575,16 @@ under `lending.statement:<line>:<statement date>`, rule 6 through `CreditBalance
 billing step - `lending.CreditLineStatementIssued`, and the owner's statements read with balances derived from the ledger),
 `CreditLineStatement`, `CreditLineStatementStore`/`JdbcCreditLineStatementStore`, `InstalmentBillingStore.dueItems` (both
 kinds of billed item - `LoanReceivables` and `LoanCollections` read it), and `app`'s `GET /v1/me/loans/{id}/statements` and
-`finapp.lending.billing{kind=statement}`; every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
+`finapp.lending.billing{kind=statement}`; `P11-TSK-023` (2026-10-13) - the line's repayment and closure: `lending V018`
+(`line_closure_request` - `UNIQUE (loan_id)`, INSERT-only, its outcome held to the line's state at commit; the repayment,
+collection-attempt and closure triggers and the loan's edge function replaced for a line `ACTIVE`/`CLOSING`),
+`Repayments` serving a line (rule 5's `CR LOAN_PRINCIPAL` paydown under the pinned `PAY_DOWN_PRINCIPAL`), `LineClosures`
+(T-clo: L3, then `LoanClosures.settlement` - L7 for a refund - closing at the request or moving the line `CLOSING`),
+`LoanClosures` closing a `CLOSING` line `CLOSED_BY_CUSTOMER` wherever it is settled, `LoanCollections` collecting a `CLOSING`
+line, `LineClosureRequest`/`LineClosureOutcome`/`LineClosureStore`/`JdbcLineClosureStore`, `AccrualLags` (the accrual lag's
+line arm), `LoanStore.beginClosing`/`countsByProductAndStatus`; and `app`'s `POST /v1/me/loans/{id}/closure`
+(`LineClosureDesk`, `MULTI_FACTOR`), `finapp.lending.repayment{outcome=paid_down}` and `finapp.lending.loans{product, status}`
+(`LoanCountMetrics`); every other statement here is the decided design, each task that builds a part rewriting it from the code, and the Phase 11 exit review (`P11-DOC-001`) reading it against the code)*.
 - **Responsibility:** originating and servicing credit — the amortising `PERSONAL_LOAN` and the revolving `CREDIT_LINE` — on Phase 10's credit decisions, including the time-based mechanics (accrual, billing, statements, delinquency) as scheduled, idempotent, replayable financial processes. **It owns the contract and its servicing facts and none of the money**: every principal, interest, fee and credit-balance figure is a balance of a per-loan ledger account, derived from postings made through `PostingService` / `ReversalService` in lending's own transaction (ADR-0090, ADR-0096).
 - **Owns:** Loan Application, Loan Product Terms Version, Loan Offer, Loan Agreement, Acceptance Evidence, Loan, Repayment Schedule, Loan Instalment, Instalment Billing, Credit Line Draw, Credit Line Statement, Interest Accrual, Fee Assessment, Disbursement, Loan Payout, Repayment, Allocation, Collection Attempt, Delinquency State, Payoff Quote, Loan Amendment, Lending Capital Contribution.
 - **Does not own:** the credit decision, its consumption fact or the exposure judgement (`credit` — lending takes a decision up only through credit's `CreditDecisionConsumptions` port, `P11-TSK-001`, and never writes credit's tables); any balance (`ledger`); the wallet (`accounts`); the external payout's withdrawal, its ambiguity, return and expectation (`payments`, `reconciliation`); write-off and the GL (Phase 14, `accounting`); collections (Phase 13).

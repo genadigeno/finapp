@@ -266,5 +266,14 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   so the line's `PAY_DOWN_PRINCIPAL` (the pinned rules, unchanged) never comes into play; `lending V017` admits a line's
   repayment only as an automatic collection (its customer repayment stays `-023`'s) and a `CLOSING` line's collection is
   `-023`'s, beside its closure.
+- **As built by `P11-TSK-023` (2026-10-13) - the line's treatment (point 2) and rule 5's paydown.** A credit line's
+  repayment runs `-018`'s one posting half with the pinned `PAY_DOWN_PRINCIPAL`: billed statements oldest first
+  (`FEES -> INTEREST -> PRINCIPAL`), then principal not yet due as a `NOT_DUE_PRINCIPAL` row (`lending V014` already admitted
+  it for a line), then only what exceeds every receivable held as `CREDIT_BALANCE` (A26); rule 5's entry gains
+  `CR LOAN_PRINCIPAL` for the paydown, aggregated beside the due accounts and the held credit. Accrued, unstated interest is
+  still not a target (point 1's due state), so a line paid beyond every due item and all its principal holds the rest even
+  while interest is accrued - the next statement bills it and rule 6 applies the held credit. A `CLOSING` line's automatic
+  collection is point 6's, unchanged (every line on the statement). `finapp.lending.repayment` gains `outcome=paid_down`
+  (the paydown component counted).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

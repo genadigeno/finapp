@@ -1006,6 +1006,7 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.LoanClosed` | 409 | The loan is closed; nothing was done. |
 | `lending.SelfDealingRefused` | 403 | An employee never services a loan of their own party; nothing was done. |
 | `lending.RepaymentNotReversible` | 409 | The repayment cannot be reversed; nothing was posted. |
+| `lending.LineNotClosable` | 409 | The account is not a credit line that can be closed by request; nothing was done. |
 
 The lending-capital doors (`P11-TSK-004`, ADR-0096 §4), every act behind `LENDING_CAPITAL_ADMINISTER` (role
 `LENDING_TREASURY_OFFICER`) and keyed per principal (`lending.capital:<type>:<id>`), so a lost response replays its
@@ -1117,8 +1118,10 @@ credit balance refunded). A lost response replays its receipt; a key retried aft
 repayment born under it (`UNIQUE (loan_id, kind, request_key)`) - another amount under it is `api.Conflict` (`409`); every
 refusal stores nothing, judged under the loan's row lock (L3) and the wallet's (L7) before any write. `NotFound` answers
 another party's loan exactly as an unknown or malformed id, on this door and on `GET /v1/me/loans/{id}/repayments`.
-`LoanNotRepayable` refuses a loan `CLOSED` (a loan closed a moment earlier included), `CANCELLED` or not yet disbursed,
-and a credit line until `P11-TSK-023` opens the door to lines. `InsufficientFunds` refuses an amount above the wallet's
+`LoanNotRepayable` refuses a loan `CLOSED` (a loan closed a moment earlier included), `CANCELLED` or not yet disbursed
+(until `P11-TSK-023` it also refused every credit line; a line now takes repayment while `ACTIVE` or `CLOSING` - what is
+due, then its principal paid down, restoring the available limit, and only a true excess held, A26 - and the repayment that
+settles a `CLOSING` line's last receivable closes it `CLOSED_BY_CUSTOMER`). `InsufficientFunds` refuses an amount above the wallet's
 available balance - settled less its standing holds, judged under the wallet's row lock (`INV-BAL-04`) - and a wallet that
 cannot be debited now (none, or not `ACTIVE`; ADR-0095 point 4 folds the two). No standing check: a suspended customer may
 still repay. An amount that is not positive, not exact at the currency's minor units, or not in the loan's currency is
@@ -1147,6 +1150,17 @@ exact swap would drive the credit balance below zero; later allocations are neve
 an approval whose re-instated principal the currency's capital headroom cannot take (judged under L6, `INV-LND-13`), and
 `WalletUnavailable` (its second subject - the title widened from "... the draw now; nothing was drawn.", the code
 unchanged) one whose wallet cannot be credited now; each leaves the proposal `PROPOSED`, nothing posted.
+
+The closure (`P11-TSK-023`, ADR-0100 point 8, `INV-LIFE-04`): `POST /v1/me/loans/{id}/closure` keyed
+`lending.closure:<type>:<id>`, no body, always a `MULTI_FACTOR` act (A19 - a weaker session is `identity.AssuranceRequired`,
+`403`), `201` with the request and its outcome: `CLOSED` at once when nothing is outstanding (every receivable zero and every
+elapsed date accrued - the credit balance refunded, the closure's reason and refund in the body), otherwise `CLOSING` (no
+further draws - `LineNotDrawable` - closed in the transaction that settles its last receivable). A lost response replays
+its receipt; a key retried after its claim lapsed converges on the request born under it, and a second key on a `CLOSING`
+line is answered with the one request (`UNIQUE (loan_id)` beneath the line's row lock). `NotFound` answers another party's
+account exactly as an unknown or malformed id. `LineNotClosable` (catalogued here - absent from `PHASE_11_PLAN.md` section
+9's list) refuses an instalment loan, which closes only by being repaid. `LoanClosed` (its second subject) refuses a
+request for a line already `CLOSED` (a second key after a closure at the request included); nothing is written.
 
 ## 3a. Rejection at the boundary
 

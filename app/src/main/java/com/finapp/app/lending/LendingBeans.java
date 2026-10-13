@@ -665,10 +665,22 @@ public class LendingBeans {
      * repayment counted in {@code finapp.lending.repayment{kind=auto_collection}}.
      */
     @Bean
-    LoanServicingMetrics loanServicingMetrics(LoanServicingStore loanServicingStore, DataSource dataSource, Clock clock,
-            MeterRegistry meterRegistry, RepaymentMetrics repaymentMetrics) {
-        return new LoanServicingMetrics(loanServicingStore, dataSource::getConnection, clock, meterRegistry,
-                repaymentMetrics);
+    LoanServicingMetrics loanServicingMetrics(com.finapp.lending.AccrualLags accrualLags, DataSource dataSource,
+            Clock clock, MeterRegistry meterRegistry, RepaymentMetrics repaymentMetrics) {
+        return new LoanServicingMetrics(accrualLags, dataSource::getConnection, clock, meterRegistry, repaymentMetrics);
+    }
+
+    /** The accrual lag's two arms - an instalment loan's every date, a line's dates with principal drawn (P11-TSK-023). */
+    @Bean
+    com.finapp.lending.AccrualLags accrualLags(LoanServicingStore loanServicingStore,
+            LedgerAccountStore<Connection> ledgerAccountStore, PurposeBalances<Connection> purposeBalances) {
+        return new com.finapp.lending.AccrualLags(loanServicingStore, ledgerAccountStore, purposeBalances);
+    }
+
+    /** {@code finapp.lending.loans{product, status}} (P11-TSK-023), every series registered at startup. */
+    @Bean
+    LoanCountMetrics loanCountMetrics(LoanStore loanStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new LoanCountMetrics(loanStore, dataSource::getConnection, clock, meterRegistry);
     }
 
     /** The servicing sweep - every instance, no lease, off in test contexts. */
@@ -824,6 +836,37 @@ public class LendingBeans {
             com.finapp.lending.RepaymentReversalStore repaymentReversalStore) {
         return new LoanRepaymentDesk(repayments, identityStore, mfaEnrolmentStore, idempotentExecutor, lendingTransactions,
                 repaymentMetrics, repaymentReversalStore);
+    }
+
+    // ------------------------------------------------------------------ the line's closure (P11-TSK-023)
+
+    /** The closure requests' store - {@code line_closure_request}, INSERT-only, one per line. */
+    @Bean
+    com.finapp.lending.LineClosureStore lineClosureStore() {
+        return new com.finapp.lending.JdbcLineClosureStore();
+    }
+
+    /** T-clo - a line's closure request under L3 (L7 for a refund at once): CLOSING, or CLOSED when nothing is owed. */
+    @Bean
+    com.finapp.lending.LineClosures lineClosures(
+            LoanStore loanStore,
+            com.finapp.lending.LineClosureStore lineClosureStore,
+            LoanTermsStore loanTermsStore,
+            com.finapp.lending.LoanClosures loanClosures,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.LineClosures(loanStore, lineClosureStore, loanTermsStore, loanClosures, outboxWriter,
+                idGenerator, clock);
+    }
+
+    @Bean
+    LineClosureDesk lineClosureDesk(
+            com.finapp.lending.LineClosures lineClosures,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions) {
+        return new LineClosureDesk(lineClosures, identityStore, idempotentExecutor, lendingTransactions);
     }
 
     // ------------------------------------------------------------------ the repayment reversal (P11-TSK-020)

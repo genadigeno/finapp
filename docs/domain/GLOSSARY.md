@@ -1245,7 +1245,10 @@ enters lending (`INV-RAIL-03`). Nor a Merchant Payout.
 acceptance with an agreed limit, against which the borrower draws to their wallet and repays
 repeatedly, billed by monthly Credit Line Statements with a Minimum Payment, and closed
 `ACTIVE → CLOSING → CLOSED` at the customer's request (directly `CLOSED` when nothing is
-outstanding); no expiry in Phase 11. Planned (`P11-TSK-021`…`-023`).
+outstanding); no expiry in Phase 11. Built by `P11-TSK-021` (draws), `-022` (statements) and `-023` (repayment - what is
+due, then principal paid down, restoring the limit, only a true excess held - and closure: a Line Closure Request,
+`line_closure_request`, born once per line; `CLOSING` takes no draw and closes `CLOSED_BY_CUSTOMER` in the transaction
+that settles its last receivable; never reopened).
 **Not:** an instalment loan — no schedule and no disbursement, draws instead. Not a card or an
 overdraft: draws go to the wallet only. Nor its Available Limit (the undrawn part) or the Exposure
 it adds (the full limit while open).

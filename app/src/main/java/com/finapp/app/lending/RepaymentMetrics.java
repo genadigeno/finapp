@@ -9,8 +9,9 @@ import java.util.Objects;
 /**
  * {@code finapp.lending.repayment{kind, outcome}} and {@code finapp.lending.allocation.anomaly} (`P11-TSK-018`,
  * PHASE_11_PLAN.md section 15). A repayment on an account the caller owns is counted once, after its transaction committed
- * or its refusal rolled back: {@code repaid}, {@code closed} (repaid, and the repayment closed the loan), or the loan's own
- * refusal ({@code not_repayable}, {@code insufficient_funds}). A replayed key or a repayment converged on under its key, an
+ * or its refusal rolled back: {@code repaid}, {@code paid_down} (repaid, and the repayment paid a credit line's principal
+ * down beyond what was due - the paydown component counted, `P11-TSK-023`), {@code closed} (repaid, and the repayment
+ * closed the loan or the closing line), or the loan's own refusal ({@code not_repayable}, {@code insufficient_funds}). A replayed key or a repayment converged on under its key, an
  * unknown account, a malformed amount or a refusal about the session count nothing. The anomaly counter rises on every
  * refused conservation - the loan's rows not explaining its due accounts, or the allocation engine breaking its own
  * assertion - and alerts above zero: it is a defect, never a customer's error. Every series registered eagerly with its
@@ -28,6 +29,7 @@ public final class RepaymentMetrics {
     /** The closed set of outcomes. */
     public enum Outcome {
         REPAID,
+        PAID_DOWN,
         CLOSED,
         NOT_REPAYABLE,
         INSUFFICIENT_FUNDS;
@@ -65,7 +67,7 @@ public final class RepaymentMetrics {
 
     private Counter counter(RepaymentKind kind, Outcome outcome) {
         return Counter.builder(REPAYMENT)
-                .description("Repayments from the wallet - made, closing, and refusals by reason - by kind and outcome")
+                .description("Repayments from the wallet - made, paying a line's principal down, closing, and refusals by reason - by kind and outcome")
                 .tags("kind", kind.name().toLowerCase(Locale.ROOT), "outcome", outcome.tag())
                 .register(registry);
     }

@@ -168,8 +168,9 @@ public enum LendingErrorCode implements ErrorCode {
             "lending.WalletUnavailable", 409, "The wallet cannot receive the money now; nothing was posted."),
 
     /**
-     * The account takes no repayment (`P11-TSK-018`; {@code INV-LND-08}): it is {@code CLOSED} or {@code CANCELLED}, not
-     * yet disbursed, or a credit line (whose repayment is `P11-TSK-023`'s). Nothing was posted.
+     * The account takes no repayment (`P11-TSK-018`; {@code INV-LND-08}): it is {@code CLOSED} or {@code CANCELLED}, or not
+     * yet disbursed. Nothing was posted. (Until `P11-TSK-023` a credit line answered this too; a line now takes
+     * repayments while {@code ACTIVE} or {@code CLOSING}.)
      */
     LOAN_NOT_REPAYABLE("lending.LoanNotRepayable", 409, "The loan cannot be repaid; nothing was posted."),
 
@@ -186,7 +187,9 @@ public enum LendingErrorCode implements ErrorCode {
     /**
      * The loan is closed (`P11-TSK-020`; A12, {@code INV-LIFE-04}, ADR-0099 point 4): a closed account is terminal, so no
      * repayment of it - the one that closed it, or any earlier one - is reversed. Nothing was proposed or posted; a
-     * proposal already standing may still be rejected.
+     * proposal already standing may still be rejected. Its second subject (`P11-TSK-023`): a closure request for a line
+     * already {@code CLOSED} - nothing was done. (A repayment reversal is also refused this code on a {@code CLOSING} line
+     * - `P11-TSK-020`'s rule admits only an {@code ACTIVE} account, recorded as an owner judgement.)
      */
     LOAN_CLOSED("lending.LoanClosed", 409, "The loan is closed; nothing was done."),
 
@@ -204,7 +207,15 @@ public enum LendingErrorCode implements ErrorCode {
      * below zero, and later allocations are never re-cut. Nothing was proposed or posted.
      */
     REPAYMENT_NOT_REVERSIBLE(
-            "lending.RepaymentNotReversible", 409, "The repayment cannot be reversed; nothing was posted.");
+            "lending.RepaymentNotReversible", 409, "The repayment cannot be reversed; nothing was posted."),
+
+    /**
+     * The account cannot be closed by request (`P11-TSK-023`; ADR-0100 point 8, {@code INV-LIFE-04}): it is an instalment
+     * loan, which closes only by being repaid - a closure is a consequence of its last receivable settling, never a
+     * command. A closed line answers {@link #LOAN_CLOSED}. Nothing was done.
+     */
+    LINE_NOT_CLOSABLE(
+            "lending.LineNotClosable", 409, "The account is not a credit line that can be closed by request; nothing was done.");
 
     private final String code;
     private final int status;

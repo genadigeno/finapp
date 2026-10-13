@@ -327,8 +327,9 @@ public final class JdbcLoanStore implements LoanStore {
     }
 
     @Override
-    public boolean close(Connection unitOfWork, LoanClosure closure, CorrelationId correlation) {
+    public boolean close(Connection unitOfWork, LoanClosure closure, LoanStatus from, CorrelationId correlation) {
         Objects.requireNonNull(closure, "closure");
+        Objects.requireNonNull(from, "from");
         Objects.requireNonNull(correlation, "correlation");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO lending.loan_closure (id, loan_id, reason, currency, scale, refund_minor,"
@@ -351,12 +352,42 @@ public final class JdbcLoanStore implements LoanStore {
         }
         try (PreparedStatement update = unitOfWork.prepareStatement(
                 // The terminal instant is the trigger's.
-                "UPDATE lending.loan SET status = 'CLOSED', closure_reason = ? WHERE id = ? AND status = 'ACTIVE'")) {
+                "UPDATE lending.loan SET status = 'CLOSED', closure_reason = ? WHERE id = ? AND status = ?")) {
             update.setString(1, closure.reason().name());
             update.setObject(2, closure.loan().value());
+            update.setString(3, from.name());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failed("closing a loan", failure);
+        }
+    }
+
+    @Override
+    public boolean beginClosing(Connection unitOfWork, LoanId id) {
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE lending.loan SET status = 'CLOSING' WHERE id = ? AND status = 'ACTIVE' AND kind = 'REVOLVING'")) {
+            update.setObject(1, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("moving a credit line to closing", failure);
+        }
+    }
+
+    @Override
+    public java.util.Map<LoanProduct, java.util.Map<LoanStatus, Long>> countsByProductAndStatus(Connection unitOfWork) {
+        java.util.Map<LoanProduct, java.util.Map<LoanStatus, Long>> counts = new java.util.EnumMap<>(LoanProduct.class);
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT product, status, count(*) FROM lending.loan GROUP BY product, status");
+                ResultSet rows = select.executeQuery()) {
+            while (rows.next()) {
+                counts.computeIfAbsent(LoanProduct.valueOf(rows.getString(1)),
+                        product -> new java.util.EnumMap<>(LoanStatus.class))
+                        .put(LoanStatus.valueOf(rows.getString(2)), rows.getLong(3));
+            }
+            return counts;
+        } catch (SQLException failure) {
+            throw failed("counting loan accounts", failure);
         }
     }
 
