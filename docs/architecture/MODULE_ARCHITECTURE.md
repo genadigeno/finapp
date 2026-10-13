@@ -552,7 +552,13 @@ L7 and `AvailableBalance.underLock`, rule 5 under `lending.repayment:<id>`, `len
 (the refund under `lending.closure-refund:<loan>`, `lending.LoanClosed`; called by T-rep and as T-svc's last step),
 `Repayment`, `RepaymentAllocation`, `RepaymentKind`, `LoanClosure`, `AllocationAnomaly`, `RepaymentStore`/`JdbcRepaymentStore`,
 `LoanWallets.existingWallet`, and `app`'s `LoanRepaymentDesk` (`POST`/`GET /v1/me/loans/{id}/repayments`),
-`finapp.lending.repayment{kind, outcome}` and `finapp.lending.allocation.anomaly`; `P11-TSK-020` (2026-10-13) - the
+`finapp.lending.repayment{kind, outcome}` and `finapp.lending.allocation.anomaly`; `P11-TSK-019` (2026-10-13) - scheduled
+auto-collection as T-svc's collection step: `lending V015` (`collection_attempt` - `UNIQUE (due_item_id, attempt_date)`,
+`UNIQUE (repayment_id)`, the outcome and figures held by its trigger; an `AUTO_COLLECTION` repayment named by its attempt at
+commit), `LoanCollections` (after the billing under L3: each billed item due and not yet attempted today, oldest first, L7
+and the available balance, `Repayments`' one posting half - kind `AUTO_COLLECTION`, key `<item>:<date>` -
+`lending.CollectionFailed`), `CollectionAttempt`, `CollectionOutcome`, `RepaymentStore.attemptedOn`/`insertAttempt`, and
+`app`'s `finapp.lending.collection{outcome}`; `P11-TSK-020` (2026-10-13) - the
 repayment reversal under four eyes: `lending V016` (`repayment_reversal`, money-free, four-eyes `CHECK`, one live proposal
 per repayment; `repayment_allocation_reversal`, INSERT-only negating rows, whole at commit; `lending.billing_component_paid`
 less the negating rows), `RepaymentReversals` (T-rev: L0, L3, L5, L6 when principal is re-instated, L7, rule 10 by

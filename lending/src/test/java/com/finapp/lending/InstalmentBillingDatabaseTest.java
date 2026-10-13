@@ -505,7 +505,7 @@ class InstalmentBillingDatabaseTest {
                 new com.finapp.platform.outbox.JdbcOutboxWriter(), IDS, DisbursementWorld.CLOCK);
         LoanServicing crashingServicing = new LoanServicing(DisbursementWorld.LOAN_STORE, SERVICING_STORE, TERMS_STORE,
                 DisbursementWorld.LEDGER_ACCOUNTS, DisbursementWorld.BALANCES, DisbursementWorld.POSTINGS, IDS, crashing,
-                DisbursementWorld.CLOSURES);
+                DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS);
         assertThatThrownBy(() -> InterestAccrualDatabaseTest.service(crashingServicing, crashed)).hasMessageContaining("crash");
         assertThat(billings(crashed)).isEmpty();
         assertThat(billingEntries(crashed)).isZero();
@@ -655,7 +655,8 @@ class InstalmentBillingDatabaseTest {
 
     /**
      * Moves every dated fact of {@code loan} {@code days} further into the past - its journal entries' dates, the
-     * disbursement, the accrual start, the schedule, the accruals, the billings, the repayments (`P11-TSK-018`), the opening
+     * disbursement, the accrual start, the schedule, the accruals, the billings, the repayments (`P11-TSK-018`), the collection
+     * attempts and their repayments' keys (`P11-TSK-019`), the opening
      * instant - and re-dates the keys that carry a date (the accruals', a post-maturity billing's) with them: the fixture's clock moving, so the next
      * step runs {@code days} later in the loan's life. Never a path the platform has.
      */
@@ -695,6 +696,13 @@ class InstalmentBillingDatabaseTest {
                 + ", due_date = due_date + " + (1_000_000 - days) + " WHERE loan_id = '" + id + "';"
                 // P11-TSK-018: a repayment's value date moves with its entry.
                 + " UPDATE lending.repayment SET value_date = value_date - " + days + " WHERE loan_id = '" + id + "';"
+                // P11-TSK-019: an attempt's date moves (far away and back - its dated unique), and an automatic
+                // collection's key - the attempt's <item>:<date> - is re-dated with it.
+                + " UPDATE lending.collection_attempt SET attempt_date = attempt_date - 1000000 WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.collection_attempt SET attempt_date = attempt_date + " + (1_000_000 - days)
+                + " WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.repayment SET request_key = split_part(request_key, ':', 1) || ':' || value_date"
+                + " WHERE loan_id = '" + id + "' AND kind = 'AUTO_COLLECTION';"
                 + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days' WHERE id = '" + id + "'");
     }
 

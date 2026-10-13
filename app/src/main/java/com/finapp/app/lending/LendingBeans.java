@@ -613,7 +613,8 @@ public class LendingBeans {
 
     /**
      * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing and the
-     * credit-balance application (rules 3 and 6, P11-TSK-017), then the closure of a settled loan (P11-TSK-018).
+     * credit-balance application (rules 3 and 6, P11-TSK-017), then auto-collection (rule 5, P11-TSK-019), then the
+     * closure of a settled loan (P11-TSK-018).
      */
     @Bean
     LoanServicing loanServicing(
@@ -625,16 +626,22 @@ public class LendingBeans {
             PostingService postingService,
             IdGenerator idGenerator,
             InstalmentBillings instalmentBillings,
-            com.finapp.lending.LoanClosures loanClosures) {
+            com.finapp.lending.LoanClosures loanClosures,
+            com.finapp.lending.LoanCollections loanCollections) {
         return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
-                postingService, idGenerator, instalmentBillings, loanClosures);
+                postingService, idGenerator, instalmentBillings, loanClosures, loanCollections);
     }
 
-    /** {@code finapp.lending.accrual{outcome}} and the accrual lag, every series registered at startup. */
+    /**
+     * {@code finapp.lending.accrual{outcome}}, the accrual lag, {@code finapp.lending.billing{kind, outcome}} and
+     * {@code finapp.lending.collection{outcome}} (P11-TSK-019), every series registered at startup; a collection's
+     * repayment counted in {@code finapp.lending.repayment{kind=auto_collection}}.
+     */
     @Bean
-    LoanServicingMetrics loanServicingMetrics(
-            LoanServicingStore loanServicingStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
-        return new LoanServicingMetrics(loanServicingStore, dataSource::getConnection, clock, meterRegistry);
+    LoanServicingMetrics loanServicingMetrics(LoanServicingStore loanServicingStore, DataSource dataSource, Clock clock,
+            MeterRegistry meterRegistry, RepaymentMetrics repaymentMetrics) {
+        return new LoanServicingMetrics(loanServicingStore, dataSource::getConnection, clock, meterRegistry,
+                repaymentMetrics);
     }
 
     /** The servicing sweep - every instance, no lease, off in test contexts. */
@@ -849,5 +856,26 @@ public class LendingBeans {
             Clock clock) {
         return new LoanServicingDesk(repaymentReversals, repaymentReversalStore, loans, loanStore, repaymentStore,
                 idempotentExecutor, lendingTransactions, repaymentReversalMetrics, auditWriter, idGenerator, clock);
+    }
+
+    /**
+     * T-svc's collection step (P11-TSK-019): what each billed item has due, from the borrower's wallet (L7 after the step's
+     * L3), through the repayment's one posting half - when the pinned terms collect automatically.
+     */
+    @Bean
+    com.finapp.lending.LoanCollections loanCollections(
+            com.finapp.lending.RepaymentStore repaymentStore,
+            com.finapp.lending.Repayments repayments,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.LoanCollections(repaymentStore, repayments, instalmentBillingStore, loanWallets,
+                new com.finapp.ledger.AvailableBalance<>(new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore()),
+                ledgerAccountStore, purposeBalances, outboxWriter, idGenerator, clock);
     }
 }

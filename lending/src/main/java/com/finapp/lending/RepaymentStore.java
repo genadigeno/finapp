@@ -3,8 +3,10 @@ package com.finapp.lending;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -42,4 +44,15 @@ public interface RepaymentStore {
      * owner-scoped in the statement: another party's loan is the same empty answer as a loan never repaid.
      */
     List<Repayment> ownedBy(Connection unitOfWork, LoanId loan, UUID party, int limit);
+
+    // ------------------------------------------------------------------ the collection attempts (P11-TSK-019)
+
+    /**
+     * The billed items of {@code loan} a collection was attempted on, on {@code attemptDate} - read under the loan's row
+     * lock (L3), so a step already taken that date is skipped ({@code UNIQUE (due_item_id, attempt_date)} beneath).
+     */
+    Set<DueItemId> attemptedOn(Connection unitOfWork, LoanId loan, LocalDate attemptDate);
+
+    /** Births one collection attempt ({@code lending V015}); the database stamps its instant. */
+    void insertAttempt(Connection unitOfWork, CollectionAttempt attempt, CorrelationId correlation);
 }

@@ -1,7 +1,9 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.CollectionOutcome;
 import com.finapp.lending.LoanServicing;
 import com.finapp.lending.LoanServicingStore;
+import com.finapp.lending.RepaymentKind;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -33,6 +35,13 @@ import lombok.extern.slf4j.Slf4j;
  *       ({@code kind = instalment}, {@code outcome = billed}) and each credit-balance application at one
  *       ({@code outcome = credit_applied}), counted once after the step's transaction committed. Registered eagerly for
  *       every outcome; a line's statement ({@code kind = statement}) is {@code P11-TSK-022}'s to add.
+ *   <li>{@code finapp.lending.collection{outcome}} (`P11-TSK-019`) - each automatic collection attempt of a committed
+ *       servicing step, by its outcome ({@code collected}, {@code partial}, {@code insufficient_funds},
+ *       {@code wallet_not_postable}, {@code nothing_due}), counted once after the step's transaction committed. Registered
+ *       eagerly for every outcome. A collection that moved money is also one {@code finapp.lending.repayment} of
+ *       {@code kind = auto_collection} ({@code repaid}, or {@code closed} when the step closed the loan), and one that
+ *       could not ({@code insufficient_funds}, {@code wallet_not_postable}) one {@code insufficient_funds} there -
+ *       {@link RepaymentMetrics}' series, the customer's door's beside it.
  * </ul>
  *
  * <p>Never an amount, a party, a loan id or a date in a tag (ADR-0072).
@@ -48,6 +57,9 @@ public final class LoanServicingMetrics {
 
     /** Exported as {@code finapp_lending_billing} (`P11-TSK-017`). */
     public static final String BILLING = "finapp.lending.billing";
+
+    /** Exported as {@code finapp_lending_collection} (`P11-TSK-019`), the plan's name. */
+    public static final String COLLECTION = "finapp.lending.collection";
 
     /** The billing series' closed set of outcomes. */
     public enum BillingOutcome {
@@ -79,6 +91,7 @@ public final class LoanServicingMetrics {
     }
 
     private final MeterRegistry registry;
+    private final RepaymentMetrics repayments;
     private final LoanServicingStore store;
     private final Connections connections;
     private final Clock clock;
@@ -86,8 +99,10 @@ public final class LoanServicingMetrics {
 
     private record Cached(Instant takenAt, Optional<Optional<Duration>> lag) {}
 
-    public LoanServicingMetrics(LoanServicingStore store, Connections connections, Clock clock, MeterRegistry registry) {
+    public LoanServicingMetrics(LoanServicingStore store, Connections connections, Clock clock, MeterRegistry registry,
+            RepaymentMetrics repayments) {
         this.store = Objects.requireNonNull(store, "store");
+        this.repayments = Objects.requireNonNull(repayments, "repayments");
         this.connections = Objects.requireNonNull(connections, "connections");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -96,6 +111,9 @@ public final class LoanServicingMetrics {
         }
         for (BillingOutcome outcome : BillingOutcome.values()) {
             billing(outcome);
+        }
+        for (CollectionOutcome outcome : CollectionOutcome.values()) {
+            collection(outcome);
         }
         Gauge.builder(LAG, this, LoanServicingMetrics::lagSeconds)
                 .description("Seconds since the end of the oldest elapsed date an instalment loan in servicing has not"
@@ -120,6 +138,30 @@ public final class LoanServicingMetrics {
         }
         if (step.applied() > 0) {
             billing(BillingOutcome.CREDIT_APPLIED).increment(step.applied());
+        }
+        int moved = 0;
+        for (CollectionOutcome outcome : CollectionOutcome.values()) {
+            int attempts = step.collected(outcome);
+            if (attempts == 0) {
+                continue;
+            }
+            collection(outcome).increment(attempts);
+            if (outcome.collected()) {
+                moved += attempts;
+            } else if (outcome.failed()) {
+                for (int i = 0; i < attempts; i++) {
+                    repayments.record(RepaymentKind.AUTO_COLLECTION, RepaymentMetrics.Outcome.INSUFFICIENT_FUNDS);
+                }
+            }
+        }
+        // A collection that closed the loan is the step's last: counted closing, the others repaid. When no collection
+        // moved money, a closure was the step's own (after a credit-balance application) and no repayment is counted.
+        int closing = moved > 0 && step.closed() ? 1 : 0;
+        for (int i = 0; i < moved - closing; i++) {
+            repayments.record(RepaymentKind.AUTO_COLLECTION, RepaymentMetrics.Outcome.REPAID);
+        }
+        if (closing == 1) {
+            repayments.record(RepaymentKind.AUTO_COLLECTION, RepaymentMetrics.Outcome.CLOSED);
         }
     }
 
@@ -156,6 +198,14 @@ public final class LoanServicingMetrics {
                 .description("Billed items of committed servicing steps (billed) and the credit-balance applications at"
                         + " them (credit_applied) - an instalment loan's instalments and post-maturity periods")
                 .tags("kind", "instalment", "outcome", outcome.tag())
+                .register(registry);
+    }
+
+    private Counter collection(CollectionOutcome outcome) {
+        return Counter.builder(COLLECTION)
+                .description("Automatic collection attempts of committed servicing steps, by outcome - collected,"
+                        + " partial, insufficient_funds, wallet_not_postable, nothing_due")
+                .tags("outcome", outcome.name().toLowerCase(Locale.ROOT))
                 .register(registry);
     }
 

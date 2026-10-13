@@ -532,7 +532,7 @@ class InterestAccrualDatabaseTest {
 
     static LoanServicing servicing(LoanServicingStore store) {
         return new LoanServicing(LOAN_STORE, store, TERMS_STORE, LEDGER_ACCOUNTS, BALANCES, POSTINGS, IDS,
-                DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES);
+                DisbursementWorld.BILLINGS, DisbursementWorld.CLOSURES, DisbursementWorld.COLLECTIONS);
     }
 
     /** A fresh wallet loan disbursed by the real T-dis. */

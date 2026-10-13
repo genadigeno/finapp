@@ -497,6 +497,17 @@ No standing check, no L0 (outstanding exposure only falls), no L5, no L6 (repaid
 gains the same closure as its last step (L7 after L3), so a credit-balance application that settles a loan closes it; a
 closed account is not re-permitted.)*
 
+*(As built by `P11-TSK-019` - T-svc's collection step, `LoanCollections`: once the accrual has caught up, after the billing
+and its credit-balance application and under the same L3, when the governing agreement's pinned terms collect automatically:
+every billed item due by today and not yet attempted today, oldest first (on its due date always, past due while something is
+due); per attempt the due state re-derived under L3, **(L7)** the existing wallet's row once a step and
+`AvailableBalance.underLock` re-read per attempt; the item's due in full, or (partial terms) as much as is available, or
+nothing; once an item is not collected in full every younger one that day is `INSUFFICIENT_FUNDS`; the money through
+`Repayments.receive` - T-rep's one posting half (L8, rule 5, the rows, `lending.RepaymentReceived`, the closure) - kind
+`AUTO_COLLECTION` under the key `<item>:<date>`; then only inserts: the `collection_attempt` row, `lending.CollectionFailed`
+when nothing could be taken. A collection that settles the loan closes it there and the step's own closure step is skipped.
+No L0 (exposure only falls), no L5, no L6; no new schedule - the servicing sweep drives it.)*
+
 *(As built by `P11-TSK-020` - T-rev, the repayment reversal: each act behind the door's claim (`lending.servicing:<type>:<id>`);
 the loan's party (frozen, unlocked) and the actor's through identity - an operator of the loan's own party, or one the
 platform cannot place, `403 lending.SelfDealingRefused`, recorded `FAILED` in a transaction of its own. The proposal: **(L3)**
@@ -604,7 +615,8 @@ LEASE_PROTECTED_SCHEDULERS` twenty-two → twenty-six. *(As built by `P11-TSK-01
 permit to the retry cadence (`finapp.lending.servicing.retry`, 15 minutes) - the cadence of a step that fails - and a completed step stamps
 the start of the next business date in the pinned zone; `lending V010` adds `loan.next_servicing_at`, stamped at birth by the loan's
 edge function, which admits the permit's move alone on an account in servicing. The twenty-sixth entry - `-015`'s `LoanPayoutSchedule`
-the twenty-fifth, built in parallel.)*
+the twenty-fifth, built in parallel.)* *(`P11-TSK-019`: auto-collection is a step of `LoanServicingSchedule`'s T-svc - no schedule of
+its own; `LEASE_PROTECTED_SCHEDULERS` unchanged.)*
 
 **Advisory namespace `11`:** lending's administrations — the terms proposals (`hashtext(product)`)
 and the capital contributions (`hashtext(currency)`) — blocking; registered by `-005`, its first
@@ -1094,6 +1106,18 @@ credit-balance application or a waiver") - through one `LoanClosures` that `-023
 not yet hold - closing would forgo it), then the credit balance refunded to the wallet (key `lending.closure-refund:<loan>`),
 the `loan_closure` fact (the subledger proof's credit-balance arm: overpayments - applications - refunds) and
 `CLOSED (REPAID)`. A line's repayment remains `-023`'s.)*
+
+*(As built by `P11-TSK-019`, 2026-10-13 - auto-collection (A21, ADR-0095 point 6): the servicing step collects what each
+billed item has due through the repayment's one posting half (kind `AUTO_COLLECTION`), one `collection_attempt` per item and
+business date (`COLLECTED`, `PARTIAL`, `INSUFFICIENT_FUNDS`, `WALLET_NOT_POSTABLE`, `NOTHING_DUE`). **When**: at the first
+servicing step of the due date's business date in the pinned zone, once that step has accrued every elapsed date and billed
+what is due (billing - and the credit balance's application - always precede it), and at the first step of each later
+business date while the item stays due; a business date the sweep missed is not back-filled. **Partial**: the item's due in
+full, or - only where the pinned terms allow partial collection - as much as is available (never the credit balance: a
+collection's every line pays its own item, so never more than due); oldest first, so once an item is not collected in full
+nothing younger is collected that day. **Retries**: the next business date's attempt is a new row; the same date is attempted
+once (`UNIQUE (due_item_id, attempt_date)`, the repayment's key `<item>:<date>` beneath). **A closed loan** is never serviced and
+so never collected; a collection that settles the loan closes it in its step.)*
 
 **Payoff** (both products). *Quote* (keyed): good-through date `G` (today, up to 30 days); amount =
 derived outstanding + the accrual the engine would post through `G − 1` on the current base —

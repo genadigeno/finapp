@@ -379,6 +379,21 @@ Born `ALLOCATED` — a repayment row exists only once its money moved, with its 
 |---|---|---|---|---|
 | Customer repayment | C, step-up, `POST /v1/me/loans/{id}/repayments`, key `lending.repayment:CUSTOMER:<id>` (T-rep) | the claim; L3 `ACTIVE`/`CLOSING`; **L7**, available ≥ amount (`AvailableBalance.underLock`); allocation derived under L3 (`INV-LND-04`); L8 | `422 lending.InsufficientFunds`, `409 lending.LoanNotRepayable`; standing is **not** checked (a suspended customer may repay) | `RepaymentReceived` (+ `LoanClosed` if it closed) |
 | Auto-collection | S, `LoanServicingSchedule` (T-svc) on the due date, retried daily while past due (A21) | L3; `collection_attempt UNIQUE (due_item_id, attempt_date)`; L7 | nothing collected → the attempt, no repayment | `RepaymentReceived` / `CollectionFailed` |
+
+*(As built by `P11-TSK-019`, 2026-10-13 - the collection step of T-svc (`LoanCollections`), once the accrual has caught up
+and after the billing and its credit-balance application, under the same L3, when the governing agreement's pinned terms
+collect automatically (the repayment method the wallet): every billed item due on or before today not yet attempted today,
+oldest first - an item on its due date always (one settled already records `NOTHING_DUE`), a past-due one while it has
+something due. Per attempt the due state is re-derived under L3; (L7) the existing wallet's row once a step - none, or not
+`ACTIVE`, is `WALLET_NOT_POSTABLE` - and `AvailableBalance.underLock` re-read per attempt. The amount is what the item has
+due, or as much of it as is available where the pinned terms allow partial collection (`PARTIAL`); otherwise nothing
+(`INSUFFICIENT_FUNDS`). Oldest first: once an item is not collected in full, every younger item that day is
+`INSUFFICIENT_FUNDS` - a younger collection would be allocated to the older one. Money moves only through `Repayments`' one
+posting half (kind `AUTO_COLLECTION`, the key `<item>:<attempt date>`, rule 5, every line on that item - never the credit
+balance); a collection that settles the loan closes it in the step (its attempt the one `lending V015` admits on the loan
+it closed). Each attempt is one `collection_attempt` row; `lending.CollectionFailed` (the item, the outcome) when nothing
+could be taken from an item with something due. A missed business date (an outage) is not back-filled: the next step makes
+that date's one attempt. A closed loan is never serviced, so never collected.)*
 | Payoff | §4.10 | | | `RepaymentReceived`, `LoanClosed` |
 
 The same key replays one answer (scenario 2); two keys serialise on L3, each allocating against what
@@ -456,7 +471,7 @@ repayment kind with agreement and schedule v n+1, refused while past due (`409 l
 | Closure | `loan_closure` | the transaction that zeroes the last receivable - a repayment, or the servicing step after a credit-balance application - with every elapsed date accrued; the credit balance refunded (`P11-TSK-018`) | `UNIQUE (loan_id)` + ledger key `lending.closure-refund:<loan>` + the conditional edge; only beside the loan `CLOSED` at commit |
 | Statement | `credit_line_statement` | T-svc at the cycle end, after its accruals | `UNIQUE (loan_id, cycle_end)` |
 | Line closure request | `line_closure_request` | `ACTIVE → CLOSING` | `UNIQUE (loan_id)` |
-| Collection attempt | `collection_attempt` | T-svc | `UNIQUE (due_item_id, attempt_date)` |
+| Collection attempt | `collection_attempt` | T-svc after the billing, once caught up, when the pinned terms collect automatically: one per billed item and business date, whatever happened (`P11-TSK-019`) | `UNIQUE (due_item_id, attempt_date)` + `UNIQUE (repayment_id)` + the repayment's `UNIQUE (loan_id, kind, request_key)` under the key `<item>:<date>`; the trigger holds the authority, the date, the figures and the repayment; an `AUTO_COLLECTION` repayment without its attempt refused at commit |
 | Fee assessment | `fee_assessment` | T-svc, on the day DPD reaches `late_fee_day` (> grace) | `UNIQUE (due_item_id, kind)`, capped per account |
 | Condition change | `loan_condition_event` | T-svc, only on a change | `UNIQUE (loan_id, business_date, kind)` |
 

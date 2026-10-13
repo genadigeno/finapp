@@ -1064,6 +1064,11 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P11-TSK-017. The billed items of the account the servicing sweep claimed and this transaction holds FOR UPDATE (L3) - the credit-balance application's due state; never a request value, no door reaches it.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.attemptedOn",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-019. The collection attempts of the account the servicing sweep claimed and this transaction holds FOR UPDATE (L3), on the step's own business date - read after the lock so a step already taken that date is skipped; never a request value, no door reaches it.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcInstalmentBillingStore.billedItemsOwnedBy",
                             new Entry(
                                     Scope.OWNER_SCOPED,

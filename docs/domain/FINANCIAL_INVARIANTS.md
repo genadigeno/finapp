@@ -173,6 +173,12 @@ placed that would make available balance negative unless the account explicitly 
 **Verify:** Concurrency tests placing simultaneous holds.
 **Phase:** 3
 
+*(Lending's wallet debits - `P11-TSK-018`'s repayment and `P11-TSK-019`'s auto-collection - judge the wallet's available
+balance (`AvailableBalance.underLock`: settled less standing holds) under the wallet's ledger row lock (L7), re-read after
+every collection of a step; a collection takes at most what is available, and nothing where partial collection is not
+allowed. `AutoCollectionDatabaseTest#partialCollectionWhenAllowed`, `#allOrNothingWhenNot` (a hold making settled money
+unavailable).)*
+
 ### INV-BAL-05 — Projections are never authoritative for a financial decision
 **Statement:** A financial decision (sufficient funds, credit exposure, settlement
 eligibility) is never made from a projection whose staleness is unbounded.
@@ -274,6 +280,13 @@ later clock day converging on `settlement-batch:<batchId>` (`INV-SET-04`). *(Ame
 Phase 7 → 8 transition, ADR-0065 (`Proposed`), in force when `P8-TSK-009` lands; the line ended
 at "tests".)*
 **Phase:** 8, 11, 14
+
+*(As built by `P11-TSK-019`, 2026-10-13 - for auto-collection, the scheduled lending process "per period" is per billed item
+and business date: `lending.collection_attempt UNIQUE (due_item_id, attempt_date)` beneath the loan's row lock (L3), and the
+attempt's repayment born under the key `<item>:<date>` (`repayment UNIQUE (loan_id, kind, request_key)`); an
+`AUTO_COLLECTION` repayment without its attempt refused at commit. `AutoCollectionDatabaseTest#twoSweepersCollectOnce`
+(scenario 2's sweeper half: two and ten racing steps - one attempt, one repayment, one entry, one event) and
+`#aCrashMidStepLeavesNothing`. The probe drops the unique - `MUTATION_TESTING.md` section 2.)*
 
 ### INV-IDEM-03 — Key reuse with a different request is rejected
 **Statement:** Presenting a known idempotency key with a materially different request is an
@@ -1820,6 +1833,14 @@ explains the due accounts (`AllocationAnomaly`); concurrent repayments serialise
 scenario 3 (`RepaymentDatabaseTest#twoRepaymentsOnOneInstalmentSerialiseAndConserve`, beside a loan-then-wallet writer) and
 `#tenKeysOneLoanConserve`; every case of the suite closes on the subledger proof's arms over both payers. Probes in
 `MUTATION_TESTING.md` section 2.)*
+
+*(As built by `P11-TSK-019`, 2026-10-13 - auto-collection: a collection's amount is never more than its item has due (its
+due, or less where partial collection is allowed) and its every allocation line pays that item - asserted by
+`LoanCollections` (an `AllocationAnomaly` otherwise) and, for every writer, by `lending V015`'s trigger (a collection's
+repayment holding credit or paying another item refused; what was due less what was collected equal to what the item still
+has due). `AutoCollectionDatabaseTest#neverMoreThanDue` and `#theDueDateCollectsOnceWhateverRaces` (steps racing the
+borrower's repayment: the bill paid exactly, never over-allocated, the rest held). Probes in `MUTATION_TESTING.md` section
+2.)*
 
 ### INV-LND-05 — Terms are pinned and immutable
 **Statement:** A loan agreement version never changes once written; it carries the full,

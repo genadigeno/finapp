@@ -84,8 +84,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw and the repayment end to end"
-        + " (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-018)")
+@DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw, the repayment and auto-collection end"
+        + " to end (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-018, P11-TSK-019)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -637,6 +637,76 @@ class LoanAccountDatabaseTest {
         assertThat(foreign.body()).contains("lending.NotFound");
         assertThat(client.get(LOANS + "/" + loanId + "/repayments", stranger.token()).statusCode()).isEqualTo(404);
         assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------ auto-collection (P11-TSK-019)
+
+    @Test
+    @DisplayName("a loan whose terms collect automatically is collected on its due date through the wired servicing sweep"
+            + " (P11-TSK-019): billed and collected in one step under the system actor - one collection_attempt COLLECTED,"
+            + " one AUTO_COLLECTION repayment of exactly the bill under the attempt's key, lending.RepaymentReceived of"
+            + " that kind; the schedule read shows the instalment PAID and the repayments read lists it; counted after the"
+            + " commit in finapp.lending.collection and finapp.lending.repayment{kind=auto_collection}; a second sweep"
+            + " collects nothing")
+    void aLoanIsCollectedOnItsDueDateThroughTheWiredSweep() throws Exception {
+        activateTerms(LoanApplicationDatabaseTest.terms(LoanProduct.PERSONAL_LOAN).toBuilder().autoCollection(true)
+                .build());
+        CreditFixtures.Customer customer;
+        String offer;
+        try {
+            customer = customers.consentingCustomer();
+            offer = offered(customer, loan("3650.00", 12, 10));
+        } finally {
+            // The offer pinned the collecting version; the suite's default (no auto-collection) is back in force.
+            activateTerms(LoanApplicationDatabaseTest.terms(LoanProduct.PERSONAL_LOAN));
+        }
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        toFirstDueDate(loanId);
+        double collectedBefore = collections("collected");
+        double repaidBefore = meterRegistry.find(RepaymentMetrics.REPAYMENT).tag("kind", "auto_collection")
+                .tag("outcome", "repaid").counter().count();
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        long bill = count("SELECT interest_due_minor + principal_due_minor FROM lending.instalment_billing"
+                + " WHERE loan_id = ?::uuid", loanId);
+        assertThat(count("SELECT count(*) FROM lending.collection_attempt WHERE loan_id = ?::uuid AND outcome ="
+                + " 'COLLECTED' AND collected_minor = due_minor", loanId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.repayment r JOIN lending.collection_attempt a"
+                + " ON a.repayment_id = r.id WHERE r.loan_id = ?::uuid AND r.kind = 'AUTO_COLLECTION'"
+                + " AND r.request_key = a.due_item_id || ':' || a.attempt_date AND r.amount_minor = ?", loanId, bill))
+                .as("one collection of exactly the bill, under the attempt's key").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?::uuid AND event_type ="
+                + " 'lending.RepaymentReceived' AND convert_from(payload, 'UTF8') LIKE '%\"kind\":\"AUTO_COLLECTION\"%'",
+                loanId)).isEqualTo(1);
+        assertThat(collections("collected")).as("counted after the commit").isEqualTo(collectedBefore + 1);
+        assertThat(meterRegistry.find(RepaymentMetrics.REPAYMENT).tag("kind", "auto_collection").tag("outcome", "repaid")
+                .counter().count()).isEqualTo(repaidBefore + 1);
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body())
+                .contains("\"status\":\"PAID\"");
+        assertThat(client.get(LOANS + "/" + loanId + "/repayments", customer.token()).body())
+                .contains("\"kind\":\"AUTO_COLLECTION\"");
+        servicing.sweepOnce();
+        assertThat(count("SELECT count(*) FROM lending.collection_attempt WHERE loan_id = ?::uuid", loanId))
+                .as("once a day, however often swept").isEqualTo(1);
+    }
+
+    private void activateTerms(com.finapp.lending.LoanTerms terms) {
+        lendingTransactions.inTransaction(uow -> {
+            var proposed = termsAdministration.propose(uow, terms, "the suite's terms", employee(),
+                    CorrelationId.generate(ids));
+            termsAdministration.approve(uow, proposed.id(), employee(), "reviewed", CorrelationId.generate(ids));
+            return null;
+        });
+    }
+
+    private double collections(String outcome) {
+        return meterRegistry.find(LoanServicingMetrics.COLLECTION).tag("outcome", outcome).counter().count();
     }
 
     @Test
