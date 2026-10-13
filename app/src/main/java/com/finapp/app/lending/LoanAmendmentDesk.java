@@ -53,8 +53,8 @@ public final class LoanAmendmentDesk {
 
     static final String ACCEPTANCE_SCOPE = "lending.amendment-acceptance:";
 
-    /** A rate as the body spells it: a plain decimal fraction, no sign, no exponent. */
-    private static final Pattern RATE = Pattern.compile("(0|1)(\\.[0-9]{1,8})?");
+    /** A rate as the body spells it: a plain decimal fraction 0 to 1, at most 8 places, no sign, no exponent. */
+    private static final Pattern RATE = Pattern.compile("0(\\.[0-9]{1,8})?|1(\\.0{1,8})?");
 
     @NonNull private final LoanAmendments amendments;
     @NonNull private final IdentityStore<Connection> identities;

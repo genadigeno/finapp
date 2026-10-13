@@ -95,7 +95,8 @@ class CanonicalOfferTermsTest {
 
     @Test
     @DisplayName("format 2 spells a servicing zone east of UTC - +14:00 and +05:30 - and declares itself; format 1 never"
-            + " spells a '+' and is refused it rather than re-spelt; a format beyond 2 is neither rendered nor read")
+            + " spells a '+' and is refused it rather than re-spelt; format 3 is read but never rendered as an offer's, and a"
+            + " format beyond 3 is neither")
     void format2SpellsAZoneEastOfUtc() {
         for (String zone : List.of("+14:00", "+05:30")) {
             CanonicalOfferTerms.Content east =
@@ -113,9 +114,47 @@ class CanonicalOfferTermsTest {
         assertThat(CanonicalOfferTerms.render(west, 1)).contains("\"servicingZone\":\"-14:00\"");
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.render(west, 3));
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.render(west, 0));
-        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"format\":\"3\",\"x\":\"y\"}"));
+        // Format 3 is an amended agreement version's (P11-TSK-027) - read, never rendered by render(content, format).
+        assertThat(CanonicalOfferTerms.formatOf("{\"format\":\"3\",\"x\":\"y\"}")).isEqualTo(3);
+        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"format\":\"4\",\"x\":\"y\"}"));
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"offer\":{}}"));
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"format\":\"2\"}"));
+    }
+
+    @Test
+    @DisplayName("format 3 - an amended agreement version's (P11-TSK-027): the same content renders the same bytes; it"
+            + " declares itself, carries the amended rate in its term set and the amendment in place of the illustration -"
+            + " the version and hash it amends, the effective date and the schedule it fixed - in format 2's token set; a"
+            + " different amendment, rate or schedule is a different hash")
+    void format3IsAnAmendedVersions() {
+        CanonicalOfferTerms.Content content = loan(LoanTermsFixtures.personalLoan("0.05").build(), 10_000_00, 30);
+        CanonicalOfferTerms.Amendment amendment = new CanonicalOfferTerms.Amendment(
+                java.util.UUID.fromString("01928c3a-0000-7000-8000-000000000027"), 1, "ab".repeat(32), 2,
+                java.time.LocalDate.parse("2026-10-13"), java.time.LocalDate.parse("2026-10-10"),
+                java.time.LocalDate.parse("2026-11-10"), 24, Money.ofMinorUnits(8_000_00, LoanTermsFixtures.EUR),
+                Money.ofMinorUnits(300_00, LoanTermsFixtures.EUR));
+        String canonical = CanonicalOfferTerms.renderAmendment(content, amendment);
+        assertThat(canonical).isEqualTo(CanonicalOfferTerms.renderAmendment(content, amendment))
+                .startsWith("{\"format\":\"3\",").matches("^\\{[A-Za-z0-9_.:+\",{}\\[\\]-]*\\}$")
+                .contains("\"nominalAnnualRate\":\"0.05\"",
+                        "\"amendment\":{\"amendment\":\"01928c3a-0000-7000-8000-000000000027\"",
+                        "\"amendsVersion\":\"1\"", "\"amendsTermsSha256\":\"" + "ab".repeat(32) + "\"",
+                        "\"agreementVersion\":\"2\"", "\"effectiveDate\":\"2026-10-13\"",
+                        "\"scheduleStart\":\"2026-10-10\"", "\"firstDueDate\":\"2026-11-10\"",
+                        "\"remainingInstalments\":\"24\"", "\"schedulePrincipal\":\"800000\"",
+                        "\"arrearsRescheduled\":\"30000\"")
+                .doesNotContain("illustration");
+        assertThat(CanonicalOfferTerms.formatOf(canonical)).isEqualTo(3);
+        CanonicalOfferTerms.Amendment other = new CanonicalOfferTerms.Amendment(amendment.amendment(), 1, "ab".repeat(32),
+                2, amendment.effectiveDate(), amendment.scheduleStart(), amendment.firstDueDate(), 25,
+                amendment.schedulePrincipal(), amendment.arrearsRescheduled());
+        assertThat(hex(CanonicalOfferTerms.renderAmendment(content, other))).isNotEqualTo(hex(canonical));
+        assertThat(hex(CanonicalOfferTerms.renderAmendment(
+                loan(LoanTermsFixtures.personalLoan("0.04").build(), 10_000_00, 30), amendment))).isNotEqualTo(hex(canonical));
+        assertThatIllegalArgumentException().as("an amendment makes the next version").isThrownBy(() ->
+                new CanonicalOfferTerms.Amendment(amendment.amendment(), 1, "ab".repeat(32), 3, amendment.effectiveDate(),
+                        amendment.scheduleStart(), amendment.firstDueDate(), 24, amendment.schedulePrincipal(),
+                        amendment.arrearsRescheduled()));
     }
 
     @Test

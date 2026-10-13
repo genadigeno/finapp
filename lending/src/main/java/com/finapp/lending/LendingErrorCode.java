@@ -52,7 +52,9 @@ public enum LendingErrorCode implements ErrorCode {
      * A terms proposal is refused whole (`P11-TSK-005`, {@code INV-LND-09}): a convention no engine version implements
      * (a rate type, rounding mode, day count, or zone), an allocation order omitting or repeating a component, another
      * product's terms, an unregistered engine version or agreement template, or a value outside the bounds lending or the
-     * product declares.
+     * product declares. Its second subject (`P11-TSK-027`): an amendment refused whole - a credit line (more limit is a new
+     * decision), a loan not yet scheduled, a higher rate, a shorter remaining term, a whole term past the product's, a change
+     * of nothing, nothing outstanding to restructure, or a schedule the engine refuses.
      */
     TERMS_INVALID("lending.TermsInvalid", 422, "The terms are not complete or not within bounds."),
 
@@ -119,7 +121,8 @@ public enum LendingErrorCode implements ErrorCode {
     /**
      * The acceptance echoed a terms hash that is not the offer's (`P11-TSK-012`, ADR-0092 point 6, {@code INV-LND-05}):
      * the customer accepted terms other than the ones recorded - nothing was written. Read the offer again and accept
-     * what it shows.
+     * what it shows. Its second subject (`P11-TSK-027`): an amendment's acceptance echoing a document hash that is not the
+     * amendment's - nothing was amended; the title is unchanged (the {@code SelfApprovalRefused} precedent).
      */
     TERMS_CHANGED("lending.TermsChanged", 409, "The terms accepted are not the offer's; nothing was accepted."),
 

@@ -210,7 +210,7 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   income rows; a closure's refund must not take the wallet after them); a waiver that settles the last receivable closes the
   account in its transaction through the one `LoanClosures` (`REPAID`, or a `CLOSING` line `CLOSED_BY_CUSTOMER` - no new
   closure reason); the self-dealing judgement is lifted into `LoanSelfDealing`, one rule for both acts.
-- **As built by `P11-TSK-027` (2026-10-13) - point 5, restructuring by amendment, with these refinements:** the migration is
+- **As built by `P11-TSK-027` (2026-10-14) - point 5, restructuring by amendment, with these refinements:** the migration is
   `lending V023` (the backlog's `V020` was stale); `loan_amendment` and `loan_amendment_decision` are INSERT-only (the
   waiver's two-table pattern) and **every status is derived** - `LAPSED` from either `PROPOSED` or `APPROVED` once the
   agreement version it amends is no longer the loan's, the loan is no longer `ACTIVE` (a payoff closed it) or the approved

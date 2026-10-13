@@ -470,7 +470,7 @@ ledger is proven against - is judged at the proposal and again at the approval (
 proposal still `PROPOSED`, nothing posted) and once more by the decision trigger, which takes L3 itself, for every writer.
 An interest waiver releases billed interest only (`LOAN_INTEREST_DUE`); accrued interest not yet billed is never waived.*
 
-*As built by `P11-TSK-027` (2026-10-13) - the amendment: `lending V023`'s `loan_amendment` (the proposal - the agreement
+*As built by `P11-TSK-027` (2026-10-14) - the amendment: `lending V023`'s `loan_amendment` (the proposal - the agreement
 version it amends, a rate never above it, the remaining instalments never fewer than the current schedule has left, the
 arrears flag, the SHA-256 of the document the customer is shown, the screened reason) and `loan_amendment_decision` (born
 once, the four eyes a `CHECK` over the proposer copied and pinned by the composite key - the waiver's pattern; an approval

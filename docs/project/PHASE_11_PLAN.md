@@ -1001,6 +1001,7 @@ rounded once `UP` to the minor unit, raised by the least amount only if the inte
 final instalment above it. Step 4's door judgement is exact over every real calendar of the leap cycle, against credit's
 bounds through the `LoanProductBounds` port; at 15 days' shortest first period and 6-60 months it first refuses at
 23.15 %, where a real loan first fails. ADR-0093's Follow-up records the reasoning and the measurements.)*
+*(As built by `P11-TSK-027`, 2026-10-14 - step 7 for an amendment: `P` is the principal not yet billed by the rows (agreement v1's principal less the principal billed net of re-scheduling - `LOAN_PRINCIPAL` after rule 13), the term the amendment's remaining instalments, and the new schedule starts at the OPEN period - the latest calendar's period holding the acceptance's business date, its start the latest billed due date and its end the new `D1` - not at the effective date: the accruals already posted in that period are then billed by the new first instalment instead of being stranded in a period no schedule bills (`lending V023`'s deferred `repayment_schedule_continues_its_period`). The new rate governs every date accrued from the acceptance's business date; the dates before it were accrued under version n by the acceptance's own catch-up. ADR-0099's Follow-up records the rest.)*
 
 ### 12.3 Interest and fees (owner brief 9.5) — `ACCRUAL_ENGINE_V1`
 

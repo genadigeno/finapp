@@ -279,7 +279,8 @@ class AmendmentDatabaseTest {
     }
 
     @Test
-    @DisplayName("arrears re-scheduled conserve principal: a first instalment ten days past due, its principal unpaid -"
+    @DisplayName("arrears re-scheduled conserve principal: a first instalment ten days past due, part-paid, 100.00 of its"
+            + " principal unpaid -"
             + " the amendment re-scheduling arrears posts rule 13 once (DR LOAN_PRINCIPAL / CR LOAN_PRINCIPAL_DUE of exactly"
             + " the item's unpaid principal, lending.amendment:<id>), one re-scheduling row naming it; LOAN_PRINCIPAL_DUE is"
             + " left with no principal, LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE unchanged, schedule version 2 amortises exactly"
@@ -287,9 +288,13 @@ class AmendmentDatabaseTest {
             + " the principal billed net of re-scheduling over the loan's life is exactly its principal")
     void arrearsRescheduledConservePrincipal() throws SQLException {
         LoanId loan = inArrears(6_400_00);
+        // Part-paid - its fee, its interest and all but 100.00 of its principal (the pinned order: fees, interest,
+        // principal) - so the principal outstanding is no longer the original principal.
+        repay(loan, key(), due(loan) - 100_00);
         long principalDue = netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL_DUE)).minorUnits();
         long notDue = netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL)).minorUnits();
-        assertThat(principalDue).as("billed principal past due").isPositive();
+        assertThat(principalDue).as("billed principal past due").isEqualTo(100_00);
+        assertThat(notDue + principalDue).as("some principal repaid").isLessThan(6_400_00);
         LoanAmendment amendment = propose(loan, rate(loan), 14, true, employee());
         approve(loan, amendment.id(), employee());
         LoanAmendments.Accepted accepted = accept(loan, amendment.id());
