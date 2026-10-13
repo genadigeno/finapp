@@ -284,8 +284,13 @@ public final class LoanServicingDesk {
                 "no such record.");
     }
 
+    /** A loan id is a UUIDv7 (ADR-0013): any other identifier names no loan - the uniform 404, never a 500. */
     private static LoanId loanId(String raw) {
-        return LoanId.of(id(raw));
+        try {
+            return LoanId.of(id(raw));
+        } catch (IllegalArgumentException notALoanId) {
+            throw notFound();
+        }
     }
 
     private static UUID id(String raw) {

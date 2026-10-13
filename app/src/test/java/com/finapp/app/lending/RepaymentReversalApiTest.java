@@ -78,12 +78,12 @@ class RepaymentReversalApiTest {
 
     @Test
     @DisplayName("to a loan servicing agent: an act without a key, with a field the body does not declare or a decision"
-            + " naming no proposal is 422 before the domain; an unknown or malformed loan is 404 lending.NotFound on every"
-            + " door; a missing reason is 422 lending.ReasonRequired")
+            + " naming no proposal is 422 before the domain; an unknown or malformed loan - a UUIDv4 included - is 404"
+            + " lending.NotFound on every door; a missing reason is 422 lending.ReasonRequired")
     void theKeyTheBodyAndTheUniformNotFound() throws Exception {
         LoanApplicationClient client = new LoanApplicationClient(port);
         String agent = sessionWith(RoleName.LOAN_SERVICING_AGENT);
-        String loan = UUID.randomUUID().toString();
+        String loan = IDS.next().toString();
         String repayment = UUID.randomUUID().toString();
         HttpResponse<String> unkeyed = client.post(reversal(loan, repayment), REASON, agent, null);
         assertThat(unkeyed.statusCode()).as(unkeyed.body()).isEqualTo(422);
@@ -96,7 +96,7 @@ class RepaymentReversalApiTest {
         assertThat(unnamed.statusCode()).as("a decision names the proposal it decides: " + unnamed.body()).isEqualTo(422);
 
         String decision = "{\"reversalId\":\"" + UUID.randomUUID() + "\",\"reason\":\"reviewed\"}";
-        for (String id : List.of(IDS.next().toString(), "not-a-uuid")) {
+        for (String id : List.of(IDS.next().toString(), UUID.randomUUID().toString(), "not-a-uuid")) {
             HttpResponse<String> read = client.get(operator(id), agent);
             assertThat(read.statusCode()).as(id + ": " + read.body()).isEqualTo(404);
             assertThat(read.body()).contains("lending.NotFound");
