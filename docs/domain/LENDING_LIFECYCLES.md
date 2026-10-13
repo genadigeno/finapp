@@ -429,6 +429,19 @@ an outcome only through these acts, each a reasoned posting (`INV-LND-11`). **In
 out of `APPROVED` (reversal, waiver), `REJECTED`, `ACCEPTED` or `LAPSED`; `PROPOSED → ACCEPTED`;
 `APPROVED → REJECTED`; approval by the proposer (`CHECK`).
 
+*As built by `P11-TSK-020` (2026-10-13) - the repayment reversal: `lending V016`'s `repayment_reversal` is the machine
+row (money-free - the amount is the repayment's - so its decision columns take a column-scoped `UPDATE` under the edge
+trigger), with `repayment_allocation_reversal` the negating rows. The proposal takes L3 only; the rejection L3 then L5
+(any holder of `LOAN_SERVICE`, the proposer's withdrawal included, on a closed loan too); the approval L0, L3, L5, L6 when
+the repayment paid principal, L7 (the wallet the repayment debited), then `ReversalService`. Each decision names its
+`reversalId`, so an approver decides exactly the proposal reviewed. Refused, nothing written and the proposal still
+`PROPOSED`: `409 lending.LoanClosed` on any loan not `ACTIVE` (the closing repayment and every earlier one), `409
+lending.RepaymentNotReversible` for a repayment already reversed or whose held credit has since been applied (the exact
+swap would drive the credit balance below zero), `422 lending.CapitalUnavailable`, `409 lending.WalletUnavailable` (the
+wallet not `ACTIVE`), `403 lending.SelfDealingRefused` (recorded `FAILED`) at every act. The interest the re-opened
+principal would have earned between the repayment and its reversal is not recharged (A10); it accrues from the reversal's
+value date.*
+
 ### 4.10 Payoff quote and execution — `P11-TSK-026`
 
 The **quote** is an immutable born-once fact (C, `POST …/payoff-quotes`, keyed, either kind, any

@@ -199,7 +199,15 @@ under the step's L3, (L7) the borrower's wallet row once a step, then per collec
 T-rep keeps, so T-svc, T-rep, the draw (L3 → L6, no wallet) and the reversal (`-020`: L0 → L3 → ...) still ascend: the only
 row two steps share before L7 is the currency's `LOAN_INTEREST_INCOME` projection (the accrual's), which no wallet holder ever
 waits on. Lock-waits proven by `AutoCollectionDatabaseTest#collectionTakesTheLoanThenTheWallet`; the due-date race of steps
-and a customer's repayment counted without a `40P01`.)* | n/a |
+and a customer's repayment counted without a `40P01`.)* *(`P11-TSK-020` (T-rev): the approval takes L0 (credit's profile, first - the reversal raises
+outstanding), L3, L5 (the proposal `FOR UPDATE`, under its loan), L6 only when the reversed repayment paid principal,
+L7 (the wallet the repayment debited), then `ReversalService` - its namespace-2 advisory lock on the original entry and
+L8; the proposal takes L3 only, the rejection L3 then L5. No cycle with T-rep (L3, L7, L8), T-svc (L3, L7, L8), the
+draw (L3, L6, L7, L8), the acceptance (L0, L2, L6) or the disbursement (L0, L3, L5, L7, L8): each takes a sub-sequence
+of the one order, and namespace 2 on a repayment's entry is taken only under that loan's L3. Lock-waits proven by
+`RepaymentReversalDatabaseTest#reversalTakesTheProfileFirst` (L0 before L3, holding L0 at L3) and
+`#aReversalNeverOverDeploysCapital` (waiting on L6 holding L3); ten approvers and reversals racing acceptances for the
+last capital run without a `40P01`.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 

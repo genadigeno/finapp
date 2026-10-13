@@ -4252,6 +4252,41 @@
           }
         }
       },
+      "lending.LoanClosed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.LoanClosed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.LoanClosed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The loan is closed; nothing was done.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.LoanNotRepayable": {
         "content": {
           "application/problem+json": {
@@ -4532,6 +4567,41 @@
           }
         }
       },
+      "lending.RepaymentNotReversible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.RepaymentNotReversible"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.RepaymentNotReversible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The repayment cannot be reversed; nothing was posted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.SelfApprovalRefused": {
         "content": {
           "application/problem+json": {
@@ -4558,6 +4628,41 @@
           }
         },
         "description": "[403] A proposal is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.SelfDealingRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.SelfDealingRefused"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.SelfDealingRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] An employee never services a loan of their own party; nothing was done.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -4732,7 +4837,7 @@
             }
           }
         },
-        "description": "[409] The wallet cannot receive the draw now; nothing was drawn.",
+        "description": "[409] The wallet cannot receive the money now; nothing was posted.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -13039,6 +13144,26 @@
         },
         "type": "object"
       },
+      "OperatorLoanView": {
+        "properties": {
+          "loan": {
+            "$ref": "#/components/schemas/LoanView"
+          },
+          "repayments": {
+            "items": {
+              "$ref": "#/components/schemas/RepaymentView"
+            },
+            "type": "array"
+          },
+          "reversals": {
+            "items": {
+              "$ref": "#/components/schemas/ReversalView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "OperatorPayoutRequest": {
         "properties": {
           "amount": {
@@ -15054,6 +15179,34 @@
         },
         "type": "object"
       },
+      "ReversalDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reversalId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reversalId"
+        ],
+        "type": "object"
+      },
+      "ReversalProposalRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReversalReceipt": {
         "properties": {
           "cover": {
@@ -15069,6 +15222,36 @@
             "type": "string"
           },
           "tradeId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReversalView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "reversalId": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -21611,6 +21794,192 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanTermsReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}": {
+      "get": {
+        "operationId": "readLoanAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorLoanView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/repayments/{repaymentId}/reversal": {
+      "post": {
+        "operationId": "proposeRepaymentReversal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repaymentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversalProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/repayments/{repaymentId}/reversal/approval": {
+      "post": {
+        "operationId": "approveRepaymentReversal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repaymentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/repayments/{repaymentId}/reversal/rejection": {
+      "post": {
+        "operationId": "rejectRepaymentReversal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repaymentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalView"
                 }
               }
             },

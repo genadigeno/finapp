@@ -508,6 +508,23 @@ nothing; once an item is not collected in full every younger one that day is `IN
 when nothing could be taken. A collection that settles the loan closes it there and the step's own closure step is skipped.
 No L0 (exposure only falls), no L5, no L6; no new schedule - the servicing sweep drives it.)*
 
+*(As built by `P11-TSK-020` - T-rev, the repayment reversal: each act behind the door's claim (`lending.servicing:<type>:<id>`);
+the loan's party (frozen, unlocked) and the actor's through identity - an operator of the loan's own party, or one the
+platform cannot place, `403 lending.SelfDealingRefused`, recorded `FAILED` in a transaction of its own. The proposal: **(L3)**
+the loan; the loan's own repayment; `ACTIVE` (`409 lending.LoanClosed` otherwise - every repayment of a closed loan, A12);
+no live proposal (`409 lending.ProposalPending`; an approved one `409 lending.RepaymentNotReversible`); its held credit still
+held; the `repayment_reversal` row born `PROPOSED` (the partial unique beneath). The approval: **(L0)** credit's profile;
+**(L3)** the loan; **(L5)** the proposal `FOR UPDATE` under it, `PROPOSED`, not the approver's own (`403
+lending.SelfApprovalRefused`; the same approver's retry converges); `ACTIVE`; the repayment's held credit still in
+`LOAN_CREDIT_BALANCE` (`409 lending.RepaymentNotReversible` - the exact swap must never drive it below zero; later
+allocations are not re-cut); the database clock after the locks, the value date its business date in the pinned zone;
+**(L6)** only when the repayment paid principal - headroom at least the principal re-instated (`422
+lending.CapitalUnavailable`); **(L7)** the wallet rule 5 debited, `ACTIVE` (`409 lending.WalletUnavailable`); rule 10 by
+`ReversalService` - rule 5's lines read from the ledger, every direction swapped, under
+`lending.repayment-reversal:<reversal>` (namespace 2 and L8 inside); then only writes no other transaction waits on - the
+proposal `APPROVED` naming the entry, one negating row per allocation, `lending.RepaymentReversed`, the audit record. Every
+refusal leaves the proposal `PROPOSED`, nothing posted. The rejection: L3, L5.)*
+
 ### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
 
 One order for every lending writer holding more than one of them:
@@ -717,6 +734,10 @@ four catalogued in `ERROR_CONTRACT.md`; a draw's lost standing is credit's `Appl
 *(`LoanNotRepayable` (`409`) and `InsufficientFunds` (`422` - the available balance short, or the wallet absent or not
 `ACTIVE`, ADR-0095 point 4) catalogued by `P11-TSK-018`; a refused conservation is a defect - `500`, counted by
 `finapp.lending.allocation.anomaly`.)*
+*(`LoanClosed` (`409`), `SelfDealingRefused` (`403`) and `RepaymentNotReversible` (`409` - added: a repayment already reversed,
+or whose held credit has since been applied) catalogued by `P11-TSK-020`, beside the reuse of `SelfApprovalRefused`,
+`ReasonRequired`, `ProposalPending`, `ProposalNotPending`, `CapitalUnavailable` and `WalletUnavailable` (its second subject: a
+wallet the reversal cannot credit).)*
 
 ## 10. Event architecture
 

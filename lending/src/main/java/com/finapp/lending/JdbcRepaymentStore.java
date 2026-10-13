@@ -58,6 +58,20 @@ public final class JdbcRepaymentStore implements RepaymentStore {
     }
 
     @Override
+    public Optional<Repayment> findById(Connection unitOfWork, LoanId loan, UUID id) {
+        Objects.requireNonNull(loan, "loan");
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS + " FROM lending.repayment r"
+                + " WHERE r.loan_id = ? AND r.id = ?")) {
+            select.setObject(1, loan.value());
+            select.setObject(2, id);
+            return repayments(unitOfWork, select).stream().findFirst();
+        } catch (SQLException failure) {
+            throw failed("reading a repayment by its id", failure);
+        }
+    }
+
+    @Override
     public Instant insert(Connection unitOfWork, Repayment repayment, CorrelationId correlation) {
         Objects.requireNonNull(repayment, "repayment");
         Objects.requireNonNull(correlation, "correlation");

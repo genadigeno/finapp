@@ -950,7 +950,24 @@ class OwnershipIsScopedTest {
                             "com.finapp.lending.JdbcLoanStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P11-TSK-014. The disbursement's L3: the loan id comes only from the sweep's claimed page; no door reaches it.")),
+                                    "P11-TSK-014. The disbursement's L3: the loan id comes only from the sweep's claimed page; no customer"
+                                        + " door reaches it. P11-TSK-020: the repayment reversal's L3 - the loan id from the"
+                                        + " path of an operator door behind LOAN_SERVICE / LOAN_SERVICE_APPROVE, which names any"
+                                        + " loan by design; the operator's own party's loan is refused (SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-020. A servicing agent names the repayment from the path of a door behind"
+                                        + " LOAN_SERVICE; the statement holds it to the loan the transaction locked (loan_id = ?"
+                                        + " AND id = ?), another loan's repayment the same 404.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentReversalStore.ofLoan",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-020. GET /v1/operator/loans/{id} behind LOAN_SERVICE - an operator reads any"
+                                        + " loan by design, each serving audited (lending.LoanRead); no customer door reaches"
+                                        + " it.")),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanStore.activate",
                             new Entry(

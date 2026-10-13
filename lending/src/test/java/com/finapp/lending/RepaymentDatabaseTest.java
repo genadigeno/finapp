@@ -645,7 +645,9 @@ class RepaymentDatabaseTest {
                     "P0001", "immutable");
             refused(migrator, "DELETE FROM lending.repayment_allocation WHERE repayment_id IN (SELECT id FROM"
                     + " lending.repayment WHERE loan_id = '" + loan.value() + "')", "P0001", "immutable");
-            refused(migrator, "TRUNCATE lending.repayment_allocation", "P0001", "");
+            // CASCADE since lending V016 (P11-TSK-020): the negating rows reference the allocation rows, so a plain
+            // TRUNCATE is refused by the foreign key (0A000) before any trigger; with CASCADE the triggers refuse it.
+            refused(migrator, "TRUNCATE lending.repayment_allocation CASCADE", "P0001", "");
         }
 
         LoanId closed = disbursed(3_000_00, 6);
@@ -764,10 +766,16 @@ class RepaymentDatabaseTest {
             long repaid = count("SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"
                     + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.component = ?",
                     id, component);
+            // P11-TSK-020: what an approved reversal negated is due again.
+            long reversed = count("SELECT coalesce(sum(n.amount_minor), 0) FROM lending.repayment_allocation_reversal n"
+                    + " JOIN lending.repayment_allocation a ON a.id = n.allocation_id"
+                    + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.component = ?",
+                    id, component);
             AccountPurpose due = component.equals("INTEREST") ? AccountPurpose.LOAN_INTEREST_DUE
                     : AccountPurpose.LOAN_PRINCIPAL_DUE;
             long balance = netDebit(loanAccount(loan, due)).minorUnits();
-            assertThat(balance).as(due + ": billed less every payer").isEqualTo(billed - applied - repaid);
+            assertThat(balance).as(due + ": billed less every payer, plus what reversals re-opened")
+                    .isEqualTo(billed - applied - repaid + reversed);
             assertThat(balance).as(due + " never negative").isGreaterThanOrEqualTo(0);
         }
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_FEES_DUE)).minorUnits()).isZero();
@@ -786,9 +794,12 @@ class RepaymentDatabaseTest {
         long applications = count("SELECT coalesce(sum(amount_minor), 0) FROM lending.credit_balance_application"
                 + " WHERE loan_id = ?", id);
         long refunds = count("SELECT coalesce(sum(refund_minor), 0) FROM lending.loan_closure WHERE loan_id = ?", id);
+        long heldReversed = count("SELECT coalesce(sum(n.amount_minor), 0) FROM lending.repayment_allocation_reversal n"
+                + " JOIN lending.repayment_allocation a ON a.id = n.allocation_id JOIN lending.repayment r"
+                + " ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.target = 'CREDIT_BALANCE'", id);
         long credit = held(loan);
-        assertThat(credit).as("the credit balance: overpayments less applications less refunds")
-                .isEqualTo(heldLines - applications - refunds);
+        assertThat(credit).as("the credit balance: overpayments less reversed overpayments, applications and refunds")
+                .isEqualTo(heldLines - heldReversed - applications - refunds);
         assertThat(credit).isGreaterThanOrEqualTo(0);
         assertThat(count("SELECT count(*) FROM lending.repayment r WHERE r.loan_id = ? AND r.amount_minor <>"
                 + " (SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"

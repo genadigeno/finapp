@@ -35,6 +35,7 @@ import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.NonNull;
@@ -65,10 +66,12 @@ public final class LoanRepaymentDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final LendingTransactions transactions;
     @NonNull private final RepaymentMetrics metrics;
+    @NonNull private final com.finapp.lending.RepaymentReversalStore reversals;
 
     /**
      * What a repayment answers - and replays. Amounts are exact decimal strings, the value date ISO; {@code status} is
-     * derived ({@code ALLOCATED}; {@code REVERSED} arrives with `P11-TSK-020`); {@code closure} is present when this
+     * derived ({@code ALLOCATED}; {@code REVERSED} on the history read once an approved reversal names it, `P11-TSK-020` - a
+     * receipt replays what was answered); {@code closure} is present when this
      * repayment closed the loan.
      */
     public record RepaymentView(
@@ -163,18 +166,30 @@ public final class LoanRepaymentDesk {
     /** The caller's own loan's repayments, newest first; another party's loan, or none, is the uniform 404. */
     public RepaymentListView list(Session current, String rawLoanId) {
         LoanId id = loanId(rawLoanId);
-        Optional<List<Repayment>> found = transactions.inTransaction(unitOfWork ->
-                repayments.history(unitOfWork, id, partyOf(unitOfWork, current)));
-        List<RepaymentView> views = new ArrayList<>();
-        for (Repayment repayment : found.orElseThrow(LoanRepaymentDesk::notFound)) {
-            views.add(view(repayment, Optional.empty()));
-        }
-        return new RepaymentListView(List.copyOf(views));
+        return transactions.inTransaction(unitOfWork -> {
+            List<Repayment> found = repayments.history(unitOfWork, id, partyOf(unitOfWork, current))
+                    .orElseThrow(LoanRepaymentDesk::notFound);
+            // P11-TSK-020: REVERSED is derived from the approved reversal naming the repayment, read in the same transaction.
+            Set<UUID> reversed = reversals.reversedAmong(unitOfWork, found.stream().map(Repayment::id).toList());
+            List<RepaymentView> views = new ArrayList<>();
+            for (Repayment repayment : found) {
+                views.add(view(repayment, Optional.empty(), reversed.contains(repayment.id())));
+            }
+            return new RepaymentListView(List.copyOf(views));
+        });
     }
 
     // ------------------------------------------------------------------ the view and the receipt
 
     private static RepaymentView view(Repayment repayment, Optional<LoanClosure> closure) {
+        return view(repayment, closure, false);
+    }
+
+    /**
+     * A repayment as answered - its status derived: {@code REVERSED} once an approved reversal names it (`P11-TSK-020`),
+     * {@code ALLOCATED} otherwise. The operator's loan read shows the same view.
+     */
+    static RepaymentView view(Repayment repayment, Optional<LoanClosure> closure, boolean reversed) {
         List<RepaymentAllocationView> allocations = new ArrayList<>();
         for (RepaymentAllocation allocation : repayment.allocations()) {
             AllocationLine line = allocation.line();
@@ -183,7 +198,8 @@ public final class LoanRepaymentDesk {
                     line.component().map(Enum::name).orElse(null), line.amount().toBigDecimal().toPlainString()));
         }
         return new RepaymentView(repayment.id().toString(), repayment.loan().value().toString(), repayment.kind().name(),
-                "ALLOCATED", repayment.amount().toBigDecimal().toPlainString(), repayment.amount().currency().code(),
+                reversed ? "REVERSED" : "ALLOCATED", repayment.amount().toBigDecimal().toPlainString(),
+                repayment.amount().currency().code(),
                 repayment.valueDate().toString(), repayment.agreementVersion(), repayment.receivedAt().toString(),
                 List.copyOf(allocations),
                 closure.map(closing -> new RepaymentClosureView(closing.reason().name(),

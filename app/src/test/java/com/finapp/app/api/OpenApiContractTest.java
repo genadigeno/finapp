@@ -328,6 +328,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/rejection",
+                        // P11-TSK-020: the loan servicing agent's doors - any loan read (LOAN_SERVICE, audited) and the
+                        // repayment reversal under four eyes (LOAN_SERVICE proposes and rejects, LOAN_SERVICE_APPROVE approves).
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/repayments/{repaymentId}/reversal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/repayments/{repaymentId}/reversal/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/repayments/{repaymentId}/reversal/rejection",
                         // P11-TSK-010: the customer's loan applications (a MULTI_FACTOR session to apply, 202; the
                         // owner's own application only; the withdrawal under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications",

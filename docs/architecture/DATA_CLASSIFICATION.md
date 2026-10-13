@@ -3112,6 +3112,38 @@ item and repayment references `CONFIDENTIAL`, the outcome, date and stamps `INTE
 | `collection_attempt` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `collection_attempt` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the loan's own flow) |
 
+### `lending` - the repayment reversal - *added by `P11-TSK-020`*
+
+`lending V016`: the four-eyes reversal's machine row and its negating rows. The proposal row carries no money (the amount
+is the repayment's); the negating rows' amounts are `RESTRICTED-FINANCIAL` as every lending amount. The operators' ids
+are `CONFIDENTIAL` (a person), their reasons `CONFIDENTIAL` (free prose by a person - screened for instrument shapes by
+the domain and by twin `CHECK`s), the loan, repayment, allocation and entry references `CONFIDENTIAL`, statuses, types,
+versions and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `repayment_reversal` | `id` | `INTERNAL` | Generated - the reversal's identity and its ledger key's (`lending.repayment-reversal:<id>`) |
+| `repayment_reversal` | `loan_id` | `CONFIDENTIAL` | The loan whose repayment it reverses |
+| `repayment_reversal` | `repayment_id` | `CONFIDENTIAL` | The repayment reversed - one live proposal per repayment |
+| `repayment_reversal` | `agreement_version` | `INTERNAL` | The agreement version the repayment was allocated under |
+| `repayment_reversal` | `status` | `INTERNAL` | The machine's state |
+| `repayment_reversal` | `proposed_by` | `CONFIDENTIAL` | The servicing agent who proposed it |
+| `repayment_reversal` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `repayment_reversal` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment_reversal` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `repayment_reversal` | `decided_by` | `CONFIDENTIAL` | The agent who approved or rejected it - never its proposer for an approval |
+| `repayment_reversal` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `repayment_reversal` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment_reversal` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `repayment_reversal` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 10's journal entry, by value - exactly when approved |
+| `repayment_reversal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `repayment_allocation_reversal` | `id` | `INTERNAL` | Generated |
+| `repayment_allocation_reversal` | `reversal_id` | `CONFIDENTIAL` | The approved reversal it belongs to |
+| `repayment_allocation_reversal` | `allocation_id` | `CONFIDENTIAL` | The allocation row it negates - once, ever |
+| `repayment_allocation_reversal` | `currency` | `INTERNAL` | The loan's currency |
+| `repayment_allocation_reversal` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `repayment_allocation_reversal` | `amount_minor` | `RESTRICTED-FINANCIAL` | The allocation's amount, negated |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.

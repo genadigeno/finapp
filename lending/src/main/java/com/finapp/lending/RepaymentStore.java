@@ -24,6 +24,13 @@ public interface RepaymentStore {
     Optional<Repayment> findByKey(Connection unitOfWork, LoanId loan, RepaymentKind kind, String requestKey);
 
     /**
+     * The loan's repayment {@code id} with its allocations, whatever its kind (`P11-TSK-020` - the repayment a reversal
+     * names); empty when the loan has no such repayment. Read under the loan's row lock by the reversal - the row and its
+     * allocations are INSERT-only, so nothing moves under the read.
+     */
+    Optional<Repayment> findById(Connection unitOfWork, LoanId loan, UUID id);
+
+    /**
      * Births {@code repayment} and its allocation rows (in their ordinals); the database stamps and answers its instant.
      * {@code repayment.receivedAt()} is a placeholder the trigger overwrites.
      */

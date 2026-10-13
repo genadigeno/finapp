@@ -116,8 +116,8 @@ class LendingMigrationTest {
         // P11-TSK-014's (V008, the accrual start, the schedule and its instalments), then P11-TSK-015's (V009, the
         // payout), P11-TSK-016's (V010, the interest accrual), P11-TSK-017's (V012, the billing and the credit-balance
         // application with its allocation rows), P11-TSK-021's (V013, the credit line draw) and P11-TSK-018's (V014, the
-        // repayment, its allocation rows and the loan's closure) and P11-TSK-019's (V015, the collection attempt); each
-        // later task rewrites this list with its own.
+        // repayment, its allocation rows and the loan's closure), P11-TSK-019's (V015, the collection attempt) and
+        // P11-TSK-020's (V016, the repayment reversal and its negating rows); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly("accrual_start", "capital_contribution", "capital_contribution_event",
                         "collection_attempt", "credit_balance_allocation", "credit_balance_application", "credit_line_draw",
@@ -127,7 +127,8 @@ class LendingMigrationTest {
                         "loan_application_event", "loan_closure", "loan_disbursement", "loan_event", "loan_instalment",
                         "loan_offer",
                         "loan_offer_event", "loan_offer_terms", "loan_payout", "loan_terms", "loan_terms_version",
-                        "loan_terms_version_event", "repayment", "repayment_allocation", "repayment_schedule");
+                        "loan_terms_version_event", "repayment", "repayment_allocation", "repayment_allocation_reversal",
+                        "repayment_reversal", "repayment_schedule");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

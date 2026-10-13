@@ -237,6 +237,15 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/lending/terms/{versionId}/approval", PermissionName.LENDING_ADMINISTER),
                     entry("POST /v1/operator/lending/terms/{versionId}/rejection", PermissionName.LENDING_ADMINISTER),
                     entry("GET /v1/operator/lending/terms", PermissionName.LENDING_INVESTIGATE),
+                    // P11-TSK-020: the loan servicing agent's doors - any loan read (audited lending.LoanRead) and the repayment
+                    // reversal under four eyes: LOAN_SERVICE proposes and rejects, LOAN_SERVICE_APPROVE approves (never one's
+                    // own - the domain and lending V016's CHECK); the negatives are RepaymentReversalApiTest's.
+                    entry("GET /v1/operator/loans/{id}", PermissionName.LOAN_SERVICE),
+                    entry("POST /v1/operator/loans/{id}/repayments/{repaymentId}/reversal", PermissionName.LOAN_SERVICE),
+                    entry("POST /v1/operator/loans/{id}/repayments/{repaymentId}/reversal/approval",
+                            PermissionName.LOAN_SERVICE_APPROVE),
+                    entry("POST /v1/operator/loans/{id}/repayments/{repaymentId}/reversal/rejection",
+                            PermissionName.LOAN_SERVICE),
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),

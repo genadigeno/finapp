@@ -2092,6 +2092,16 @@ a waiver above what is due refused `422 lending.WaiverExceedsDue` (`P11-TSK-025`
 (`P11-TSK-027`); the adjustment guard refusing every loan purpose (`P11-TSK-003`).
 **Phase:** 11
 
+*(As built by `P11-TSK-020`, 2026-10-13 - the repayment reversal: `lending V016`'s `repayment_reversal` (money-free machine row,
+column-scoped `UPDATE` of its decision columns, four-eyes `CHECK`, one live proposal per repayment by the partial `UNIQUE
+(repayment_id) WHERE status IN ('PROPOSED', 'APPROVED')`, reasons screened by twin `CHECK`s) and
+`repayment_allocation_reversal` (INSERT-only negating rows, one per allocation, the same amount, once ever, whole at
+commit); `RepaymentReversals` refuses the proposer's approval, an operator of the loan's own party (`SelfDealingRefused`,
+recorded `FAILED`), a loan not `ACTIVE` (A12), a repayment already reversed or whose held credit was since applied; the
+approval posts rule 10 by `ReversalService` (the exact swap, `INV-REV-02`). Verified by `RepaymentReversalDatabaseTest` -
+scenario 6, ten approvers one reversal, self-approval at both ranks, self-dealing, the closed loan, the original
+byte-identical, the bound.)*
+
 ### INV-LND-12 — Delinquency is derived and its history append-only
 **Statement:** Days past due is the number of days between the oldest past-due item's due date and
 the current business date (the database clock, the agreement's zone), zero when nothing is past due —
