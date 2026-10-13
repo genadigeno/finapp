@@ -470,6 +470,26 @@ ledger is proven against - is judged at the proposal and again at the approval (
 proposal still `PROPOSED`, nothing posted) and once more by the decision trigger, which takes L3 itself, for every writer.
 An interest waiver releases billed interest only (`LOAN_INTEREST_DUE`); accrued interest not yet billed is never waived.*
 
+*As built by `P11-TSK-027` (2026-10-14) - the amendment: `lending V023`'s `loan_amendment` (the proposal - the agreement
+version it amends, a rate never above it, the remaining instalments never fewer than the current schedule has left, the
+arrears flag, the SHA-256 of the document the customer is shown, the screened reason) and `loan_amendment_decision` (born
+once, the four eyes a `CHECK` over the proposer copied and pinned by the composite key - the waiver's pattern; an approval
+stamps the offer's `expires_at` from the pinned offer validity on the database clock), both INSERT-only; the acceptance is
+agreement version n+1 naming the amendment (`UNIQUE (amendment_id)`), never a status column. **Every status is derived**:
+no decision `PROPOSED`; an agreement version naming it `ACCEPTED`; a rejection `REJECTED`; and `LAPSED` - from either
+`PROPOSED` or `APPROVED` - once the agreement version it amends is no longer the loan's, the loan is no longer `ACTIVE`,
+or (approved) its offer expired; no sweeper writes a lapse, and a customer's decline is simply letting it lapse (no decline
+door). One amendment of a loan is open at a time (`PROPOSED`, or `APPROVED` and unexpired; `409 lending.ProposalPending`,
+the trigger beneath L3). The proposal and the decisions take L3 and read the proposal under it (no row lock exists to take);
+the approval is refused `409 lending.AmendmentLapsed` once the agreement moved or the loan closed; the rejection is
+`PROPOSED`-only (a lapsed amendment is already terminal). The acceptance (C, `MULTI_FACTOR`, the body echoing the
+document's hash - `409 lending.TermsChanged` otherwise) takes L3 owner-scoped, reads the amendment under it, accrues every
+elapsed date and bills everything due (the servicing step's own accrual and billing), then writes agreement v n+1
+(canonical terms **format 3**, the amended agreement's own self-contained bytes), its evidence (`loan_acceptance`, the
+amendment's document hash, no offer), rule 13 and one `loan_amendment_rescheduling` row per past-due item re-scheduled,
+and schedule v n+1 - two deferred checks hold the agreement beside its evidence and its schedule, and the schedule
+continuing the open period. The customer reads only an amendment ever approved (a `PROPOSED` one is `404`).*
+
 ### 4.10 Payoff quote and execution — `P11-TSK-026`
 
 The **quote** is an immutable born-once fact (C, `POST …/payoff-quotes`, keyed, either kind, any

@@ -29,6 +29,7 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
             + " b.accrual_engine_version, b.journal_entry_id,"
             + " lending.billing_component_billed(b.id, 'FEES') AS fees_billed,"
             + " b.interest_due_minor - lending.billing_component_billed(b.id, 'INTEREST') AS interest_waived,"
+            + " b.principal_due_minor - lending.billing_component_billed(b.id, 'PRINCIPAL') AS principal_rescheduled,"
             + " lending.billing_component_paid(b.id, 'FEES') AS fees_paid,"
             + " lending.billing_component_paid(b.id, 'INTEREST') AS interest_paid,"
             + " lending.billing_component_paid(b.id, 'PRINCIPAL') AS principal_paid"
@@ -204,6 +205,7 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
         return new BilledItem(billing,
                 Money.ofPersisted(row.getLong("fees_billed"), currency, scale),
                 Money.ofPersisted(row.getLong("interest_waived"), currency, scale),
+                Money.ofPersisted(row.getLong("principal_rescheduled"), currency, scale),
                 Money.ofPersisted(row.getLong("fees_paid"), currency, scale),
                 Money.ofPersisted(row.getLong("interest_paid"), currency, scale),
                 Money.ofPersisted(row.getLong("principal_paid"), currency, scale));

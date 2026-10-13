@@ -119,15 +119,16 @@ class LendingMigrationTest {
         // repayment, its allocation rows and the loan's closure), P11-TSK-019's (V015, the collection attempt) and
         // P11-TSK-020's (V016, the repayment reversal and its negating rows), P11-TSK-022's (V017, the credit line
         // statement), P11-TSK-023's (V018, the line closure request), P11-TSK-024's (V020, the condition history),
-        // P11-TSK-025's (V021, the fee assessment, the waiver and its decision) and P11-TSK-026's (V022, the payoff quote and
-        // its execution); each later task rewrites this list with its own.
+        // P11-TSK-025's (V021, the fee assessment, the waiver and its decision), P11-TSK-026's (V022, the payoff quote and
+        // its execution) and P11-TSK-027's (V023, the amendment, its decision and its re-scheduled arrears); each later task
+        // rewrites this list with its own.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly("accrual_start", "capital_contribution", "capital_contribution_event",
                         "collection_attempt", "credit_balance_allocation", "credit_balance_application", "credit_line_draw",
                         "credit_line_statement", "fee_assessment",
                         "flyway_schema_history", "instalment_billing", "interest_accrual", "line_closure_request", "loan",
                         "loan_acceptance",
-                        "loan_agreement",
+                        "loan_agreement", "loan_amendment", "loan_amendment_decision", "loan_amendment_rescheduling",
                         "loan_application",
                         "loan_application_event", "loan_closure", "loan_condition_event", "loan_disbursement", "loan_event", "loan_instalment",
                         "loan_offer",

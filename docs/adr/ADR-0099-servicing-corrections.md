@@ -210,5 +210,37 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   income rows; a closure's refund must not take the wallet after them); a waiver that settles the last receivable closes the
   account in its transaction through the one `LoanClosures` (`REPAID`, or a `CLOSING` line `CLOSED_BY_CUSTOMER` - no new
   closure reason); the self-dealing judgement is lifted into `LoanSelfDealing`, one rule for both acts.
+- **As built by `P11-TSK-027` (2026-10-14) - point 5, restructuring by amendment, with these refinements:** the migration is
+  `lending V023` (the backlog's `V020` was stale); `loan_amendment` and `loan_amendment_decision` are INSERT-only (the
+  waiver's two-table pattern) and **every status is derived** - `LAPSED` from either `PROPOSED` or `APPROVED` once the
+  agreement version it amends is no longer the loan's, the loan is no longer `ACTIVE` (a payoff closed it) or the approved
+  offer expired (the pinned offer validity, stamped at the approval on the database clock) - so no sweeper writes a lapse
+  and the customer declines by letting it lapse; **what an amendment may change**: the rate (equal or lower - a higher rate
+  is a new decision, `422 lending.TermsInvalid`), the remaining term (never fewer instalments than the current schedule has
+  left, the loan's whole term - instalments billed plus remaining - within the product's maximum) and whether the arrears
+  are re-scheduled; never the principal, the repayment day, the terms version, the engines or the template, and never a
+  credit line (`422 lending.TermsInvalid`); **the customer's consent** is a `MULTI_FACTOR` acceptance echoing the SHA-256 of
+  the amendment's document (`AmendmentDocument`, rendered from the proposal's immutable facts and hashed at the proposal; a
+  mismatch `409 lending.TermsChanged`), its evidence a `loan_acceptance` row binding that hash; **the acceptance catches up
+  first** - every elapsed date accrued under the agreement in force and everything due billed (the servicing step's own
+  accrual and billing, so "billed instalments kept" includes today's) - and the new rate governs every date accrued from
+  the acceptance's business date; **the new schedule starts at the open period** (the latest calendar's period holding
+  today - its start the latest billed due date), so the accruals already posted in it are billed by the new first
+  instalment and never stranded (a deferred check holds it); **arrears** are billed principal past due (due before today):
+  each such item's whole unpaid principal re-classified by rule 13 under one entry `lending.amendment:<amendment>` and
+  recorded per item (`loan_amendment_rescheduling`); `lending.billing_component_billed(item, 'PRINCIPAL')` subtracts it, so
+  the due state, DPD, the closure's rows-side rule and the never-over-paid rules read the re-classification - overdue
+  interest and fees stay due on their items (never capitalised), and the loan cures only when they are paid; no condition is
+  written by the acceptance (the next servicing step records the change - conditions follow the rows); **agreement v n+1**
+  keeps the principal, decision, terms version, day, engines and template, takes the amendment's rate and term (`term_months`
+  the instalments billed plus the remaining ones), and carries canonical terms **format 3** (format 2's content with the
+  illustration replaced by the amendment, the version and hash it amends, the effective date and the schedule it fixed) -
+  admitted only for a version after the first; **schedule v n+1**'s principal is exactly the principal not yet billed by the
+  rows (agreement v1's principal less the principal billed net of re-scheduling - `LOAN_PRINCIPAL` after rule 13), held by
+  the schedule trigger for every writer; the billing trigger's principal rank reads the principal billed **net of
+  re-scheduling** (`P11-TSK-017`'s carry) and a billing names the agreement version its schedule projects; **no L0, L6 or
+  L7** - the exposure measure and capital headroom read `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` and the latest agreement's
+  principal, all unchanged; an amendment is final - a later one supersedes it as version n+2, and a quote made before it
+  goes stale (`409 lending.PayoffQuoteStale`, `P11-TSK-026`).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

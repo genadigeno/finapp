@@ -3937,6 +3937,41 @@
           }
         }
       },
+      "lending.AmendmentLapsed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.AmendmentLapsed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.AmendmentLapsed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The amendment has lapsed; nothing was amended.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.AmountOutOfRange": {
         "content": {
           "application/problem+json": {
@@ -8360,6 +8395,133 @@
             "type": "string"
           },
           "reversesAllocationId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AmendmentAcceptanceBody": {
+        "properties": {
+          "documentSha256": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentSha256"
+        ],
+        "type": "object"
+      },
+      "AmendmentAcceptedView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amendmentId": {
+            "type": "string"
+          },
+          "arrearsRescheduled": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AmendmentDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AmendmentProposalRequest": {
+        "properties": {
+          "nominalAnnualRate": {
+            "maxLength": 12,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "remainingInstalments": {
+            "format": "int32",
+            "maximum": 600,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "rescheduleArrears": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "nominalAnnualRate",
+          "remainingInstalments",
+          "rescheduleArrears"
+        ],
+        "type": "object"
+      },
+      "AmendmentView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amendmentId": {
+            "type": "string"
+          },
+          "amendsVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currentRate": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "documentSha256": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "remainingInstalments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rescheduleArrears": {
+            "type": "boolean"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -13027,6 +13189,17 @@
         },
         "type": "object"
       },
+      "OfferedAmendmentView": {
+        "properties": {
+          "amendment": {
+            "$ref": "#/components/schemas/AmendmentView"
+          },
+          "document": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OfferedCorridor": {
         "properties": {
           "corridor": {
@@ -13345,6 +13518,12 @@
       },
       "OperatorLoanView": {
         "properties": {
+          "amendments": {
+            "items": {
+              "$ref": "#/components/schemas/AmendmentView"
+            },
+            "type": "array"
+          },
           "fees": {
             "items": {
               "$ref": "#/components/schemas/FeeView"
@@ -19643,6 +19822,94 @@
         }
       }
     },
+    "/v1/me/loans/{id}/amendments/{amendmentId}": {
+      "get": {
+        "operationId": "readAmendment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "amendmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferedAmendmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}/amendments/{amendmentId}/acceptance": {
+      "post": {
+        "operationId": "acceptAmendment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "amendmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendmentAcceptanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AmendmentAcceptedView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/me/loans/{id}/closure": {
       "post": {
         "operationId": "requestLineClosure",
@@ -22463,6 +22730,157 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OperatorLoanView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/amendments": {
+      "post": {
+        "operationId": "proposeAmendment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendmentProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AmendmentView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/amendments/{amendmentId}/approval": {
+      "post": {
+        "operationId": "approveAmendment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "amendmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendmentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AmendmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/amendments/{amendmentId}/rejection": {
+      "post": {
+        "operationId": "rejectAmendment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "amendmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendmentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AmendmentView"
                 }
               }
             },

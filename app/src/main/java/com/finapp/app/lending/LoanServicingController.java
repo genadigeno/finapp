@@ -6,7 +6,10 @@ import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +33,11 @@ import org.springframework.web.bind.annotation.RestController;
  * a loan of their own party ({@code 403 lending.SelfDealingRefused}, recorded). Role {@code LOAN_SERVICING_AGENT}. Since
  * `P11-TSK-025` the fee and interest waivers under the same four eyes (A14): a holder of {@code LOAN_SERVICE} proposes a
  * waiver of an amount with a reason, a DIFFERENT holder of {@code LOAN_SERVICE_APPROVE} approves it - posted within what is
- * due now ({@code 422 lending.WaiverExceedsDue} otherwise) - and the loan read lists the account's fees and waivers.
+ * due now ({@code 422 lending.WaiverExceedsDue} otherwise) - and the loan read lists the account's fees and waivers. Since
+ * `P11-TSK-027` the restructuring by agreement amendment under the same four eyes (ADR-0099 point 5): a holder of
+ * {@code LOAN_SERVICE} proposes a lower or equal rate, a remaining term never shorter, arrears re-scheduled or not, with a
+ * reason; a DIFFERENT holder of {@code LOAN_SERVICE_APPROVE} approves it, which offers it to the customer - who alone makes
+ * it agreement version n+1 - and the loan read lists the account's amendments.
  */
 @RestController
 @RequestMapping(path = "/operator/loans", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -39,6 +46,7 @@ public class LoanServicingController {
 
     @NonNull private final LoanServicingDesk desk;
     @NonNull private final LoanWaiverDesk waivers;
+    @NonNull private final LoanAmendmentDesk amendments;
 
     /** Any loan: the account, its repayments with their derived status, its reversals - audited per serving. */
     @GetMapping(path = "/{id}")
@@ -130,6 +138,48 @@ public class LoanServicingController {
         return waivers.reject(id, waiverId, idempotencyKey, body);
     }
 
+    /**
+     * Proposes amending the loan's agreement - a rate never above it, a remaining term never shorter than its schedule has
+     * left, arrears re-scheduled or not - with a reason; nothing is posted and nothing amended (`P11-TSK-027`).
+     */
+    @PostMapping(path = "/{id}/amendments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LOAN_SERVICE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanAmendmentDesk.AmendmentView proposeAmendment(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @Valid @RequestBody AmendmentProposalRequest body) {
+        return amendments.propose(id, idempotencyKey, body);
+    }
+
+    /**
+     * Approves the named pending amendment - someone other than its proposer, while the agreement it amends is still the
+     * loan's: offered to the customer until its expiry.
+     */
+    @PostMapping(path = "/{id}/amendments/{amendmentId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LOAN_SERVICE_APPROVE)
+    @RequiresIdempotencyKey
+    public LoanAmendmentDesk.AmendmentView approveAmendment(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @PathVariable("amendmentId") String amendmentId,
+            @Valid @RequestBody AmendmentDecisionRequest body) {
+        return amendments.approve(id, amendmentId, idempotencyKey, body);
+    }
+
+    /** Rejects the named pending amendment - the proposer's withdrawal included; a reason is required. */
+    @PostMapping(path = "/{id}/amendments/{amendmentId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LOAN_SERVICE)
+    @RequiresIdempotencyKey
+    public LoanAmendmentDesk.AmendmentView rejectAmendment(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @PathVariable("amendmentId") String amendmentId,
+            @Valid @RequestBody AmendmentDecisionRequest body) {
+        return amendments.reject(id, amendmentId, idempotencyKey, body);
+    }
+
     // -----------------------------------------------------------------
 
     /** A proposal's reason - required, judged by the domain ({@code lending.ReasonRequired}). */
@@ -159,4 +209,20 @@ public class LoanServicingController {
     /** A waiver's decision - the waiver is named by the path; the decider's reason. */
     @ClosedBody
     public record WaiverDecisionRequest(@Size(max = 1000) String reason) {}
+
+    /**
+     * An amendment's proposal (`P11-TSK-027`): the amended nominal annual rate (a decimal fraction, never above the
+     * agreement's), the new schedule's remaining instalments, whether arrears are re-scheduled, and the reason, judged by
+     * the domain ({@code lending.ReasonRequired}). Closed - no amount can be named: an amendment never raises principal.
+     */
+    @ClosedBody
+    public record AmendmentProposalRequest(
+            @NotBlank @Size(max = 12) String nominalAnnualRate,
+            @NotNull @Min(1) @Max(600) Integer remainingInstalments,
+            @NotNull Boolean rescheduleArrears,
+            @Size(max = 1000) String reason) {}
+
+    /** An amendment's decision - the amendment is named by the path; the decider's reason. */
+    @ClosedBody
+    public record AmendmentDecisionRequest(@Size(max = 1000) String reason) {}
 }

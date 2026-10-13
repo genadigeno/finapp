@@ -74,14 +74,16 @@ public interface InstalmentBillingStore {
      *
      * @param feesBilled the fees assessed on the item, less approved fee waivers
      * @param interestWaived the interest approved waivers forgave of the item's billed interest
+     * @param principalRescheduled the billed principal accepted amendments re-scheduled as not due (`P11-TSK-027`, rule 13)
      */
-    record BilledItem(InstalmentBilling billing, Money feesBilled, Money interestWaived, Money feesPaid,
-            Money interestPaid, Money principalPaid) {
+    record BilledItem(InstalmentBilling billing, Money feesBilled, Money interestWaived, Money principalRescheduled,
+            Money feesPaid, Money interestPaid, Money principalPaid) {
 
         public BilledItem {
             Objects.requireNonNull(billing, "billing must not be null");
             Objects.requireNonNull(feesBilled, "feesBilled must not be null");
             Objects.requireNonNull(interestWaived, "interestWaived must not be null");
+            Objects.requireNonNull(principalRescheduled, "principalRescheduled must not be null");
             Objects.requireNonNull(feesPaid, "feesPaid must not be null");
             Objects.requireNonNull(interestPaid, "interestPaid must not be null");
             Objects.requireNonNull(principalPaid, "principalPaid must not be null");
@@ -91,7 +93,7 @@ public interface InstalmentBillingStore {
         public DueState.DueItem dueItem() {
             return new DueState.DueItem(DueItemId.of(billing.id()), billing.dueDate(), feesBilled.minus(feesPaid),
                     billing.interestDue().minus(interestWaived).minus(interestPaid),
-                    billing.principalDue().minus(principalPaid));
+                    billing.principalDue().minus(principalRescheduled).minus(principalPaid));
         }
 
         /** Everything still due on it. */

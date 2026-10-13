@@ -490,6 +490,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // computes it), never a source (the borrower's own wallet), never a party.
                         "PayoffQuoteBody",
                         "PayoffBody",
+                        // P11-TSK-027: the restructuring doors. No secret in any. A proposal carries a rate as a decimal
+                        // string, an instalment count, a flag and a reason screened for card-number and account shapes at the
+                        // domain and by lending V023's CHECKs; a decision a screened reason; the customer's acceptance the
+                        // public SHA-256 of the document they were shown. Closed: never an amount, never a party.
+                        "AmendmentProposalRequest",
+                        "AmendmentDecisionRequest",
+                        "AmendmentAcceptanceBody",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's

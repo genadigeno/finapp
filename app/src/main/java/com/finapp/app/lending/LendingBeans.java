@@ -1010,10 +1010,11 @@ public class LendingBeans {
             IdGenerator idGenerator,
             Clock clock,
             com.finapp.lending.FeeAssessmentStore feeAssessmentStore,
-            com.finapp.lending.WaiverStore waiverStore) {
+            com.finapp.lending.WaiverStore waiverStore,
+            com.finapp.lending.LoanAmendmentStore loanAmendmentStore) {
         return new LoanServicingDesk(repaymentReversals, repaymentReversalStore, loans, loanStore, repaymentStore,
                 idempotentExecutor, lendingTransactions, repaymentReversalMetrics, auditWriter, idGenerator, clock,
-                feeAssessmentStore, waiverStore);
+                feeAssessmentStore, waiverStore, loanAmendmentStore);
     }
 
     /**
@@ -1112,5 +1113,62 @@ public class LendingBeans {
             LendingTransactions lendingTransactions,
             LoanWaiverMetrics loanWaiverMetrics) {
         return new LoanWaiverDesk(waivers, idempotentExecutor, lendingTransactions, loanWaiverMetrics);
+    }
+
+    // ------------------------------------------------------------------ restructuring by agreement amendment (P11-TSK-027)
+
+    /** The amendments' store - {@code loan_amendment}, its decision and its re-scheduled arrears, all INSERT-only (V023). */
+    @Bean
+    com.finapp.lending.LoanAmendmentStore loanAmendmentStore() {
+        return new com.finapp.lending.JdbcLoanAmendmentStore();
+    }
+
+    /**
+     * T-amd and the customer's acceptance - the four-eyes amendment under L3; the acceptance's catch-up through the servicing
+     * step's own accrual and billing, rule 13 through the ledger's PostingService, schedule n+1 by the pinned engine; whose
+     * party an operator is read through the identity store (credit's {@code IdentityActingParty}).
+     */
+    @Bean
+    com.finapp.lending.LoanAmendments loanAmendments(
+            LoanStore loanStore,
+            com.finapp.lending.LoanAmendmentStore loanAmendmentStore,
+            LoanOfferStore loanOfferStore,
+            LoanTermsStore loanTermsStore,
+            LoanProductBounds loanProductBounds,
+            LoanServicing loanServicing,
+            LoanServicingStore loanServicingStore,
+            InstalmentBillings instalmentBillings,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanDisbursementStore loanDisbursementStore,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            PostingService postingService,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.LoanAmendments(loanStore, loanAmendmentStore, loanOfferStore, loanTermsStore,
+                loanProductBounds, loanServicing, loanServicingStore, instalmentBillings, instalmentBillingStore,
+                loanDisbursementStore, ledgerAccountStore, purposeBalances, postingService,
+                new com.finapp.app.credit.IdentityActingParty(identityStore), outboxWriter, auditWriter, idGenerator, clock);
+    }
+
+    /** {@code finapp.lending.amendment{outcome}}, every series registered at startup. */
+    @Bean
+    LoanAmendmentMetrics loanAmendmentMetrics(MeterRegistry meterRegistry) {
+        return new LoanAmendmentMetrics(meterRegistry);
+    }
+
+    /** The restructuring doors' boundary half - the operator's under the servicing scope, the customer's acceptance keyed. */
+    @Bean
+    LoanAmendmentDesk loanAmendmentDesk(
+            com.finapp.lending.LoanAmendments loanAmendments,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            LoanAmendmentMetrics loanAmendmentMetrics) {
+        return new LoanAmendmentDesk(loanAmendments, identityStore, idempotentExecutor, lendingTransactions,
+                loanAmendmentMetrics);
     }
 }

@@ -35,7 +35,9 @@ import org.springframework.web.bind.annotation.RestController;
  * (`P11-TSK-023`), a {@code MULTI_FACTOR} act keyed {@code lending.closure:CUSTOMER:<id>}, {@code 201} with its outcome -
  * and the payoff of either kind (`P11-TSK-026`): its quote, keyed {@code lending.payoff-quote:CUSTOMER:<id>} under the
  * platform's conditional step-up, and its execution, a {@code MULTI_FACTOR} act keyed {@code lending.payoff:CUSTOMER:<id>},
- * each {@code 201}.
+ * each {@code 201} - and the restructuring offered to them (`P11-TSK-027`): its read with the document they accept, and
+ * its acceptance, a {@code MULTI_FACTOR} act keyed {@code lending.amendment-acceptance:CUSTOMER:<id>}, {@code 201} with the
+ * agreement and schedule versions it made.
  */
 @RestController
 @RequestMapping(path = "/me/loans", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -48,6 +50,7 @@ public class LoanController {
     @NonNull private final LoanRepaymentDesk repayments;
     @NonNull private final LineClosureDesk closures;
     @NonNull private final LoanPayoffDesk payoffs;
+    @NonNull private final LoanAmendmentDesk amendments;
 
     /** The caller's loans, newest first. */
     @GetMapping
@@ -165,6 +168,39 @@ public class LoanController {
         return payoffs.execute(current(request), id, idempotencyKey, body);
     }
 
+    /**
+     * The caller's own loan's amendment offered to them (`P11-TSK-027`): the rate it amends from and to, the remaining
+     * instalments, whether arrears are re-scheduled, its state, its expiry and the document whose hash they echo to accept
+     * it. An amendment never offered to them is the uniform {@code 404}.
+     */
+    @GetMapping("/{id}/amendments/{amendmentId}")
+    public LoanAmendmentDesk.OfferedAmendmentView readAmendment(
+            @PathVariable("id") String id,
+            @PathVariable("amendmentId") String amendmentId,
+            HttpServletRequest request) {
+        return amendments.read(current(request), id, amendmentId);
+    }
+
+    /**
+     * Accepts the caller's own loan's amendment (`P11-TSK-027`): while approved, unexpired and on the agreement version it
+     * amends - otherwise {@code 409 lending.AmendmentLapsed} - everything due billed, then agreement version n+1, the arrears
+     * re-scheduled when it says so, and schedule version n+1 from the principal outstanding, in one transaction. Keyed
+     * ({@code lending.amendment-acceptance:CUSTOMER:<id>}), {@code MULTI_FACTOR}, {@code 201}.
+     */
+    @PostMapping(path = "/{id}/amendments/{amendmentId}/acceptance", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanAmendmentDesk.AmendmentAcceptedView acceptAmendment(
+            @PathVariable("id") String id,
+            @PathVariable("amendmentId") String amendmentId,
+            @Valid @RequestBody AmendmentAcceptanceBody body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return amendments.accept(current(request), id, amendmentId, idempotencyKey, body,
+                java.util.Optional.ofNullable(request.getRemoteAddr()),
+                java.util.Optional.ofNullable(request.getHeader(org.springframework.http.HttpHeaders.USER_AGENT)));
+    }
+
     /** The caller's own loan's repayments and their allocations, newest first (`P11-TSK-018`). */
     @GetMapping("/{id}/repayments")
     public LoanRepaymentDesk.RepaymentListView listRepayments(@PathVariable("id") String id, HttpServletRequest request) {
@@ -199,6 +235,13 @@ public class LoanController {
     /** A payoff: the quote it executes. Closed - an unknown field is {@code 422}; the amount is the quote's. */
     @ClosedBody
     public record PayoffBody(@NotBlank @Size(max = 36) String quoteId) {}
+
+    /**
+     * An amendment's acceptance: the SHA-256 of the document the amendment read showed (lowercase hexadecimal). Closed - an
+     * unknown field is {@code 422}; nothing about the evidence is the body's to claim.
+     */
+    @ClosedBody
+    public record AmendmentAcceptanceBody(@NotBlank @Size(max = 64) String documentSha256) {}
 
     private static Session current(HttpServletRequest request) {
         Object session = request.getAttribute(SessionAuthenticationInterceptor.CURRENT_SESSION);

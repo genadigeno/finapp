@@ -758,7 +758,11 @@ class RepaymentDatabaseTest {
                     ? count("SELECT coalesce(sum(amount_minor), 0) FROM lending.fee_assessment WHERE loan_id = ?", id)
                     : count("SELECT coalesce(sum(" + component.toLowerCase(java.util.Locale.ROOT) + "_due_minor), 0)"
                             + " FROM lending.instalment_billing WHERE loan_id = ?", id);
-            if (!component.equals("PRINCIPAL")) {
+            if (component.equals("PRINCIPAL")) {
+                // P11-TSK-027: what accepted amendments re-scheduled of the billed principal is no longer due (rule 13).
+                billed -= count("SELECT coalesce(sum(principal_minor), 0) FROM lending.loan_amendment_rescheduling"
+                        + " WHERE loan_id = ?", id);
+            } else {
                 billed -= count("SELECT coalesce(sum(w.amount_minor), 0) FROM lending.waiver w JOIN lending.waiver_decision d"
                         + " ON d.waiver_id = w.id AND d.outcome = 'APPROVED' WHERE w.loan_id = ? AND w.kind = ?", id,
                         component.equals("FEES") ? "FEE" : "INTEREST");
@@ -789,9 +793,12 @@ class RepaymentDatabaseTest {
                 + " WHERE loan_id = ?", id);
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_INTEREST_ACCRUED)).minorUnits())
                 .isEqualTo(accrued - billedInterest);
+        // P11-TSK-027: rule 13 returns re-scheduled arrears to LOAN_PRINCIPAL - the principal not yet billed, net.
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL)).minorUnits())
                 .isEqualTo(count("SELECT amount_minor FROM lending.loan_agreement WHERE loan_id = ? AND version = 1", id)
                         - count("SELECT coalesce(sum(principal_due_minor), 0) FROM lending.instalment_billing"
+                                + " WHERE loan_id = ?", id)
+                        + count("SELECT coalesce(sum(principal_minor), 0) FROM lending.loan_amendment_rescheduling"
                                 + " WHERE loan_id = ?", id));
         long heldLines = count("SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"
                 + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.target = 'CREDIT_BALANCE'",

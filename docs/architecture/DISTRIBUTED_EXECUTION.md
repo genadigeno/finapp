@@ -221,7 +221,20 @@ is immutable - `payoff_execution UNIQUE (quote_id)`/`(loan_id)` arbitrate), no L
 `PayoffDatabaseTest#payoffDuringARepaymentIsStaleOrClosedNeverWrong` (a repayment waiting on the payoff's L3 finds it
 `CLOSED`) and `#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure` (the servicing step and the payoff each
 waiting on the other's L3); ten executions of one quote, the sweep racing a payoff and repayments racing payoffs counted
-without a `40P01`.)* | n/a |
+without a `40P01`.)* *(`P11-TSK-027` (T-amd and the amendment's acceptance): the proposal, approval and rejection take L3
+and read the proposal under it (INSERT-only rows - `loan_amendment_decision UNIQUE (amendment_id)` decides once beneath L3;
+each of `lending V023`'s triggers takes L3 itself for every writer); the customer's acceptance takes L3 owner-scoped, then
+its own postings - the catch-up accrual (the currency's `LOAN_INTEREST_INCOME` projection row), the billing and the
+credit-balance application, rule 13 - all L8 on the loan's own rows and that income row, in `lockBalancesInOrder`'s order -
+and inserts only (agreement v n+1 under `UNIQUE (loan_id, version)` and `UNIQUE (amendment_id)`, the evidence, the
+re-scheduled items, schedule v n+1 under `UNIQUE (loan_id, schedule_version)` and `UNIQUE (agreement_id)`). No L0 and no L6
+(the exposure measure and capital headroom read `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` and the latest agreement's
+principal - rule 13 moves between the two and the principal is never raised), no L7 (no wallet money moves, and the
+acceptance never closes the account), no L5 row lock. A sub-sequence of T-svc's order, so no cycle with T-svc, T-rep,
+T-pay, T-rev (L0 then L3 - the acceptance never takes L0) or T-wvr (L3, L7, L8). Counted by `AmendmentDatabaseTest`: ten
+acceptances of one amendment - one version, nine converge; ten approvers - one decision; ten proposers - one open
+amendment; an acceptance after a payoff closed the loan - `AmendmentLapsed` - and a quote made before an acceptance -
+`PayoffQuoteStale` - without a `40P01`.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 

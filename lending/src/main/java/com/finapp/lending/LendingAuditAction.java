@@ -165,7 +165,44 @@ public enum LendingAuditAction implements AuditableAction {
             "lending.WaiverRejected",
             "A proposed waiver was rejected - or withdrawn by its proposer; nothing was posted and the fee or interest may"
                     + " be proposed for waiver again.",
-            true);
+            true),
+
+    /** A loan servicing agent proposed a restructuring by agreement amendment. */
+    AMENDMENT_PROPOSED(
+            "lending.AmendmentProposed",
+            "A holder of LOAN_SERVICE proposed amending an ACTIVE instalment loan's agreement version not of their own party"
+                    + " (P11-TSK-027, ADR-0099 point 5) - a rate never above it, a remaining term never shorter than its"
+                    + " schedule has left, arrears re-scheduled or not - with a reason screened for card and account numbers,"
+                    + " awaiting a DIFFERENT holder of LOAN_SERVICE_APPROVE and then the customer (INV-AUD-04, INV-LND-11)."
+                    + " Never more credit. The summary names the loan and the version amended - never the rate.",
+            true),
+
+    /** A different agent approved a restructuring: the customer's offer opened. */
+    AMENDMENT_APPROVED(
+            "lending.AmendmentApproved",
+            "A holder of LOAN_SERVICE_APPROVE other than its proposer (also held by lending V023's four-eyes CHECK) approved"
+                    + " an amendment while the agreement version it amends was still the loan's - opening the customer's"
+                    + " offer until its expiry (the pinned offer validity on the database clock). Nothing is posted and the"
+                    + " agreement is unchanged until the customer accepts. The summary names the loan and the version.",
+            true),
+
+    /** A restructuring was rejected, or withdrawn by its proposer. */
+    AMENDMENT_REJECTED(
+            "lending.AmendmentRejected",
+            "A proposed amendment was rejected - or withdrawn by its proposer; the agreement is unchanged and a new"
+                    + " amendment may be proposed.",
+            true),
+
+    /** The customer accepted a restructuring: agreement and schedule version n+1. */
+    AMENDMENT_ACCEPTED(
+            "lending.AmendmentAccepted",
+            "The customer accepted an approved, unexpired amendment of their own loan with a MULTI_FACTOR session"
+                    + " (P11-TSK-027, ADR-0099 point 5, scenario 8): agreement version n+1 (the amended rate and term, the"
+                    + " same principal - never more credit), its acceptance evidence, the arrears re-scheduled by posting rule"
+                    + " 13 (DR LOAN_PRINCIPAL / CR LOAN_PRINCIPAL_DUE) when the amendment said so, and schedule version n+1"
+                    + " from the principal outstanding - in one transaction, conditional on the agreement version it amends"
+                    + " (INV-LND-05). The summary names the loan, the versions and the entry - never an amount or the rate.",
+            false);
 
     private final String code;
     private final String description;

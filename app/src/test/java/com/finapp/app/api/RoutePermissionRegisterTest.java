@@ -251,6 +251,13 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/loans/{id}/waivers", PermissionName.LOAN_SERVICE),
                     entry("POST /v1/operator/loans/{id}/waivers/{waiverId}/approval", PermissionName.LOAN_SERVICE_APPROVE),
                     entry("POST /v1/operator/loans/{id}/waivers/{waiverId}/rejection", PermissionName.LOAN_SERVICE),
+                    // P11-TSK-027: the restructuring doors under four eyes - LOAN_SERVICE proposes and rejects,
+                    // LOAN_SERVICE_APPROVE approves (never one's own - the domain and lending V023's CHECK); the customer's
+                    // acceptance is a session door; the negatives are AmendmentApiTest's.
+                    entry("POST /v1/operator/loans/{id}/amendments", PermissionName.LOAN_SERVICE),
+                    entry("POST /v1/operator/loans/{id}/amendments/{amendmentId}/approval",
+                            PermissionName.LOAN_SERVICE_APPROVE),
+                    entry("POST /v1/operator/loans/{id}/amendments/{amendmentId}/rejection", PermissionName.LOAN_SERVICE),
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),

@@ -339,6 +339,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/waivers",
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/waivers/{waiverId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/waivers/{waiverId}/rejection",
+                        // P11-TSK-027: the restructuring doors under four eyes (LOAN_SERVICE proposes and rejects,
+                        // LOAN_SERVICE_APPROVE approves; the customer alone accepts).
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments/{amendmentId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments/{amendmentId}/rejection",
                         // P11-TSK-010: the customer's loan applications (a MULTI_FACTOR session to apply, 202; the
                         // owner's own application only; the withdrawal under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications",
@@ -370,6 +375,10 @@ class OpenApiContractTest {
                         // step-up, 201) and its execution (MULTI_FACTOR, keyed, 201 with the payoff and its closure).
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/payoff-quotes",
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/payoff",
+                        // P11-TSK-027: the amendment offered to the customer - its read with its document, and its
+                        // acceptance (MULTI_FACTOR, keyed, 201 with the agreement and schedule versions it made).
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/amendments/{amendmentId}",
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/amendments/{amendmentId}/acceptance",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

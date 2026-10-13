@@ -3295,6 +3295,49 @@ assessment, agreement and entry references `CONFIDENTIAL`, kinds, outcomes, type
 | `waiver_decision` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 8's, 8a's or 9's journal entry, by value - exactly when approved |
 | `waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
 
+### `lending` - restructuring by agreement amendment - *added by `P11-TSK-027`*
+
+`lending V023`: the amendment's proposal, its decision and its re-scheduled arrears. The rate and the amount are
+`RESTRICTED-FINANCIAL` as every lending rate and amount; the remaining term `CONFIDENTIAL` as the agreement's term; the operators'
+ids and reasons `CONFIDENTIAL`; the loan, agreement, item, amendment and entry references `CONFIDENTIAL`; flags, outcomes, types,
+versions, hashes and stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `loan_amendment` | `id` | `INTERNAL` | Generated - the amendment's identity and its rule 13 key's (`lending.amendment:<id>`) |
+| `loan_amendment` | `loan_id` | `CONFIDENTIAL` | The instalment loan it amends |
+| `loan_amendment` | `amends_agreement_id` | `CONFIDENTIAL` | The agreement version it amends - its acceptance is conditional on it being current |
+| `loan_amendment` | `amends_version` | `INTERNAL` | That version's number |
+| `loan_amendment` | `nominal_annual_rate` | `RESTRICTED-FINANCIAL` | The amended rate - never above the version's |
+| `loan_amendment` | `remaining_instalments` | `CONFIDENTIAL` | The new schedule's term in instalments - never shorter than the current schedule's remainder |
+| `loan_amendment` | `reschedule_arrears` | `INTERNAL` | Whether billed principal past due is re-scheduled (rule 13) |
+| `loan_amendment` | `document_sha256` | `INTERNAL` | A hash of the document the customer is shown |
+| `loan_amendment` | `proposed_by` | `CONFIDENTIAL` | The servicing agent who proposed it |
+| `loan_amendment` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `loan_amendment` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_amendment` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_amendment` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `loan_amendment_decision` | `id` | `INTERNAL` | Generated |
+| `loan_amendment_decision` | `amendment_id` | `CONFIDENTIAL` | The amendment decided - once |
+| `loan_amendment_decision` | `proposed_by` | `CONFIDENTIAL` | The proposer, copied and pinned by the composite key - the four-eyes `CHECK`'s subject |
+| `loan_amendment_decision` | `outcome` | `INTERNAL` | `APPROVED` or `REJECTED` |
+| `loan_amendment_decision` | `decided_by` | `CONFIDENTIAL` | The agent who approved or rejected it - never its proposer for an approval |
+| `loan_amendment_decision` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `loan_amendment_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_amendment_decision` | `expires_at` | `INTERNAL` | The customer's offer's expiry - stamped by the trigger, exactly when approved |
+| `loan_amendment_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_amendment_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
+| `loan_amendment_rescheduling` | `id` | `INTERNAL` | Generated |
+| `loan_amendment_rescheduling` | `amendment_id` | `CONFIDENTIAL` | The accepted amendment that re-scheduled it |
+| `loan_amendment_rescheduling` | `loan_id` | `CONFIDENTIAL` | The loan |
+| `loan_amendment_rescheduling` | `billing_id` | `CONFIDENTIAL` | The past-due billed item whose principal it re-classified |
+| `loan_amendment_rescheduling` | `currency` | `INTERNAL` | The loan's currency |
+| `loan_amendment_rescheduling` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `loan_amendment_rescheduling` | `principal_minor` | `RESTRICTED-FINANCIAL` | Exactly the item's unpaid billed principal, re-classified as not due |
+| `loan_amendment_rescheduling` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 13's journal entry, by value - one per amendment |
+| `loan_amendment_rescheduling` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_amendment_rescheduling` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
