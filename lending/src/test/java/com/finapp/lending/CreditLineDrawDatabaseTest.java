@@ -102,7 +102,8 @@ import org.junit.jupiter.api.Test;
 class CreditLineDrawDatabaseTest {
 
     static final JdbcCreditLineDrawStore DRAW_STORE = new JdbcCreditLineDrawStore();
-    static final CreditLineDraws DRAWS = draws(DrawSuspension.BEFORE_ANY_CONDITION);
+    // The wired suspension: the derived condition (P11-TSK-024) - a line with no statement past due is never suspended.
+    static final CreditLineDraws DRAWS = draws(DisbursementWorld.CONDITIONS);
     static final IdempotentExecutor DOOR_CLAIM = new IdempotentExecutor(new JdbcIdempotencyRecordStore(), CLOCK,
             Duration.ofDays(1), Duration.ofMinutes(5));
 
@@ -359,17 +360,18 @@ class CreditLineDrawDatabaseTest {
 
     @Test
     @DisplayName("a suspended line refuses the draw 409 lending.DrawsSuspended under its lock, nothing written - the check"
-            + " -024's condition read brings into force (until then nothing is past due or defaulted)")
+            + " and its place proven with a double; the wired derivation (P11-TSK-024) leaves a line with nothing past due"
+            + " drawable - its bite is DelinquencyDatabaseTest's")
     void aSuspendedLineRefusesDraws() {
         DisbursementWorld.Accepted line = acceptedLine(1_000_00);
         fund(eur(10_000_00));
-        CreditLineDraws suspended = draws((unitOfWork, account, businessDate) -> account.equals(line.loan()));
+        CreditLineDraws suspended = draws((unitOfWork, account, pinned, businessDate) -> account.equals(line.loan()));
         assertThatExceptionOfType(CreditLineDraws.DrawsSuspended.class).isThrownBy(() -> inOneTransaction(uow ->
                 drawAs(uow, suspended, line.party(), line.loan(), key(), 100_00)));
         assertThat(entries(line)).isZero();
-        assertThat(DrawSuspension.BEFORE_ANY_CONDITION.suspended(null, line.loan(),
-                DisbursementWorld.businessDate(line.loan())))
-                .as("before statements and the condition step, no line is suspended").isFalse();
+        boolean wired = inOneTransaction(uow -> DisbursementWorld.CONDITIONS.derive(uow, line.loan(),
+                lineTerms(uow, line), DisbursementWorld.businessDate(line.loan())).suspendsDraws());
+        assertThat(wired).as("a line with no statement past due is not suspended").isFalse();
         assertThat(draw(line, key(), 100_00).replayed()).isFalse();
     }
 
@@ -443,7 +445,7 @@ class CreditLineDrawDatabaseTest {
                 throw new IllegalStateException("the instance died after the posting, the row and the event row");
             }
         };
-        CreditLineDraws dying = draws(DrawSuspension.BEFORE_ANY_CONDITION, crashing);
+        CreditLineDraws dying = draws(DisbursementWorld.CONDITIONS, crashing);
         String key = key();
         assertThatThrownBy(() -> inOneTransaction(uow -> drawAs(uow, dying, line.party(), line.loan(), key, 400_00)))
                 .hasMessageContaining("instance died");
@@ -538,6 +540,12 @@ class CreditLineDrawDatabaseTest {
     }
 
     // ------------------------------------------------------------------ the world's door
+
+    /** The line's governing agreement's pinned terms. */
+    static LoanTerms lineTerms(Connection unitOfWork, DisbursementWorld.Accepted line) {
+        LoanStore.Owned owned = LOAN_STORE.ownedBy(unitOfWork, line.loan(), line.party()).orElseThrow();
+        return TERMS_STORE.version(unitOfWork, owned.agreement().termsVersionId()).orElseThrow().terms();
+    }
 
     static CreditLineDraws draws(DrawSuspension suspension) {
         return draws(suspension, new JdbcOutboxWriter());
@@ -639,7 +647,7 @@ class CreditLineDrawDatabaseTest {
 
     /** The available limit as the customer's read derives it. */
     private static Money available(DisbursementWorld.Accepted line) {
-        return inOneTransaction(uow -> new Loans(LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, PAYOUT_STORE)
+        return inOneTransaction(uow -> DisbursementWorld.LOANS
                 .read(uow, line.loan(), line.party())).orElseThrow().availableLimit().orElseThrow();
     }
 

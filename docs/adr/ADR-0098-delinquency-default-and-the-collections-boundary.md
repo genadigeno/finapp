@@ -158,5 +158,46 @@ after closure), `INV-LND-10`, `INV-LIFE-01`…`04`, `INV-EVT-01`…`04`.
   cure, the events), `P11-TSK-025` (the late fee) and `P11-TSK-026` (scenario 10,
   `PayoffDatabaseTest#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure`).
 - Phase 13 names the collections context that consumes the events; Phase 14 owns write-off.
+- **As built by `P11-TSK-024` (2026-10-13)** - `lending V020` (`loan_condition_event`), `LoanConditions`,
+  `DelinquencyState`, `LoanConditionEvent`, `ConditionKind`, `LoanConditionStore`; decided and recorded:
+  1. **DPD** is the business date (the database clock read after L3, the governing agreement's pinned zone) less the
+     oldest due date of a billed item - an instalment's billing or a line's statement, its minimum payment - with
+     anything unpaid (billed less every payer's allocations, over the three components, `> 0`), 0 when none: a
+     difference of dates, never a counter. **A partial payment** leaves its item past due (no tolerance - a minor unit
+     unpaid is unpaid); DPD moves only when the oldest past-due item is paid in full, to the next oldest one's age or to
+     0. Grace delays only the late fee. The same rule is `lending.days_past_due(loan, date)` in SQL and
+     `DelinquencyState.derive` in Java.
+  2. **Derived on read, recorded on change.** Every decision derives the condition live from the rows - the draw's
+     suspension under L3, the customer's and operator's reads in their snapshot - so a repayment that cures lifts a
+     line's suspension at its own commit. The history is **the daily evaluation's**: T-svc's condition step appends a
+     row only when the bucket or the flag differs from the latest recorded one, **at most once a business date** (once a
+     change is recorded on a date nothing more is evaluated that date; a cure after it is the next date's row). Decision
+     3's "a repayment that cures re-derives in its own transaction (T-rep) and appends the cure" is **not built**: the
+     born-once key `(loan_id, business_date, kind)` admits one change of a kind a day, so a repayment curing after the
+     morning's change could not append its own; the decisions that matter read the live derivation instead (owner
+     judgement recorded).
+  3. **The default flag's memory is the recorded history**: `defaulted = DPD >= threshold || (latest DEFAULT row
+     defaulted && DPD > 0)` - set at the threshold (L7), held while anything is past due, cleared at cure (A8). A
+     threshold crossing, or a cure, that happens and is undone entirely between two evaluations (an outage of servicing
+     longer than a business date) is not observed - the first evaluation after it computes from the dates as they then
+     stand (owner judgement recorded).
+  4. **The step's place**: after the closure step, on an account the step did not close, and only once caught up (every
+     elapsed date accrued, everything due billed - so DPD is judged on every item that should be). No condition is
+     written in the transaction that closes an account, whichever transaction closes it: a closed account's condition is
+     its closure (`lending.LoanClosed`).
+  5. **Every writer**: `lending V020`'s trigger holds each row to the derivation - DPD from the rows, the bucket under the
+     governing agreement's pinned bounds, the flag by point 3's rule, a change from the latest row of its kind, dated the
+     transaction's business date, never on a `CLOSED` or `CANCELLED` account; UPDATE, DELETE and TRUNCATE refused for
+     every role. `INV-LND-12`'s DPD is a `DB-CONSTRAINT` as well as `DOMAIN`.
+  6. **Events**: `lending.LoanDelinquencyChanged` (previous and new bucket, DPD, the flag, the agreement version, the
+     product - cure announced as the bucket back to `CURRENT`), `lending.LoanDefaulted`, `lending.LoanDefaultCleared`;
+     never a party or an amount.
+  7. **The draw's suspension** (A25) is `LoanConditions` behind `DrawSuspension`, which now takes the pinned terms;
+     `P11-TSK-021`'s placeholder is gone.
+  8. **Reads** carry `condition` (`delinquency`, `daysPastDue`, `bucket`, `defaulted`, a line's `drawsSuspended`), null
+     for an account not in servicing; **gauges** `finapp.lending.delinquency{product, bucket}` and
+     `finapp.lending.default{product}` count accounts from the latest recorded rows.
+  9. **Not built**, each with its default as in decision 6; the servicing hold (A9) would be a third `kind` set and
+     cleared by a person, suspending the late fee and auto-collection - the slot designed, no member added.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

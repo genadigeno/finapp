@@ -221,7 +221,13 @@ public final class MetricNames {
                     // code writes a constant per billing step). The plan's own series carries it (PHASE_11_PLAN.md
                     // section 15: finapp.lending.billing{kind, outcome}); a name-split would make "is billing running"
                     // two queries. Registered eagerly.
-                    "kind");
+                    "kind",
+                    // Which days-past-due bucket (P11-TSK-024): b1_1_29, b2_30_59, b3_60_89 or b4_90_plus, the closed
+                    // DelinquencyBucket - a reviewed code change, never a request's value. On an account COUNT only
+                    // (finapp.lending.delinquency{product, bucket}, PHASE_11_PLAN.md section 15): a category every past-due
+                    // account in it shares, never one account's condition - an account's DPD, bucket or default flag is
+                    // RESTRICTED-FINANCIAL and never a tag (ADR-0098). Registered eagerly per product and bucket.
+                    "bucket");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

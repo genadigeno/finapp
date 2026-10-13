@@ -86,7 +86,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the acceptance, the disbursement, the accrual, the billing, the draw, the statement, the repayment and"
         + " auto-collection end to end (P11-TSK-012, P11-TSK-014, P11-TSK-016, P11-TSK-017, P11-TSK-021, P11-TSK-022,"
-        + " P11-TSK-018, P11-TSK-019)")
+        + " P11-TSK-018, P11-TSK-019, P11-TSK-024)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class LoanAccountDatabaseTest {
 
@@ -941,6 +941,54 @@ class LoanAccountDatabaseTest {
                 + " AND target_id = ?", loanId)).isEqualTo(1);
     }
 
+    // ------------------------------------------------------------------ the condition (P11-TSK-024)
+
+    @Test
+    @DisplayName("a past-due loan's condition is recorded and read end to end (P11-TSK-024): its first instalment due"
+            + " yesterday and unpaid, the wired sweep bills it and records B1 at DPD 1 - one row, one"
+            + " lending.LoanDelinquencyChanged, the loan still ACTIVE; the customer's read shows PAST_DUE, 1, B1_1_29, not"
+            + " defaulted, and so does the audited operator read; finapp.lending.delinquency counts it; repaid over the"
+            + " door, the customer's read is CURRENT at once")
+    void aPastDueLoansConditionIsRecordedAndReadEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3750.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        toFirstDueDate(loanId, 1);
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        assertThat(scalar("SELECT kind || ':' || days_past_due || ':' || bucket || ':' || previous_bucket || ':' || defaulted"
+                + " FROM lending.loan_condition_event WHERE loan_id = ?::uuid", loanId))
+                .isEqualTo("DELINQUENCY:1:B1_1_29:CURRENT:false");
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?::uuid AND event_type ="
+                + " 'lending.LoanDelinquencyChanged'", loanId)).isEqualTo(1);
+        String condition = "\"condition\":{\"delinquency\":\"PAST_DUE\",\"daysPastDue\":1,\"bucket\":\"B1_1_29\","
+                + "\"defaulted\":false,\"drawsSuspended\":null}";
+        String read = client.get(LOANS + "/" + loanId, customer.token()).body();
+        assertThat(read).contains("\"status\":\"ACTIVE\"", condition);
+        String operator = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        HttpResponse<String> operatorRead = client.get("/v1/operator/loans/" + loanId, operator);
+        assertThat(operatorRead.statusCode()).as(operatorRead.body()).isEqualTo(200);
+        assertThat(operatorRead.body()).contains(condition);
+        assertThat(meterRegistry.find(LoanConditionMetrics.DELINQUENCY).tag("product", "personal_loan")
+                .tag("bucket", "b1_1_29").gauge().value()).as("counted from the recorded condition").isGreaterThanOrEqualTo(1);
+        assertThat(meterRegistry.find(LoanConditionMetrics.DEFAULT).tag("product", "credit_line").gauge()).isNotNull();
+
+        long owed = count("SELECT interest_due_minor + principal_due_minor FROM lending.instalment_billing"
+                + " WHERE loan_id = ?::uuid", loanId);
+        HttpResponse<String> repaid = repay(customer.token(), loanId,
+                Money.ofMinorUnits(owed, EUR).toBigDecimal().toPlainString(), key());
+        assertThat(repaid.statusCode()).as(repaid.body()).isEqualTo(201);
+        assertThat(client.get(LOANS + "/" + loanId, customer.token()).body()).contains("\"condition\":{\"delinquency\":"
+                + "\"CURRENT\",\"daysPastDue\":0,\"bucket\":null,\"defaulted\":false,\"drawsSuspended\":null}");
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private double reversals(String outcome) {
@@ -971,8 +1019,14 @@ class LoanAccountDatabaseTest {
 
     /** The fixture's clock: the loan's dated facts moved back until its first due date is today (never a path). */
     static void toFirstDueDate(String loanId) throws Exception {
-        long days = count("SELECT i.due_date - s.start_date FROM lending.loan_instalment i JOIN lending.accrual_start s"
-                + " ON s.loan_id = i.loan_id WHERE i.loan_id = ?::uuid AND i.sequence = 1", loanId);
+        toFirstDueDate(loanId, 0);
+    }
+
+    /** As {@link #toFirstDueDate(String)}, the first due date {@code daysAgo} days before today (P11-TSK-024). */
+    static void toFirstDueDate(String loanId, int daysAgo) throws Exception {
+        long days = daysAgo + count("SELECT i.due_date - s.start_date FROM lending.loan_instalment i"
+                + " JOIN lending.accrual_start s ON s.loan_id = i.loan_id WHERE i.loan_id = ?::uuid AND i.sequence = 1",
+                loanId);
         try (Connection owner = DatabaseRoles.bootstrap()) {
             owner.setAutoCommit(false);
             try (Statement statement = owner.createStatement()) {

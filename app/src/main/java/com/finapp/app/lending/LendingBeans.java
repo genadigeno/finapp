@@ -392,11 +392,44 @@ public class LendingBeans {
                 idGenerator, clock);
     }
 
-    /** The customer's loan reads - balances derived from journal lines. */
+    /** The customer's loan reads - balances derived from journal lines, the condition derived (P11-TSK-024). */
     @Bean
     Loans loans(LoanStore loanStore, LedgerAccountStore<Connection> ledgerAccountStore,
-            PurposeBalances<Connection> purposeBalances, LoanPayoutStore loanPayoutStore) {
-        return new Loans(loanStore, ledgerAccountStore, purposeBalances, loanPayoutStore);
+            PurposeBalances<Connection> purposeBalances, LoanPayoutStore loanPayoutStore,
+            com.finapp.lending.LoanConditions loanConditions) {
+        return new Loans(loanStore, ledgerAccountStore, purposeBalances, loanPayoutStore, loanConditions);
+    }
+
+    /** The condition history's store (P11-TSK-024, lending V020) - {@code loan_condition_event}, INSERT-only. */
+    @Bean
+    com.finapp.lending.LoanConditionStore loanConditionStore() {
+        return new com.finapp.lending.JdbcLoanConditionStore();
+    }
+
+    /**
+     * Delinquency and default (P11-TSK-024): T-svc's condition step, the draw's suspension (A25) and the reads' condition -
+     * one derivation over the billed items.
+     */
+    @Bean
+    com.finapp.lending.LoanConditions loanConditions(
+            InstalmentBillingStore instalmentBillingStore,
+            com.finapp.lending.LoanConditionStore loanConditionStore,
+            LoanTermsStore loanTermsStore,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.LoanConditions(instalmentBillingStore, loanConditionStore, loanTermsStore,
+                outboxWriter, idGenerator, clock);
+    }
+
+    /**
+     * {@code finapp.lending.delinquency{product, bucket}} and {@code finapp.lending.default{product}} (P11-TSK-024), every
+     * series registered at startup.
+     */
+    @Bean
+    LoanConditionMetrics loanConditionMetrics(com.finapp.lending.LoanConditionStore loanConditionStore,
+            DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new LoanConditionMetrics(loanConditionStore, dataSource::getConnection, clock, meterRegistry);
     }
 
     /** {@code finapp.lending.acceptance{product, outcome}}, every series registered at startup. */
@@ -640,7 +673,8 @@ public class LendingBeans {
     /**
      * T-svc - the servicing step under L3: daily accrual (posting rule 2, P11-TSK-016), then billing - or a line's
      * statement (P11-TSK-022) - and the credit-balance application (rules 3 and 6, P11-TSK-017), then auto-collection
-     * (rule 5, P11-TSK-019), then the closure of a settled loan (P11-TSK-018).
+     * (rule 5, P11-TSK-019), then the closure of a settled loan (P11-TSK-018), then - on an account it did not close - the
+     * condition (P11-TSK-024).
      */
     @Bean
     LoanServicing loanServicing(
@@ -654,9 +688,11 @@ public class LendingBeans {
             InstalmentBillings instalmentBillings,
             com.finapp.lending.LoanClosures loanClosures,
             com.finapp.lending.LoanCollections loanCollections,
-            com.finapp.lending.CreditLineStatements creditLineStatements) {
+            com.finapp.lending.CreditLineStatements creditLineStatements,
+            com.finapp.lending.LoanConditions loanConditions) {
         return new LoanServicing(loanStore, loanServicingStore, loanTermsStore, ledgerAccountStore, purposeBalances,
-                postingService, idGenerator, instalmentBillings, loanClosures, loanCollections, creditLineStatements);
+                postingService, idGenerator, instalmentBillings, loanClosures, loanCollections, creditLineStatements,
+                loanConditions);
     }
 
     /**
@@ -726,22 +762,13 @@ public class LendingBeans {
         return new com.finapp.lending.JdbcCreditLineDrawStore();
     }
 
-    /**
-     * The draws-suspended condition over what exists: nothing can be past due before a line's statement (`-022`) and
-     * nothing defaulted before the condition step (`-024`), which replaces this bean with the condition read.
-     */
-    @Bean
-    com.finapp.lending.DrawSuspension drawSuspension() {
-        return com.finapp.lending.DrawSuspension.BEFORE_ANY_CONDITION;
-    }
-
     /** T-drw - the draw under L3 and L6, posting rule 1 to the wallet through the ledger. */
     @Bean
     com.finapp.lending.CreditLineDraws creditLineDraws(
             LoanStore loanStore,
             com.finapp.lending.CreditLineDrawStore creditLineDrawStore,
             LoanTermsStore loanTermsStore,
-            com.finapp.lending.DrawSuspension drawSuspension,
+            com.finapp.lending.LoanConditions loanConditions,
             LoanPartyStanding loanPartyStanding,
             LendingCapitalHeadroom lendingCapitalHeadroom,
             LoanWallets loanWallets,
@@ -751,7 +778,8 @@ public class LendingBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock) {
-        return new com.finapp.lending.CreditLineDraws(loanStore, creditLineDrawStore, loanTermsStore, drawSuspension,
+        // The draws-suspended condition (A25): the derived condition read under L3 (P11-TSK-024 replaced -021's placeholder).
+        return new com.finapp.lending.CreditLineDraws(loanStore, creditLineDrawStore, loanTermsStore, loanConditions,
                 loanPartyStanding, lendingCapitalHeadroom, loanWallets, ledgerAccountStore, purposeBalances,
                 postingService, outboxWriter, idGenerator, clock);
     }

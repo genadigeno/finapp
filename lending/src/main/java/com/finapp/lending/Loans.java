@@ -35,17 +35,21 @@ public final class Loans {
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PurposeBalances<Connection> balances;
     @NonNull private final LoanPayoutStore payouts;
+    @NonNull private final LoanConditions conditions;
 
     /**
-     * A loan, its governing agreement, its derived balances and - path X - its payout's status (`P11-TSK-015`; empty for a
-     * wallet loan or a line).
+     * A loan, its governing agreement, its derived balances, - path X - its payout's status (`P11-TSK-015`; empty for a
+     * wallet loan or a line) and its condition (`P11-TSK-024`: DPD, bucket and default derived in the read's snapshot on
+     * the database clock's business date; empty for an account not in servicing).
      */
-    public record Read(LoanStore.Owned owned, Balances balances, Optional<PayoutStatus> payout) {
+    public record Read(LoanStore.Owned owned, Balances balances, Optional<PayoutStatus> payout,
+            Optional<DelinquencyState> condition) {
 
         public Read {
             Objects.requireNonNull(owned, "owned must not be null");
             Objects.requireNonNull(balances, "balances must not be null");
             Objects.requireNonNull(payout, "payout must not be null");
+            Objects.requireNonNull(condition, "condition must not be null");
         }
 
         /**
@@ -64,6 +68,19 @@ public final class Loans {
                 return Optional.of(Money.ofPersisted(0, limit.currency(), limit.scale()));
             }
             return Optional.of(new AvailableLimit(limit, balances.principalOutstanding()).available());
+        }
+
+        /**
+         * Whether a line's draws are suspended (`P11-TSK-024`, A25) - past due or defaulted, from this read's condition;
+         * empty for an instalment loan and for a line not {@code ACTIVE} (a closing or closed line takes no draw whatever
+         * its condition - its available limit reads zero). It decides nothing: the draw derives its own under the line's
+         * lock.
+         */
+        public Optional<Boolean> drawsSuspended() {
+            if (owned.loan().kind() != LoanKind.REVOLVING || owned.loan().status() != LoanStatus.ACTIVE) {
+                return Optional.empty();
+            }
+            return condition.map(DelinquencyState::suspendsDraws);
         }
 
         @Override
@@ -120,7 +137,7 @@ public final class Loans {
 
     private Read readOf(Connection unitOfWork, LoanStore.Owned owned, UUID party) {
         return new Read(owned, balancesOf(unitOfWork, owned),
-                payouts.statusOwnedBy(unitOfWork, owned.loan().id(), party));
+                payouts.statusOwnedBy(unitOfWork, owned.loan().id(), party), conditions.read(unitOfWork, owned));
     }
 
     /** Each balance at the agreement's persisted scale - the scale every posting to the loan is made in. */

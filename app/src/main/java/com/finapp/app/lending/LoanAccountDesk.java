@@ -92,7 +92,8 @@ public final class LoanAccountDesk {
      * external payout's state on path X (`P11-TSK-015`: {@code PENDING}, {@code DISPATCHING}, {@code DISPATCHED},
      * {@code PAID_OUT}, {@code FAILED}, {@code NOT_DISPATCHED}) - null for a wallet loan and a line; never the destination.
      * {@code availableLimit} is a line's (`P11-TSK-021`): its limit less its drawn principal while {@code ACTIVE}, zero
-     * once it is not - derived in the read's snapshot, never stored; null for an instalment loan.
+     * once it is not - derived in the read's snapshot, never stored; null for an instalment loan. {@code condition} is the
+     * account's delinquency and default (`P11-TSK-024`) - null for an account not in servicing.
      */
     public record LoanView(
             String loanId,
@@ -106,7 +107,24 @@ public final class LoanAccountDesk {
             AgreementView agreement,
             BalancesView balances,
             String payoutStatus,
-            String availableLimit) {}
+            String availableLimit,
+            ConditionView condition) {}
+
+    /**
+     * The account's condition now (`P11-TSK-024`; ADR-0098, {@code PHASE_11_PLAN.md} section 12.7) - derived in the read's
+     * snapshot from the billed items on the database clock's business date, never stored: {@code delinquency}
+     * {@code CURRENT} or {@code PAST_DUE}; {@code daysPastDue} from the oldest item unpaid at the end of its due date (0
+     * when nothing is); {@code bucket} its band ({@code B1_1_29}, {@code B2_30_59}, {@code B3_60_89}, {@code B4_90_PLUS}),
+     * null when current; {@code defaulted} set at the pinned threshold (90 days) and cleared at cure; {@code drawsSuspended}
+     * an {@code ACTIVE} line's (A25) - null for an instalment loan and a closing line. A condition, never a state: the account's {@code status} is unchanged
+     * by it.
+     */
+    public record ConditionView(
+            String delinquency,
+            int daysPastDue,
+            String bucket,
+            boolean defaulted,
+            Boolean drawsSuspended) {}
 
     /** The agreement version that governs the account - a loan's principal, or a line's limit. */
     public record AgreementView(
@@ -443,7 +461,13 @@ public final class LoanAccountDesk {
                         decimal(balances.feesDue()),
                         decimal(balances.creditBalance())),
                 read.payout().map(Enum::name).orElse(null),
-                read.availableLimit().map(LoanAccountDesk::decimal).orElse(null));
+                read.availableLimit().map(LoanAccountDesk::decimal).orElse(null),
+                read.condition().map(condition -> new ConditionView(
+                        condition.pastDue() ? "PAST_DUE" : "CURRENT",
+                        condition.daysPastDue(),
+                        condition.bucket().map(Enum::name).orElse(null),
+                        condition.defaulted(),
+                        read.drawsSuspended().orElse(null))).orElse(null));
     }
 
     private static String decimal(Money amount) {

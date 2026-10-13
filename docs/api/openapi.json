@@ -9095,6 +9095,27 @@
         },
         "type": "object"
       },
+      "ConditionView": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "daysPastDue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaulted": {
+            "type": "boolean"
+          },
+          "delinquency": {
+            "type": "string"
+          },
+          "drawsSuspended": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ConfirmSessionRequest": {
         "properties": {
           "instrument": {
@@ -12582,6 +12603,9 @@
           },
           "closedAt": {
             "type": "string"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/ConditionView"
           },
           "currency": {
             "type": "string"

@@ -193,7 +193,7 @@ public final class CreditLineDraws {
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
         LocalDate valueDate = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
-        if (suspension.suspended(unitOfWork, id, valueDate)) {
+        if (suspension.suspended(unitOfWork, id, pinned, valueDate)) {
             throw new DrawsSuspended();
         }
         if (!standing.inGoodStanding(unitOfWork, party)) {

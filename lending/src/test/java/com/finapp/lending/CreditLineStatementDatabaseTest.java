@@ -623,7 +623,7 @@ class CreditLineStatementDatabaseTest {
     }
 
     static Money available(DisbursementWorld.Accepted line) {
-        return inOneTransaction(uow -> new Loans(LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, PAYOUT_STORE)
+        return inOneTransaction(uow -> DisbursementWorld.LOANS
                 .read(uow, line.loan(), line.party())).orElseThrow().availableLimit().orElseThrow();
     }
 
