@@ -1916,6 +1916,226 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Lending — origination, disbursement, servicing, the book, proofs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 221 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Applications, offers and acceptances",
+      "description": "finapp.lending.application, .offer and .acceptance by product and outcome, and finapp.credit.consumption by outcome - counted after each act commits. Per instance: sum(). Counts, never amounts.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 222 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (product, outcome) (rate(finapp_lending_application_total[5m]))", "legendFormat": "application {{product}} {{outcome}}" },
+        { "refId": "B", "expr": "sum by (product, outcome) (rate(finapp_lending_offer_total[5m]))", "legendFormat": "offer {{product}} {{outcome}}" },
+        { "refId": "C", "expr": "sum by (product, outcome) (rate(finapp_lending_acceptance_total[5m]))", "legendFormat": "acceptance {{product}} {{outcome}}" },
+        { "refId": "D", "expr": "sum by (outcome) (rate(finapp_credit_consumption_total[5m]))", "legendFormat": "consumption {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disbursements and payouts",
+      "description": "finapp.lending.disbursement by payout path and outcome, finapp.lending.payout by outcome - every committed step that did something.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 222 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (payout, outcome) (rate(finapp_lending_disbursement_total[5m]))", "legendFormat": "disbursement {{payout}} {{outcome}}" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(finapp_lending_payout_total[5m]))", "legendFormat": "payout {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Waiting disbursements and payouts",
+      "description": "finapp.lending.disbursement.pending.age (alerted past the 24 h deadline ceiling) and finapp.lending.payout.dispatched.age (alerted past the 30 min outcome objective) - LendingObjectives. Fleet-wide gauges: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 222 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_lending_disbursement_pending_age_seconds)", "legendFormat": "oldest pending disbursement" },
+        { "refId": "B", "expr": "max(finapp_lending_payout_dispatched_age_seconds)", "legendFormat": "oldest unconcluded payout" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Servicing: accrual, billing, collection, fees",
+      "description": "finapp.lending.accrual, .billing by kind, .collection and .fee by kind, each by outcome - the servicing sweep's steps, counted after commit.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 229 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_lending_accrual_total[5m]))", "legendFormat": "accrual {{outcome}}" },
+        { "refId": "B", "expr": "sum by (kind, outcome) (rate(finapp_lending_billing_total[5m]))", "legendFormat": "billing {{kind}} {{outcome}}" },
+        { "refId": "C", "expr": "sum by (outcome) (rate(finapp_lending_collection_total[5m]))", "legendFormat": "collection {{outcome}}" },
+        { "refId": "D", "expr": "sum by (kind, outcome) (rate(finapp_lending_fee_total[5m]))", "legendFormat": "fee {{kind}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Accrual lag",
+      "description": "finapp.lending.accrual.lag - seconds since the end of the oldest elapsed business date an account in servicing has not accrued (alerted past a day). Fleet-wide gauge: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 229 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_lending_accrual_lag_seconds)", "legendFormat": "oldest unaccrued date" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Customer and operator acts",
+      "description": "finapp.lending.repayment by kind, .draw, .payoff, .reversal, .waiver by kind and .amendment, by outcome; finapp.lending.allocation.anomaly (alerted above 0).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 229 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (kind, outcome) (rate(finapp_lending_repayment_total[5m]))", "legendFormat": "repayment {{kind}} {{outcome}}" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(finapp_lending_draw_total[5m]))", "legendFormat": "draw {{outcome}}" },
+        { "refId": "C", "expr": "sum by (outcome) (rate(finapp_lending_payoff_total[5m]))", "legendFormat": "payoff {{outcome}}" },
+        { "refId": "D", "expr": "sum by (outcome) (rate(finapp_lending_reversal_total[5m]))", "legendFormat": "reversal {{outcome}}" },
+        { "refId": "E", "expr": "sum by (kind, outcome) (rate(finapp_lending_waiver_total[5m]))", "legendFormat": "waiver {{kind}} {{outcome}}" },
+        { "refId": "F", "expr": "sum by (outcome) (rate(finapp_lending_amendment_total[5m]))", "legendFormat": "amendment {{outcome}}" },
+        { "refId": "G", "expr": "sum(increase(finapp_lending_allocation_anomaly_total[15m]))", "legendFormat": "allocation anomalies" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "The book: accounts by state and condition",
+      "description": "finapp.lending.loans by product and status, finapp.lending.delinquency by product and bucket, finapp.lending.default by product - account COUNTS only; the amounts are the portfolio and delinquency reports (audited). Fleet-wide gauges: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 236 },
+      "targets": [
+        { "refId": "A", "expr": "max by (product, status) (finapp_lending_loans)", "legendFormat": "{{product}} {{status}}" },
+        { "refId": "B", "expr": "max by (product, bucket) (finapp_lending_delinquency)", "legendFormat": "past due {{product}} {{bucket}}" },
+        { "refId": "C", "expr": "max by (product) (finapp_lending_default)", "legendFormat": "defaulted {{product}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Proofs and the census",
+      "description": "finapp.lending.subledger.proof, .replay, .capital.proof and finapp.credit.exposure.census by verdict - FAILS and DIVERGED must be 0 (each alerted) - and finapp.lending.capital.headroom.low (alerted above 0). Fleet-wide gauges: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 236 },
+      "targets": [
+        { "refId": "A", "expr": "max by (verdict) (finapp_lending_subledger_proof)", "legendFormat": "subledger {{verdict}}" },
+        { "refId": "B", "expr": "max by (verdict) (finapp_lending_replay)", "legendFormat": "replay {{verdict}}" },
+        { "refId": "C", "expr": "max by (verdict) (finapp_lending_capital_proof)", "legendFormat": "capital {{verdict}}" },
+        { "refId": "D", "expr": "max by (verdict) (finapp_credit_exposure_census)", "legendFormat": "census {{verdict}}" },
+        { "refId": "E", "expr": "max(finapp_lending_capital_headroom_low)", "legendFormat": "currencies below the headroom floor" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active terms and lending sweepers",
+      "description": "finapp.lending.terms.active - each product's ACTIVE terms version, 0 for none (production's state until the activation gate opens; alerted where the target offers lending) - and the four lending sweeper flags, min() showing whether any scraped instance does not run one (alerted).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 236 },
+      "targets": [
+        { "refId": "A", "expr": "max by (product) (finapp_lending_terms_active)", "legendFormat": "active terms {{product}}" },
+        { "refId": "B", "expr": "min(finapp_lending_origination_sweeper_enabled)", "legendFormat": "origination sweep (min)" },
+        { "refId": "C", "expr": "min(finapp_lending_disbursement_sweeper_enabled)", "legendFormat": "disbursement sweep (min)" },
+        { "refId": "D", "expr": "min(finapp_lending_payout_sweeper_enabled)", "legendFormat": "payout sweep (min)" },
+        { "refId": "E", "expr": "min(finapp_lending_servicing_sweeper_enabled)", "legendFormat": "servicing sweep (min)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
@@ -41,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LoanApplicationController {
 
     @NonNull private final LoanApplicationDesk desk;
+    @NonNull private final LendingFlowScope flow;
 
     /** Applies for a personal loan or a credit line - one act opening credit's decision request in the same commit. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -50,7 +52,7 @@ public class LoanApplicationController {
             @Valid @RequestBody LoanApplicationBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.submit(current(request), idempotencyKey, body);
+        return flow.door(LendingSpans.APPLY, () -> desk.submit(current(request), idempotencyKey, body));
     }
 
     /** The caller's own application: its status, and - once declined - credit's reasons in the customer's words. */
@@ -67,7 +69,7 @@ public class LoanApplicationController {
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.withdraw(current(request), id, idempotencyKey);
+        return flow.doorOnApplication(LendingSpans.WITHDRAW, id, () -> desk.withdraw(current(request), id, idempotencyKey));
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanPayoutStore;
 import com.finapp.lending.LoanPayoutSteps;
 import com.finapp.platform.security.SecurityContext;
@@ -33,6 +34,7 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration permit;
+    private final LendingFlowScope flow;
     private ScheduledExecutorService executor;
 
     public LoanPayoutSchedule(
@@ -42,6 +44,19 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration permit) {
+        this(steps, transactions, metrics, pollInterval, batch, permit, LendingFlowScope.NONE);
+    }
+
+    /** As above, each step's span recorded in its flow's stored correlation (P11-TSK-030). */
+    public LoanPayoutSchedule(
+            LoanPayoutSteps steps,
+            LendingTransactions transactions,
+            LoanPayoutMetrics metrics,
+            Duration pollInterval,
+            int batch,
+            Duration permit,
+            LendingFlowScope flow) {
+        this.flow = java.util.Objects.requireNonNull(flow, "flow");
         this.steps = Objects.requireNonNull(steps, "steps");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
@@ -68,7 +83,8 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
             List<LoanPayoutStore.Claimed> due = transactions.inTransaction(uow -> steps.claim(uow, batch, permit));
             for (LoanPayoutStore.Claimed claimed : due) {
                 try {
-                    steps.step(transactions, claimed, SecurityContext.require()).forEach(metrics::record);
+                    flow.forLoan(LendingSpans.PAYOUT, claimed.loan(),
+                            () -> steps.step(transactions, claimed, SecurityContext.require())).forEach(metrics::record);
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick re-drives under the same instruction; the class name only.
                     log.warn("Loan payout step failed: {}", failure.getClass().getSimpleName());

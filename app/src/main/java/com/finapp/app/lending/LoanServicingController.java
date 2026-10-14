@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
@@ -47,6 +48,7 @@ public class LoanServicingController {
     @NonNull private final LoanServicingDesk desk;
     @NonNull private final LoanWaiverDesk waivers;
     @NonNull private final LoanAmendmentDesk amendments;
+    @NonNull private final LendingFlowScope flow;
 
     /** Any loan: the account, its repayments with their derived status, its reversals - audited per serving. */
     @GetMapping(path = "/{id}")
@@ -65,7 +67,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("repaymentId") String repaymentId,
             @Valid @RequestBody ReversalProposalRequest body) {
-        return desk.propose(id, repaymentId, idempotencyKey, body.reason());
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> desk.propose(id, repaymentId, idempotencyKey, body.reason()));
     }
 
     /**
@@ -80,7 +82,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("repaymentId") String repaymentId,
             @Valid @RequestBody ReversalDecisionRequest body) {
-        return desk.approve(id, repaymentId, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> desk.approve(id, repaymentId, idempotencyKey, body));
     }
 
     /** Rejects the named pending reversal - the proposer's withdrawal included; a reason is required. */
@@ -92,7 +94,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("repaymentId") String repaymentId,
             @Valid @RequestBody ReversalDecisionRequest body) {
-        return desk.reject(id, repaymentId, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> desk.reject(id, repaymentId, idempotencyKey, body));
     }
 
     /**
@@ -108,7 +110,7 @@ public class LoanServicingController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody WaiverProposalRequest body) {
-        return waivers.propose(id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> waivers.propose(id, idempotencyKey, body));
     }
 
     /**
@@ -123,7 +125,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("waiverId") String waiverId,
             @Valid @RequestBody WaiverDecisionRequest body) {
-        return waivers.approve(id, waiverId, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> waivers.approve(id, waiverId, idempotencyKey, body));
     }
 
     /** Rejects the named pending waiver - the proposer's withdrawal included; a reason is required. */
@@ -135,7 +137,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("waiverId") String waiverId,
             @Valid @RequestBody WaiverDecisionRequest body) {
-        return waivers.reject(id, waiverId, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> waivers.reject(id, waiverId, idempotencyKey, body));
     }
 
     /**
@@ -150,7 +152,7 @@ public class LoanServicingController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody AmendmentProposalRequest body) {
-        return amendments.propose(id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> amendments.propose(id, idempotencyKey, body));
     }
 
     /**
@@ -165,7 +167,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("amendmentId") String amendmentId,
             @Valid @RequestBody AmendmentDecisionRequest body) {
-        return amendments.approve(id, amendmentId, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> amendments.approve(id, amendmentId, idempotencyKey, body));
     }
 
     /** Rejects the named pending amendment - the proposer's withdrawal included; a reason is required. */
@@ -177,7 +179,7 @@ public class LoanServicingController {
             @PathVariable("id") String id,
             @PathVariable("amendmentId") String amendmentId,
             @Valid @RequestBody AmendmentDecisionRequest body) {
-        return amendments.reject(id, amendmentId, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.CORRECT, id, () -> amendments.reject(id, amendmentId, idempotencyKey, body));
     }
 
     // -----------------------------------------------------------------

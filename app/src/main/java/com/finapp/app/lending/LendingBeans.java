@@ -452,6 +452,16 @@ public class LendingBeans {
                 loanAcceptanceMetrics, loanSchedules, creditLineStatements);
     }
 
+    /**
+     * Lending's step spans, linked by each flow's stored correlation (P11-TSK-030) - over the platform's domain spans,
+     * no attribute ever.
+     */
+    @Bean
+    LendingFlowScope lendingFlowScope(LendingTransactions lendingTransactions,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        return new LendingFlowScope(lendingTransactions, domainSpans);
+    }
+
     /** The origination sweep - every instance, no lease, off in test contexts. */
     @Bean
     @ConditionalOnProperty(name = "finapp.lending.origination.sweeper.enabled", havingValue = "true", matchIfMissing = true)
@@ -461,9 +471,10 @@ public class LendingBeans {
             LoanOfferMetrics loanOfferMetrics,
             @Value("${finapp.lending.origination.poll:PT5S}") Duration pollInterval,
             @Value("${finapp.lending.origination.batch:20}") int batch,
-            @Value("${finapp.lending.origination.permit:PT30S}") Duration permit) {
+            @Value("${finapp.lending.origination.permit:PT30S}") Duration permit,
+            LendingFlowScope lendingFlowScope) {
         return new LoanOriginationSchedule(loanOrigination, lendingTransactions, loanOfferMetrics, pollInterval, batch,
-                permit);
+                permit, lendingFlowScope);
     }
 
     /** Whether this instance runs the origination sweep - eager either way (`P1-TSK-029`'s rule). */
@@ -538,9 +549,10 @@ public class LendingBeans {
             LoanDisbursementMetrics loanDisbursementMetrics,
             @Value("${finapp.lending.disbursement.poll:PT5S}") Duration pollInterval,
             @Value("${finapp.lending.disbursement.batch:20}") int batch,
-            @Value("${finapp.lending.disbursement.permit:PT1M}") Duration permit) {
+            @Value("${finapp.lending.disbursement.permit:PT1M}") Duration permit,
+            LendingFlowScope lendingFlowScope) {
         return new LoanDisbursementSchedule(loanDisbursements, lendingTransactions, loanDisbursementMetrics, pollInterval,
-                batch, permit);
+                batch, permit, lendingFlowScope);
     }
 
     /** Whether this instance runs the disbursement sweep - eager either way (`P1-TSK-029`'s rule). */
@@ -603,9 +615,10 @@ public class LendingBeans {
             LoanPayoutMetrics loanPayoutMetrics,
             @Value("${finapp.lending.payout.poll:PT5S}") Duration pollInterval,
             @Value("${finapp.lending.payout.batch:20}") int batch,
-            @Value("${finapp.lending.payout.permit:PT1M}") Duration permit) {
+            @Value("${finapp.lending.payout.permit:PT1M}") Duration permit,
+            LendingFlowScope lendingFlowScope) {
         return new LoanPayoutSchedule(loanPayoutSteps, lendingTransactions, loanPayoutMetrics, pollInterval, batch,
-                permit);
+                permit, lendingFlowScope);
     }
 
     /** Whether this instance runs the payout sweep - eager either way (`P1-TSK-029`'s rule). */
@@ -729,9 +742,10 @@ public class LendingBeans {
             LoanServicingMetrics loanServicingMetrics,
             @Value("${finapp.lending.servicing.poll:PT1M}") Duration pollInterval,
             @Value("${finapp.lending.servicing.batch:50}") int batch,
-            @Value("${finapp.lending.servicing.retry:PT15M}") Duration retryCadence) {
+            @Value("${finapp.lending.servicing.retry:PT15M}") Duration retryCadence,
+            LendingFlowScope lendingFlowScope) {
         return new LoanServicingSchedule(loanServicing, lendingTransactions, loanServicingMetrics, pollInterval, batch,
-                retryCadence);
+                retryCadence, lendingFlowScope);
     }
 
     /** Whether this instance runs the servicing sweep - eager either way (`P1-TSK-029`'s rule). */
@@ -1250,6 +1264,13 @@ public class LendingBeans {
             LendingTransactions lendingTransactions, Clock clock, MeterRegistry meterRegistry,
             @Value("${finapp.lending.proofs.refresh:PT15M}") Duration refresh) {
         return new LendingProofMetrics(lendingProofs, lendingTransactions::inSnapshot, clock, meterRegistry, refresh);
+    }
+
+    /** The four operations reports (P11-TSK-030) - one read-only snapshot each, recorded before they are answered. */
+    @Bean
+    LendingReports lendingReports(LendingTransactions lendingTransactions, com.finapp.lending.LendingProofs lendingProofs,
+            AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new LendingReports(lendingTransactions, lendingProofs, auditWriter, idGenerator, clock);
     }
 
     /** The investigator's explanation and replay; whose party an investigator is read through the identity store. */

@@ -690,6 +690,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/credit/outcomes",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/credit/reasons",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/credit/sources",
+                        // P11-TSK-030: the lending operations reports (LENDING_INVESTIGATE, recorded per serving).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/lending/portfolio",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/lending/delinquency",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/lending/accrual",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/lending/capital",
                         // P10-TSK-018: the underwriter's review queue and the acts on a case.
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases",
                         ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}/assignment",

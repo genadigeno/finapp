@@ -1,0 +1,4617 @@
+{
+  "uid": "finapp-platform",
+  "title": "finapp — platform baseline",
+  "description": "The Phase 0 operational picture: is the instance up, is the outbox draining, and is the connection pool the bottleneck. Provisioned from git (P0-TSK-029); edit the file, not the UI.",
+  "editable": false,
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Outbox — publication lag",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Pending events",
+      "description": "Unpublished outbox events, dead-lettered ones included. Depth alone is ambiguous — a thousand published within the second is healthy — so read it beside the age panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp_outbox_pending",
+          "legendFormat": "pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "no data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Oldest unpublished",
+      "description": "How long the oldest unpublished event has waited. This is what separates 'busy' from 'stuck': a growing age with a flat depth means the relay is not draining.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp_outbox_oldest_seconds",
+          "legendFormat": "oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "no data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox backlog over time",
+      "description": "Depth and age together. Absent data — not zero — is what a gauge reports when the database cannot be read, so a gap here is an outage rather than an empty outbox.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp_outbox_pending",
+          "legendFormat": "pending events"
+        },
+        {
+          "refId": "B",
+          "expr": "finapp_outbox_oldest_seconds",
+          "legendFormat": "oldest (s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Request path",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP requests by outcome",
+      "description": "Framework metrics, not ours — useful, and not a contract. A rise in 5xx here beside a flat 4xx is our fault; the reverse is a client's.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(http_server_requests_seconds_count[1m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "unit": "reqps",
+          "noValue": "no traffic"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Connection pool",
+      "description": "The failure ADR-0016 and the connection-pool debt both name: ten instances at Hikari's default exhaust PostgreSQL's default max_connections before doing any work. Pending threads rising while active is flat is waiting, not load.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hikaricp_connections_active",
+          "legendFormat": "active"
+        },
+        {
+          "refId": "B",
+          "expr": "hikaricp_connections_idle",
+          "legendFormat": "idle"
+        },
+        {
+          "refId": "C",
+          "expr": "hikaricp_connections_pending",
+          "legendFormat": "threads waiting"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "threads waiting"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Identity — security signals",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Recovery initiations",
+      "description": "THE account-takeover signal (PHASE_1_PLAN.md §10). A campaign is a rise here — and a rise in `refused` is a probe against identifiers that do not exist, which the 202 response deliberately hides from the caller and cannot hide from this.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_identity_recovery_initiation_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Authentication outcomes and lockouts",
+      "description": "Failure rate is noisy and mostly benign; a spike in LOCKOUTS is credential stuffing. Two meters rather than a third tag value, so the second signal is not buried in the first's noise.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_identity_authentication_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(finapp_identity_lockout_total[5m]))",
+          "legendFormat": "lockouts"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lockouts"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Second-factor challenges",
+      "description": "Refusals rising is somebody holding a stolen password and failing at the second factor. The REASON — wrong code, replayed, no factor — lives in the audit trail and never in a tag.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_identity_mfa_challenge_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Live sessions",
+      "description": "max(), NEVER sum(): the gauge is read from the database, so every instance reports the same fleet-wide figure and summing ten replicas would report ten times the truth. Absent rather than zero when the database is unreadable — a comforting zero is not alertable.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_identity_session_active)",
+          "legendFormat": "live"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Session lifetime, when its owner ended it",
+      "description": "ONE POPULATION, and it is not all sessions: expiry is derived and never observed (ADR-0030), so expired sessions cannot appear here. Bulk revocation and step-up rotation are excluded too. The MEAN rather than a quantile: a Timer publishes no histogram buckets without publishPercentileHistogram(), whose cardinality this low-volume signal does not earn, and client-side percentiles do not aggregate across replicas. DashboardQueriesResolveTest caught the first version querying _bucket.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(finapp_identity_session_lifetime_seconds_sum[30m])) / sum(rate(finapp_identity_session_lifetime_seconds_count[30m]))",
+          "legendFormat": "mean"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(finapp_identity_session_lifetime_seconds_count[30m]))",
+          "legendFormat": "samples/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "KYC and consent — verification flow",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Case throughput",
+      "description": "finapp.kyc.case by outcome (PHASE_2_PLAN.md §10): opened at creation, approved/rejected at decision, counted at the store seam so every door - the endpoint, the consumer, KYB registration and both decision paths - moves it. The straight-through rate is derivable as approved over opened. Per-instance counters: aggregate with sum(rate(...)).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_kyc_case_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Check outcomes",
+      "description": "finapp.kyc.check as normalised by us, never a provider verdict (INV-KYC-01). A rising indeterminate is a provider degrading - which is exactly the moment this series must already exist, and why it is registered eagerly and unconditionally (P2-TSK-020).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_kyc_check_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Review queue",
+      "description": "Checks awaiting a person (PHASE_2_PLAN.md §10: the queue nobody watches is the queue that ages). A fleet-wide gauge read from the database, so every instance reports the same figure: max(), NEVER sum() - summing ten replicas reports ten times the truth.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_kyc_review_queue)",
+          "legendFormat": "waiting"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider latency",
+      "description": "Verification provider round-trip time, refusals included - the port is total, so a timeout or a 5xx is a timed result, never an exception (ADR-0008). The MEAN, for the session-lifetime panel's reason: a Timer publishes no histogram buckets without publishPercentileHistogram(), whose cardinality this signal does not earn.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(finapp_kyc_provider_latency_seconds_sum[5m])) / sum(rate(finapp_kyc_provider_latency_seconds_count[5m]))",
+          "legendFormat": "mean"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(finapp_kyc_provider_latency_seconds_count[5m]))",
+          "legendFormat": "calls/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Consent grants and withdrawals",
+      "description": "finapp.consent.grant and finapp.consent.withdrawal by purpose (PHASE_2_PLAN.md §10): a withdrawal spike is a trust event worth seeing, which is why it is its own meter rather than an outcome tag buried in the grant rate. The purpose tag is bounded by the closed ConsentPurpose enum (MetricNames.ALLOWED_TAG_KEYS records the decision).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (purpose) (rate(finapp_consent_grant_total[5m]))",
+          "legendFormat": "{{purpose}} granted"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (purpose) (rate(finapp_consent_withdrawal_total[5m]))",
+          "legendFormat": "{{purpose}} withdrawn"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Ledger and accounts — financial correctness",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Trial balance by currency",
+      "description": "INV-ACC-01 as a series (P3-TSK-019): 0 verified balanced, 1 out of balance, NaN unverifiable. Zero, or an incident - alert on any non-zero value. Fleet-wide from every instance: max(), NEVER sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 46
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (currency) (finapp_ledger_trial_balance)",
+          "legendFormat": "{{currency}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Projection drift",
+      "description": "Accounts where recomputation from postings disagrees with ledger.account_balance (INV-BAL-02, P3-TSK-010) - including a holds_minor no ACTIVE hold row explains (P3-TSK-020). Zero at all times; alert on any non-zero value. Fleet-wide: max(), NEVER sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 46
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_ledger_projection_drift)",
+          "legendFormat": "drifting accounts"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active holds",
+      "description": "Holds currently ACTIVE, system-wide (P3-TSK-020): hold utilisation, a count never an amount. NaN means the count could not be read - absent is alertable, a comforting zero is not. Fleet-wide: max(), NEVER sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 46
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_ledger_hold_active)",
+          "legendFormat": "active"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Journal-write commands by outcome",
+      "description": "finapp.ledger.posting (P3-TSK-020): posting, reversal and adjustment commands through the ledger's one write path. posted ran and appended; replayed returned a recorded outcome; refused threw - the failure rate an operator watches when Phase 4 makes this the hot path.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_ledger_posting_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Posting latency",
+      "description": "finapp.ledger.posting.latency: the duration a caller experiences on the write path, every outcome. No histogram buckets are published (the P1-TSK-029 lesson) - these are max and the rate-derived mean.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_ledger_posting_latency_seconds_max)",
+          "legendFormat": "max"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(finapp_ledger_posting_latency_seconds_sum[5m])) / sum(rate(finapp_ledger_posting_latency_seconds_count[5m]))",
+          "legendFormat": "mean"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Account lifecycle",
+      "description": "finapp.accounts.account (P3-TSK-020): customer accounts opened and closed. Only the acting call counts - a converged retry, a replayed key and the losers of a concurrent close are never throughput (P2-TSK-020's discipline).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_accounts_account_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Transfers — customer money movement",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 60
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Transfer commands by outcome",
+      "description": "finapp.transfers.transfer (P4-TSK-011): the first customer-visible money movement, by outcome. completed and failed are acting judgements; replayed is a retried key returning its recorded judgement (INV-IDEM-01); reversed is the operator's correction; refused is a command declined with nothing written - a rise in refused is somebody probing destinations.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_transfers_transfer_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Transfer latency",
+      "description": "finapp.transfers.transfer.latency (P4-TSK-011): duration of the transfer execution command, every outcome of POST /v1/transfers - a timer recording only successes would flatter exactly the incident an operator is trying to see. Read from _count/_sum/_max; no histogram buckets are published (the P1-TSK-029 lesson).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_transfers_transfer_latency_seconds_max)",
+          "legendFormat": "max"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(finapp_transfers_transfer_latency_seconds_sum[5m])) / sum(rate(finapp_transfers_transfer_latency_seconds_count[5m]))",
+          "legendFormat": "mean"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Idempotency conflicts",
+      "description": "finapp.transfers.conflict (P4-TSK-011): INV-IDEM-03 fingerprint conflicts on the transfer command - a known key presented with a materially different request. A security signal: a stranger replaying logged keys (ADR-0004's owning-principal fingerprint refusing them). The healthy reading is a flat zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(finapp_transfers_conflict_total[5m]))",
+          "legendFormat": "conflicts"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Beneficiary lifecycle",
+      "description": "finapp.transfers.beneficiary (P4-TSK-011): saved destinations added and removed. Only the acting call counts - a converged retry is never throughput (P3-TSK-020's discipline).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 68
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_transfers_beneficiary_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Payments — provider-decided money",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Payment judgements by outcome",
+      "description": "finapp.payments.attempt (P5-TSK-017): ACTING attempt judgements only - a replay, a converged retry and the losers of a racing resolution are never counted, whichever of the four resolvers applied the outcome. unknown is the honest state INV-LIFE-03 requires when a provider's answer is lost: a judgement, not a failure, settled later by a resolver.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 76
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_payments_attempt_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider latency by operation",
+      "description": "finapp.payments.provider.latency (P5-TSK-017): EVERY call to the payment provider - approvals, declines, timeouts and dropped connections alike, recorded in a finally. A rising max with a flat mean is the ambiguity window opening: the calls that time out are exactly the ones that strand payments in an unknown state.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 76
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (operation) (finapp_payments_provider_latency_seconds_max)",
+          "legendFormat": "{{operation}} max"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(finapp_payments_provider_latency_seconds_sum[5m])) / sum(rate(finapp_payments_provider_latency_seconds_count[5m]))",
+          "legendFormat": "mean"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Refund judgements by outcome",
+      "description": "finapp.payments.refund (P5-TSK-017): acting refund judgements. completed released the customer's hold and posted the return; failed released with nothing posted; unknown left the funds visibly reserved until a resolver settles it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 76
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_payments_refund_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payments stranded in an unknown state",
+      "description": "finapp.payments.unknown.active (P5-TSK-017): attempts and refunds sitting in an honestly-unknown state, system-wide. Temporary by design - the sweeper and the webhook resolver settle them - so a sustained non-zero value means neither is getting there, and a refund among them is a customer's money behind a standing hold. Fleet-wide: max(), never sum(). No data here means UNREADABLE, never healthy: the gauge publishes NaN rather than a false zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 83
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_unknown_active)",
+          "legendFormat": "stranded"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unknown payment",
+      "description": "finapp.payments.unknown.age (P5-TSK-017): how long the OLDEST unknown operation has been unknown, measured from the state's own entry the way the sweeper measures it. The stuck-payment alert's series: a flat count while this climbs is ambiguity that is not being resolved.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 83
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_unknown_age)",
+          "legendFormat": "oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook deliveries by outcome",
+      "description": "finapp.payments.webhook (P5-TSK-017): what became of each delivery at the door. processed applied an effect, duplicate was absorbed by the inbox (INV-IDEM-04), refused failed authentication or the evidence bound, unmappable was authentic but named no operation we minted. A rise in refused is somebody probing the door; a rise in unmappable is an integration break.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 83
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_payments_webhook_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Checkout and merchants — merchant money",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 90
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkout sessions by outcome",
+      "description": "finapp.checkout.session (P6-TSK-008): how the platform's offers ENDED, counted once per session on the transition that committed it. completed_late is money that landed after the offer expired (INV-MER-06): if it is not rare, the offer window is too short or the provider too slow.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 91
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_checkout_session_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Conversion age by outcome",
+      "description": "finapp.checkout.conversion.age (P6-TSK-013): creation to completion, once per completion. completed measures the customer inside the window; completed_late measures the provider after it - kept apart so the rare late ones cannot swallow the mean.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 91
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_checkout_conversion_age_seconds_sum[30m])) / sum by (outcome) (rate(finapp_checkout_conversion_age_seconds_count[30m]))",
+          "legendFormat": "{{outcome}} mean"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (outcome) (finapp_checkout_conversion_age_seconds_max)",
+          "legendFormat": "{{outcome}} max"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fee assessments",
+      "description": "finapp.merchant.fee.assessed (P6-TSK-013): merchant-bound captures that assessed the platform's fee, once per capture however many resolvers raced it. A count, never an amount (INV-AUD-02).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 91
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(finapp_merchant_fee_assessed_total[5m]))",
+          "legendFormat": "assessed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payout judgements by outcome",
+      "description": "finapp.merchant.payout (P6-TSK-013): acting judgements only, counted post-commit at the door that applied them. completed released the hold and posted, failed released it, unknown left the merchant's money reserved until the sweep resolves it. A payout that went unknown and then completed is two judgements.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 98
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_merchant_payout_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payouts without an answer",
+      "description": "finapp.merchant.payout.unknown.active (P6-TSK-013): every UNKNOWN payout, and every DISPATCHED one past the resolution sweep's own bound - each a merchant's money behind a standing hold. Sustained non-zero means the sweep is not getting there. Fleet-wide: max(), never sum(). No data here means UNREADABLE, never healthy: the gauge publishes NaN rather than a false zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 98
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_merchant_payout_unknown_active)",
+          "legendFormat": "unanswered"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unanswered payout",
+      "description": "finapp.merchant.payout.unknown.age (P6-TSK-013): how long the oldest of those has waited, measured the way the sweep measures it - an UNKNOWN payout from its entry into that state, an overdue dispatch from its latest send permit. The stuck-payout alert's series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 98
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_merchant_payout_unknown_age)",
+          "legendFormat": "oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payout destination changes pending",
+      "description": "finapp.merchant.destination.pending (P6-TSK-011): proposals awaiting a second operator, and approvals still cooling off. A change nobody expected, showing up here during its cooling-off, is what this panel exists to make visible. Fleet-wide: max(), never sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 105
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_merchant_destination_pending)",
+          "legendFormat": "pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Rails and disputes — how money travels, and how it comes back",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 112
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Rail judgements by rail and type",
+      "description": "finapp.payments.rail.outcome (P7-TSK-015): every acting judgement - payments, refunds, withdrawals, dispute answers - by the rail that produced it, counted once however many doors and sweeps raced for it, after its transaction committed. A rail's success rate is its successes over its decided outcomes; a rise in unknown on one rail is that rail answering ambiguously. Per instance: sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 113
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (rail, type, outcome) (rate(finapp_payments_rail_outcome_total[5m]))",
+          "legendFormat": "{{rail}} {{type}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Rail latency by operation",
+      "description": "finapp.payments.rail.latency (P7-TSK-015): every call a rail's port makes, EVERY outcome - timeouts and refused connections included - by rail and operation. A rail whose max climbs is a rail in trouble before its outcomes say so. The instant scheme is timed under its own name since P7-TSK-015 (it was published as the card PSP's).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 113
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (rail, operation) (finapp_payments_rail_latency_seconds_max)",
+          "legendFormat": "{{rail}} {{operation}} max"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (rail) (rate(finapp_payments_rail_latency_seconds_sum[5m])) / sum by (rail) (rate(finapp_payments_rail_latency_seconds_count[5m]))",
+          "legendFormat": "{{rail}} mean"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Routing decisions",
+      "description": "finapp.payments.routing.decision (P7-TSK-003): decisions by chosen rail, or rail=none with the refusal's leading rejection reason. A spike with rail=none is a rail outage or a policy gap. Per instance: sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 113
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (rail, outcome) (rate(finapp_payments_routing_decision_total[5m]))",
+          "legendFormat": "{{rail}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Withdrawals without an answer",
+      "description": "finapp.payments.withdrawal.unknown.active (P7-TSK-015): every UNKNOWN withdrawal, and every DISPATCHED one past the resolution sweep's own bound - each a customer's money behind a standing hold. Sustained non-zero means the sweep is not getting there. Fleet-wide: max(), never sum(). No data here means UNREADABLE, never healthy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 120
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_withdrawal_unknown_active)",
+          "legendFormat": "unanswered"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unanswered withdrawal",
+      "description": "finapp.payments.withdrawal.unknown.age (P7-TSK-015): how long the oldest of those has waited, measured the way the sweep measures it. The stuck-withdrawal alert's series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 120
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_withdrawal_unknown_age)",
+          "legendFormat": "oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disputes by stage",
+      "description": "finapp.payments.dispute (P7-TSK-015): disputes standing at each stage now. The open stages (inquiry, charged_back, represented) are the workload; the terminal ones (won, lost, accepted, closed) are the outcomes and only grow - the win rate is won / (won + lost). The chargeback ratio per merchant is the operator report, never a tag. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 120
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (stage) (finapp_payments_dispute)",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Chargebacks near their deadline",
+      "description": "finapp.payments.dispute.deadline.near (P7-TSK-014): chargebacks awaiting an answer the PSP took whose network respond-by date is inside the alarm window or already missed. The alarm, never a decision. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 127
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_dispute_deadline_near)",
+          "legendFormat": "near or missed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Dispute answers without a word",
+      "description": "finapp.payments.dispute.response.unknown.active (P7-TSK-015, INV-LIFE-03): every UNKNOWN dispute answer, and every DISPATCHED one past the resolution sweep's bound - an answer the network's deadline may overtake. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 127
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_dispute_response_unknown_active)",
+          "legendFormat": "unanswered"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unanswered dispute answer",
+      "description": "finapp.payments.dispute.response.unknown.age (P7-TSK-015): how long the oldest of those has waited, measured the way the sweep measures it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 127
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_dispute_response_unknown_age)",
+          "legendFormat": "oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Counterparties below zero",
+      "description": "finapp.ledger.negative.positions (P7-TSK-013): accounts a chargeback drove below zero, by purpose - merchant debt and customer receivables. A count, never an amount. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 134
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (purpose) (finapp_ledger_negative_positions)",
+          "legendFormat": "{{purpose}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Settlement and reconciliation — what the counterparties said, and whether it matched",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 141
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Proofs that must read 0",
+      "description": "The four must-be-0 verdicts (P8-TSK-024, PHASE_8_PLAN section 15): finapp.reconciliation.position.proof (currencies failing INV-REC-06, by purpose), finapp.reconciliation.line.unattributed (unknown lines on reconciled positions, by purpose), finapp.reconciliation.cash.proof (INV-SET-06, by currency) and finapp.reconciliation.suspense.unowned (INV-REC-09). Each tile is the worst purpose or currency; the alert names which. Counts and verdicts, never an amount - the amounts are the positions and suspense reports'. Fleet-wide: max(). No data means UNREADABLE, never healthy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 142
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_reconciliation_position_proof)",
+          "legendFormat": "position proof"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_reconciliation_line_unattributed)",
+          "legendFormat": "unattributed lines"
+        },
+        {
+          "refId": "C",
+          "expr": "max(finapp_reconciliation_cash_proof)",
+          "legendFormat": "cash proof"
+        },
+        {
+          "refId": "D",
+          "expr": "max(finapp_reconciliation_suspense_unowned)",
+          "legendFormat": "unowned suspense"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "UNREADABLE (NaN, not zero)",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Settlement files pending, and the oldest",
+      "description": "finapp.settlement.file.pending and finapp.settlement.file.age (P8-TSK-003): non-terminal files by source - those awaiting a second person's attestation included - and how long the oldest has waited (right axis). A growing age with a flat count is a file nobody is attesting or a parse that is not finishing. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 142
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (source) (finapp_settlement_file_pending)",
+          "legendFormat": "{{source}} pending"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (source) (finapp_settlement_file_age)",
+          "legendFormat": "{{source}} oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Source silence",
+      "description": "finapp.settlement.source.silence (P8-TSK-021): seconds since each source's last ACCEPTED batch, by any channel - a file that never came shows here before its expectations age into breaks. The silent-source alert's series. A source that has never been accepted reads NaN, never zero. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 142
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (source) (finapp_settlement_source_silence)",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconciliation runs pending, blocked, and the oldest",
+      "description": "finapp.reconciliation.run.pending, .run.blocked and .run.age (P8-TSK-011): incomplete runs by source, blocked ones (MUST read 0 - each is a batch nobody is matching, alerted; requeued at POST /v1/operator/reconciliation/runs/{id}/requeue) and the oldest incomplete run's age (right axis). Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 149
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (source) (finapp_reconciliation_run_pending)",
+          "legendFormat": "{{source}} pending"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (source) (finapp_reconciliation_run_blocked)",
+          "legendFormat": "{{source}} blocked"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (source) (finapp_reconciliation_run_age_seconds)",
+          "legendFormat": "{{source}} oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Item dispositions and late matches",
+      "description": "finapp.reconciliation.item (P8-TSK-024): every settlement line's committed disposition - matched, unmatched, parked, checked, offset, errored - counted once after its chunk committed; the match rate is matched over the total. finapp.reconciliation.rematch: late records found for lines that waited, REPROCESS allocations included. Per instance: sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 149
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_reconciliation_item_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_reconciliation_rematch_total[5m]))",
+          "legendFormat": "rematch {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Expectations open and overdue",
+      "description": "finapp.reconciliation.expectation.open, .expectation.overdue and .expectation.overdue.age (P8-TSK-007, -013): what the platform expects a counterparty to report, by source; those past their window (INV-SET-02, alerted); and the oldest overdue one's age (right axis). Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 149
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (source) (finapp_reconciliation_expectation_open)",
+          "legendFormat": "{{source}} open"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (source) (finapp_reconciliation_expectation_overdue)",
+          "legendFormat": "{{source}} overdue"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (source) (finapp_reconciliation_expectation_overdue_age_seconds)",
+          "legendFormat": "{{source}} oldest overdue"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Open breaks by severity",
+      "description": "finapp.reconciliation.break.open (P8-TSK-024): the break backlog. The gauge is tagged by break type and severity; each series is collapsed fleet-wide with max() first, then the types are summed within a severity - summing instances would multiply the backlog by the instance count. The list is GET /v1/operator/reconciliation/breaks.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 156
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (severity) (max by (type, severity) (finapp_reconciliation_break_open))",
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest open break by severity",
+      "description": "finapp.reconciliation.break.age (P8-TSK-024): how long the oldest open break of each severity has stood. The break-age alerts' series: CRITICAL above 0, HIGH above a day, MEDIUM above five days, LOW above fifteen. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 156
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (severity) (finapp_reconciliation_break_age)",
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Suspense open, and the oldest",
+      "description": "finapp.reconciliation.suspense.open and .suspense.age (P8-TSK-010, INV-REC-05): suspense items still holding a remainder, and the oldest one's age (right axis) - suspense is never a permanent resting place. A count and an age, never an amount: the balance, CREDIT and DEBIT gross, is the audited suspense report's. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 156
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_reconciliation_suspense_open)",
+          "legendFormat": "open"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_reconciliation_suspense_age_seconds)",
+          "legendFormat": "oldest"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Resolutions and replays",
+      "description": "finapp.reconciliation.resolution (P8-TSK-024): resolutions by kind and outcome - approved, rejected, withdrawn, evidenced, stale - REPUDIATE_BATCH included. finapp.reconciliation.replay (P8-TSK-022): decision replays by verdict; any diverged is a stored decision that no longer follows from its own snapshot, and raises a CRITICAL break. Per instance: sum().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 163
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type, outcome) (rate(finapp_reconciliation_resolution_total[5m]))",
+          "legendFormat": "{{type}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_reconciliation_replay_total[5m]))",
+          "legendFormat": "replay {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "FX and cross-border — quotes, covers, proofs, payments, returns",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 170
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "FX quotes by outcome",
+      "description": "finapp.fx.quote (P9-TSK-008): quote requests per pair by outcome - issued, or refused for rate trouble or the cap. Per instance: sum(). A count, never a rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 171
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_fx_quote_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Quotes closed and live",
+      "description": "finapp.fx.quote.closed by outcome (accepted, expired, cancelled, abandoned) and finapp.fx.quote.open, the live quotes. Fleet-wide gauge: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 171
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_fx_quote_closed_total[5m]))",
+          "legendFormat": "closed {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(max by (pair) (finapp_fx_quote_open))",
+          "legendFormat": "open"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reference age and fetches",
+      "description": "finapp.fx.rate.age (seconds since the latest reference snapshot, worst pair) and finapp.fx.rate.fetch by outcome. Stale past the policy's maximum age fails quoting closed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 171
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_fx_rate_age)",
+          "legendFormat": "oldest reference (s)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_fx_rate_fetch_total[5m]))",
+          "legendFormat": "fetch {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider quote latency",
+      "description": "finapp.fx.provider.quote.latency by provider and outcome: the firm quote's wall time - failover health.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 178
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (provider, outcome) (rate(finapp_fx_provider_quote_latency_seconds_sum[5m]) / clamp_min(rate(finapp_fx_provider_quote_latency_seconds_count[5m]), 1e-9))",
+          "legendFormat": "{{provider}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Conversions executed and reversed",
+      "description": "finapp.fx.trade by outcome (executed, reversed) and finapp.fx.residual by direction - the residual's frequency; its amount is the revenue report's.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 178
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_fx_trade_total[5m]))",
+          "legendFormat": "trade {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (direction) (rate(finapp_fx_residual_total[5m]))",
+          "legendFormat": "residual {{direction}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cover outcomes",
+      "description": "finapp.fx.cover by provider, type and outcome: executed, off plan, rejected, unknown, requoted, voided.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 178
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (provider, outcome) (rate(finapp_fx_cover_total[5m]))",
+          "legendFormat": "{{provider}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Covers unanswered and open",
+      "description": "finapp.fx.cover.unknown.age and finapp.fx.cover.open.age by provider: the oldest unanswered execution and the oldest uncovered leg. Fleet-wide: max(). Alerts past five minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 185
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (provider) (finapp_fx_cover_unknown_age_seconds)",
+          "legendFormat": "unknown {{provider}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (provider) (finapp_fx_cover_open_age_seconds)",
+          "legendFormat": "open {{provider}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FX proofs that must read 0",
+      "description": "finapp.fx.proof by purpose (currencies failing the FX books proof) and finapp.fx.plan.verdict (1 clean, 0 diverged). Verdicts, never amounts.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 185
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (purpose) (finapp_fx_proof)",
+          "legendFormat": "proof {{purpose}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_fx_plan_verdict)",
+          "legendFormat": "plan verdict"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbound credits unanswered and undecided",
+      "description": "finapp.payments.outbound.unknown.age and finapp.payments.outbound.received.age: the oldest credit with no answer, and the oldest the provider holds undecided. Fleet-wide: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 185
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_payments_outbound_unknown_age)",
+          "legendFormat": "unknown"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_payments_outbound_received_age)",
+          "legendFormat": "received"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cross-border payments by corridor",
+      "description": "finapp.crossborder.payment by outcome - submitted, in transit, delivered, failed, cancelled, returned - and finapp.crossborder.payment.in.transit.age, the oldest undelivered payment. Counts and ages, never amounts.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 192
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_crossborder_payment_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_crossborder_payment_in_transit_age)",
+          "legendFormat": "oldest in transit (s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Returns and cancellations",
+      "description": "finapp.crossborder.return by outcome (applied, deferred, not applicable, resolved) and finapp.crossborder.cancellation by outcome (recalled, too late) - the free-option watch.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 192
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_crossborder_return_total[5m]))",
+          "legendFormat": "return {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_crossborder_cancellation_total[5m]))",
+          "legendFormat": "cancellation {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Counterparty screening and review",
+      "description": "finapp.kyc.counterparty.screening by outcome, and the review backlog's age - a beneficiary held unpayable until a reviewer decides.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 192
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_kyc_counterparty_screening_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_kyc_counterparty_review_age_seconds)",
+          "legendFormat": "oldest review (s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Credit decisioning — decisions, reasons, data, queues, proofs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 199
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit decisions by outcome",
+      "description": "finapp.credit.decision (P10-TSK-016) by product and outcome - counted after each decision commits. Per instance: sum(). A count, never an amount.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 200
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (product, outcome) (rate(finapp_credit_decision_total[5m]))",
+          "legendFormat": "{{product}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Decisions by pinned policy version and decider",
+      "description": "finapp.credit.decision by the policy version each decision pinned and who decided - system or person, never the person. Whether a new version moved the approval rate is this panel (the outcomes report has the rates).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 200
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (policy_version, decision_maker, outcome) (increase(finapp_credit_decision_total[1h]))",
+          "legendFormat": "v{{policy_version}} {{decision_maker}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Decision latency p99",
+      "description": "finapp.credit.decision.latency from submission to decision, p99 from the timer's buckets, by decider. The platform's is held to 45 minutes (alerted, CreditObjectives); a person's waits for an underwriter.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 200
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le, decision_maker) (rate(finapp_credit_decision_latency_seconds_bucket[30m])))",
+          "legendFormat": "p99 {{decision_maker}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Adverse-action reasons",
+      "description": "finapp.credit.reason by catalogued reason code - every decision's reasons, the platform's and a person's. The reasons report has the per-product distribution.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 207
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason_code) (increase(finapp_credit_reason_total[1h]))",
+          "legendFormat": "{{reason_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit data answers",
+      "description": "finapp.credit.data.request by source kind, provider and outcome (received, unavailable, consent withdrawn, duplicate) - counted after commit; per provider it is also the bureau-cost proxy. The unavailability ratio is alerted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 207
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source_kind, provider, outcome) (rate(finapp_credit_data_request_total[5m]))",
+          "legendFormat": "{{source_kind}} {{provider}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit data provider latency (mean)",
+      "description": "finapp.credit.data.latency per source kind and provider - the MEAN: the timer publishes no histogram, and this signal does not earn one.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 207
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source_kind, provider) (rate(finapp_credit_data_latency_seconds_sum[5m])) / sum by (source_kind, provider) (rate(finapp_credit_data_latency_seconds_count[5m]))",
+          "legendFormat": "{{source_kind}} {{provider}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Open requests and the review queue",
+      "description": "finapp.credit.request.open.age by open state (alerted past the request validity outside in_review) and finapp.credit.review.age, the oldest open review case (alerted past a day). Fleet-wide gauges: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 214
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (status) (finapp_credit_request_open_age_seconds)",
+          "legendFormat": "oldest {{status}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_credit_review_age_seconds)",
+          "legendFormat": "oldest open review case"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Replay proof and active policies",
+      "description": "finapp.credit.replay by verdict - DIVERGED must be 0 (alerted, INV-CRD-01) - and finapp.credit.policy.active, each offered product's ACTIVE policy version, 0 for none (alerted). Fleet-wide gauges: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 214
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (verdict) (finapp_credit_replay)",
+          "legendFormat": "replay {{verdict}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (product) (finapp_credit_policy_active)",
+          "legendFormat": "active policy {{product}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credit sweepers",
+      "description": "finapp.credit.progress.sweeper.enabled and finapp.credit.data.retry.sweeper.enabled - per instance, 1 when it runs the sweep; min() shows whether any scraped instance does not (alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 214
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(finapp_credit_progress_sweeper_enabled)",
+          "legendFormat": "progress sweep (min)"
+        },
+        {
+          "refId": "B",
+          "expr": "min(finapp_credit_data_retry_sweeper_enabled)",
+          "legendFormat": "data retry sweep (min)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Lending — origination, disbursement, servicing, the book, proofs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 221
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Applications, offers and acceptances",
+      "description": "finapp.lending.application, .offer and .acceptance by product and outcome, and finapp.credit.consumption by outcome - counted after each act commits. Per instance: sum(). Counts, never amounts.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 222
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (product, outcome) (rate(finapp_lending_application_total[5m]))",
+          "legendFormat": "application {{product}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (product, outcome) (rate(finapp_lending_offer_total[5m]))",
+          "legendFormat": "offer {{product}} {{outcome}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (product, outcome) (rate(finapp_lending_acceptance_total[5m]))",
+          "legendFormat": "acceptance {{product}} {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (outcome) (rate(finapp_credit_consumption_total[5m]))",
+          "legendFormat": "consumption {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disbursements and payouts",
+      "description": "finapp.lending.disbursement by payout path and outcome, finapp.lending.payout by outcome - every committed step that did something.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 222
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (payout, outcome) (rate(finapp_lending_disbursement_total[5m]))",
+          "legendFormat": "disbursement {{payout}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_lending_payout_total[5m]))",
+          "legendFormat": "payout {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Waiting disbursements and payouts",
+      "description": "finapp.lending.disbursement.pending.age (alerted past the 24 h deadline ceiling) and finapp.lending.payout.dispatched.age (alerted past the 30 min outcome objective) - LendingObjectives. Fleet-wide gauges: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 222
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_lending_disbursement_pending_age_seconds)",
+          "legendFormat": "oldest pending disbursement"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_lending_payout_dispatched_age_seconds)",
+          "legendFormat": "oldest unconcluded payout"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Servicing: accrual, billing, collection, fees",
+      "description": "finapp.lending.accrual, .billing by kind, .collection and .fee by kind, each by outcome - the servicing sweep's steps, counted after commit.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 229
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_lending_accrual_total[5m]))",
+          "legendFormat": "accrual {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (kind, outcome) (rate(finapp_lending_billing_total[5m]))",
+          "legendFormat": "billing {{kind}} {{outcome}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (outcome) (rate(finapp_lending_collection_total[5m]))",
+          "legendFormat": "collection {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (kind, outcome) (rate(finapp_lending_fee_total[5m]))",
+          "legendFormat": "fee {{kind}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Accrual lag",
+      "description": "finapp.lending.accrual.lag - seconds since the end of the oldest elapsed business date an account in servicing has not accrued (alerted past a day). Fleet-wide gauge: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 229
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_lending_accrual_lag_seconds)",
+          "legendFormat": "oldest unaccrued date"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Customer and operator acts",
+      "description": "finapp.lending.repayment by kind, .draw, .payoff, .reversal, .waiver by kind and .amendment, by outcome; finapp.lending.allocation.anomaly (alerted above 0).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 229
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, outcome) (rate(finapp_lending_repayment_total[5m]))",
+          "legendFormat": "repayment {{kind}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_lending_draw_total[5m]))",
+          "legendFormat": "draw {{outcome}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (outcome) (rate(finapp_lending_payoff_total[5m]))",
+          "legendFormat": "payoff {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (outcome) (rate(finapp_lending_reversal_total[5m]))",
+          "legendFormat": "reversal {{outcome}}"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (kind, outcome) (rate(finapp_lending_waiver_total[5m]))",
+          "legendFormat": "waiver {{kind}} {{outcome}}"
+        },
+        {
+          "refId": "F",
+          "expr": "sum by (outcome) (rate(finapp_lending_amendment_total[5m]))",
+          "legendFormat": "amendment {{outcome}}"
+        },
+        {
+          "refId": "G",
+          "expr": "sum(increase(finapp_lending_allocation_anomaly_total[15m]))",
+          "legendFormat": "allocation anomalies"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "The book: accounts by state and condition",
+      "description": "finapp.lending.loans by product and status, finapp.lending.delinquency by product and bucket, finapp.lending.default by product - account COUNTS only; the amounts are the portfolio and delinquency reports (audited). Fleet-wide gauges: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 236
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (product, status) (finapp_lending_loans)",
+          "legendFormat": "{{product}} {{status}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (product, bucket) (finapp_lending_delinquency)",
+          "legendFormat": "past due {{product}} {{bucket}}"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (product) (finapp_lending_default)",
+          "legendFormat": "defaulted {{product}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Proofs and the census",
+      "description": "finapp.lending.subledger.proof, .replay, .capital.proof and finapp.credit.exposure.census by verdict - FAILS and DIVERGED must be 0 (each alerted) - and finapp.lending.capital.headroom.low (alerted above 0). Fleet-wide gauges: max().",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 236
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (verdict) (finapp_lending_subledger_proof)",
+          "legendFormat": "subledger {{verdict}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (verdict) (finapp_lending_replay)",
+          "legendFormat": "replay {{verdict}}"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (verdict) (finapp_lending_capital_proof)",
+          "legendFormat": "capital {{verdict}}"
+        },
+        {
+          "refId": "D",
+          "expr": "max by (verdict) (finapp_credit_exposure_census)",
+          "legendFormat": "census {{verdict}}"
+        },
+        {
+          "refId": "E",
+          "expr": "max(finapp_lending_capital_headroom_low)",
+          "legendFormat": "currencies below the headroom floor"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active terms and lending sweepers",
+      "description": "finapp.lending.terms.active - each product's ACTIVE terms version, 0 for none (production's state until the activation gate opens; alerted where the target offers lending) - and the four lending sweeper flags, min() showing whether any scraped instance does not run one (alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 236
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (product) (finapp_lending_terms_active)",
+          "legendFormat": "active terms {{product}}"
+        },
+        {
+          "refId": "B",
+          "expr": "min(finapp_lending_origination_sweeper_enabled)",
+          "legendFormat": "origination sweep (min)"
+        },
+        {
+          "refId": "C",
+          "expr": "min(finapp_lending_disbursement_sweeper_enabled)",
+          "legendFormat": "disbursement sweep (min)"
+        },
+        {
+          "refId": "D",
+          "expr": "min(finapp_lending_payout_sweeper_enabled)",
+          "legendFormat": "payout sweep (min)"
+        },
+        {
+          "refId": "E",
+          "expr": "min(finapp_lending_servicing_sweeper_enabled)",
+          "legendFormat": "servicing sweep (min)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ]
+}
