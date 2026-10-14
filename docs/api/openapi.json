@@ -12758,6 +12758,316 @@
         },
         "type": "object"
       },
+      "LendingAccrualReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LendingAccrualRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LendingAccrualRow": {
+        "properties": {
+          "accounts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "accruedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "ledgerMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "posted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ties": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "LendingBookTie": {
+        "properties": {
+          "creditBalanceMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "outstandingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tiesToProducts": {
+            "type": "boolean"
+          },
+          "trialBalanceZero": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "LendingCapitalReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LendingCapitalRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LendingCapitalRow": {
+        "properties": {
+          "committedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "headroomMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lendingFundedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outstandingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "recognisedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LendingDelinquencyReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LendingDelinquencyRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LendingDelinquencyRow": {
+        "properties": {
+          "accounts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "defaulted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feesDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LendingPortfolioReport": {
+        "properties": {
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/LendingBookTie"
+            },
+            "type": "array"
+          },
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "proofs": {
+            "$ref": "#/components/schemas/LendingProofCounts"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LendingPortfolioRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LendingPortfolioRow": {
+        "properties": {
+          "active": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cancelled": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "closed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "closing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "creditBalanceMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "feesDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestAccruedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outstandingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pendingDisbursement": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LendingProofCounts": {
+        "properties": {
+          "diverged": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "divergedLoans": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "failingLoans": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "holding": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "identical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "Line": {
         "properties": {
           "accountId": {
@@ -26059,6 +26369,114 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FxRevenueReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/lending/accrual": {
+      "get": {
+        "operationId": "readLendingAccrualReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LendingAccrualReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/lending/capital": {
+      "get": {
+        "operationId": "readLendingCapitalReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LendingCapitalReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/lending/delinquency": {
+      "get": {
+        "operationId": "readLendingDelinquencyReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LendingDelinquencyReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/lending/portfolio": {
+      "get": {
+        "operationId": "readLendingPortfolioReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LendingPortfolioReport"
                 }
               }
             },

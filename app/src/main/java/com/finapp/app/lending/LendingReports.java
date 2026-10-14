@@ -118,7 +118,7 @@ public final class LendingReports {
      * principal, accrued and due interest, due fees (receivables, debit-normal) and the credit balance owed back (a
      * liability, credit-normal) - with the outstanding total of the five receivables.
      */
-    public record PortfolioRow(
+    public record LendingPortfolioRow(
             String product, String currency, int scale, long pendingDisbursement, long active, long closing, long closed,
             long cancelled, long principalMinor, long principalDueMinor, long interestAccruedMinor, long interestDueMinor,
             long feesDueMinor, long creditBalanceMinor, long outstandingMinor) {}
@@ -127,7 +127,7 @@ public final class LendingReports {
      * One currency's book from the ledger's side - every {@code LOAN}-owned account - and whether it ties: equal to the
      * product rows, and the trial balance through the date zero in the currency.
      */
-    public record BookTie(
+    public record LendingBookTie(
             String currency, int scale, long outstandingMinor, long creditBalanceMinor, boolean tiesToProducts,
             boolean trialBalanceZero) {}
 
@@ -135,19 +135,20 @@ public final class LendingReports {
      * The subledger proof and the replay over every account, read on the report's snapshot (the instant it was taken, not
      * the date): counts per verdict, and the accounts that fail or diverge - identifiers only, bounded.
      */
-    public record Proofs(
+    public record LendingProofCounts(
             long holding, long failing, List<String> failingLoans, long identical, long diverged, List<String> divergedLoans,
             boolean truncated) {}
 
-    public record PortfolioReport(
-            String date, boolean known, List<PortfolioRow> rows, List<BookTie> currencies, Proofs proofs) {}
+    public record LendingPortfolioReport(
+            String date, boolean known, List<LendingPortfolioRow> rows, List<LendingBookTie> currencies,
+            LendingProofCounts proofs) {}
 
     /** The loan book as of the end of {@code date}, tied to the ledger and carrying the proofs. */
-    public PortfolioReport portfolio(String date) {
+    public LendingPortfolioReport portfolio(String date) {
         LocalDate day = date(date);
         return read("portfolio", day, (uow, known) -> {
             if (!known) {
-                return new Served<>(new PortfolioReport(day.toString(), false, List.of(), List.of(), null), 0);
+                return new Served<>(new LendingPortfolioReport(day.toString(), false, List.of(), List.of(), null), 0);
             }
             // The accounts by product, currency and state.
             Map<String, long[]> states = new TreeMap<>();
@@ -176,7 +177,7 @@ public final class LendingReports {
                     }
                 }
             }
-            List<PortfolioRow> rows = new ArrayList<>();
+            List<LendingPortfolioRow> rows = new ArrayList<>();
             Map<String, Balances> productTotals = new TreeMap<>();
             java.util.Set<String> keys = new java.util.TreeSet<>(states.keySet());
             keys.addAll(byProduct.keySet());
@@ -185,7 +186,7 @@ public final class LendingReports {
                 long[] counts = states.getOrDefault(key, new long[5]);
                 Balances balances = byProduct.getOrDefault(key, new Balances());
                 int scale = balances.scale(parts[1]);
-                rows.add(new PortfolioRow(tag(parts[0]), parts[1].strip(), scale, counts[0], counts[1], counts[2],
+                rows.add(new LendingPortfolioRow(tag(parts[0]), parts[1].strip(), scale, counts[0], counts[1], counts[2],
                         counts[3], counts[4], balances.debit("LOAN_PRINCIPAL"), balances.debit("LOAN_PRINCIPAL_DUE"),
                         balances.debit("LOAN_INTEREST_ACCRUED"), balances.debit("LOAN_INTEREST_DUE"),
                         balances.debit("LOAN_FEES_DUE"), balances.credit("LOAN_CREDIT_BALANCE"), balances.outstanding()));
@@ -205,17 +206,17 @@ public final class LendingReports {
                 }
             }
             Map<String, Boolean> trial = trialBalance(uow, day);
-            List<BookTie> currencies = new ArrayList<>();
+            List<LendingBookTie> currencies = new ArrayList<>();
             java.util.Set<String> bookCurrencies = new java.util.TreeSet<>(book.keySet());
             bookCurrencies.addAll(productTotals.keySet());
             for (String currency : bookCurrencies) {
                 Balances ledger = book.getOrDefault(currency, new Balances());
                 Balances products = productTotals.getOrDefault(currency, new Balances());
-                currencies.add(new BookTie(currency, ledger.scale(currency), ledger.outstanding(),
+                currencies.add(new LendingBookTie(currency, ledger.scale(currency), ledger.outstanding(),
                         ledger.credit("LOAN_CREDIT_BALANCE"), ledger.equals(products), trial.getOrDefault(currency, true)));
             }
-            Proofs read = proofs(uow);
-            return new Served<>(new PortfolioReport(day.toString(), true, List.copyOf(rows), List.copyOf(currencies), read),
+            LendingProofCounts read = proofs(uow);
+            return new Served<>(new LendingPortfolioReport(day.toString(), true, List.copyOf(rows), List.copyOf(currencies), read),
                     rows.size());
         });
     }
@@ -227,18 +228,18 @@ public final class LendingReports {
      * latest change recorded on or before it, {@code current} when none - how many of them stood defaulted, and their due
      * balances: principal, interest and fees billed or assessed and not yet paid.
      */
-    public record DelinquencyRow(
+    public record LendingDelinquencyRow(
             String product, String currency, int scale, String bucket, long accounts, long defaulted,
             long principalDueMinor, long interestDueMinor, long feesDueMinor, long dueMinor) {}
 
-    public record DelinquencyReport(String date, boolean known, List<DelinquencyRow> rows) {}
+    public record LendingDelinquencyReport(String date, boolean known, List<LendingDelinquencyRow> rows) {}
 
     /** The book in servicing by days-past-due bucket as of the end of {@code date}, with its due sums from the ledger. */
-    public DelinquencyReport delinquency(String date) {
+    public LendingDelinquencyReport delinquency(String date) {
         LocalDate day = date(date);
         return read("delinquency", day, (uow, known) -> {
             if (!known) {
-                return new Served<>(new DelinquencyReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new LendingDelinquencyReport(day.toString(), false, List.of()), 0);
             }
             String conditioned = "SELECT s.id, s.product, s.currency,"
                     + " COALESCE((SELECT c.bucket FROM lending.loan_condition_event c WHERE c.loan_id = s.id"
@@ -279,18 +280,18 @@ public final class LendingReports {
                     }
                 }
             }
-            List<DelinquencyRow> rows = new ArrayList<>();
+            List<LendingDelinquencyRow> rows = new ArrayList<>();
             for (Map.Entry<String, long[]> entry : accounts.entrySet()) {
                 String[] parts = entry.getKey().split("\\|");
                 Balances due = dues.getOrDefault(entry.getKey(), new Balances());
                 long principal = due.debit("LOAN_PRINCIPAL_DUE");
                 long interest = due.debit("LOAN_INTEREST_DUE");
                 long fees = due.debit("LOAN_FEES_DUE");
-                rows.add(new DelinquencyRow(tag(parts[0]), parts[1].strip(), due.scale(parts[1]), tag(parts[2]),
+                rows.add(new LendingDelinquencyRow(tag(parts[0]), parts[1].strip(), due.scale(parts[1]), tag(parts[2]),
                         entry.getValue()[0], entry.getValue()[1], principal, interest, fees,
                         Math.addExact(Math.addExact(principal, interest), fees)));
             }
-            return new Served<>(new DelinquencyReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new LendingDelinquencyReport(day.toString(), true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -301,20 +302,20 @@ public final class LendingReports {
      * amount, the posted interest the accrual rows record, the same from the ledger's lines on {@code LOAN_INTEREST_ACCRUED}
      * of their entries, and whether the two tie.
      */
-    public record AccrualRow(
+    public record LendingAccrualRow(
             String product, String currency, int scale, long accounts, long posted, long accruedMinor, long ledgerMinor,
             boolean ties) {}
 
-    public record AccrualReport(String date, boolean known, List<AccrualRow> rows) {}
+    public record LendingAccrualReport(String date, boolean known, List<LendingAccrualRow> rows) {}
 
     /** The interest accrued for {@code date}, by product - the rows' totals tied to the ledger's. */
-    public AccrualReport accrual(String date) {
+    public LendingAccrualReport accrual(String date) {
         LocalDate day = date(date);
         return read("accrual", day, (uow, known) -> {
             if (!known) {
-                return new Served<>(new AccrualReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new LendingAccrualReport(day.toString(), false, List.of()), 0);
             }
-            List<AccrualRow> rows = new ArrayList<>();
+            List<LendingAccrualRow> rows = new ArrayList<>();
             try (PreparedStatement select = uow.prepareStatement("SELECT l.product, x.currency, x.scale, count(*),"
                     + " count(*) FILTER (WHERE x.journal_entry_id IS NOT NULL), sum(x.posted_minor),"
                     + " COALESCE(sum((SELECT sum(CASE WHEN ln.direction = 'DEBIT' THEN ln.amount_minor"
@@ -328,12 +329,12 @@ public final class LendingReports {
                     while (found.next()) {
                         long accrued = exact(found.getBigDecimal(6));
                         long ledger = exact(found.getBigDecimal(7));
-                        rows.add(new AccrualRow(tag(found.getString(1)), found.getString(2).strip(), found.getInt(3),
+                        rows.add(new LendingAccrualRow(tag(found.getString(1)), found.getString(2).strip(), found.getInt(3),
                                 found.getLong(4), found.getLong(5), accrued, ledger, accrued == ledger));
                     }
                 }
             }
-            return new Served<>(new AccrualReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new LendingAccrualReport(day.toString(), true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -344,18 +345,18 @@ public final class LendingReports {
      * evidence, the principal committed to loans awaiting disbursement, the principal outstanding, the headroom left, and
      * the safeguarding term - wallet money lending created and still funds.
      */
-    public record CapitalRow(
+    public record LendingCapitalRow(
             String currency, int scale, long recognisedMinor, long committedMinor, long outstandingMinor,
             long headroomMinor, long lendingFundedMinor) {}
 
-    public record CapitalReport(String date, boolean known, List<CapitalRow> rows) {}
+    public record LendingCapitalReport(String date, boolean known, List<LendingCapitalRow> rows) {}
 
     /** The lending capital's headroom per supported currency as of the end of {@code date}. */
-    public CapitalReport capital(String date) {
+    public LendingCapitalReport capital(String date) {
         LocalDate day = date(date);
         return read("capital", day, (uow, known) -> {
             if (!known) {
-                return new Served<>(new CapitalReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new LendingCapitalReport(day.toString(), false, List.of()), 0);
             }
             Map<String, Balances> ledger = new TreeMap<>();
             try (PreparedStatement select = uow.prepareStatement("SELECT a.currency, ln.scale, a.purpose,"
@@ -384,7 +385,7 @@ public final class LendingReports {
                     }
                 }
             }
-            List<CapitalRow> rows = new ArrayList<>();
+            List<LendingCapitalRow> rows = new ArrayList<>();
             for (CurrencyCode currency : SupportedCurrencies.ALL) {
                 Balances terms = ledger.getOrDefault(currency.code(), new Balances());
                 terms.addAll(committed.getOrDefault(currency.code(), new Balances()));
@@ -392,11 +393,11 @@ public final class LendingReports {
                 long recognised = terms.credit("LENDING_CAPITAL");
                 long commitment = terms.debit("COMMITTED");
                 long outstanding = Math.addExact(terms.debit("LOAN_PRINCIPAL"), terms.debit("LOAN_PRINCIPAL_DUE"));
-                rows.add(new CapitalRow(currency.code(), scale, recognised, commitment, outstanding,
+                rows.add(new LendingCapitalRow(currency.code(), scale, recognised, commitment, outstanding,
                         Math.subtractExact(Math.subtractExact(recognised, commitment), outstanding),
                         Math.addExact(outstanding, commitment)));
             }
-            return new Served<>(new CapitalReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new LendingCapitalReport(day.toString(), true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -474,13 +475,13 @@ public final class LendingReports {
     }
 
     /** The subledger proof and the replay over every account, on the snapshot - counts, and the loans that do not hold. */
-    private Proofs proofs(Connection snapshot) {
+    private LendingProofCounts proofs(Connection snapshot) {
         LendingProofs.Reading reading = proofs.prove(snapshot);
         List<String> failing = reading.failures().stream().map(LoanSubledgerProof.Verdict::loan)
                 .map(loan -> loan.value().toString()).toList();
         List<String> diverged = reading.divergences().stream().map(replay -> replay.loan().value().toString()).toList();
         boolean truncated = failing.size() > BOUND || diverged.size() > BOUND;
-        return new Proofs(reading.holding(), reading.failing(), bounded(failing),
+        return new LendingProofCounts(reading.holding(), reading.failing(), bounded(failing),
                 reading.replaying(com.finapp.lending.LoanReplayProof.Verdict.IDENTICAL),
                 reading.replaying(com.finapp.lending.LoanReplayProof.Verdict.DIVERGED), bounded(diverged), truncated);
     }

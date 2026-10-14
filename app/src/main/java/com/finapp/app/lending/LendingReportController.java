@@ -26,7 +26,7 @@ public class LendingReportController {
     /** The loan book by product and state, tied to the ledger and the trial balance, with the proofs. */
     @GetMapping("/portfolio")
     @RequiresPermission(PermissionName.LENDING_INVESTIGATE)
-    public LendingReports.PortfolioReport readLendingPortfolioReport(
+    public LendingReports.LendingPortfolioReport readLendingPortfolioReport(
             @RequestParam(value = "date", required = false) String date) {
         return reports.portfolio(date);
     }
@@ -34,7 +34,7 @@ public class LendingReportController {
     /** The book in servicing by days-past-due bucket, with its due sums. */
     @GetMapping("/delinquency")
     @RequiresPermission(PermissionName.LENDING_INVESTIGATE)
-    public LendingReports.DelinquencyReport readLendingDelinquencyReport(
+    public LendingReports.LendingDelinquencyReport readLendingDelinquencyReport(
             @RequestParam(value = "date", required = false) String date) {
         return reports.delinquency(date);
     }
@@ -42,7 +42,7 @@ public class LendingReportController {
     /** The interest accrued for the date, by product, tied to the ledger. */
     @GetMapping("/accrual")
     @RequiresPermission(PermissionName.LENDING_INVESTIGATE)
-    public LendingReports.AccrualReport readLendingAccrualReport(
+    public LendingReports.LendingAccrualReport readLendingAccrualReport(
             @RequestParam(value = "date", required = false) String date) {
         return reports.accrual(date);
     }
@@ -50,7 +50,7 @@ public class LendingReportController {
     /** The lending capital's headroom per supported currency. */
     @GetMapping("/capital")
     @RequiresPermission(PermissionName.LENDING_INVESTIGATE)
-    public LendingReports.CapitalReport readLendingCapitalReport(
+    public LendingReports.LendingCapitalReport readLendingCapitalReport(
             @RequestParam(value = "date", required = false) String date) {
         return reports.capital(date);
     }

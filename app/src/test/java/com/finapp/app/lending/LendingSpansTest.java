@@ -40,6 +40,9 @@ import org.junit.jupiter.api.Test;
         + " (P11-TSK-030)")
 class LendingSpansTest {
 
+    private static final com.finapp.sharedkernel.id.IdGenerator IDS =
+            new com.finapp.sharedkernel.id.IdGenerator(java.time.Clock.systemUTC(), new java.security.SecureRandom());
+
     private static final Pattern SPAN_LIST = Pattern.compile(
             "spans through the platform `Spans` port with no attribute at all\\s*\\(([^)]*)\\)");
     private static final Pattern NAME = Pattern.compile("`([a-z]+(?:\\.[a-z]+)+)`");
@@ -88,7 +91,7 @@ class LendingSpansTest {
                 .isEmpty();
         assertThat(LendingFlowScope.leg(spans, LendingSpans.DISBURSE, Optional.of(" "), () -> "ran"))
                 .as("a stored value the correlation type refuses: the leg still runs").isEqualTo("ran");
-        assertThat(LendingFlowScope.NONE.forLoan(LendingSpans.PAYOUT, LoanId.of(UUID.randomUUID()),
+        assertThat(LendingFlowScope.NONE.forLoan(LendingSpans.PAYOUT, LoanId.next(IDS),
                 CorrelationContext::current)).as("no lookup: unscoped").isEmpty();
     }
 
