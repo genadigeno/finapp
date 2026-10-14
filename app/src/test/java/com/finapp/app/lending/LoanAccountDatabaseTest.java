@@ -1045,6 +1045,59 @@ class LoanAccountDatabaseTest {
                 + " AND target_id = ?", loanId)).isEqualTo(1);
     }
 
+    // ------------------------------------------------------------------ the explanation door (P11-TSK-029)
+
+    @Test
+    @DisplayName("a loan is explained and replayed end to end (P11-TSK-029): disbursed through the sweep, then the borrower -"
+            + " granted the investigator's role - refused their own loan's explanation and replay 403"
+            + " lending.SelfDealingRefused, each recorded FAILED; a lending officer is served the explanation from rows"
+            + " (the agreement and its hash, the schedule, the disbursement's entry named by its row, the six balances"
+            + " explained, HOLDS) audited lending.ExplanationRead with no amount in the record, and the replay IDENTICAL"
+            + " audited lending.LoanReplayed with the reason")
+    void aLoanIsExplainedAndReplayedEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("4200.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        String explanation = "/v1/operator/loans/" + loanId + "/explanation";
+        String replay = "/v1/operator/loans/" + loanId + "/replay";
+        String reason = "{\"reason\":\"the customer disputes the first schedule\"}";
+
+        assign(UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE party_id = ?::uuid",
+                customer.party().toString())), RoleName.LENDING_OFFICER);
+        HttpResponse<String> insider = client.get(explanation, customer.token());
+        assertThat(insider.statusCode()).as(insider.body()).isEqualTo(403);
+        assertThat(insider.body()).contains("lending.SelfDealingRefused").doesNotContain("4200");
+        assertThat(client.post(replay, reason, customer.token(), null).statusCode()).isEqualTo(403);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfDealingRefused'"
+                + " AND outcome = 'FAILED' AND target_id = ? AND change_summary LIKE '%act=investigation:%'", loanId))
+                .isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation IN ('lending.ExplanationRead',"
+                + " 'lending.LoanReplayed') AND target_id = ?", loanId)).as("nothing served, nothing recorded").isZero();
+
+        String officer = sessionWith(RoleName.LENDING_OFFICER);
+        HttpResponse<String> explained = client.get(explanation, officer);
+        assertThat(explained.statusCode()).as(explained.body()).isEqualTo(200);
+        assertThat(explained.body()).contains("\"loanId\":\"" + loanId + "\"", "\"status\":\"ACTIVE\"",
+                "\"version\":1", "\"origin\":\"OFFER\"", "\"termsSha256\":\"" + hash.toLowerCase(java.util.Locale.ROOT)
+                        + "\"", "\"explainedBy\":\"DISBURSEMENT\"", "\"subledgerVerdict\":\"HOLDS\"",
+                "\"account\":\"LOAN_PRINCIPAL\",\"ledger\":\"4200.00\",\"rows\":\"4200.00\",\"explained\":true")
+                .doesNotContain("UNEXPLAINED");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.ExplanationRead'"
+                + " AND outcome = 'SUCCEEDED' AND target_id = ? AND change_summary LIKE '%subledger=HOLDS%'"
+                + " AND change_summary NOT LIKE '%4200%'", loanId)).isEqualTo(1);
+
+        HttpResponse<String> replayed = client.post(replay, reason, officer, null);
+        assertThat(replayed.statusCode()).as(replayed.body()).isEqualTo(200);
+        assertThat(replayed.body()).contains("\"verdict\":\"IDENTICAL\"", "\"divergences\":[]");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.LoanReplayed'"
+                + " AND outcome = 'SUCCEEDED' AND target_id = ? AND reason = 'the customer disputes the first schedule'"
+                + " AND change_summary LIKE '%verdict=IDENTICAL%'", loanId)).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ the condition (P11-TSK-024)
 
     @Test

@@ -258,6 +258,11 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/loans/{id}/amendments/{amendmentId}/approval",
                             PermissionName.LOAN_SERVICE_APPROVE),
                     entry("POST /v1/operator/loans/{id}/amendments/{amendmentId}/rejection", PermissionName.LOAN_SERVICE),
+                    // P11-TSK-029: the lending investigator's doors - a loan's explanation from its rows (audited
+                    // lending.ExplanationRead) and its replay with a reason (audited lending.LoanReplayed), never of the
+                    // investigator's own party's loan; the negatives are LendingProofApiTest's.
+                    entry("GET /v1/operator/loans/{id}/explanation", PermissionName.LENDING_INVESTIGATE),
+                    entry("POST /v1/operator/loans/{id}/replay", PermissionName.LENDING_INVESTIGATE),
                     entry("POST /v1/operator/credit/policies", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/approval", PermissionName.CREDIT_POLICY_ADMINISTER),
                     entry("POST /v1/operator/credit/policies/{versionId}/rejection", PermissionName.CREDIT_POLICY_ADMINISTER),

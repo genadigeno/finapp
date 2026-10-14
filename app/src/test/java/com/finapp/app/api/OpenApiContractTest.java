@@ -344,6 +344,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments",
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments/{amendmentId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments/{amendmentId}/rejection",
+                        // P11-TSK-029: the lending investigator's doors - a loan's explanation from its rows and its
+                        // replay with a reason (LENDING_INVESTIGATE, each audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/explanation",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/replay",
                         // P11-TSK-010: the customer's loan applications (a MULTI_FACTOR session to apply, 202; the
                         // owner's own application only; the withdrawal under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications",

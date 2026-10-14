@@ -1705,6 +1705,8 @@ due account negative — gauged `finapp.lending.subledger.proof{verdict}` and al
 (`P11-TST-001`).
 **Phase:** 11
 
+*(Proven continuously by `P11-TSK-029`, 2026-10-14 - `LoanSubledgerProof`: per account, each of the six balances folded from zero over its journal lines (never the projection) equals its rows' figure - `LOAN_PRINCIPAL` disbursed or drawn less billed, plus re-scheduled, less paid down (paydowns and prepayments) plus reversed paydowns; `LOAN_PRINCIPAL_DUE` billed less re-scheduled, paid, plus reversed; `LOAN_INTEREST_ACCRUED` accruals less billed interest (no waiver releases accrued interest as built); `LOAN_INTEREST_DUE` billed less waived, paid, plus reversed; `LOAN_FEES_DUE` assessed less waived, paid, plus reversed; `LOAN_CREDIT_BALANCE` held plus fee refunds less reversed held, applications and the closure's refund - with every journal entry on the six accounts named by a row, the six accounts exactly the loan's, none on its wrong side and a terminal account's six zero. Read by `LendingProofs` in one read-only `REPEATABLE READ` snapshot, gauged `finapp.lending.subledger.proof{verdict}`, explained by `GET /v1/operator/loans/{id}/explanation`. Verified by `LendingProofDatabaseTest` - a posting no row names fails it, a raw projection edit does not; probe in `MUTATION_TESTING.md` §2.)*
+
 *(As built by `P11-TSK-017`, 2026-10-12 - the billing arms: every `instalment_billing` row is born with posting rule 3's entry
 (or none, for a billing of nothing) and every `credit_balance_allocation` with rule 6's, in one transaction, so
 `LOAN_INTEREST_DUE` and `LOAN_PRINCIPAL_DUE` are the billings less the allocations and `LOAN_INTEREST_ACCRUED` the accruals less
@@ -1769,6 +1771,8 @@ exactly and replayed `IDENTICAL` (`P11-TST-002`); `LoanReplayProof` re-running t
 every schedule version (`P11-TSK-029`).
 **Phase:** 11
 
+*(Replayed by `P11-TSK-029`, 2026-10-14 - `LoanReplayProof` re-derives every schedule version by the engine version it pinned: version 1 projected from the accrual start, an amendment's re-calculated and a prepayment's re-calculated at the superseded instalment, each from the principal the ledger held at its birth over the open period it superseded - every instalment compared; `LendingProofDatabaseTest#anInstalmentLoansWholeLifeReplaysIdentically`.)*
+
 *(As built by `P11-TSK-006`, 2026-10-11 - `SCHEDULE_ENGINE_V1`: the level instalment is the actual-day annuity rounded
 once `UP` (raised by the least amount only if the period roundings would leave the final instalment above it), period
 interest rounded once `HALF_EVEN` through `Act365Fixed`, the final principal portion the remaining balance, conservation
@@ -1828,6 +1832,8 @@ pinned order, overflow only past every billed item and by the treatment), `#inde
 `P11-TSK-008` rows. The deferred trigger, the lock and scenario 3 remain `-018`'s.)*
 **Phase:** 11
 
+*(Replayed by `P11-TSK-029`, 2026-10-14 - every repayment's and credit-balance application's lines re-derived by the pinned allocation engine over the due state the rows and the ledger held just before it (the history walked in the lock's order, lending `V025` stamping the money decisions after L3); the subledger proof's no-wrong-side arm; `LendingProofDatabaseTest#aByteFlippedInAnyFactDiverges` - an allocation line moved by a minor unit is `DIVERGED`.)*
+
 *(As built by `P11-TSK-017`, 2026-10-12 - the credit-balance application, the first caller of `allocate` against real rows:
 the credit balance as the amount over the due state derived under L3, its lines on billed items recorded as
 `credit_balance_allocation` rows; `lending V012`'s deferred check refuses at commit, for every writer, an application whose rows
@@ -1882,6 +1888,8 @@ byte for byte, so replay re-verifies every hash in the format it was written in.
 `CHECK` proven alone (`LoanAcceptanceDatabaseTest#anOfferEastOfUtcIsAccepted`, the triggers suspended), and the four
 probes performed - `MUTATION_TESTING.md` §2's `P11-TSK-031` rows.)*
 **Phase:** 11
+
+*(Re-verified by `P11-TSK-029`, 2026-10-14 - `LoanReplayProof` re-renders every agreement version's canonical terms from its rows in its stored format (1 and 2 from the offer and the version's columns, 3 from the amendment and the schedule it fixed, 4 from the prepayment and the schedule it fixed - `LoanReplayer.render`) and re-verifies their SHA-256 against `terms_sha256`; a canonical byte flipped and re-hashed (the `CHECK` satisfied, as a forger would) is `DIVERGED` - `LendingProofDatabaseTest#aByteFlippedInAnyFactDiverges`, probe in `MUTATION_TESTING.md` §2.)*
 
 *(As built by `P11-TSK-005`, 2026-10-11 - the terms half: `lending V003` splits a version into the money-free machine
 row `loan_terms_version` (identity frozen by the edge trigger, the decision columns its only `UPDATE`, one `PROPOSED`
@@ -2051,6 +2059,8 @@ amounts equal to the projection to the minor unit on an on-time path, property-t
 the build rule with a planted `double` in `lending`; the battery's every accrual, billing and
 statement replayed `IDENTICAL` in two JVMs, a perturbed accrual flipping the verdict (`P11-TST-002`).
 **Phase:** 11
+
+*(Replayed by `P11-TSK-029`, 2026-10-14 - every accrual (period, base from the journal lines dated on or before it, cumulative figure, posting; no elapsed date with principal outstanding missing), billing and statement re-derived by the engine version its row pinned, dispatched on the stored number by `LoanReplayer` - an exhaustive switch over `EngineVersion`, so a new version is a compile error until its replay exists; a number this build does not hold is `DIVERGED` (`ENGINE_ABSENT`), never skipped.)*
 
 *(As built by `P11-TSK-005`, 2026-10-11 - "terms naming a convention no engine version implements are refused": at the
 domain by `LoanTerms`' construction (`422 lending.TermsInvalid` - a rate type, rounding mode, day count, zone or

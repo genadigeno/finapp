@@ -202,7 +202,31 @@ public enum LendingAuditAction implements AuditableAction {
                     + " 13 (DR LOAN_PRINCIPAL / CR LOAN_PRINCIPAL_DUE) when the amendment said so, and schedule version n+1"
                     + " from the principal outstanding - in one transaction, conditional on the agreement version it amends"
                     + " (INV-LND-05). The summary names the loan, the versions and the entry - never an amount or the rate.",
-            false);
+            false),
+
+    /** A lending investigator was served a loan's explanation from its rows. */
+    EXPLANATION_READ(
+            "lending.ExplanationRead",
+            "A holder of LENDING_INVESTIGATE was served a loan account's explanation through GET"
+                    + " /v1/operator/loans/{id}/explanation (P11-TSK-029, PHASE_11_PLAN.md section 9): its agreement versions"
+                    + " and hashes, schedule versions, accruals, billings, statements, draws, repayments and their"
+                    + " allocations, applications, fees, waivers, reversals, amendments, conditions, the payout, the closure,"
+                    + " every journal entry on its six accounts and the subledger proof's verdict - read from rows alone in"
+                    + " one REPEATABLE READ snapshot and committed with this record, so no explanation is served without it."
+                    + " Never of the investigator's own party's loan (lending.SelfDealingRefused). The summary names the loan,"
+                    + " the row counts and the verdict - never an amount (INV-AUD-02).",
+            false),
+
+    /** A lending investigator replayed a loan account. */
+    LOAN_REPLAYED(
+            "lending.LoanReplayed",
+            "A holder of LENDING_INVESTIGATE replayed a loan account through POST /v1/operator/loans/{id}/replay"
+                    + " (P11-TSK-029, ADR-0092 point 9), with a reason: every agreement version's canonical terms re-rendered"
+                    + " and their hash re-verified, every schedule, accrual, billing, statement, allocation and fee re-derived"
+                    + " by the engine version its row pinned, on one read-only REPEATABLE READ snapshot - IDENTICAL or"
+                    + " DIVERGED, nothing changed. Recorded in a transaction of its own that commits before the verdict is"
+                    + " answered. The summary names the loan, the verdict and the kinds that diverged - never an amount.",
+            true);
 
     private final String code;
     private final String description;

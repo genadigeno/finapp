@@ -660,6 +660,7 @@ class CreditLineStatementDatabaseTest {
      * it, the applications and the closure's refund (`P11-TSK-023`).
      */
     static void assertLineSubledgerProves(DisbursementWorld.Accepted line, long creditFixture) {
+        DIAG_PROOFS(line.loan());
         UUID id = line.loan().value();
         for (String component : List.of("FEES", "INTEREST", "PRINCIPAL")) {
             // P11-TSK-025: fees are what was assessed on the statements; fee and interest waivers forgive what they billed.
@@ -751,5 +752,11 @@ class CreditLineStatementDatabaseTest {
                 + " correlation_id) VALUES (gen_random_uuid(), '" + loan + "', DATE '" + start + "', DATE '" + end
                 + "', DATE '" + end.plusDays(25) + "', 'EUR', 2, " + interest + ", 0, 0, " + interest + ", '" + agreement
                 + "', 1, 1, 1, " + (interest > 0 ? "gen_random_uuid()" : "NULL") + ", statement_timestamp(), 'p11t22-raw')";
+    }
+
+    static void DIAG_PROOFS(LoanId diagLoan) {
+        LendingProofs.Proven diag = LendingProofsWorld.proven(diagLoan);
+        System.out.println("PROOFDIAG " + StackWalker.getInstance().walk(f -> f.skip(2).findFirst().map(x -> x.getMethodName()).orElse("?"))
+                + " " + diag.subledger() + " " + diag.replay().verdict() + " " + diag.replay().findings() + " n=" + diag.replay().replayed());
     }
 }

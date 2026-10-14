@@ -1213,4 +1213,54 @@ public class LendingBeans {
         return new LoanAmendmentDesk(loanAmendments, identityStore, idempotentExecutor, lendingTransactions,
                 loanAmendmentMetrics);
     }
+
+    // ------------------------------------------------------------------ the lending proofs and the explanation door (P11-TSK-029)
+
+    /** Every loan's whole record, read on the caller's snapshot - the proofs' and the explanation's one reader. */
+    @Bean
+    com.finapp.lending.LoanRecordStore loanRecordStore(LoanOfferStore loanOfferStore, LoanTermsStore loanTermsStore,
+            LedgerAccountStore<Connection> ledgerAccountStore, PurposeBalances<Connection> purposeBalances) {
+        return new com.finapp.lending.JdbcLoanRecordStore(loanOfferStore, loanTermsStore, ledgerAccountStore,
+                purposeBalances);
+    }
+
+    @Bean
+    com.finapp.lending.LoanSubledgerProof loanSubledgerProof() {
+        return new com.finapp.lending.LoanSubledgerProof();
+    }
+
+    @Bean
+    com.finapp.lending.LoanReplayProof loanReplayProof() {
+        return new com.finapp.lending.LoanReplayProof();
+    }
+
+    /** The two proofs over every account in one read-only REPEATABLE READ snapshot. */
+    @Bean
+    com.finapp.lending.LendingProofs lendingProofs(com.finapp.lending.LoanRecordStore loanRecordStore,
+            com.finapp.lending.LoanSubledgerProof loanSubledgerProof, com.finapp.lending.LoanReplayProof loanReplayProof) {
+        return new com.finapp.lending.LendingProofs(loanRecordStore, loanSubledgerProof, loanReplayProof);
+    }
+
+    /** {@code finapp.lending.subledger.proof{verdict}} and {@code finapp.lending.replay{verdict}}, registered eagerly. */
+    @Bean
+    LendingProofMetrics lendingProofMetrics(com.finapp.lending.LendingProofs lendingProofs,
+            LendingTransactions lendingTransactions, Clock clock, MeterRegistry meterRegistry) {
+        return new LendingProofMetrics(lendingProofs, lendingTransactions::inSnapshot, clock, meterRegistry);
+    }
+
+    /** The investigator's explanation and replay; whose party an investigator is read through the identity store. */
+    @Bean
+    com.finapp.lending.LoanExplanations loanExplanations(com.finapp.lending.LoanRecordStore loanRecordStore,
+            com.finapp.lending.LendingProofs lendingProofs, com.finapp.lending.LoanSubledgerProof loanSubledgerProof,
+            LoanStore loanStore, com.finapp.identity.IdentityStore<Connection> identityStore,
+            AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new com.finapp.lending.LoanExplanations(loanRecordStore, lendingProofs, loanSubledgerProof, loanStore,
+                new com.finapp.app.credit.IdentityActingParty(identityStore), auditWriter, idGenerator, clock);
+    }
+
+    @Bean
+    LoanInvestigationDesk loanInvestigationDesk(com.finapp.lending.LoanExplanations loanExplanations,
+            LendingTransactions lendingTransactions) {
+        return new LoanInvestigationDesk(loanExplanations, lendingTransactions);
+    }
 }
