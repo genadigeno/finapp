@@ -260,9 +260,10 @@ class LendingProofDatabaseTest {
     // ------------------------------------------------------------------ the subledger proof reads journal lines
 
     @Test
-    @DisplayName("a posting to a loan account no lending row names - an entry the ledger accepted - fails the subledger"
-            + " proof (the account's identity and the unexplained entry), never corrected; a raw edit of the ledger's"
-            + " balance projection is invisible to it: the proof reads journal lines and stays green")
+    @DisplayName("a posting to a loan account no lending row names - an entry the ledger accepted, then a raw-SQL entry"
+            + " beneath every door - fails the subledger proof (the account's identity and the unexplained entry), never"
+            + " corrected; a raw edit of the ledger's balance projection is invisible to it: the proof reads journal lines"
+            + " and stays green")
     void aPostingNoRowNamesFailsAndAProjectionEditDoesNot() {
         LoanId loan = aged(2_000_00, 40);
         serviceUntilCaughtUp(loan);
@@ -285,6 +286,20 @@ class LendingProofDatabaseTest {
         assertThat(rogue.subledger().toString()).as("identifiers and arm names, never an amount").doesNotContain("700");
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_FEES_DUE)).minorUnits())
                 .as("nothing repaired: the ledger still holds the rogue line").isGreaterThanOrEqualTo(7_00);
+
+        // A raw-SQL posting beneath every door - a balanced entry straight into the ledger's tables on the loan's
+        // LOAN_INTEREST_DUE - fails it the same way: the proof reads what the ledger holds, however it got there.
+        String entry = IDS.next().toString();
+        asOwner("INSERT INTO ledger.journal_entry (id, posting_date, value_date, entry_type, reference, actor_id,"
+                + " correlation_id, causation_id, idempotency_scope, created_at) VALUES ('" + entry + "', DATE '"
+                + businessDate(loan) + "', DATE '" + businessDate(loan) + "', 'POSTING', 'raw', 'raw', 'raw', 'raw',"
+                + " 'raw:" + entry + "', statement_timestamp());"
+                + " INSERT INTO ledger.journal_line (id, entry_id, ledger_account_id, direction, amount_minor, currency,"
+                + " scale, seq) VALUES (gen_random_uuid(), '" + entry + "', '"
+                + loanAccount(loan, AccountPurpose.LOAN_INTEREST_DUE).value() + "', 'DEBIT', 300, 'EUR', 2, 0),"
+                + " (gen_random_uuid(), '" + entry + "', '" + cashAtBank().value() + "', 'CREDIT', 300, 'EUR', 2, 1)");
+        assertThat(proven(loan).subledger().failures()).contains("LOAN_INTEREST_DUE", "LOAN_FEES_DUE",
+                "UNEXPLAINED_ENTRIES");
     }
 
     @Test
