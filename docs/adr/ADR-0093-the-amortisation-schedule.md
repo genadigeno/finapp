@@ -226,5 +226,13 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
   instalments (a late-payment history left more principal than the projection, and the prepayment was smaller than the
   excess) the term is kept and the instalment is `recalculate`'s least - the term is never lengthened. Golden cases by an
   independent oracle in `ScheduleEngineV1Test#recalculationAtTheInstalment`.
+- **Measured by `P11-TST-002` (2026-10-14) - the Consequences' "measured in the battery".** `ScheduleEngineV1.project`
+  over the first 2,000 of the battery's generated loans (terms 6-60, principals EUR 500.00-25,000.00, rates 0 to
+  0.23106446), single-threaded after one warm pass, on the 4-core build machine: a mean of 29-43 µs a projection, the
+  55-60-month terms 58-90 µs, across nine full-size runs (the spread is concurrent load). One projection per accrual
+  start and one per illustrated offer: the exact products (decision 3's `F_n`, `S_n`) cost nothing that matters at Phase
+  11's volumes, and nothing changes. The battery also holds every one of its 10,000 schedules and illustrations equal,
+  figure for figure, to an independent derivation (`AmortisationOracles`) through the replay, and finds the least-amount
+  raise in 140 of them.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.
