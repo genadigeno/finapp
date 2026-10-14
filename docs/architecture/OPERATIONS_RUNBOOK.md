@@ -366,7 +366,7 @@ case someone holds is never expired under them, so release what you will not dec
   replay proof, the open requests, the review queue or the active policies are unwatched until it
   reads again. Check the instance's database connectivity.
 
-## 7. Lending capital (Phase 11)
+## 7. Lending (Phase 11): capital, terms, the activation gate and every lending alert
 
 *Added by `P11-TSK-004` (ADR-0096 §4-6, `INV-LND-13`).* No loan can be accepted and no line drawn until the
 platform's own money is recognised as lending capital in that currency - and capital is recognised only from the
@@ -395,11 +395,11 @@ new reference and send the money again. A rejected contribution's reference stay
 
 ### 7.2 The capital alerts
 
-- **`finapp.lending.capital.proof{verdict="FAILS"}` above 0** (page) - a `LENDING_CAPITAL` line no recognition
+- **`finapp.lending.capital.proof{verdict="FAILS"}` above 0** (`LendingCapitalProofFailing`, page) - a `LENDING_CAPITAL` line no recognition
   explains, or headroom below zero at rest. Capital is never adjusted to fit: find the foreign entry (the CRITICAL log
   line names the currency; the capital report shows the terms) and open an incident. A repudiated bank statement that
   carried a recognised contribution also reports here - its reversal is a capital movement Phase 11 does not model.
-- **`finapp.lending.capital.headroom.low` above 0** (ticket) - a currency's headroom stands below
+- **`finapp.lending.capital.headroom.low` above 0** (`LendingCapitalHeadroomLow`, ticket) - a currency's headroom stands below
   `finapp.lending.capital.headroom-floor.<CCY>` (minor units, 0 when unset): contribute more capital before
   acceptances start refusing `422 lending.CapitalUnavailable`.
 
@@ -419,5 +419,150 @@ versions is `ACTIVE`, and **no migration activates one**: production starts with
    later offer pins the new version, and existing agreements keep theirs.
 3. `GET /v1/operator/lending/terms?product=&at=` reads the version in force now, or at any past instant.
 
-**`finapp.lending.terms.active{product}` at 0** for a product the environment offers is the alert (enabled per
-environment, `P11-TSK-030`); NaN means the read failed, never "none".
+**`finapp.lending.terms.active{product}` at 0** for a product the environment offers is the `LendingTermsNoneActive` alert (enabled per
+environment by the `lending_offered` target label, §7.4); NaN means the read failed, never "none".
+
+### 7.4 The production activation gate - before the first terms version in production
+
+*Added by `P11-TSK-030` (`PHASE_11_PLAN.md` §1.1, L11; ADR-0090).* **Production ships closed.** No migration activates a
+terms version, so production starts with `finapp.lending.terms.active{product}` at 0 and every application answers
+`422 lending.ProductNotOffered`. That is the expected state - not an incident - until **every** condition below is true,
+in this order, each with its evidence recorded:
+
+1. **Unresolved questions #13 and #14 are answered** (`CURRENT_STATE.md` §Unresolved questions): where a party's date of
+   birth and country of residence come from (the bureau matches a person by them), and what consented account link a
+   financial-data pull reads. Until both are answered `CreditSourceOrder` refuses a named provider at startup and every
+   credit decision falls to the policy's fallback - `REFER`, and a person may not approve on an absent bureau balance
+   (`422 credit.ExposureUnassessable`, R11) - so no production decision can be `APPROVED`.
+2. **A real bureau adapter, contract-tested**: a `CreditBureau` for a real provider passing `CreditBureauContract` (the
+   `bureau-sim-a`/`-b` precedent, `P10-TSK-006`, `-021`) with its golden files, configured in the provider order.
+3. **A credit policy version reading it**: a `credit_policy_version` whose rules read that provider's attributes,
+   proposed and four-eyes activated under §6.1 - never migration-activated.
+4. **Legal review of the terms (A1)**: the products are a neutral EUR reference product with no consumer-credit-law
+   features (L4); before production every term the agreement template states - rate, fees, conventions, documents - is
+   reviewed for the jurisdiction it will be offered in, and the review's outcome recorded beside the terms version it
+   approves.
+5. **Lending capital recognised** in EUR (§7.1): `GET /v1/operator/reports/lending/capital?date=<today>` shows
+   `recognisedMinor` covering the planned book and the headroom above `finapp.lending.capital.headroom-floor.EUR`; the
+   capital proof holds (`finapp.lending.capital.proof{verdict="FAILS"}` at 0).
+6. **A four-eyes terms activation** (§7.3): one `LENDING_OFFICER` proposes the reviewed version, a second activates it.
+7. **The alert armed**: the environment's Prometheus scrape configuration labels the application targets
+   `lending_offered: "true"`, so `LendingTermsNoneActive` watches the products from now on
+   (`infra/prometheus/rules/lending.yml`).
+
+Nothing here is a switch in code: each step is a person's recorded act. A step out of order is refused by the platform
+where it can be (no decision is `APPROVED` before 1-3; no acceptance before 5) and by this procedure where it cannot (4, 7).
+
+### 7.5 Interest accrual lags - `LendingAccrualLagging`
+
+*Added by `P11-TSK-030`.* **Signal.** `max(finapp_lending_accrual_lag_seconds) > 86400` for 30 min (page): an account in
+servicing has left an elapsed business date unaccrued for more than a day past its end (`LendingObjectives.ACCRUAL_LAG`).
+**What it means.** The servicing sweep is not reaching an account: off on every instance (`LendingServicingSweeperOff`),
+a step failing on every tick (`finapp_lending_accrual_total{outcome}` and the warn line naming only the exception's
+class), or a pinned zone misread. **What a person does.** Nothing to the rows: accrual is born once per account and date
+(`interest_accrual UNIQUE (loan_id, accrual_date)`, ledger key `lending.accrual:<loan>:<date>`), so the sweep catches
+every missed date up by itself once it runs. Restore the sweep on at least one instance; if a step keeps failing, read the
+accrual report (`GET /v1/operator/reports/lending/accrual?date=`) - which dates accrued, and that their totals tie to the
+ledger - and the account's explanation (`GET /v1/operator/loans/{id}/explanation`, `LENDING_INVESTIGATE`), and open an
+incident with the class name. A line accrues only dates that ended with principal drawn, and a path X loan accrues nothing
+until its payout concludes (A30) - neither is a lag.
+
+### 7.6 A stuck disbursement or payout - `LendingDisbursementPastDeadline`, `LendingPayoutUnconcluded`
+
+*Added by `P11-TSK-030`.* **Signals.** `max(finapp_lending_disbursement_pending_age_seconds) > 86400` for 15 min (page): a
+`PENDING` disbursement older than the longest deadline any terms version may name (`LoanProduct.disbursementDeadline()`,
+24 h) - the sweep cancels a loan whose wallet cannot be posted by its own deadline (`DISBURSEMENT_FAILED`), so one pending
+past the ceiling is not being stepped. `max(finapp_lending_payout_dispatched_age_seconds) > 1800` for 5 min (page): a
+path X payout unconcluded thirty minutes after its birth (`LendingObjectives.PAYOUT_OUTCOME`).
+**A disbursement.** Check `finapp_lending_disbursement_sweeper_enabled` on every instance and
+`finapp_lending_disbursement_total{payout, outcome}` (`retrying` climbing: the wallet cannot be posted). Never post a
+disbursement by hand and never move the loan's state: the sweep posts it once (`lending.disbursement:<loan>`) or cancels it
+at the deadline, and a cancelled loan releases its committed capital.
+**A payout.** The borrower's funds are already theirs - credited to the wallet and held - so nothing is lost; the platform
+bears the ambiguity. Read the withdrawal in payments (`finapp_payments_withdrawal_unknown_age`; payments' resolution sweep
+inquires a `DISPATCHED` withdrawal after its bound); a payout payments holds `UNKNOWN` concludes when payments learns the
+outcome. **Never re-dispatch** - a second instruction could pay twice (scenario 5); the payout is re-driven only under its
+own instruction, by the sweep. `NOT_DISPATCHED` releases the hold and starts interest; a `FAILED` withdrawal leaves the funds
+in the wallet. The withdrawal's reconciliation is payments' and Phase 8's (§14).
+
+### 7.7 A failing proof - subledger, replay, capital, census
+
+*Added by `P11-TSK-030`; the carry from `P11-TSK-029`.* **Signals** (each page, `for: 1m`):
+- `LendingSubledgerProofFailing` - `max(finapp_lending_subledger_proof{verdict="FAILS"}) > 0` (`INV-LND-01`): an account
+  whose six ledger balances its rows do not explain - a line no row names, a balance on its wrong side, a closed account
+  not zero. The CRITICAL log line counts the failing accounts per arm (`LOAN_PRINCIPAL`, `UNEXPLAINED_ENTRIES`,
+  `NEGATIVE`, `TERMINAL_NOT_ZERO`, ...) - never which loan.
+- `LendingReplayDiverged` - `max(finapp_lending_replay{verdict="DIVERGED"}) > 0` (`INV-LND-05`, `INV-LND-09`): a figure
+  that no longer re-derives by the engine version its row pinned, or canonical terms that no longer hash to their stored
+  value. The CRITICAL line counts the diverged accounts per kind (`ACCRUAL`, `SCHEDULE`, `TERMS`, ...).
+- `LendingCapitalProofFailing` - `max(finapp_lending_capital_proof{verdict="FAILS"}) > 0` (`INV-LND-13`): §7.2.
+- `CreditExposureCensusFailing` - `max(finapp_credit_exposure_census{verdict="FAILS"}) > 0` (`INV-CRD-09`,
+  `INV-LND-06`): a party whose reserved, committed and outstanding principal exceeds the limit each deciding policy
+  declared.
+
+**Which accounts.** `GET /v1/operator/reports/lending/portfolio?date=<today>` (`LENDING_INVESTIGATE`, recorded) carries
+the proofs read on its own snapshot: `proofs.failingLoans` and `proofs.divergedLoans` (bounded at 100, `truncated` when
+more). **What a person does.** Investigate, never correct: explain each account (`GET /v1/operator/loans/{id}/explanation`
+- every row, every journal entry on its six accounts with the row that names it, the proof's six figures) and replay it
+(`POST /v1/operator/loans/{id}/replay` with a reason - `IDENTICAL` or the kinds that diverged); an investigator never
+reads their own party's loan (`lending.SelfDealingRefused`). The loan ledger accounts are closed to free adjustment
+(`422 ledger.AdjustmentOnReconciledPosition`) and no row is ever updated to make a proof hold. Open an incident; the only
+correctors of a booked figure are the four-eyes acts (repayment reversal, waiver, amendment), and only where the
+investigation shows the act, not the record, was wrong. A census failure is credit's (§6) and lending's together: never
+release exposure by hand.
+**The reading's cost** (the `-029` carry, decided by `-030`): each scraped instance reads every account's whole record per
+reading, behind `finapp.lending.proofs.refresh` (15 min by default, never below 60 s); a verdict is cached until the next
+reading, so the alerts' `for: 1m` holds. When one reading approaches the floor - the scrape that refreshes it slows by the
+reading's duration - lengthen the floor; the partitioned or incremental proof is the recorded debt (`CURRENT_STATE.md`
+§Architectural debt), due before the book reaches that size.
+
+### 7.8 An allocation anomaly - `LendingAllocationAnomaly`
+
+*Added by `P11-TSK-030`.* **Signal.** `sum(increase(finapp_lending_allocation_anomaly_total[15m])) > 0` (page): a
+repayment whose allocation did not conserve its amount was refused - nothing posted, the customer's money untouched in
+their wallet. **What a person does.** An engine or its inputs are wrong: replay the loan (§7.7) and open an incident; the
+customer may retry once it is fixed. Never allocate by hand.
+
+### 7.9 Low capital headroom - `LendingCapitalHeadroomLow`
+
+*Added by `P11-TSK-030`.* **Signal.** `max(finapp_lending_capital_headroom_low) > 0` for 15 min (ticket): a currency's
+headroom below `finapp.lending.capital.headroom-floor.<CCY>`. Read the amounts in
+`GET /v1/operator/reports/lending/capital?date=<today>` - recognised, committed, outstanding, headroom, lending funded -
+never in a series. **What a person does.** Contribute capital under §7.1 (four eyes, bank-recognised) before acceptances
+and draws start refusing `422 lending.CapitalUnavailable`; repayments restore headroom at commit, and a cancelled
+disbursement releases its commitment.
+
+### 7.10 Sweepers off, gauges unreadable, terms missing
+
+*Added by `P11-TSK-030`.* **`LendingOriginationSweeperOff`, `LendingDisbursementSweeperOff`, `LendingPayoutSweeperOff`,
+`LendingServicingSweeperOff`** (ticket): an instance runs with `finapp.lending.<sweep>.sweeper.enabled` false. The four
+sweeps are leaderless - every instance claims with `FOR UPDATE SKIP LOCKED` - so the others carry the work; set it back to
+`true`. **`LendingGaugesUnreadable`** (ticket): a lending gauge reads NaN - its database read failed - so the proofs, the
+census, the queues, the lag or the active terms are unwatched until it reads again; NaN is never read as 0 or as the last
+value. Check the instance's database connectivity. **`LendingTermsNoneActive`** (ticket; only where the target is labelled
+`lending_offered="true"`): an offered product has no `ACTIVE` terms - activate a version under §7.3.
+
+### 7.11 The lending reports, and the failure scenarios they answer
+
+*Added by `P11-TSK-030`.* `GET /v1/operator/reports/lending/{portfolio,delinquency,accrual,capital}?date=YYYY-MM-DD`
+(`LENDING_INVESTIGATE`): the amounts lending never publishes as a series, each as of the end of one business date - every
+account on its own date in its pinned zone - read in one read-only `REPEATABLE READ` snapshot and recorded
+`lending.ReportRead` before the answer. A malformed or missing date is `422 api.ValidationFailed`, unrecorded; a date the
+platform has not had is answered empty (`known: false`), recorded. The portfolio ties the book to the ledger
+(`tiesToProducts`) and the trial balance through the date (`trialBalanceZero`): either false is an incident under §7.7.
+
+| Failure scenario (`PHASE_11_PLAN.md` §14) | Alert | Procedure |
+|---|---|---|
+| Timeout and retry; a commit whose response is lost | none - the key replays the stored answer | - |
+| A service crashes mid-step | the step's queue or lag alert if it stalls | §7.5, §7.6 |
+| An event duplicated, late or missing | none - events are hints, rows decide | - |
+| A provider unavailable or answering unknown | `LendingPayoutUnconcluded` | §7.6 |
+| A webhook duplicated | none - payments' and the inbox's dedupe | - |
+| Two requests race | `LendingSubledgerProofFailing`, `CreditExposureCensusFailing`, `LendingCapitalProofFailing` were an arbiter to fail | §7.7 |
+| Settlement late; reconciliation breaks on a payout | payments' and Phase 8's alerts | §7.6 |
+| A capital contribution never arrives at the bank | `LendingCapitalHeadroomLow` | §7.1, §7.9 |
+| The accrual job crashes or runs twice | `LendingAccrualLagging` (twice: nothing - born once) | §7.5 |
+| A repayment for a closed loan | none - `409 lending.LoanNotRepayable`, nothing posted | - |
+| Clock skew across the accrual boundary | `LendingReplayDiverged` were a date misjudged | §7.7 |
+| A payoff races a repayment or the delinquency worker | `LendingAllocationAnomaly`, `LendingSubledgerProofFailing` | §7.7, §7.8 |
+| A sweeper off, a gauge unreadable, an offered product without terms | the four `…SweeperOff`, `LendingGaugesUnreadable`, `LendingTermsNoneActive` | §7.10 |

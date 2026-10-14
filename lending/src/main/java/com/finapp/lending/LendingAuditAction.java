@@ -91,7 +91,10 @@ public enum LendingAuditAction implements AuditableAction {
                     + " currency the recognised capital, the committed and outstanding principal, the headroom and the"
                     + " safeguarding term, and each contribution's derived recognition - read in one REPEATABLE READ"
                     + " snapshot and committed with this record, so no report is served without it. Amounts are an"
-                    + " audited report, never a metric (ADR-0072). The summary names the report and its row counts.",
+                    + " audited report, never a metric (ADR-0072). Since P11-TSK-030 also the portfolio, delinquency,"
+                    + " accrual and capital operations reports as of a business date, each read in one read-only"
+                    + " snapshot with this record committed in its own transaction before the answer. The summary names"
+                    + " the report, its date and its row counts - never an amount.",
             false),
 
     /** A loan servicing agent proposed the reversal of one repayment. */
