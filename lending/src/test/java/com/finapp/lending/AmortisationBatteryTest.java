@@ -118,8 +118,8 @@ class AmortisationBatteryTest {
         long generation = outcomes.stream().mapToLong(Outcome::generationNanos).sum();
         long replay = outcomes.stream().mapToLong(Outcome::replayNanos).sum();
         System.out.println("P11-TST-002 TIMING: wall=" + millis(wallNanos) + "ms parentPass=" + millis(parentNanos)
-                + "ms secondJvm=" + millis(child.elapsedNanos()) + "ms threadSummed{generation=" + millis(generation) + "ms, replayAndProofs=" + millis(replay)
-                + "ms} processors=" + Runtime.getRuntime().availableProcessors() + " scheduleEngineV1.project{mean="
+                + "ms secondJvm=" + millis(child.elapsedNanos()) + "ms threadSummed{generation=" + millis(generation)
+                + "ms, replayAndProofs=" + millis(replay) + "ms} processors=" + Runtime.getRuntime().availableProcessors() + " scheduleEngineV1.project{mean="
                 + cost[0] + "ns over " + cost[1] + " projections, 55-60-month mean=" + cost[2] + "ns over " + cost[3]
                 + "}");
         System.out.println("P11-TST-002 FINGERPRINT: seed=" + AmortisationWorld.SEED + " loans=" + LOANS + " lines="
@@ -249,7 +249,9 @@ class AmortisationBatteryTest {
         List<String> diverged = outcomes.stream().filter(outcome -> outcome.verdict() != Verdict.IDENTICAL)
                 .map(outcome -> outcome.kind() + " " + outcome.index() + " " + outcome.checks()).toList();
         assertThat(diverged).as("accounts DIVERGED - " + replaySummary()).isEmpty();
-        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.replayed()).isPositive());
+        List<String> idle = outcomes.stream().filter(outcome -> outcome.replayed() <= 0)
+                .map(outcome -> outcome.kind() + " " + outcome.index()).toList();
+        assertThat(idle).as("accounts re-deriving nothing").isEmpty();
         List<String> failing = outcomes.stream().filter(outcome -> !outcome.ledgerFailures().isEmpty())
                 .map(outcome -> outcome.kind() + " " + outcome.index() + " " + outcome.ledgerFailures()).toList();
         assertThat(failing).as("subledger proofs that do not hold").isEmpty();
@@ -307,13 +309,15 @@ class AmortisationBatteryTest {
     void aForgedAgreementByteDivergesOnlyByItsHash() {
         List<Outcome> forged = perturbedBy(Perturbation.AGREEMENT_BYTE);
         assertThat(forged).as("forged agreements").isNotEmpty();
-        assertThat(forged).allSatisfy(outcome -> {
-            assertThat(outcome.perturbed().verdict()).as(outcome.kind() + " " + outcome.index())
-                    .isEqualTo(Verdict.DIVERGED);
-            assertThat(outcome.perturbed().checks()).as(outcome.kind() + " " + outcome.index())
-                    .containsExactly(Check.TERMS);
-            assertThat(outcome.perturbed().ledgerHolds()).as("the money is untouched").isTrue();
-        });
+        System.out.println("P11-TST-002 PERTURBED AGREEMENT_BYTE: " + forged.size() + " accounts, "
+                + forged.stream().filter(outcome -> outcome.perturbed().checks().equals(Set.of(Check.TERMS))).count()
+                + " DIVERGED by TERMS alone, " + forged.stream().filter(outcome -> outcome.perturbed().verdict()
+                        == Verdict.IDENTICAL).count() + " IDENTICAL, subledger holding on "
+                + forged.stream().filter(outcome -> outcome.perturbed().ledgerHolds()).count());
+        List<String> wrong = forged.stream().filter(outcome -> outcome.perturbed().verdict() != Verdict.DIVERGED
+                || !outcome.perturbed().checks().equals(Set.of(Check.TERMS)) || !outcome.perturbed().ledgerHolds())
+                .map(outcome -> outcome.kind() + " " + outcome.index() + " " + outcome.perturbed()).toList();
+        assertThat(wrong).as("forged agreements not DIVERGED by TERMS alone with the money untouched").isEmpty();
     }
 
     @Test
