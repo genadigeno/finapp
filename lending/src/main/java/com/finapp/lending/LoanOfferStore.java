@@ -21,8 +21,11 @@ public interface LoanOfferStore {
     /** The database's clock now - {@code statement_timestamp()}, read after the caller's locks. */
     Instant databaseNow(Connection unitOfWork);
 
-    /** Births the offer {@code OFFERED}; the database stamps and answers its expiry. */
-    Instant insert(Connection unitOfWork, NewOffer offer);
+    /**
+     * Births the offer {@code OFFERED}; the database stamps and answers its offering instant - read by the insert itself
+     * (`P11-TSK-034`, {@code lending V026}) - and its expiry.
+     */
+    Offered insert(Connection unitOfWork, NewOffer offer);
 
     /** Births the offer's terms - once. */
     void insertTerms(Connection unitOfWork, LoanOfferId offer, LoanProduct product, LoanOffer.Terms terms);
@@ -72,7 +75,22 @@ public interface LoanOfferStore {
 
     // ------------------------------------------------------------------ rows
 
-    /** An offer at birth - identity, decision, pin and the offering instant; the expiry is the database's. */
+    /**
+     * What the database stamped at the offer's birth: the offering instant - its clock at the insert, never before the
+     * transaction's start - and the expiry from it (`P11-TSK-034`).
+     */
+    record Offered(Instant offeredAt, Instant expiresAt) {
+
+        public Offered {
+            Objects.requireNonNull(offeredAt, "offeredAt must not be null");
+            Objects.requireNonNull(expiresAt, "expiresAt must not be null");
+        }
+    }
+
+    /**
+     * An offer at birth - identity, decision and pin; the offering instant and the expiry are the database's
+     * (`P11-TSK-034`: never a clock value an earlier statement read).
+     */
     record NewOffer(
             LoanOfferId id,
             LoanApplicationId application,
@@ -80,7 +98,6 @@ public interface LoanOfferStore {
             LoanProduct product,
             UUID decision,
             LoanTermsVersionId termsVersion,
-            Instant offeredAt,
             Instant decisionValidUntil,
             CorrelationId correlation) {
 
@@ -91,7 +108,6 @@ public interface LoanOfferStore {
             Objects.requireNonNull(product, "product must not be null");
             Objects.requireNonNull(decision, "decision must not be null");
             Objects.requireNonNull(termsVersion, "termsVersion must not be null");
-            Objects.requireNonNull(offeredAt, "offeredAt must not be null");
             Objects.requireNonNull(decisionValidUntil, "decisionValidUntil must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
         }

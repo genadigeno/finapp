@@ -18177,6 +18177,180 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   both together (fresh test databases are unaffected).
 - **Verified** (fresh): the new case red on the unfixed tree (`LoanPayoutStepsDatabaseTest`, 11 tests, 1 failed), then green; lending hermetic (`:lending:test --rerun`) 170 across 21; lending databaseTest (whole, the build's shift `Etc/GMT+12`) 180 across 16, 0 failures (10:48 UTC; `LoanPayoutStepsDatabaseTest` 11, `InterestAccrualDatabaseTest` 14 inside it) - the first whole run (10:37 UTC) 180 with one red not this item's, `InstalmentBillingDatabaseTest#lateRepaymentRaisesTheNextInterestDue` failing in its fixture's origination (`inserting a loan offer: SQLSTATE P0001` - no payout, no accrual start on its path; read as `lending V005`'s `offered_at <= statement_timestamp()` rank meeting a backward step, found not caused, below) - green in the re-run; app own-container `LoanPayoutDatabaseTest` 9 and `LoanAccountDatabaseTest` 14 (23, 0 failures, their own invocation); platform `ColumnClassificationTest` 5 and `ApplicationRoleGrantsTest` 6; app `MutationDemonstrationTest` 9 after the rows were written. Fleet hermetic and architecture tiers deferred to the coordinator's post-merge run; build, fleet database and kafka tiers not run (the standing criterion-7 deviation). **Found, not caused** (for the owner): `lending V005`'s offer trigger refuses `offered_at > statement_timestamp()`, with `offered_at` read by an earlier statement of the same transaction - a backward step between the two refuses an origination (`P0001`, retried by the sweep): the same class, a candidate remediation; and the two clock-step test exposures above.
 
+**P11-TSK-034 — Remediation: the lending write path under a backward database clock** — `COMPLETE` (2026-10-15) *(added out of turn on the owner's instruction, 2026-10-14 ("fix the clock first") - a Phase 11 remediation item; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TST-001` stays `READY` and must not start before this lands; found by `P11-TSK-033` (the offer insert, "found, not caused") and by `P11-TSK-030`'s run (`InstalmentBillingDatabaseTest#tenSweepersBillOnce`, "no billing found"))*
+- **The defect**: the database clock is not monotonic (an NTP or hypervisor correction steps it back - measured on the
+  local VM by up to 1.7 s, ADR-0063, `X-TSK-017`, `P11-TSK-033`), so within ONE transaction a later statement's
+  `statement_timestamp()` can read earlier than an earlier statement's, and `transaction_timestamp()` can stand after
+  both. Lending's write path judged a value one statement read from the clock against ANOTHER single reading in three
+  places: (1) **the offering instant** - `LoanOrigination` read the clock after its locks and passed it as `offered_at`;
+  `lending V005`/`V006`'s offer trigger refused `offered_at > statement_timestamp()` or `< transaction_timestamp()`, so a
+  step between the read and the insert refused a legitimate origination with an opaque `P0001` - the recurring "inserting a
+  loan offer: SQLSTATE P0001" failure in the fixtures of `InstalmentBillingDatabaseTest`, `FeeAndWaiverDatabaseTest`,
+  `LendingProofDatabaseTest`, `RepaymentDatabaseTest`, `LoanOriginationDatabaseTest` and others, and in production an
+  origination rolled back and re-swept until the clock caught up; (2) **the business dates** - fifteen "never after today" /
+  "never before today" ranks (`V009`, `V013`, `V017`…`V024`) read today as `business_date(statement_timestamp())` or
+  `business_date(transaction_timestamp())` while the step dated its fact by its own read: a step across a midnight in the
+  pinned zone made the window `[date(start), date(statement)]` empty or exclude the step's date - a repayment, draw,
+  disbursement, accrual, billing, statement, collection attempt, condition, fee, payoff quote or execution, schedule version
+  or re-scheduling refused as future- or back-dated; (3) **the servicing permit** - an account's `next_servicing_at` is
+  stamped at its opening; a sweep on a clock stepped back behind it claims nothing until the clock passes it - in
+  production a delay of at most the step, in `tenSweepersBillOnce` (one sweep, then the assertion) "no billing found"
+  (0 where 2 were due). Beside them, tests that ordered or compared by database stamps, or slept 20 ms past a 1 ms permit.
+  Severity IMPORTANT (a legitimate act refused - liveness; no amount, entry or balance can be wrong; fail-closed).
+- **Reproduced first** (`BackwardClockDatabaseTest`, 9 cases, on the unfixed tree 9 of 9 red): `ClockStep`, a test-only
+  shadow of the four clock functions in a schema of its own (`clockstep`, the bootstrap superuser's, dropped after the
+  suite) that a session opts into by its `search_path` - the lending triggers are invoker's rights with no path of their own,
+  so the production code and triggers run unchanged on a clock the case steps back by 2 s (more than the 1.7 s measured)
+  between a step's own clock read and its writes (`afterRead`), or before the read (`beforeRead`), optionally framed just
+  after a midnight. Red: the origination stepped after its read and before it - "inserting a loan offer: SQLSTATE P0001",
+  the flake's own message; across a midnight; a repayment stepped across a midnight after and before its read -
+  "inserting a repayment: SQLSTATE P0001"; a servicing step - "inserting an interest accrual: SQLSTATE P0001"; the
+  business-date range (the two functions missing); the census (15 functions judging a business date on one reading);
+  the billing symptom - a sweep on a clock 2 s behind the opening permit claimed nothing and billed nothing, and the old
+  fixture's backdated loan stayed unclaimed on it.
+- **The billing symptom, diagnosed** (not guessed): 0 billings rules out a due date judged "not yet come" (the first
+  instalment is long past, so that gives 1) and a refused billing (the accrual would have refused first, and only across a
+  midnight); a swallowed step failure needs a midnight. What remains, and reproduces exactly, is the claim: `backdate`
+  moved every dated fact of the loan into the past but left its servicing permit at the opening's database instant, so a
+  sweep whose clock had stepped back behind that instant - within the tens of milliseconds between the opening and the
+  sweep - claimed none of the three loans; `tenSweepersBillOnce` sweeps once and asserts.
+- **Design** (Lending; DoD `DOD-FIN` - the dating ranks, `INV-LND-10`; `DOD-TEST`; `DOD-DOC`). **The rule** (ADR-0063
+  decision 2, the fifth set of database-own stamps): where a rank judges a value the step read from the clock, either the
+  database stamps it in the judging statement (re-read in the same statement, floored by the order of facts), or the rank
+  judges against every reading the transaction made - never one other reading. Per site:
+  (1) the offering instant becomes the insert's own stamp, `offered_at := GREATEST(statement_timestamp(),
+  transaction_timestamp())` - this statement's clock, held at the transaction's start when the clock stands behind it - and
+  the step takes it back from `RETURNING` and illustrates from its business date (re-projecting only when a step put its
+  read on another day; a refusal then is rolled back and re-judged). No writer supplies an offering instant any more, so
+  none can date one outside its transaction - the old window holds by construction, not by refusal.
+  (2) two functions, `lending.business_date_earliest(zone)` / `lending.business_date_latest(zone)` - the earlier / later of
+  the transaction's start's and this statement's business dates - and every business-date rank judges a ceiling against the
+  latest and a floor against the earliest. On a clock that did not step both are the one date the ranks read before; on one
+  that stepped they admit exactly the dates the database showed this transaction, and a date beyond every reading - a fact
+  genuinely future- or back-dated - is still refused. The step's read lies between the start and the statement, so a single
+  step across a midnight can no longer put it outside; two crossings inside one transaction (one forward, one back) remain a
+  refusal, rolled back and re-run.
+  (3) kept - a permit is a liveness bound (ADR-0063 decision 4): the fixture moves the permit with the history it backdates.
+- **Sites examined** (every clock comparison in the latest bodies of `lending V001`…`V025`, every `databaseNow` read in the
+  Java steps): **fixed** - `loan_offer_permits_only_machine_edges` (offered_at, (1)); `collection_attempt_is_born_once`,
+  `credit_line_draw_is_born_once`, `fee_assessment_is_born_once`, `loan_condition_event_is_born_once`,
+  `loan_disbursement_permits_only_machine_edges` (value date), `payoff_quote_is_born_once`,
+  `payoff_execution_is_born_once`, `repayment_is_born_once` (each a window: floor earliest, ceiling latest);
+  `credit_line_statement_is_born_once`, `instalment_billing_is_born_once`, `interest_accrual_is_born_once` (ceilings);
+  `repayment_schedule_is_born_once` (the start's ceiling, the billing-first floor); `loan_amendment_rescheduling_is_born_once`
+  ("past due" read on the transaction's start: latest - which also closes a lock wait across a midnight);
+  `repayment_schedule_continues_its_period` ("first due after today": earliest); `accrual_start_is_born_once` (path X's
+  ceiling `GREATEST(latest, the payout's birth)`). **Kept, decided**: the offer's DECLINED/ACCEPTED/EXPIRED edges and the
+  loan's birth beside an unexpired offer (Java's decline, accept and expire are conditional updates judged in the same
+  statement; the acceptance's pre-check made MORE lenient by a step back); the amendment version's `decision.expires_at <=
+  now` (more lenient); the one-open-amendment check `d.expires_at > now` and the disbursement's `deadline_at > now` before
+  `DISBURSEMENT_FAILED` (judgements, ADR-0063 decision 4 - within a step around the instant the act is refused, rolled back
+  and re-run: fail-closed); the payout's forward-only permit rules (a step back is more lenient; the claim stamps from the
+  same statement); every claim `next_*_at <= now` (liveness, at most the step); every birth and decision stamp (no rank
+  orders them beyond `V019`'s conclusion, `V003`'s effective periods and the same-statement `CHECK`s). **Java**:
+  `LoanOrigination` (fixed); `LoanAcceptances`, `LoanAmendments`' expiry (kept); `LoanDisbursements`, `LoanServicing`
+  (accrual, billing, statement, collection, condition, fee), `CreditLineDraws`, `Repayments`, `Prepayments`, `Payoffs`,
+  `RepaymentReversals`, `LineClosures`, `LoanAmendments`' dates (dated by their read - admitted by the fixed ranks);
+  `AccrualLags` (a gauge); `JdbcRepaymentStore.ownedBy` (the borrower's history read newest first by `created_at` - now the
+  record's order, `recorded_order DESC NULLS LAST`).
+- **Tests hardened** (without weakening what they prove): `InterestAccrualDatabaseTest.backdate` moves the servicing permit
+  with the history (`tenSweepersBillOnce`, the accrual's three sweepers); `DisbursementWorld.duePayout` (`X-TSK-013`'s aged
+  permit - the permit a minute into the database's past as the owner) replaces every `Thread.sleep(20)` past a 1 ms permit in
+  `LoanPayoutStepsDatabaseTest` and `InterestAccrualDatabaseTest`, and makes a path X payout due at birth; the re-claim's
+  permit `isNotEqualTo` the first (a fencing token, not a clock order); `interestStartsAtTheTerminalOutcome` asserts the exact
+  clamp against the recording statement's clock; `anUnroutablePayoutReleasesTheHold` the accrual start against the row's
+  own stamps, not a later `now()`; `LoanDisbursementDatabaseTest`'s race makes its three births due; `RepaymentDatabaseTest`
+  reads the two repayments' order from the record; `LendingProofDatabaseTest` the reversal's `decided_order` against the
+  repayments' `recorded_order`; app `LoanPayoutDatabaseTest` makes the application, the disbursement and the payout due
+  instead of sleeping; `PayoffDatabaseTest.assertNoConditionAfterClosure` and `LoanOriginationDatabaseTest`'s validities,
+  below. **Left, reviewed** (same class, not met, recorded): `CreditLineRepaymentDatabaseTest`'s "no draw born after the
+  request" (`d.created_at > q.requested_at` - the request carries no record order, and transaction ids would not order a
+  draw that waited on L3; the line's `CLOSING` refusal is the every-writer rank); `LendingProofDatabaseTest`'s fee pick
+  `ORDER BY created_at LIMIT 1` (a selection, any fee serves); `LoanOriginationDatabaseTest.sweepUntilClaimed` (a bounded
+  retry that outlasts a step); app `LoanPayoutDatabaseTest`'s `Thread.sleep(80)` before payments' resolution sweep
+  (payments' database-stamped inquiry permit - another module's).
+- **As built** (2026-10-14): lending **`V026`** (`V026__the_lending_write_path_under_a_backward_clock.sql`) - the two
+  functions, `COMMENT ON COLUMN lending.loan_offer.offered_at`, and sixteen trigger functions replaced, each generated by
+  script from its latest body (`V006`, `V009`, `V013`, `V017`, `V018`, `V019`, `V020`, `V021`, `V022` x3, `V023` x2,
+  `V024` x3) and diffed against it: only the stated comparisons, the offer's stamp and their comments change (the census
+  case holds the rule for the future). Java: `LoanOfferStore.insert` answers `Offered(offeredAt, expiresAt)` and
+  `NewOffer` carries no offering instant (the insert omits the column; the trigger stamps it); `LoanOrigination` judges
+  the lapse and the amortisation on its read, inserts, then illustrates from `offered_at`'s business date (re-projecting
+  only when the two dates differ); `JdbcRepaymentStore.ownedBy` orders by `recorded_order DESC NULLS LAST, created_at
+  DESC, id DESC`. Tests: `ClockStep`, `BackwardClockDatabaseTest` (10 cases - the nine reproductions and the history's
+  order), `DisbursementWorld.approved` (an approved application, split out of `accepted`) and `duePayout`, the hardenings
+  above. **A boundary moved, recorded**: a decision whose validity ends in the milliseconds between the step's read and
+  the insert is now refused by the trigger's "never born expired" (`P0001`, rolled back; the next sweep closes it
+  `DECISION_LAPSED`) where before an offer was born expiring within milliseconds; on a stepped clock it cannot happen (the
+  stamp is then the transaction's start, at or before the read).
+- **Further flakes met in this item's own runs, diagnosed**: (a) `LoanOriginationDatabaseTest#declineAndExpiryAtTheBoundaryLeaveExactlyOne`
+  ("expected OFFERED but was CLOSED_UNDECIDED", whole-tier run 1): the step's own outcome, so not an insert failure (the
+  helper rethrows those) - the origination's lapse check on its read closed it: the case planted a 600 ms decision
+  validity on the JVM's clock, which the test VM's database clock runs up to 650 ms ahead of (ADR-0063's "stamp a
+  fixture's times from the clock that will judge them"); the case's validities (and `approve`'s) now come from
+  `DisbursementWorld.databaseNow()`, the unswept one a second. (b) `PayoffDatabaseTest#payoffIsPermittedInAnyCondition`
+  ("[no condition after the closure] expected 0 but was 2", whole-tier run 4): `assertNoConditionAfterClosure` compared
+  the conditions' `created_at` with the closure's - a step between the last servicing transaction and the payoff stamps
+  the closure first; reproduced exactly (the closure's stamp planted two seconds before the conditions': "expected 0 but
+  was 2" on the old comparison, green on the new) - it now compares the writing transactions' ids (`xmin`, assigned in
+  order and never reused in a fresh test database), and the trigger's refusal of a condition on a closed account stays the
+  every-writer rank.
+- **Objective**: no legitimate lending act is refused, and no fixture fails, because the database clock stepped back within
+  a transaction or between two. **Bounded context**: Lending. **Dependencies**: none (`-033`'s `V019` and `-029`'s `V025`
+  are carried forward).
+- **Domain changes**: none. **Persistence**: `lending V026` (two functions, sixteen trigger functions replaced, a column
+  comment). **APIs**: none (`GET /v1/me/loans/{id}/repayments` newest first by the record's order). **Events**: none
+  (`LoanOffered`'s expiry unchanged). **Financial impact**: none on amounts; an offer is dated its insert's instant (at
+  most milliseconds later than before; on a stepped clock the transaction's start). **Invariants**: `INV-LND-10`,
+  `INV-LND-05`, `INV-HIST-01`. **Distributed-system concerns**: none new - every stamp and rank is a pure function of the
+  one database clock's readings in its own transaction. **Security**, **Audit**, **Observability**, **Reconciliation**:
+  none.
+- **Acceptance criteria**: every new case red on the unfixed tree and green on `V026`; each production fix probed; the
+  site list recorded; `:lending:databaseTest` whole green on at least three runs; the app's lending own-container suites
+  green. **Definition of done**: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium (sixteen trigger bodies replaced -
+  generated from their latest bodies by script and diffed: only the stated lines change). **Cx**: M.
+- **Probes** (each performed: the fix reverted, the named cases red from a fresh results file, the file restored
+  byte-identical, sha256-verified; `MUTATION_TESTING.md` §2 +10): the offering instant without the transaction's floor
+  (3 red); `V005`/`V006`'s refusal reinstated beside the stamp (3 red, "inserting a loan offer: SQLSTATE P0001"); the stamp
+  trusting a writer's value (`theOfferingInstantIsTheDatabasesForEveryWriter` red); `LoanOrigination` illustrating from its
+  read's date (1 red); `business_date_latest` on one reading (3 red); `business_date_earliest` on one reading (2 red);
+  `repayment_is_born_once` back on `V024`'s readings (3 red, the census naming it); `interest_accrual_is_born_once` back
+  on the bare clock (2 red, the census naming it); `ownedBy` back on `created_at` (1 red); `backdate` without the permit
+  (1 red - `tenSweepersBillOnce`'s symptom).
+- **Gate** (2026-10-15, `COMPLETE`; multi-instance `PASS`): CRITICAL none. IMPORTANT, both fixed - (1) the offering
+  instant's every-writer property (a writer's value is overwritten, never trusted) was tested by nothing:
+  `LoanOriginationDatabaseTest#theOfferingInstantIsTheDatabasesForEveryWriter` (a raw offer naming 2999 and 2001 is born
+  at `GREATEST(statement_timestamp(), transaction_timestamp())`, its expiry and permit from it), probed; (2)
+  `LENDING_LIFECYCLES.md`'s clock table still described a business date as one clock reading and a permit as binding
+  nothing: it now states the range the ranks judge against and a birth permit's liveness delay. MINOR - `TESTING.md` §5's
+  rules gained the transaction-id order and "plant a validity on the clock that judges it"; MINOR, recorded - the
+  decision-lapse boundary moved (above), and the four same-class test exposures left (above).
+- **Verified** (fresh, the final tree `aebe1448`'s code): `BackwardClockDatabaseTest` red on the unfixed tree (9 tests, 9
+  failed), then green (10); `:lending:test --rerun` 181 across 22, 0 failures; whole `:lending:databaseTest`, the build's
+  shift `Etc/GMT-14`, seven runs - run 1 (before the origination validity fix) 274, 1 failed (diagnosed (a)); runs 2 and 3
+  275 across 24, 0 failures; run 4 275, 1 failed (diagnosed (b)); after both fixes and the gate's case, **runs 5, 6 and 7
+  276 across 24, 0 failures each** (21:48, 21:59, 22:09 UTC); `LoanOriginationDatabaseTest` 18 and `PayoffDatabaseTest`
+  14 alone after their fixes; app own-container (its own invocation) `LoanAccountDatabaseTest` 21, `LoanOfferDatabaseTest`
+  4, `LoanApplicationDatabaseTest` 12, `LoanPayoutDatabaseTest` 9, `LendingReportsDatabaseTest` 3 - 49, 0 failures;
+  `:app:test --rerun` 875 across 174, 0 failures; app `MutationDemonstrationTest` 9 after the rows were written; platform
+  `ColumnClassificationTest` 5 and `ApplicationRoleGrantsTest` 6. Fleet hermetic and architecture tiers deferred to the
+  coordinator's post-merge run; `build`, fleet `databaseTest` and `kafkaTest` not run (the standing criterion-7
+  deviation). Settlement's known-red suites not run.
+- **Other modules** (for the owner, candidate items, not fixed here): credit's decision request, credit decision and
+  underwriting case judge `expires_at <= statement_timestamp()` in the lock statement and the trigger refuses `EXPIRED`
+  on a later statement's clock - within a step of the expiry the expiry is refused (`P0001`) and re-swept: fail-closed,
+  liveness only (lending's offer expiry is one conditional statement); payments' resolution permits waited on by
+  `Thread.sleep(80)` in app's `LoanPayoutDatabaseTest` (`X-TSK-013`'s aged-permit form fits). Payments, accounts, ledger,
+  KYC (already `GREATEST(statement_timestamp(), requested_at)`) and FX (same-statement windows) have no rank judging a
+  database-clock read across statements.
+- **Owner judgements**: (1) the offering instant is the database's own stamp, no writer's value - the old window holds by
+  construction; (2) "today" is the range of dates the transaction read, ceilings on the latest and floors on the
+  earliest; two midnight crossings inside one transaction remain a refusal and a re-run; (3) the expiry and deadline
+  judgements and the birth permits are kept (ADR-0063 decision 4); (4) the repayment history's order fixed in the same
+  item (a read, the same class); (5) `ClockStep`'s schema is the test database's only - created by the bootstrap superuser,
+  dropped after its suite, never a migration; (6) `V026` follows `V025` (`outOfOrder = false`), so it merges after `-029`,
+  as it already does on this branch.
+
 **P11-TST-001 — The lending storm** — `READY` *(marked by `P11-TSK-030`'s completion gate, 2026-10-14: its dependency `-030` - and with it every built task - is `COMPLETE`; the next unfinished item in backlog order with every dependency met. `P11-TST-002` (dependency `-029`) is eligible beside it and stands after it in the backlog's order, left `PLANNED`)*
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
   end to end from application to closure, for both products — every mandatory scenario exercised.

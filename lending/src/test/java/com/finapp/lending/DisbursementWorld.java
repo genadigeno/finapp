@@ -241,6 +241,34 @@ final class DisbursementWorld {
 
     private static Accepted accepted(LoanProduct product, long minor, Optional<Integer> term, PayoutPreference payout,
             int repaymentDay) {
+        Approved approved = approved(product, minor, term, payout, repaymentDay);
+        LoanApplicationId application = approved.application();
+        UUID party = approved.party();
+        LoanOrigination.Outcome outcome = inOneTransaction(uow -> ORIGINATION.originate(uow, application, SYSTEM));
+        assertThat(outcome.kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+        LoanOfferId offer = LoanOfferId.of(UUID.fromString(scalar(
+                "SELECT id::text FROM lending.loan_offer WHERE application_id = ?", application.value())));
+        String hash = scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_offer_terms WHERE offer_id = ?",
+                offer.value());
+        Optional<UUID> method = payout == PayoutPreference.EXTERNAL_ACCOUNT
+                ? Optional.of(UUID.randomUUID())
+                : Optional.empty();
+        LoanAcceptances.Accepted accepted = inOneTransaction(uow -> ACCEPTANCES.accept(uow, offer, party,
+                new LoanAcceptances.Acceptance(hash, method, new AcceptanceEvidence(UUID.randomUUID(),
+                        UUID.randomUUID(), "MULTI_FACTOR", Optional.empty(), Optional.empty())),
+                customer(party), correlation()));
+        return new Accepted(accepted.loan().id(), party, approved.amount(), method);
+    }
+
+    /** An application awaiting its decision whose credit decision is approved - the origination step's input. */
+    record Approved(LoanApplicationId application, UUID party, Money amount) {}
+
+    /**
+     * A fresh party's application of {@code product} for {@code minor} AWAITING_DECISION on the terms in force, credit's
+     * decision approved for thirty days - ready for the origination step (`P11-TSK-034` originates it on a stepped clock).
+     */
+    static Approved approved(LoanProduct product, long minor, Optional<Integer> term, PayoutPreference payout,
+            int repaymentDay) {
         Money amount = Money.ofMinorUnits(minor, EUR);
         LoanApplicationId application = LoanApplicationId.next(IDS);
         UUID party = UUID.randomUUID();
@@ -262,20 +290,7 @@ final class DisbursementWorld {
             return null;
         });
         CREDIT.approve(request, party, product, amount, term, databaseNow().plus(Duration.ofDays(30)));
-        LoanOrigination.Outcome outcome = inOneTransaction(uow -> ORIGINATION.originate(uow, application, SYSTEM));
-        assertThat(outcome.kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
-        LoanOfferId offer = LoanOfferId.of(UUID.fromString(scalar(
-                "SELECT id::text FROM lending.loan_offer WHERE application_id = ?", application.value())));
-        String hash = scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_offer_terms WHERE offer_id = ?",
-                offer.value());
-        Optional<UUID> method = payout == PayoutPreference.EXTERNAL_ACCOUNT
-                ? Optional.of(UUID.randomUUID())
-                : Optional.empty();
-        LoanAcceptances.Accepted accepted = inOneTransaction(uow -> ACCEPTANCES.accept(uow, offer, party,
-                new LoanAcceptances.Acceptance(hash, method, new AcceptanceEvidence(UUID.randomUUID(),
-                        UUID.randomUUID(), "MULTI_FACTOR", Optional.empty(), Optional.empty())),
-                customer(party), correlation()));
-        return new Accepted(accepted.loan().id(), party, amount, method);
+        return new Approved(application, party, amount);
     }
 
     /** The product's terms in force: a fee-free 8.99 % version unless a case activated another. */
@@ -335,11 +350,28 @@ final class DisbursementWorld {
         }
     }
 
-    /** A path X loan disbursed: accepted for an external payout and posted, its payout born PENDING. */
+    /**
+     * A path X loan disbursed: accepted for an external payout and posted, its payout born PENDING - and due for the payout
+     * sweep on the database's clock ({@link #duePayout}): born "due at once", it is due only once the clock passes its
+     * birth, which a step back after the birth postpones.
+     */
     static Accepted disbursedExternally(long minor, int term) {
         Accepted loan = acceptedLoan(minor, term, PayoutPreference.EXTERNAL_ACCOUNT);
         assertThat(disburse(loan.loan()).kind()).isEqualTo(LoanDisbursements.Outcome.Kind.POSTED);
+        duePayout(loan.loan());
         return loan;
+    }
+
+    /**
+     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-034`, `X-TSK-013`'s
+     * aged-permit form): moved a minute into the past as the bootstrap owner with the triggers suspended - neither the
+     * claim's forward-only rule nor the database's stamp lets a writer age a permit, which is their point. Never a
+     * {@code Thread.sleep} past a 1 ms permit: the database clock steps back by up to 1.7 s on the VM, and a sleep shorter
+     * than the step races it. The birth is not moved (the conclusion's floor and the accrual start's date read it).
+     */
+    static void duePayout(LoanId loan) {
+        asOwner("UPDATE lending.loan_payout SET next_attempt_at = statement_timestamp() - interval '1 minute'"
+                + " WHERE loan_id = '" + loan.value() + "'");
     }
 
     /** The available balance of {@code account} - settled less its standing holds - as the ledger derives it. */

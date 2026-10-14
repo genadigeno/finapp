@@ -2133,6 +2133,17 @@ Still the database's time, still never an instance's. Verified by
 `LoanPayoutStepsDatabaseTest#aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth`; three probes,
 `MUTATION_TESTING.md` §2's `P11-TSK-033` rows.)*
 
+*(Today is a range under a backward clock, `P11-TSK-034`, 2026-10-14: within one transaction the database clock can read
+earlier in a later statement than in an earlier one, so "today" read once by the step and judged against another single
+reading by the trigger could fall on different days across a midnight - a repayment, draw, disbursement, accrual,
+billing, statement, collection attempt, condition, fee, payoff or schedule version refused as dated in the future or the
+past. `lending V026`'s ranks judge a ceiling against `lending.business_date_latest(zone)` and a floor against
+`lending.business_date_earliest(zone)` - the later and the earlier of the transaction's start's and this statement's
+business dates: still the database's time and never an instance's, still never early (a date after every reading the
+database clock showed the transaction is refused), and one date on a clock that did not step. The offering instant
+(`INV-LND-05`'s pinned offer) is the insert's own stamp. Verified by `BackwardClockDatabaseTest` (`ClockStep` steps the
+database clock on demand); `MUTATION_TESTING.md` §2's `P11-TSK-034` rows.)*
+
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
 carry a reason, are proposed by one person and approved by another — never the proposer, never an

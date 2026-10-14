@@ -376,7 +376,7 @@ class LoanOriginationDatabaseTest {
         for (int round = 0; round < 5; round++) {
             Application application = application(LINE, 10);
             CREDIT.approve(application, Money.ofMinorUnits(1_500_00, LoanTermsFixtures.EUR), Optional.empty(),
-                    Instant.now().plusMillis(1_500));
+                    DisbursementWorld.databaseNow().plusMillis(1_500));
             assertThat(sweepUntilClaimed(application, HOUR)).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
             LoanOfferId offer = offerOf(application);
             List<String> outcomes = race(2, index -> {
@@ -410,8 +410,11 @@ class LoanOriginationDatabaseTest {
         }
 
         Application unswept = application(LINE, 10);
+        // Valid a second on the DATABASE's clock - the clock the origination judges the lapse on (P11-TSK-034): planted
+        // on this JVM's clock, which the test VM's database clock runs up to 650 ms ahead of (ADR-0063), a 600 ms validity
+        // had lapsed before the step read it and the application closed CLOSED_UNDECIDED.
         CREDIT.approve(unswept, Money.ofMinorUnits(1_500_00, LoanTermsFixtures.EUR), Optional.empty(),
-                Instant.now().plusMillis(600));
+                DisbursementWorld.databaseNow().plusMillis(1_000));
         assertThat(sweepUntilClaimed(unswept, HOUR)).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
         LoanOfferId expiring = offerOf(unswept);
         assertThat(expire(expiring))
@@ -599,6 +602,43 @@ class LoanOriginationDatabaseTest {
     // ------------------------------------------------------------------ the ranks, for every writer
 
     @Test
+    @DisplayName("the offering instant is the database's for every writer (P11-TSK-034, lending V026): a raw offer naming"
+            + " one in 2999 or in 2001 is born at the insert's own clock - GREATEST(statement_timestamp(),"
+            + " transaction_timestamp()) - never at the writer's value; the expiry and the permit from it")
+    void theOfferingInstantIsTheDatabasesForEveryWriter() throws Exception {
+        activate(LOAN, "0.0815");
+        Application application = application(LOAN, 10);
+        UUID version = activeVersion(LOAN);
+        for (String named : List.of("2999-01-01T00:00:00Z", "2001-01-01T00:00:00Z")) {
+            try (Connection owner = DatabaseRoles.migrator()) {
+                owner.setAutoCommit(false);
+                try (PreparedStatement insert = owner.prepareStatement(
+                        "INSERT INTO lending.loan_offer (id, application_id, party_id, product, status, decision_id,"
+                                + " terms_version_id, offered_at, decision_valid_until, expires_at, next_step_at,"
+                                + " correlation_id) VALUES (gen_random_uuid(), ?, ?, ?, 'OFFERED', gen_random_uuid(), ?,"
+                                + " ?::timestamptz, statement_timestamp() + interval '30 days', ?::timestamptz,"
+                                + " ?::timestamptz, 'raw') RETURNING (offered_at = GREATEST(statement_timestamp(),"
+                                + " transaction_timestamp()) AND expires_at = LEAST(decision_valid_until, offered_at"
+                                + " + interval '14 days') AND next_step_at = expires_at)::text")) {
+                    insert.setObject(1, application.id().value());
+                    insert.setObject(2, application.party());
+                    insert.setString(3, application.product().name());
+                    insert.setObject(4, version);
+                    insert.setString(5, named);
+                    insert.setString(6, named);
+                    insert.setString(7, named);
+                    try (ResultSet row = insert.executeQuery()) {
+                        row.next();
+                        assertThat(row.getString(1)).as("a writer naming %s", named).isEqualTo("true");
+                    }
+                } finally {
+                    owner.rollback(); // an offer commits only beside its application's edge
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("raw SQL cannot skip an edge for any role: no ACCEPTED here, nothing out of a terminal offer, an"
             + " application never OFFERED without its offer, an offer never committed without its application's edge,"
             + " the terms immutable and their hash the bytes', nothing deleted")
@@ -685,10 +725,13 @@ class LoanOriginationDatabaseTest {
         return application;
     }
 
-    /** Credit approves {@code application} for {@code minor} (and a term), valid {@code validity} from now. */
+    /**
+     * Credit approves {@code application} for {@code minor} (and a term), valid {@code validity} from now on the database's
+     * clock - the clock the origination judges the lapse on (P11-TSK-034), never this JVM's.
+     */
     private static UUID approve(Application application, long minor, Optional<Integer> term, Duration validity) {
         return CREDIT.approve(application, Money.ofMinorUnits(minor, LoanTermsFixtures.EUR), term,
-                Instant.now().plus(validity));
+                DisbursementWorld.databaseNow().plus(validity));
     }
 
     private static boolean hintDecision(UUID decision) {
