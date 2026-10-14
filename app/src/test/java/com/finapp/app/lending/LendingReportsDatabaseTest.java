@@ -275,6 +275,21 @@ class LendingReportsDatabaseTest {
                 + " AND target_type = 'lending_report' AND target_id IN ('portfolio', 'delinquency', 'accrual', 'capital')"
                 + " AND outcome = 'SUCCEEDED' AND change_summary LIKE '%known=true%'")).isGreaterThanOrEqualTo(4);
 
+        // ---- the needle walk over the refusals too: a key reused for another body, a malformed amount - each logged
+        String reused = key();
+        HttpResponse<String> repaid = client.post(LOANS + "/" + pastDue + "/repayments",
+                "{\"amount\":\"1.00\",\"currency\":\"EUR\"}", borrower.token(), reused);
+        assertThat(repaid.statusCode()).as(repaid.body()).isEqualTo(201);
+        HttpResponse<String> conflict = client.post(LOANS + "/" + pastDue + "/repayments",
+                "{\"amount\":\"2.00\",\"currency\":\"EUR\"}", borrower.token(), reused);
+        assertThat(conflict.statusCode()).as(conflict.body()).isEqualTo(409);
+        HttpResponse<String> malformed = client.post(LOANS + "/" + drawn + "/draws",
+                "{\"amount\":\"4.1.7\",\"currency\":\"EUR\"}", drawer.token(), key());
+        assertThat(malformed.statusCode()).as(malformed.body()).isEqualTo(422);
+        HttpResponse<String> unknown = client.post(LOANS + "/" + pending + "/draws",
+                "{\"amount\":\"417.29\",\"currency\":\"EUR\"}", drawer.token(), key());
+        assertThat(unknown.statusCode()).as("another party's loan: " + unknown.body()).isEqualTo(404);
+
         // ---- the needle walk: no loan, party or planted amount in anything logged, no party in any report
         Set<String> identifiers = Set.of(pastDue, pending, drawn, borrower.party().toString(), waiting.party().toString(),
                 drawer.party().toString());
