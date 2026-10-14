@@ -1239,9 +1239,9 @@ class LoanAccountDatabaseTest {
     @DisplayName("a loan is prepaid end to end (P11-TSK-028): a freshly disbursed loan prepaid EUR 1,000.00 over the door"
             + " from a MULTI_FACTOR session - 201 with agreement version 2 and schedule version 2, the level instalment"
             + " unchanged over fewer instalments, the key replaying its receipt byte for byte; the customer's schedule door"
-            + " answers version 2; the platform's credit exposure falls and the capital headroom rises by the amount, with"
-            + " no profile or capital lock taken; the whole principal is 422 lending.PrepaymentExceedsPrincipal; another"
-            + " party's loan 404; finapp.lending.repayment{kind=prepayment} counted once per outcome")
+            + " answers version 2; the platform's credit exposure falls and the capital headroom rises by the amount, the"
+            + " prepayment completing while another transaction holds the party's profile (L0) and the capital row (L6);"
+            + " the whole principal is 422 lending.PrepaymentExceedsPrincipal; another party's loan 404; finapp.lending.repayment{kind=prepayment} counted once per outcome")
     void aLoanIsPrepaidEndToEnd() throws Exception {
         CreditFixtures.Customer customer = customers.consentingCustomer();
         String offer = offered(customer, loan("4300.00", 12, 10));
@@ -1261,7 +1261,31 @@ class LoanAccountDatabaseTest {
         String prepayments = LOANS + "/" + loanId + "/prepayments";
         String body = "{\"amount\":\"1000.00\",\"currency\":\"EUR\"}";
         String prepaymentKey = key();
-        HttpResponse<String> prepaid = client.post(prepayments, body, customer.token(), prepaymentKey);
+        // No L0 and no L6: the prepayment completes while another transaction holds the party's credit profile and the
+        // currency's LENDING_CAPITAL row - exposure only falls and headroom only rises, so it waits on neither.
+        HttpResponse<String> prepaid;
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement profile = holder.prepareStatement(
+                            "SELECT 1 FROM credit.credit_profile WHERE party_id = ? FOR UPDATE");
+                    PreparedStatement capital = holder.prepareStatement("SELECT 1 FROM ledger.ledger_account"
+                            + " WHERE purpose = 'LENDING_CAPITAL' AND currency = 'EUR' FOR UPDATE")) {
+                profile.setObject(1, customer.party());
+                try (ResultSet row = profile.executeQuery()) {
+                    assertThat(row.next()).as("the decided party has its profile").isTrue();
+                }
+                try (ResultSet row = capital.executeQuery()) {
+                    assertThat(row.next()).as("ledger V026 seeds the capital account").isTrue();
+                }
+            }
+            Future<HttpResponse<String>> prepaying =
+                    pool.submit(() -> client.post(prepayments, body, customer.token(), prepaymentKey));
+            prepaid = prepaying.get(60, TimeUnit.SECONDS);
+            holder.rollback();
+        } finally {
+            pool.shutdownNow();
+        }
         assertThat(prepaid.statusCode()).as(prepaid.body()).isEqualTo(201);
         assertThat(prepaid.body()).contains("\"kind\":\"PREPAYMENT\"", "\"target\":\"NOT_DUE_PRINCIPAL\"",
                 "\"agreementVersion\":2", "\"scheduleVersion\":2", "\"instalment\":\"" + instalment + "\"");

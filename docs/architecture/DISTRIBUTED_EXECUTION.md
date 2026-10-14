@@ -248,9 +248,9 @@ T-wvr's interest waiver takes L7 BEFORE posting rule 9 to the same income projec
 T-dis path X's wallet before `LOAN_FEE_INCOME`): against T-svc's collection, T-pay and T-ppy, on two loans of one party,
 that is a pre-existing wait inversion - PostgreSQL's deadlock detector aborts one side whole (no money moves on either),
 recorded for the owner by this task, not changed. Counted by `PrepaymentDatabaseTest`: ten prepayments under one key - one
-repayment, one entry, one version, nine converge; a prepayment racing an amendment's acceptance - one version 2, the other
+repayment, one entry, one version, nine converge; ten under ten keys - versions 2 to 11 without a gap, each seeing the one before it; a prepayment racing an amendment's acceptance - one version 2, the other
 version 3 or lapsed; a prepayment beside the billing of the same due date in both orders and racing - the date billed
-once.)* | n/a |
+once; beneath every writer, `lending V024` refuses a schedule superseding an instalment already due and unbilled.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 

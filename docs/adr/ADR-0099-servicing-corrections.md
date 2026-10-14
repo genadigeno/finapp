@@ -267,6 +267,10 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   `prepaid`, `arrears_first`, `exceeds_principal`, `not_repayable`, `insufficient_funds`. Found on the way and corrected:
   `JdbcLoanStore.lock`/`lockOwnedBy` read the agreement in the lock statement's pre-wait snapshot, so an act waiting on L3
   behind an amendment's acceptance or a prepayment saw the superseded version (and failed against the database's version
-  checks); the agreement is now read by a statement of its own after the lock, for every caller.
+  checks); the agreement is now read by a statement of its own after the lock, for every caller. Added at the completion
+  gate: `lending V024`'s schedule trigger refuses, for every later version (an amendment's too), a schedule superseded
+  while an instalment of it already due is unbilled - the step order's "billing first" held beneath the domain, so no due
+  instalment and none of its period's accrued interest is stranded; and every `lending.LoanAmended` names its `origin`
+  (`AMENDMENT`, `PREPAYMENT`).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

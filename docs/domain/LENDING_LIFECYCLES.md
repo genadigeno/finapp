@@ -540,7 +540,8 @@ but the term (instalments billed plus the new schedule's), canonical terms forma
 agreement grants, exercised by the customer's own keyed command) - and schedule v n+1, billed instalments kept, unbilled
 superseded; `lending.RepaymentReceived` (kind `PREPAYMENT`) and `lending.LoanAmended` (origin `PREPAYMENT`). No fee (L8).
 A pending amendment of version n lapses and a payoff quote made under it is stale, both by derivation; a prepayment is never
-reversed (`RepaymentNotReversible`, `lending V024`) - its correction is an amendment.*
+reversed (`RepaymentNotReversible`, `lending V024`) - its correction is an amendment. Beneath every writer, `lending V024`
+refuses a schedule version superseding an instalment already due and unbilled - the billing first, an amendment's too.*
 
 ### 4.11 The born-once facts (not machines)
 

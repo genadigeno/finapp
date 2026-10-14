@@ -164,6 +164,15 @@ class PrepaymentDatabaseTest {
         assertThat(dueOf(loan, 2, 1)).as("the open period's due date - the old second one").isEqualTo(secondDue);
         assertThat(events(loan, Repayments.RECEIVED_EVENT)).as("the first repayment and the prepayment").isEqualTo(2);
         assertThat(events(loan, LoanAmendments.AMENDED_EVENT)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = ?"
+                + " AND convert_from(payload, 'UTF8') LIKE '%\"kind\":\"PREPAYMENT\"%'", loan.value(),
+                Repayments.RECEIVED_EVENT)).as("RepaymentReceived, kind PREPAYMENT").isEqualTo(1);
+        assertThat(scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event WHERE aggregate_id = ?"
+                + " AND event_type = ?", loan.value(), LoanAmendments.AMENDED_EVENT))
+                .as("LoanAmended names its origin and the prepayment - never an amount, a rate or a party")
+                .contains("\"origin\":\"PREPAYMENT\"", "\"prepaymentId\":\"" + repayment + "\"",
+                        "\"agreementVersion\":\"2\"", "\"amendsVersion\":\"1\"", "\"scheduleVersion\":\"2\"")
+                .doesNotContain("amount", "Rate", "party", "200000");
         assertSubledgerProves(loan);
 
         // The next day accrues on the lower base under version 2.
@@ -281,6 +290,31 @@ class PrepaymentDatabaseTest {
         assertSubledgerProves(loan);
     }
 
+    @Test
+    @DisplayName("ten prepayments under ten keys serialise on L3: each sees the version the one before it committed while"
+            + " it waited (the agreement read after the lock), so all ten succeed as versions 2 to 11 without a gap, each"
+            + " schedule version naming its own agreement version and amortising exactly LOAN_PRINCIPAL, the level"
+            + " instalment unchanged throughout")
+    void tenPrepaymentsUnderTenKeysSerialise() throws Exception {
+        LoanId loan = current(6_350_00);
+        long instalment = instalmentOf(loan, 1);
+        List<Prepayments.Prepaid> outcomes = race(10, index -> prepay(loan, key(), 100_00));
+        assertThat(outcomes).filteredOn(Prepayments.Prepaid::replayed).isEmpty();
+        assertThat(outcomes).extracting(prepaid -> prepaid.rescheduled().agreementVersion())
+                .containsExactlyInAnyOrder(2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+        assertThat(scalar("SELECT string_agg(schedule_version::text || ':' || agreement_version, ','"
+                + " ORDER BY schedule_version) FROM lending.repayment_schedule WHERE loan_id = ?", loan.value()))
+                .isEqualTo("1:1,2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,10:10,11:11");
+        assertThat(count("SELECT count(DISTINCT instalment_minor) FROM lending.repayment_schedule WHERE loan_id = ?",
+                loan.value())).isEqualTo(1);
+        assertThat(instalmentOf(loan, 11)).isEqualTo(instalment);
+        assertThat(count("SELECT principal_minor FROM lending.repayment_schedule WHERE loan_id = ? AND schedule_version = 11",
+                loan.value())).isEqualTo(netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL)).minorUnits());
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ? AND kind = 'PREPAYMENT'", loan.value()))
+                .isEqualTo(10);
+        assertSubledgerProves(loan);
+    }
+
     // ------------------------------------------------------------------ beside the other acts
 
     @Test
@@ -359,20 +393,23 @@ class PrepaymentDatabaseTest {
             + " loan whose first due date has come and is not yet billed, its credit balance covering the instalment - the"
             + " sweep then the prepayment, the prepayment then the sweep, and the two racing: each bills the due date"
             + " exactly once (the prepayment's own catch-up when it runs first), the credit balance pays it, and schedule"
-            + " version 2 starts at that due date")
+            + " version 2 starts at that due date; a writer that skips the billing is refused by the database - an"
+            + " instalment already due is never superseded unbilled")
     void prepaymentAndBillingOnTheSameDateSerialise() throws Exception {
+        // The billing first for EVERY writer: a writer that skips the billing - here the real T-ppy wired to a billing
+        // step that sees no schedule - is refused by lending V024's schedule trigger: an instalment already due is never
+        // superseded unbilled (the storage error names the statement and its SQLSTATE only; the guard's own probe in
+        // MUTATION_TESTING.md shows this refusal is that guard's). Nothing is written.
+        LoanId blind = dueAndUnbilled(6_550_00);
+        String untouched = footprint(blind);
+        assertThatExceptionOfType(LendingStorageException.class)
+                .isThrownBy(() -> prepayWith(blindToTheSchedule(), blind, key(), 1_000_00))
+                .withMessageContaining("inserting a repayment schedule: SQLSTATE P0001");
+        assertThat(footprint(blind)).as("nothing written").isEqualTo(untouched);
+
         for (String order : List.of("SWEEP_FIRST", "PREPAYMENT_FIRST", "RACE")) {
-            // A fresh loan re-projected on its day (10) so its first due date is the latest 10th up to today - not yet
-            // billed, nothing accrued (a uniform backdate would leave the calendar off its day, which the recalculation
-            // refuses) - and an early repayment held as credit, covering the instalment.
-            LoanId loan = InterestAccrualDatabaseTest.disbursed(6_600_00, 12);
-            LocalDate today = businessDate(loan);
-            LocalDate due = today.withDayOfMonth(10).isAfter(today) ? today.withDayOfMonth(10).minusMonths(1)
-                    : today.withDayOfMonth(10);
-            InstalmentBillingDatabaseTest.reproject(loan, due.minusMonths(1), 10);
-            assertThat(dueOf(loan, 1, 1)).isEqualTo(due);
-            repay(loan, key(), 2 * instalmentOf(loan, 1));
-            assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?", loan.value())).isZero();
+            LoanId loan = dueAndUnbilled(6_600_00);
+            LocalDate due = dueOf(loan, 1, 1);
             switch (order) {
                 case "SWEEP_FIRST" -> {
                     serviceUntilCaughtUp(loan);
@@ -441,14 +478,63 @@ class PrepaymentDatabaseTest {
     }
 
     static Prepayments.Prepaid prepayAs(UUID party, LoanId loan, String key, long minor) {
+        return prepayAs(PREPAYMENTS, party, loan, key, minor);
+    }
+
+    static Prepayments.Prepaid prepayWith(Prepayments prepayments, LoanId loan, String key, long minor) {
+        return prepayAs(prepayments, partyOf(loan), loan, key, minor);
+    }
+
+    private static Prepayments.Prepaid prepayAs(Prepayments prepayments, UUID party, LoanId loan, String key, long minor) {
         Actor actor = customer(party);
         CorrelationId correlation = correlation();
         try (SecurityContext.Scope scope = SecurityContext.enter(actor);
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(correlation).causing(CausationId.of(correlation.value())))) {
-            return inOneTransaction(uow -> PREPAYMENTS.prepay(uow, loan, party, new Prepayments.Request(key, eur(minor)),
+            return inOneTransaction(uow -> prepayments.prepay(uow, loan, party, new Prepayments.Request(key, eur(minor)),
                     actor, correlation));
         }
+    }
+
+    /**
+     * A fresh loan re-projected on its day (10) so its first due date is the latest 10th up to today - not yet billed,
+     * nothing accrued (a uniform backdate would leave the calendar off its day, which the recalculation refuses) - and an
+     * early repayment held as credit, covering the instalment.
+     */
+    static LoanId dueAndUnbilled(long principal) {
+        LoanId loan = InterestAccrualDatabaseTest.disbursed(principal, 12);
+        LocalDate today = businessDate(loan);
+        LocalDate due = today.withDayOfMonth(10).isAfter(today) ? today.withDayOfMonth(10).minusMonths(1)
+                : today.withDayOfMonth(10);
+        InstalmentBillingDatabaseTest.reproject(loan, due.minusMonths(1), 10);
+        assertThat(dueOf(loan, 1, 1)).isEqualTo(due);
+        repay(loan, key(), 2 * instalmentOf(loan, 1));
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?", loan.value())).isZero();
+        return loan;
+    }
+
+    /**
+     * The real T-ppy whose billing step sees no schedule - so it bills nothing: a writer that skips the billing, which the
+     * database must refuse beneath the domain.
+     */
+    static Prepayments blindToTheSchedule() {
+        InstalmentBillingStore blind = (InstalmentBillingStore) java.lang.reflect.Proxy.newProxyInstance(
+                InstalmentBillingStore.class.getClassLoader(), new Class<?>[] {InstalmentBillingStore.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("latestSchedule")) {
+                        return Optional.empty();
+                    }
+                    try {
+                        return method.invoke(BILLING_STORE, arguments);
+                    } catch (java.lang.reflect.InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+        InstalmentBillings billings = new InstalmentBillings(blind, LEDGER_ACCOUNTS, BALANCES, DisbursementWorld.POSTINGS,
+                new JdbcOutboxWriter(), IDS, CLOCK);
+        return new Prepayments(LOAN_STORE, REPAYMENT_STORE, TERMS_STORE, OFFER_STORE, SERVICING, SERVICING_STORE, billings,
+                BILLING_STORE, DISBURSEMENT_STORE, WALLETS, new AvailableBalance<>(new JdbcBalanceDerivation(), HOLD_STORE),
+                LEDGER_ACCOUNTS, BALANCES, REPAYMENTS, new JdbcOutboxWriter(), IDS, CLOCK);
     }
 
     /** The level instalment of the loan's schedule version {@code version}. */

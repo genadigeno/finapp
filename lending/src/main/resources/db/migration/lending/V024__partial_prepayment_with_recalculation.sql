@@ -34,7 +34,8 @@
 -- repayment_allocation_is_born_once (V017) - an instalment loan's principal not yet due is paid by a PREPAYMENT's one line
 -- only; loan_agreement_is_born_once (V023) - version n+1 a prepayment's; loan_agreement_amended_beside_its_facts (V023) - a
 -- prepayment's version beside its schedule, its term the instalments billed plus the schedule's; principal_not_yet_billed
--- (V023) - less what was prepaid; repayment_schedule_is_born_once (V023) - version n+1 of a prepayment's agreement;
+-- (V023) - less what was prepaid; repayment_schedule_is_born_once (V023) - version n+1 of a prepayment's agreement, and for
+-- every later version (an amendment's too) no instalment of the superseded schedule already due superseded unbilled;
 -- instalment_billing_is_born_once (V023) - the principal billed plus prepaid never beyond the principal;
 -- repayment_reversal_permits_only_machine_edges (V016) - a prepayment is never reversed (it moved the agreement: a correction
 -- is an amendment). The CHECKs repayment_kind_is_known (V014), loan_agreement_origin (V006) and
@@ -489,6 +490,16 @@ BEGIN
                 OR EXISTS (SELECT 1 FROM lending.instalment_billing b
                             WHERE b.loan_id = NEW.loan_id AND b.due_date > NEW.start_date) THEN
             RAISE EXCEPTION 'a later schedule version starts at the open period''s start - after every billed due date, never after today (P11-TSK-027)';
+        END IF;
+        -- THE BILLING FIRST, for every writer (P11-TSK-028): no instalment of the superseded schedule already due - its due
+        -- date come by the transaction's business date in the pinned zone - is superseded unbilled, so neither it nor the
+        -- interest its period accrued is stranded (PHASE_11_PLAN.md section 12.2 step 7). The transaction's start, never a
+        -- later statement's: the domain bills through a date read after its lock, never earlier, so this never refuses it.
+        IF EXISTS (SELECT 1 FROM lending.loan_instalment i
+                    WHERE i.schedule_id = previous.id
+                      AND i.due_date <= lending.business_date(transaction_timestamp(), zone)
+                      AND NOT EXISTS (SELECT 1 FROM lending.instalment_billing b WHERE b.instalment_id = i.id)) THEN
+            RAISE EXCEPTION 'a schedule is superseded only once every instalment of it already due is billed - the billing first (P11-TSK-028, INV-LND-03)';
         END IF;
     END IF;
     NEW.created_at := statement_timestamp();

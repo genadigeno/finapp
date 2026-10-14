@@ -103,6 +103,9 @@ public final class LoanAmendments {
     /** The event an accepted amendment publishes. */
     public static final String AMENDED_EVENT = "lending.LoanAmended";
 
+    /** The origin an accepted amendment's {@code lending.LoanAmended} names (`P11-TSK-028`: a prepayment's names its own). */
+    public static final String ORIGIN = "AMENDMENT";
+
     /** The audit records' target type. */
     static final String TARGET_TYPE = "loan_amendment";
 
@@ -599,6 +602,8 @@ public final class LoanAmendments {
         Money arrears = plan.arrears();
         EventPayload payload = EventPayload.of()
                 .with("loanId", loan.id().value().toString())
+                // P11-TSK-028: every LoanAmended names its origin - an amendment's, or a prepayment's (Prepayments.ORIGIN).
+                .with("origin", ORIGIN)
                 .with("amendmentId", amendment.id().toString())
                 .with("agreementVersion", Integer.toString(amended.version()))
                 .with("amendsVersion", Integer.toString(amendment.amendsVersion()))
