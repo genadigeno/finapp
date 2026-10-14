@@ -1241,11 +1241,15 @@ public class LendingBeans {
         return new com.finapp.lending.LendingProofs(loanRecordStore, loanSubledgerProof, loanReplayProof);
     }
 
-    /** {@code finapp.lending.subledger.proof{verdict}} and {@code finapp.lending.replay{verdict}}, registered eagerly. */
+    /**
+     * {@code finapp.lending.subledger.proof{verdict}} and {@code finapp.lending.replay{verdict}}, registered eagerly; read
+     * behind {@code finapp.lending.proofs.refresh} (15 minutes by default, the reading's cost control - P11-TSK-030).
+     */
     @Bean
     LendingProofMetrics lendingProofMetrics(com.finapp.lending.LendingProofs lendingProofs,
-            LendingTransactions lendingTransactions, Clock clock, MeterRegistry meterRegistry) {
-        return new LendingProofMetrics(lendingProofs, lendingTransactions::inSnapshot, clock, meterRegistry);
+            LendingTransactions lendingTransactions, Clock clock, MeterRegistry meterRegistry,
+            @Value("${finapp.lending.proofs.refresh:PT15M}") Duration refresh) {
+        return new LendingProofMetrics(lendingProofs, lendingTransactions::inSnapshot, clock, meterRegistry, refresh);
     }
 
     /** The investigator's explanation and replay; whose party an investigator is read through the identity store. */

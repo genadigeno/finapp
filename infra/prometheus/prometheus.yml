@@ -30,3 +30,8 @@ scrape_configs:
           # A LABEL, not a metric tag. Which target a sample came from is the scraper's question,
           # which is exactly why MetricNames forbids the application from tagging it itself.
           env: local
+          # Whether this environment OFFERS lending (P11-TSK-030): the LendingTermsNoneActive alert reads it, so a
+          # product without ACTIVE terms alerts only where it is meant to be offered. Production's expected state is
+          # "false" until OPERATIONS_RUNBOOK.md section 7.4's activation gate opens; local development offers nothing
+          # unless a developer activates terms, and then sets this to "true".
+          lending_offered: "false"
