@@ -445,9 +445,12 @@ class LendingProofDatabaseTest {
                     correlation));
             approval.commit();
         }
+        // Placed after the repayment it waited behind in the record's order - the replay's (lending.record_order, drawn
+        // under L3) - never compared by the clock's stamps, which a database clock stepped back between the two reverses
+        // (P11-TSK-034).
         assertThat(count("SELECT count(*) FROM lending.repayment_reversal WHERE loan_id = ? AND status = 'APPROVED'"
-                + " AND decided_at > (SELECT max(created_at) FROM lending.repayment WHERE loan_id = ?)", loan.value(),
-                loan.value())).as("stamped after the repayment it waited behind").isEqualTo(1);
+                + " AND decided_order > (SELECT max(recorded_order) FROM lending.repayment WHERE loan_id = ?)", loan.value(),
+                loan.value())).as("ordered after the repayment it waited behind").isEqualTo(1);
         assertProven(loan);
     }
 

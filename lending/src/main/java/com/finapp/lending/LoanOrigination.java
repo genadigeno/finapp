@@ -185,18 +185,20 @@ public final class LoanOrigination {
         if (!pinned.allowedDays().contains(application.repaymentDay())) {
             return close(unitOfWork, application, LoanApplicationStatus.CLOSED_UNDECIDED, DAY_NOT_OFFERED_REASON, actor);
         }
-        // The offering instant: the database clock, read after the application's lock and the terms pin.
+        // The database clock, read after the application's lock and the terms pin: what the step judges by - the decision's
+        // lapse and whether a loan's schedule amortises. It is NOT the offering instant (P11-TSK-034): the insert stamps
+        // that itself (lending V026), since a database clock stepped back between this read and the insert would put this
+        // reading after the insert's clock - the refusal V005/V006 met as an opaque P0001.
         Instant now = offers.databaseNow(unitOfWork);
         if (!approved.validUntil().isAfter(now)) {
             return close(unitOfWork, application, LoanApplicationStatus.CLOSED_UNDECIDED, DECISION_LAPSED_REASON, actor);
         }
-        Optional<LoanOffer.Illustration> illustration = Optional.empty();
+        ZoneId zone = ZoneId.of(pinned.servicingZone());
+        LocalDate today = LocalDate.ofInstant(now, zone);
+        Optional<Schedule> projected = Optional.empty();
         Optional<LoanOffer.MinimumPaymentRule> rule = Optional.empty();
         if (application.product().kind() == LoanKind.INSTALMENT) {
-            int termMonths = approved.termMonths().orElseThrow();
-            LocalDate today = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
-            ScheduleOutcome schedule =
-                    ScheduleEngineV1.project(pinned, approved.amount(), termMonths, application.repaymentDay(), today);
+            ScheduleOutcome schedule = project(pinned, approved, application, today);
             if (schedule instanceof ScheduleOutcome.Refused refused) {
                 if (refused.reason() == ScheduleRefusal.NOT_AMORTISING) {
                     return close(unitOfWork, application, LoanApplicationStatus.CLOSED_UNDECIDED, NOT_AMORTISING_REASON,
@@ -205,13 +207,32 @@ public final class LoanOrigination {
                 // The terms door judged these terms whole; anything else is a defect, never a closure.
                 throw new IllegalStateException("the pinned schedule engine refused an approved offer: " + refused.reason());
             }
-            illustration = Optional.of(LoanOffer.Illustration.of(((ScheduleOutcome.Projected) schedule).schedule()));
+            projected = Optional.of(((ScheduleOutcome.Projected) schedule).schedule());
         } else {
             StatementTerms statement = StatementTerms.of(pinned, application.repaymentDay());
             rule = Optional.of(new LoanOffer.MinimumPaymentRule(statement.minimumPaymentFloor(),
                     statement.minimumPaymentRatioBps(), statement.paymentDueDays()));
         }
         LoanOfferId offerId = LoanOfferId.next(ids);
+        LoanOfferStore.Offered born = offers.insert(unitOfWork, new LoanOfferStore.NewOffer(offerId, application.id(),
+                application.party(), application.product(), approved.decision(), version.row().id(),
+                approved.validUntil(), application.correlation()));
+        Instant expiresAt = born.expiresAt();
+        // The illustration starts on the offering instant's business date - one clock's with the expiry. Only a step that
+        // put the read on another day than the insert re-projects; a refusal then is a defect of the moment, rolled back
+        // whole and re-judged by the next sweep on one clock.
+        Optional<LoanOffer.Illustration> illustration = Optional.empty();
+        if (projected.isPresent()) {
+            LocalDate offeredOn = LocalDate.ofInstant(born.offeredAt(), zone);
+            Schedule schedule = projected.get();
+            if (!offeredOn.equals(today)) {
+                if (!(project(pinned, approved, application, offeredOn) instanceof ScheduleOutcome.Projected again)) {
+                    throw new IllegalStateException("the offering date's schedule does not amortise where the read's did");
+                }
+                schedule = again.schedule();
+            }
+            illustration = Optional.of(LoanOffer.Illustration.of(schedule));
+        }
         String canonical = CanonicalOfferTerms.render(new CanonicalOfferTerms.Content(offerId, application.id(),
                 approved.decision(), version.row().id(), version.row().version(), pinned, approved.amount(),
                 approved.termMonths(), application.repaymentDay(), illustration));
@@ -221,9 +242,6 @@ public final class LoanOrigination {
                 OfferDocument.render(offerId, application.product(), unhashedDocument));
         LoanOffer.Terms offered = terms(pinned, approved, application, illustration, rule, canonical, documentSha256);
 
-        Instant expiresAt = offers.insert(unitOfWork, new LoanOfferStore.NewOffer(offerId, application.id(),
-                application.party(), application.product(), approved.decision(), version.row().id(), now,
-                approved.validUntil(), application.correlation()));
         offers.insertTerms(unitOfWork, offerId, application.product(), offered);
         offers.appendEvent(unitOfWork, new LoanOfferStore.HistoryRow(ids.next(), offerId, Optional.empty(),
                 LoanOfferStatus.OFFERED, APPROVED_REASON, actor, application.correlation()));
@@ -245,6 +263,14 @@ public final class LoanOrigination {
         }
         publish(unitOfWork, OFFERED_EVENT, offerId, OFFER_AGGREGATE_TYPE, payload, application.correlation());
         return new Outcome(Outcome.Kind.OFFERED, Optional.of(application.product()), Optional.of(APPROVED_REASON));
+    }
+
+    /** The pinned engine's projection of the approved loan from {@code start}. */
+    private static ScheduleOutcome project(
+            LoanTerms pinned, LoanCreditDecisions.CreditOutcome.Approved approved, LoanApplication application,
+            LocalDate start) {
+        return ScheduleEngineV1.project(pinned, approved.amount(), approved.termMonths().orElseThrow(),
+                application.repaymentDay(), start);
     }
 
     private static LoanOffer.Terms terms(

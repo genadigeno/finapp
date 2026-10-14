@@ -401,14 +401,16 @@ class InterestAccrualDatabaseTest {
             assertThat(entries(loan)).isZero();
             assertThat(scalar("SELECT (next_servicing_at > statement_timestamp())::text FROM lending.loan WHERE id = ?",
                     loan.value())).isEqualTo("true");
-            // The first round with the payout PENDING; the second with it DISPATCHED and payments undecided.
+            // The first round with the payout PENDING; the second with it DISPATCHED and payments undecided - each made
+            // due on the database's clock first (P11-TSK-034: never a sleep past a 1 ms permit).
+            DisbursementWorld.duePayout(loan);
             assertThat(DisbursementWorld.sweepPayouts(java.time.Duration.ofMillis(1))).containsKey(loan);
         }
         assertThat(scalar("SELECT status FROM lending.loan_payout WHERE loan_id = ?", loan.value())).isEqualTo("DISPATCHED");
         assertThat(count("SELECT count(*) FROM lending.accrual_start WHERE loan_id = ?", loan.value())).isZero();
         DisbursementWorld.PAYMENTS.outcomes.put(loan, new LoanPayouts.Outcome.Concluded(PayoutStatus.PAID_OUT,
                 java.time.Instant.now()));
-        Thread.sleep(20);
+        DisbursementWorld.duePayout(loan);
         assertThat(DisbursementWorld.sweepPayouts(java.time.Duration.ofMillis(1)).get(loan))
                 .containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
         assertThat(scalar("SELECT origin FROM lending.accrual_start WHERE loan_id = ?", loan.value()))
@@ -582,7 +584,12 @@ class InterestAccrualDatabaseTest {
         }
     }
 
-    /** Moves every dated fact of {@code loan} {@code days} into the past - the fixture's clock, never a path. */
+    /**
+     * Moves every dated fact of {@code loan} {@code days} into the past - the fixture's clock, never a path. The servicing
+     * permit moves with the opening it was stamped at (`P11-TSK-034`): left at the opening's database instant, a sweep on a
+     * database clock stepped back behind it claimed nothing - {@code InstalmentBillingDatabaseTest#tenSweepersBillOnce}'s
+     * "no billing found" - so the fixture makes it due on any clock, as {@code X-TSK-013}'s aged permits do.
+     */
     static void backdate(LoanId loan, int days) {
         UUID id = loan.value();
         asOwner("UPDATE ledger.journal_entry SET posting_date = posting_date - " + days + ", value_date = value_date - "
@@ -592,7 +599,8 @@ class InterestAccrualDatabaseTest {
                 + " UPDATE lending.repayment_schedule SET start_date = start_date - " + days + " WHERE loan_id = '" + id + "';"
                 + " UPDATE lending.loan_instalment SET period_start = period_start - " + days + ", due_date = due_date - "
                 + days + " WHERE loan_id = '" + id + "';"
-                + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days' WHERE id = '" + id + "'");
+                + " UPDATE lending.loan SET opened_at = opened_at - interval '" + days + " days', next_servicing_at ="
+                + " next_servicing_at - interval '" + days + " days' WHERE id = '" + id + "'");
     }
 
     /** {@link #backdate} to an accrual start of {@code start}. */

@@ -172,8 +172,13 @@ class RepaymentDatabaseTest {
             assertThat(item.paid().minorUnits()).as("never over-allocated").isEqualTo(bill);
             assertThat(due(loan)).isZero();
             assertThat(held(loan)).as("the rest held").isEqualTo(2 * each - bill);
+            // Newest first in the record's order (L3's), never the clock's (P11-TSK-034): a step between the two would
+            // otherwise flip them.
             Repayment first = both.get(1);
             Repayment second = both.get(0);
+            assertThat(count("SELECT count(*) FROM lending.repayment a JOIN lending.repayment b ON b.loan_id = a.loan_id"
+                    + " WHERE a.id = ? AND b.id = ? AND a.recorded_order < b.recorded_order", first.id(), second.id()))
+                    .as("the first written under the loan's lock before the second").isEqualTo(1);
             assertThat(first.to(AllocationLine.Target.CREDIT_BALANCE).isZero()).as("the first finds the whole bill due")
                     .isTrue();
             assertThat(second.to(AllocationLine.Target.CREDIT_BALANCE).minorUnits())

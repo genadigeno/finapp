@@ -92,6 +92,12 @@ class LoanDisbursementDatabaseTest {
         List<DisbursementWorld.Accepted> mine = List.of(acceptedLoan(1_000_00, 12), acceptedLoan(1_100_00, 12),
                 acceptedLoan(1_200_00, 12));
         Set<LoanId> ours = Set.of(mine.get(0).loan(), mine.get(1).loan(), mine.get(2).loan());
+        // Due on the database's clock, deterministically (P11-TSK-034): born "due at once", a disbursement is due only once
+        // the clock passes its birth, which a step back after the birth postpones past every round below.
+        for (LoanId each : ours) {
+            asOwner("UPDATE lending.loan_disbursement SET next_attempt_at = statement_timestamp() - interval '1 minute'"
+                    + " WHERE loan_id = '" + each.value() + "'");
+        }
         Map<LoanId, List<LoanDisbursements.Outcome.Kind>> byLoan = new ConcurrentHashMap<>();
         race(10, index -> {
             try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {

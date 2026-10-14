@@ -12,6 +12,7 @@ import static com.finapp.lending.DisbursementWorld.claimed;
 import static com.finapp.lending.DisbursementWorld.count;
 import static com.finapp.lending.DisbursementWorld.disburse;
 import static com.finapp.lending.DisbursementWorld.disbursedExternally;
+import static com.finapp.lending.DisbursementWorld.duePayout;
 import static com.finapp.lending.DisbursementWorld.execute;
 import static com.finapp.lending.DisbursementWorld.inOneTransaction;
 import static com.finapp.lending.DisbursementWorld.loanAccount;
@@ -136,10 +137,13 @@ class LoanPayoutStepsDatabaseTest {
         DisbursementWorld.Accepted loan = disbursedExternally(1_700_00, 12);
         LoanPayoutStore.Claimed first = claimed(claimPayouts(AT_ONCE), loan.loan()).orElseThrow();
         assertThat(first.status()).isEqualTo(PayoutStatus.DISPATCHING);
-        Thread.sleep(20);
+        duePayout(loan.loan());
         LoanPayoutStore.Claimed second = claimed(claimPayouts(AT_ONCE), loan.loan()).orElseThrow();
         assertThat(second.status()).as("re-driven, still DISPATCHING").isEqualTo(PayoutStatus.DISPATCHING);
-        assertThat(second.permit()).isAfter(first.permit());
+        // A new permit - the re-claim's fencing token. Not "later": both are database clock readings, and a clock stepped
+        // back between the two claims stamps the second earlier (P11-TSK-034); the overtaken step's conditional writes
+        // below are what the token protects.
+        assertThat(second.permit()).isNotEqualTo(first.permit());
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
             for (LoanPayouts.Dispatch late : List.<LoanPayouts.Dispatch>of(
                     new LoanPayouts.Dispatch.Accepted(UUID.randomUUID()),
@@ -167,7 +171,7 @@ class LoanPayoutStepsDatabaseTest {
         assertThat(scalar("SELECT status FROM lending.loan_payout WHERE loan_id = ?", loan.loan().value()))
                 .isEqualTo("DISPATCHING");
         PAYMENTS.answers.remove(loan.loan());
-        Thread.sleep(20);
+        duePayout(loan.loan());
         assertThat(sweepPayouts(AT_ONCE).get(loan.loan())).startsWith(LoanPayoutSteps.Outcome.Kind.DISPATCHED);
         assertThat(PAYMENTS.dispatchesOf(loan.loan())).isEqualTo(2);
     }
@@ -201,7 +205,7 @@ class LoanPayoutStepsDatabaseTest {
     void anUndecidedWithdrawalIsObservedNeverReDispatched() throws Exception {
         DisbursementWorld.Accepted loan = dispatched(1_900_00);
         for (int round = 0; round < 3; round++) {
-            Thread.sleep(20);
+            duePayout(loan.loan());
             assertThat(sweepPayouts(AT_ONCE).get(loan.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.AWAITING);
         }
         UUID id = loan.loan().value();
@@ -222,15 +226,23 @@ class LoanPayoutStepsDatabaseTest {
         Instant concluded = Instant.parse(scalar("SELECT to_char(created_at AT TIME ZONE 'UTC',"
                 + " 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') FROM lending.loan_payout WHERE loan_id = ?", id)).plusMillis(5);
         PAYMENTS.outcomes.put(loan.loan(), new LoanPayouts.Outcome.Concluded(PayoutStatus.PAID_OUT, concluded));
-        Thread.sleep(20);
+        duePayout(loan.loan());
         assertThat(sweepPayouts(AT_ONCE).get(loan.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
         assertThat(scalar("SELECT status FROM lending.loan_payout WHERE loan_id = ?", id)).isEqualTo("PAID_OUT");
-        assertThat(Instant.parse(scalar("SELECT to_char(concluded_at AT TIME ZONE 'UTC',"
-                + " 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') FROM lending.loan_payout WHERE loan_id = ?", id)))
-                .isEqualTo(concluded);
-        assertThat(scalar("SELECT origin || '|' || start_date::text || '|' || (journal_entry_id IS NULL)::text"
-                + " FROM lending.accrual_start WHERE loan_id = ?", id))
-                .isEqualTo("PAYOUT_CONCLUDED|" + concluded.atZone(java.time.ZoneOffset.UTC).toLocalDate() + "|true");
+        // Payments' instant, exactly - held only by the recording statement's own clock (decided_at) and the birth: on a
+        // clock that did not step, the instant itself; on one stepped back below it, that clock - never a later reading's
+        // judgement, which a step would contradict (P11-TSK-034, as P11-TSK-033's case).
+        assertThat(scalar("SELECT (concluded_at = GREATEST(LEAST(?::timestamptz, decided_at), created_at))::text"
+                + " FROM lending.loan_payout WHERE loan_id = ?", java.sql.Timestamp.from(concluded), id))
+                .as("payments' instant, held within the payout's life").isEqualTo("true");
+        assertThat(scalar("SELECT (decided_at < ?::timestamptz OR concluded_at = ?::timestamptz)::text"
+                + " FROM lending.loan_payout WHERE loan_id = ?", java.sql.Timestamp.from(concluded),
+                java.sql.Timestamp.from(concluded), id)).as("payments' instant itself, once the clock is past it")
+                .isEqualTo("true");
+        assertThat(scalar("SELECT s.origin || '|' || (s.start_date = lending.business_date(p.concluded_at, 'UTC'))::text"
+                + " || '|' || (s.journal_entry_id IS NULL)::text FROM lending.accrual_start s JOIN lending.loan_payout p"
+                + " ON p.loan_id = s.loan_id WHERE s.loan_id = ?", id))
+                .isEqualTo("PAYOUT_CONCLUDED|true|true");
         assertThat(scalar("SELECT start_date::text FROM lending.repayment_schedule WHERE loan_id = ?"
                 + " AND schedule_version = 1", id))
                 .isEqualTo(scalar("SELECT start_date::text FROM lending.accrual_start WHERE loan_id = ?", id));
@@ -239,7 +251,7 @@ class LoanPayoutStepsDatabaseTest {
                 .contains("\"outcome\":\"PAID_OUT\"", "\"withdrawalId\":\"" + PAYMENTS.withdrawals.get(loan.loan()));
         assertThat(netDebit(loanAccount(loan.loan(), AccountPurpose.LOAN_PRINCIPAL))).as("INV-LND-07")
                 .isEqualTo(loan.principal());
-        Thread.sleep(20);
+        duePayout(loan.loan());
         assertThat(sweepPayouts(AT_ONCE)).as("a terminal payout is never claimed").doesNotContainKey(loan.loan());
     }
 
@@ -254,7 +266,8 @@ class LoanPayoutStepsDatabaseTest {
                 Instant.parse("2001-01-01T00:00:00Z")));
         PAYMENTS.outcomes.put(late.loan(), new LoanPayouts.Outcome.Concluded(PayoutStatus.PAID_OUT,
                 Instant.parse("2999-01-01T00:00:00Z")));
-        Thread.sleep(20);
+        duePayout(early.loan());
+        duePayout(late.loan());
         var effects = sweepPayouts(AT_ONCE);
         assertThat(effects.get(early.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.FAILED);
         assertThat(effects.get(late.loan())).containsExactly(LoanPayoutSteps.Outcome.Kind.PAID_OUT);
@@ -330,8 +343,13 @@ class LoanPayoutStepsDatabaseTest {
         assertThat(scalar("SELECT h.status FROM ledger.hold h JOIN lending.loan_payout p ON p.hold_id = h.id"
                 + " WHERE p.loan_id = ?", id)).isEqualTo("RELEASED");
         assertThat(available(walletOf(loan.party()))).isEqualTo(loan.principal());
-        assertThat(scalar("SELECT (s.start_date = lending.business_date(now(), 'UTC'))::text FROM lending.accrual_start s"
-                + " WHERE s.loan_id = ? AND s.origin = 'PAYOUT_CONCLUDED'", id)).isEqualTo("true");
+        // Interest from the refusal's instant: the recording statement's clock held at the birth (V019), its business date
+        // - read against the row's own stamps, never a later now(), which a clock stepped back across a midnight would
+        // contradict (P11-TSK-034).
+        assertThat(scalar("SELECT (p.concluded_at = GREATEST(p.decided_at, p.created_at)"
+                + " AND s.start_date = lending.business_date(p.concluded_at, 'UTC'))::text FROM lending.accrual_start s"
+                + " JOIN lending.loan_payout p ON p.loan_id = s.loan_id WHERE s.loan_id = ? AND s.origin = 'PAYOUT_CONCLUDED'",
+                id)).isEqualTo("true");
         assertThat(count("SELECT count(*) FROM lending.repayment_schedule WHERE loan_id = ?", id)).isEqualTo(1);
         assertThat(scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event WHERE aggregate_id = ?"
                 + " AND event_type = 'lending.LoanPayoutConcluded'", id))

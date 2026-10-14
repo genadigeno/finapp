@@ -51,27 +51,27 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
     }
 
     @Override
-    public Instant insert(Connection unitOfWork, NewOffer offer) {
+    public Offered insert(Connection unitOfWork, NewOffer offer) {
         Objects.requireNonNull(offer, "offer");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO lending.loan_offer (id, application_id, party_id, product, status, decision_id,"
-                        + " terms_version_id, offered_at, decision_valid_until, expires_at, next_step_at, correlation_id)"
-                        // The expiry and the permit are the trigger's; the placeholders are overwritten.
-                        + " VALUES (?, ?, ?, ?, 'OFFERED', ?, ?, ?, ?, ?, ?, ?) RETURNING expires_at")) {
+                        + " terms_version_id, decision_valid_until, expires_at, next_step_at, correlation_id)"
+                        // The offering instant, the expiry and the permit are the trigger's (lending V026: the offering
+                        // instant this statement's own clock); the placeholders are overwritten.
+                        + " VALUES (?, ?, ?, ?, 'OFFERED', ?, ?, ?, ?, ?, ?) RETURNING offered_at, expires_at")) {
             insert.setObject(1, offer.id().value());
             insert.setObject(2, offer.application().value());
             insert.setObject(3, offer.party());
             insert.setString(4, offer.product().name());
             insert.setObject(5, offer.decision());
             insert.setObject(6, offer.termsVersion().value());
-            insert.setTimestamp(7, Timestamp.from(offer.offeredAt()));
+            insert.setTimestamp(7, Timestamp.from(offer.decisionValidUntil()));
             insert.setTimestamp(8, Timestamp.from(offer.decisionValidUntil()));
             insert.setTimestamp(9, Timestamp.from(offer.decisionValidUntil()));
-            insert.setTimestamp(10, Timestamp.from(offer.decisionValidUntil()));
-            insert.setString(11, offer.correlation().value());
+            insert.setString(10, offer.correlation().value());
             try (ResultSet row = insert.executeQuery()) {
                 row.next();
-                return row.getTimestamp(1).toInstant();
+                return new Offered(row.getTimestamp(1).toInstant(), row.getTimestamp(2).toInstant());
             }
         } catch (SQLException failure) {
             throw failed("inserting a loan offer", failure);

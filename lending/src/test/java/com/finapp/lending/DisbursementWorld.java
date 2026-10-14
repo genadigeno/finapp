@@ -350,11 +350,28 @@ final class DisbursementWorld {
         }
     }
 
-    /** A path X loan disbursed: accepted for an external payout and posted, its payout born PENDING. */
+    /**
+     * A path X loan disbursed: accepted for an external payout and posted, its payout born PENDING - and due for the payout
+     * sweep on the database's clock ({@link #duePayout}): born "due at once", it is due only once the clock passes its
+     * birth, which a step back after the birth postpones.
+     */
     static Accepted disbursedExternally(long minor, int term) {
         Accepted loan = acceptedLoan(minor, term, PayoutPreference.EXTERNAL_ACCOUNT);
         assertThat(disburse(loan.loan()).kind()).isEqualTo(LoanDisbursements.Outcome.Kind.POSTED);
+        duePayout(loan.loan());
         return loan;
+    }
+
+    /**
+     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-034`, `X-TSK-013`'s
+     * aged-permit form): moved a minute into the past as the bootstrap owner with the triggers suspended - neither the
+     * claim's forward-only rule nor the database's stamp lets a writer age a permit, which is their point. Never a
+     * {@code Thread.sleep} past a 1 ms permit: the database clock steps back by up to 1.7 s on the VM, and a sleep shorter
+     * than the step races it. The birth is not moved (the conclusion's floor and the accrual start's date read it).
+     */
+    static void duePayout(LoanId loan) {
+        asOwner("UPDATE lending.loan_payout SET next_attempt_at = statement_timestamp() - interval '1 minute'"
+                + " WHERE loan_id = '" + loan.value() + "'");
     }
 
     /** The available balance of {@code account} - settled less its standing holds - as the ledger derives it. */

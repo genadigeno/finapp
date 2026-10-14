@@ -193,6 +193,7 @@ class LoanPayoutDatabaseTest {
                         withdrawal)), new LoanPayouts.Dispatch.NotNow()))
                 .contains(new LoanPayouts.Dispatch.Accepted(UUID.fromString(withdrawal)));
         LoanPayoutSchedule reDriver = payoutSweep(AT_ONCE);
+        duePayout(contended);
         race(10, () -> reDriver.sweepOnce());
         reDriver.sweepOnce();
         assertThat(payoutStatus(contended)).isEqualTo("PAID_OUT");
@@ -228,7 +229,7 @@ class LoanPayoutDatabaseTest {
         assertThat(scalar("SELECT status FROM payments.withdrawal WHERE id = ?::uuid", withdrawal)).isEqualTo("UNKNOWN");
         String reference = scalar("SELECT end_to_end_reference FROM payments.withdrawal WHERE id = ?::uuid", withdrawal);
         for (int round = 0; round < 4; round++) {
-            Thread.sleep(20);
+            duePayout(loan);
             payoutSweep(AT_ONCE).sweepOnce();
             assertThat(payoutStatus(loan)).isEqualTo("DISPATCHED");
         }
@@ -380,7 +381,7 @@ class LoanPayoutDatabaseTest {
                 .isEqualTo("DISPATCHING");
         String reference = scalar("SELECT end_to_end_reference FROM payments.withdrawal WHERE instruction_reference = ?",
                 "lending:" + loan.loanId());
-        Thread.sleep(20);
+        duePayout(loan);
         payoutSweep(AT_ONCE).sweepOnce();
         assertThat(payoutStatus(loan)).isEqualTo("PAID_OUT");
         assertThat(scalar("SELECT withdrawal_id::text FROM lending.loan_payout WHERE loan_id = ?::uuid", loan.loanId()))
@@ -406,7 +407,7 @@ class LoanPayoutDatabaseTest {
         post("p11t15-returned:" + UUID.randomUUID(), List.of(
                 new JournalLine(cashAtBank(), Direction.DEBIT, Money.ofMinorUnits(1500_00, EUR)),
                 new JournalLine(wallet, Direction.CREDIT, Money.ofMinorUnits(1500_00, EUR))));
-        Thread.sleep(20);
+        duePayout(loan);
         payoutSweep(AT_ONCE).sweepOnce();
         assertThat(payoutStatus(loan)).isEqualTo("PAID_OUT");
         assertThat(scalar("SELECT start_date::text FROM lending.accrual_start WHERE loan_id = ?::uuid", loan.loanId()))
@@ -438,10 +439,12 @@ class LoanPayoutDatabaseTest {
                 "{\"termsSha256\":\"" + hash + "\",\"payoutMethodId\":\"" + method + "\"}", customer.token(), key());
         assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
         String loanId = field(accepted.body(), "loanId");
+        due("lending.loan_disbursement", "next_attempt_at", "loan_id", loanId);
         assertThat(disbursementSweep.sweepOnce()).isPositive();
         assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
         Disbursed disbursed = new Disbursed(customer, loanId, method);
         assertThat(payoutStatus(disbursed)).isEqualTo("PENDING");
+        duePayout(disbursed);
         return disbursed;
     }
 
@@ -463,8 +466,31 @@ class LoanPayoutDatabaseTest {
         UUID request = UUID.fromString(field(submitted.body(), "decisionRequestId"));
         assertThat(CreditFixtures.decide(request)).isEqualTo("APPROVED");
         lendingTransactions.inTransaction(uow -> origination.hintRequest(uow, request));
+        due("lending.loan_application", "next_step_at", "decision_request_id", request.toString());
         originationSweep.sweepOnce();
         return field(client.read(customer.token(), field(submitted.body(), "applicationId")).body(), "offerId");
+    }
+
+    /**
+     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-034`, `X-TSK-013`'s
+     * aged-permit form) - never a {@code Thread.sleep} past a 1 ms permit, which a database clock stepped back (up to 1.7 s
+     * on the VM) outlasts; born "due at once", a permit is due only once the clock passes the birth.
+     */
+    private static void duePayout(Disbursed loan) throws Exception {
+        due("lending.loan_payout", "next_attempt_at", "loan_id", loan.loanId());
+    }
+
+    /** {@code table}'s permit {@code column} where {@code key} is {@code value}, a minute into the database's past. */
+    private static void due(String table, String column, String key, String value) throws Exception {
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE " + table + " SET " + column + " = statement_timestamp() - interval '1 minute'"
+                        + " WHERE " + key + " = '" + value + "'");
+            }
+            owner.commit();
+        }
     }
 
     private LoanPayoutSchedule payoutSweep(Duration permit) {
