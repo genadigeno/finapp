@@ -826,6 +826,9 @@ class RepaymentDatabaseTest {
         assertThat(count("SELECT count(*) FROM lending.repayment r JOIN ledger.journal_line l"
                 + " ON l.entry_id = r.journal_entry_id AND l.direction = 'DEBIT' WHERE r.loan_id = ?"
                 + " AND l.amount_minor <> r.amount_minor", id)).as("each entry debits the wallet the amount").isZero();
+        // P11-TSK-029: the production subledger proof agrees with these hand-written arms on every loan a suite proves.
+        LoanSubledgerProof.Verdict proof = LendingProofsWorld.SUBLEDGER.prove(LendingProofsWorld.record(loan));
+        assertThat(proof.holds()).as("LoanSubledgerProof: %s", proof).isTrue();
     }
 
     private static void assertRepaidOnce(LoanId loan, String key, long minor) {

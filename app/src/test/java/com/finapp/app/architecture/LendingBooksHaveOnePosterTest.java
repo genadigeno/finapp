@@ -115,6 +115,35 @@ class LendingBooksHaveOnePosterTest {
                 .isTrue());
     }
 
+    /**
+     * `P11-TSK-029`: the rule is no longer vacuous on either half. Statically, every one of the six per-loan purposes is
+     * named by a lending operation that posts to it - not only by its opener ({@code LoanAccounts}) - so the "only lending
+     * names it" rule above guards live posters. And the every-writer half - a raw SQL poster no Java scan can see - is the
+     * subledger proof's: it proves exactly the six per-loan purposes, each against the rows of its one poster.
+     */
+    @Test
+    @DisplayName("not vacuous (P11-TSK-029): each per-loan purpose has a live lending poster, and the subledger proof proves"
+            + " exactly the six")
+    void theLoanBookHasLivePostersAndItsProof() {
+        List<String> perLoan = com.finapp.lending.LoanAccounts.purposes().stream().map(AccountPurpose::name).toList();
+        assertThat(perLoan).hasSize(6).allMatch(LOAN_BOOK::contains);
+        assertThat(com.finapp.lending.LoanSubledgerProof.PURPOSES.stream().map(AccountPurpose::name).toList())
+                .as("the subledger proof proves exactly the six per-loan accounts, the every-writer half of this rule")
+                .containsExactlyElementsOf(perLoan);
+        Map<String, String> lending = new LinkedHashMap<>();
+        for (Path source : mainSources()) {
+            String path = normalised(source);
+            String name = fileName(path);
+            if (path.contains(LENDING_MAIN) && !name.equals("LoanAccounts.java") && !name.equals("LoanSubledgerProof.java")) {
+                lending.put(path, scan(read(source), false));
+            }
+        }
+        perLoan.forEach(purpose -> assertThat(lending.values().stream()
+                        .anyMatch(code -> Pattern.compile("\\b" + purpose + "\\b").matcher(code).find()))
+                .as("%s is posted by a lending operation, not only opened", purpose)
+                .isTrue());
+    }
+
     @Test
     @DisplayName("a planted poster is caught, in each spelling the rule claims to see, and prose is ignored")
     void aPlantedPosterIsCaught() {

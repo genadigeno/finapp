@@ -2820,6 +2820,7 @@ codes `INTERNAL`.
 | `loan_agreement` | `terms_sha256` | `INTERNAL` | A hash of the canonical terms |
 | `loan_agreement` | `effective_from` | `INTERNAL` | System time from which the version governs |
 | `loan_agreement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_agreement` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `loan_acceptance` | `id` | `INTERNAL` | Generated |
 | `loan_acceptance` | `loan_id` | `CONFIDENTIAL` | The loan accepted |
 | `loan_acceptance` | `agreement_id` | `CONFIDENTIAL` | The agreement version accepted |
@@ -2902,6 +2903,7 @@ account, named only on the journal line).
 | `repayment_schedule` | `start_date` | `INTERNAL` | The accrual start the first period runs from |
 | `repayment_schedule` | `intended_day` | `INTERNAL` | The repayment day the due dates are computed from |
 | `repayment_schedule` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment_schedule` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `repayment_schedule` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
 | `loan_instalment` | `id` | `INTERNAL` | Generated |
 | `loan_instalment` | `schedule_id` | `INTERNAL` | Its schedule version |
@@ -2975,6 +2977,7 @@ scheduling instant (`INTERNAL`).
 | `interest_accrual` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine version |
 | `interest_accrual` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 2's journal entry, by value - null for a zero day |
 | `interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `interest_accrual` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `interest_accrual` | `correlation_id` | `INTERNAL` | The account's correlation |
 
 ### `lending` - the instalment billing and the credit-balance application - *added by `P11-TSK-017`*
@@ -3004,6 +3007,7 @@ and entry references `CONFIDENTIAL`, dates, periods, kinds, versions and stamps 
 | `instalment_billing` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine version |
 | `instalment_billing` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 3's journal entry, by value - null for a billing of nothing |
 | `instalment_billing` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `instalment_billing` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `instalment_billing` | `correlation_id` | `INTERNAL` | The account's correlation |
 | `credit_balance_application` | `id` | `INTERNAL` | Generated |
 | `credit_balance_application` | `billing_id` | `INTERNAL` | The billing it was applied at - once |
@@ -3016,6 +3020,7 @@ and entry references `CONFIDENTIAL`, dates, periods, kinds, versions and stamps 
 | `credit_balance_application` | `allocation_engine_version` | `INTERNAL` | The pinned allocation engine version |
 | `credit_balance_application` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 6's journal entry, by value |
 | `credit_balance_application` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_balance_application` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `credit_balance_application` | `correlation_id` | `INTERNAL` | The account's correlation |
 | `credit_balance_allocation` | `id` | `INTERNAL` | Generated |
 | `credit_balance_allocation` | `application_id` | `INTERNAL` | The application it is a line of |
@@ -3046,6 +3051,7 @@ No available-limit column exists: the limit is derived, never stored (ADR-0100 p
 | `credit_line_draw` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 1's journal entry, by value |
 | `credit_line_draw` | `value_date` | `INTERNAL` | The business date of the database clock in the pinned zone - accrual runs from it |
 | `credit_line_draw` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_line_draw` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `credit_line_draw` | `correlation_id` | `INTERNAL` | The draw request's correlation |
 
 ### `lending` - the repayment and the closure - *added by `P11-TSK-018`*
@@ -3071,6 +3077,7 @@ wallet identifier is stored: the wallet is the party's, resolved through account
 | `repayment` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 5's journal entry, by value |
 | `repayment` | `value_date` | `INTERNAL` | The business date of the database clock in the pinned zone |
 | `repayment` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `repayment` | `correlation_id` | `INTERNAL` | The repayment request's correlation |
 | `repayment_allocation` | `id` | `INTERNAL` | Generated |
 | `repayment_allocation` | `repayment_id` | `CONFIDENTIAL` | The repayment it is a line of |
@@ -3090,6 +3097,7 @@ wallet identifier is stored: the wallet is the party's, resolved through account
 | `loan_closure` | `refund_journal_entry_id` | `CONFIDENTIAL` | The refund's journal entry, by value - null when nothing was refunded |
 | `loan_closure` | `repayment_id` | `CONFIDENTIAL` | The repayment whose transaction closed it - null for a closure by the servicing step |
 | `loan_closure` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_closure` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `loan_closure` | `correlation_id` | `INTERNAL` | The closing transaction's correlation |
 
 ### `lending` - the collection attempt - *added by `P11-TSK-019`*
@@ -3135,6 +3143,7 @@ versions and stamps `INTERNAL`.
 | `repayment_reversal` | `decided_by` | `CONFIDENTIAL` | The agent who approved or rejected it - never its proposer for an approval |
 | `repayment_reversal` | `decided_by_type` | `INTERNAL` | A closed actor type |
 | `repayment_reversal` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `repayment_reversal` | `decided_order` | `INTERNAL` | The decision's place in its loan's history - `lending.record_order` drawn by the edge function when the decision is written (`P11-TSK-029`, `V025`) |
 | `repayment_reversal` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
 | `repayment_reversal` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 10's journal entry, by value - exactly when approved |
 | `repayment_reversal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
@@ -3170,6 +3179,7 @@ amount, the line, agreement and entry references `CONFIDENTIAL`, dates, versions
 | `credit_line_statement` | `accrual_engine_version` | `INTERNAL` | The pinned accrual engine version whose rows it bills |
 | `credit_line_statement` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 3's journal entry, by value - null for a statement of nothing |
 | `credit_line_statement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `credit_line_statement` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `credit_line_statement` | `correlation_id` | `INTERNAL` | The line's correlation |
 
 ### `lending` - the credit line closure request - *added by `P11-TSK-023`*
@@ -3270,6 +3280,7 @@ assessment, agreement and entry references `CONFIDENTIAL`, kinds, outcomes, type
 | `fee_assessment` | `agreement_version` | `INTERNAL` | Its version |
 | `fee_assessment` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 4's journal entry, by value |
 | `fee_assessment` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `fee_assessment` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `fee_assessment` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the loan's own flow) |
 | `waiver` | `id` | `INTERNAL` | Generated - the waiver's identity and its ledger key's (`lending.waiver:<id>`) |
 | `waiver` | `loan_id` | `CONFIDENTIAL` | The loan whose fee or interest it waives |
@@ -3292,6 +3303,7 @@ assessment, agreement and entry references `CONFIDENTIAL`, kinds, outcomes, type
 | `waiver_decision` | `decided_by` | `CONFIDENTIAL` | The agent who approved or rejected it - never its proposer for an approval |
 | `waiver_decision` | `decided_by_type` | `INTERNAL` | A closed actor type |
 | `waiver_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `waiver_decision` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `waiver_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
 | `waiver_decision` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 8's, 8a's or 9's journal entry, by value - exactly when approved |
 | `waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
@@ -3337,6 +3349,7 @@ versions, hashes and stamps `INTERNAL`.
 | `loan_amendment_rescheduling` | `principal_minor` | `RESTRICTED-FINANCIAL` | Exactly the item's unpaid billed principal, re-classified as not due |
 | `loan_amendment_rescheduling` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 13's journal entry, by value - one per amendment |
 | `loan_amendment_rescheduling` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_amendment_rescheduling` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `loan_amendment_rescheduling` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
 
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*

@@ -247,7 +247,8 @@ operational accounts are seeded with UUIDv7 literals below the id ceiling.
 `V015` binding trigger restated by `V026`): a `MANUAL` line on any of them is refused at the domain
 and by the trigger. `LENDING_CAPITAL` is also a reconciled position, so completeness reports any line
 on it no recognition explains; the loan book is not - it opens no expectations - and is proven by the
-subledger proof (`P11-TSK-029`). Statically, `LendingBooksHaveOnePosterTest` lets only lending name a
+subledger proof (`LoanSubledgerProof`, built by `P11-TSK-029`: each of a loan's six balances folded from zero over its
+journal lines equals its rows' figure, and every entry on them is named by a row of the loan). Statically, `LendingBooksHaveOnePosterTest` lets only lending name a
 `LOAN_*` purpose and only the declaration (and, from `P11-TSK-004`, capital recognition and its
 readers) name `LENDING_CAPITAL`. No `*_CLEARING` purpose arrived (`INV-RAIL-04`): lending moves no
 money across a rail itself. Nothing posts to any of the ten yet; the posting rules are ADR-0096 §2's,

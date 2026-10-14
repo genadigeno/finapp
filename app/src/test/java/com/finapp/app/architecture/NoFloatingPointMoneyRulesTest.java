@@ -342,6 +342,10 @@ class NoFloatingPointMoneyRulesTest {
                     "com.finapp.app.lending.LoanConditionMetrics",
                     "com.finapp.app.lending.LoanConditionMetrics$Cached",
                     "com.finapp.app.lending.LoanConditionMetrics$Counts",
+                    // P11-TSK-029. The SAME case again: loan account COUNTS - how many the subledger proof HOLDS and FAILS
+                    // for, how many replay IDENTICAL and DIVERGED - through the ToDoubleFunction a Gauge imposes, NaN the
+                    // sentinel for unreadable. The proofs compare Money with Money; no figure is ever published (ADR-0072).
+                    "com.finapp.app.lending.LendingProofMetrics",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

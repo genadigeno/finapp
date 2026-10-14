@@ -497,6 +497,10 @@ class CredentialReachesNoEmittedSinkTest {
                         "AmendmentProposalRequest",
                         "AmendmentDecisionRequest",
                         "AmendmentAcceptanceBody",
+                        // P11-TSK-029: the investigator's replay of a loan - a reason screened for card-number and account
+                        // shapes at the domain, kept on the audit record. No secret; closed: never an engine version, never a
+                        // figure, never a party.
+                        "LoanReplayRequest",
                         // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
                         // and a NARRATIVE; no secret. The narrative is screened for card-number and
                         // account shapes at the domain and by kyc V009's CHECK, and the request's

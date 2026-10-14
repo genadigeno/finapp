@@ -11562,6 +11562,636 @@
         },
         "type": "object"
       },
+      "ExplainedAccrualView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "base": {
+            "type": "string"
+          },
+          "cumulativeExact": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "engine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedAgreementView": {
+        "properties": {
+          "accrualEngine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "agreementId": {
+            "type": "string"
+          },
+          "allocationEngine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "canonicalFormat": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "originId": {
+            "type": "string"
+          },
+          "repaymentDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scheduleEngine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "statementEngine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "template": {
+            "type": "string"
+          },
+          "templateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termsSha256": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedAllocationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "billedItemId": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedAmendmentView": {
+        "properties": {
+          "amendmentId": {
+            "type": "string"
+          },
+          "amendsVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "remainingInstalments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rescheduleArrears": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedApplicationView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedAllocationView"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string"
+          },
+          "billedItemId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedBalanceView": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "explained": {
+            "type": "boolean"
+          },
+          "ledger": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedBillingView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "billingId": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "interestDue": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "principalDue": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedClosureView": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "refund": {
+            "type": "string"
+          },
+          "refundJournalEntryId": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedConditionView": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "daysPastDue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaulted": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedDisbursementView": {
+        "properties": {
+          "journalEntryId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedDivergenceView": {
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedDrawView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "drawId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedEntryView": {
+        "properties": {
+          "explainedBy": {
+            "type": "string"
+          },
+          "explainedById": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedLineView"
+            },
+            "type": "array"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedFeeView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "billedItemId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "feeId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedInstalmentView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "closingPrincipal": {
+            "type": "string"
+          },
+          "days": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "instalmentId": {
+            "type": "string"
+          },
+          "interest": {
+            "type": "string"
+          },
+          "openingPrincipal": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedLineView": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedPayoffView": {
+        "properties": {
+          "businessDate": {
+            "type": "string"
+          },
+          "executed": {
+            "type": "boolean"
+          },
+          "goodThrough": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "string"
+          },
+          "quoteId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedPayoutView": {
+        "properties": {
+          "concludedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "withdrawalId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedRepaymentView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationEngine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedAllocationView"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedReschedulingView": {
+        "properties": {
+          "amendmentId": {
+            "type": "string"
+          },
+          "billedItemId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedReversalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "reversalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedScheduleView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "engine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "finalInstalment": {
+            "type": "string"
+          },
+          "instalment": {
+            "type": "string"
+          },
+          "instalments": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedInstalmentView"
+            },
+            "type": "array"
+          },
+          "intendedDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalInterest": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedStatementView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "cycleEnd": {
+            "type": "string"
+          },
+          "cycleStart": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "feesCarried": {
+            "type": "string"
+          },
+          "interestBilled": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "minimumPayment": {
+            "type": "string"
+          },
+          "principalBilled": {
+            "type": "string"
+          },
+          "statementId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplainedWaiverView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "billedItemId": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "feeId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "waiverId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ExplanationView": {
         "properties": {
           "amount": {
@@ -12406,6 +13036,161 @@
         },
         "type": "object"
       },
+      "LoanExplanationView": {
+        "properties": {
+          "accrualStart": {
+            "type": "string"
+          },
+          "accruals": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedAccrualView"
+            },
+            "type": "array"
+          },
+          "agreements": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedAgreementView"
+            },
+            "type": "array"
+          },
+          "amendments": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedAmendmentView"
+            },
+            "type": "array"
+          },
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedBalanceView"
+            },
+            "type": "array"
+          },
+          "billings": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedBillingView"
+            },
+            "type": "array"
+          },
+          "cancellationReason": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "closure": {
+            "$ref": "#/components/schemas/ExplainedClosureView"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedConditionView"
+            },
+            "type": "array"
+          },
+          "creditApplications": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedApplicationView"
+            },
+            "type": "array"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "disbursement": {
+            "$ref": "#/components/schemas/ExplainedDisbursementView"
+          },
+          "draws": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedDrawView"
+            },
+            "type": "array"
+          },
+          "fees": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedFeeView"
+            },
+            "type": "array"
+          },
+          "journalEntries": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedEntryView"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "payoffQuotes": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedPayoffView"
+            },
+            "type": "array"
+          },
+          "payout": {
+            "$ref": "#/components/schemas/ExplainedPayoutView"
+          },
+          "product": {
+            "type": "string"
+          },
+          "repayments": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedRepaymentView"
+            },
+            "type": "array"
+          },
+          "reschedulings": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedReschedulingView"
+            },
+            "type": "array"
+          },
+          "reversals": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedReversalView"
+            },
+            "type": "array"
+          },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedScheduleView"
+            },
+            "type": "array"
+          },
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedStatementView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subledgerFailures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "subledgerVerdict": {
+            "type": "string"
+          },
+          "waivers": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedWaiverView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "LoanListView": {
         "properties": {
           "loans": {
@@ -12520,6 +13305,37 @@
           "amount",
           "currency"
         ],
+        "type": "object"
+      },
+      "LoanReplayRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanReplayView": {
+        "properties": {
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainedDivergenceView"
+            },
+            "type": "array"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "replayed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "LoanTermsDecisionRequest": {
@@ -23033,6 +23849,33 @@
         }
       }
     },
+    "/v1/operator/loans/{id}/explanation": {
+      "get": {
+        "operationId": "explainLoan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanExplanationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/loans/{id}/repayments/{repaymentId}/reversal": {
       "post": {
         "operationId": "proposeRepaymentReversal",
@@ -23184,6 +24027,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReversalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/replay": {
+      "post": {
+        "operationId": "replayLoan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanReplayView"
                 }
               }
             },

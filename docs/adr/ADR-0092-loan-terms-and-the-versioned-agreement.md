@@ -259,5 +259,23 @@ only by an accepted amendment.
   constant - so an agreement copies its offer's format and a format-1 offer still `OFFERED` at deploy remains
   acceptable under the exact-copy trigger. `lending V011` replaces both canonical-shape `CHECK`s: the column equal to
   the bytes' token, format 1 its own set, format 2 that set and `+`, any other format refused - for every writer.
+- **Built: the replay (`P11-TSK-029`, 2026-10-14), with refinements read against the code.** (a) Point 9 as built:
+  `LoanReplayer` dispatches every computation on the version NUMBER a row pinned - an exhaustive `switch` over
+  `EngineVersion`, so a new engine version is a compile error until its replay exists - and a number this build does not
+  hold is `DIVERGED` (`ENGINE_ABSENT`), never another version's arithmetic and never skipped. (b) Every agreement version's
+  canonical terms are re-rendered from its rows in its STORED format - 1 and 2 from the offer and the version's columns
+  (with the illustration re-projected), 3 from the amendment and the schedule it fixed, 4 from the prepayment and the
+  schedule it fixed - and their SHA-256 re-verified against `terms_sha256`; the version's engines and template are held
+  to the terms version it pins. A format-3 version's effective date is the business date of its `effective_from` in the
+  pinned zone (the acceptance's clock read and its insert are one transaction's two statements apart - a midnight
+  between them would read `DIVERGED`, an alert investigated, never a correction). (c) `LoanReplayProof` then walks the
+  account's rows in the lock's order and re-derives every schedule version, accrual, billing, statement, credit-balance
+  application, allocation and late fee by the engine its row pinned over the state the rows and the ledger held just
+  before it. (d) **lending `V025`**: the record carries the lock's order itself - the sequence `lending.record_order`
+  drawn under L3 into `recorded_order` on every fact the replay walks (a waiver decision's by its trigger after it takes
+  L3, a reversal's `decided_order` by its edge function at the decision) - because a wall clock is not an order: the
+  replay found the database clock stepped back between two transactions, a prepayment's version 2 stamped before the
+  catch-up that preceded it. (e) The
+  door: `POST /v1/operator/loans/{id}/replay` (`LENDING_INVESTIGATE`, a reason, audited `lending.LoanReplayed`).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

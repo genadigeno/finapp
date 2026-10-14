@@ -302,5 +302,17 @@ Financial impact: the operational ledger gains the loan book and the platform's 
   capital proof reports `FAILS` (alerted) and every later acceptance, draw and principal-re-instating reversal is refused
   until capital is recognised again. The remedy for a deployed shortfall is treasury's (a new contribution), not a
   lock.
+- **Built: the subledger proof (`P11-TSK-029`, 2026-10-14), with refinements read against the code.** (a) Point 3's
+  identities as built, each on the account's normal side and folded from zero over journal lines: `LOAN_PRINCIPAL` =
+  disbursed or drawn - billed + re-scheduled (rule 13) - paid down (a line's paydowns and an instalment loan's
+  prepayments) + reversed paydowns; `LOAN_PRINCIPAL_DUE` = billed - re-scheduled - paid + reversed;
+  `LOAN_INTEREST_ACCRUED` = accruals - billed interest ("waived from accrued" is zero: every interest waiver releases a
+  billed item's due interest, rule 9); `LOAN_INTEREST_DUE` = billed - waived - paid + reversed; `LOAN_FEES_DUE` =
+  assessed - waived - paid + reversed; `LOAN_CREDIT_BALANCE` = held + fees refunded (rule 8a) - reversed held - applied -
+  refunded at closure. (b) Beyond the identities, every journal entry on the six accounts must be named by a row of the
+  loan - two rogue postings that net to nothing still fail it - the six accounts must be exactly the loan's, and a
+  `CANCELLED` account's six balances are zero like a `CLOSED` one's. (c) It is a pure function of one `LoanRecord`
+  read in one read-only `REPEATABLE READ` snapshot (`LendingProofs`), gauged `finapp.lending.subledger.proof{verdict}`
+  and shown, figure by figure, by the investigator's explanation. Nothing self-corrects.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.
