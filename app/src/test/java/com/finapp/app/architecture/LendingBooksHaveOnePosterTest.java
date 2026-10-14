@@ -66,7 +66,23 @@ class LendingBooksHaveOnePosterTest {
                             + " line - a statement credit matched to an approved contribution, the one way capital arises",
                     "LendingCapitalHeadroom.java",
                     "READER: resolves the currency's capital account, locks it FOR UPDATE (L6) and derives the headroom"
-                            + " from journal lines; it posts nothing");
+                            + " from journal lines; it posts nothing",
+                    "LendingReports.java",
+                    "READER (P11-TSK-030): the audited capital report sums the capital account's lines as of a business"
+                            + " date in one read-only snapshot - amounts are a report, never a series (ADR-0072); it posts"
+                            + " nothing");
+
+    /**
+     * Every file outside {@code lending} permitted to name the loan book, READ-only, with its role (`P11-TSK-030`): the
+     * audited operations reports, which must name the balances they report. A reader is held below never to reach a
+     * poster - no {@code PostingService}, {@code ReversalService} or {@code JournalLine} - so the permit cannot become a
+     * second way value moves.
+     */
+    static final Map<String, String> LOAN_BOOK_READERS =
+            Map.of(
+                    "LendingReports.java",
+                    "READER: the portfolio and delinquency reports sum each loan account's lines as of a business date"
+                            + " in one read-only snapshot, the book tied to the ledger; it posts nothing");
 
     /** Every LOAN_* purpose, derived from the declaration. */
     static final List<String> LOAN_BOOK =
@@ -113,6 +129,25 @@ class LendingBooksHaveOnePosterTest {
                         .anyMatch(source -> mentionsCapital(source.getValue())))
                 .as("no capital permit is stale: %s really names LENDING_CAPITAL", permitted)
                 .isTrue());
+        LOAN_BOOK_READERS.keySet().forEach(permitted -> assertThat(sources.entrySet().stream()
+                        .filter(source -> fileName(source.getKey()).equals(permitted))
+                        .anyMatch(source -> mentionsLoanBook(source.getValue())))
+                .as("no loan-book reader permit is stale: %s really names the loan book", permitted)
+                .isTrue());
+        // A READER - of either book - never reaches a poster: the permit is to name a balance, never to move one.
+        java.util.Set<String> readers = new java.util.TreeSet<>(LOAN_BOOK_READERS.keySet());
+        CAPITAL_PERMITTED.forEach((file, role) -> {
+            if (role.startsWith("READER")) {
+                readers.add(file);
+            }
+        });
+        sources.forEach((path, text) -> {
+            if (readers.contains(fileName(path))) {
+                assertThat(scan(text, false))
+                        .as("%s is a READER permit and must never reach a poster", path)
+                        .doesNotContain("PostingService").doesNotContain("ReversalService").doesNotContain("JournalLine");
+            }
+        });
     }
 
     /**
@@ -186,7 +221,7 @@ class LendingBooksHaveOnePosterTest {
                     if (DECLARING_FILE.equals(fileName)) {
                         return;
                     }
-                    if (!path.contains(LENDING_MAIN) && mentionsLoanBook(text)) {
+                    if (!path.contains(LENDING_MAIN) && !LOAN_BOOK_READERS.containsKey(fileName) && mentionsLoanBook(text)) {
                         outside.add("the loan book in " + path);
                     }
                     if (!CAPITAL_PERMITTED.containsKey(fileName) && mentionsCapital(text)) {

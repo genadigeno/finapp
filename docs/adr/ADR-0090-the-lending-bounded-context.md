@@ -234,5 +234,11 @@ ADR-0001, ADR-0006, ADR-0084.
     backlog's `EngineVersions` is the enum `EngineVersion` beside `LendingEngine`, a member per
     engine version, so a semantic change is a new member and the old one stays for replay.
 - The Phase 11 → 12 transition names refinance's owning phase.
+- **The activation gate, written (`P11-TSK-030`, 2026-10-14).** Point 9's preconditions are
+  `OPERATIONS_RUNBOOK.md` §7.4, in order, each a person's recorded act: #13 and #14 answered, a real bureau
+  adapter passing `CreditBureauContract`, a credit policy reading it, legal review of the terms (A1), lending
+  capital recognised, a four-eyes terms activation - and, last, the environment's scrape targets labelled
+  `lending_offered="true"`, which arms `LendingTermsNoneActive` (`infra/prometheus/rules/lending.yml`):
+  production's no-terms state is expected, so the alert is enabled per environment, never by default.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); the Phase 11 review
   (`P11-DOC-001`) reads it against the code, corrects it in place with dated notes, and accepts it.
