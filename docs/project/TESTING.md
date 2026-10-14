@@ -219,6 +219,27 @@ UTC's at the hour it starts (UTC-12 before 11:00 UTC, UTC+14 from then; `lending
 and prints the zone. `-Pfinapp.db.zone=<zone id>` pins another — `UTC` turns the shift off for a
 diagnosis. The other modules' tiers are not shifted.
 
+### The database clock steps back — wait for nothing, and order by nothing it stamps
+
+The test database runs in a Docker VM whose clock is corrected in steps, back by up to 1.7 s
+(ADR-0063). So a permit the database stamped "due at once" may not be due to the next statement,
+`Thread.sleep(20)` past a 1 ms permit races the step, and two rows' `created_at` can stand in the
+reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `P11-TSK-034`):
+
+- **Make a permit due, never wait for it**: move it into the database's past as the owner with the
+  triggers suspended — `AgedPermits.age` in `app`, `DisbursementWorld.duePayout` and the lending
+  fixtures that plant `next_*_at = statement_timestamp() - interval '1 minute'`; a fixture that moves
+  a loan's history into the past moves its servicing permit with it (`InterestAccrualDatabaseTest.backdate`).
+- **Order by the record, never the clock**: a domain key (`accrual_date`, `due_date`, `sequence`) or
+  lending's `recorded_order` / `decided_order`; compare a stamp only with the stamps the same
+  statement wrote (`concluded_at = GREATEST(LEAST(instant, decided_at), created_at)`).
+- **To prove behaviour on a stepped clock, step it**: `ClockStep` (lending's tests) shadows
+  `statement_timestamp()`, `transaction_timestamp()`, `now()` and `clock_timestamp()` in a schema of
+  its own that a session opts into by its `search_path` — the lending triggers are invoker's rights
+  with no path of their own, so production code and triggers run unchanged on a clock the case steps
+  back between a step's read and its writes (`afterRead` / `beforeRead`), optionally framed just
+  after a midnight (`BackwardClockDatabaseTest`).
+
 ### A suite that needs a database of its own
 
 The three rules are the default, and a few suites cannot meet them without losing what they

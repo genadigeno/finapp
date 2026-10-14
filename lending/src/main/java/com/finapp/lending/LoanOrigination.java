@@ -35,8 +35,9 @@ import lombok.RequiredArgsConstructor;
  * the product's terms version {@code ACTIVE} now pinned {@code FOR SHARE} ({@link LoanTermsAdministration#pinActive} -
  * the version recorded on the application is informational), the database clock read after the pin, and the offer born
  * with exactly the approved amount and term (A20), the pinned version's whole term set in its canonical terms, the loan's
- * illustrative schedule from today or the line's minimum-payment rule (A5), the application moved {@code OFFERED} beside
- * it. An approval that cannot be offered closes the application {@code CLOSED_UNDECIDED} with its reason and no offer:
+ * illustrative schedule from the offering day or the line's minimum-payment rule (A5), the application moved
+ * {@code OFFERED} beside it. The offering instant is the insert's own database stamp, never the step's read
+ * (`P11-TSK-034`, {@code lending V026}). An approval that cannot be offered closes the application {@code CLOSED_UNDECIDED} with its reason and no offer:
  * no {@code ACTIVE} terms ({@code PRODUCT_NOT_OFFERED}), the chosen day no longer offered
  * ({@code REPAYMENT_DAY_NOT_OFFERED}), the decision already lapsed ({@code DECISION_LAPSED}), or a loan whose own
  * schedule would not amortise ({@code TERMS_NOT_AMORTISING}).

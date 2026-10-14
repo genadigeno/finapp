@@ -207,6 +207,22 @@ class BackwardClockDatabaseTest {
         assertThat(offenders).isEmpty();
     }
 
+    @Test
+    @DisplayName("the borrower's repayment history reads newest first in the record's order: a later repayment a clock"
+            + " stepped back stamped before the earlier one is still listed first")
+    void theRepaymentHistoryReadsInTheRecordsOrder() {
+        LoanId loan = RepaymentDatabaseTest.billedLoan(5_500_00);
+        Repayments.Repaid earlier = RepaymentDatabaseTest.repay(loan, RepaymentDatabaseTest.key(), 50_00);
+        Repayments.Repaid later = RepaymentDatabaseTest.repay(loan, RepaymentDatabaseTest.key(), 60_00);
+        // The clock stepped back between the two: the later one's stamp a second before the earlier one's.
+        asOwner("UPDATE lending.repayment SET created_at = (SELECT created_at FROM lending.repayment WHERE id = '"
+                + earlier.repayment().id() + "') - interval '1 second' WHERE id = '" + later.repayment().id() + "'");
+        List<Repayment> history = DisbursementWorld.inOneTransaction(uow -> REPAYMENT_STORE.ownedBy(uow, loan,
+                partyOf(loan), 10));
+        assertThat(history).extracting(Repayment::id)
+                .containsExactly(later.repayment().id(), earlier.repayment().id());
+    }
+
     // ------------------------------------------------------------------ the servicing permit
 
     @Test

@@ -185,3 +185,18 @@ Financial impact:
   disagree, the order of facts wins - this ADR's decision 2 - and the stamp is later than the clock by at most the step.
   The ceiling's consumer (the accrual start's "never after today") takes the same reference, `GREATEST(the clock, the
   birth)`, so it does not refuse what the clamp produced. No instance clock, no domain change.
+- *2026-10-14, `P11-TSK-034`*: a fifth set of database-own stamps, and the ranks that judge against the database clock
+  across statements of ONE transaction. A step back between two statements makes the later `statement_timestamp()` read
+  earlier than the earlier one, and `transaction_timestamp()` stand after both, so a rank that judged a value one
+  statement read against ANOTHER single reading refused legitimate acts: the loan offer's `offered_at` (read by the step,
+  refused by `lending V005`/`V006` when after the insert's clock - the recurring origination `P0001`), and fifteen
+  business-date ranks (`V009`, `V013`, `V017`…`V024`) that read "today" from one reading while the step dated its fact by
+  its own. `lending V026` applies decision 2 in its database form: the offering instant is the insert's own stamp,
+  `GREATEST(statement_timestamp(), transaction_timestamp())` (re-read in the judging statement, floored by the
+  transaction's start); and "today" is the range the transaction read - `lending.business_date_earliest(zone)` for a
+  floor, `lending.business_date_latest(zone)` for a ceiling - so a date is admitted exactly when the database clock showed
+  it to this transaction, and a date beyond every reading is still refused. Judgements stay decision 4's: the offer's and
+  the amendment's expiries and the disbursement's deadline are refused fail-closed within a step of their instant, and a
+  permit stamped at birth is due a step later (a liveness delay). No instance clock, no domain change. The test suites
+  that waited on a database-stamped permit or ordered by its stamps were moved to aged permits and the record's order;
+  `ClockStep` (lending's tests) steps the database clock on demand (`TESTING.md` §5).

@@ -229,8 +229,10 @@ amount and term, the pinned version's rate, engines, template and a line's rule 
 canonical terms (format 1; format 2 from `P11-TSK-031` - format 1 with `+` in a token, so a servicing zone east of UTC
 is spelled) with `terms_sha256` - a `CHECK` holds the hash to the stored bytes - and the offer document's
 `document_sha256`; `loan_offer_event` the history. Born `OFFERED` under L1 for an application `AWAITING_DECISION` of the
-same party and product, on the product's `ACTIVE` version, `offered_at` a database instant of the transaction;
-`expires_at` and the permit stamped by the trigger; `UNIQUE (application_id)` and `UNIQUE (decision_id)`; committed only
+same party and product, on the product's `ACTIVE` version, `offered_at` a database instant of the transaction - the
+insert's own stamp, `GREATEST(statement_timestamp(), transaction_timestamp())`, never a value the step read in an
+earlier statement, which a database clock stepped back would put after the insert's clock (`lending V026`,
+`P11-TSK-034`); the illustration starts on its business date; `expires_at` and the permit stamped by the trigger; `UNIQUE (application_id)` and `UNIQUE (decision_id)`; committed only
 beside the application's `OFFERED` edge and with its terms (deferred). The decline (`POST /v1/me/loan-offers/{id}/decline`,
 conditional step-up) is conditional on `OFFERED` and `expires_at > statement_timestamp()`, refused `409
 lending.OfferNotAcceptable` otherwise - so an offer past its instant but not yet swept is not declined; it expires. The
