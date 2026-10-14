@@ -11,8 +11,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CompletableFuture;
 import java.util.TimeZone;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -54,7 +54,14 @@ final class SecondJvm {
                 "-cp", System.getProperty("java.class.path"), main.getName(), out.toString()));
         command.addAll(List.of(arguments));
         long started = System.nanoTime();
-        Process child = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        Process child;
+        try {
+            child = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        } catch (IOException | RuntimeException failed) {
+            Files.deleteIfExists(out);
+            Files.deleteIfExists(log);
+            throw failed;
+        }
         return new Started(child, out, log, started);
     }
 
@@ -78,6 +85,13 @@ final class SecondJvm {
         /** How long the child ran, from its start to its exit - once joined. */
         long elapsedNanos() {
             return exited.join() - started;
+        }
+
+        /** For a caller that failed before joining: the child destroyed and its files deleted - nothing left behind. */
+        void abandon() throws IOException {
+            child.destroyForcibly();
+            Files.deleteIfExists(out);
+            Files.deleteIfExists(log);
         }
 
         /** Waits at most {@code timeout} for the child and returns the lines it wrote after its defaults line. */

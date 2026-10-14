@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.Month;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -87,8 +88,11 @@ class AmortisationBatteryTest {
         ENGINE_NUMBER
     }
 
-    /** A perturbed or swapped record's replay. */
-    record Flip(String what, Verdict verdict, Set<Check> checks, boolean ledgerHolds) {}
+    /**
+     * A perturbed or swapped record's replay. {@code namesItsRow}: the findings name the changed row itself under the
+     * expected check - not merely the check's kind on some other row (a swapped slice changes many rows: always true).
+     */
+    record Flip(String what, Verdict verdict, Set<Check> checks, boolean ledgerHolds, boolean namesItsRow) {}
 
     /** What one account came to - its record discarded. */
     record Outcome(Kind kind, int index, String behaviour, AmortisationInAnotherJvm.Summary summary, Verdict verdict,
@@ -106,9 +110,16 @@ class AmortisationBatteryTest {
         // The second JVM first, so it works while this one does.
         SecondJvm.Started child = SecondJvm.start(AmortisationInAnotherJvm.class, "1g", Integer.toString(LOANS),
                 Integer.toString(LINES));
-        outcomes = IntStream.range(0, LOANS + LINES).parallel().mapToObj(AmortisationBatteryTest::outcome).toList();
-        long parentNanos = System.nanoTime() - begun;
-        long[] cost = scheduleCost();
+        long parentNanos;
+        long[] cost;
+        try {
+            outcomes = IntStream.range(0, LOANS + LINES).parallel().mapToObj(AmortisationBatteryTest::outcome).toList();
+            parentNanos = System.nanoTime() - begun;
+            cost = scheduleCost();
+        } catch (RuntimeException | Error failed) {
+            child.abandon(); // this JVM's pass failed: no orphaned child, no temporary files
+            throw failed;
+        }
         theirs = child.join(Duration.ofMinutes(30));
         long wallNanos = System.nanoTime() - begun;
         ours = AmortisationInAnotherJvm.lines(outcomes.stream().map(Outcome::summary).toList(), LOANS, LINES);
@@ -149,8 +160,10 @@ class AmortisationBatteryTest {
         LoanRecord perturbedRecord = Perturbed.of(perturbation, generated);
         LoanReplayProof.Replay perturbed = REPLAY.replay(perturbedRecord);
         boolean perturbedHolds = perturbation != Perturbation.AGREEMENT_BYTE || SUBLEDGER.prove(perturbedRecord).holds();
+        boolean namesItsRow = perturbed.findings().contains(new LoanReplayProof.Finding(Perturbed.named(perturbation),
+                Perturbed.subject(perturbation, generated.record())));
         Flip flip = new Flip(Perturbed.what(perturbation, generated), perturbed.verdict(), perturbed.checks(),
-                perturbedHolds);
+                perturbedHolds, namesItsRow);
 
         Optional<Arithmetic> swapped = swappedArithmetic(kind, index);
         boolean predicted = false;
@@ -160,7 +173,7 @@ class AmortisationBatteryTest {
             predicted = swapped.get() == Arithmetic.ROUNDED_TWICE ? alternate.roundingSensitive() : alternate.capBinds();
             LoanReplayProof.Replay alternateReplay = REPLAY.replay(alternate.record());
             swappedReplay = Optional.of(new Flip(swapped.get().name(), alternateReplay.verdict(), alternateReplay.checks(),
-                    true));
+                    true, true));
         }
         long finished = System.nanoTime();
         return new Outcome(kind, index, generated.behaviour(), summary, replay.verdict(), replay.replayed(),
@@ -230,10 +243,35 @@ class AmortisationBatteryTest {
                 Tag.ZERO_RATE, Tag.MONTH_END_STARTS, Tag.FORMAT_1, Tag.FORMAT_2)) {
             assertThat(lineTags.get(tag)).as("lines: " + tag).isPositive();
         }
+        // Floors at about half of the figures the full-size population is recorded with (BACKLOG.md's as-built), so a
+        // change to the generator that thins a case out fails here and not only in the fingerprint a reviewer may re-pin.
+        Map<Tag, Long> loanFloors = new EnumMap<>(Map.of(Tag.LEAP_DAY_ACCRUALS, 3_500L, Tag.POST_MATURITY_BILLINGS,
+                2_500L, Tag.LATE_FEES_CAPPED, 750L, Tag.CLOSURES, 4_000L, Tag.REFUNDS, 500L, Tag.RAISED_SCHEDULES, 70L,
+                Tag.MONTH_END_STARTS, 700L));
+        Map<Tag, Long> lineFloors = new EnumMap<>(Map.of(Tag.LEAP_DAY_ACCRUALS, 350L, Tag.EMPTY_STATEMENTS, 4_500L,
+                Tag.FLOOR_DOMINATES, 3_000L, Tag.RATIO_DOMINATES, 8_000L, Tag.CAP_DOMINATES, 8_000L,
+                Tag.LATE_FEES_CAPPED, 130L, Tag.DRAWS, 14_000L));
+        loanFloors.forEach((tag, floor) -> assertThat(loanTags.get(tag)).as("loans: " + tag).isGreaterThanOrEqualTo(floor));
+        lineFloors.forEach((tag, floor) -> assertThat(lineTags.get(tag)).as("lines: " + tag).isGreaterThanOrEqualTo(floor));
+        assertThat(lines.stream().filter(Outcome::capBinds).count()).as("lines on which the cap binds")
+                .isGreaterThanOrEqualTo(600);
+        assertThat(lines.stream().map(outcome -> outcome.start().getYear()).collect(Collectors.toSet()))
+                .as("lines starting in 2027 and in 2028").contains(2027, 2028);
         for (Perturbation perturbation : Perturbation.values()) {
             assertThat(outcomes.stream().filter(outcome -> outcome.perturbation() == perturbation).count())
                     .as("accounts perturbed by " + perturbation).isGreaterThanOrEqualTo(1_000);
         }
+        // The selections are the mix's, not the index's: the swapped loans meet every term and repayment day, and the
+        // lines whose statement is perturbed - and the swapped lines - meet every statement day.
+        List<Outcome> swappedLoans = loans.stream().filter(outcome -> outcome.swapped().isPresent()).toList();
+        assertThat(swappedLoans.stream().map(Outcome::term).collect(Collectors.toSet())).as("swapped loans: every term")
+                .isEqualTo(IntStream.rangeClosed(6, 60).boxed().collect(Collectors.toSet()));
+        assertThat(swappedLoans.stream().map(Outcome::day).collect(Collectors.toSet()))
+                .as("swapped loans: every repayment day").isEqualTo(days);
+        assertThat(lines.stream().filter(outcome -> outcome.perturbation() == Perturbation.STATEMENT).map(Outcome::day)
+                .collect(Collectors.toSet())).as("statement-perturbed lines: every statement day").isEqualTo(days);
+        assertThat(lines.stream().filter(outcome -> outcome.swapped().isPresent()).map(Outcome::day)
+                .collect(Collectors.toSet())).as("swapped lines: every statement day").isEqualTo(days);
         for (Arithmetic arithmetic : List.of(Arithmetic.ROUNDED_TWICE, Arithmetic.UNCAPPED)) {
             assertThat(outcomes.stream().filter(outcome -> outcome.swapped().equals(Optional.of(arithmetic)))
                     .filter(Outcome::predicted).count()).as("accounts predicted to diverge under " + arithmetic)
@@ -315,7 +353,8 @@ class AmortisationBatteryTest {
                         == Verdict.IDENTICAL).count() + " IDENTICAL, subledger holding on "
                 + forged.stream().filter(outcome -> outcome.perturbed().ledgerHolds()).count());
         List<String> wrong = forged.stream().filter(outcome -> outcome.perturbed().verdict() != Verdict.DIVERGED
-                || !outcome.perturbed().checks().equals(Set.of(Check.TERMS)) || !outcome.perturbed().ledgerHolds())
+                || !outcome.perturbed().checks().equals(Set.of(Check.TERMS)) || !outcome.perturbed().namesItsRow()
+                || !outcome.perturbed().ledgerHolds())
                 .map(outcome -> outcome.kind() + " " + outcome.index() + " " + outcome.perturbed()).toList();
         assertThat(wrong).as("forged agreements not DIVERGED by TERMS alone with the money untouched").isEmpty();
     }
@@ -377,14 +416,42 @@ class AmortisationBatteryTest {
 
     // ------------------------------------------------------------------ the perturbations
 
-    /** One per account, rotated by index - every kind on at least 1,000 accounts at full size. */
+    /**
+     * A stable 64-bit mix of an account's index (splitmix64's finaliser). Every selection below - the perturbation's
+     * rotation, the engine swapped, the swapped slice - is taken from it and never from the index itself: the generator
+     * walks the index ({@code term = 6 + index % 55}, {@code day = 1 + index % 28}, a zero rate on {@code index % 16}), so
+     * an index-modulo selection would cover a lattice of the grid (the gate's finding) where the mix covers all of it.
+     */
+    static long mix(Kind kind, int index) {
+        long z = (kind == Kind.LOAN ? 0x4C4F414EL : 0x4C494E45L) * 0x9E3779B97F4A7C15L + index;
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        return z ^ (z >>> 31);
+    }
+
+    /** {@code mix}'s bits from {@code shift}, reduced modulo {@code modulus} - never negative. */
+    static int pick(Kind kind, int index, int shift, int modulus) {
+        return (int) Math.floorMod(mix(kind, index) >>> shift, (long) modulus);
+    }
+
+    /** The half of the lines - exactly half, by the mix's rank - whose perturbation is their statement. */
+    private static final boolean[] STATEMENT_HALF = statementHalf();
+
+    private static boolean[] statementHalf() {
+        boolean[] half = new boolean[LINES];
+        IntStream.range(0, LINES).boxed().sorted(Comparator.comparingLong(index -> mix(Kind.LINE, index)))
+                .limit(LINES / 2).forEach(index -> half[index] = true);
+        return half;
+    }
+
+    /** One per account, rotated by the mix - every kind on at least 1,000 accounts at full size. */
     static Perturbation perturbationOf(Generated generated) {
         int index = generated.index();
         List<Perturbation> kinds;
         if (generated.kind() == Kind.LOAN) {
             kinds = List.of(Perturbation.ACCRUAL, Perturbation.BILLING, Perturbation.ALLOCATION,
                     Perturbation.AGREEMENT_BYTE, Perturbation.ENGINE_NUMBER);
-            int first = (index + index / 55) % kinds.size();
+            int first = pick(Kind.LOAN, index, 0, kinds.size());
             for (int i = 0; i < kinds.size(); i++) {
                 Perturbation kind = kinds.get((first + i) % kinds.size());
                 if (Perturbed.applies(kind, generated.record())) {
@@ -392,12 +459,12 @@ class AmortisationBatteryTest {
                 }
             }
         } else {
-            if (index % 2 == 0 && Perturbed.applies(Perturbation.STATEMENT, generated.record())) {
+            if (STATEMENT_HALF[index] && Perturbed.applies(Perturbation.STATEMENT, generated.record())) {
                 return Perturbation.STATEMENT;
             }
             kinds = List.of(Perturbation.ACCRUAL, Perturbation.ALLOCATION, Perturbation.AGREEMENT_BYTE,
                     Perturbation.ENGINE_NUMBER);
-            int first = (index / 2) % kinds.size();
+            int first = pick(Kind.LINE, index, 0, kinds.size());
             for (int i = 0; i < kinds.size(); i++) {
                 Perturbation kind = kinds.get((first + i) % kinds.size());
                 if (Perturbed.applies(kind, generated.record())) {
@@ -408,15 +475,15 @@ class AmortisationBatteryTest {
         return Perturbation.AGREEMENT_BYTE;
     }
 
-    /** Every tenth loan's accrual rounded twice; every tenth line's, alternately, rounded twice or uncapped. */
+    /** One loan in ten (by the mix) rounded twice; one line in ten, by the mix's next bit, rounded twice or uncapped. */
     static Optional<Arithmetic> swappedArithmetic(Kind kind, int index) {
-        if (kind == Kind.LOAN) {
-            return index % SLICE == 0 ? Optional.of(Arithmetic.ROUNDED_TWICE) : Optional.empty();
-        }
-        if (index % SLICE != 5) {
+        if (pick(kind, index, 24, SLICE) != 0) {
             return Optional.empty();
         }
-        return Optional.of((index / SLICE) % 2 == 0 ? Arithmetic.UNCAPPED : Arithmetic.ROUNDED_TWICE);
+        if (kind == Kind.LOAN) {
+            return Optional.of(Arithmetic.ROUNDED_TWICE);
+        }
+        return Optional.of(pick(kind, index, 40, 2) == 0 ? Arithmetic.UNCAPPED : Arithmetic.ROUNDED_TWICE);
     }
 
     /** A copy of a record with one fact changed - the original untouched (it already replayed IDENTICAL). */
@@ -446,7 +513,7 @@ class AmortisationBatteryTest {
             List<LendingEngine> engines = generated.kind() == Kind.LOAN
                     ? List.of(LendingEngine.SCHEDULE, LendingEngine.ACCRUAL, LendingEngine.ALLOCATION)
                     : List.of(LendingEngine.STATEMENT, LendingEngine.ACCRUAL, LendingEngine.ALLOCATION);
-            return engines.get((generated.index() / 7) % engines.size());
+            return engines.get(pick(generated.kind(), generated.index(), 16, engines.size()));
         }
 
         static LoanRecord of(Perturbation kind, Generated generated) {
@@ -461,17 +528,44 @@ class AmortisationBatteryTest {
             };
         }
 
+        /** The check a perturbation must be named by. */
+        static Check named(Perturbation kind) {
+            return switch (kind) {
+                case ACCRUAL -> Check.ACCRUAL;
+                case BILLING -> Check.BILLING;
+                case STATEMENT -> Check.STATEMENT;
+                case ALLOCATION -> Check.ALLOCATION;
+                case AGREEMENT_BYTE -> Check.TERMS;
+                case ENGINE_NUMBER -> Check.ENGINE_ABSENT;
+            };
+        }
+
+        /** The row a perturbation changes - the one its finding must name (an engine number is the agreement's). */
+        static UUID subject(Perturbation kind, LoanRecord record) {
+            return switch (kind) {
+                case ACCRUAL -> record.accruals().get(accrualIndex(record)).id();
+                case BILLING -> record.billings().get(record.billings().size() / 2).id();
+                case STATEMENT -> record.statements().get(record.statements().size() / 2).id();
+                case ALLOCATION -> record.repayments().get(movable(record).orElseThrow()[0]).id();
+                case AGREEMENT_BYTE, ENGINE_NUMBER -> record.agreements().get(0).id();
+            };
+        }
+
+        /** An accrual that is not its period's last (its successor reads it) - from the middle of the record. */
+        private static int accrualIndex(LoanRecord record) {
+            List<LoanRecord.Accrual> accruals = record.accruals();
+            for (int i = accruals.size() / 2; i < accruals.size() - 1; i++) {
+                if (accruals.get(i + 1).periodStart().equals(accruals.get(i).periodStart())) {
+                    return i;
+                }
+            }
+            return accruals.size() / 2;
+        }
+
         /** An accrual that is not its period's last (its successor reads it), its posting one minor unit up. */
         private static LoanRecord accrual(LoanRecord record) {
             List<LoanRecord.Accrual> accruals = new ArrayList<>(record.accruals());
-            int chosen = accruals.size() / 2;
-            for (int i = accruals.size() / 2; i < accruals.size() - 1; i++) {
-                LoanRecord.Accrual next = accruals.get(i + 1);
-                if (next.periodStart().equals(accruals.get(i).periodStart())) {
-                    chosen = i;
-                    break;
-                }
-            }
+            int chosen = accrualIndex(record);
             LoanRecord.Accrual row = accruals.get(chosen);
             accruals.set(chosen, new LoanRecord.Accrual(row.id(), row.date(), row.periodStart(), row.periodEnd(),
                     row.base(), row.cumulativeExact(), plus(row.posted(), 1), row.agreementId(), row.agreementVersion(),
@@ -551,7 +645,10 @@ class AmortisationBatteryTest {
                     line.component(), plus(line.amount(), by));
         }
 
-        /** One byte of the canonical terms changed - and re-hashed, as a forger would, so only re-rendering sees it. */
+        /**
+         * The canonical terms forged - a key inserted into the template object ({@code "x":"1",}, `LendingProofDatabaseTest`'s
+         * shape) - and re-hashed, as a forger would, so only re-rendering sees it.
+         */
         private static LoanRecord forged(LoanRecord record) {
             LoanRecord.Agreement agreement = record.agreements().get(0);
             String terms = agreement.canonicalTerms().replace("\"template\":{", "\"template\":{\"x\":\"1\",");
@@ -767,12 +864,13 @@ class AmortisationBatteryTest {
     private static void assertFlipped(Perturbation perturbation, Check named) {
         List<Outcome> perturbed = perturbedBy(perturbation);
         assertThat(perturbed).as("accounts perturbed by " + perturbation).isNotEmpty();
+        assertThat(Perturbed.named(perturbation)).as("the check " + perturbation + " must name").isEqualTo(named);
         List<String> unflipped = perturbed.stream().filter(outcome -> outcome.perturbed().verdict() != Verdict.DIVERGED
-                || !outcome.perturbed().checks().contains(named))
+                || !outcome.perturbed().checks().contains(named) || !outcome.perturbed().namesItsRow())
                 .map(outcome -> outcome.kind() + " " + outcome.index() + " " + outcome.perturbed()).toList();
         System.out.println("P11-TST-002 PERTURBED " + perturbation + ": " + perturbed.size() + " accounts, "
-                + (perturbed.size() - unflipped.size()) + " DIVERGED naming " + named);
-        assertThat(unflipped).as("perturbed accounts not DIVERGED by " + named).isEmpty();
+                + (perturbed.size() - unflipped.size()) + " DIVERGED naming " + named + " on the changed row");
+        assertThat(unflipped).as("perturbed accounts not DIVERGED by " + named + " on the changed row").isEmpty();
     }
 
     private static List<Outcome> perturbedBy(Perturbation perturbation) {
