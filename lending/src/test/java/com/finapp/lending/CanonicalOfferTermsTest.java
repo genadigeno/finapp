@@ -114,9 +114,12 @@ class CanonicalOfferTermsTest {
         assertThat(CanonicalOfferTerms.render(west, 1)).contains("\"servicingZone\":\"-14:00\"");
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.render(west, 3));
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.render(west, 0));
-        // Format 3 is an amended agreement version's (P11-TSK-027) - read, never rendered by render(content, format).
+        // Format 3 is an amended agreement version's (P11-TSK-027), format 4 a prepayment's (P11-TSK-028) - read, never
+        // rendered by render(content, format).
         assertThat(CanonicalOfferTerms.formatOf("{\"format\":\"3\",\"x\":\"y\"}")).isEqualTo(3);
-        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"format\":\"4\",\"x\":\"y\"}"));
+        assertThat(CanonicalOfferTerms.formatOf("{\"format\":\"4\",\"x\":\"y\"}")).isEqualTo(4);
+        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.render(west, 4));
+        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"format\":\"5\",\"x\":\"y\"}"));
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"offer\":{}}"));
         assertThatIllegalArgumentException().isThrownBy(() -> CanonicalOfferTerms.formatOf("{\"format\":\"2\"}"));
     }
@@ -155,6 +158,41 @@ class CanonicalOfferTermsTest {
                 new CanonicalOfferTerms.Amendment(amendment.amendment(), 1, "ab".repeat(32), 3, amendment.effectiveDate(),
                         amendment.scheduleStart(), amendment.firstDueDate(), 24, amendment.schedulePrincipal(),
                         amendment.arrearsRescheduled()));
+    }
+
+    @Test
+    @DisplayName("format 4 - a prepayment's agreement version's (P11-TSK-028): the same content renders the same bytes; it"
+            + " declares itself, carries the governing rate in its term set and the prepayment in place of the illustration"
+            + " - the version and hash it follows, the effective date, the amount prepaid and the schedule it fixed - in"
+            + " format 2's token set; a different prepayment, amount or schedule is a different hash")
+    void format4IsAPrepaymentsVersion() {
+        CanonicalOfferTerms.Content content = loan(LoanTermsFixtures.personalLoan("0.0899").build(), 10_000_00, 9);
+        CanonicalOfferTerms.Prepayment prepayment = new CanonicalOfferTerms.Prepayment(
+                java.util.UUID.fromString("01928c3a-0000-7000-8000-000000000028"), 1, "cd".repeat(32), 2,
+                java.time.LocalDate.parse("2026-10-14"), Money.ofMinorUnits(2_000_00, LoanTermsFixtures.EUR),
+                java.time.LocalDate.parse("2026-10-10"), java.time.LocalDate.parse("2026-11-10"), 8,
+                Money.ofMinorUnits(6_400_00, LoanTermsFixtures.EUR), Money.ofMinorUnits(879_15, LoanTermsFixtures.EUR));
+        String canonical = CanonicalOfferTerms.renderPrepayment(content, prepayment);
+        assertThat(canonical).isEqualTo(CanonicalOfferTerms.renderPrepayment(content, prepayment))
+                .startsWith("{\"format\":\"4\",").matches("^\\{[A-Za-z0-9_.:+\",{}\\[\\]-]*\\}$")
+                .contains("\"nominalAnnualRate\":\"0.0899\"", "\"termMonths\":\"9\"",
+                        "\"prepayment\":{\"prepayment\":\"01928c3a-0000-7000-8000-000000000028\"",
+                        "\"followsVersion\":\"1\"", "\"followsTermsSha256\":\"" + "cd".repeat(32) + "\"",
+                        "\"agreementVersion\":\"2\"", "\"effectiveDate\":\"2026-10-14\"", "\"prepaid\":\"200000\"",
+                        "\"scheduleStart\":\"2026-10-10\"", "\"firstDueDate\":\"2026-11-10\"",
+                        "\"remainingInstalments\":\"8\"", "\"schedulePrincipal\":\"640000\"",
+                        "\"instalment\":\"87915\"")
+                .doesNotContain("illustration").doesNotContain("amendment");
+        assertThat(CanonicalOfferTerms.formatOf(canonical)).isEqualTo(4);
+        CanonicalOfferTerms.Prepayment other = new CanonicalOfferTerms.Prepayment(prepayment.prepayment(), 1,
+                "cd".repeat(32), 2, prepayment.effectiveDate(), Money.ofMinorUnits(2_000_01, LoanTermsFixtures.EUR),
+                prepayment.scheduleStart(), prepayment.firstDueDate(), 8, prepayment.schedulePrincipal(),
+                prepayment.instalment());
+        assertThat(hex(CanonicalOfferTerms.renderPrepayment(content, other))).isNotEqualTo(hex(canonical));
+        assertThatIllegalArgumentException().as("a prepayment makes the next version").isThrownBy(() ->
+                new CanonicalOfferTerms.Prepayment(prepayment.prepayment(), 2, "cd".repeat(32), 2,
+                        prepayment.effectiveDate(), prepayment.prepaid(), prepayment.scheduleStart(),
+                        prepayment.firstDueDate(), 8, prepayment.schedulePrincipal(), prepayment.instalment()));
     }
 
     @Test

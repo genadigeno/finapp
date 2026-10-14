@@ -185,6 +185,73 @@ class ScheduleEngineV1Test {
         assertThat(schedule.totalInterest()).isEqualTo(eur("163.52"));
     }
 
+    @Test
+    @DisplayName("recalculation at the instalment (step 7, a partial prepayment - P11-TSK-028): the same level instalment,"
+            + " the least term that amortises the lower principal - EUR 1,000.00 prepaid off the recalculation above"
+            + " shortens ten instalments to eight, the last the remainder and its interest, below the level one")
+    void recalculationAtTheInstalment() {
+        LoanTerms terms = personalLoan("0.0899").build();
+        LocalDate effective = LocalDate.parse("2026-06-05");
+        LocalDate next = LocalDate.parse("2026-06-20");
+        ScheduleOutcome outcome = ScheduleEngineV1.recalculateAtInstalment(terms, eur("3321.09"), eur("448.47"), 10, 20,
+                effective, next);
+        Schedule schedule = ((ScheduleOutcome.Projected) outcome).schedule();
+        assertThat(schedule.instalment()).as("the instalment unchanged").isEqualTo(eur("448.47"));
+        assertThat(schedule.principal()).isEqualTo(eur("3321.09"));
+        // An independent oracle (exact rationals, the instalment held at 448.47 until what is left and its interest fit).
+        assertThat(rows(schedule)).containsExactly(
+                "1|2026-06-05|2026-06-20|15|3321.09|12.27|436.20|448.47|2884.89",
+                "2|2026-06-20|2026-07-20|30|2884.89|21.32|427.15|448.47|2457.74",
+                "3|2026-07-20|2026-08-20|31|2457.74|18.77|429.70|448.47|2028.04",
+                "4|2026-08-20|2026-09-20|31|2028.04|15.48|432.99|448.47|1595.05",
+                "5|2026-09-20|2026-10-20|30|1595.05|11.79|436.68|448.47|1158.37",
+                "6|2026-10-20|2026-11-20|31|1158.37|8.84|439.63|448.47|718.74",
+                "7|2026-11-20|2026-12-20|30|718.74|5.31|443.16|448.47|275.58",
+                "8|2026-12-20|2027-01-20|31|275.58|2.10|275.58|277.68|0.00");
+        assertThat(schedule.totalInterest()).isEqualTo(eur("95.88"));
+        // The least term: seven instalments at 448.47 would leave the seventh above it.
+        assertThat(schedule.periods().get(6).closingBalance().isPositive()).isTrue();
+        // At zero rate: 500.00 at 166.67 is three instalments, the last 166.66.
+        Schedule zero = ((ScheduleOutcome.Projected) ScheduleEngineV1.recalculateAtInstalment(personalLoan("0").build(),
+                eur("500.00"), eur("166.67"), 6, 1, LocalDate.parse("2026-01-15"), LocalDate.parse("2026-02-01")))
+                .schedule();
+        assertThat(rows(zero)).containsExactly(
+                "1|2026-01-15|2026-02-01|17|500.00|0.00|166.67|166.67|333.33",
+                "2|2026-02-01|2026-03-01|28|333.33|0.00|166.67|166.67|166.66",
+                "3|2026-03-01|2026-04-01|31|166.66|0.00|166.66|166.66|0.00");
+        // A principal the instalment pays in one: one instalment, the whole of it.
+        assertThat(((ScheduleOutcome.Projected) ScheduleEngineV1.recalculateAtInstalment(terms, eur("100.00"),
+                eur("448.47"), 10, 20, effective, next)).schedule().termMonths()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("recalculation at the instalment never lengthens the term: when the instalment cannot amortise the"
+            + " principal within the remaining instalments - or never reduces it - the term is kept and the instalment is"
+            + " the engine's own recalculation, above the old one; its refusals are recalculate's")
+    void recalculationAtTheInstalmentNeverLengthensTheTerm() {
+        LoanTerms terms = personalLoan("0.0899").build();
+        LocalDate effective = LocalDate.parse("2026-06-05");
+        LocalDate next = LocalDate.parse("2026-06-20");
+        Schedule kept = ((ScheduleOutcome.Projected) ScheduleEngineV1.recalculate(terms, eur("4321.09"), 10, 20, effective,
+                next)).schedule();
+        for (String instalment : List.of("400.00", "10.00")) {
+            ScheduleOutcome outcome = ScheduleEngineV1.recalculateAtInstalment(terms, eur("4321.09"), eur(instalment), 10,
+                    20, effective, next);
+            assertThat(((ScheduleOutcome.Projected) outcome).schedule()).as(instalment).isEqualTo(kept);
+        }
+        assertThat(kept.instalment().compareTo(eur("400.00"))).as("above the old instalment").isPositive();
+        assertThat(List.of(
+                ScheduleEngineV1.recalculateAtInstalment(terms, eur("100.00"), eur("0.00"), 10, 20, effective, next),
+                ScheduleEngineV1.recalculateAtInstalment(terms, eur("100.00"), Money.ofMinorUnits(100_00,
+                        CurrencyCode.of("USD")), 10, 20, effective, next),
+                ScheduleEngineV1.recalculateAtInstalment(terms, eur("100.00"), eur("50.00"), 0, 20, effective, next),
+                ScheduleEngineV1.recalculateAtInstalment(terms, eur("100.00"), eur("50.00"), 10, 20, effective, effective),
+                ScheduleEngineV1.recalculateAtInstalment(terms, eur("100.00"), eur("50.00"), 10, 20, effective,
+                        LocalDate.parse("2026-06-21"))))
+                .allSatisfy(outcome -> assertThat(outcome).isInstanceOfSatisfying(ScheduleOutcome.Refused.class,
+                        refused -> assertThat(refused.reason()).isEqualTo(ScheduleRefusal.INVALID_REQUEST)));
+    }
+
     // ------------------------------------------------------------------ the value
 
     @Test

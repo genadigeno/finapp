@@ -11,7 +11,9 @@ import java.util.Objects;
  * PHASE_11_PLAN.md section 15). A repayment on an account the caller owns is counted once, after its transaction committed
  * or its refusal rolled back: {@code repaid}, {@code paid_down} (repaid, and the repayment paid a credit line's principal
  * down beyond what was due - the paydown component counted, `P11-TSK-023`), {@code closed} (repaid, and the repayment
- * closed the loan or the closing line), or the loan's own refusal ({@code not_repayable}, {@code insufficient_funds}). A replayed key or a repayment converged on under its key, an
+ * closed the loan or the closing line), or the loan's own refusal ({@code not_repayable}, {@code insufficient_funds}); a
+ * prepayment (`P11-TSK-028`, kind {@code prepayment} - PHASE_11_PLAN.md section 15 names no separate series)
+ * {@code prepaid}, or refused {@code arrears_first} or {@code exceeds_principal}. A replayed key or a repayment converged on under its key, an
  * unknown account, a malformed amount or a refusal about the session count nothing. The anomaly counter rises on every
  * refused conservation - the loan's rows not explaining its due accounts, or the allocation engine breaking its own
  * assertion - and alerts above zero: it is a defect, never a customer's error. Every series registered eagerly with its
@@ -32,7 +34,13 @@ public final class RepaymentMetrics {
         PAID_DOWN,
         CLOSED,
         NOT_REPAYABLE,
-        INSUFFICIENT_FUNDS;
+        INSUFFICIENT_FUNDS,
+        /** A prepayment made, re-scheduling the loan (`P11-TSK-028`). */
+        PREPAID,
+        /** A prepayment refused: something billed still owing (`P11-TSK-028`). */
+        ARREARS_FIRST,
+        /** A prepayment refused: the amount reaches the principal not yet due (`P11-TSK-028`). */
+        EXCEEDS_PRINCIPAL;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);

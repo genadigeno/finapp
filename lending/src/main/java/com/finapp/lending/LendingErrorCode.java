@@ -245,7 +245,23 @@ public enum LendingErrorCode implements ErrorCode {
      * against the agreement in force is the act that fits.
      */
     AMENDMENT_LAPSED(
-            "lending.AmendmentLapsed", 409, "The amendment has lapsed; nothing was amended.");
+            "lending.AmendmentLapsed", 409, "The amendment has lapsed; nothing was amended."),
+
+    /**
+     * Principal cannot be paid early while anything billed is owing (`P11-TSK-028`; ADR-0099 point 6): an instalment, its
+     * interest or a fee, past due or due today. Nothing was posted; repay what is due first, then prepay.
+     */
+    ARREARS_FIRST(
+            "lending.ArrearsFirst", 409, "Something billed is still owing; pay it before prepaying. Nothing was posted."),
+
+    /**
+     * A partial prepayment is less than the principal not yet due (`P11-TSK-028`): the amount reaches or exceeds it. Nothing
+     * was posted; the payoff settles the whole account, interest included.
+     */
+    PREPAYMENT_EXCEEDS_PRINCIPAL(
+            "lending.PrepaymentExceedsPrincipal",
+            422,
+            "A prepayment is less than the principal not yet due; nothing was posted - the payoff settles the whole.");
 
     private final String code;
     private final int status;

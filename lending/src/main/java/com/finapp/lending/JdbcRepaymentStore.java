@@ -172,6 +172,33 @@ public final class JdbcRepaymentStore implements RepaymentStore {
         }
     }
 
+    @Override
+    public Optional<Rescheduled> rescheduledBy(Connection unitOfWork, LoanId loan, UUID repayment) {
+        Objects.requireNonNull(loan, "loan");
+        Objects.requireNonNull(repayment, "repayment");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT a.version, s.schedule_version, s.term_months,"
+                + " s.currency, s.scale, s.instalment_minor, s.final_instalment_minor,"
+                + " (SELECT i.due_date FROM lending.loan_instalment i WHERE i.schedule_id = s.id AND i.sequence = 1)"
+                + " AS first_due FROM lending.loan_agreement a JOIN lending.repayment_schedule s ON s.agreement_id = a.id"
+                + " WHERE a.loan_id = ? AND a.prepayment_id = ?")) {
+            select.setObject(1, loan.value());
+            select.setObject(2, repayment);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());
+                int scale = row.getInt("scale");
+                return Optional.of(new Rescheduled(row.getInt("version"), row.getInt("schedule_version"),
+                        row.getInt("term_months"), Money.ofPersisted(row.getLong("instalment_minor"), currency, scale),
+                        Money.ofPersisted(row.getLong("final_instalment_minor"), currency, scale),
+                        row.getObject("first_due", LocalDate.class)));
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a prepayment's re-schedule", failure);
+        }
+    }
+
     // ------------------------------------------------------------------ the collection attempts (P11-TSK-019)
 
     @Override

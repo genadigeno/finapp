@@ -15,5 +15,11 @@ public enum RepaymentKind {
     AUTO_COLLECTION,
 
     /** The one repayment of a payoff's execution (`P11-TSK-026`). */
-    PAYOFF
+    PAYOFF,
+
+    /**
+     * Principal not yet due paid early by the borrower's own instruction, re-scheduling the loan - agreement and schedule
+     * version n+1 in its transaction (`P11-TSK-028`, {@link Prepayments}); never reversed.
+     */
+    PREPAYMENT
 }

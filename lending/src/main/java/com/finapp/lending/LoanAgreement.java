@@ -12,10 +12,13 @@ import java.util.UUID;
  * One version of a loan agreement (`P11-TSK-012`, {@code lending V006}; ADR-0092 point 5, {@code INV-LND-05}): version 1
  * is its offer's terms, copied byte for byte at the acceptance - the canonical terms ({@link CanonicalOfferTerms}, in
  * the offer's own format) and their SHA-256 - with the figures a servicing step needs beside them. Never changed by any
- * role; a change of terms is version n+1 (`P11-TSK-027` - an accepted amendment's, {@link #amended}).
+ * role; a change of terms is version n+1 (`P11-TSK-027` - an accepted amendment's, {@link #amended}; `P11-TSK-028` - a
+ * prepayment's re-schedule, {@link #prepaid}).
  *
  * @param offer the offer it was accepted from - version 1's; an amendment's version names its amendment instead
  * @param amendment the accepted amendment a version after the first is (`P11-TSK-027`) - empty for version 1
+ * @param prepayment the prepayment (its repayment) whose re-schedule a version after the first is (`P11-TSK-028`) - empty
+ *     for version 1 and an amendment's version
  * @param decision credit's decision the acceptance consumed, by value
  * @param termsVersionId the terms version the offer pinned
  * @param amount the principal (a loan) or the limit (a line)
@@ -28,6 +31,7 @@ public record LoanAgreement(
         int version,
         Optional<LoanOfferId> offer,
         Optional<UUID> amendment,
+        Optional<UUID> prepayment,
         UUID decision,
         LoanTermsVersionId termsVersionId,
         LoanProduct product,
@@ -49,6 +53,7 @@ public record LoanAgreement(
         Objects.requireNonNull(loan, "loan must not be null");
         Objects.requireNonNull(offer, "offer must not be null");
         Objects.requireNonNull(amendment, "amendment must not be null");
+        Objects.requireNonNull(prepayment, "prepayment must not be null");
         Objects.requireNonNull(decision, "decision must not be null");
         Objects.requireNonNull(termsVersionId, "termsVersionId must not be null");
         Objects.requireNonNull(product, "product must not be null");
@@ -69,9 +74,10 @@ public record LoanAgreement(
         if (termsSha256.length != 32) {
             throw new IllegalArgumentException("the terms hash is SHA-256");
         }
-        if ((version == 1) != (offer.isPresent() && amendment.isEmpty())
-                || (version > 1) != (offer.isEmpty() && amendment.isPresent())) {
-            throw new IllegalArgumentException("version 1 is its offer's, every later version an amendment's");
+        if ((version == 1) != (offer.isPresent() && amendment.isEmpty() && prepayment.isEmpty())
+                || (version > 1) != (offer.isEmpty() && amendment.isPresent() != prepayment.isPresent())) {
+            throw new IllegalArgumentException("version 1 is its offer's, every later version an amendment's or a"
+                    + " prepayment's");
         }
     }
 
@@ -81,7 +87,8 @@ public record LoanAgreement(
      */
     static LoanAgreement versionOne(LoanAgreementId id, LoanId loan, LoanOffer offer, Instant effectiveFrom) {
         LoanOffer.Terms terms = offer.terms();
-        return new LoanAgreement(id, loan, 1, Optional.of(offer.id()), Optional.empty(), offer.decision(), offer.termsVersionId(),
+        return new LoanAgreement(id, loan, 1, Optional.of(offer.id()), Optional.empty(), Optional.empty(), offer.decision(),
+                offer.termsVersionId(),
                 offer.product(), terms.amount(), terms.termMonths(), terms.nominalAnnualRate(), terms.repaymentDay(),
                 terms.scheduleEngine(), terms.accrualEngine(), terms.allocationEngine(), terms.statementEngine(),
                 terms.template(), terms.canonicalTerms(), terms.termsSha256(), effectiveFrom);
@@ -95,10 +102,22 @@ public record LoanAgreement(
      */
     LoanAgreement amended(LoanAgreementId next, UUID amendment, BigDecimal rate, int termMonths, String canonical,
             Instant effective) {
-        return new LoanAgreement(next, loan, version + 1, Optional.empty(), Optional.of(amendment), decision,
+        return new LoanAgreement(next, loan, version + 1, Optional.empty(), Optional.of(amendment), Optional.empty(), decision,
                 termsVersionId, product, amount, Optional.of(termMonths), rate, repaymentDay, scheduleEngine,
                 accrualEngine, allocationEngine, statementEngine, template, canonical, CanonicalOfferTerms.sha256(canonical),
                 effective);
+    }
+
+    /**
+     * Version {@code version() + 1} as a prepayment's re-schedule makes it (`P11-TSK-028`): everything of this version but
+     * {@code termMonths} (the instalments billed plus the new schedule's, never longer) and the version's canonical terms
+     * (format 4) - the effective instant is the database's, read back after the insert.
+     */
+    LoanAgreement prepaid(LoanAgreementId next, UUID prepayment, int termMonths, String canonical, Instant effective) {
+        return new LoanAgreement(next, loan, version + 1, Optional.empty(), Optional.empty(), Optional.of(prepayment),
+                decision, termsVersionId, product, amount, Optional.of(termMonths), nominalAnnualRate, repaymentDay,
+                scheduleEngine, accrualEngine, allocationEngine, statementEngine, template, canonical,
+                CanonicalOfferTerms.sha256(canonical), effective);
     }
 
     @Override

@@ -867,6 +867,48 @@ public class LendingBeans {
                 repaymentMetrics, repaymentReversalStore);
     }
 
+    // ------------------------------------------------------------------ the partial prepayment (P11-TSK-028)
+
+    /**
+     * T-ppy - the prepayment under L3: the servicing step's own catch-up, the due state, L7, rule 5 through the one posting
+     * half, agreement and schedule version n+1.
+     */
+    @Bean
+    com.finapp.lending.Prepayments prepayments(
+            LoanStore loanStore,
+            com.finapp.lending.RepaymentStore repaymentStore,
+            LoanTermsStore loanTermsStore,
+            LoanOfferStore loanOfferStore,
+            LoanServicing loanServicing,
+            LoanServicingStore loanServicingStore,
+            InstalmentBillings instalmentBillings,
+            InstalmentBillingStore instalmentBillingStore,
+            LoanDisbursementStore loanDisbursementStore,
+            LoanWallets loanWallets,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PurposeBalances<Connection> purposeBalances,
+            com.finapp.lending.Repayments repayments,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.lending.Prepayments(loanStore, repaymentStore, loanTermsStore, loanOfferStore, loanServicing,
+                loanServicingStore, instalmentBillings, instalmentBillingStore, loanDisbursementStore, loanWallets,
+                new com.finapp.ledger.AvailableBalance<>(new com.finapp.ledger.JdbcBalanceDerivation(),
+                        new com.finapp.ledger.JdbcHoldStore()),
+                ledgerAccountStore, purposeBalances, repayments, outboxWriter, idGenerator, clock);
+    }
+
+    @Bean
+    LoanPrepaymentDesk loanPrepaymentDesk(
+            com.finapp.lending.Prepayments prepayments,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            IdempotentExecutor idempotentExecutor,
+            LendingTransactions lendingTransactions,
+            RepaymentMetrics repaymentMetrics) {
+        return new LoanPrepaymentDesk(prepayments, identityStore, idempotentExecutor, lendingTransactions,
+                repaymentMetrics);
+    }
+
     // ------------------------------------------------------------------ the line's closure (P11-TSK-023)
 
     /** The closure requests' store - {@code line_closure_request}, INSERT-only, one per line. */

@@ -1005,6 +1005,23 @@ class OwnershipIsScopedTest {
                                         + " path of an operator door behind LOAN_SERVICE / LOAN_SERVICE_APPROVE, which names any"
                                         + " loan by design; the operator's own party's loan is refused (SelfDealingRefused).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.lockedRead",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P11-TSK-028. The read of a loan this transaction has just locked FOR UPDATE (L3) -"
+                                        + " private, reached only from lock (the sweeps' and the operator doors' L3, as"
+                                        + " classified there) and lockOwnedBy (owner-scoped, party_id = ?, which returns"
+                                        + " empty before reaching it for another party's loan); a statement of its own so"
+                                        + " the agreement version is read after the lock, never a request value beyond it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.rescheduledBy",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "P11-TSK-028. The loan id comes from lockOwnedBy, which this transaction holds FOR"
+                                        + " UPDATE under party_id = ? (L3), and the repayment id from findByKey under that"
+                                        + " loan; the statement holds the agreement to that loan (a.loan_id = ?).")),
+                    Map.entry(
                             "com.finapp.lending.JdbcRepaymentStore.findById",
                             new Entry(
                                     Scope.ADMINISTERED,

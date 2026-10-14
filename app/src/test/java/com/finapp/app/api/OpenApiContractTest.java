@@ -379,6 +379,9 @@ class OpenApiContractTest {
                         // acceptance (MULTI_FACTOR, keyed, 201 with the agreement and schedule versions it made).
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/amendments/{amendmentId}",
                         ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/amendments/{amendmentId}/acceptance",
+                        // P11-TSK-028: the partial prepayment (MULTI_FACTOR, keyed, 201 with the repayment and the
+                        // agreement and schedule versions it made).
+                        ApiVersion.CURRENT_PREFIX + "/me/loans/{id}/prepayments",
                         // P3-TSK-013: the account product - open/list, and the balance read
                         // whose response names its numbers and its nature (ADR-0041).
                         ApiVersion.CURRENT_PREFIX + "/me/accounts",

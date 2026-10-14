@@ -216,5 +216,15 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
   - *Probes* (`MUTATION_TESTING.md` §2): the follow-up's "round the instalment `HALF_EVEN`" is caught by the golden
     cases and by the property "A is never below the exact annuity" - the "final ≤ regular" property alone no longer
     catches it, the least-amount raise repairing the final instalment.
+- **As built by `P11-TSK-028` (2026-10-14) - step 7 for a partial prepayment.** `ScheduleEngineV1.recalculateAtInstalment`
+  is added beside `recalculate` (no figure of `project` or `recalculate` changes): the superseded schedule's level
+  instalment `A` is kept and the term is the least number of monthly instalments, at most the superseded schedule's
+  remaining ones, over which `A` amortises the remaining principal - found forward, since the balance path under `A` does
+  not depend on the term; every period but the last pays `A` and the last the balance and its interest, never above `A`.
+  Any schedule of that shape is the least term at `A` (every period but the last closes positive), so `lending V024` holds
+  it by the instalment equality and the term bound alone. When `A` cannot amortise the principal within the remaining
+  instalments (a late-payment history left more principal than the projection, and the prepayment was smaller than the
+  excess) the term is kept and the instalment is `recalculate`'s least - the term is never lengthened. Golden cases by an
+  independent oracle in `ScheduleEngineV1Test#recalculationAtTheInstalment`.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

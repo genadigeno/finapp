@@ -2799,6 +2799,7 @@ codes `INTERNAL`.
 | `loan_agreement` | `version` | `INTERNAL` | The version number |
 | `loan_agreement` | `offer_id` | `CONFIDENTIAL` | Version 1's offer |
 | `loan_agreement` | `amendment_id` | `CONFIDENTIAL` | A later version's amendment (`P11-TSK-027`) |
+| `loan_agreement` | `prepayment_id` | `CONFIDENTIAL` | A later version's prepayment - the repayment whose re-schedule it is (`P11-TSK-028`) |
 | `loan_agreement` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
 | `loan_agreement` | `terms_version_id` | `INTERNAL` | The pinned terms version |
 | `loan_agreement` | `product` | `INTERNAL` | A closed product code |
