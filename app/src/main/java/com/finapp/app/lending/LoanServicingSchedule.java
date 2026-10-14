@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanId;
 import com.finapp.lending.LoanServicing;
 import com.finapp.platform.security.SecurityContext;
@@ -34,6 +35,7 @@ public final class LoanServicingSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration retryCadence;
+    private final LendingFlowScope flow;
     private ScheduledExecutorService executor;
 
     public LoanServicingSchedule(
@@ -43,6 +45,19 @@ public final class LoanServicingSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration retryCadence) {
+        this(servicing, transactions, metrics, pollInterval, batch, retryCadence, LendingFlowScope.NONE);
+    }
+
+    /** As above, each step's span recorded in its flow's stored correlation (P11-TSK-030). */
+    public LoanServicingSchedule(
+            LoanServicing servicing,
+            LendingTransactions transactions,
+            LoanServicingMetrics metrics,
+            Duration pollInterval,
+            int batch,
+            Duration retryCadence,
+            LendingFlowScope flow) {
+        this.flow = java.util.Objects.requireNonNull(flow, "flow");
         this.servicing = Objects.requireNonNull(servicing, "servicing");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
@@ -69,7 +84,8 @@ public final class LoanServicingSchedule implements SmartLifecycle {
             List<LoanId> due = transactions.inTransaction(uow -> servicing.claim(uow, batch, retryCadence));
             for (LoanId loan : due) {
                 try {
-                    LoanServicing.Outcome step = transactions.inTransaction(uow -> servicing.service(uow, loan));
+                    LoanServicing.Outcome step = flow.forLoan(LendingSpans.SERVICE, loan,
+                            () -> transactions.inTransaction(uow -> servicing.service(uow, loan)));
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's cadence stands and a later tick steps again; the class name only - never a party.

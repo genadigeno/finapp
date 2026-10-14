@@ -95,7 +95,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetailBody> handleUnexpected(Exception exception, HttpServletRequest request) {
-        log.error("Unhandled error on {}", request.getRequestURI(), exception);
+        log.error("Unhandled error on {}", routeOf(request), exception);
         return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
     }
 
@@ -118,7 +118,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
             if (cause instanceof BoundedRequest.RequestTooLargeException tooLarge) {
                 String path = pathOf(request);
-                log.warn("Request body to {} exceeded {} bytes", path, tooLarge.maxBytes());
+                log.warn("Request body to {} exceeded {} bytes", routeOf(request), tooLarge.maxBytes());
                 return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.PAYLOAD_TOO_LARGE.status()))
                         .contentType(PROBLEM_JSON)
                         .body(ProblemDetailBody.from(ProblemDetail.of(
@@ -179,7 +179,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleIdempotencyConflict(
             IdempotencyConflictException exception, HttpServletRequest request) {
 
-        log.warn("Idempotency key reused for a different request on {}", request.getRequestURI());
+        log.warn("Idempotency key reused for a different request on {}", routeOf(request));
         return render(
                 ProblemDetail.of(
                         PlatformErrorCode.CONFLICT,
@@ -201,7 +201,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleIdempotencyInProgress(
             IdempotencyInProgressException exception, HttpServletRequest request) {
 
-        log.warn("Idempotency key still in progress on {}", request.getRequestURI());
+        log.warn("Idempotency key still in progress on {}", routeOf(request));
         return render(
                 ProblemDetail.of(
                         PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS,
@@ -231,7 +231,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         // purpose because it goes to the log and not to a stranger.
         log.warn(
                 "Consent-gated capability refused on {}: no current basis for {}",
-                request.getRequestURI(),
+                routeOf(request),
                 exception.purpose());
         return render(
                 ProblemDetail.of(
@@ -255,7 +255,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleAccountOpeningRefused(
             AccountOpeningRefusedException exception, HttpServletRequest request) {
         // Warn, not error: the gate refusing is the control working.
-        log.warn("Account opening refused on {}", request.getRequestURI());
+        log.warn("Account opening refused on {}", routeOf(request));
         return render(
                 ProblemDetail.of(
                         AccountsErrorCode.ACCOUNT_OPENING_REFUSED,
@@ -303,7 +303,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetailBody> handleAccountNotPostable(
             com.finapp.ledger.LedgerAccountNotPostableException exception,
             HttpServletRequest request) {
-        log.warn("A posting named a non-ACTIVE account on {}", request.getRequestURI());
+        log.warn("A posting named a non-ACTIVE account on {}", routeOf(request));
         return render(
                 ProblemDetail.of(
                         com.finapp.ledger.LedgerErrorCode.ACCOUNT_NOT_POSTABLE,
@@ -322,7 +322,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
             com.finapp.ledger.SelfApprovalRefusedException exception,
             HttpServletRequest request) {
         // Warn, not error: the refusal is the four-eyes control working.
-        log.warn("A self-approval was refused on {}", request.getRequestURI());
+        log.warn("A self-approval was refused on {}", routeOf(request));
         return render(
                 ProblemDetail.of(
                         com.finapp.ledger.LedgerErrorCode.SELF_APPROVAL_REFUSED,
@@ -361,7 +361,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         log.warn(
                 "An adjustment on a reconciled position ({}) was refused on {}",
                 exception.position(),
-                request.getRequestURI());
+                routeOf(request));
         return render(
                 ProblemDetail.of(
                         com.finapp.ledger.LedgerErrorCode.ADJUSTMENT_ON_RECONCILED_POSITION,
@@ -380,7 +380,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
             HttpServletRequest request) {
         log.warn(
                 "A cross-origin adjustment decision was refused on {}",
-                request.getRequestURI());
+                routeOf(request));
         return render(
                 ProblemDetail.of(
                         com.finapp.ledger.LedgerErrorCode.ADJUSTMENT_ORIGIN_MISMATCH,
@@ -511,7 +511,7 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      */
     private ResponseEntity<Object> validationFailed(String detail, WebRequest request) {
         String path = pathOf(request);
-        log.warn("Validation failed on {}: {}", path, detail);
+        log.warn("Validation failed on {}: {}", routeOf(request), detail);
         return ResponseEntity.status(HttpStatus.valueOf(PlatformErrorCode.VALIDATION_FAILED.status()))
                 .contentType(PROBLEM_JSON)
                 .body(
@@ -556,12 +556,12 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         ErrorCode code = codeForStatus(statusCode.value());
         String path = pathOf(request);
         if (statusCode.is5xxServerError()) {
-            log.error("Framework error {} on {}", statusCode.value(), path, exception);
+            log.error("Framework error {} on {}", statusCode.value(), routeOf(request), exception);
         } else {
             log.warn(
                     "Framework error {} on {} rendered as {}",
                     statusCode.value(),
-                    path,
+                    routeOf(request),
                     code.code(),
                     exception);
         }
@@ -595,6 +595,16 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                             ? PlatformErrorCode.MALFORMED_REQUEST
                             : PlatformErrorCode.INTERNAL_ERROR;
         };
+    }
+
+    private static String routeOf(HttpServletRequest request) {
+        return LoggedRoutes.of(request);
+    }
+
+    private static String routeOf(WebRequest request) {
+        return request instanceof ServletWebRequest servlet
+                ? LoggedRoutes.of(servlet.getRequest())
+                : "an unknown route";
     }
 
     private static String pathOf(WebRequest request) {

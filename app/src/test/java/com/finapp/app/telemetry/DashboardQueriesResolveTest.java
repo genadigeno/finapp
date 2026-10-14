@@ -87,6 +87,8 @@ class DashboardQueriesResolveTest {
                     // P10-TSK-020: the credit row groups by product, pinned policy version, decider kind, reason
                     // code, source kind, open state and replay verdict - labels, not series.
                     "product", "policy_version", "decision_maker", "reason_code", "source_kind", "status", "verdict",
+                    // P11-TSK-030: the lending row groups by payout path, billed or fee kind and delinquency bucket.
+                    "payout", "kind", "bucket",
                     // P7-TSK-015: the rail and dispute row groups by rail, judged type and
                     // dispute stage - labels, not series.
                     "rail", "type", "stage",
@@ -187,6 +189,44 @@ class DashboardQueriesResolveTest {
                 "finapp_credit_data_latency_seconds_count", "finapp_credit_request_open_age_seconds",
                 "finapp_credit_review_age_seconds", "finapp_credit_replay", "finapp_credit_policy_active",
                 "finapp_credit_progress_sweeper_enabled", "finapp_credit_data_retry_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+    }
+
+    @Test
+    @DisplayName("the lending row: nine panels reading every PHASE_11_PLAN section 15 series, each published on a fresh"
+            + " instance (P11-TSK-030)")
+    void theLendingRowResolves() throws Exception {
+        JsonNode panels = JsonMapper.builder().build().readTree(RepositoryPaths.read(DASHBOARD)).path("panels");
+        List<String> rowQueries = new java.util.ArrayList<>();
+        int count = -1;
+        for (JsonNode panel : panels) {
+            boolean row = "row".equals(panel.path("type").asString());
+            if (row && panel.path("title").asString().startsWith("Lending")) {
+                count = 0;
+            } else if (row && count >= 0) {
+                break;
+            } else if (count >= 0) {
+                count++;
+                panel.path("targets").valueStream().map(target -> target.path("expr").stringValue()).forEach(rowQueries::add);
+            }
+        }
+        assertThat(count).as("the lending row's panels").isEqualTo(9);
+        Set<String> queried = rowQueries.stream().flatMap(DashboardQueriesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        // Every row of PHASE_11_PLAN.md section 15, in its published form.
+        assertThat(queried).containsExactlyInAnyOrder(
+                "finapp_lending_application_total", "finapp_lending_offer_total", "finapp_lending_acceptance_total",
+                "finapp_credit_consumption_total", "finapp_lending_disbursement_total", "finapp_lending_payout_total",
+                "finapp_lending_disbursement_pending_age_seconds", "finapp_lending_payout_dispatched_age_seconds",
+                "finapp_lending_accrual_total", "finapp_lending_billing_total", "finapp_lending_collection_total",
+                "finapp_lending_fee_total", "finapp_lending_accrual_lag_seconds", "finapp_lending_repayment_total",
+                "finapp_lending_draw_total", "finapp_lending_payoff_total", "finapp_lending_reversal_total",
+                "finapp_lending_waiver_total", "finapp_lending_amendment_total", "finapp_lending_allocation_anomaly_total",
+                "finapp_lending_loans", "finapp_lending_delinquency", "finapp_lending_default",
+                "finapp_lending_subledger_proof", "finapp_lending_replay", "finapp_lending_capital_proof",
+                "finapp_credit_exposure_census", "finapp_lending_capital_headroom_low", "finapp_lending_terms_active",
+                "finapp_lending_origination_sweeper_enabled", "finapp_lending_disbursement_sweeper_enabled",
+                "finapp_lending_payout_sweeper_enabled", "finapp_lending_servicing_sweeper_enabled");
         assertThat(publishedSeriesNames()).containsAll(queried);
     }
 

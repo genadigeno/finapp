@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
@@ -53,6 +54,7 @@ public class LoanController {
     @NonNull private final LoanPayoffDesk payoffs;
     @NonNull private final LoanAmendmentDesk amendments;
     @NonNull private final LoanPrepaymentDesk prepayments;
+    @NonNull private final LendingFlowScope flow;
 
     /** The caller's loans, newest first. */
     @GetMapping
@@ -99,7 +101,7 @@ public class LoanController {
             @Valid @RequestBody CreditLineDrawBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return draws.draw(current(request), id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.DRAW, id, () -> draws.draw(current(request), id, idempotencyKey, body));
     }
 
     /**
@@ -117,7 +119,8 @@ public class LoanController {
             @Valid @RequestBody LoanRepaymentBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return repayments.repay(current(request), id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.REPAY, id,
+                () -> repayments.repay(current(request), id, idempotencyKey, body));
     }
 
     /**
@@ -135,7 +138,8 @@ public class LoanController {
             @Valid @RequestBody LoanRepaymentBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return prepayments.prepay(current(request), id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.PREPAY, id,
+                () -> prepayments.prepay(current(request), id, idempotencyKey, body));
     }
 
     /**
@@ -151,7 +155,7 @@ public class LoanController {
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return closures.request(current(request), id, idempotencyKey);
+        return flow.doorOnLoan(LendingSpans.CLOSE, id, () -> closures.request(current(request), id, idempotencyKey));
     }
 
     /**
@@ -167,7 +171,7 @@ public class LoanController {
             @Valid @RequestBody PayoffQuoteBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return payoffs.quote(current(request), id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.QUOTE, id, () -> payoffs.quote(current(request), id, idempotencyKey, body));
     }
 
     /**
@@ -185,7 +189,8 @@ public class LoanController {
             @Valid @RequestBody PayoffBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return payoffs.execute(current(request), id, idempotencyKey, body);
+        return flow.doorOnLoan(LendingSpans.PAYOFF, id,
+                () -> payoffs.execute(current(request), id, idempotencyKey, body));
     }
 
     /**
@@ -216,9 +221,9 @@ public class LoanController {
             @Valid @RequestBody AmendmentAcceptanceBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return amendments.accept(current(request), id, amendmentId, idempotencyKey, body,
-                java.util.Optional.ofNullable(request.getRemoteAddr()),
-                java.util.Optional.ofNullable(request.getHeader(org.springframework.http.HttpHeaders.USER_AGENT)));
+        return flow.doorOnLoan(LendingSpans.AMEND, id, () -> amendments.accept(current(request), id, amendmentId,
+                idempotencyKey, body, java.util.Optional.ofNullable(request.getRemoteAddr()),
+                java.util.Optional.ofNullable(request.getHeader(org.springframework.http.HttpHeaders.USER_AGENT))));
     }
 
     /** The caller's own loan's repayments and their allocations, newest first (`P11-TSK-018`). */

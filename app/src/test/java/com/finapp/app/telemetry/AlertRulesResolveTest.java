@@ -70,6 +70,11 @@ class AlertRulesResolveTest {
 
     private static final String CREDIT_GROUP = "credit";
 
+    /** The lending rules (P11-TSK-030), held to the same checks and to the objectives the code declares. */
+    private static final String LENDING_RULES = "infra/prometheus/rules/lending.yml";
+
+    private static final String LENDING_GROUP = "lending";
+
     /** A PromQL metric selector: an identifier not immediately followed by an opening bracket. */
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
@@ -96,7 +101,9 @@ class AlertRulesResolveTest {
                     // Label names the rules group or select by.
                     "source", "outcome", "purpose", "currency", "severity", "type", "pair", "provider", "corridor",
                     // P10-TSK-020: the credit rules' labels - and le, the latency bucket's boundary.
-                    "product", "decision_maker", "le", "status", "verdict", "source_kind");
+                    "product", "decision_maker", "le", "status", "verdict", "source_kind",
+                    // P11-TSK-030: the lending rules read a TARGET label the environment sets (never a metric tag).
+                    "lending_offered");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -251,6 +258,57 @@ class AlertRulesResolveTest {
             assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
         });
         Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(CREDIT_RULES));
+        assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
+                .anySatisfy(pattern -> assertThat(
+                        FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());
+    }
+
+    @Test
+    @DisplayName("the lending rules: every section 15 alert present, every queried series published on a fresh instance with"
+            + " the verdicts and products the rules select, each threshold the objective the code declares, each rule well"
+            + " formed, the file loaded (P11-TSK-030)")
+    void theLendingRulesResolve() {
+        List<Map<String, Object>> lending = rules(LENDING_RULES, LENDING_GROUP);
+        Map<String, String> expressions = new TreeMap<>();
+        lending.forEach(rule -> expressions.put(String.valueOf(rule.get("alert")), String.valueOf(rule.get("expr")).strip()));
+        // PHASE_11_PLAN.md section 15's alerts, every one (PHASE_GATES.md section 5 Phase 11 names them), and the NaN rule.
+        assertThat(expressions).containsOnlyKeys("LendingDisbursementPastDeadline", "LendingPayoutUnconcluded",
+                "LendingAccrualLagging", "LendingAllocationAnomaly", "LendingSubledgerProofFailing", "LendingReplayDiverged",
+                "LendingCapitalProofFailing", "LendingCapitalHeadroomLow", "CreditExposureCensusFailing",
+                "LendingTermsNoneActive", "LendingOriginationSweeperOff", "LendingDisbursementSweeperOff",
+                "LendingPayoutSweeperOff", "LendingServicingSweeperOff", "LendingGaugesUnreadable");
+        Set<String> queried = lending.stream()
+                .map(rule -> String.valueOf(rule.get("expr")))
+                .flatMap(AlertRulesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(queried).containsExactlyInAnyOrder("finapp_lending_disbursement_pending_age_seconds",
+                "finapp_lending_payout_dispatched_age_seconds", "finapp_lending_accrual_lag_seconds",
+                "finapp_lending_allocation_anomaly_total", "finapp_lending_subledger_proof", "finapp_lending_replay",
+                "finapp_lending_capital_proof", "finapp_lending_capital_headroom_low", "finapp_credit_exposure_census",
+                "finapp_lending_terms_active", "finapp_lending_origination_sweeper_enabled",
+                "finapp_lending_disbursement_sweeper_enabled", "finapp_lending_payout_sweeper_enabled",
+                "finapp_lending_servicing_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+
+        // The thresholds are the objectives the code declares; the label values the rules select are on the live scrape.
+        assertThat(threshold(expressions.get("LendingDisbursementPastDeadline")))
+                .isEqualTo(LendingObjectives.disbursementDeadline().toSeconds());
+        assertThat(threshold(expressions.get("LendingPayoutUnconcluded")))
+                .isEqualTo(LendingObjectives.PAYOUT_OUTCOME.toSeconds());
+        assertThat(threshold(expressions.get("LendingAccrualLagging"))).isEqualTo(LendingObjectives.ACCRUAL_LAG.toSeconds());
+        String scrape = scrape();
+        assertThat(scrape).contains("finapp_lending_subledger_proof{verdict=\"FAILS\"}",
+                "finapp_lending_replay{verdict=\"DIVERGED\"}", "finapp_lending_capital_proof{verdict=\"FAILS\"}",
+                "finapp_credit_exposure_census{verdict=\"FAILS\"}", "finapp_lending_terms_active{product=\"PERSONAL_LOAN\"}",
+                "finapp_lending_terms_active{product=\"CREDIT_LINE\"}");
+        assertThat(expressions.get("LendingTermsNoneActive")).contains("lending_offered=\"true\"");
+
+        assertThat(lending).allSatisfy(rule -> {
+            assertThat(String.valueOf(rule.get("for"))).matches("\\d+[smhd]");
+            assertThat(map(rule.get("labels")).get("severity")).isIn("page", "ticket");
+            assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
+        });
+        Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(LENDING_RULES));
         assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
                 .anySatisfy(pattern -> assertThat(
                         FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());

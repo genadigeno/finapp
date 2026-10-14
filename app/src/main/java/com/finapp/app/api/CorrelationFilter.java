@@ -135,7 +135,7 @@ public class CorrelationFilter extends OncePerRequestFilter {
             log.warn(
                     "Rejected a malformed {} header on {}; it is not echoed",
                     HEADER,
-                    request.getRequestURI());
+                    LoggedRoutes.of(request));
             return Optional.empty();
         }
     }

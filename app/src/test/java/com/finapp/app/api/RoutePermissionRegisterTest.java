@@ -277,6 +277,12 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/reports/credit/outcomes", PermissionName.CREDIT_INVESTIGATE),
                     entry("GET /v1/operator/reports/credit/reasons", PermissionName.CREDIT_INVESTIGATE),
                     entry("GET /v1/operator/reports/credit/sources", PermissionName.CREDIT_INVESTIGATE),
+                    // P11-TSK-030: the four lending reports - amounts as of a business date in one snapshot, each serving
+                    // recorded lending.ReportRead.
+                    entry("GET /v1/operator/reports/lending/portfolio", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/reports/lending/delinquency", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/reports/lending/accrual", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/reports/lending/capital", PermissionName.LENDING_INVESTIGATE),
                     // P10-TSK-018: the underwriter's doors - the review queue and the acts on a referral's case, held by
                     // UNDERWRITER alone (ADR-0089 point 8).
                     entry("GET /v1/operator/credit/review-cases", PermissionName.CREDIT_UNDERWRITE),

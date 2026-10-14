@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
@@ -41,6 +42,7 @@ public class LoanOfferController {
 
     @NonNull private final LoanOfferDesk desk;
     @NonNull private final LoanAccountDesk accounts;
+    @NonNull private final LendingFlowScope flow;
 
     /** The caller's own offer, exactly as recorded. */
     @GetMapping("/{id}")
@@ -55,7 +57,7 @@ public class LoanOfferController {
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.decline(current(request), id, idempotencyKey);
+        return flow.doorOnOffer(LendingSpans.DECLINE, id, () -> desk.decline(current(request), id, idempotencyKey));
     }
 
     /**
@@ -70,8 +72,8 @@ public class LoanOfferController {
             @Valid @RequestBody LoanAcceptanceBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return accounts.accept(current(request), id, idempotencyKey, body, Optional.ofNullable(request.getRemoteAddr()),
-                Optional.ofNullable(request.getHeader(HttpHeaders.USER_AGENT)));
+        return flow.door(LendingSpans.ACCEPT, () -> accounts.accept(current(request), id, idempotencyKey, body,
+                Optional.ofNullable(request.getRemoteAddr()), Optional.ofNullable(request.getHeader(HttpHeaders.USER_AGENT))));
     }
 
     /**

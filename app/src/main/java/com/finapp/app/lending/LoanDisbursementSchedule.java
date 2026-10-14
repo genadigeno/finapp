@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanDisbursements;
 import com.finapp.lending.LoanId;
 import com.finapp.platform.security.SecurityContext;
@@ -33,6 +34,7 @@ public final class LoanDisbursementSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration permit;
+    private final LendingFlowScope flow;
     private ScheduledExecutorService executor;
 
     public LoanDisbursementSchedule(
@@ -42,6 +44,19 @@ public final class LoanDisbursementSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration permit) {
+        this(disbursements, transactions, metrics, pollInterval, batch, permit, LendingFlowScope.NONE);
+    }
+
+    /** As above, each step's span recorded in its flow's stored correlation (P11-TSK-030). */
+    public LoanDisbursementSchedule(
+            LoanDisbursements disbursements,
+            LendingTransactions transactions,
+            LoanDisbursementMetrics metrics,
+            Duration pollInterval,
+            int batch,
+            Duration permit,
+            LendingFlowScope flow) {
+        this.flow = java.util.Objects.requireNonNull(flow, "flow");
         this.disbursements = Objects.requireNonNull(disbursements, "disbursements");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
@@ -68,8 +83,8 @@ public final class LoanDisbursementSchedule implements SmartLifecycle {
             List<LoanId> due = transactions.inTransaction(uow -> disbursements.claim(uow, batch, permit));
             for (LoanId loan : due) {
                 try {
-                    LoanDisbursements.Outcome step = transactions.inTransaction(
-                            uow -> disbursements.disburse(uow, loan, SecurityContext.require()));
+                    LoanDisbursements.Outcome step = flow.forLoan(LendingSpans.DISBURSE, loan, () -> transactions.inTransaction(
+                            uow -> disbursements.disburse(uow, loan, SecurityContext.require())));
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick steps again; the class name only - never a party.

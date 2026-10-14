@@ -1677,6 +1677,21 @@ reports**, not series. Spans per step linked by the account's correlation (the `
 precedent). A dashboard row and `infra/prometheus/rules/lending.yml`, resolved against a live scrape
 (`P11-TSK-030`). Every series registered eagerly at startup with its closed tags.
 
+*(As built by `P11-TSK-030`:* the reports are `GET /v1/operator/reports/lending/{portfolio,delinquency,accrual,capital}?date=`
+- one read-only `REPEATABLE READ` snapshot each, every account on its own business date, `lending.ReportRead` committed
+before the answer; the portfolio report ties the book to the ledger and the trial balance and lists the accounts the
+proofs fail or diverge. The rules are fifteen alerts - each series above with an alert, the `CreditExposureCensusFailing`
+rule and `LendingGaugesUnreadable` (NaN, never the last value) - their thresholds `LendingObjectives`' (the disbursement
+deadline ceiling 24 h, the payout outcome objective 30 min, the accrual lag one day), the terms rule enabled per
+environment by the `lending_offered` target label; `LendingAlertRulesTest` breaks each one's condition and sees it, and
+only it, fire. `LendingFlowScope` records the steps' spans through the platform `Spans` port with no attribute at all
+(`lending.application.submit`, `lending.application.withdraw`, `lending.offer.make`, `lending.offer.expire`,
+`lending.offer.decline`, `lending.offer.accept`, `lending.loan.disburse`, `lending.payout.step`, `lending.loan.service`,
+`lending.loan.draw`, `lending.loan.repay`, `lending.loan.prepay`, `lending.loan.quote`, `lending.loan.payoff`,
+`lending.loan.close`, `lending.amendment.accept`, `lending.loan.correct`) - each sweep leg in its row's stored correlation,
+each door on an existing row in that row's correlation caused by the request's, the act itself in the request's scope.
+The subledger and replay gauges read behind `finapp.lending.proofs.refresh`, 15 minutes by default.)*
+
 ---
 
 ## 16. Milestones

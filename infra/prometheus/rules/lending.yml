@@ -1,0 +1,183 @@
+# Lending alerts (P11-TSK-030, PHASE_11_PLAN.md section 15; ADR-0090...ADR-0100). Each alert's procedure is
+# OPERATIONS_RUNBOOK.md section 7.
+#
+# Every expression names a series the application publishes - AlertRulesResolveTest#theLendingRulesResolve checks each
+# one against a live scrape and holds each threshold equal to the objective the code declares
+# (com.finapp.app.telemetry.LendingObjectives); LendingAlertRulesTest evaluates every rule over a scrape whose one sample
+# breaks its condition and proves that alert, and only it, fires - and that none fires on a healthy scrape. The
+# expressions keep to the small grammar that test evaluates (a selector, max/min/sum with an optional by, increase over a
+# window, a comparison with a number, x != x and or); a rule outside it fails the test rather than going unchecked.
+#
+# Conventions (credit.yml's):
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with max(), never sum() -
+#   the fleet's alert does not double-fire and does not depend on any one instance. Counters are per instance:
+#   sum(increase(...)). The sweeper flags are per instance's configuration, so they are alerted per series, the instance
+#   label naming which one.
+# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so the threshold
+#   rules cannot see it and LendingGaugesUnreadable can.
+# - Never a figure anywhere: labels and annotations name products, verdicts and states only - no amount, rate, balance,
+#   limit, DPD, party or loan exists in any lending series to name (ADR-0072, PHASE_11_PLAN.md section 11). Amounts are
+#   the audited reports' (GET /v1/operator/reports/lending/*), loans the explanation door's.
+# - lending_offered is a TARGET label the environment's scrape configuration sets, never a metric tag: an environment
+#   that offers lending labels its application targets lending_offered="true" (the last step of the activation gate,
+#   OPERATIONS_RUNBOOK.md section 7.4); production does not until that gate opens - no ACTIVE terms is its expected state.
+# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+
+groups:
+  - name: lending
+    rules:
+      - alert: LendingDisbursementPastDeadline
+        # A PENDING disbursement older than the longest deadline any product's terms may name (24 h): the disbursement
+        # sweep cancels a loan whose wallet could not be posted by its deadline, so one still pending past it means the
+        # sweep is not acting on it.
+        expr: max(finapp_lending_disbursement_pending_age_seconds) > 86400
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "A loan disbursement has waited past every product's deadline"
+          description: "The oldest PENDING disbursement has waited {{ $value | humanizeDuration }}. Check finapp_lending_disbursement_sweeper_enabled on every instance and finapp_lending_disbursement_total by outcome (OPERATIONS_RUNBOOK.md section 7.6)."
+
+      - alert: LendingPayoutUnconcluded
+        # A payout (path X) unconcluded thirty minutes after its birth - the borrower's funds held, their interest waiting
+        # (A30). Payments' ambiguity or a payout stuck before payments took it; never re-dispatched by hand.
+        expr: max(finapp_lending_payout_dispatched_age_seconds) > 1800
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A loan payout has not concluded within its objective"
+          description: "The oldest unconcluded payout was born {{ $value | humanizeDuration }} ago. Check the payout sweep and payments' withdrawal for it (finapp_payments_withdrawal_unknown_age); OPERATIONS_RUNBOOK.md section 7.6."
+
+      - alert: LendingAccrualLagging
+        # An account in servicing has left an elapsed business date unaccrued for more than a day past its end.
+        expr: max(finapp_lending_accrual_lag_seconds) > 86400
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "Loan interest accrual is more than a day behind"
+          description: "The oldest unaccrued elapsed date ended {{ $value | humanizeDuration }} ago. Check finapp_lending_servicing_sweeper_enabled and finapp_lending_accrual_total by outcome; the sweep catches up born-once (OPERATIONS_RUNBOOK.md section 7.5)."
+
+      - alert: LendingAllocationAnomaly
+        # A repayment's allocation refused for not conserving the amount - a defect in an engine or its inputs; the
+        # repayment was refused, nothing posted.
+        expr: sum(increase(finapp_lending_allocation_anomaly_total[15m])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A loan repayment allocation did not conserve its amount"
+          description: "At least one allocation was refused in fifteen minutes. The repayment posted nothing; read the loan's explanation and replay it (OPERATIONS_RUNBOOK.md section 7.8)."
+
+      - alert: LendingSubledgerProofFailing
+        # INV-LND-01: a loan account whose six ledger balances its rows do not explain. Never corrected - investigated.
+        expr: max(finapp_lending_subledger_proof{verdict="FAILS"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Loan accounts' ledger balances are not explained by their rows"
+          description: "{{ $value }} loan accounts fail the subledger proof. The portfolio report lists them (GET /v1/operator/reports/lending/portfolio); explain each through GET /v1/operator/loans/{id}/explanation. Never adjust a balance (OPERATIONS_RUNBOOK.md section 7.7)."
+
+      - alert: LendingReplayDiverged
+        # INV-LND-05, INV-LND-09: a loan account a figure of which no longer re-derives by its pinned engine, or whose
+        # canonical terms no longer re-verify.
+        expr: max(finapp_lending_replay{verdict="DIVERGED"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Loan accounts do not replay from their pinned engines and terms"
+          description: "{{ $value }} loan accounts replay DIVERGED. The portfolio report lists them; replay each through POST /v1/operator/loans/{id}/replay to see which kinds differ. Never repair a row (OPERATIONS_RUNBOOK.md section 7.7)."
+
+      - alert: LendingCapitalProofFailing
+        # INV-LND-13: a LENDING_CAPITAL line no recognition explains, or headroom below zero at rest.
+        expr: max(finapp_lending_capital_proof{verdict="FAILS"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "The lending capital proof fails"
+          description: "{{ $value }} currencies fail the lending capital proof. Read GET /v1/operator/reports/lending/capital; capital is never adjusted to fit (OPERATIONS_RUNBOOK.md sections 7.2 and 7.7)."
+
+      - alert: LendingCapitalHeadroomLow
+        # A currency's headroom below its configured floor (finapp.lending.capital.headroom-floor.<CCY>).
+        expr: max(finapp_lending_capital_headroom_low) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Lending capital headroom is below its floor"
+          description: "{{ $value }} currencies stand below their headroom floor; acceptances and draws will refuse lending.CapitalUnavailable once it is spent. Contribute capital (OPERATIONS_RUNBOOK.md sections 7.1 and 7.9)."
+
+      - alert: CreditExposureCensusFailing
+        # INV-CRD-09, INV-LND-06: a party whose reserved, committed and outstanding principal exceeds the limit each
+        # deciding policy declared.
+        expr: max(finapp_credit_exposure_census{verdict="FAILS"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "The credit exposure census fails"
+          description: "{{ $value }} parties fail the exposure census. Never release or reduce exposure by hand (OPERATIONS_RUNBOOK.md section 7.7)."
+
+      - alert: LendingTermsNoneActive
+        # A product with no ACTIVE terms version, in an environment that offers lending: the application door answers
+        # lending.ProductNotOffered. Production's expected state until the activation gate opens - so it is enabled per
+        # environment by the target label, never by default.
+        expr: min by (product) (finapp_lending_terms_active{lending_offered="true"}) == 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The loan product {{ $labels.product }} has no active terms"
+          description: "No {{ $labels.product }} application is accepted until a terms version is activated by a person other than its proposer (OPERATIONS_RUNBOOK.md sections 7.3 and 7.4)."
+
+      - alert: LendingOriginationSweeperOff
+        # Every instance runs the four lending sweeps, leaderless; each is off only in test contexts, never scraped.
+        expr: finapp_lending_origination_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the loan origination sweep"
+          description: "finapp.lending.origination.sweeper.enabled is false on a scraped instance. Applications are offered by the others; set it back to true."
+
+      - alert: LendingDisbursementSweeperOff
+        expr: finapp_lending_disbursement_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the loan disbursement sweep"
+          description: "finapp.lending.disbursement.sweeper.enabled is false on a scraped instance. Loans are disbursed by the others; set it back to true."
+
+      - alert: LendingPayoutSweeperOff
+        expr: finapp_lending_payout_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the loan payout sweep"
+          description: "finapp.lending.payout.sweeper.enabled is false on a scraped instance. Payouts are carried by the others; set it back to true."
+
+      - alert: LendingServicingSweeperOff
+        expr: finapp_lending_servicing_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the loan servicing sweep"
+          description: "finapp.lending.servicing.sweeper.enabled is false on a scraped instance. Accounts are serviced by the others; set it back to true."
+
+      - alert: LendingGaugesUnreadable
+        # NaN: a lending gauge whose database read failed - an unreadable proof, queue or lag must stay visible, never read
+        # as 0 or as its last value.
+        expr: max(finapp_lending_subledger_proof != finapp_lending_subledger_proof) or max(finapp_lending_replay != finapp_lending_replay) or max(finapp_lending_capital_proof != finapp_lending_capital_proof) or max(finapp_lending_capital_headroom_low != finapp_lending_capital_headroom_low) or max(finapp_credit_exposure_census != finapp_credit_exposure_census) or max(finapp_lending_disbursement_pending_age_seconds != finapp_lending_disbursement_pending_age_seconds) or max(finapp_lending_payout_dispatched_age_seconds != finapp_lending_payout_dispatched_age_seconds) or max(finapp_lending_accrual_lag_seconds != finapp_lending_accrual_lag_seconds) or max(finapp_lending_terms_active != finapp_lending_terms_active)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A lending gauge cannot be read"
+          description: "A lending gauge reads NaN - its database read failed. The proofs, the census, the disbursement and payout queues, the accrual lag or the active terms are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 7.10)."

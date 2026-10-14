@@ -234,5 +234,11 @@ outcome creates, duplicates or undoes it), `INV-RAIL-02`, `INV-RAIL-03`, `INV-PA
   `business_date(GREATEST(statement_timestamp(), payout.created_at))`, so a conclusion within a step across midnight is
   admitted instead of refused and re-observed until the clock catches up. Proven by
   `LoanPayoutStepsDatabaseTest#aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth`; protects `INV-LND-10`.
+- **The thresholds, declared (`P11-TSK-030`, 2026-10-14).** `LendingObjectives`: the pending disbursement alerts
+  past the longest deadline any terms version may name (`LoanProduct.disbursementDeadline()`, 24 h - a path X
+  disbursement counts until its wallet posting, the payout after it is the payout's alert); the payout alerts
+  thirty minutes after its birth - payments' instant rail answers in seconds and its resolution sweep inquires a
+  `DISPATCHED` withdrawal after ten minutes, so thirty leave the claim, the dispatch and two resolution passes.
+  `LendingAlertRulesTest` and `AlertRulesResolveTest#theLendingRulesResolve` hold the rules to these.
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

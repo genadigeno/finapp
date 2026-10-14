@@ -95,7 +95,7 @@ public class RequestSizeLimitFilter extends OncePerRequestFilter {
             // they sent would be repeating untrusted input back out.
             log.warn(
                     "Refused a request to {} declaring {} bytes; the limit is {}",
-                    request.getRequestURI(),
+                    LoggedRoutes.of(request),
                     declared,
                     bound);
             problems.write(

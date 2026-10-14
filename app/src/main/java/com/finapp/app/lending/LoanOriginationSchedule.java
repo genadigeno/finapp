@@ -1,5 +1,6 @@
 package com.finapp.app.lending;
 
+import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanApplicationId;
 import com.finapp.lending.LoanOfferId;
 import com.finapp.lending.LoanOrigination;
@@ -36,6 +37,7 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration permit;
+    private final LendingFlowScope flow;
     private ScheduledExecutorService executor;
 
     public LoanOriginationSchedule(
@@ -45,6 +47,19 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration permit) {
+        this(origination, transactions, metrics, pollInterval, batch, permit, LendingFlowScope.NONE);
+    }
+
+    /** As above, each step's span recorded in its flow's stored correlation (P11-TSK-030). */
+    public LoanOriginationSchedule(
+            LoanOrigination origination,
+            LendingTransactions transactions,
+            LoanOfferMetrics metrics,
+            Duration pollInterval,
+            int batch,
+            Duration permit,
+            LendingFlowScope flow) {
+        this.flow = java.util.Objects.requireNonNull(flow, "flow");
         this.origination = Objects.requireNonNull(origination, "origination");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
@@ -72,8 +87,8 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
                     transactions.inTransaction(uow -> origination.claimApplications(uow, batch, permit));
             for (LoanApplicationId id : applications) {
                 try {
-                    LoanOrigination.Outcome step = transactions.inTransaction(
-                            uow -> origination.originate(uow, id, SecurityContext.require()));
+                    LoanOrigination.Outcome step = flow.forApplication(LendingSpans.OFFER, id, () -> transactions.inTransaction(
+                            uow -> origination.originate(uow, id, SecurityContext.require())));
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick steps again; the class name only - never a party.
@@ -83,8 +98,8 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
             List<LoanOfferId> offers = transactions.inTransaction(uow -> origination.claimOffers(uow, batch, permit));
             for (LoanOfferId id : offers) {
                 try {
-                    Optional<LoanProduct> expired =
-                            transactions.inTransaction(uow -> origination.expire(uow, id, SecurityContext.require()));
+                    Optional<LoanProduct> expired = flow.forOffer(LendingSpans.EXPIRE, id,
+                            () -> transactions.inTransaction(uow -> origination.expire(uow, id, SecurityContext.require())));
                     expired.ifPresent(product -> metrics.record(product, LoanOfferMetrics.Outcome.EXPIRED));
                 } catch (RuntimeException failure) {
                     log.warn("Loan offer expiry failed: {}", failure.getClass().getSimpleName());
