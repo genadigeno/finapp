@@ -751,7 +751,6 @@ class RepaymentDatabaseTest {
      * account and no credit balance ever on the wrong side.
      */
     static void assertSubledgerProves(LoanId loan) {
-        DIAG_PROOFS(loan);
         UUID id = loan.value();
         for (String component : List.of("FEES", "INTEREST", "PRINCIPAL")) {
             // P11-TSK-025: fees are what was assessed on the billed items; fee and interest waivers forgive what they billed.
@@ -827,6 +826,9 @@ class RepaymentDatabaseTest {
         assertThat(count("SELECT count(*) FROM lending.repayment r JOIN ledger.journal_line l"
                 + " ON l.entry_id = r.journal_entry_id AND l.direction = 'DEBIT' WHERE r.loan_id = ?"
                 + " AND l.amount_minor <> r.amount_minor", id)).as("each entry debits the wallet the amount").isZero();
+        // P11-TSK-029: the production subledger proof agrees with these hand-written arms on every loan a suite proves.
+        LoanSubledgerProof.Verdict proof = LendingProofsWorld.SUBLEDGER.prove(LendingProofsWorld.record(loan));
+        assertThat(proof.holds()).as("LoanSubledgerProof: %s", proof).isTrue();
     }
 
     private static void assertRepaidOnce(LoanId loan, String key, long minor) {
@@ -951,11 +953,5 @@ class RepaymentDatabaseTest {
         return "INSERT INTO lending.loan_closure (id, loan_id, reason, currency, scale, refund_minor,"
                 + " refund_journal_entry_id, repayment_id, created_at, correlation_id) VALUES (gen_random_uuid(), '"
                 + loan.value() + "', 'REPAID', 'EUR', 2, 0, NULL, NULL, statement_timestamp(), 'p11t18-raw')";
-    }
-
-    static void DIAG_PROOFS(LoanId diagLoan) {
-        LendingProofs.Proven diag = LendingProofsWorld.proven(diagLoan);
-        System.out.println("PROOFDIAG " + StackWalker.getInstance().walk(f -> f.skip(2).findFirst().map(x -> x.getMethodName()).orElse("?"))
-                + " " + diag.subledger() + " " + diag.replay().verdict() + " " + diag.replay().findings() + " n=" + diag.replay().replayed());
     }
 }

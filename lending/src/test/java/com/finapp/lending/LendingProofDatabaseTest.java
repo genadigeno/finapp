@@ -436,6 +436,33 @@ class LendingProofDatabaseTest {
         assertProven(loan);
     }
 
+    @Test
+    @DisplayName("a database clock stepped back never reorders the history (lending V025): a prepayment's repayment,"
+            + " agreement version 2 and schedule version 2 stamped an hour BEFORE the catch-up that preceded them - as a"
+            + " backward step of the clock would stamp them - still replay IDENTICAL: the replay walks recorded_order,"
+            + " drawn under the loan's lock, never the wall clock")
+    void aClockSteppedBackNeverReordersTheHistory() {
+        LoanId loan = aged(4_000_00, 40);
+        topUp(partyOf(loan), 10_000_00);
+        serviceUntilCaughtUp(loan);
+        repay(loan, key(), due(loan));
+        PrepaymentDatabaseTest.prepay(loan, key(), 400_00);
+        assertProven(loan);
+        String id = loan.value().toString();
+        String earlier = "(SELECT min(created_at) - interval '1 hour' FROM lending.interest_accrual WHERE loan_id = '" + id
+                + "')";
+        asOwner("UPDATE lending.repayment SET created_at = " + earlier + " WHERE loan_id = '" + id
+                + "' AND kind = 'PREPAYMENT';"
+                + " UPDATE lending.loan_agreement SET created_at = " + earlier + ", effective_from = effective_from"
+                + " WHERE loan_id = '" + id + "' AND version = 2;"
+                + " UPDATE lending.repayment_schedule SET created_at = " + earlier + " WHERE loan_id = '" + id
+                + "' AND schedule_version = 2");
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ? AND version = 2 AND created_at <"
+                + " (SELECT min(created_at) FROM lending.interest_accrual WHERE loan_id = ?)", loan.value(), loan.value()))
+                .as("the stamps say the prepayment came first").isEqualTo(1);
+        assertProven(loan);
+    }
+
     // ------------------------------------------------------------------ the explanation
 
     @Test

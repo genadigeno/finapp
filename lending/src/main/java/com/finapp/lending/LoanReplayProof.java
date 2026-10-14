@@ -365,7 +365,7 @@ public final class LoanReplayProof {
             }
             // A later version starts the open period of the calendar it superseded, from the principal outstanding
             // (LOAN_PRINCIPAL) the ledger held at its birth - after rule 13 or the prepayment's rule 5.
-            Money outstanding = asOf(AccountPurpose.LOAN_PRINCIPAL, fixed.createdAt());
+            Money outstanding = asOf(AccountPurpose.LOAN_PRINCIPAL, stamp(fixed));
             InstalmentCalendar previous = calendar(superseded.get());
             if (!fixed.principal().equals(outstanding) || fixed.instalments().isEmpty()) {
                 return Optional.empty();
@@ -390,7 +390,7 @@ public final class LoanReplayProof {
                 }
                 Set<UUID> billedBefore = new HashSet<>();
                 for (LoanRecord.Billing billing : record.billings()) {
-                    if (billing.createdAt().isBefore(prepaid.createdAt())) {
+                    if (stamp(billing).before(stamp(prepaid))) {
                         billing.instalment().ifPresent(billedBefore::add);
                     }
                 }
@@ -429,29 +429,29 @@ public final class LoanReplayProof {
         // -------------------------------------------------------------- the history
 
         /** One fact in the lock's order. */
-        private record Event(Instant at, int rank, UUID id, Object fact) {}
+        private record Event(LoanSubledgerProof.Stamp at, int rank, UUID id, Object fact) {}
 
         void history() {
             List<Event> events = new ArrayList<>();
-            record.agreements().forEach(agreement -> events.add(new Event(agreement.createdAt(), 0, agreement.id(),
+            record.agreements().forEach(agreement -> events.add(new Event(stamp(agreement), 0, agreement.id(),
                     agreement)));
-            record.schedules().forEach(fixed -> events.add(new Event(fixed.createdAt(), 1, fixed.id(), fixed)));
-            record.accruals().forEach(accrual -> events.add(new Event(accrual.createdAt(), 2, accrual.id(), accrual)));
-            record.billings().forEach(billing -> events.add(new Event(billing.createdAt(), 3, billing.id(), billing)));
-            record.statements().forEach(statement -> events.add(new Event(statement.createdAt(), 3, statement.id(),
+            record.schedules().forEach(fixed -> events.add(new Event(stamp(fixed), 1, fixed.id(), fixed)));
+            record.accruals().forEach(accrual -> events.add(new Event(stamp(accrual), 2, accrual.id(), accrual)));
+            record.billings().forEach(billing -> events.add(new Event(stamp(billing), 3, billing.id(), billing)));
+            record.statements().forEach(statement -> events.add(new Event(stamp(statement), 3, statement.id(),
                     statement)));
-            record.applications().forEach(application -> events.add(new Event(application.createdAt(), 4,
+            record.applications().forEach(application -> events.add(new Event(stamp(application), 4,
                     application.id(), application)));
-            record.fees().forEach(fee -> events.add(new Event(fee.createdAt(), 5, fee.id(), fee)));
-            record.reschedulings().forEach(rescheduling -> events.add(new Event(rescheduling.createdAt(), 6,
+            record.fees().forEach(fee -> events.add(new Event(stamp(fee), 5, fee.id(), fee)));
+            record.reschedulings().forEach(rescheduling -> events.add(new Event(stamp(rescheduling), 6,
                     rescheduling.id(), rescheduling)));
-            record.repayments().forEach(payment -> events.add(new Event(payment.createdAt(), 7, payment.id(), payment)));
+            record.repayments().forEach(payment -> events.add(new Event(stamp(payment), 7, payment.id(), payment)));
             record.waivers().stream().filter(LoanRecord.WaiverRow::approved).forEach(waiver -> events.add(
-                    new Event(waiver.decidedAt().orElseThrow(), 8, waiver.id(), waiver)));
+                    new Event(stamp(waiver), 8, waiver.id(), waiver)));
             record.reversals().stream().filter(reversal -> "APPROVED".equals(reversal.status())).forEach(reversal ->
-                    events.add(new Event(reversal.decidedAt().orElseThrow(), 9, reversal.id(), reversal)));
-            record.closure().ifPresent(closure -> events.add(new Event(closure.createdAt(), 10, closure.id(), closure)));
-            events.sort(Comparator.comparing(Event::at).thenComparingInt(Event::rank).thenComparing(Event::id));
+                    events.add(new Event(stamp(reversal), 9, reversal.id(), reversal)));
+            record.closure().ifPresent(closure -> events.add(new Event(stamp(closure), 10, closure.id(), closure)));
+            events.sort(Comparator.comparing(Event::at, LoanSubledgerProof.Stamp::compareTo).thenComparingInt(Event::rank).thenComparing(Event::id));
 
             for (Event event : events) {
                 switch (event.fact()) {
@@ -501,7 +501,7 @@ public final class LoanReplayProof {
                         new BigDecimal(agreement.get().nominalAnnualRate()), pinned.get().dayCount(),
                         pinned.get().interestRounding(), LoanReplayer.version(LendingEngine.ACCRUAL, accrual.engine()));
                 Optional<InterestAccrual> previous = previousInPeriod(accrual);
-                Money base = base(accrual.date(), accrual.createdAt());
+                Money base = base(accrual.date(), stamp(accrual));
                 InterestAccrual derived = LoanReplayer.accrue(terms, period, previous, accrual.date(), base);
                 if (!derived.base().equals(accrual.base()) || !derived.posted().equals(accrual.posted())
                         || derived.cumulativeExact().compareTo(accrual.cumulativeExact()) != 0) {
@@ -543,7 +543,7 @@ public final class LoanReplayProof {
          * Principal outstanding at the end of {@code date} as the accrual step read it: {@code LOAN_PRINCIPAL +
          * LOAN_PRINCIPAL_DUE} over the lines dated on or before it, of the entries written before {@code before}.
          */
-        private Money base(LocalDate date, Instant before) {
+        private Money base(LocalDate date, LoanSubledgerProof.Stamp before) {
             Money base = zero;
             for (AccountPurpose purpose : List.of(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE)) {
                 for (PurposeBalances.DatedLine line : linesOf(purpose)) {
@@ -569,7 +569,7 @@ public final class LoanReplayProof {
             LocalDate expected = start.get();
             for (LoanRecord.Accrual accrual : record.accruals()) {
                 for (LocalDate date = expected; date.isBefore(accrual.date()); date = date.plusDays(1)) {
-                    if (base(date, accrual.createdAt()).isPositive()) {
+                    if (base(date, stamp(accrual)).isPositive()) {
                         diverged(Check.ACCRUAL_MISSING, accrual.id());
                         break;
                     }
@@ -599,18 +599,15 @@ public final class LoanReplayProof {
                     int rows = 0;
                     for (LoanRecord.Accrual accrual : record.accruals()) {
                         if (accrual.periodStart().equals(period.start()) && accrual.periodEnd().equals(period.endExclusive())
-                                && accrual.createdAt().isBefore(billing.createdAt())) {
+                                && stamp(accrual).before(stamp(billing))) {
                             interest = interest.plus(accrual.posted());
                             rows++;
                         }
                     }
-                    Money notDue = asOf(AccountPurpose.LOAN_PRINCIPAL, billing.createdAt());
+                    Money notDue = asOf(AccountPurpose.LOAN_PRINCIPAL, stamp(billing));
                     Money principal = principalDue(billing, fixed, interest, notDue);
                     if (!candidate || ("POST_MATURITY".equals(billing.kind()) && rows == 0)
                             || !interest.equals(billing.interestDue()) || !principal.equals(billing.principalDue())) {
-                        System.err.println("DEBUGBILLING candidate=" + candidate + " rows=" + rows + " interest=" + interest
-                                + "/" + billing.interestDue() + " principal=" + principal + "/" + billing.principalDue()
-                                + " notDue=" + notDue + " seq=" + billing.sequence() + " kind=" + billing.kind());
                         diverged(Check.BILLING, billing.id());
                     }
                 }
@@ -619,7 +616,7 @@ public final class LoanReplayProof {
             }
             billing.instalment().ifPresent(billedInstalments::add);
             items.put(billing.id(), new Item(billing.dueDate(), billing.interestDue(), billing.principalDue()));
-            applicationExpected(billing.id(), billing.createdAt());
+            applicationExpected(billing.id(), stamp(billing));
         }
 
         /** The billed item is one the schedule in force names: an instalment of it, or a period of its calendar after it. */
@@ -676,7 +673,7 @@ public final class LoanReplayProof {
                     List<InterestAccrual> accruals = new ArrayList<>();
                     for (LoanRecord.Accrual accrual : record.accruals()) {
                         if (accrual.periodStart().equals(cycle.start()) && accrual.periodEnd().equals(cycle.endExclusive())
-                                && accrual.createdAt().isBefore(statement.createdAt())) {
+                                && stamp(accrual).before(stamp(statement))) {
                             accruals.add(interestAccrual(accrual));
                         }
                     }
@@ -684,7 +681,7 @@ public final class LoanReplayProof {
                     Money dueAtClose = zero;
                     LocalDate close = cycle.endExclusive().minusDays(1);
                     for (PurposeBalances.DatedLine line : record.journalLines()) {
-                        if (line.valueDate().isAfter(close) || !writtenBefore(line.entry(), statement.createdAt())) {
+                        if (line.valueDate().isAfter(close) || !writtenBefore(line.entry(), stamp(statement))) {
                             continue;
                         }
                         Money signed = line.direction() == Direction.DEBIT ? line.amount() : line.amount().negated();
@@ -694,9 +691,9 @@ public final class LoanReplayProof {
                             dueAtClose = dueAtClose.plus(signed);
                         }
                     }
-                    Money notDueNow = asOf(AccountPurpose.LOAN_PRINCIPAL, statement.createdAt());
+                    Money notDueNow = asOf(AccountPurpose.LOAN_PRINCIPAL, stamp(statement));
                     Money cap = notDueAtClose.compareTo(notDueNow) <= 0 ? notDueAtClose : notDueNow;
-                    Statement derived = LoanReplayer.state(terms, cycle, accruals, feesCarried(cycle, statement.createdAt()),
+                    Statement derived = LoanReplayer.state(terms, cycle, accruals, feesCarried(cycle, stamp(statement)),
                             cap, notDueAtClose.plus(dueAtClose).minus(cap));
                     if (!cycle.start().equals(statement.cycleStart()) || !cycle.endExclusive().equals(statement.cycleEnd())
                             || !derived.interestBilled().equals(statement.interestBilled())
@@ -715,15 +712,15 @@ public final class LoanReplayProof {
             lastStatement = Optional.of(statement);
             items.put(statement.id(), new Item(statement.dueDate(), statement.interestBilled(),
                     statement.principalBilled()));
-            applicationExpected(statement.id(), statement.createdAt());
+            applicationExpected(statement.id(), stamp(statement));
         }
 
         /** The fees assessed in the cycle before the statement, less those waived before it - carried by the statement. */
-        private Money feesCarried(AccrualPeriod cycle, Instant before) {
+        private Money feesCarried(AccrualPeriod cycle, LoanSubledgerProof.Stamp before) {
             Money carried = zero;
             Set<UUID> inCycle = new HashSet<>();
             for (LoanRecord.Fee fee : record.fees()) {
-                if (cycle.contains(fee.businessDate()) && fee.createdAt().isBefore(before)) {
+                if (cycle.contains(fee.businessDate()) && stamp(fee).before(before)) {
                     carried = carried.plus(fee.amount());
                     inCycle.add(fee.id());
                 }
@@ -731,7 +728,7 @@ public final class LoanReplayProof {
             for (LoanRecord.WaiverRow waiver : record.waivers()) {
                 if (waiver.kind() == WaiverKind.FEE && waiver.approved()
                         && waiver.feeAssessmentId().filter(inCycle::contains).isPresent()
-                        && waiver.decidedAt().orElseThrow().isBefore(before)) {
+                        && stamp(waiver).before(before)) {
                     carried = carried.minus(waiver.amount());
                 }
             }
@@ -739,7 +736,7 @@ public final class LoanReplayProof {
         }
 
         /** After an item is billed, the step applies a credit balance held to what is due - its absence is a finding. */
-        private void applicationExpected(UUID item, Instant billedAt) {
+        private void applicationExpected(UUID item, LoanSubledgerProof.Stamp billedAt) {
             boolean applied = record.applications().stream().anyMatch(application -> application.billingId().equals(item));
             if (applied) {
                 return;
@@ -763,10 +760,10 @@ public final class LoanReplayProof {
                 } else {
                     AllocationRules settling = new AllocationRules(rules.get().engine(), rules.get().sequence(),
                             rules.get().order(), OverpaymentTreatment.HOLD_AS_CREDIT);
-                    Money credit = asOf(AccountPurpose.LOAN_CREDIT_BALANCE, application.createdAt()).negated();
+                    Money credit = asOf(AccountPurpose.LOAN_CREDIT_BALANCE, stamp(application)).negated();
                     List<AllocationLine> derived = new ArrayList<>();
                     Money total = zero;
-                    for (AllocationLine line : LoanReplayer.allocate(credit, dueState(application.createdAt()), settling)) {
+                    for (AllocationLine line : LoanReplayer.allocate(credit, dueState(stamp(application)), settling)) {
                         if (line.target() == AllocationLine.Target.DUE_ITEM) {
                             derived.add(line);
                             total = total.plus(line.amount());
@@ -801,7 +798,7 @@ public final class LoanReplayProof {
                 if (rules.isEmpty()) {
                     diverged(Check.ALLOCATION, payment.id());
                 } else {
-                    DueState state = dueState(payment.createdAt());
+                    DueState state = dueState(stamp(payment));
                     List<AllocationLine> derived = payment.kind() == RepaymentKind.PREPAYMENT
                             ? LoanReplayer.allocatePrepayment(payment.amount(), state, rules.get())
                             : LoanReplayer.allocate(payment.amount(), state, rules.get());
@@ -831,7 +828,7 @@ public final class LoanReplayProof {
         }
 
         /** The due state just before {@code before}: the items' billed less paid, and the principal not yet due. */
-        private DueState dueState(Instant before) {
+        private DueState dueState(LoanSubledgerProof.Stamp before) {
             List<DueState.DueItem> due = new ArrayList<>();
             items.forEach((id, item) -> {
                 if (item.total().isPositive() || item.total().isNegative()) {
@@ -941,7 +938,7 @@ public final class LoanReplayProof {
 
         private void closure(LoanRecord.Closure closure) {
             replayed++;
-            Money held = asOf(AccountPurpose.LOAN_CREDIT_BALANCE, closure.createdAt()).negated();
+            Money held = asOf(AccountPurpose.LOAN_CREDIT_BALANCE, stamp(closure)).negated();
             if (!held.equals(closure.refund())) {
                 diverged(Check.CLOSURE, closure.id());
             }
@@ -1001,14 +998,62 @@ public final class LoanReplayProof {
             return Optional.ofNullable(items.get(id));
         }
 
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Agreement row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.ScheduleVersion row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Accrual row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Billing row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.StatementRow row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Application row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Fee row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Rescheduling row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Payment row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.WaiverRow row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.decidedAt().orElse(row.proposedAt()));
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Reversal row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.decidedAt().orElse(row.proposedAt()));
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.Closure row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
         /** Whether {@code entry} was written before {@code before} - an entry no row names counts as always written. */
-        private boolean writtenBefore(JournalEntryId entry, Instant before) {
+        private boolean writtenBefore(JournalEntryId entry, LoanSubledgerProof.Stamp before) {
             LoanSubledgerProof.Namer namer = named.get(entry);
-            return namer == null || namer.at().isBefore(before);
+            return namer == null || namer.stamp().before(before);
         }
 
         /** {@code purpose}'s balance (DR - CR) over the entries written before {@code before}. */
-        private Money asOf(AccountPurpose purpose, Instant before) {
+        private Money asOf(AccountPurpose purpose, LoanSubledgerProof.Stamp before) {
             Money balance = zero;
             for (PurposeBalances.DatedLine line : linesOf(purpose)) {
                 if (writtenBefore(line.entry(), before)) {

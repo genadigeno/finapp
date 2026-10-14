@@ -91,7 +91,7 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                         row.getInt("allocation_engine_version"), integer(row, "statement_engine_version"),
                         row.getString("agreement_template_id"), row.getInt("agreement_template_version"),
                         row.getInt("canonical_format"), row.getString("canonical_terms"), row.getBytes("terms_sha256"),
-                        instant(row, "effective_from"), instant(row, "created_at")));
+                        instant(row, "effective_from"), instant(row, "created_at"), order(row, "recorded_order")));
 
         Optional<LoanRecord.Disbursement> disbursement = first(query(c, "SELECT id, status, payout_method_id, journal_entry_id,"
                 + " value_date, decided_at, created_at FROM lending.loan_disbursement WHERE loan_id = ?", id,
@@ -128,20 +128,22 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                         money(row, "final_instalment_minor"), money(row, "total_interest_minor"), row.getInt("term_months"),
                         row.getObject("start_date", LocalDate.class), row.getInt("intended_day"),
                         instant(row, "created_at"),
-                        instalments.getOrDefault(row.getObject("id", UUID.class), List.of())));
+                        instalments.getOrDefault(row.getObject("id", UUID.class), List.of()), order(row, "recorded_order")));
 
         List<LoanRecord.Draw> draws = query(c, "SELECT * FROM lending.credit_line_draw WHERE loan_id = ?"
                 + " ORDER BY created_at, id", id, row -> new LoanRecord.Draw(row.getObject("id", UUID.class),
                         money(row, "amount_minor"), row.getObject("agreement_id", UUID.class),
                         row.getInt("agreement_version"), JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)),
-                        row.getObject("value_date", LocalDate.class), instant(row, "created_at")));
+                        row.getObject("value_date", LocalDate.class), instant(row, "created_at"),
+                        order(row, "recorded_order")));
         List<LoanRecord.Accrual> accruals = query(c, "SELECT * FROM lending.interest_accrual WHERE loan_id = ?"
                 + " ORDER BY accrual_date", id, row -> new LoanRecord.Accrual(row.getObject("id", UUID.class),
                         row.getObject("accrual_date", LocalDate.class), row.getObject("period_start", LocalDate.class),
                         row.getObject("period_end", LocalDate.class), money(row, "base_minor"),
                         row.getBigDecimal("cumulative_exact"), money(row, "posted_minor"),
                         row.getObject("agreement_id", UUID.class), row.getInt("agreement_version"),
-                        row.getInt("accrual_engine_version"), entry(row, "journal_entry_id"), instant(row, "created_at")));
+                        row.getInt("accrual_engine_version"), entry(row, "journal_entry_id"), instant(row, "created_at"),
+                        order(row, "recorded_order")));
         List<LoanRecord.Billing> billings = query(c, "SELECT * FROM lending.instalment_billing WHERE loan_id = ?"
                 + " ORDER BY due_date", id, row -> new LoanRecord.Billing(row.getObject("id", UUID.class),
                         row.getString("kind"), row.getObject("schedule_id", UUID.class), row.getInt("schedule_version"),
@@ -149,7 +151,8 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                         row.getObject("due_date", LocalDate.class), money(row, "interest_due_minor"),
                         money(row, "principal_due_minor"), row.getObject("agreement_id", UUID.class),
                         row.getInt("agreement_version"), row.getInt("schedule_engine_version"),
-                        row.getInt("accrual_engine_version"), entry(row, "journal_entry_id"), instant(row, "created_at")));
+                        row.getInt("accrual_engine_version"), entry(row, "journal_entry_id"), instant(row, "created_at"),
+                        order(row, "recorded_order")));
         List<LoanRecord.StatementRow> statements = query(c, "SELECT * FROM lending.credit_line_statement WHERE loan_id = ?"
                 + " ORDER BY cycle_end", id, row -> new LoanRecord.StatementRow(row.getObject("id", UUID.class),
                         row.getObject("cycle_start", LocalDate.class), row.getObject("cycle_end", LocalDate.class),
@@ -157,7 +160,8 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                         money(row, "fees_carried_minor"), money(row, "principal_billed_minor"),
                         money(row, "minimum_payment_minor"), row.getObject("agreement_id", UUID.class),
                         row.getInt("agreement_version"), row.getInt("statement_engine_version"),
-                        row.getInt("accrual_engine_version"), entry(row, "journal_entry_id"), instant(row, "created_at")));
+                        row.getInt("accrual_engine_version"), entry(row, "journal_entry_id"), instant(row, "created_at"),
+                        order(row, "recorded_order")));
 
         Map<UUID, List<LoanRecord.ApplicationLine>> applicationLines = new HashMap<>();
         for (Map.Entry<UUID, LoanRecord.ApplicationLine> pair : query(c, "SELECT x.* FROM lending.credit_balance_allocation x"
@@ -173,7 +177,8 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                         money(row, "amount_minor"), row.getObject("agreement_id", UUID.class),
                         row.getInt("agreement_version"), row.getInt("allocation_engine_version"),
                         JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)), instant(row, "created_at"),
-                        applicationLines.getOrDefault(row.getObject("id", UUID.class), List.of())));
+                        applicationLines.getOrDefault(row.getObject("id", UUID.class), List.of()),
+                        order(row, "recorded_order")));
 
         Map<UUID, List<LoanRecord.PaymentLine>> paymentLines = new HashMap<>();
         for (Map.Entry<UUID, LoanRecord.PaymentLine> pair : query(c, "SELECT x.* FROM lending.repayment_allocation x"
@@ -192,7 +197,8 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                         row.getInt("allocation_engine_version"),
                         JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)),
                         row.getObject("value_date", LocalDate.class), instant(row, "created_at"),
-                        paymentLines.getOrDefault(row.getObject("id", UUID.class), List.of())));
+                        paymentLines.getOrDefault(row.getObject("id", UUID.class), List.of()),
+                        order(row, "recorded_order")));
 
         Map<UUID, List<LoanRecord.Negation>> negations = new HashMap<>();
         for (Map.Entry<UUID, LoanRecord.Negation> pair : query(c, "SELECT n.* FROM lending.repayment_allocation_reversal n"
@@ -202,27 +208,29 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
             negations.computeIfAbsent(pair.getKey(), key -> new ArrayList<>()).add(pair.getValue());
         }
         List<LoanRecord.Reversal> reversals = query(c, "SELECT id, repayment_id, agreement_version, status, proposed_at,"
-                + " decided_at, journal_entry_id FROM lending.repayment_reversal WHERE loan_id = ? ORDER BY proposed_at, id",
+                + " decided_at, journal_entry_id, decided_order FROM lending.repayment_reversal WHERE loan_id = ? ORDER BY proposed_at, id",
                 id, row -> new LoanRecord.Reversal(row.getObject("id", UUID.class), row.getObject("repayment_id", UUID.class),
                         row.getInt("agreement_version"), row.getString("status"), instant(row, "proposed_at"),
                         optionalInstant(row, "decided_at"), entry(row, "journal_entry_id"),
-                        negations.getOrDefault(row.getObject("id", UUID.class), List.of())));
+                        negations.getOrDefault(row.getObject("id", UUID.class), List.of()), order(row, "decided_order")));
 
         List<LoanRecord.Fee> fees = query(c, "SELECT * FROM lending.fee_assessment WHERE loan_id = ?"
                 + " ORDER BY created_at, id", id, row -> new LoanRecord.Fee(row.getObject("id", UUID.class),
                         row.getObject("due_item_id", UUID.class), row.getString("kind"),
                         row.getObject("business_date", LocalDate.class), money(row, "amount_minor"),
                         row.getObject("agreement_id", UUID.class), row.getInt("agreement_version"),
-                        JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)), instant(row, "created_at")));
+                        JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)), instant(row, "created_at"),
+                        order(row, "recorded_order")));
         List<LoanRecord.WaiverRow> waivers = query(c, "SELECT w.id, w.kind, w.fee_assessment_id, w.due_item_id, w.currency,"
-                + " w.scale, w.amount_minor, w.agreement_version, w.proposed_at, d.outcome, d.decided_at, d.journal_entry_id"
+                + " w.scale, w.amount_minor, w.agreement_version, w.proposed_at, d.outcome, d.decided_at, d.journal_entry_id,"
+                + " d.recorded_order"
                 + " FROM lending.waiver w LEFT JOIN lending.waiver_decision d ON d.waiver_id = w.id WHERE w.loan_id = ?"
                 + " ORDER BY w.proposed_at, w.id", id, row -> new LoanRecord.WaiverRow(row.getObject("id", UUID.class),
                         WaiverKind.valueOf(row.getString("kind")), uuid(row, "fee_assessment_id"),
                         row.getObject("due_item_id", UUID.class), money(row, "amount_minor"),
                         row.getInt("agreement_version"), instant(row, "proposed_at"),
                         Optional.ofNullable(row.getString("outcome")), optionalInstant(row, "decided_at"),
-                        entry(row, "journal_entry_id")));
+                        entry(row, "journal_entry_id"), order(row, "recorded_order")));
         List<LoanRecord.Amendment> amendments = query(c, "SELECT m.id, m.amends_agreement_id, m.amends_version,"
                 + " m.nominal_annual_rate, m.remaining_instalments, m.reschedule_arrears, m.document_sha256, m.proposed_at,"
                 + " d.outcome, d.decided_at, d.expires_at FROM lending.loan_amendment m LEFT JOIN"
@@ -237,11 +245,12 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
                 + " WHERE loan_id = ? ORDER BY created_at, id", id, row -> new LoanRecord.Rescheduling(
                         row.getObject("id", UUID.class), row.getObject("amendment_id", UUID.class),
                         row.getObject("billing_id", UUID.class), money(row, "principal_minor"),
-                        JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)), instant(row, "created_at")));
+                        JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)), instant(row, "created_at"),
+                        order(row, "recorded_order")));
         Optional<LoanRecord.Closure> closure = first(query(c, "SELECT * FROM lending.loan_closure WHERE loan_id = ?", id,
                 row -> new LoanRecord.Closure(row.getObject("id", UUID.class), row.getString("reason"),
                         money(row, "refund_minor"), entry(row, "refund_journal_entry_id"), uuid(row, "repayment_id"),
-                        instant(row, "created_at"))));
+                        instant(row, "created_at"), order(row, "recorded_order"))));
         List<LoanRecord.PayoffQuoteRow> quotes = query(c, "SELECT id, business_date, good_through, currency, scale,"
                 + " outstanding_minor, agreement_version, created_at FROM lending.payoff_quote WHERE loan_id = ?"
                 + " ORDER BY created_at, id", id, row -> new LoanRecord.PayoffQuoteRow(row.getObject("id", UUID.class),
@@ -325,6 +334,12 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
     /** The one row a unique key admits, if any. */
     private static <T> Optional<T> first(List<T> rows) {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
+    /** A fact's place in its loan's history, or {@link LoanRecord#UNORDERED} for one written before lending V025. */
+    private static long order(ResultSet row, String column) throws SQLException {
+        long value = row.getLong(column);
+        return row.wasNull() ? LoanRecord.UNORDERED : value;
     }
 
     private static CurrencyCode currency(ResultSet row) throws SQLException {

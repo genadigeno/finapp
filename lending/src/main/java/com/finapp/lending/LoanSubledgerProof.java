@@ -295,13 +295,36 @@ public final class LoanSubledgerProof {
         return unexplained;
     }
 
-    /** The row that names a journal entry: its kind, its id and the database instant it was written. */
-    public record Namer(String kind, UUID row, java.time.Instant at) {
+    /** The row that names a journal entry: its kind, its id and its place in the loan's history. */
+    public record Namer(String kind, UUID row, Stamp stamp) {
 
         public Namer {
             Objects.requireNonNull(kind, "kind");
             Objects.requireNonNull(row, "row");
+            Objects.requireNonNull(stamp, "stamp");
+        }
+    }
+
+    /**
+     * A fact's place in its loan's history: its {@code recorded_order} (lending {@code V025}) - drawn under the loan's
+     * row lock, so clock-independent - then, for facts written before {@code V025} ({@link LoanRecord#UNORDERED}), its
+     * stamp.
+     */
+    public record Stamp(long order, java.time.Instant at) implements Comparable<Stamp> {
+
+        public Stamp {
             Objects.requireNonNull(at, "at");
+        }
+
+        @Override
+        public int compareTo(Stamp other) {
+            int byOrder = Long.compare(order, other.order);
+            return byOrder != 0 ? byOrder : at.compareTo(other.at);
+        }
+
+        /** Whether this fact was written before {@code other}. */
+        public boolean before(Stamp other) {
+            return compareTo(other) < 0;
         }
     }
 
@@ -309,27 +332,29 @@ public final class LoanSubledgerProof {
     public static Map<JournalEntryId, Namer> namedEntries(LoanRecord record) {
         Map<JournalEntryId, Namer> named = new HashMap<>();
         record.disbursement().ifPresent(found -> found.entry().ifPresent(entry -> named.put(entry,
-                new Namer("DISBURSEMENT", found.id(), found.decidedAt().orElse(found.createdAt())))));
-        record.draws().forEach(draw -> named.put(draw.entry(), new Namer("DRAW", draw.id(), draw.createdAt())));
+                new Namer("DISBURSEMENT", found.id(), new Stamp(LoanRecord.UNORDERED, found.decidedAt().orElse(found.createdAt()))))));
+        record.draws().forEach(draw -> named.put(draw.entry(), new Namer("DRAW", draw.id(), new Stamp(draw.order(), draw.createdAt()))));
         record.accruals().forEach(accrual -> accrual.entry().ifPresent(entry -> named.put(entry,
-                new Namer("ACCRUAL", accrual.id(), accrual.createdAt()))));
+                new Namer("ACCRUAL", accrual.id(), new Stamp(accrual.order(), accrual.createdAt())))));
         record.billings().forEach(billing -> billing.entry().ifPresent(entry -> named.put(entry,
-                new Namer("BILLING", billing.id(), billing.createdAt()))));
+                new Namer("BILLING", billing.id(), new Stamp(billing.order(), billing.createdAt())))));
         record.statements().forEach(statement -> statement.entry().ifPresent(entry -> named.put(entry,
-                new Namer("STATEMENT", statement.id(), statement.createdAt()))));
+                new Namer("STATEMENT", statement.id(), new Stamp(statement.order(), statement.createdAt())))));
         record.applications().forEach(application -> named.put(application.entry(),
-                new Namer("CREDIT_APPLICATION", application.id(), application.createdAt())));
+                new Namer("CREDIT_APPLICATION", application.id(), new Stamp(application.order(), application.createdAt()))));
         record.repayments().forEach(payment -> named.put(payment.entry(),
-                new Namer("REPAYMENT", payment.id(), payment.createdAt())));
+                new Namer("REPAYMENT", payment.id(), new Stamp(payment.order(), payment.createdAt()))));
         record.reversals().forEach(reversal -> reversal.entry().ifPresent(entry -> named.put(entry,
-                new Namer("REPAYMENT_REVERSAL", reversal.id(), reversal.decidedAt().orElse(reversal.proposedAt())))));
-        record.fees().forEach(fee -> named.put(fee.entry(), new Namer("FEE", fee.id(), fee.createdAt())));
+                new Namer("REPAYMENT_REVERSAL", reversal.id(),
+                new Stamp(reversal.order(), reversal.decidedAt().orElse(reversal.proposedAt()))))));
+        record.fees().forEach(fee -> named.put(fee.entry(), new Namer("FEE", fee.id(), new Stamp(fee.order(), fee.createdAt()))));
         record.waivers().forEach(waiver -> waiver.entry().ifPresent(entry -> named.put(entry,
-                new Namer("WAIVER", waiver.id(), waiver.decidedAt().orElse(waiver.proposedAt())))));
+                new Namer("WAIVER", waiver.id(),
+                new Stamp(waiver.order(), waiver.decidedAt().orElse(waiver.proposedAt()))))));
         record.reschedulings().forEach(rescheduling -> named.put(rescheduling.entry(),
-                new Namer("RESCHEDULING", rescheduling.id(), rescheduling.createdAt())));
+                new Namer("RESCHEDULING", rescheduling.id(), new Stamp(rescheduling.order(), rescheduling.createdAt()))));
         record.closure().ifPresent(closure -> closure.refundEntry().ifPresent(entry -> named.put(entry,
-                new Namer("CLOSURE_REFUND", closure.id(), closure.createdAt()))));
+                new Namer("CLOSURE_REFUND", closure.id(), new Stamp(closure.order(), closure.createdAt())))));
         return named;
     }
 }

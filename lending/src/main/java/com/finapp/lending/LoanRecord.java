@@ -24,8 +24,9 @@ import java.util.UUID;
  * <p><strong>Rows as written.</strong> Every amount is the row's own minor units at its own scale; every engine version is
  * the row's own NUMBER, never resolved to an {@link EngineVersion} here - a number this build does not hold must reach the
  * replay as a number, to be reported {@code DIVERGED}, never refused at the read ({@code INV-LND-09}). Every fact carries
- * the database instant it was written ({@code created_at}, a decision's {@code decided_at} - lending {@code V025}): each was
- * stamped under the loan's row lock (L3), so the instants are the lock's order and the replay walks them.
+ * its place in the loan's history - {@code recorded_order}, a reversal's {@code decided_order}, drawn from
+ * {@code lending.record_order} under the loan's row lock (L3, lending {@code V025}) - so the replay walks the lock's
+ * order whatever the database clock did; a fact written before {@code V025} carries {@link #UNORDERED} and its stamp.
  *
  * <p><strong>The ledger as it stands.</strong> The loan's own ledger accounts (every account the ledger holds for the loan as
  * owner) and every journal line on them with its entry and value date - derived balances, never the projection
@@ -96,6 +97,9 @@ public record LoanRecord(
         journalLines = List.copyOf(journalLines);
     }
 
+    /** The order of a fact written before lending {@code V025}: before every ordered fact, among its peers by its stamp. */
+    public static final long UNORDERED = Long.MIN_VALUE;
+
     /** The loan's id. */
     public LoanId id() {
         return loan.id();
@@ -145,7 +149,8 @@ public record LoanRecord(
             UUID decision, UUID termsVersionId, LoanProduct product, int scale, long amountMinor, Optional<Integer> termMonths,
             String nominalAnnualRate, int repaymentDay, Optional<Integer> scheduleEngine, int accrualEngine,
             int allocationEngine, Optional<Integer> statementEngine, String templateId, int templateVersion,
-            int canonicalFormat, String canonicalTerms, byte[] termsSha256, Instant effectiveFrom, Instant createdAt) {
+            int canonicalFormat, String canonicalTerms, byte[] termsSha256, Instant effectiveFrom, Instant createdAt,
+            long order) {
 
         public Agreement {
             termsSha256 = termsSha256.clone();
@@ -191,7 +196,7 @@ public record LoanRecord(
     /** A schedule version and its instalments. */
     public record ScheduleVersion(UUID id, int version, UUID agreementId, int agreementVersion, int engine, Money principal,
             Money instalment, Money finalInstalment, Money totalInterest, int termMonths, LocalDate startDate,
-            int intendedDay, Instant createdAt, List<Instalment> instalments) {
+            int intendedDay, Instant createdAt, List<Instalment> instalments, long order) {
 
         public ScheduleVersion {
             instalments = List.copyOf(instalments);
@@ -215,7 +220,7 @@ public record LoanRecord(
 
     /** A credit line's draw. */
     public record Draw(UUID id, Money amount, UUID agreementId, int agreementVersion, JournalEntryId entry,
-            LocalDate valueDate, Instant createdAt) {
+            LocalDate valueDate, Instant createdAt, long order) {
 
         @Override
         public String toString() {
@@ -226,7 +231,7 @@ public record LoanRecord(
     /** A day's accrual. */
     public record Accrual(UUID id, LocalDate date, LocalDate periodStart, LocalDate periodEnd, Money base,
             BigDecimal cumulativeExact, Money posted, UUID agreementId, int agreementVersion, int engine,
-            Optional<JournalEntryId> entry, Instant createdAt) {
+            Optional<JournalEntryId> entry, Instant createdAt, long order) {
 
         @Override
         public String toString() {
@@ -238,7 +243,7 @@ public record LoanRecord(
     public record Billing(UUID id, String kind, UUID scheduleId, int scheduleVersion, Optional<UUID> instalment,
             int sequence, LocalDate periodStart, LocalDate dueDate, Money interestDue, Money principalDue,
             UUID agreementId, int agreementVersion, int scheduleEngine, int accrualEngine,
-            Optional<JournalEntryId> entry, Instant createdAt) {
+            Optional<JournalEntryId> entry, Instant createdAt, long order) {
 
         @Override
         public String toString() {
@@ -249,7 +254,7 @@ public record LoanRecord(
     /** A credit line's statement. */
     public record StatementRow(UUID id, LocalDate cycleStart, LocalDate cycleEnd, LocalDate dueDate, Money interestBilled,
             Money feesCarried, Money principalBilled, Money minimumPayment, UUID agreementId, int agreementVersion,
-            int statementEngine, int accrualEngine, Optional<JournalEntryId> entry, Instant createdAt) {
+            int statementEngine, int accrualEngine, Optional<JournalEntryId> entry, Instant createdAt, long order) {
 
         @Override
         public String toString() {
@@ -259,7 +264,7 @@ public record LoanRecord(
 
     /** A credit-balance application and its lines. */
     public record Application(UUID id, UUID billingId, Money amount, UUID agreementId, int agreementVersion,
-            int allocationEngine, JournalEntryId entry, Instant createdAt, List<ApplicationLine> lines) {
+            int allocationEngine, JournalEntryId entry, Instant createdAt, List<ApplicationLine> lines, long order) {
 
         public Application {
             lines = List.copyOf(lines);
@@ -282,7 +287,8 @@ public record LoanRecord(
 
     /** Money received - a repayment of any kind - and its allocation lines. */
     public record Payment(UUID id, RepaymentKind kind, Money amount, UUID agreementId, int agreementVersion,
-            int allocationEngine, JournalEntryId entry, LocalDate valueDate, Instant createdAt, List<PaymentLine> lines) {
+            int allocationEngine, JournalEntryId entry, LocalDate valueDate, Instant createdAt, List<PaymentLine> lines,
+            long order) {
 
         public Payment {
             lines = List.copyOf(lines);
@@ -306,7 +312,7 @@ public record LoanRecord(
 
     /** A repayment reversal - proposed, approved or rejected - and, once approved, its negating rows. */
     public record Reversal(UUID id, UUID repaymentId, int agreementVersion, String status, Instant proposedAt,
-            Optional<Instant> decidedAt, Optional<JournalEntryId> entry, List<Negation> negations) {
+            Optional<Instant> decidedAt, Optional<JournalEntryId> entry, List<Negation> negations, long order) {
 
         public Reversal {
             negations = List.copyOf(negations);
@@ -324,7 +330,7 @@ public record LoanRecord(
 
     /** A fee assessed on a billed item. */
     public record Fee(UUID id, UUID dueItemId, String kind, LocalDate businessDate, Money amount, UUID agreementId,
-            int agreementVersion, JournalEntryId entry, Instant createdAt) {
+            int agreementVersion, JournalEntryId entry, Instant createdAt, long order) {
 
         @Override
         public String toString() {
@@ -335,7 +341,7 @@ public record LoanRecord(
     /** A waiver and its decision, if decided. */
     public record WaiverRow(UUID id, WaiverKind kind, Optional<UUID> feeAssessmentId, UUID dueItemId, Money amount,
             int agreementVersion, Instant proposedAt, Optional<String> outcome, Optional<Instant> decidedAt,
-            Optional<JournalEntryId> entry) {
+            Optional<JournalEntryId> entry, long order) {
 
         /** Whether its decision approved it. */
         public boolean approved() {
@@ -380,7 +386,7 @@ public record LoanRecord(
 
     /** Arrears an accepted amendment re-scheduled (rule 13). */
     public record Rescheduling(UUID id, UUID amendmentId, UUID billingId, Money principal, JournalEntryId entry,
-            Instant createdAt) {
+            Instant createdAt, long order) {
 
         @Override
         public String toString() {
@@ -390,7 +396,7 @@ public record LoanRecord(
 
     /** The closure and its refund. */
     public record Closure(UUID id, String reason, Money refund, Optional<JournalEntryId> refundEntry,
-            Optional<UUID> repaymentId, Instant createdAt) {
+            Optional<UUID> repaymentId, Instant createdAt, long order) {
 
         @Override
         public String toString() {
