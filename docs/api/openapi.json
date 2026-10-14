@@ -4077,6 +4077,41 @@
           }
         }
       },
+      "lending.ArrearsFirst": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.ArrearsFirst"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.ArrearsFirst"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] Something billed is still owing; pay it before prepaying. Nothing was posted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "lending.CapitalUnavailable": {
         "content": {
           "application/problem+json": {
@@ -4523,6 +4558,41 @@
           }
         },
         "description": "[422] The payout destination is not the customer's own verified bank account, or is not expected here.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "lending.PrepaymentExceedsPrincipal": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "lending.PrepaymentExceedsPrincipal"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/lending.PrepaymentExceedsPrincipal"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A prepayment is less than the principal not yet due; nothing was posted - the payoff settles the whole.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -14557,6 +14627,35 @@
         },
         "type": "object"
       },
+      "PrepaymentView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "finalInstalment": {
+            "type": "string"
+          },
+          "instalment": {
+            "type": "string"
+          },
+          "nextDueDate": {
+            "type": "string"
+          },
+          "remainingInstalments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "repayment": {
+            "$ref": "#/components/schemas/RepaymentView"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PricingPolicyRequest": {
         "properties": {
           "openQuoteCap": {
@@ -20072,6 +20171,51 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PayoffQuoteView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/loans/{id}/prepayments": {
+      "post": {
+        "operationId": "prepayLoan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanRepaymentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrepaymentView"
                 }
               }
             },

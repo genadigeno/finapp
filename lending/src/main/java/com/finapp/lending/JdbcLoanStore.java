@@ -27,7 +27,7 @@ public final class JdbcLoanStore implements LoanStore {
     private static final String COLUMNS =
             "l.id, l.party_id, l.product, l.status, l.currency, l.offer_id, l.decision_id, l.opened_at, l.closed_at,"
                     + " l.correlation_id, a.id AS agreement_id, a.version, a.offer_id AS agreement_offer_id, a.amendment_id,"
-                    + " a.decision_id AS agreement_decision_id, a.terms_version_id, a.scale, a.amount_minor,"
+                    + " a.prepayment_id, a.decision_id AS agreement_decision_id, a.terms_version_id, a.scale, a.amount_minor,"
                     + " a.term_months, a.nominal_annual_rate, a.repayment_day, a.schedule_engine_version,"
                     + " a.accrual_engine_version, a.allocation_engine_version, a.statement_engine_version,"
                     + " a.agreement_template_id, a.agreement_template_version, a.canonical_terms, a.terms_sha256,"
@@ -88,13 +88,14 @@ public final class JdbcLoanStore implements LoanStore {
     public Instant insertAgreement(Connection unitOfWork, LoanAgreement agreement) {
         Objects.requireNonNull(agreement, "agreement");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
-                "INSERT INTO lending.loan_agreement (id, loan_id, version, offer_id, amendment_id, decision_id,"
+                "INSERT INTO lending.loan_agreement (id, loan_id, version, offer_id, amendment_id, prepayment_id,"
+                        + " decision_id,"
                         + " terms_version_id, product, currency, scale, amount_minor, term_months, nominal_annual_rate,"
                         + " repayment_day, schedule_engine_version, accrual_engine_version, allocation_engine_version,"
                         + " statement_engine_version, agreement_template_id, agreement_template_version,"
                         + " canonical_format, canonical_terms, terms_sha256, effective_from, created_at)"
                         // The two instants are the trigger's; the placeholders are overwritten.
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
                         + " statement_timestamp(), statement_timestamp()) RETURNING effective_from")) {
             int i = 0;
             insert.setObject(++i, agreement.id().value());
@@ -102,6 +103,7 @@ public final class JdbcLoanStore implements LoanStore {
             insert.setInt(++i, agreement.version());
             insert.setObject(++i, agreement.offer().map(LoanOfferId::value).orElse(null));
             insert.setObject(++i, agreement.amendment().orElse(null));
+            insert.setObject(++i, agreement.prepayment().orElse(null));
             insert.setObject(++i, agreement.decision());
             insert.setObject(++i, agreement.termsVersionId().value());
             insert.setString(++i, agreement.product().name());
@@ -273,13 +275,34 @@ public final class JdbcLoanStore implements LoanStore {
     public Optional<Owned> lock(Connection unitOfWork, LoanId id) {
         Objects.requireNonNull(id, "id");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + FROM + " WHERE l.id = ? FOR UPDATE OF l")) {
+                "SELECT l.id FROM lending.loan l WHERE l.id = ? FOR UPDATE OF l")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+            }
+        } catch (SQLException failure) {
+            throw failed("locking a loan", failure);
+        }
+        return lockedRead(unitOfWork, id);
+    }
+
+    /**
+     * The loan just locked and its governing agreement version, read by a statement of its own AFTER the lock
+     * (`P11-TSK-028`): a statement that waits on a row lock re-reads the locked row but reads every other table - the
+     * agreement's versions - in the snapshot it took before it waited, so the lock's own statement could answer a version
+     * an act committed while it waited (an amendment's acceptance, a prepayment) had already superseded. Under READ
+     * COMMITTED this statement's snapshot follows the lock, and every writer of a version holds the same lock.
+     */
+    private Optional<Owned> lockedRead(Connection unitOfWork, LoanId id) {
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS + FROM + " WHERE l.id = ?")) {
             select.setObject(1, id.value());
             try (ResultSet row = select.executeQuery()) {
                 return row.next() ? Optional.of(owned(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw failed("locking a loan", failure);
+            throw failed("reading a locked loan", failure);
         }
     }
 
@@ -316,15 +339,18 @@ public final class JdbcLoanStore implements LoanStore {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(party, "party");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + FROM + " WHERE l.id = ? AND l.party_id = ? FOR UPDATE OF l")) {
+                "SELECT l.id FROM lending.loan l WHERE l.id = ? AND l.party_id = ? FOR UPDATE OF l")) {
             select.setObject(1, id.value());
             select.setObject(2, party);
             try (ResultSet row = select.executeQuery()) {
-                return row.next() ? Optional.of(owned(row)) : Optional.empty();
+                if (!row.next()) {
+                    return Optional.empty();
+                }
             }
         } catch (SQLException failure) {
             throw failed("locking a loan", failure);
         }
+        return lockedRead(unitOfWork, id);
     }
 
     @Override
@@ -417,6 +443,7 @@ public final class JdbcLoanStore implements LoanStore {
                 row.getInt("version"),
                 Optional.ofNullable(agreementOffer).map(LoanOfferId::of),
                 Optional.ofNullable(row.getObject("amendment_id", UUID.class)),
+                Optional.ofNullable(row.getObject("prepayment_id", UUID.class)),
                 row.getObject("agreement_decision_id", UUID.class),
                 LoanTermsVersionId.of(row.getObject("terms_version_id", UUID.class)),
                 product,

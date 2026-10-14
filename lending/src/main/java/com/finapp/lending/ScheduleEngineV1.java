@@ -147,6 +147,75 @@ public final class ScheduleEngineV1 {
     }
 
     /**
+     * A new schedule version after a partial prepayment (step 7 - `P11-TSK-028`; ADR-0099 point 6, "shorter term, same
+     * instalment"): {@code principal} the principal outstanding after the prepayment, {@code instalment} the superseded
+     * schedule's level instalment {@code A}, and the term the LEAST number of monthly instalments, at most
+     * {@code maximumMonths} (the superseded schedule's remaining ones), over which {@code A} amortises it - every period
+     * but the last pays {@code A} and the last the remaining balance and its interest, never more than {@code A}. The
+     * periods run from {@code effectiveFrom} with {@code nextDueDate} the first due date, exactly as
+     * {@link #recalculate}'s.
+     *
+     * <p>Only when {@code A} cannot amortise the principal within {@code maximumMonths} - a history of late payment left
+     * more principal outstanding than the projection, and the prepayment was smaller than that excess - is the term kept
+     * and the instalment this engine's own least ({@link #recalculate} over {@code maximumMonths}), necessarily above
+     * {@code A}: the term is never lengthened. Pure and deterministic like every entry point, so replay re-derives the
+     * version from the same inputs. No figure of {@link #project} or {@link #recalculate} changes.
+     *
+     * @param instalment the level instalment to keep - positive, in the terms' currency at its scale
+     * @param maximumMonths the most instalments the new schedule may have
+     */
+    public static ScheduleOutcome recalculateAtInstalment(
+            LoanTerms terms,
+            Money principal,
+            Money instalment,
+            int maximumMonths,
+            int intendedDay,
+            LocalDate effectiveFrom,
+            LocalDate nextDueDate) {
+        Objects.requireNonNull(terms, "terms");
+        Objects.requireNonNull(principal, "principal");
+        Objects.requireNonNull(instalment, "instalment");
+        Objects.requireNonNull(effectiveFrom, "effectiveFrom");
+        Objects.requireNonNull(nextDueDate, "nextDueDate");
+        Optional<ScheduleOutcome.Refused> refused = conventions(terms)
+                .or(() -> request(terms, principal, maximumMonths, intendedDay, effectiveFrom))
+                .or(() -> inRange(nextDueDate));
+        if (refused.isPresent()) {
+            return refused.get();
+        }
+        if (!instalment.isPositive() || !instalment.currency().equals(principal.currency())
+                || instalment.scale() != principal.scale()) {
+            return invalid("the instalment kept is positive, in the principal's currency at its scale");
+        }
+        YearMonth first = YearMonth.from(nextDueDate);
+        if (!nextDueDate.isAfter(effectiveFrom) || !nextDueDate.equals(onDay(first, intendedDay))
+                || Act365Fixed.days(effectiveFrom, nextDueDate) > MAXIMUM_RECALCULATION_FIRST_PERIOD_DAYS) {
+            return invalid("a recalculation's next due date falls after its effective date, on its intended day, within"
+                    + " a year");
+        }
+        List<LocalDate> dueDates = dueDates(first, intendedDay, maximumMonths);
+        BigDecimal rate = terms.nominalAnnualRate();
+        // Forward under A: the balance path is the same whatever the term, so the least term is the first period in
+        // which what is left and its interest fit in A.
+        Money balance = principal;
+        LocalDate previous = effectiveFrom;
+        for (int index = 0; index < maximumMonths; index++) {
+            Money interest = interest(balance, rate, Act365Fixed.days(previous, dueDates.get(index)));
+            if (balance.plus(interest).compareTo(instalment) <= 0) {
+                List<LocalDate> term = dueDates.subList(0, index + 1);
+                return build(terms, principal, intendedDay, effectiveFrom, term, days(effectiveFrom, term), instalment);
+            }
+            Money portion = instalment.minus(interest);
+            if (!portion.isPositive()) {
+                break; // A never reduces this balance: no term at A exists.
+            }
+            balance = balance.minus(portion);
+            previous = dueDates.get(index);
+        }
+        return build(terms, principal, intendedDay, effectiveFrom, dueDates);
+    }
+
+    /**
      * Whether ANY loan within {@code bounds} under {@code terms} could fail to amortise - the terms proposal door's
      * judgement ({@code 422 lending.TermsNotAmortising}, ADR-0092 section 3, ADR-0093 section 5). Empty when every loan
      * amortises.
@@ -214,16 +283,29 @@ public final class ScheduleEngineV1 {
 
     private static ScheduleOutcome build(
             LoanTerms terms, Money principal, int intendedDay, LocalDate start, List<LocalDate> dueDates) {
-        CurrencyCode currency = terms.currency();
         BigDecimal rate = terms.nominalAnnualRate();
-        int n = dueDates.size();
-        long[] days = new long[n];
+        long[] days = days(start, dueDates);
+        Money instalment = leastLevelInstalment(principal, rate, days, annuityUp(principal, rate, days));
+        return build(terms, principal, intendedDay, start, dueDates, days, instalment);
+    }
+
+    /** Each period's actual days, the first from {@code start}. */
+    private static long[] days(LocalDate start, List<LocalDate> dueDates) {
+        long[] days = new long[dueDates.size()];
         LocalDate previous = start;
-        for (int index = 0; index < n; index++) {
+        for (int index = 0; index < days.length; index++) {
             days[index] = Act365Fixed.days(previous, dueDates.get(index));
             previous = dueDates.get(index);
         }
-        Money instalment = leastLevelInstalment(principal, rate, days, annuityUp(principal, rate, days));
+        return days;
+    }
+
+    /** The schedule under the level {@code instalment} - refused if a balance runs out early or a portion is not positive. */
+    private static ScheduleOutcome build(LoanTerms terms, Money principal, int intendedDay, LocalDate start,
+            List<LocalDate> dueDates, long[] days, Money instalment) {
+        CurrencyCode currency = terms.currency();
+        BigDecimal rate = terms.nominalAnnualRate();
+        int n = dueDates.size();
         Path path = simulate(principal, rate, days, instalment);
         if (path.exhaustedBefore() > 0) {
             return new ScheduleOutcome.Refused(ScheduleRefusal.NOT_AMORTISING, "a " + n
@@ -231,7 +313,7 @@ public final class ScheduleEngineV1 {
         }
         List<SchedulePeriod> periods = new ArrayList<>(n);
         Money opening = principal;
-        previous = start;
+        LocalDate previous = start;
         for (int index = 0; index < n; index++) {
             Money interest = path.interest()[index];
             Money principalPortion = index == n - 1 ? opening : instalment.minus(interest);

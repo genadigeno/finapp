@@ -523,6 +523,26 @@ amount, else `422 lending.InsufficientFunds`; **L8** and rule 5 - one repayment 
 everything receivable, allocated to every component; the closure). No standing check, no L0, no L6, no audit record; any
 condition.*
 
+*As built by `P11-TSK-028` (2026-10-14) - `lending V024`, `Prepayments`. **The prepayment** (C, `MULTI_FACTOR`, `POST
+…/prepayments`, key `lending.prepayment:CUSTOMER:<id>`): **L3** owner-scoped (the agreement read after the lock); a key
+retried converges, another amount under it `api.Conflict`; an `ACTIVE`, scheduled instalment loan, else `409
+lending.LoanNotRepayable` (a credit line's repayment already pays its principal down); the database clock after the lock;
+the servicing step's own catch-up (accrual, billing, credit-balance application - so a billing on the same business date
+always comes first); then `AllocationEngineV1.allocatePrepayment` over the due state derived under L3 - anything billed still
+owing, past due or due today, `409 lending.ArrearsFirst`; an amount reaching the principal not yet due `422
+lending.PrepaymentExceedsPrincipal` (the whole is the payoff's - a prepayment never closes the loan); schedule v n+1 by
+`ScheduleEngineV1.recalculateAtInstalment` from the open period over `LOAN_PRINCIPAL` less the amount - the SAME level
+instalment over the least term, never longer than what the superseded schedule had left (only when late payments left more
+principal than that instalment can amortise in the remaining term is the term kept and the instalment the engine's); **L7**
+the wallet and its available balance; rule 5 (`DR CUSTOMER_WALLET / CR LOAN_PRINCIPAL`, one `NOT_DUE_PRINCIPAL` line) through
+`Repayments`' one posting half, kind `PREPAYMENT`; agreement v n+1 - a third origin, `prepayment_id`: everything of version n
+but the term (instalments billed plus the new schedule's), canonical terms format 4, no acceptance evidence (a right the
+agreement grants, exercised by the customer's own keyed command) - and schedule v n+1, billed instalments kept, unbilled
+superseded; `lending.RepaymentReceived` (kind `PREPAYMENT`) and `lending.LoanAmended` (origin `PREPAYMENT`). No fee (L8).
+A pending amendment of version n lapses and a payoff quote made under it is stale, both by derivation; a prepayment is never
+reversed (`RepaymentNotReversible`, `lending V024`) - its correction is an amendment. Beneath every writer, `lending V024`
+refuses a schedule version superseding an instalment already due and unbilled - the billing first, an amendment's too.*
+
 ### 4.11 The born-once facts (not machines)
 
 | Fact | Table | Born | Once by |

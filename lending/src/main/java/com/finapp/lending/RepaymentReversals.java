@@ -130,7 +130,8 @@ public final class RepaymentReversals {
      * @throws SelfDealingRefused the loan is the actor's own party's
      * @throws LoanClosed the loan is not {@code ACTIVE}
      * @throws ProposalPending a proposal for the repayment awaits a decision
-     * @throws RepaymentNotReversible the repayment is already reversed, or its held credit has since been applied
+     * @throws RepaymentNotReversible the repayment is already reversed, its held credit has since been applied, or it is a
+     *     prepayment (`P11-TSK-028` - it moved the agreement; a correction is an amendment)
      */
     public RepaymentReversal propose(Connection unitOfWork, LoanId loan, UUID repayment, String reason, Actor actor,
             CorrelationId correlation) {
@@ -146,6 +147,11 @@ public final class RepaymentReversals {
         Repayment reversed = repayments.findById(unitOfWork, loan, repayment).orElseThrow(LoanNotFound::new);
         if (locked.loan().status() != LoanStatus.ACTIVE) {
             throw new LoanClosed();
+        }
+        if (reversed.kind() == RepaymentKind.PREPAYMENT) {
+            // P11-TSK-028: a prepayment moved the agreement and the schedule - swapping its entry would leave the schedule
+            // amortising less principal than the loan owes. Its correction is an amendment (lending V024 refuses it too).
+            throw new RepaymentNotReversible("a prepayment moved the agreement; its correction is an amendment");
         }
         Optional<RepaymentReversal> live = reversals.live(unitOfWork, repayment);
         if (live.isPresent()) {

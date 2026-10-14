@@ -242,5 +242,35 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   L7** - the exposure measure and capital headroom read `LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE` and the latest agreement's
   principal, all unchanged; an amendment is final - a later one supersedes it as version n+2, and a quote made before it
   goes stale (`409 lending.PayoffQuoteStale`, `P11-TSK-026`).
+- **As built by `P11-TSK-028` (2026-10-14) - point 6, the partial prepayment, with these refinements:** the migration is
+  `lending V024` (the backlog's `V021` was stale); **agreement version n+1 is a prepayment's** - a third origin,
+  `loan_agreement.prepayment_id` naming the repayment (the origin `CHECK` now "version 1 the offer's; every later version
+  exactly one of an amendment's or a prepayment's") - carrying everything of version n but a term never longer (instalments
+  billed plus the new schedule's) and canonical terms **format 4** (the prepayment, the version and hash it follows, the
+  effective date, the amount prepaid and the schedule it fixed); a new version rather than a schedule alone because a
+  schedule is named for the agreement version it projects, the agreement states the contract's term, a pending amendment
+  of version n then lapses and a payoff quote made under it is stale by derivation, and replay re-derives each version from
+  its bytes; **no acceptance evidence** - a prepayment is a right the agreement already grants, exercised by the customer's
+  own keyed `MULTI_FACTOR` command, the repayment row its record; **"shorter term, same instalment"** is exact:
+  `ScheduleEngineV1.recalculateAtInstalment` keeps the superseded schedule's level instalment and takes the least term that
+  amortises the remaining principal, never more instalments than the superseded schedule had left - only when late payments
+  left more principal than that instalment can carry in the remaining term is the term kept and the instalment the
+  engine's own (necessarily higher); the reduce-instalment option stays out of scope; **arrears first** means nothing billed
+  still owing - past due or due today - after the prepayment's own catch-up (the servicing step's accrual, billing and
+  credit-balance application, so a billing on the same business date always comes first: `409 lending.ArrearsFirst`, new);
+  **strictly partial** - an amount reaching the principal not yet due is `422 lending.PrepaymentExceedsPrincipal` (new):
+  the whole is the payoff's, which also settles the open period's accrued interest, so a prepayment never closes the loan
+  and never meets `LoanClosures`; **never reversed** - the reversal's proposal is `409 lending.RepaymentNotReversible` and
+  `lending V024` refuses the row (swapping its entry would leave the schedule amortising less principal than the loan owes);
+  the correction is an amendment (F4); **`MULTI_FACTOR`** for every customer, as the payoff and the acceptance, not the
+  repayment's conditional step-up; **no fee** (L8); `finapp.lending.repayment{kind=prepayment}` with the outcomes
+  `prepaid`, `arrears_first`, `exceeds_principal`, `not_repayable`, `insufficient_funds`. Found on the way and corrected:
+  `JdbcLoanStore.lock`/`lockOwnedBy` read the agreement in the lock statement's pre-wait snapshot, so an act waiting on L3
+  behind an amendment's acceptance or a prepayment saw the superseded version (and failed against the database's version
+  checks); the agreement is now read by a statement of its own after the lock, for every caller. Added at the completion
+  gate: `lending V024`'s schedule trigger refuses, for every later version (an amendment's too), a schedule superseded
+  while an instalment of it already due is unbilled - the step order's "billing first" held beneath the domain, so no due
+  instalment and none of its period's accrued interest is stranded; and every `lending.LoanAmended` names its `origin`
+  (`AMENDMENT`, `PREPAYMENT`).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
   review (`P11-DOC-001`) after reading it against the code.

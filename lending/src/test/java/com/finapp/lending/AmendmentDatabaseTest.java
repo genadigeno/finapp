@@ -138,6 +138,9 @@ class AmendmentDatabaseTest {
                 + " i.schedule_id WHERE s.loan_id = ? AND s.schedule_version = 2", loan.value())).isEqualTo(18);
         assertThat(dueOf(loan, 2, 1)).as("the open period's due date - the old second one").isEqualTo(secondDue);
         assertThat(events(loan, LoanAmendments.AMENDED_EVENT)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = ?"
+                + " AND convert_from(payload, 'UTF8') LIKE '%\"origin\":\"AMENDMENT\"%'", loan.value(),
+                LoanAmendments.AMENDED_EVENT)).as("P11-TSK-028: every LoanAmended names its origin").isEqualTo(1);
         for (String action : List.of("lending.AmendmentProposed", "lending.AmendmentApproved", "lending.AmendmentAccepted")) {
             assertThat(audits(proposed.id(), action)).as(action).isEqualTo(1);
         }

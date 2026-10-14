@@ -52,6 +52,14 @@ public final class CanonicalOfferTerms {
      */
     public static final int AMENDED_FORMAT = 3;
 
+    /**
+     * The format of a PREPAYMENT's agreement version's canonical terms (`P11-TSK-028`, {@code lending V024}): format 2's
+     * content with the offer's illustration replaced by the prepayment that made the version - its identity, the version
+     * and hash it followed, its effective date, the amount prepaid and the schedule it fixed. Admitted only for a prepayment's
+     * version.
+     */
+    public static final int PREPAID_FORMAT = 4;
+
     /** Format 1's token set: every format-1 row ever stored is in it ({@code lending V005}, {@code V006}). */
     private static final Pattern FORMAT_1_VALUE = Pattern.compile("[A-Za-z0-9_.:-]{1,64}");
 
@@ -137,13 +145,62 @@ public final class CanonicalOfferTerms {
     }
 
     /**
+     * What makes a prepayment's version (`P11-TSK-028`): the prepayment (its repayment), the agreement version it followed
+     * and that version's terms hash, the new version's number, the business date it took effect, the principal prepaid,
+     * and the schedule it fixed - its start (the open period's), first due date, instalments, the principal it amortises and
+     * its level instalment.
+     */
+    public record Prepayment(
+            UUID prepayment,
+            int followsVersion,
+            String followsTermsSha256,
+            int agreementVersion,
+            java.time.LocalDate effectiveDate,
+            Money prepaid,
+            java.time.LocalDate scheduleStart,
+            java.time.LocalDate firstDueDate,
+            int remainingInstalments,
+            Money schedulePrincipal,
+            Money instalment) {
+
+        public Prepayment {
+            Objects.requireNonNull(prepayment, "prepayment must not be null");
+            Objects.requireNonNull(followsTermsSha256, "followsTermsSha256 must not be null");
+            Objects.requireNonNull(effectiveDate, "effectiveDate must not be null");
+            Objects.requireNonNull(prepaid, "prepaid must not be null");
+            Objects.requireNonNull(scheduleStart, "scheduleStart must not be null");
+            Objects.requireNonNull(firstDueDate, "firstDueDate must not be null");
+            Objects.requireNonNull(schedulePrincipal, "schedulePrincipal must not be null");
+            Objects.requireNonNull(instalment, "instalment must not be null");
+            if (followsVersion < 1 || agreementVersion != followsVersion + 1 || remainingInstalments < 1) {
+                throw new IllegalArgumentException("a prepayment makes the next version over at least one instalment");
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "Prepayment[" + prepayment + ", v" + agreementVersion + ", redacted]";
+        }
+    }
+
+    /**
+     * The canonical form of a prepayment's agreement version (format 4, `P11-TSK-028`): {@code content} - the loan's origin
+     * (its offer, application and decision), its principal, the version's term and day, the pinned terms version with the
+     * governing rate in its term set - and {@code prepayment} in place of the illustration.
+     */
+    public static String renderPrepayment(Content content, Prepayment prepayment) {
+        Objects.requireNonNull(prepayment, "prepayment");
+        return render(content, PREPAID_FORMAT, Optional.empty(), Optional.of(prepayment));
+    }
+
+    /**
      * The canonical form of an amended agreement version (format 3, `P11-TSK-027`): {@code content} - the loan's origin
      * (its offer, application and decision), its principal, the version's term and day, the pinned terms version with the
      * AMENDED rate in its term set - and {@code amendment} in place of the illustration.
      */
     public static String renderAmendment(Content content, Amendment amendment) {
         Objects.requireNonNull(amendment, "amendment");
-        return render(content, AMENDED_FORMAT, Optional.of(amendment));
+        return render(content, AMENDED_FORMAT, Optional.of(amendment), Optional.empty());
     }
 
     /** The canonical form of {@code content}, in the format this class writes ({@link #FORMAT}). */
@@ -159,16 +216,20 @@ public final class CanonicalOfferTerms {
         if (format == AMENDED_FORMAT) {
             throw new IllegalArgumentException("format 3 is an amended version's: renderAmendment");
         }
-        return render(content, format, Optional.empty());
+        if (format == PREPAID_FORMAT) {
+            throw new IllegalArgumentException("format 4 is a prepayment's version's: renderPrepayment");
+        }
+        return render(content, format, Optional.empty(), Optional.empty());
     }
 
-    private static String render(Content content, int format, Optional<Amendment> amended) {
+    private static String render(Content content, int format, Optional<Amendment> amended,
+            Optional<Prepayment> prepaid) {
         Objects.requireNonNull(content, "content");
         LoanTerms terms = content.terms();
         Canonical out = new Canonical(switch (format) {
             case 1 -> FORMAT_1_VALUE;
-            case 2, AMENDED_FORMAT -> FORMAT_2_VALUE;
-            default -> throw new IllegalArgumentException("the canonical offer terms are format 1 or 2");
+            case 2, AMENDED_FORMAT, PREPAID_FORMAT -> FORMAT_2_VALUE;
+            default -> throw new IllegalArgumentException("the canonical offer terms are format 1, 2, 3 or 4");
         });
         out.append('{');
         field(out, "format", Integer.toString(format)).append(',');
@@ -244,6 +305,23 @@ public final class CanonicalOfferTerms {
             out.append("}}");
             return out.toString();
         }
+        if (prepaid.isPresent()) {
+            Prepayment prepayment = prepaid.get();
+            out.append("},\"prepayment\":{");
+            field(out, "prepayment", prepayment.prepayment().toString()).append(',');
+            field(out, "followsVersion", Integer.toString(prepayment.followsVersion())).append(',');
+            field(out, "followsTermsSha256", prepayment.followsTermsSha256()).append(',');
+            field(out, "agreementVersion", Integer.toString(prepayment.agreementVersion())).append(',');
+            field(out, "effectiveDate", prepayment.effectiveDate().toString()).append(',');
+            field(out, "prepaid", minor(prepayment.prepaid())).append(',');
+            field(out, "scheduleStart", prepayment.scheduleStart().toString()).append(',');
+            field(out, "firstDueDate", prepayment.firstDueDate().toString()).append(',');
+            field(out, "remainingInstalments", Integer.toString(prepayment.remainingInstalments())).append(',');
+            field(out, "schedulePrincipal", minor(prepayment.schedulePrincipal())).append(',');
+            field(out, "instalment", minor(prepayment.instalment()));
+            out.append("}}");
+            return out.toString();
+        }
         out.append("},\"illustration\":{");
         Optional<LoanOffer.Illustration> illustration = content.illustration();
         field(out, "basis", illustration.isPresent() ? "ILLUSTRATIVE_FROM_OFFERING_DAY" : NONE).append(',');
@@ -268,8 +346,8 @@ public final class CanonicalOfferTerms {
             throw new IllegalArgumentException("canonical offer terms open with their format token");
         }
         int format = Integer.parseInt(token.group(1));
-        if (format != 1 && format != 2 && format != AMENDED_FORMAT) {
-            throw new IllegalArgumentException("the canonical offer terms are format 1, 2 or 3");
+        if (format != 1 && format != 2 && format != AMENDED_FORMAT && format != PREPAID_FORMAT) {
+            throw new IllegalArgumentException("the canonical offer terms are format 1, 2, 3 or 4");
         }
         return format;
     }

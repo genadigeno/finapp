@@ -794,12 +794,16 @@ class RepaymentDatabaseTest {
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_INTEREST_ACCRUED)).minorUnits())
                 .isEqualTo(accrued - billedInterest);
         // P11-TSK-027: rule 13 returns re-scheduled arrears to LOAN_PRINCIPAL - the principal not yet billed, net.
+        // P11-TSK-028: a prepayment's one line pays it down before it is ever billed.
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL)).minorUnits())
                 .isEqualTo(count("SELECT amount_minor FROM lending.loan_agreement WHERE loan_id = ? AND version = 1", id)
                         - count("SELECT coalesce(sum(principal_due_minor), 0) FROM lending.instalment_billing"
                                 + " WHERE loan_id = ?", id)
                         + count("SELECT coalesce(sum(principal_minor), 0) FROM lending.loan_amendment_rescheduling"
-                                + " WHERE loan_id = ?", id));
+                                + " WHERE loan_id = ?", id)
+                        - count("SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"
+                                + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ?"
+                                + " AND r.kind = 'PREPAYMENT' AND a.target = 'NOT_DUE_PRINCIPAL'", id));
         long heldLines = count("SELECT coalesce(sum(a.amount_minor), 0) FROM lending.repayment_allocation a"
                 + " JOIN lending.repayment r ON r.id = a.repayment_id WHERE r.loan_id = ? AND a.target = 'CREDIT_BALANCE'",
                 id);

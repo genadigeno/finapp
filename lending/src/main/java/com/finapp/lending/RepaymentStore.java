@@ -1,10 +1,12 @@
 package com.finapp.lending;
 
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -38,6 +40,33 @@ public interface RepaymentStore {
 
     /** The closure {@code repayment}'s transaction brought, if it closed its loan - for a converged replay's answer. */
     Optional<LoanClosure> closedBy(Connection unitOfWork, UUID repayment);
+
+    /**
+     * The agreement and schedule versions a prepayment's transaction made (`P11-TSK-028`, {@code lending V024}) - for a
+     * converged replay's answer; empty for any other repayment. Read under the loan's row lock, for a repayment of the
+     * loan the caller's owner-scoped lock answered.
+     */
+    Optional<Rescheduled> rescheduledBy(Connection unitOfWork, LoanId loan, UUID repayment);
+
+    /**
+     * What a prepayment re-scheduled: agreement version n+1, schedule version n+1, its instalments, its level and final
+     * instalments and its first due date.
+     */
+    record Rescheduled(int agreementVersion, int scheduleVersion, int termMonths, Money instalment, Money finalInstalment,
+            LocalDate firstDueDate) {
+
+        public Rescheduled {
+            Objects.requireNonNull(instalment, "instalment must not be null");
+            Objects.requireNonNull(finalInstalment, "finalInstalment must not be null");
+            Objects.requireNonNull(firstDueDate, "firstDueDate must not be null");
+        }
+
+        /** The versions and the term - never an amount. */
+        @Override
+        public String toString() {
+            return "Rescheduled[v" + agreementVersion + ", schedule v" + scheduleVersion + ", " + termMonths + " instalments]";
+        }
+    }
 
     /**
      * {@code party}'s loan {@code loan}'s repayments with their allocations, newest first, at most {@code limit} -

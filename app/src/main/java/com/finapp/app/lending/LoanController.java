@@ -37,7 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
  * platform's conditional step-up, and its execution, a {@code MULTI_FACTOR} act keyed {@code lending.payoff:CUSTOMER:<id>},
  * each {@code 201} - and the restructuring offered to them (`P11-TSK-027`): its read with the document they accept, and
  * its acceptance, a {@code MULTI_FACTOR} act keyed {@code lending.amendment-acceptance:CUSTOMER:<id>}, {@code 201} with the
- * agreement and schedule versions it made.
+ * agreement and schedule versions it made - and a loan's partial prepayment (`P11-TSK-028`), a {@code MULTI_FACTOR} act
+ * keyed {@code lending.prepayment:CUSTOMER:<id>}, {@code 201} with the repayment and the re-schedule it made.
  */
 @RestController
 @RequestMapping(path = "/me/loans", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -51,6 +52,7 @@ public class LoanController {
     @NonNull private final LineClosureDesk closures;
     @NonNull private final LoanPayoffDesk payoffs;
     @NonNull private final LoanAmendmentDesk amendments;
+    @NonNull private final LoanPrepaymentDesk prepayments;
 
     /** The caller's loans, newest first. */
     @GetMapping
@@ -116,6 +118,24 @@ public class LoanController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
         return repayments.repay(current(request), id, idempotencyKey, body);
+    }
+
+    /**
+     * Prepays principal not yet due on the caller's own instalment loan from their wallet (`P11-TSK-028`): the term
+     * shortens and the instalment stays - agreement and schedule version n+1 in the same transaction; refused while
+     * anything billed is owing ({@code 409 lending.ArrearsFirst}) and for the whole principal not yet due (the payoff's,
+     * {@code 422 lending.PrepaymentExceedsPrincipal}). No fee. Keyed ({@code lending.prepayment:CUSTOMER:<id>}),
+     * {@code MULTI_FACTOR}, {@code 201} with the repayment and the re-schedule.
+     */
+    @PostMapping(path = "/{id}/prepayments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanPrepaymentDesk.PrepaymentView prepayLoan(
+            @PathVariable("id") String id,
+            @Valid @RequestBody LoanRepaymentBody body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return prepayments.prepay(current(request), id, idempotencyKey, body);
     }
 
     /**

@@ -212,7 +212,7 @@ public final class LoanRepaymentDesk {
     }
 
     /** The receipt: the view's fields, '|'-separated, the allocations ';'-separated with ','-separated fields. */
-    private static StoredResponse stored(RepaymentView view) {
+    static StoredResponse stored(RepaymentView view) {
         List<String> lines = new ArrayList<>();
         for (RepaymentAllocationView line : view.allocations()) {
             lines.add(String.join(",", line.target(), nullable(line.billingId()), nullable(line.component()),
@@ -225,7 +225,7 @@ public final class LoanRepaymentDesk {
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    private static RepaymentView replayed(byte[] body) {
+    static RepaymentView replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         List<RepaymentAllocationView> allocations = new ArrayList<>();
         if (!fields[10].isEmpty()) {

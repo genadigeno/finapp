@@ -1235,6 +1235,92 @@ class LoanAccountDatabaseTest {
                 .contains("\"scheduleVersion\":2", "\"agreementVersion\":2");
     }
 
+    @Test
+    @DisplayName("a loan is prepaid end to end (P11-TSK-028): a freshly disbursed loan prepaid EUR 1,000.00 over the door"
+            + " from a MULTI_FACTOR session - 201 with agreement version 2 and schedule version 2, the level instalment"
+            + " unchanged over fewer instalments, the key replaying its receipt byte for byte; the customer's schedule door"
+            + " answers version 2; the platform's credit exposure falls and the capital headroom rises by the amount, the"
+            + " prepayment completing while another transaction holds the party's profile (L0) and the capital row (L6);"
+            + " the whole principal is 422 lending.PrepaymentExceedsPrincipal; another party's loan 404; finapp.lending.repayment{kind=prepayment} counted once per outcome")
+    void aLoanIsPrepaidEndToEnd() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("4300.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        String instalment = Money.ofMinorUnits(count("SELECT instalment_minor FROM lending.repayment_schedule"
+                + " WHERE loan_id = ?::uuid AND schedule_version = 1", loanId), EUR).toBigDecimal().toPlainString();
+        Money exposureBefore = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                customer.party(), EUR));
+        Money headroomBefore = lendingTransactions.inTransaction(uow -> headroom.atRest(uow, EUR)).headroom();
+        double prepaidBefore = prepaid("prepaid");
+        double exceedsBefore = prepaid("exceeds_principal");
+
+        String prepayments = LOANS + "/" + loanId + "/prepayments";
+        String body = "{\"amount\":\"1000.00\",\"currency\":\"EUR\"}";
+        String prepaymentKey = key();
+        // No L0 and no L6: the prepayment completes while another transaction holds the party's credit profile and the
+        // currency's LENDING_CAPITAL row - exposure only falls and headroom only rises, so it waits on neither.
+        HttpResponse<String> prepaid;
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement profile = holder.prepareStatement(
+                            "SELECT 1 FROM credit.credit_profile WHERE party_id = ? FOR UPDATE");
+                    PreparedStatement capital = holder.prepareStatement("SELECT 1 FROM ledger.ledger_account"
+                            + " WHERE purpose = 'LENDING_CAPITAL' AND currency = 'EUR' FOR UPDATE")) {
+                profile.setObject(1, customer.party());
+                try (ResultSet row = profile.executeQuery()) {
+                    assertThat(row.next()).as("the decided party has its profile").isTrue();
+                }
+                try (ResultSet row = capital.executeQuery()) {
+                    assertThat(row.next()).as("ledger V026 seeds the capital account").isTrue();
+                }
+            }
+            Future<HttpResponse<String>> prepaying =
+                    pool.submit(() -> client.post(prepayments, body, customer.token(), prepaymentKey));
+            prepaid = prepaying.get(60, TimeUnit.SECONDS);
+            holder.rollback();
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(prepaid.statusCode()).as(prepaid.body()).isEqualTo(201);
+        assertThat(prepaid.body()).contains("\"kind\":\"PREPAYMENT\"", "\"target\":\"NOT_DUE_PRINCIPAL\"",
+                "\"agreementVersion\":2", "\"scheduleVersion\":2", "\"instalment\":\"" + instalment + "\"");
+        assertThat(Integer.parseInt(prepaid.body().replaceAll(".*\"remainingInstalments\":([0-9]+).*", "$1")))
+                .as("the term shortened").isLessThan(12);
+        assertThat(client.post(prepayments, body, customer.token(), prepaymentKey).body()).as("the receipt, byte for byte")
+                .isEqualTo(prepaid.body());
+        assertThat(prepaid("prepaid")).as("counted after the commit, the replay not").isEqualTo(prepaidBefore + 1);
+        assertThat(client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body())
+                .contains("\"scheduleVersion\":2", "\"agreementVersion\":2");
+        Money exposureAfter = lendingTransactions.inTransaction(uow -> creditExposure.outstandingFor(uow,
+                customer.party(), EUR));
+        assertThat(exposureAfter).as("exposure falls by the amount prepaid").isEqualTo(exposureBefore.minus(Money.ofMinorUnits(1_000_00, EUR)));
+        assertThat(lendingTransactions.inTransaction(uow -> headroom.atRest(uow, EUR)).headroom())
+                .as("the principal repaid restores the headroom")
+                .isEqualTo(headroomBefore.plus(Money.ofMinorUnits(1_000_00, EUR)));
+
+        HttpResponse<String> whole = client.post(prepayments, "{\"amount\":\"3300.00\",\"currency\":\"EUR\"}",
+                customer.token(), key());
+        assertThat(whole.statusCode()).as(whole.body()).isEqualTo(422);
+        assertThat(whole.body()).contains("lending.PrepaymentExceedsPrincipal");
+        assertThat(prepaid("exceeds_principal")).isEqualTo(exceedsBefore + 1);
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        HttpResponse<String> foreign = client.post(prepayments, body, stranger.token(), key());
+        assertThat(foreign.statusCode()).as(foreign.body()).isEqualTo(404);
+        assertThat(foreign.body()).contains("lending.NotFound");
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid AND kind = 'PREPAYMENT'", loanId))
+                .isEqualTo(1);
+    }
+
+    private double prepaid(String outcome) {
+        return meterRegistry.find(RepaymentMetrics.REPAYMENT).tag("kind", "prepayment").tag("outcome", outcome).counter()
+                .count();
+    }
+
     private double amended(String outcome) {
         return meterRegistry.find(LoanAmendmentMetrics.AMENDMENT).tag("outcome", outcome).counter().count();
     }

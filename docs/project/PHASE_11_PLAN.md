@@ -679,6 +679,7 @@ capital line's foreign-key share is what may wait on L6. Still one-way: no lendi
 | **Scenario 6** — a reversal after allocation | proposal row conditional; L0, L3; `ReversalService` bound | one reversal; allocations negated by rows, later allocations untouched | `-020` |
 | **Scenario 7** — payoff while a repayment is processing | L3; the quote recomputed under it | `409 lending.PayoffQuoteStale`, never a wrong payoff | `-026` |
 | **Scenario 8** — schedule changed under an approved amendment | L3; acceptance conditional on the agreement version | agreement and schedule v n+1 once; a moved agreement lapses it | `-027` |
+| A prepayment: ten under one key; racing an acceptance; beside the same date's billing | claim + `UNIQUE (loan_id, kind, request_key)`; L3 + `UNIQUE (loan_id, version)`/`(prepayment_id)`; the prepayment's own catch-up under L3 | one repayment and one version n+1; the other act version n+2 or lapsed; the date billed once | `-028` |
 | **Scenario 9** — crash after posting, before event publication | the outbox row in the posting's transaction | both or neither; the relay publishes after a restart | `-014`, `TST-001` |
 | **Scenario 10** — payoff while the delinquency worker runs | L3; the condition step re-derives under it; terminal loans skipped | no condition written after closure | `-026` |
 | Ten approvers of a waiver / reversal / amendment / terms / contribution | proposal row conditional `PROPOSED`; four-eyes `CHECK` | one decision | `-005`, `-004`, `-020`, `-025`, `-027` |
@@ -1002,6 +1003,7 @@ final instalment above it. Step 4's door judgement is exact over every real cale
 bounds through the `LoanProductBounds` port; at 15 days' shortest first period and 6-60 months it first refuses at
 23.15 %, where a real loan first fails. ADR-0093's Follow-up records the reasoning and the measurements.)*
 *(As built by `P11-TSK-027`, 2026-10-14 - step 7 for an amendment: `P` is the principal not yet billed by the rows (agreement v1's principal less the principal billed net of re-scheduling - `LOAN_PRINCIPAL` after rule 13), the term the amendment's remaining instalments, and the new schedule starts at the OPEN period - the latest calendar's period holding the acceptance's business date, its start the latest billed due date and its end the new `D1` - not at the effective date: the accruals already posted in that period are then billed by the new first instalment instead of being stranded in a period no schedule bills (`lending V023`'s deferred `repayment_schedule_continues_its_period`). The new rate governs every date accrued from the acceptance's business date; the dates before it were accrued under version n by the acceptance's own catch-up. ADR-0099's Follow-up records the rest.)*
+*(As built by `P11-TSK-028`, 2026-10-14 - step 7 for a partial prepayment: `P` is the principal not yet billed less what was prepaid (`LOAN_PRINCIPAL` after rule 5), the start the open period's as for an amendment, and the term the LEAST number of instalments, never more than the superseded schedule had left, over which the superseded schedule's level instalment amortises `P` (`ScheduleEngineV1.recalculateAtInstalment`) - shorter term, same instalment; only when that instalment cannot amortise `P` within the remaining instalments (a late-payment history) is the term kept and the instalment `recalculate`'s. ADR-0093's Follow-up records the rest.)*
 
 ### 12.3 Interest and fees (owner brief 9.5) — `ACCRUAL_ENGINE_V1`
 
@@ -1256,6 +1258,17 @@ compute (`PayoffDatabaseTest#noRebateArithmeticExists`).)*
 **Partial prepayment** (cut candidate `-028`): a repayment kind `PREPAYMENT` crediting
 `LOAN_PRINCIPAL`, with agreement and schedule version n+1 (shorter term, same instalment) in one
 transaction; refused while past due (`409 lending.ArrearsFirst`).
+
+*(As built by `P11-TSK-028`, 2026-10-14 - `Prepayments` over `lending V024`, never cut. T-ppy: the claim
+(`lending.prepayment:<type>:<id>`, `MULTI_FACTOR`); **(L3)** owner-scoped, the agreement read after the lock; an `ACTIVE`,
+scheduled instalment loan (`LoanNotRepayable` - a line's repayment already pays principal down); the servicing step's own
+catch-up (accrual, billing, rule 6) so a same-date billing always comes first; `allocatePrepayment` - anything billed still
+owing, past due or due today, `409 lending.ArrearsFirst`; an amount reaching the principal not yet due `422
+lending.PrepaymentExceedsPrincipal` (the whole is the payoff's); schedule v n+1 by `ScheduleEngineV1.recalculateAtInstalment`
+(the same level instalment, the least term within the remaining one); **(L7)**; rule 5 with its one `CR LOAN_PRINCIPAL` line
+through `Repayments`' posting half (kind `PREPAYMENT`); agreement v n+1 a prepayment's (`prepayment_id`, the term only
+changed, canonical format 4, no acceptance evidence) and schedule v n+1; `lending.LoanAmended` (origin `PREPAYMENT`). No
+fee, no L0, L5 or L6; never closes the loan; never reversed - the correction is an amendment.)*
 
 ### 12.6 The revolving credit line (L3) — ADR-0100
 

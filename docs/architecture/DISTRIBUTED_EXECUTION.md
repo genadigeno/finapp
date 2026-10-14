@@ -234,7 +234,23 @@ acceptance never closes the account), no L5 row lock. A sub-sequence of T-svc's 
 T-pay, T-rev (L0 then L3 - the acceptance never takes L0) or T-wvr (L3, L7, L8). Counted by `AmendmentDatabaseTest`: ten
 acceptances of one amendment - one version, nine converge; ten approvers - one decision; ten proposers - one open
 amendment; an acceptance after a payoff closed the loan - `AmendmentLapsed` - and a quote made before an acceptance -
-`PayoffQuoteStale` - without a `40P01`.)* | n/a |
+`PayoffQuoteStale` - without a `40P01`.)* *(`P11-TSK-028` (T-ppy, the partial prepayment): the door's claim; L3 owner-scoped
+- read by a statement of its own AFTER the lock, so an agreement version committed while the lock waited (an acceptance, a
+prepayment) is seen (`JdbcLoanStore.lock`/`lockOwnedBy`, corrected by this task for every caller: the lock's own statement
+read the agreement in its pre-wait snapshot); then the servicing step's own postings - the catch-up accrual (the currency's
+`LOAN_INTEREST_INCOME` projection row), the billing and the credit-balance application; then L7 (the wallet's ledger row,
+`AvailableBalance.underLock`) and L8 through `Repayments`' one posting half (rule 5: the wallet, `LOAN_PRINCIPAL` and the
+credit balance's projection rows); then inserts only - the repayment under `UNIQUE (loan_id, kind, request_key)`, agreement
+v n+1 under `UNIQUE (loan_id, version)` and `UNIQUE (prepayment_id)`, schedule v n+1 under `UNIQUE (loan_id,
+schedule_version)` and `UNIQUE (agreement_id)`. No L0 (outstanding exposure only falls), no L5, no L6 (headroom rises at
+commit). T-pay's order exactly - L3, the income row, L7, L8 - so no cycle with T-svc, T-rep, T-pay, T-rev, T-amd or T-clo.
+T-wvr's interest waiver takes L7 BEFORE posting rule 9 to the same income projection row (its fee arm's order, shared with
+T-dis path X's wallet before `LOAN_FEE_INCOME`): against T-svc's collection, T-pay and T-ppy, on two loans of one party,
+that is a pre-existing wait inversion - PostgreSQL's deadlock detector aborts one side whole (no money moves on either),
+recorded for the owner by this task, not changed. Counted by `PrepaymentDatabaseTest`: ten prepayments under one key - one
+repayment, one entry, one version, nine converge; ten under ten keys - versions 2 to 11 without a gap, each seeing the one before it; a prepayment racing an amendment's acceptance - one version 2, the other
+version 3 or lapsed; a prepayment beside the billing of the same due date in both orders and racing - the date billed
+once; beneath every writer, `lending V024` refuses a schedule superseding an instalment already due and unbilled.)* | n/a |
 
 ### Why the Phase 10 → 11 transition added rows for components that do not exist yet
 
