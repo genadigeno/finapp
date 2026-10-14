@@ -103,6 +103,7 @@ final class LendingStormCatalogue {
         sameRepaymentKeyOnBothInstances();
         twoRepaymentsOnOneInstalment();
         accrualRunOnBothInstances();
+        waiverAcrossInstances();
         lostResponseConcludedByInquiry();
         reversalAfterAllocation();
         payoffRacingARepayment();
@@ -350,16 +351,49 @@ final class LendingStormCatalogue {
         censusAfter("scenario 6, a reversal after allocation");
     }
 
+    /**
+     * A late fee waived under four eyes across instances (A14): proposed by one agent on A, its self-approval refused on
+     * B, approved by the other agent on B - the fee assessments scenario 4's overdue accounts were charged.
+     */
+    private void waiverAcrossInstances() throws Exception {
+        String[] agents = storm.agents();
+        for (String[] fee : LendingStormWorld.rows("SELECT f.loan_id::text, f.id::text, f.amount_minor::text FROM"
+                + " lending.fee_assessment f JOIN lending.loan l ON l.id = f.loan_id WHERE l.status = 'ACTIVE' AND NOT"
+                + " EXISTS (SELECT 1 FROM lending.waiver w WHERE w.fee_assessment_id = f.id) ORDER BY f.id LIMIT 2")) {
+            String waivers = OPERATOR_LOANS + "/" + fee[0] + "/waivers";
+            Answer proposed = a().door().post(waivers, "{\"kind\":\"FEE\",\"targetId\":\"" + fee[1] + "\",\"amount\":\""
+                    + LendingStormWorld.decimal(Long.parseLong(fee[2])) + "\",\"currency\":\"EUR\","
+                    + "\"reason\":\"the storm's goodwill\"}", agents[0], key());
+            judged(tally, "waiver propose", proposed, "422 lending.WaiverExceedsDue");
+            if (proposed.status() != 201) {
+                continue;
+            }
+            String waiver = waivers + "/" + proposed.field("waiverId");
+            judged(tally, "waiver self-approval", b().door().post(waiver + "/approval", "{\"reason\":\"mine\"}",
+                    agents[0], key()), "403 lending.SelfApprovalRefused");
+            Answer approved = b().door().post(waiver + "/approval", "{\"reason\":\"checked\"}", agents[1], key());
+            judged(tally, "waiver approve", approved);
+            if (approved.status() == 200 && count("SELECT count(*) FROM lending.waiver_decision d JOIN lending.waiver w"
+                    + " ON w.id = d.waiver_id WHERE w.fee_assessment_id = ?::uuid AND d.outcome = 'APPROVED'", fee[1]) == 1) {
+                storm.coverage("a waiver approved across instances", 1);
+            }
+        }
+        censusAfter("a waiver across instances");
+    }
+
     /** Scenario 7: a payoff on A against a repayment on B at a barrier, until both orders have happened. */
     private void payoffRacingARepayment() throws Exception {
         List<Aged> racing = new ArrayList<>();
         for (int i = 0; i < 16 && (covered("scenario 7 payoff stale") == 0
                 || covered("scenario 7 closed then not repayable") == 0); i++) {
             if (racing.isEmpty()) {
-                racing.addAll(agedLoans(4, 0));
+                racing.addAll(bankedAgedLoans(4, 0));
             }
             Aged aged = racing.remove(0);
             serviceOn(a(), aged.loan());
+            // The payoff owes the principal disbursed AND the month's interest: the borrower's bank tops the wallet up
+            // first (a real pay-in), so the payoff can win the race and not only lose it.
+            storm.fundFromBank(b(), aged.borrower(), 500_00);
             Answer quoted = a().door().post(LOANS + "/" + aged.loan() + "/payoff-quotes", "{}", aged.token(), key());
             judged(tally, "scenario 7 quote", quoted);
             String quote = quoted.field("quoteId");
@@ -446,11 +480,13 @@ final class LendingStormCatalogue {
 
     /** Scenario 10: a delinquent account's servicing step on A against a payoff on B at a barrier. */
     private void payoffBesideTheDelinquencyWorker() throws Exception {
-        List<Aged> delinquent = agedLoans(4, 5);
+        List<Aged> delinquent = bankedAgedLoans(4, 5);
         for (int i = 0; i < 4; i++) {
             Aged aged = delinquent.get(i);
             Account account = new Account(aged.loan(), aged.borrower(), AccountKind.WALLET_LOAN, 0, Role.PLAIN);
             serviceOn(b(), aged.loan());
+            // The payoff owes the arrears' interest and fees beside the principal: the borrower's bank tops up first.
+            storm.fundFromBank(a(), aged.borrower(), 500_00);
             List<Object> raced = bothAtOnce(() -> serviceOn(a(), aged.loan()), () -> storm.payOffOn(b(), account));
             if (raced.get(0) instanceof Throwable failure) {
                 tally.unexplained("scenario 10: the servicing step failed - " + failure.getClass().getSimpleName());
@@ -492,7 +528,10 @@ final class LendingStormCatalogue {
                             "422 lending.CapitalUnavailable");
                     if (waiting == null || !waiting.contains("credit_profile") || !offerFree) {
                         tally.unexplained("C17: the acceptance did not wait behind the held profile lock (L0) holding"
-                                + " no later-order lock");
+                                + " no later-order lock - waiting on: " + (waiting == null ? "nothing"
+                                : waiting.replaceAll("\\s+", " ").substring(0, Math.min(120,
+                                        waiting.replaceAll("\\s+", " ").length())))
+                                + ", the offer free: " + offerFree);
                     }
                     storm.coverage("C17 lock order observed behind a held L0", waiting != null && offerFree ? 1 : 0);
                 } finally {
@@ -947,8 +986,9 @@ final class LendingStormCatalogue {
 
     /** R7: the payoff refused at the closure - the same quote closes it once, every balance zero. */
     private void refusedAtTheClosure() throws Exception {
-        Aged aged = agedLoan(0, false);
+        Aged aged = agedLoan(0, false, true);
         serviceOn(a(), aged.loan());
+        storm.fundFromBank(b(), aged.borrower(), 500_00); // the month's interest beside the principal disbursed
         Answer quoted = a().door().post(LOANS + "/" + aged.loan() + "/payoff-quotes", "{}", aged.token(), key());
         judged(tally, "R7 quote", quoted);
         String body = "{\"quoteId\":\"" + quoted.field("quoteId") + "\"}";
@@ -1130,7 +1170,16 @@ final class LendingStormCatalogue {
     private List<Aged> agedLoans(int n, int daysAgo) throws Exception {
         List<Callable<Aged>> makers = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            makers.add(() -> agedLoan(daysAgo, false));
+            makers.add(() -> agedLoan(daysAgo, false, false));
+        }
+        return LendingStormDatabaseTest.all(makers);
+    }
+
+    /** {@link #agedLoans}, each borrower banked - so their own bank can top their wallet up. */
+    private List<Aged> bankedAgedLoans(int n, int daysAgo) throws Exception {
+        List<Callable<Aged>> makers = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            makers.add(() -> agedLoan(daysAgo, false, true));
         }
         return LendingStormDatabaseTest.all(makers);
     }
@@ -1148,7 +1197,12 @@ final class LendingStormCatalogue {
      * ahead, so only the scene services it. {@code collects}: under terms that collect automatically (the loan's own).
      */
     private Aged agedLoan(int daysAgo, boolean collects) throws Exception {
-        Borrower borrower = freshBorrower(false);
+        return agedLoan(daysAgo, collects, false);
+    }
+
+    /** {@link #agedLoan(int, boolean)}, the borrower {@code banked} - a bank account of their own registered. */
+    private Aged agedLoan(int daysAgo, boolean collects, boolean banked) throws Exception {
+        Borrower borrower = freshBorrower(banked);
         String today = scalar("SELECT lending.business_date(now(), 'UTC')::text");
         LocalDate due = LocalDate.parse(today).minusDays(daysAgo);
         int day = due.getDayOfMonth() > 28 ? 28 : due.getDayOfMonth();
@@ -1216,12 +1270,20 @@ final class LendingStormCatalogue {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         String found = null;
         while (System.nanoTime() < deadline) {
-            for (String[] waiting : LendingStormWorld.rows("SELECT query FROM pg_stat_activity WHERE " + blocker
-                    + " = ANY (pg_blocking_pids(pid))")) {
-                if (waiting[0] != null && waiting[0].contains("credit_profile")) {
-                    return waiting[0];
+            // Read as the bootstrap owner: another role's statement text reads "<insufficient privilege>" otherwise.
+            try (Connection owner = DatabaseRoles.bootstrap();
+                    PreparedStatement select = owner.prepareStatement("SELECT query FROM pg_stat_activity WHERE ?"
+                            + " = ANY (pg_blocking_pids(pid))")) {
+                select.setInt(1, blocker);
+                try (ResultSet waiting = select.executeQuery()) {
+                    while (waiting.next()) {
+                        String query = waiting.getString(1);
+                        if (query != null && query.contains("credit_profile")) {
+                            return query;
+                        }
+                        found = query;
+                    }
                 }
-                found = waiting[0];
             }
             Thread.sleep(25);
         }

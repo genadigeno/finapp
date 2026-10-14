@@ -840,7 +840,7 @@ publication cannot lose or invent one).
 | `LoanOffered` / `LoanOfferClosed` | offer | T-off / declined, expired | offer id, decision id, principal or limit, currency, term, rate, expiry, terms version |
 | `LoanAccepted` | loan | T-acc | account id, kind, agreement id + hash, decision id, offer id |
 | `LoanDisbursed` / `LoanCancelled` | loan | T-dis / cancellation | entry id, value date, principal, currency, path; reason |
-| `LoanPayoutConcluded` | loan | T-pyr | outcome (`PAID_OUT`/`FAILED`/`RETURNED`/`NOT_DISPATCHED`), payments' reference |
+| `LoanPayoutConcluded` | loan | T-pyr | outcome (`PAID_OUT`/`FAILED`/`NOT_DISPATCHED`), payments' reference *(read `PAID_OUT`/`FAILED`/`RETURNED`/`NOT_DISPATCHED` until `P11-TST-001` found the drift: `RETURNED` has no producer - section 5.4's as-built note, `PayoutStatus`)* |
 | `InstalmentBilled` / `CreditLineStatementIssued` | loan | billing / statement | due date, interest, principal, fees due; minimum payment |
 | `CreditLineDrawn` | loan | T-drw | draw id, amount, entry id |
 | `RepaymentReceived` / `RepaymentReversed` | loan | T-rep, collection, payoff / reversal | amount, allocation summary per component, entry id |
@@ -1587,7 +1587,9 @@ clock skew across the accrual boundary.
 - **`P11-TST-001` — the lending storm:** two application instances, clocks ±5 s, shared parties
   across both products; applications through credit's simulators; acceptances racing decisions for
   the other product; capital headroom contested; disbursements on both paths with payout faults
-  (lost responses, failures, returns); draws, repayments, auto-collections, reversals, waivers,
+  (lost responses, failures, returns *(as ruled by the owner at `P11-TST-001`'s design, 2026-10-14: a payout
+  `FAILED` - the funds back in the wallet - and the economic return as the borrower's bank sending money back as an
+  inbound pay-in to the wallet, the loan unaffected; a payout `RETURNED` has no producer, section 5.4)*); draws, repayments, auto-collections, reversals, waivers,
   amendments, payoffs and statements; the servicing sweep across ≥ 3 real business-date boundaries
   (fixed-offset zones per cohort, A15); every one of the ten scenarios exercised; crash points incl.
   two killed backends. At rest, every round, one `REPEATABLE READ` snapshot: subledger proof zero for

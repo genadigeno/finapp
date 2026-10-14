@@ -363,12 +363,16 @@ final class LendingStormCensus {
                 + " AND ev.event_type = fa.event_type WHERE coalesce(fa.n, 0) <> coalesce(ev.n, 0)) mismatched";
     }
 
-    /** The LIVENESS censuses: meaningful once the sweeps have caught up - read at rest, every round. */
+    /**
+     * The LIVENESS censuses: meaningful once the sweeps have caught up - read at rest, every round. Each judges the clock
+     * at the SNAPSHOT's own instant ({@code transaction_timestamp()}): the census's readings take seconds, and a later
+     * statement's clock against the snapshot's rows would see a claim's lease lapse that the rows cannot yet show.
+     */
     static Map<String, String> liveness() {
         Map<String, String> zero = new LinkedHashMap<>();
         zero.put("C6 an account in servicing whose last ended date, with principal outstanding at its end, has no accrual",
                 "SELECT count(*) FROM lending.loan l JOIN " + ZONES + " z ON z.loan_id = l.id"
-                        + " CROSS JOIN LATERAL (SELECT lending.business_date(statement_timestamp(), z.servicing_zone) - 1"
+                        + " CROSS JOIN LATERAL (SELECT lending.business_date(transaction_timestamp(), z.servicing_zone) - 1"
                         + " AS yesterday) y LEFT JOIN lending.accrual_start s ON s.loan_id = l.id"
                         + " WHERE l.status IN ('ACTIVE', 'CLOSING') AND (l.kind = 'REVOLVING' OR s.start_date <= y.yesterday)"
                         + " AND lending.business_date(l.opened_at, z.servicing_zone) <= y.yesterday"
@@ -392,7 +396,7 @@ final class LendingStormCensus {
                         + " FROM lending.accrual_start s WHERE s.loan_id = p.loan_id)");
         zero.put("rest: an account in servicing not yet serviced for its business date",
                 "SELECT count(*) FROM lending.loan WHERE status IN ('ACTIVE', 'CLOSING')"
-                        + " AND next_servicing_at <= statement_timestamp()");
+                        + " AND next_servicing_at <= transaction_timestamp()");
         return zero;
     }
 

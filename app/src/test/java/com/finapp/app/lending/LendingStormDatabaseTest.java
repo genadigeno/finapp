@@ -719,6 +719,28 @@ class LendingStormDatabaseTest {
         judged(tally, "pay-in confirmation", confirmed);
     }
 
+    /**
+     * A scene's borrower funded from their own bank: payments' real pay-in, created on {@code on}, confirmed on the other,
+     * executed once the scheme answers its inquiry - awaited until {@code EXECUTED}, the wallet's credit final.
+     */
+    void fundFromBank(Instance on, Borrower borrower, long minor) throws Exception {
+        String token = borrower.customer().token();
+        Answer created = on.door().post("/v1/payments", "{\"paymentMethodId\":\"" + borrower.bankMethod()
+                + "\",\"amount\":\"" + decimal(minor) + "\",\"currency\":\"EUR\"}", token, key());
+        judged(tally, "scene pay-in", created);
+        assertThat(created.status()).as(created.body()).isEqualTo(201);
+        Answer confirmed = other(on).door().post("/v1/payments/" + created.field("id") + "/confirmation", null, token,
+                null);
+        judged(tally, "scene pay-in confirmation", confirmed);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (count("SELECT count(*) FROM payments.payment_attempt WHERE intent_id = ?::uuid AND status = 'EXECUTED'",
+                created.field("id")) == 0) {
+            assertThat(System.nanoTime()).as("the scene's pay-in executed").isLessThan(deadline);
+            answerInquiries();
+            Thread.sleep(250);
+        }
+    }
+
     /** A payoff quoted on one instance and executed on the other - stale or closed answers are the race's own. */
     private Answer payOff(Instance on, Account account, boolean mayFail) throws Exception {
         String token = account.borrower().customer().token();
@@ -1101,9 +1123,15 @@ class LendingStormDatabaseTest {
     // ---------------------------------------------------------------- rest
 
     /**
+     * A servicing claim pushes the permit one retry cadence ahead (2 s here) while its step runs: a permit within this
+     * window may be a step still in flight, so the storm is not at rest until every permit lies beyond it.
+     */
+    private static final String IN_FLIGHT = "interval '3 seconds'";
+
+    /**
      * The movers stopped; the sweeps drain to the quiet predicates on the database: no credit request in progress, no
      * disbursement pending, no payout in flight (the scheme's inquiries answered), every account in servicing serviced
-     * for its business date.
+     * for its business date - no servicing step still in flight.
      */
     private void rest(String when) throws Exception {
         long deadline = System.nanoTime() + REST_BOUND.toNanos();
@@ -1114,7 +1142,7 @@ class LendingStormDatabaseTest {
                     + " IN ('SUBMITTED', 'AWAITING_DECISION')) + (SELECT count(*) FROM lending.loan WHERE status ="
                     + " 'PENDING_DISBURSEMENT') + (SELECT count(*) FROM lending.loan_payout WHERE status IN ('PENDING',"
                     + " 'DISPATCHING', 'DISPATCHED')) + (SELECT count(*) FROM lending.loan WHERE status IN ('ACTIVE',"
-                    + " 'CLOSING') AND next_servicing_at <= statement_timestamp())");
+                    + " 'CLOSING') AND next_servicing_at <= statement_timestamp() + " + IN_FLIGHT + ")");
             if (busy == 0) {
                 return;
             }
@@ -1125,7 +1153,8 @@ class LendingStormDatabaseTest {
                     + " lending.loan WHERE status = 'PENDING_DISBURSEMENT' UNION ALL SELECT 'payout ' || status,"
                     + " count(*)::text FROM lending.loan_payout WHERE status IN ('PENDING', 'DISPATCHING', 'DISPATCHED')"
                     + " GROUP BY status UNION ALL SELECT 'unserviced', count(*)::text FROM lending.loan WHERE status IN"
-                    + " ('ACTIVE', 'CLOSING') AND next_servicing_at <= statement_timestamp()").stream().map(List::of)
+                    + " ('ACTIVE', 'CLOSING') AND next_servicing_at <= statement_timestamp() + " + IN_FLIGHT).stream()
+                    .map(List::of)
                     .toList()).isLessThan(deadline);
             Thread.sleep(500);
         }
@@ -1348,6 +1377,9 @@ class LendingStormDatabaseTest {
         minimum.put("scenario 9 killed after the posting", 1);
         minimum.put("scenario 9 the relay killed and restarted", 1);
         minimum.put("scenario 10 payoff beside the delinquency worker", 3);
+        minimum.put("scenario 4 a step killed mid-run", 1);
+        minimum.put("crash points", 12);
+        minimum.put("a waiver approved across instances", 1);
         minimum.put("boundary 1 crossed", 1);
         minimum.put("boundary 2 crossed", 1);
         minimum.put("boundary 3 crossed", 1);

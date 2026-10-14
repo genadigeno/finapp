@@ -614,6 +614,9 @@ final class LendingStormWorld {
         LocalDate newStart = null;
         for (int back = 1; back <= 200 && schedule == null; back++) {
             LocalDate candidate = firstDue.minusDays(back);
+            if (candidate.isAfter(start)) {
+                continue; // an accrual start is never after the day the loan was disbursed - never in the future
+            }
             ScheduleOutcome outcome = ScheduleEngineV1.project(terms, principal, term, day, candidate);
             if (outcome instanceof ScheduleOutcome.Projected projected
                     && projected.schedule().periods().get(0).dueDate().equals(firstDue)) {
