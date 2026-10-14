@@ -370,7 +370,9 @@ class CreditLineStatementDatabaseTest {
         assertThat(columns()).containsExactly("id", "loan_id", "cycle_start", "cycle_end", "due_date", "currency", "scale",
                 "interest_billed_minor", "fees_carried_minor", "principal_billed_minor", "minimum_payment_minor",
                 "agreement_id", "agreement_version", "statement_engine_version", "accrual_engine_version",
-                "journal_entry_id", "created_at", "correlation_id");
+                "journal_entry_id", "created_at", "correlation_id",
+                // P11-TSK-029 (lending V025): the statement's place in its loan's history - an order, never a balance.
+                "recorded_order");
         LocalDate statementDate = onOrBefore(today());
         DisbursementWorld.Accepted line = lines(1, 3_000_00, statementDate.getDayOfMonth(), 25, false).get(0);
         LocalDate opened = statementDate.minusMonths(1).minusDays(10);
