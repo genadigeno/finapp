@@ -104,13 +104,13 @@ instance skew cannot move a date:
 |---|---|
 | Offer expiry | stamped `expires_at = LEAST(decision.valid_until, offered_at + offer_validity)` at birth; acceptance on `expires_at > statement_timestamp()`, expiry on `<=` — exactly one at the instant |
 | Decision consumable | credit's port: `valid_until > statement_timestamp()` under L0, the complement of the reservation's predicate |
-| A business date ("a day", "midnight") | the database clock in the agreement's pinned `servicing_zone` (`UTC`, A2); date `d` is accruable only once the clock, read after L3, is past the end of `d` |
+| A business date ("a day", "midnight") | the database clock in the agreement's pinned `servicing_zone` (`UTC`, A2); date `d` is accruable only once the clock, read after L3, is past the end of `d`. The every-writer ranks judge the step's date against the range the transaction read - `lending.business_date_earliest(zone)` for a floor, `lending.business_date_latest(zone)` for a ceiling, the earlier and later of its start's and this statement's dates (`lending V026`, `P11-TSK-034`) - so a database clock stepped back across a midnight between the step's read and its write refuses nothing a reading admitted |
 | Value and posting date | every lending entry: the business date of the database clock under L3 (A10); accrual: the accrual date |
 | Due, past due, DPD | an item is due on its date and past due once its date has ended; DPD counts from the oldest unpaid due date to the current business date |
 | Disbursement deadline | stamped at the disbursement's birth (24 h); retries stop and the loan is cancelled at `<=` |
 | Accrual start (path X) | payments' conclusion instant, read from payments' row, in the pinned zone |
 | Amendment acceptance window · payoff good-through date · capital expectation ageing | each stamped from `statement_timestamp()` at birth and compared with it at the act |
-| Sweep permits | stamped from `statement_timestamp()` by the one-statement `FOR UPDATE SKIP LOCKED` claim; a permit binds nothing |
+| Sweep permits | stamped from `statement_timestamp()` by the one-statement `FOR UPDATE SKIP LOCKED` claim; a permit binds nothing. A permit "due at once" (stamped at birth) is due to a later statement only once the clock passes it - on a clock stepped back, a delay of at most the step (ADR-0063 decision 4, `P11-TSK-034`) |
 
 ---
 

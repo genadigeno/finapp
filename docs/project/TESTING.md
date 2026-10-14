@@ -231,8 +231,12 @@ reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `
   fixtures that plant `next_*_at = statement_timestamp() - interval '1 minute'`; a fixture that moves
   a loan's history into the past moves its servicing permit with it (`InterestAccrualDatabaseTest.backdate`).
 - **Order by the record, never the clock**: a domain key (`accrual_date`, `due_date`, `sequence`) or
-  lending's `recorded_order` / `decided_order`; compare a stamp only with the stamps the same
-  statement wrote (`concluded_at = GREATEST(LEAST(instant, decided_at), created_at)`).
+  lending's `recorded_order` / `decided_order` - or, where no order is recorded, the writing
+  transactions' ids (`xmin`, `PayoffDatabaseTest.assertNoConditionAfterClosure`); compare a stamp only
+  with the stamps the same statement wrote (`concluded_at = GREATEST(LEAST(instant, decided_at), created_at)`).
+- **Plant a validity on the clock that judges it**: a decision's `validUntil` from
+  `DisbursementWorld.databaseNow()`, never `Instant.now()` - the VM's database clock runs up to 650 ms
+  ahead of the host.
 - **To prove behaviour on a stepped clock, step it**: `ClockStep` (lending's tests) shadows
   `statement_timestamp()`, `transaction_timestamp()`, `now()` and `clock_timestamp()` in a schema of
   its own that a session opts into by its `search_path` — the lending triggers are invoker's rights

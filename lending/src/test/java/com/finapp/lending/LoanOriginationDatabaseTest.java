@@ -602,6 +602,43 @@ class LoanOriginationDatabaseTest {
     // ------------------------------------------------------------------ the ranks, for every writer
 
     @Test
+    @DisplayName("the offering instant is the database's for every writer (P11-TSK-034, lending V026): a raw offer naming"
+            + " one in 2999 or in 2001 is born at the insert's own clock - GREATEST(statement_timestamp(),"
+            + " transaction_timestamp()) - never at the writer's value; the expiry and the permit from it")
+    void theOfferingInstantIsTheDatabasesForEveryWriter() throws Exception {
+        activate(LOAN, "0.0815");
+        Application application = application(LOAN, 10);
+        UUID version = activeVersion(LOAN);
+        for (String named : List.of("2999-01-01T00:00:00Z", "2001-01-01T00:00:00Z")) {
+            try (Connection owner = DatabaseRoles.migrator()) {
+                owner.setAutoCommit(false);
+                try (PreparedStatement insert = owner.prepareStatement(
+                        "INSERT INTO lending.loan_offer (id, application_id, party_id, product, status, decision_id,"
+                                + " terms_version_id, offered_at, decision_valid_until, expires_at, next_step_at,"
+                                + " correlation_id) VALUES (gen_random_uuid(), ?, ?, ?, 'OFFERED', gen_random_uuid(), ?,"
+                                + " ?::timestamptz, statement_timestamp() + interval '30 days', ?::timestamptz,"
+                                + " ?::timestamptz, 'raw') RETURNING (offered_at = GREATEST(statement_timestamp(),"
+                                + " transaction_timestamp()) AND expires_at = LEAST(decision_valid_until, offered_at"
+                                + " + interval '14 days') AND next_step_at = expires_at)::text")) {
+                    insert.setObject(1, application.id().value());
+                    insert.setObject(2, application.party());
+                    insert.setString(3, application.product().name());
+                    insert.setObject(4, version);
+                    insert.setString(5, named);
+                    insert.setString(6, named);
+                    insert.setString(7, named);
+                    try (ResultSet row = insert.executeQuery()) {
+                        row.next();
+                        assertThat(row.getString(1)).as("a writer naming %s", named).isEqualTo("true");
+                    }
+                } finally {
+                    owner.rollback(); // an offer commits only beside its application's edge
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("raw SQL cannot skip an edge for any role: no ACCEPTED here, nothing out of a terminal offer, an"
             + " application never OFFERED without its offer, an offer never committed without its application's edge,"
             + " the terms immutable and their hash the bytes', nothing deleted")
