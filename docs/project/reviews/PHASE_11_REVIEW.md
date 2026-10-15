@@ -55,8 +55,8 @@ text, or recorded with an owner, and every correction in code was broken on purp
 
 | Severity | Finding | Done |
 |---|---|---|
-| **IMPORTANT** | **A deadlock cycle in the lending lock order.** The interest waiver (T-wvr) took the borrower's wallet (L7) before posting rule 9 to the currency's shared `LOAN_INTEREST_INCOME` row; the servicing step's accrual, the payoff's and the prepayment's catch-up accrual take that row before their wallet. Over two accounts of one party: `40P01`, one side rolled back whole (no money moves), the operator answered `500`. Recorded for the owner by `-028`, unchanged; invisible to the storm, which proposed only fee waivers | `Waivers.approve` takes the income row (`PostingService.lockBalancesInOrder`) before L7 for an interest waiver. `FeeAndWaiverDatabaseTest#anInterestWaiverTakesTheIncomeRowBeforeTheWallet` (held at the income row, the approval holds no wallet). The storm now proposes interest waivers (C14 judges the order under load). `DISTRIBUTED_EXECUTION.md` §3, ADR-0099, the plan. Probed |
-| **IMPORTANT** | **The storm's evidence was not on the final code.** Its three green runs and seven probes ran on `cd549de5`, before `lending V028` (eighteen trigger functions replaced), the merge resolution and the dependency upgrades; `-036`'s own record said the storm must follow it | Re-run on the final code (§ *The storm on the final code*): its first run was **red** - C11's "written after the closure" compared two statements' clock readings, and a database clock stepped back inside the closing transaction made rows written before the closure read after it (diagnosed by the next run's diagnostic: one transaction, an earlier record order). C11 now judges by `lending V025`'s record order, with a non-asserting stamp diagnostic beside it |
+| **IMPORTANT** | **A deadlock cycle in the lending lock order.** The interest waiver (T-wvr) took the borrower's wallet (L7) before posting rule 9 to the currency's shared `LOAN_INTEREST_INCOME` row; the servicing step's accrual, the payoff's and the prepayment's catch-up accrual take that row before their wallet. Over two accounts of one party: `40P01`, one side rolled back whole (no money moves), the operator answered `500`. Recorded for the owner by `-028`, unchanged; invisible to the storm, which proposed only fee waivers | `Waivers.approve` takes the income row (`PostingService.lockBalancesInOrder`) before L7 for an interest waiver. `FeeAndWaiverDatabaseTest#anInterestWaiverTakesTheIncomeRowBeforeTheWallet` (held at the income row, the approval holds no wallet). The storm's load proposes interest waivers where it finds billed interest owing (few were found - the proof is the lock-wait test). `DISTRIBUTED_EXECUTION.md` §3, ADR-0099, the plan. Probed |
+| **IMPORTANT** | **The storm's evidence was not on the final code.** Its three green runs and seven probes ran on `cd549de5`, before `lending V028` (eighteen trigger functions replaced), the merge resolution and the dependency upgrades; `-036`'s own record said the storm must follow it | Re-run on the final code (§ *The storm on the final code*): its first run was **red** - C11's "written after the closure" compared two statements' clock readings, and a database clock stepped back inside the closing transaction made rows written before the closure read after it (diagnosed by the next run's diagnostic: one transaction, an earlier record order). C11 now judges by `lending V025`'s record order, with a non-asserting stamp diagnostic beside it; the draw-after-request census by the clock's step; the storm's world reuses its connections (two runs void on ephemeral-port exhaustion). **Three consecutive green runs on `152f1728`** (1,571 s, 1,530 s, 1,546 s) |
 | **IMPORTANT** | **Some fifty of the schema's seventy-one uniques never probed with the locks bypassed** (the tasks' records name about nineteen) - among them the disbursement's and the payout's `UNIQUE (loan_id)`, whose raw second inserts every suite makes are refused by the trigger first | `BornOnceArbiters` (platform test fixtures) and `LendingBornOnceArbitersDatabaseTest`: every unique read from the catalogue, each copy refused by the probed unique alone with every trigger suspended and every `CHECK` dropped; the seventy-one and the eight foreign-key targets pinned; fifty-nine refused alone in lending, the four capital uniques in `app` (`LendingCapitalDatabaseTest#everyCapitalArbiterRefusesACopyWithEveryTriggerOff`). Probed: two survivals corrected, then caught |
 | **IMPORTANT** | **`PHASE_11_PLAN.md` §13.4's re-dispatch probe was never performed** - the tasks and the storm performed "conclude on `UNKNOWN`" in its place, and `INV-LND-07`'s verify text claimed it | Performed: **survived** - an equivalent mutant at the money's level (payments' key is the loan's own instruction: one withdrawal, one send). Recorded honestly; "never re-dispatched by lending" rests on the machine and payments' key; `INV-LND-07` corrected |
 | **IMPORTANT** | **Raw-SQL edges out of terminal states untested** for the offer (`EXPIRED → ACCEPTED` above all - a test labelled "nothing out of a terminal offer" used an `OFFERED` one), terms `RETIRED`/`REJECTED`, a `FAILED` disbursement and a `CANCELLED` loan, and "for every role" proven for one role in places | `LoanAcceptanceDatabaseTest#nothingLeavesATerminalOfferForAnyRole`, `LoanTermsDatabaseTest#nothingLeavesATerminalVersionForAnyRole`, `LoanDisbursementDatabaseTest#nothingLeavesATerminalLoanOrDisbursementForAnyRole` - real terminal rows, both roles. Probed (five mutations) |
@@ -147,9 +147,10 @@ namespace `11` registered; no `synchronized`, static mutable state or instance-c
   "no `40P01`" could not see it (it proposed only fee waivers). **Corrected:** `Waivers.approve` takes the income row
   (`PostingService.lockBalancesInOrder`) before L7 for an interest waiver, the order every other writer keeps;
   `FeeAndWaiverDatabaseTest#anInterestWaiverTakesTheIncomeRowBeforeTheWallet` holds the income row from another
-  session and proves the waiting approval holds no wallet (`FOR UPDATE NOWAIT` on it succeeds); probed; the storm now
-  proposes interest waivers too (C14 judges the order under load); `DISTRIBUTED_EXECUTION.md` §3, ADR-0099 and the plan
-  record it.
+  session and proves the waiting approval holds no wallet (`FOR UPDATE NOWAIT` on it succeeds); probed; the storm's load
+  now proposes an interest waiver when it finds billed interest owing (its load found few waivable items: the runs'
+  tallies are reported below, so the lock-wait test, not the storm, is this correction's proof);
+  `DISTRIBUTED_EXECUTION.md` §3, ADR-0099 and the plan record it.
 - **Born-once arbiters unprobed.** The tasks probed nineteen uniques with their triggers off; the schema holds
   seventy-one. **Corrected by a class, not by instances:** `BornOnceArbiters` (platform test fixtures) reads every
   unique index of a schema from the catalogue and, as the bootstrap superuser with every trigger suspended and every
@@ -242,7 +243,40 @@ acceleration, variable rate or capital return in any main source set (every hit 
 seeded and unposted `LOAN_WRITE_OFF_EXPENSE`, Phase 11's own auto-collection, `CreditBeans` refusing a bureau URL,
 comment-only deferrals, `FeeKind` = `LATE` and `RateType` = `FIXED` by `CHECK`). **`PASS`.**
 
-⟨STORM SECTION⟩
+## The storm on the final code
+
+`P11-TST-001`'s three green runs and seven probes ran on `cd549de5`; the final code differs by `lending V028` (eighteen
+trigger functions replaced), the merge resolution, the dependency upgrades and this review's corrections. The storm was
+re-run, alone, in a worktree of its own, until three consecutive runs were green - every attempt recorded:
+
+| Attempt | Code | Outcome |
+|---|---|---|
+| A | `e70ddbb8` | **Red, round 1** - C11 "a repayment, draw or condition written after the loan's closure": two rows, unlisted (the combined query dumped none) |
+| B | `b4baf019` - C11 split per fact and judged by `lending V025`'s record order; a non-asserting stamp diagnostic | Void - the connection attempt failed ("Address already in use") with a database suite run beside it. Its diagnostic listed the class: billings written in the closing transaction itself (one `xmin`, an earlier record order) stamped up to a second after `closed_at` - the database clock stepped back between the transaction's statements |
+| C | `f71a4aba` | Void - the same exhaustion, run alone: the storm's world opened a connection per read, about seven thousand sockets in `TIME_WAIT` within minutes on this host's 16,384 ephemeral ports. The diagnostic listed the same class again |
+| D | `1cdced28` - the world's owner connections reused (a bounded idle set, one autocommit statement per borrow) | **Red, round 5** - C11 "a draw written after its line's closure request": a draw stamped 1.2 ms after the request, the same stamp class across two transactions serialised on L3 (a draw on a `CLOSING` line is refused by the line's re-read under L3 and by `lending V013`'s trigger for every writer, so the draw came first) |
+| E | `152f1728` - that census given the clock's step (5 s) as its tolerance | **Green, three consecutive runs** |
+
+The three green runs, each its own container, `:app:ownContainerDatabaseTest --tests LendingStormDatabaseTest --rerun`:
+
+| Run | UTC | Duration | Seed | Rounds / readings (at rest) | Loans (lines) | Deadlocks |
+|---|---|---|---|---|---|---|
+| 1 | 19:43:51-20:10:39 | 1,571 s | 1792093453264 | 12 / 135 (56) | 322 (81) | 0 |
+| 2 | 20:11:55-20:38:03 | 1,530 s | 1792095139168 | 12 / 138 (56) | 304 (72) | 0 |
+| 3 | 20:39:19-21:05:43 | 1,546 s | 1792096783431 | 12 / 138 (56) | 304 (78) | 0 |
+
+Each: one test, zero failures; every census exact at every reading; every scenario's minimum met; one restart; the
+needle walk over 17-23 million characters of output finding no loan or party id and no amount; the scheme's sends
+equal to the withdrawals; every bureau and financial-data report recorded once; the payout failed and returned. Run 1's
+diagnostic listed, unasserted, one draw stamped 85 ms after its line's closure with an earlier record order in an
+earlier transaction - the class C11 no longer mistakes.
+
+**What the re-run does not re-prove.** The seven §13.4 probes were performed on `cd549de5` and not re-performed on the
+final code: the censuses they proved red are unchanged but for C11's record order and C10's bound, which, with C23, are
+this review's census additions and are **not probed** (recorded, MINOR - a probe of each is a 25-minute storm run).
+The load's service desk proposed **no** waiver in any of the three runs (each tally's two waivers are the catalogue's
+scene): billed interest owing was rarely found, so the storm is no evidence for the interest waiver's corrected lock
+order - its lock-wait test and probe are.
 
 ## The ten mandatory scenarios
 
@@ -380,7 +414,7 @@ deviation and the production reality. Each read clause by clause against the cod
 | Failure recovery | `PASS` - a crash after each step re-driven (the payoff since this review); scenario 9; the storm's crash points and killed backends; §14's fourteen rows, two by recorded rationale |
 | Security and audit | `PASS` - area 5 |
 | Observability | `PASS` - the thirty-three §15 series registered eagerly with closed tags (`LendingMetersTest`, and `PlannedMetersExistTest` armed by the flip); every alert broken and seen to fire (`LendingAlertRulesTest`); the rules resolved against a live scrape; amounts only in audited reports |
-| Testing | ⟨TESTING VERDICT⟩ |
+| Testing | `PASS` - the ten scenarios named, green and exercised in the storm (scenario 8's named test asserting part, its siblings the rest); the storm green in three consecutive fresh runs **on the final code** (above), its seven probes caught on `P11-TST-001`'s code and its three new census arms not probed (recorded); the battery's 10,000 loans and 2,000 lines `IDENTICAL` in two JVMs, a perturbed accrual, billing, statement, allocation or agreement byte flipping the verdict (run fresh in this review's hermetic tier); every task's probe in §2 and `P11-TST-*` in §4 |
 | Documentation and invariants | `PASS` - area 7; every `Phase: 11` invariant with performed §2 rows; ADR-0090…0100 accepted |
 | Universal criterion 7 | The standing deviation, recorded (below) - not a pass |
 | The production reality | Recorded as an accepted limitation (below) |
