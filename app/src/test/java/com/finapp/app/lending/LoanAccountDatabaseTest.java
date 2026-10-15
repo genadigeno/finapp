@@ -316,6 +316,56 @@ class LoanAccountDatabaseTest {
         assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?::uuid", externalOffer)).isEqualTo("OFFERED");
     }
 
+    @Test
+    @DisplayName("an offer that expires while its acceptance waits on the capital row (L6) is 409"
+            + " lending.OfferNotAcceptable over the door, never 500 api.InternalError: nothing written, credit's"
+            + " decision not consumed, and the same key retried is the same 409 (P11-TSK-034)")
+    void anOfferExpiringWhileTheAcceptanceWaitsIsA409() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("2200.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        // The fixture's clock: the offer due to expire three seconds from now on the database clock (the bootstrap
+        // owner, triggers suspended - no writer can move an expiry).
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE lending.loan_offer SET expires_at = statement_timestamp() + interval '3 seconds',"
+                        + " next_step_at = statement_timestamp() + interval '3 seconds' WHERE id = '" + offer + "'");
+            }
+            owner.commit();
+        }
+        String acceptKey = key();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            headroom.underLock(holder, EUR);
+            Future<HttpResponse<String>> accepting = pool.submit(() -> accept(customer.token(), offer, hash, null, acceptKey));
+            String waiting = awaitAStatementBlockedBy(pid(holder));
+            assertThat(waiting).as("past its expiry check and credit's consumption, waiting on L6")
+                    .contains("ledger_account");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (!"t".equals(scalar("SELECT expires_at <= statement_timestamp() FROM lending.loan_offer"
+                    + " WHERE id = ?::uuid", offer))) {
+                assertThat(System.nanoTime()).as("the offer's instant passes on the database clock").isLessThan(deadline);
+                Thread.sleep(5);
+            }
+            holder.commit();
+            HttpResponse<String> refused = accepting.get(60, TimeUnit.SECONDS);
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+            assertThat(refused.body()).contains("lending.OfferNotAcceptable", "the offer has expired");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan WHERE offer_id = ?::uuid", offer)).isZero();
+        assertThat(count("SELECT count(*) FROM credit.credit_decision_consumption c JOIN lending.loan_offer o"
+                + " ON o.decision_id = c.decision_id WHERE o.id = ?::uuid", offer)).as("the consumption rolled back").isZero();
+        assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?::uuid", offer)).isIn("OFFERED", "EXPIRED");
+        HttpResponse<String> retried = accept(customer.token(), offer, hash, null, acceptKey);
+        assertThat(retried.statusCode()).as("a refusal stores nothing under the key: " + retried.body()).isEqualTo(409);
+        assertThat(retried.body()).contains("lending.OfferNotAcceptable");
+    }
+
     // ------------------------------------------------------------------ the disbursement (P11-TSK-014)
 
     @Test

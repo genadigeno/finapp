@@ -19,7 +19,12 @@ import java.util.UUID;
  */
 public interface LoanStore {
 
-    /** Births the loan; the database stamps and answers the opening instant. */
+    /**
+     * Births the loan; the database stamps and answers the opening instant.
+     *
+     * @throws OfferExpired the offer's {@code expires_at} has passed on the database clock at this statement - the one
+     *     refusal of the loan's birth that is the customer's, not a breach (`P11-TSK-034`, {@code lending V026})
+     */
     Instant insert(Connection unitOfWork, NewLoan loan);
 
     /** Appends one history row; the database stamps the time. */
@@ -167,6 +172,19 @@ public interface LoanStore {
         @Override
         public String toString() {
             return "Owned[" + loan + "]";
+        }
+    }
+
+    /**
+     * The loan's birth refused because its offer expired on the database clock between the acceptance's own judgement
+     * and the insert ({@code lending V026}'s SQLSTATE {@code LNEXP}, `P11-TSK-034`) - the acceptance answers it as the
+     * offer no longer acceptable. Every other refusal of the birth is a {@link LendingStorageException}.
+     */
+    final class OfferExpired extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public OfferExpired() {
+            super("the offer expired before the loan was born");
         }
     }
 }
