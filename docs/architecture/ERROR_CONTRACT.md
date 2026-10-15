@@ -1092,8 +1092,11 @@ The acceptance and the loan reads (`P11-TSK-012`, `LENDING_LIFECYCLES.md` §4.4 
 enrolled or not, a weaker session is `identity.AssuranceRequired`, `403`), `201` with the loan account; a lost response
 replays its receipt and every refusal stores nothing - the refusals are judged under the party's credit profile lock and
 the offer's row lock, before any write. `NotFound` answers another party's offer exactly as an unknown or malformed one.
-`OfferNotAcceptable` refuses an offer no longer `OFFERED` or past its `expires_at` on the database clock (swept or not),
-and an offer whose decision credit will not take up - lapsed on credit's clock, not an approval, already consumed or
+`OfferNotAcceptable` refuses an offer no longer `OFFERED` or past its `expires_at` on the database clock (swept or not) -
+judged after the offer's lock and again where the loan is born, so an offer that expires while the acceptance waits on
+credit or the capital row is the same `409`, never a `500` (`P11-TSK-034`: `lending V026`'s expiry refusal carries its
+own SQLSTATE, `LNEXP`, and only that code is mapped; any other refusal at the loan's birth is a breach and stays
+`api.InternalError`) - and an offer whose decision credit will not take up - lapsed on credit's clock, not an approval, already consumed or
 unknown - credit's reason by name in the detail, never a figure. `TermsChanged` (first raised here) refuses an echoed
 terms hash that is not the offer's, malformed included: the customer accepts only the bytes the offer read showed.
 `PayoutDestinationInvalid` (first raised here) refuses path X without a payment method, a payment method named for a

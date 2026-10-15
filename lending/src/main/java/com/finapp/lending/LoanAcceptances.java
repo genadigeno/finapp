@@ -41,7 +41,9 @@ import lombok.RequiredArgsConstructor;
  *       commitment, and a credit decision for the same party takes the same row first, so the two serialise and no
  *       instant sees neither the reservation nor the commitment ({@code INV-LND-06}, {@code INV-CRD-09});
  *   <li><strong>(L2)</strong> the offer {@code FOR UPDATE}, owner-scoped; acted on only while {@code OFFERED} and, on the
- *       database clock read after the lock, unexpired;
+ *       database clock read after the lock, unexpired - and the loan's birth re-judges the expiry on its own statement's
+ *       clock, so an offer that expires during the waits below is refused {@code OfferNotAcceptable} there too
+ *       ({@code lending V026}'s {@code LNEXP}, `P11-TSK-034`);
  *   <li>the echoed terms hash compared with the offer's ({@code TermsChanged}); the payout destination verified
  *       ({@code PayoutDestinationInvalid}); the party's standing re-read ({@code NotInGoodStanding}) - every refusal
  *       before any write;
@@ -172,7 +174,15 @@ public final class LoanAcceptances {
         LoanId loanId = LoanId.next(ids);
         LoanStore.NewLoan born = new LoanStore.NewLoan(loanId, party, offer.product(),
                 offer.terms().amount().currency(), offer.id(), offer.decision(), correlation);
-        Instant openedAt = loans.insert(unitOfWork, born);
+        Instant openedAt;
+        try {
+            openedAt = loans.insert(unitOfWork, born);
+        } catch (LoanStore.OfferExpired expired) {
+            // The clock crossed expires_at while this acceptance waited on credit's consumption or L6: the birth's
+            // backstop refused it in its own SQLSTATE - the customer's 409, exactly as at the check after L2
+            // (P11-TSK-034). Any other refusal of the birth is a breach and stays a storage failure.
+            throw LoanOffers.OfferNotAcceptable.of(offer);
+        }
         loans.appendEvent(unitOfWork, new LoanStore.HistoryRow(ids.next(), loanId, Optional.empty(), born.bornStatus(),
                 ACCEPTED_REASON, actor, correlation));
         LoanAgreement unstamped = LoanAgreement.versionOne(agreementId, loanId, offer, openedAt);

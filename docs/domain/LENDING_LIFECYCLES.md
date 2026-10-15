@@ -250,6 +250,16 @@ nothing under the customer's key); its `expires_at <= valid_until` is then past 
 it. The binding of agreement and consumption is credit's `UNIQUE (consumer_kind, consumer_ref)` over the agreement's id
 and the one transaction - no lending trigger reads credit's table (A16 at the database).*
 
+*The expiry crossed during the acceptance's waits (`P11-TSK-034`, 2026-10-15; found by `P11-TST-001`'s storm): the
+acceptance judges the offer unexpired after L2 and then waits - credit's consumption, L6 - so the database clock may pass
+`expires_at` before the loan is born. The loan's edge trigger re-judges the expiry at the INSERT and refuses it - the
+strict backstop: no loan is born for an offer expired at that instant - but it refused in the generic `P0001` every
+breach of the trigger shares, and the customer got `500`. `lending V026` gives that refusal, and the offer's own refusal
+of `ACCEPTED` or `DECLINED` past the instant, their own SQLSTATE, `LNEXP`, judged after the offer's identity (a foreign,
+moved or mismatched offer is refused `P0001` even when expired); the acceptance maps exactly `LNEXP` to `409
+lending.OfferNotAcceptable` and writes nothing, the offer left `OFFERED` for the sweep. Every other refusal of the loan's
+birth is an invariant breach and stays a `500`.*
+
 ### 4.5 Loan (`lending.loan`), both kinds — `P11-TSK-012`, `-014`, `-023`, `-026`
 
 ```

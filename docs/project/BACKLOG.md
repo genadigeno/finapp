@@ -18177,6 +18177,95 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   both together (fresh test databases are unaffected).
 - **Verified** (fresh): the new case red on the unfixed tree (`LoanPayoutStepsDatabaseTest`, 11 tests, 1 failed), then green; lending hermetic (`:lending:test --rerun`) 170 across 21; lending databaseTest (whole, the build's shift `Etc/GMT+12`) 180 across 16, 0 failures (10:48 UTC; `LoanPayoutStepsDatabaseTest` 11, `InterestAccrualDatabaseTest` 14 inside it) - the first whole run (10:37 UTC) 180 with one red not this item's, `InstalmentBillingDatabaseTest#lateRepaymentRaisesTheNextInterestDue` failing in its fixture's origination (`inserting a loan offer: SQLSTATE P0001` - no payout, no accrual start on its path; read as `lending V005`'s `offered_at <= statement_timestamp()` rank meeting a backward step, found not caused, below) - green in the re-run; app own-container `LoanPayoutDatabaseTest` 9 and `LoanAccountDatabaseTest` 14 (23, 0 failures, their own invocation); platform `ColumnClassificationTest` 5 and `ApplicationRoleGrantsTest` 6; app `MutationDemonstrationTest` 9 after the rows were written. Fleet hermetic and architecture tiers deferred to the coordinator's post-merge run; build, fleet database and kafka tiers not run (the standing criterion-7 deviation). **Found, not caused** (for the owner): `lending V005`'s offer trigger refuses `offered_at > statement_timestamp()`, with `offered_at` read by an earlier statement of the same transaction - a backward step between the two refuses an origination (`P0001`, retried by the sweep): the same class, a candidate remediation; and the two clock-step test exposures above.
 
+**P11-TSK-034 — Remediation: the offer's expiry at the loan's birth answered 409, not 500** — `IN_PROGRESS` (implemented 2026-10-15, awaiting its completion gate) *(added out of turn on the owner's instruction, 2026-10-15 - a Phase 11 remediation item, run beside `P11-TST-001`; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TST-001` stays the current task and is blocked on this item; found by `P11-TST-001`'s storm)*
+- **The defect**: `LoanAcceptances` judges the offer unexpired on the database clock right after L2 (`offers.databaseNow`),
+  then waits - credit's consumption under L0 and, for a loan, the capital row (L6) - and only then births the loan. The
+  loan's edge trigger (`lending V006`, latest `V022`) re-judges `offer.expires_at <= statement_timestamp()` at the INSERT
+  - the correct strict backstop - but refused in the generic `P0001` every breach of that trigger shares, so
+  `JdbcLoanStore.insert` threw `LendingStorageException` and the door answered **`500 api.InternalError`** where the same
+  lapse judged a moment earlier is `409 lending.OfferNotAcceptable`. No money affected (the transaction rolls back, the
+  claim with it); the error contract broken. The offer's own `ACCEPTED`/`DECLINED` edge carries the same kind of expiry
+  re-check in the same generic code. Severity IMPORTANT (a contract defect under concurrency; no amount wrong).
+- **Reproduced first** (the storm agent, deterministically, then made permanent): hold L6, start an acceptance of a loan
+  offer due to expire in seconds - it passes its expiry check and waits on `ledger.ledger_account FOR UPDATE` - wait
+  until `expires_at` passes on the database clock, release: `LendingStorageException ... inserting a loan: SQLSTATE P0001`.
+- **The decision** (owner, "map the refusal"; design 2026-10-15): (1) lending **`V026`** gives the triggers' expiry
+  refusals their own SQLSTATE, **`LNEXP`** - a custom code in no class PostgreSQL defines, after fx `V005`'s `FXCAP`, the
+  repository's one precedent (the `P0xxx` class is PL/pgSQL's own, `P0001`-`P0004`, and is not used); (2) the acceptance
+  maps exactly that code to `OfferNotAcceptable` (`409`); every other refusal of those triggers stays `P0001` and a `500`
+  - a loan for another party's, a moved, another product's or another decision's offer is an invariant breach, never a
+  client error; (3) the trigger stays the strict backstop - an offer expired at the instant the loan is born is refused,
+  for every writer; only the code the refusal carries changes; (4) the identity checks run **before** the expiry, so an
+  offer both foreign and expired is refused as the breach (`P0001`); (5) never edit an applied migration - `V026`
+  `CREATE OR REPLACE`s the two functions.
+- **As built** (2026-10-15): lending **`V026`** replaces, otherwise verbatim (migrator-owned; schema-qualified, invoker's
+  rights, no `search_path` - as `V006`'s and `V022`'s), `lending.loan_permits_only_machine_edges` (`V022`'s, the latest) -
+  its INSERT branch splits the offer's identity (`NOT FOUND`, status, party, product, decision: `P0001`, the message
+  unchanged) from the expiry (`expires_at <= statement_timestamp()`: `LNEXP`, "a loan is never born for an expired offer")
+  - and `lending.loan_offer_permits_only_machine_edges` (`V006`'s, the latest) - the customer-side edges past the instant
+  (`ACCEPTED`, `DECLINED`) refused in `LNEXP`, the message unchanged. **Java**: `JdbcLoanStore.OFFER_EXPIRED_SQLSTATE`;
+  `JdbcLoanStore.insert` throws the port's new `LoanStore.OfferExpired` for exactly that code (any other code is the
+  `LendingStorageException` it was); `LoanAcceptances.accept` answers it `LoanOffers.OfferNotAcceptable.of(offer)` ("the
+  offer has expired" - the refusal the check after L2 gives); `JdbcLoanOfferStore.accept` and `.decline` answer `LNEXP`
+  `false`, the predicate's own answer - unreachable through the stores today (their `WHERE expires_at >
+  statement_timestamp()` reads the same statement's clock as the trigger), kept so the contract holds if the predicate
+  ever drifts from the trigger. No door, error code, event, audit row, metric or grant changes: the door already maps
+  `OfferNotAcceptable` (and meters it `NOT_ACCEPTABLE`).
+- **Objective**: an offer that expires during the acceptance's waits is answered as every expired offer is - `409
+  lending.OfferNotAcceptable`, nothing written - while a breach at the loan's birth stays a `500`. **Bounded context**:
+  Lending (T-acc; the loan's and the offer's edge triggers). **Aggregates**: the offer (`OFFERED`), the loan (born).
+  **Lifecycle**: unchanged - `OFFERED → ACCEPTED` only while unexpired; past the instant the offer stays `OFFERED` for the
+  sweep (`EXPIRED`). **Dependencies**: none.
+- **Domain changes**: none. **Persistence**: `lending V026` (two trigger functions replaced; no table, column, constraint,
+  index or grant). **APIs**: none new - the acceptance's `409 lending.OfferNotAcceptable` now also covers the expiry crossed
+  during its waits. **Events**: none. **Financial impact**: none - no money moves at acceptance; the refusal rolls back
+  credit's consumption, the commitment and the capital judgement with it. **Invariants**: `INV-LND-10` (the acceptance
+  window judged on the database clock, at every rank), `INV-LND-06` (unchanged: a refused acceptance consumes nothing).
+- **Transactions, consistency, idempotency**: unchanged - one transaction, the refusal thrown before the commit; the door's
+  claim rolls back, so a retry under the same key re-runs and is refused at the check after L2 (the same `409`).
+- **Distributed-system concerns** (multi-instance: **PASS**): the defect is a race between ten instances' waits and the
+  one database clock they share; the fix adds no state, lock or schedule - the refusal's code is a pure function of the
+  locked offer row and that clock, judged in the statement that births the loan, so any number of instances on any
+  instance clocks agree. Duplicate, retried and timed-out requests behave as before (the claim). Isolation `READ
+  COMMITTED`, the offer under L2 for the whole transaction - no stale read of its status.
+- **Security**: none (the refusal names no figure; the SQLSTATE is not exposed - the door answers the problem body).
+  **Audit**: none (a refusal writes no audit row, as before). **Observability**: the refusal now meters
+  `finapp.lending.acceptance{outcome=not_acceptable}` instead of surfacing as an unhandled `500`. **Reconciliation**: N/A.
+- **Tests**: `LoanAcceptanceDatabaseTest#anOfferExpiringWhileTheAcceptanceWaitsIsNotAcceptable` (the storm's reproduction,
+  permanent: L6 held, the acceptance past its check waiting on `ledger.ledger_account`, the database clock past
+  `expires_at`, released - `OfferNotAcceptable` "the offer has expired", nothing written, the sweep then expires it);
+  `#onlyTheExpiryIsTheCustomers` (a loan forged to another party at birth stays `LendingStorageException ... SQLSTATE
+  P0001`; for the migrator and the application role a raw loan for an expired offer is `LNEXP`, for an expired offer under
+  another party `P0001`, for an unexpired offer under another party `P0001`, the offer `ACCEPTED` and `DECLINED` past its
+  instant `LNEXP`; the store's conditional edge answers `false`); `#expiryAndAcceptanceLeaveExactlyOne`'s raw `ACCEPTED`
+  past the instant now expects `LNEXP`, as does `LoanOriginationDatabaseTest#declineAndExpiryAtTheBoundaryLeaveExactlyOne`'s
+  raw `DECLINED`. `app`'s `LoanAccountDatabaseTest#anOfferExpiringWhileTheAcceptanceWaitsIsA409` -
+  the same race over `POST /v1/me/loan-offers/{id}/acceptance` with credit's real consumption: `409
+  lending.OfferNotAcceptable`, no loan, credit's consumption rolled back, the same key retried the same `409`.
+- **Probe**: the acceptance's mapping removed; separately `V026`'s loan-birth expiry back on the generic code - the race
+  case red each time (`MUTATION_TESTING.md` §2).
+- **Acceptance criteria**: the race answered `409` at the service and over the door; a breach at birth still a `500`;
+  every expiry refusal `LNEXP` and every other `P0001`, for every writer; the probes caught; the lending acceptance and
+  guard suites and the app's acceptance suite green.
+- **Out of scope**: the other clock-crossing refusals of the same class recorded by `P11-TSK-033` (`lending V005`'s
+  `offered_at` rank under a backward step); any other trigger refusal (each remains a breach); the storm itself.
+- **Definition of done**: `DOD-API` (the error contract), `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Probes performed** (2026-10-15, each restored byte-identical - sha256 and `git diff --exit-code`): (1) the mapping
+  removed (`LoanAcceptances` catching an unrelated exception in place of `LoanStore.OfferExpired`) - the race case red,
+  the refusal surfacing as `LoanStore.OfferExpired` (unmapped at the door: a `500`); (2) `V026`'s loan-birth expiry back
+  on `P0001` - the race case red with `LendingStorageException: lending storage failed inserting a loan: SQLSTATE P0001`,
+  the storm's defect exactly, and `#onlyTheExpiryIsTheCustomers` red on the raw birth (`P0001` where `LNEXP` was expected).
+- **Verified** (fresh, 2026-10-15, targeted - another agent's storm runs on the same machine): lending `databaseTest`
+  `LoanAcceptanceDatabaseTest` 16, `LoanOriginationDatabaseTest` 17, `LoanDisbursementDatabaseTest` 11,
+  `CreditLineDrawDatabaseTest` 14, `LendingMigrationTest` 6, `LendingSchemaHasNoMutableMoneyTest` 8 (72, 0 failures);
+  lending `unitTest --rerun` 190 across 22; lending `architectureTest` 3; app `ownContainerDatabaseTest`
+  `LoanAccountDatabaseTest` 22 and `LoanOfferDatabaseTest` 4 (0 failures); app `architectureTest`
+  `MutationDemonstrationTest` 9 (after the §2 rows were written), `TestTaxonomyTest` 17 and `ErrorCodeRegistryTest` 6
+(after `ERROR_CONTRACT.md` was edited). One existing assertion
+  followed the code, not the rule: `LoanOriginationDatabaseTest#declineAndExpiryAtTheBoundaryLeaveExactlyOne`'s raw
+  `DECLINED` past the instant now expects `LNEXP` (the sweep-side `EXPIRED` before the instant stays `P0001`). Not run:
+  the whole lending `databaseTest`, the fleet tiers (the standing criterion-7 deviation; the coordinator's post-merge run).
+
 **P11-TST-001 — The lending storm** — `READY` *(marked by `P11-TSK-030`'s completion gate, 2026-10-14: its dependency `-030` - and with it every built task - is `COMPLETE`; the next unfinished item in backlog order with every dependency met. `P11-TST-002` (dependency `-029`) is eligible beside it and stands after it in the backlog's order, left `PLANNED`)*
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
   end to end from application to closure, for both products — every mandatory scenario exercised.

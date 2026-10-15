@@ -24,6 +24,12 @@ import java.util.UUID;
  */
 public final class JdbcLoanStore implements LoanStore {
 
+    /**
+     * The offer's expiry refusals' own SQLSTATE ({@code lending V026}, `P11-TSK-034`) - the loan's birth and the offer's
+     * customer-side edges past {@code expires_at}; every other refusal of those triggers is {@code P0001}.
+     */
+    static final String OFFER_EXPIRED_SQLSTATE = "LNEXP";
+
     private static final String COLUMNS =
             "l.id, l.party_id, l.product, l.status, l.currency, l.offer_id, l.decision_id, l.opened_at, l.closed_at,"
                     + " l.correlation_id, a.id AS agreement_id, a.version, a.offer_id AS agreement_offer_id, a.amendment_id,"
@@ -60,6 +66,9 @@ public final class JdbcLoanStore implements LoanStore {
                 return row.getTimestamp(1).toInstant();
             }
         } catch (SQLException failure) {
+            if (OFFER_EXPIRED_SQLSTATE.equals(failure.getSQLState())) {
+                throw new OfferExpired();
+            }
             throw failed("inserting a loan", failure);
         }
     }
