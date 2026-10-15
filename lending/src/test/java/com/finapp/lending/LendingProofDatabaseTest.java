@@ -303,6 +303,75 @@ class LendingProofDatabaseTest {
     }
 
     @Test
+    @DisplayName("no due account is negative: a raw-SQL entry beneath every door crediting a loan's LOAN_FEES_DUE below zero"
+            + " - no fee ever assessed - fails the subledger proof's NEGATIVE rule, beside the figure and the unexplained"
+            + " entry; the account is named, never an amount, and nothing is corrected")
+    void aNegativeDueAccountFailsTheNegativeRule() {
+        LoanId loan = aged(1_800_00, 20);
+        LendingProofs.Proven clean = assertProven(loan);
+        assertThat(clean.subledger().noneNegative()).isTrue();
+
+        String entry = IDS.next().toString();
+        asOwner("INSERT INTO ledger.journal_entry (id, posting_date, value_date, entry_type, reference, actor_id,"
+                + " correlation_id, causation_id, idempotency_scope, created_at) VALUES ('" + entry + "', DATE '"
+                + businessDate(loan) + "', DATE '" + businessDate(loan) + "', 'POSTING', 'raw', 'raw', 'raw', 'raw',"
+                + " 'raw:" + entry + "', statement_timestamp());"
+                + " INSERT INTO ledger.journal_line (id, entry_id, ledger_account_id, direction, amount_minor, currency,"
+                + " scale, seq) VALUES (gen_random_uuid(), '" + entry + "', '"
+                + loanAccount(loan, AccountPurpose.LOAN_FEES_DUE).value() + "', 'CREDIT', 500, 'EUR', 2, 0),"
+                + " (gen_random_uuid(), '" + entry + "', '" + cashAtBank().value() + "', 'DEBIT', 500, 'EUR', 2, 1)");
+
+        LoanSubledgerProof.Verdict negative = proven(loan).subledger();
+        assertThat(negative.figure(AccountPurpose.LOAN_FEES_DUE).ledger().isNegative()).as("fees due below zero").isTrue();
+        assertThat(negative.noneNegative()).as("the NEGATIVE rule").isFalse();
+        assertThat(negative.holds()).isFalse();
+        assertThat(negative.failures()).contains("NEGATIVE", "LOAN_FEES_DUE", "UNEXPLAINED_ENTRIES");
+        assertThat(negative.toString()).as("identifiers and arm names, never an amount").contains("NEGATIVE")
+                .doesNotContain("500");
+        assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_FEES_DUE)).minorUnits())
+                .as("nothing repaired: the ledger still holds the rogue line").isEqualTo(-5_00);
+    }
+
+    @Test
+    @DisplayName("the database never checks that a POSTED disbursement's journal_entry_id names a real entry (lending V028):"
+            + " a disbursement planted POSTED naming an entry the ledger never held - nothing posted to the loan's accounts"
+            + " - fails that loan's subledger proof on LOAN_PRINCIPAL (the rows claim the agreement's principal, the"
+            + " journal lines hold none); restored, it proves again")
+    void aDisbursementNamingNoEntryFailsTheProof() {
+        DisbursementWorld.Accepted pending = DisbursementWorld.acceptedLoan(1_700_00, 12);
+        LoanId loan = pending.loan();
+        assertThat(subledger(loan).holds()).as("PENDING, nothing claimed, nothing posted").isTrue();
+        String id = loan.value().toString();
+        // An identifier of the platform's own shape (UUIDv7, ADR-0013) that no journal entry carries.
+        String neverPosted = IDS.next().toString();
+        asOwner("UPDATE lending.loan_disbursement SET status = 'POSTED', journal_entry_id = '" + neverPosted + "',"
+                + " value_date = (statement_timestamp() AT TIME ZONE 'UTC')::date, decided_at = statement_timestamp()"
+                + " WHERE loan_id = '" + id + "'");
+        try {
+            assertThat(count("SELECT count(*) FROM lending.loan_disbursement d WHERE d.loan_id = ? AND d.status = 'POSTED'"
+                    + " AND NOT EXISTS (SELECT 1 FROM ledger.journal_entry e WHERE e.id = d.journal_entry_id)", loan.value()))
+                    .as("POSTED, naming an entry that does not exist").isEqualTo(1);
+            LoanSubledgerProof.Verdict forged = subledger(loan);
+            assertThat(forged.loan()).as("the verdict names the loan").isEqualTo(loan);
+            assertThat(forged.holds()).isFalse();
+            assertThat(forged.failures()).contains("LOAN_PRINCIPAL");
+            assertThat(forged.figure(AccountPurpose.LOAN_PRINCIPAL).rows()).as("the rows claim the principal")
+                    .isEqualTo(pending.principal());
+            assertThat(forged.figure(AccountPurpose.LOAN_PRINCIPAL).ledger().isZero()).as("the ledger holds none")
+                    .isTrue();
+        } finally {
+            asOwner("UPDATE lending.loan_disbursement SET status = 'PENDING', journal_entry_id = NULL, value_date = NULL,"
+                    + " decided_at = NULL WHERE loan_id = '" + id + "'");
+        }
+        assertThat(subledger(loan).holds()).as("restored").isTrue();
+    }
+
+    /** {@code loan}'s subledger verdict alone, on a fresh snapshot. */
+    private static LoanSubledgerProof.Verdict subledger(LoanId loan) {
+        return onSnapshot(snapshot -> LendingProofsWorld.SUBLEDGER.prove(RECORDS.read(snapshot, loan).orElseThrow()));
+    }
+
+    @Test
     @DisplayName("every closed account is zero: two loans paid off and a line closed prove with six zero balances; a line"
             + " posted to a CLOSED account afterwards fails it - TERMINAL_NOT_ZERO and the unexplained entry")
     void everyClosedAccountIsZero() {
