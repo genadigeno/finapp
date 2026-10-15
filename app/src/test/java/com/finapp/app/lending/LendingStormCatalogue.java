@@ -108,6 +108,7 @@ final class LendingStormCatalogue {
         accrualRunOnBothInstances();
         waiverAcrossInstances();
         lostResponseConcludedByInquiry();
+        payoutFailedThenReturned();
         reversalAfterAllocation();
         payoffRacingARepayment();
         amendmentUnderARace();
@@ -142,12 +143,16 @@ final class LendingStormCatalogue {
         censusAfter("scenario 1, one disbursement on both instances");
     }
 
+    /** A direct disbursement step on {@code on} - counted, once committed, by that instance's own metrics (C19). */
     private Object disburse(Instance on, String loan) {
         try (var actor = com.finapp.platform.security.SecurityContext.enterSystem();
                 var flow = com.finapp.platform.correlation.CorrelationContext.enter(LendingStormWorld.flow())) {
-            return on.transactions().inTransaction(uow -> on.beans().getBean(com.finapp.lending.LoanDisbursements.class)
-                    .disburse(uow, com.finapp.lending.LoanId.of(UUID.fromString(loan)),
+            com.finapp.lending.LoanDisbursements.Outcome step = on.transactions().inTransaction(uow -> on.beans()
+                    .getBean(com.finapp.lending.LoanDisbursements.class).disburse(uow,
+                            com.finapp.lending.LoanId.of(UUID.fromString(loan)),
                             com.finapp.platform.security.SecurityContext.require()));
+            on.beans().getBean(LoanDisbursementMetrics.class).record(step);
+            return step;
         }
     }
 
@@ -656,19 +661,90 @@ final class LendingStormCatalogue {
         }
     }
 
-    /** A line's closure on A racing a draw on B - exactly one of "drawn, then closing" and "closing, then refused". */
+    /**
+     * A line's closure on A racing a draw on B - exactly one of "drawn, then closing" and "closing, then refused", judged
+     * from the rows: the draw and the closure request are both written under the line's row lock (L3), each stamped by its
+     * own statement's database clock. The first two races give one side a head start, so BOTH orders occur in every run;
+     * the rest are released at one instant. Anything else - a draw stamped after the request, both or neither - is a
+     * breach (C15 here; C11's "a draw written after its line's closure request" at every reading).
+     */
     private void closureRacingADraw() throws Exception {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             Borrower borrower = freshBorrower(false);
             String line = acceptedLine(borrower, 2_000_00);
+            long drawLag = i == 0 ? 400 : 0;
+            long closureLag = i == 1 ? 400 : 0;
             List<Object> raced = bothAtOnce(
-                    () -> a().door().post(LOANS + "/" + line + "/closure", null, borrower.customer().token(), key()),
-                    () -> b().door().post(LOANS + "/" + line + "/draws", money(500_00), borrower.customer().token(), key()));
-            judged(tally, "closure race closure", answer(raced.get(0)));
-            judged(tally, "closure race draw", answer(raced.get(1)), "409 lending.LineNotDrawable");
+                    () -> {
+                        Thread.sleep(closureLag);
+                        return a().door().post(LOANS + "/" + line + "/closure", null, borrower.customer().token(), key());
+                    },
+                    () -> {
+                        Thread.sleep(drawLag);
+                        return b().door().post(LOANS + "/" + line + "/draws", money(500_00), borrower.customer().token(),
+                                key());
+                    });
+            Answer closure = answer(raced.get(0));
+            Answer draw = answer(raced.get(1));
+            judged(tally, "closure race closure", closure);
+            judged(tally, "closure race draw", draw, "409 lending.LineNotDrawable", "409 lending.LoanClosed");
             censusAfter("a closure racing a draw " + (i + 1));
-            storm.coverage("closure raced a draw", 1);
+            String[] order = LendingStormWorld.row("SELECT q.outcome, (SELECT count(*) FROM lending.credit_line_draw d WHERE"
+                    + " d.loan_id = q.loan_id)::text, (SELECT count(*) FROM lending.credit_line_draw d WHERE d.loan_id ="
+                    + " q.loan_id AND d.created_at < q.requested_at)::text FROM lending.line_closure_request q WHERE"
+                    + " q.loan_id = ?::uuid", line);
+            if (order != null && draw.status() == 201 && "CLOSING".equals(order[0]) && "1".equals(order[1])
+                    && "1".equals(order[2])) {
+                storm.coverage("closure raced a draw: drawn, then closing", 1);
+            } else if (order != null && draw.status() == 409 && "CLOSED".equals(order[0]) && "0".equals(order[1])) {
+                storm.coverage("closure raced a draw: closing, then refused", 1);
+            } else {
+                tally.unexplained("a closure raced a draw in neither order - the draw answered " + draw.status()
+                        + ", the request " + (order == null ? "absent" : order[0] + " beside " + order[1] + " draws, "
+                                + order[2] + " before it"));
+            }
         }
+    }
+
+    /**
+     * A payout FAILED by the scheme, then the borrower's bank returning money to the wallet (the owner's ruling on
+     * "returns", design Q2): the scheme rejects transfers while the scene's external loan pays out - quiesced, so no other
+     * payout meets it - the payout FAILED with payments agreeing and the funds back in the wallet; then, past both
+     * instances' skew, a real instant pay-in from the borrower's bank into that wallet, executed. The loan is unaffected
+     * by either: still in servicing, no repayment, its principal account unmoved.
+     */
+    void payoutFailedThenReturned() throws Exception {
+        Borrower borrower = freshBorrower(true);
+        storm.scheme().succeedsWith(SimulatedInstantSchemeAdapter.TRANSFERS_PATH, 200, "{\"status\":\"rejected\"}");
+        String loan;
+        try {
+            loan = acceptedLoan(borrower, 2_300_00, 10, true, false);
+            LendingStormWorld.awaitDatabase(PATIENCE, "the payout FAILED by the scheme", "SELECT p.status = 'FAILED'"
+                    + " AND w.status = 'FAILED' FROM lending.loan_payout p JOIN payments.withdrawal w ON w.id ="
+                    + " p.withdrawal_id WHERE p.loan_id = ?::uuid", loan);
+        } finally {
+            world.schemeAccepts();
+        }
+        String before = unaffected(loan);
+        Thread.sleep(11_000); // past both instances' skew: the pay-in is stamped after the failure on any clock
+        storm.fundFromBank(a(), borrower, 1_000_00);
+        String after = unaffected(loan);
+        censusAfter("a payout failed, then the bank returned money to its wallet");
+        if (before.equals(after) && before.startsWith("ACTIVE")) {
+            storm.coverage("a payout failed, then the bank returned money to its wallet", 1);
+        } else {
+            tally.unexplained("the money returned to a failed payout's wallet affected its loan: " + before + " -> "
+                    + after);
+        }
+    }
+
+    /** The loan's status, repayments and principal - what neither a failed payout nor a pay-in may move. */
+    private static String unaffected(String loan) throws SQLException {
+        return scalar("SELECT l.status || ' ' || (SELECT count(*) FROM lending.repayment r WHERE r.loan_id = l.id) || ' '"
+                + " || (SELECT coalesce(sum(CASE j.direction WHEN 'DEBIT' THEN j.amount_minor ELSE -j.amount_minor END), 0)"
+                + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id WHERE"
+                + " a.owner_kind = 'LOAN' AND a.owner_ref = l.id AND a.purpose IN ('LOAN_PRINCIPAL', 'LOAN_PRINCIPAL_DUE'))"
+                + " FROM lending.loan l WHERE l.id = ?::uuid", loan);
     }
 
     /**
@@ -745,9 +821,25 @@ final class LendingStormCatalogue {
         censusAfter("self-dealing refused");
     }
 
-    /** A contribution approved whose statement line never arrives: an expectation open, no capital. */
+    /**
+     * A contribution approved whose statement line never arrives: an expectation open, no capital. Beside it, the four
+     * eyes' other answer for terms and capital - a proposal REJECTED by the second officer and the second treasurer on the
+     * other instance (C13 counts each rejection's audit record against its row).
+     */
     private void capitalThatNeverArrives() throws Exception {
         String[] treasurers = storm.treasurers();
+        String[] officers = storm.officers();
+        Answer terms = a().door().post(LendingStormWorld.TERMS, LendingStormWorld.terms("PERSONAL_LOAN", "UTC", true,
+                "0.0750", "proposed to be rejected"), officers[0], key());
+        judged(tally, "terms proposed to be rejected", terms);
+        judged(tally, "terms rejected", b().door().post(LendingStormWorld.TERMS + "/" + terms.field("id") + "/rejection",
+                "{\"reason\":\"not this rate\"}", officers[1], key()));
+        Answer capital = b().door().post(LendingStormWorld.CONTRIBUTIONS, "{\"currency\":\"EUR\",\"amountMinor\":"
+                + 7_000_00 + ",\"reference\":\"LCAP-" + (100_000_000_000L + LendingStormWorld.RANDOMNESS.nextInt(899_999_999))
+                + "\",\"reason\":\"a tranche to be rejected\"}", treasurers[1], key());
+        judged(tally, "capital proposed to be rejected", capital);
+        judged(tally, "capital rejected", a().door().post(LendingStormWorld.CONTRIBUTIONS + "/" + capital.field("id")
+                + "/rejection", "{\"reason\":\"no board minute\"}", treasurers[0], key()));
         long before = count("SELECT count(*) FROM reconciliation.capital_recognition");
         String contribution = world.tranche(b().door(), a().door(), treasurers[1], treasurers[0], 5_000_00, false, tally);
         censusAfter("capital that never arrives");
@@ -806,15 +898,9 @@ final class LendingStormCatalogue {
         Aged aged = agedLoan(20, false);
         LocalDate start = LocalDate.parse(scalar("SELECT start_date::text FROM lending.accrual_start WHERE loan_id ="
                 + " ?::uuid", aged.loan()));
-        storm.servicingFaultsInjected().incrementAndGet();
         try (AutoCloseable killed = LendingStormFaults.refuse("lending.interest_accrual", "INSERT",
                 "NEW.loan_id = '" + aged.loan() + "'::uuid AND NEW.accrual_date = DATE '" + start.plusDays(2) + "'", true)) {
-            try {
-                serviceOn(a(), aged.loan());
-                tally.unexplained("K2: the killed catch-up committed");
-            } catch (RuntimeException expected) {
-                tally.count("K2 the catch-up killed");
-            }
+            failsOnceInTheSweep(aged.loan(), "K2 the catch-up killed");
         }
         boolean rolledBack = count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ?::uuid", aged.loan())
                 == 0;
@@ -923,15 +1009,9 @@ final class LendingStormCatalogue {
     /** R4: the billing refused - the servicing sweep bills the date once. */
     private void refusedAtTheBilling() throws Exception {
         Aged aged = agedLoan(0, false);
-        storm.servicingFaultsInjected().incrementAndGet();
         try (AutoCloseable refused = LendingStormFaults.refuse("lending.instalment_billing", "INSERT",
                 "NEW.loan_id = '" + aged.loan() + "'::uuid", false)) {
-            try {
-                serviceOn(a(), aged.loan());
-                tally.unexplained("R4: the refused billing committed");
-            } catch (RuntimeException expected) {
-                tally.count("R4 the billing refused");
-            }
+            failsOnceInTheSweep(aged.loan(), "R4 the billing refused");
         }
         serviceOn(b(), aged.loan());
         censusAfter("R4 refused at the billing");
@@ -967,15 +1047,9 @@ final class LendingStormCatalogue {
         LendingStormWorld.awaitDatabase(PATIENCE, "the line serviced once", "SELECT next_servicing_at >"
                 + " statement_timestamp() FROM lending.loan WHERE id = ?::uuid", line);
         LendingStormWorld.lineBornInThePast(line, today.minusDays(20), zone, Instant.parse("2999-01-01T00:00:00Z"));
-        storm.servicingFaultsInjected().incrementAndGet();
         try (AutoCloseable refused = LendingStormFaults.refuse("lending.credit_line_statement", "INSERT",
                 "NEW.loan_id = '" + line + "'::uuid", false)) {
-            try {
-                serviceOn(a(), line);
-                tally.unexplained("R5: the refused statement committed");
-            } catch (RuntimeException expected) {
-                tally.count("R5 the statement refused");
-            }
+            failsOnceInTheSweep(line, "R5 the statement refused");
         }
         boolean rolledBack = count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ?::uuid", line) == 0;
         serviceOn(b(), line);
@@ -1116,6 +1190,43 @@ final class LendingStormCatalogue {
             release.executeUpdate();
         }
         storm.restAndCensus(scene);
+    }
+
+    /**
+     * The armed servicing fault taken by the instances' OWN servicing sweeps, so their meter counts it (C15's meter arm):
+     * the account - held from the sweeps by a far permit - handed to them while the fault is armed, until exactly one
+     * sweep step on either instance failed ({@code finapp.lending.accrual{outcome=failed}}, both summed), then held again
+     * before the claim's retry cadence (2 s) could let a second step take it. One failure per armed fault, or C15.
+     */
+    private void failsOnceInTheSweep(String loan, String what) throws Exception {
+        double before = storm.servicingFailures();
+        storm.servicingFaultsInjected().incrementAndGet();
+        permit(loan, "statement_timestamp()");
+        long deadline = System.nanoTime() + PATIENCE.toNanos();
+        while (storm.servicingFailures() < before + 1 && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+        }
+        permit(loan, "'2999-01-01T00:00:00Z'::timestamptz");
+        Thread.sleep(500);
+        double failed = storm.servicingFailures() - before;
+        if (failed == 1) {
+            tally.count(what + " in a sweep");
+        } else {
+            tally.unexplained(what + ": the sweeps failed " + failed + " steps under one armed fault, not one");
+        }
+    }
+
+    /** The account's servicing permit moved (the owner's fixture: a permit is no fact, and nothing else moves). */
+    private static void permit(String loan, String when) throws SQLException {
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (java.sql.Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE lending.loan SET next_servicing_at = " + when + " WHERE id = '" + loan
+                        + "'::uuid");
+            }
+            owner.commit();
+        }
     }
 
     /**

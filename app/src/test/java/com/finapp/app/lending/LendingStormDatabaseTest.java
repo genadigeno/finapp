@@ -158,7 +158,7 @@ class LendingStormDatabaseTest {
     private static final long TRANCHE_ZERO = 140_000_00;
     private static final long TRANCHE = 25_000_00;
 
-    private static final LendingStormCredit CREDIT = LendingStormCredit.start(NEEDLE);
+    private static final LendingStormCredit CREDIT = LendingStormCredit.start(NEEDLE, LendingStormWorld.SEED + 1);
     private static SimulatedProvider scheme;
     private static final Map<String, String> PROPERTIES = new LinkedHashMap<>();
     private static volatile ConfigurableApplicationContext instanceB;
@@ -185,8 +185,21 @@ class LendingStormDatabaseTest {
     private final Set<String> reserved = ConcurrentHashMap.newKeySet();
     /** The cohorts' boundaries and the terms versions pinned under them. */
     private final List<Cohort> cohorts = new ArrayList<>();
-    /** Armed faults that explain an exception in a direct step: the scene's own expectation. */
+    /**
+     * Servicing faults the storm armed beneath the instances' OWN servicing sweeps (K2, R4, R5) - C15's meter arm: the
+     * sweeps' {@code finapp.lending.accrual{outcome=failed}} on both instances rises by exactly these over the storm, so no
+     * sweep failed silently (a sweep's failure is logged and metered, never answered to anyone the tally could judge).
+     */
     private final AtomicInteger servicingFaultsInjected = new AtomicInteger();
+    /** The sweeps' failed servicing steps on both instances when the load began - C15's meter arm's baseline. */
+    private volatile double servicingFailuresBefore;
+    /** The killed B's failed servicing steps up to the instant it was killed - its meters die with its context. */
+    private volatile double servicingFailuresOfTheKilledB;
+    /** Terms v4, activated mid-load - the offers made before it and accepted after it keep their own version (I11). */
+    private volatile String termsV4;
+    /** C19's window: the meters and the rows read at rest as the catalogue begins. */
+    private Map<String, double[]> meteredAtTheCatalogue;
+    private long recordOrderAtTheCatalogue;
 
     private String officer;
     private String secondOfficer;
@@ -264,6 +277,8 @@ class LendingStormDatabaseTest {
     void theStormLeavesEveryLoanProvable(CapturedOutput output) throws Exception {
         long began = System.nanoTime();
         stormBegan = began;
+        System.out.printf("P11-TST-001 SEED: %d - replay the storm's choices with FINAPP_STORM_SEED=%d%n",
+                LendingStormWorld.SEED, LendingStormWorld.SEED);
         a = instance("A", port, context);
         world = new LendingStormWorld(context, CREDIT, scheme, a.door());
         census = new LendingStormCensus(context.getBean(LendingProofs.class), context.getBean(LendingCapitalProof.class));
@@ -283,12 +298,18 @@ class LendingStormDatabaseTest {
         // 4. AT REST.
         rest("drained");
         census("drained", true);
+        assertThat(census.dpdChecked).as("C9 the date difference was judged on accounts in servicing").isPositive();
+        assertThat(census.dpdPastDue).as("C9 ... among them accounts past due (DPD above zero)").isPositive();
         assertTheAuditCountsEveryAct();
         assertTheCashAndTheProjections();
         assertTheGaugesAtRest();
         assertTheMetersCountTheRows();
+        assertNoSweepFailedUnexplained();
         assertTheSchemeSentOnce();
+        assertTheBureauPulledOncePerRecord();
         assertTheNeedleReachedNoSink(output);
+        assertThePayoutFaultsLanded();
+        assertTheTermsWerePinnedAcrossTheActivation();
         assertEveryScenarioWasExercised();
         assertThat(tally.unexplained).as("C15 unexplained failures - every response in its act's closed set, every"
                 + " exception an armed fault's").isEmpty();
@@ -471,6 +492,7 @@ class LendingStormDatabaseTest {
             }
             return null;
         });
+        servicingFailuresBefore = servicingFailures();
         try {
             while (rounds.get() < MIN_ROUNDS || LendingStormWorld.databaseNow().isBefore(last.plusSeconds(20))) {
                 int round = rounds.incrementAndGet();
@@ -866,7 +888,16 @@ class LendingStormDatabaseTest {
         Thread.sleep(1_500 + RANDOMNESS.nextInt(1_500));
         int dice = RANDOMNESS.nextInt(100);
         String reader = on == a ? officer : secondOfficer;
-        if (dice < 35) {
+        if (dice < 15) {
+            // A servicing agent's read of any loan - audited lending.LoanRead, one record per serving (C13).
+            Optional<Account> account = liveAccount();
+            if (account.isPresent()) {
+                Answer read = on.door().get(OPERATOR_LOANS + "/" + account.get().loan(), on == a ? agent : secondAgent);
+                if (judged(tally, "operator loan read", read) && read.status() == 200) {
+                    tally.audited("lending.LoanRead");
+                }
+            }
+        } else if (dice < 35) {
             String report = List.of("portfolio", "delinquency", "accrual", "capital").get(RANDOMNESS.nextInt(4));
             String today = scalar("SELECT (now() AT TIME ZONE 'UTC')::date::text");
             Answer read = on.door().get(REPORTS + "/" + report + "?date=" + today, reader);
@@ -1033,11 +1064,39 @@ class LendingStormDatabaseTest {
     /** Withdrawal references whose inquiry answers "accepted": the scheme's record shows the send. */
     private final Set<String> inquiryAccepts = ConcurrentHashMap.newKeySet();
 
-    /** Terms v4 mid-load, four eyes across instances: offers outstanding keep their pinned version. */
+    /**
+     * Terms v4 mid-load, four eyes across instances: offers outstanding keep their pinned version. One offer is made on
+     * purpose just before it and accepted just after it - so the run always holds at least one agreement that must pin the
+     * offer's own version across the activation (I11; asserted at rest from the rows, with every such offer the load made).
+     */
     private Void activateTermsMidLoad() throws Exception {
-        world.activateTerms(a.door(), b.door(), officer, secondOfficer,
+        CreditFixtures.Customer customer = world.borrower(LendingStormCredit.Profile.GOOD);
+        Borrower borrower = new Borrower(customer, null, null);
+        Answer submitted = a.door().post(APPLICATIONS, LendingStormWorld.loanApplication(2_000_00, 12, 10, false),
+                customer.token(), key());
+        judged(tally, "apply before v4", submitted);
+        Optional<String> offer = submitted.status() == 202
+                ? LendingStormWorld.awaitOffer(submitted.field("applicationId"), Duration.ofSeconds(90)) : Optional.empty();
+        String hash = offer.isPresent() ? LendingStormWorld.termsHash(a.door(), customer.token(), offer.get()) : null;
+        termsV4 = world.activateTerms(a.door(), b.door(), officer, secondOfficer,
                 LendingStormWorld.terms("PERSONAL_LOAN", "UTC", true, "0.0799", "v4 mid-storm"), tally);
         tally.count("terms v4 activated mid-load");
+        if (offer.isEmpty()) {
+            tally.unexplained("the offer made before v4 was never offered");
+            return null;
+        }
+        // Accepted after v4 on the other instance - the capital is contested, so the treasury may have to top it up first.
+        for (int attempt = 0; attempt < 12; attempt++) {
+            Answer accepted = b.door().post(OFFERS + "/" + offer.get() + "/acceptance",
+                    LendingStormWorld.acceptance(hash, null), customer.token(), key());
+            judged(tally, "accept after v4", accepted, "422 lending.CapitalUnavailable");
+            if (accepted.status() == 201) {
+                accounts.add(new Account(accepted.field("loanId"), borrower, AccountKind.WALLET_LOAN, 0, Role.PLAIN));
+                tally.count("an offer made before v4 accepted after it");
+                return null;
+            }
+            Thread.sleep(5_000);
+        }
         return null;
     }
 
@@ -1072,10 +1131,18 @@ class LendingStormDatabaseTest {
         coverage("boundary " + cohort.k() + " crossed", 1);
     }
 
+    /**
+     * One servicing step taken directly on {@code on} - and, once its transaction committed, counted by that instance's
+     * own {@link LoanServicingMetrics}, exactly as its schedule counts the steps it takes (so C19's meters cover the rows
+     * the storm's direct steps write). A step that fails is the storm's to explain (C15), never metered here.
+     */
     private LoanServicing.Outcome serviceOnce(Instance on, String loan) {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem();
                 CorrelationContext.Scope flow = CorrelationContext.enter(LendingStormWorld.flow())) {
-            return on.transactions().inTransaction(uow -> on.servicing().service(uow, LoanId.of(UUID.fromString(loan))));
+            LoanServicing.Outcome step = on.transactions().inTransaction(uow -> on.servicing().service(uow,
+                    LoanId.of(UUID.fromString(loan))));
+            on.beans().getBean(LoanServicingMetrics.class).record(step);
+            return step;
         }
     }
 
@@ -1183,6 +1250,9 @@ class LendingStormDatabaseTest {
     // ================================================================== 2. the catalogue (filled in below)
 
     private void catalogue() throws Exception {
+        // C19's window opens at rest, after the load - B's restart behind it, both instances' meters alive to its end.
+        meteredAtTheCatalogue = metered();
+        recordOrderAtTheCatalogue = count("SELECT last_value FROM lending.record_order");
         LendingStormCatalogue scenes = new LendingStormCatalogue(this);
         scenes.run();
     }
@@ -1228,19 +1298,30 @@ class LendingStormDatabaseTest {
         equal.put("lending.TermsVersionProposed", "SELECT count(*) FROM lending.loan_terms_version");
         equal.put("lending.TermsVersionActivated",
                 "SELECT count(*) FROM lending.loan_terms_version_event WHERE to_status = 'ACTIVE'");
+        equal.put("lending.TermsVersionRejected", "SELECT count(*) FROM lending.loan_terms_version WHERE status ="
+                + " 'REJECTED'");
         equal.put("lending.CapitalContributionProposed", "SELECT count(*) FROM lending.capital_contribution");
         equal.put("lending.CapitalContributionApproved",
                 "SELECT count(*) FROM lending.capital_contribution_event WHERE to_status = 'APPROVED'");
+        equal.put("lending.CapitalContributionRejected",
+                "SELECT count(*) FROM lending.capital_contribution_event WHERE to_status = 'REJECTED'");
         for (Map.Entry<String, String> pair : equal.entrySet()) {
+            long rows = count(pair.getValue());
             softly.assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = ? AND outcome ="
-                    + " 'SUCCEEDED'", pair.getKey())).as("C13 %s audited once per row", pair.getKey())
-                    .isEqualTo(count(pair.getValue()));
+                    + " 'SUCCEEDED'", pair.getKey())).as("C13 %s audited once per row", pair.getKey()).isEqualTo(rows);
+            // Every act a scene performs on purpose happened - an equality over nothing proves nothing. The three
+            // rejections only the load's dice choose (one decision in six) are counted, not required.
+            if (!Set.of("lending.WaiverRejected", "lending.RepaymentReversalRejected", "lending.AmendmentRejected")
+                    .contains(pair.getKey())) {
+                softly.assertThat(rows).as("C13 %s - the storm performed it", pair.getKey()).isPositive();
+            }
         }
         for (String read : List.of("lending.ReportRead", "lending.ExplanationRead", "lending.LoanReplayed",
                 "lending.LoanRead")) {
             softly.assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = ? AND outcome ="
                     + " 'SUCCEEDED'", read)).as("C13 %s - exactly the storm's successful reads", read)
                     .isEqualTo(tally.auditedReads(read));
+            softly.assertThat(tally.auditedReads(read)).as("C13 %s - the storm read", read).isPositive();
         }
         softly.assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
                 + " 'lending.SelfDealingRefused' AND outcome = 'FAILED'")).as("C13 every self-dealing attempt recorded")
@@ -1322,22 +1403,139 @@ class LendingStormDatabaseTest {
         return search.counters().stream().mapToDouble(Counter::count).sum();
     }
 
-    /** C19: both instances' counters summed equal the committed rows - every act counted, once, after its commit. */
-    private void assertTheMetersCountTheRows() throws Exception {
-        SoftAssertions softly = new SoftAssertions();
-        double accepted = 0;
-        double drawn = 0;
-        for (Instance on : List.of(a, b)) {
-            accepted += counter(on, LoanAcceptanceMetrics.ACCEPTANCE, "outcome", "accepted");
-            drawn += counter(on, CreditLineDrawMetrics.DRAW, "outcome", "drawn");
+    /**
+     * The loans a door's own catch-up has serviced (`Payoffs`, `Prepayments`, `LoanAmendments` call
+     * {@code LoanServicing.catchUp} and bill in their own transactions - not the servicing step, so not its meter): every
+     * loan quoted a payoff, prepaid or amended.
+     */
+    private static final String SERVICED_BY_A_DOOR = "(SELECT q.loan_id FROM lending.payoff_quote q UNION SELECT r.loan_id"
+            + " FROM lending.repayment r WHERE r.kind = 'PREPAYMENT' UNION SELECT g.loan_id FROM lending.loan_agreement g"
+            + " WHERE g.version > 1)";
+
+    /**
+     * One C19 arm: a series (both instances summed), the rows it counts, and - for the servicing step's series, whose rows
+     * a door's catch-up also writes - the window's rows on loans no door serviced, which the meter must cover at least.
+     */
+    private record MeterArm(String name, java.util.function.ToDoubleFunction<Instance> meter, String rows,
+            String noDoorRows, boolean required) {}
+
+    private static List<MeterArm> meterArms() {
+        String instalment = LoanServicingMetrics.BILLING;
+        return List.of(
+                new MeterArm("acceptances", on -> counter(on, LoanAcceptanceMetrics.ACCEPTANCE, "outcome", "accepted"),
+                        "SELECT count(*) FROM lending.loan", null, true),
+                new MeterArm("draws", on -> counter(on, CreditLineDrawMetrics.DRAW, "outcome", "drawn"),
+                        "SELECT count(*) FROM lending.credit_line_draw", null, true),
+                new MeterArm("disbursements posted", on -> counter(on, LoanDisbursementMetrics.DISBURSEMENT, "outcome",
+                        "posted"), "SELECT count(*) FROM lending.loan_disbursement WHERE status = 'POSTED'", null, true),
+                new MeterArm("disbursements cancelled for a lost standing", on -> counter(on,
+                        LoanDisbursementMetrics.DISBURSEMENT, "outcome", "standing_lost"),
+                        "SELECT count(*) FROM lending.loan WHERE cancellation_reason = 'STANDING_LOST'", null, true),
+                new MeterArm("payouts paid out", on -> counter(on, LoanPayoutMetrics.PAYOUT, "outcome", "paid_out"),
+                        "SELECT count(*) FROM lending.loan_payout WHERE status = 'PAID_OUT'", null, true),
+                new MeterArm("payouts failed", on -> counter(on, LoanPayoutMetrics.PAYOUT, "outcome", "failed"),
+                        "SELECT count(*) FROM lending.loan_payout WHERE status = 'FAILED'", null, true),
+                new MeterArm("customer repayments", on -> counter(on, RepaymentMetrics.REPAYMENT, "kind", "customer",
+                        "outcome", "repaid") + counter(on, RepaymentMetrics.REPAYMENT, "kind", "customer", "outcome",
+                        "paid_down") + counter(on, RepaymentMetrics.REPAYMENT, "kind", "customer", "outcome", "closed"),
+                        "SELECT count(*) FROM lending.repayment WHERE kind = 'CUSTOMER'", null, true),
+                new MeterArm("auto-collections", on -> counter(on, RepaymentMetrics.REPAYMENT, "kind", "auto_collection",
+                        "outcome", "repaid") + counter(on, RepaymentMetrics.REPAYMENT, "kind", "auto_collection",
+                        "outcome", "closed"), "SELECT count(*) FROM lending.repayment WHERE kind = 'AUTO_COLLECTION'",
+                        null, false),
+                new MeterArm("payoffs", on -> counter(on, RepaymentMetrics.REPAYMENT, "kind", "payoff", "outcome",
+                        "closed"), "SELECT count(*) FROM lending.repayment WHERE kind = 'PAYOFF'", null, true),
+                new MeterArm("prepayments", on -> counter(on, RepaymentMetrics.REPAYMENT, "kind", "prepayment", "outcome",
+                        "prepaid"), "SELECT count(*) FROM lending.repayment WHERE kind = 'PREPAYMENT'", null, false),
+                new MeterArm("accruals", on -> counter(on, LoanServicingMetrics.ACCRUAL, "outcome", "posted")
+                        + counter(on, LoanServicingMetrics.ACCRUAL, "outcome", "zero"),
+                        "SELECT count(*) FROM lending.interest_accrual", "SELECT count(*) FROM lending.interest_accrual"
+                                + " WHERE recorded_order > ? AND loan_id NOT IN " + SERVICED_BY_A_DOOR, true),
+                new MeterArm("instalment billings", on -> counter(on, instalment, "kind", "instalment", "outcome",
+                        "billed"), "SELECT count(*) FROM lending.instalment_billing", "SELECT count(*) FROM"
+                                + " lending.instalment_billing WHERE recorded_order > ? AND loan_id NOT IN "
+                                + SERVICED_BY_A_DOOR, true),
+                new MeterArm("statements", on -> counter(on, instalment, "kind", "statement", "outcome", "billed"),
+                        "SELECT count(*) FROM lending.credit_line_statement", "SELECT count(*) FROM"
+                                + " lending.credit_line_statement WHERE recorded_order > ? AND loan_id NOT IN "
+                                + SERVICED_BY_A_DOOR, true));
+    }
+
+    /**
+     * Every arm's meters (both instances summed) and rows, read at rest - re-read until the meters stood still across the
+     * rows' reading, so a step that commits between the two reads (a zone's midnight) cannot split them.
+     */
+    private Map<String, double[]> metered() throws Exception {
+        for (int attempt = 0; ; attempt++) {
+            Map<String, double[]> reading = new LinkedHashMap<>();
+            for (MeterArm arm : meterArms()) {
+                reading.put(arm.name(), new double[] {arm.meter().applyAsDouble(a) + arm.meter().applyAsDouble(b),
+                        count(arm.rows())});
+            }
+            boolean still = true;
+            for (MeterArm arm : meterArms()) {
+                still &= reading.get(arm.name())[0] == arm.meter().applyAsDouble(a) + arm.meter().applyAsDouble(b);
+            }
+            if (still || attempt == 20) {
+                return reading;
+            }
+            Thread.sleep(250);
         }
-        // B was restarted: its first context's meters died with it, so the rows are at least the meters, and the
-        // restarted instance's acts are counted from its own start - the meters may never exceed the rows.
-        softly.assertThat((long) accepted).as("C19 acceptances counted, never more than the loans")
-                .isLessThanOrEqualTo(count("SELECT count(*) FROM lending.loan")).isPositive();
-        softly.assertThat((long) drawn).as("C19 draws counted, never more than the draws")
-                .isLessThanOrEqualTo(count("SELECT count(*) FROM lending.credit_line_draw"));
+    }
+
+    /**
+     * C19: both instances' counters equal the committed rows - every act counted once, after its commit - over the window
+     * from the catalogue's start to the end, both of them at rest (B's restart lies behind it: the killed B's meters died
+     * with its context, so a whole-storm equality would hold only with its last acts guessed). The servicing step's own
+     * series (accruals, billings, statements) count the step's rows, while a door's catch-up writes such rows too: for
+     * them the meters never exceed the rows, and cover at least every row on a loan no door serviced. The storm's direct
+     * steps are counted by their instance's own metrics beans, as its schedules count theirs.
+     */
+    private void assertTheMetersCountTheRows() throws Exception {
+        Map<String, double[]> now = metered();
+        SoftAssertions softly = new SoftAssertions();
+        Map<String, String> report = new LinkedHashMap<>();
+        for (MeterArm arm : meterArms()) {
+            long meters = Math.round(now.get(arm.name())[0] - meteredAtTheCatalogue.get(arm.name())[0]);
+            long rows = Math.round(now.get(arm.name())[1] - meteredAtTheCatalogue.get(arm.name())[1]);
+            if (arm.noDoorRows() == null) {
+                softly.assertThat(meters).as("C19 %s: counted once per committed row (window: meters %s, rows %s)",
+                        arm.name(), meters, rows).isEqualTo(rows);
+                report.put(arm.name(), meters + "=" + rows);
+            } else {
+                long noDoor = count(arm.noDoorRows(), recordOrderAtTheCatalogue);
+                softly.assertThat(meters).as("C19 %s: never more than the rows (window: meters %s, rows %s)",
+                        arm.name(), meters, rows).isLessThanOrEqualTo(rows);
+                softly.assertThat(meters).as("C19 %s: every row on a loan no door serviced counted (window: meters"
+                        + " %s, such rows %s)", arm.name(), meters, noDoor).isGreaterThanOrEqualTo(noDoor);
+                report.put(arm.name(), noDoor + "<=" + meters + "<=" + rows);
+            }
+            if (arm.required()) {
+                softly.assertThat(meters).as("C19 %s: the window holds some", arm.name()).isPositive();
+            }
+        }
+        System.out.println("P11-TST-001 METERS (the catalogue's window): " + report);
         softly.assertAll();
+    }
+
+    /** Both instances' failed servicing steps, now. */
+    double servicingFailures() {
+        return counter(a, LoanServicingMetrics.ACCRUAL, "outcome", "failed")
+                + counter(b, LoanServicingMetrics.ACCRUAL, "outcome", "failed");
+    }
+
+    /**
+     * C15's meter arm: over the storm, the sweeps' failed servicing steps on both instances - the killed B's up to its
+     * kill - are exactly the faults the storm armed beneath them. A sweep swallows its failure into a log line and this
+     * meter; nothing else would see it.
+     */
+    private void assertNoSweepFailedUnexplained() {
+        double failed = servicingFailures() + servicingFailuresOfTheKilledB - servicingFailuresBefore;
+        System.out.printf("P11-TST-001 SWEEP FAILURES: %.0f failed servicing steps metered, %d faults injected beneath the"
+                + " sweeps%n", failed, servicingFaultsInjected.get());
+        assertThat(servicingFaultsInjected.get()).as("C15 faults were injected beneath the sweeps").isPositive();
+        assertThat(failed).as("C15 finapp.lending.accrual{outcome=failed} on both instances = the servicing faults"
+                + " injected beneath the sweeps - no sweep failed unexplained").isEqualTo(servicingFaultsInjected.get());
     }
 
     /** C21: one send per withdrawal reference - never re-sent while UNKNOWN; every lending withdrawal sent. */
@@ -1356,27 +1554,127 @@ class LendingStormDatabaseTest {
                 .as("C21 every lending withdrawal reached the scheme once").isEqualTo(strings("SELECT end_to_end_reference"
                         + " FROM payments.withdrawal WHERE instruction_reference LIKE 'lending:%'").stream()
                         .filter(perReference::containsKey).count());
-        int[] pulls = CREDIT.pulls();
-        assertThat(pulls[0]).as("C21 the bureau produced reports").isPositive();
-        System.out.printf("P11-TST-001 SCHEME: %d sends, %d withdrawals; credit: %d bureau and %d financial-data reports%n",
-                sends.size(), perReference.size(), pulls[0], pulls[1]);
+        System.out.printf("P11-TST-001 SCHEME: %d sends, %d withdrawals%n", sends.size(), perReference.size());
     }
 
-    /** C20: the needle - no response carried it, it rests only in credit's evidence, no log line holds it or an id. */
+    /**
+     * C21's credit arm: per source, one report per reference (the simulator's pulls are its distinct produced references),
+     * every report produced recorded exactly once - pulls = records - and the references recorded exactly the references
+     * the source produced (no record without a report, no report left unrecorded).
+     */
+    private void assertTheBureauPulledOncePerRecord() throws Exception {
+        SoftAssertions softly = new SoftAssertions();
+        int[] pulls = CREDIT.pulls();
+        List<Set<String>> produced = CREDIT.producedReferences();
+        String[] kinds = {"BUREAU", "FINANCIAL_DATA"};
+        for (int source = 0; source < 2; source++) {
+            long records = count("SELECT count(*) FROM credit.credit_record WHERE source_kind = ?", kinds[source]);
+            Set<String> recorded = Set.copyOf(strings("SELECT d.request_reference FROM credit.data_request d WHERE"
+                    + " d.source_kind = ? AND EXISTS (SELECT 1 FROM credit.credit_record r WHERE r.data_request_id = d.id)",
+                    kinds[source]));
+            softly.assertThat(pulls[source]).as("C21 %s produced reports", kinds[source]).isPositive();
+            softly.assertThat(pulls[source]).as("C21 %s one report per reference", kinds[source])
+                    .isEqualTo(produced.get(source).size());
+            softly.assertThat((long) pulls[source]).as("C21 %s pulls = records", kinds[source]).isEqualTo(records);
+            Map<String, Integer> unrecorded = new TreeMap<>();
+            for (String reference : produced.get(source)) {
+                if (!recorded.contains(reference)) {
+                    unrecorded.merge(String.valueOf(scalar("SELECT d.status || '/' || r.status FROM credit.data_request d"
+                            + " JOIN credit.decision_request r ON r.id = d.decision_request_id WHERE d.request_reference"
+                            + " = ?", reference)), 1, Integer::sum);
+                }
+            }
+            softly.assertThat(recorded).as("C21 %s the references recorded are the references produced (produced but"
+                    + " unrecorded, by data/decision request status: %s)", kinds[source], unrecorded)
+                    .isEqualTo(produced.get(source));
+        }
+        System.out.printf("P11-TST-001 CREDIT: %d bureau and %d financial-data reports, each recorded once%n", pulls[0],
+                pulls[1]);
+        softly.assertAll();
+    }
+
+    /** A UUID - a loan's, a party's - wherever it stands in the output. */
+    private static final java.util.regex.Pattern IDENTIFIER =
+            java.util.regex.Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    /**
+     * An amount as the storm renders it (major units, two places) standing as a token of its own: not inside a longer
+     * number, a version, a time or an address ({@code 1.18.46}, {@code 09:12:42.640}, {@code 127.0.0.1}).
+     */
+    private static final java.util.regex.Pattern RENDERED_AMOUNT =
+            java.util.regex.Pattern.compile("(?<![0-9.:\\-])([0-9]{3,})\\.([0-9]{2})(?![0-9])");
+
+    /**
+     * C20: the needle - no response carried it, it rests only in credit's evidence, no log line holds it - and the
+     * backlog's "no figure in its logs": no loan or party id of ANY scene (every loan and every applicant, from the rows)
+     * and no amount the storm rendered into a request body or a statement in the captured output. The amount rule:
+     * every rendered amount of at least 100.00, matched as a whole token in the rendering every request body uses - a
+     * shorter one ({@code 0.05}, {@code 45.00}) stands in unrelated text, and minor-unit integers collide with the
+     * configuration's own numbers ({@code 300000}), so those are not judged.
+     */
     private void assertTheNeedleReachedNoSink(CapturedOutput output) throws Exception {
         assertThat(tally.needleSightings).as("C20 no response carried the marker").isEmpty();
         String captured = output.getAll();
         assertThat(captured).as("C20 no log line carries the marker").doesNotContain(NEEDLE);
-        List<String> leaked = new ArrayList<>();
-        for (Account account : accounts) {
-            if (captured.contains(account.loan())) {
-                leaked.add("a loan id");
-            }
-            if (captured.contains(account.borrower().customer().party().toString())) {
-                leaked.add("a party id");
+        Set<String> identifiers = new java.util.HashSet<>(strings("SELECT id::text FROM lending.loan UNION SELECT"
+                + " party_id::text FROM lending.loan_application UNION SELECT party_id::text FROM lending.loan"));
+        Set<Long> amounts = new java.util.HashSet<>();
+        for (Long minor : LendingStormWorld.RENDERED_AMOUNTS) {
+            if (minor >= 100_00) {
+                amounts.add(minor);
             }
         }
-        assertThat(leaked).as("C20 no loan or party id in the captured output (route templates, never URIs)").isEmpty();
+        long leakedIds = 0;
+        java.util.regex.Matcher id = IDENTIFIER.matcher(captured);
+        while (id.find()) {
+            leakedIds += identifiers.contains(id.group()) ? 1 : 0;
+        }
+        long leakedAmounts = 0;
+        java.util.regex.Matcher amount = RENDERED_AMOUNT.matcher(captured);
+        while (amount.find()) {
+            leakedAmounts += amounts.contains(Long.parseLong(amount.group(1) + amount.group(2))) ? 1 : 0;
+        }
+        System.out.printf("P11-TST-001 NEEDLE: %d characters scanned for %d loan and party ids and %d amounts%n",
+                captured.length(), identifiers.size(), amounts.size());
+        assertThat(identifiers).as("C20 the ids judged").isNotEmpty();
+        assertThat(amounts).as("C20 the amounts judged").isNotEmpty();
+        assertThat(leakedIds).as("C20 no loan or party id in the captured output (route templates, never URIs)").isZero();
+        assertThat(leakedAmounts).as("C20 no storm amount in the captured output - no figure in the logs").isZero();
+    }
+
+    /**
+     * The owner's ruling on "returns" (design Q2), counted from the rows: payouts the scheme FAILED - lending and payments
+     * agreeing - and, for such a payout, the borrower's bank returning money to the same wallet by a real instant pay-in
+     * executed after the failure (a margin past both instances' skew), the loan still the borrower's: not cancelled.
+     */
+    private void assertThePayoutFaultsLanded() throws Exception {
+        long failed = count("SELECT count(*) FROM lending.loan_payout p JOIN payments.withdrawal w ON w.id ="
+                + " p.withdrawal_id WHERE p.status = 'FAILED' AND w.status = 'FAILED'");
+        long returned = count("SELECT count(DISTINCT p.loan_id) FROM lending.loan_payout p JOIN lending.loan l ON l.id ="
+                + " p.loan_id JOIN payments.payment_intent i ON i.credit_account_id = p.wallet_account_id WHERE p.status ="
+                + " 'FAILED' AND l.status <> 'CANCELLED' AND i.created_at > p.decided_at + interval '10 seconds' AND EXISTS"
+                + " (SELECT 1 FROM payments.payment_attempt t WHERE t.intent_id = i.id AND t.status = 'EXECUTED')");
+        System.out.printf("P11-TST-001 PAYOUT FAULTS: %d payouts FAILED, %d returned to their wallets by the bank%n", failed,
+                returned);
+        assertThat(failed).as("a payout FAILED by the scheme, lending and payments agreeing").isPositive();
+        assertThat(returned).as("a FAILED payout's wallet funded back by the borrower's bank (a pay-in), the loan"
+                + " unaffected").isPositive();
+    }
+
+    /**
+     * I11: every offer made before terms v4 and accepted after it pins the OFFER's version - never v4 - and the run holds
+     * at least one (the activation's own, made on purpose; replay stays IDENTICAL across it - C2 at every reading).
+     */
+    private void assertTheTermsWerePinnedAcrossTheActivation() throws Exception {
+        assertThat(termsV4).as("terms v4 was activated mid-load").isNotNull();
+        String[] pinned = LendingStormWorld.row("SELECT count(*)::text, count(*) FILTER (WHERE g.terms_version_id <>"
+                + " o.terms_version_id OR g.terms_version_id = v.id)::text FROM lending.loan_offer o JOIN"
+                + " lending.loan_acceptance a ON a.offer_id = o.id AND a.agreement_version = 1 JOIN lending.loan_agreement g"
+                + " ON g.loan_id = a.loan_id AND g.version = 1 JOIN lending.loan_terms_version v ON v.id = ?::uuid"
+                + " WHERE o.product = v.product AND o.offered_at < v.effective_from AND a.accepted_at > v.effective_from",
+                termsV4);
+        System.out.printf("P11-TST-001 PINNED: %s offers made before terms v4 and accepted after it%n", pinned[0]);
+        assertThat(Long.parseLong(pinned[0])).as("I11 an offer made before v4 was accepted after it").isPositive();
+        assertThat(Long.parseLong(pinned[1])).as("I11 each such agreement pins its offer's version, never v4").isZero();
     }
 
     /** The coverage ledger: every scenario at or above its minimum - counted from rows. */
@@ -1400,6 +1698,10 @@ class LendingStormDatabaseTest {
         minimum.put("scenario 4 a step killed mid-run", 1);
         minimum.put("crash points", 12);
         minimum.put("a waiver approved across instances", 1);
+        // The closure-versus-draw race in both of its orders, each judged from the rows (I5).
+        minimum.put("closure raced a draw: drawn, then closing", 1);
+        minimum.put("closure raced a draw: closing, then refused", 1);
+        minimum.put("a payout failed, then the bank returned money to its wallet", 1);
         // The acceptance's own backend identified behind a held L0 (C17): at least one of its two held-lock sightings
         // committed, so its transaction id was matched - a refused (422) sighting has no row to match.
         minimum.put("C17 lock order observed behind a held L0", 1);
@@ -1510,6 +1812,8 @@ class LendingStormDatabaseTest {
     private Void restartInstanceB() throws Exception {
         restarting = true;
         b.door().down = true;
+        // C15's meter arm: what the B about to be killed had counted - every step that fails from here is the kill's.
+        servicingFailuresOfTheKilledB += counter(b, LoanServicingMetrics.ACCRUAL, "outcome", "failed");
         int terminated;
         try {
             terminated = LendingStormFaults.terminateBackends(B_APPLICATION_NAME);
@@ -1600,7 +1904,7 @@ class LendingStormDatabaseTest {
     /** A live account no scene owns: in servicing, chosen at random. */
     Optional<Account> liveAccount() throws SQLException {
         List<Account> candidates = new ArrayList<>(accounts);
-        Collections.shuffle(candidates);
+        Collections.shuffle(candidates, RANDOMNESS);
         for (Account account : candidates.subList(0, Math.min(5, candidates.size()))) {
             if (!reserved.contains(account.loan()) && "ACTIVE".equals(scalar("SELECT status FROM lending.loan"
                     + " WHERE id = ?::uuid", UUID.fromString(account.loan())))) {

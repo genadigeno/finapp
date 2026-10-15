@@ -5,7 +5,6 @@ import com.finapp.credit.FinancialDataProvider;
 import com.finapp.sharedkernel.money.CountryCode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -13,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,21 +35,25 @@ public final class LendingStormCredit implements AutoCloseable {
     }
 
     private static final byte[] KEY = "a-lending-storm-provider-key-32b".getBytes(StandardCharsets.UTF_8);
-    private static final SecureRandom RANDOMNESS = new SecureRandom();
-
+    /** Seeded from the storm's seed (`P11-TST-001` gate, I8): a red run's parties and faults replay. */
+    private final Random randomness;
     private final SimulatedBureauEngine bureau;
     private final SimulatedBureauEngine findata;
     private final Map<String, CreditDataSubject> facts = new ConcurrentHashMap<>();
     private final Map<UUID, Long> balances = new ConcurrentHashMap<>();
     private final CreditDataSubjectResolver subjects = reference -> Optional.ofNullable(facts.get(reference));
 
-    private LendingStormCredit(SimulatedBureauEngine bureau, SimulatedBureauEngine findata) {
+    private LendingStormCredit(SimulatedBureauEngine bureau, SimulatedBureauEngine findata, long seed) {
         this.bureau = bureau;
         this.findata = findata;
+        this.randomness = new Random(seed);
     }
 
-    /** Both simulators started, every answer carrying {@code needle} in a field no adapter reads. */
-    public static LendingStormCredit start(String needle) {
+    /**
+     * Both simulators started, every answer carrying {@code needle} in a field no adapter reads; the parties' facts and the
+     * armed faults chosen from {@code seed}.
+     */
+    public static LendingStormCredit start(String needle, long seed) {
         try {
             SimulatedBureauEngine bureau = SimulatedBureauEngine.start();
             SimulatedBureauEngine findata = SimulatedBureauEngine.startFinancialData();
@@ -57,7 +61,7 @@ public final class LendingStormCredit implements AutoCloseable {
             findata.note(needle);
             bureau.slowness(Duration.ofMillis(1_500));
             findata.slowness(Duration.ofMillis(1_500));
-            return new LendingStormCredit(bureau, findata);
+            return new LendingStormCredit(bureau, findata, seed);
         } catch (IOException failure) {
             throw new IllegalStateException(failure);
         }
@@ -84,10 +88,10 @@ public final class LendingStormCredit implements AutoCloseable {
         while (true) {
             StringBuilder name = new StringBuilder("Storm ");
             for (int i = 0; i < 10; i++) {
-                name.append((char) ('a' + RANDOMNESS.nextInt(26)));
+                name.append((char) ('a' + randomness.nextInt(26)));
             }
-            LocalDate born = LocalDate.of(1960 + RANDOMNESS.nextInt(40), 1 + RANDOMNESS.nextInt(12),
-                    1 + RANDOMNESS.nextInt(28));
+            LocalDate born = LocalDate.of(1960 + randomness.nextInt(40), 1 + randomness.nextInt(12),
+                    1 + randomness.nextInt(28));
             String subject = name + "|" + born + "|DE";
             SimulatedBureauEngine.Figures figures = SimulatedBureauEngine.Figures.of(subject);
             SimulatedBureauEngine.Summary summary = SimulatedBureauEngine.Summary.of(subject);
@@ -120,7 +124,7 @@ public final class LendingStormCredit implements AutoCloseable {
     public void armTransientFault(boolean onTheBureau) {
         SimulatedBureauEngine.Fault[] transientFaults = {SimulatedBureauEngine.Fault.UNAVAILABLE,
                 SimulatedBureauEngine.Fault.SLOW, SimulatedBureauEngine.Fault.LOSE_RESPONSE};
-        (onTheBureau ? bureau : findata).arm(transientFaults[RANDOMNESS.nextInt(transientFaults.length)]);
+        (onTheBureau ? bureau : findata).arm(transientFaults[randomness.nextInt(transientFaults.length)]);
     }
 
     /** Reports produced by the bureau and the provider - one per reference each. */

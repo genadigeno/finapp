@@ -37,7 +37,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -53,6 +52,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -88,7 +88,20 @@ final class LendingStormWorld {
     static final String TERMS = "/v1/operator/lending/terms";
     static final String CONTRIBUTIONS = "/v1/operator/lending/capital-contributions";
     static final String REPORTS = "/v1/operator/reports/lending";
-    static final SecureRandom RANDOMNESS = new SecureRandom();
+    /**
+     * The storm's seed (`P11-TST-001` gate, I8): {@code -Dfinapp.storm.seed} or {@code FINAPP_STORM_SEED} - the
+     * environment reaches Gradle's test worker, a {@code -D} on Gradle's command line does not - else the clock. Printed at
+     * the start, so a red run's every choice the storm makes (who acts, which product, which amount, which fault) can be
+     * replayed - as far as two instances' scheduling allows: the threads' interleaving, the keys' UUIDs and the database's
+     * {@code ORDER BY random()} are not the seed's.
+     */
+    static final long SEED = seed();
+    static final Random RANDOMNESS = new Random(SEED);
+    /**
+     * Every amount the storm rendered into a request body or a statement (minor units) - C20's catalogue of the figures
+     * that must never reach the captured output (the backlog's "no figure in its logs"). Never printed.
+     */
+    static final Set<Long> RENDERED_AMOUNTS = ConcurrentHashMap.newKeySet();
     private static final Pattern CODE = Pattern.compile("\"code\":\"([^\"]*)\"");
 
     // ================================================================== the tally - every act, classified
@@ -313,8 +326,15 @@ final class LendingStormWorld {
         return UUID.randomUUID().toString();
     }
 
+    /** A storm amount as every request body renders it (major units, two places) - registered for C20's scan. */
     static String decimal(long minor) {
+        RENDERED_AMOUNTS.add(minor);
         return BigDecimal.valueOf(minor, 2).toPlainString();
+    }
+
+    private static long seed() {
+        String given = System.getProperty("finapp.storm.seed", System.getenv("FINAPP_STORM_SEED"));
+        return given == null || given.isBlank() ? System.currentTimeMillis() : Long.parseLong(given.trim());
     }
 
     static long minor(String decimal) {
@@ -601,6 +621,7 @@ final class LendingStormWorld {
     }
 
     private static String bankDecimal(long minor) {
+        RENDERED_AMOUNTS.add(minor);
         return (minor / 100) + "." + String.format("%02d", minor % 100);
     }
 

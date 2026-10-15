@@ -83,6 +83,8 @@ final class LendingStormCensus {
                 zeroes(snapshot, when, softly, safety());
                 if (atRest) {
                     zeroes(snapshot, when + " (at rest)", softly, liveness());
+                    dpdChecked = one(snapshot, "SELECT count(*) FROM " + DPD + " d");
+                    dpdPastDue = one(snapshot, "SELECT count(*) FROM " + DPD + " d WHERE d.dpd > 0");
                 }
             } finally {
                 snapshot.rollback();
@@ -173,6 +175,26 @@ final class LendingStormCensus {
     private static final String ZONES = "(SELECT g.loan_id, t.servicing_zone FROM lending.loan_agreement g"
             + " JOIN lending.loan_terms t ON t.terms_version_id = g.terms_version_id WHERE g.version = 1)";
 
+    /**
+     * C9's own derivation of every account in servicing's days past due, computed here and not by the platform's
+     * {@code lending.days_past_due}: its business date (the snapshot's database clock in its pinned zone) less the oldest
+     * due date of a billed item - an instalment's billing or a line's statement - fallen due before that date with any
+     * component still unpaid; zero when there is none.
+     */
+    static final String DPD = "(SELECT l.id AS loan_id, t.today, coalesce(t.today - (SELECT min(i.due_date) FROM (SELECT"
+            + " b.id, b.due_date FROM lending.instalment_billing b WHERE b.loan_id = l.id UNION ALL SELECT s.id, s.due_date"
+            + " FROM lending.credit_line_statement s WHERE s.loan_id = l.id) i WHERE i.due_date < t.today AND EXISTS"
+            + " (SELECT 1 FROM (VALUES ('FEES'), ('INTEREST'), ('PRINCIPAL')) c(component) WHERE"
+            + " lending.billing_component_paid(i.id, c.component) < lending.billing_component_billed(i.id, c.component))),"
+            + " 0) AS dpd FROM lending.loan l JOIN (SELECT g.loan_id, w.servicing_zone FROM lending.loan_agreement g"
+            + " JOIN lending.loan_terms w ON w.terms_version_id = g.terms_version_id WHERE g.version = 1)"
+            + " z ON z.loan_id = l.id CROSS JOIN LATERAL (SELECT lending.business_date(transaction_timestamp(),"
+            + " z.servicing_zone) AS today) t WHERE l.status IN ('ACTIVE', 'CLOSING'))";
+
+    /** The accounts C9's date difference was judged on at the last reading at rest, and those of them past due. */
+    volatile long dpdChecked;
+    volatile long dpdPastDue;
+
     /** The business date of the closure of each closed loan, in its zone. */
     private static final String CLOSED_ON = "(SELECT l.id AS loan_id, lending.business_date(l.closed_at, z.servicing_zone)"
             + " AS closed_on FROM lending.loan l JOIN " + ZONES + " z ON z.loan_id = l.id WHERE l.status = 'CLOSED')";
@@ -257,6 +279,13 @@ final class LendingStormCensus {
         zero.put("C9 two conditions of one kind for one account and business date",
                 "SELECT count(*) FROM (SELECT loan_id, business_date, kind FROM lending.loan_condition_event GROUP BY"
                         + " 1, 2, 3 HAVING count(*) > 1) twice");
+        // A recorded condition's DPD is a date difference: its business date less the due date of one of the account's
+        // billed items (the oldest then unpaid) - never a counter that could have drifted (INV-LND-12).
+        zero.put("C9 a condition past due whose business date less its DPD is no billed item's due date",
+                "SELECT count(*) FROM lending.loan_condition_event e WHERE e.days_past_due > 0 AND NOT EXISTS (SELECT 1"
+                        + " FROM lending.instalment_billing b WHERE b.loan_id = e.loan_id AND b.due_date = e.business_date"
+                        + " - e.days_past_due) AND NOT EXISTS (SELECT 1 FROM lending.credit_line_statement s WHERE"
+                        + " s.loan_id = e.loan_id AND s.due_date = e.business_date - e.days_past_due)");
         // C10 - a line's drawn principal never above its limit (INV-LND-14).
         zero.put("C10 a line's principal above its limit (no reversed paydown to explain it)",
                 "SELECT count(*) FROM lending.loan l JOIN lending.loan_agreement g ON g.loan_id = l.id AND g.version ="
@@ -296,6 +325,11 @@ final class LendingStormCensus {
                         + " lending.credit_line_draw d JOIN lending.loan l ON l.id = d.loan_id WHERE l.status = 'CLOSED'"
                         + " AND d.created_at > l.closed_at) + (SELECT count(*) FROM lending.loan_condition_event e JOIN"
                         + " lending.loan l ON l.id = e.loan_id WHERE l.status = 'CLOSED' AND e.created_at > l.closed_at)");
+        // A line's closure request and a draw are written under the line's row lock (L3), each stamped with its own
+        // statement's database clock: a draw stamped after the request was drawn on a line already closing (I5).
+        zero.put("C11 a draw written after its line's closure request",
+                "SELECT count(*) FROM lending.credit_line_draw d JOIN lending.line_closure_request q ON q.loan_id ="
+                        + " d.loan_id WHERE d.created_at > q.requested_at");
         zero.put("C11 an edge out of CLOSED or CANCELLED",
                 "SELECT count(*) FROM lending.loan_event WHERE from_status IN ('CLOSED', 'CANCELLED')");
         // C12 - every state change's event exactly once (the outbox written in the fact's own transaction).
@@ -325,6 +359,8 @@ final class LendingStormCensus {
         {"lending.CreditLineDrawn", "SELECT loan_id, 1 FROM lending.credit_line_draw"},
         {"lending.RepaymentReceived", "SELECT loan_id, 1 FROM lending.repayment"},
         {"lending.RepaymentReversed", "SELECT loan_id, 1 FROM lending.repayment_reversal WHERE status = 'APPROVED'"},
+        {"lending.CollectionFailed", "SELECT loan_id, 1 FROM lending.collection_attempt WHERE outcome IN"
+                + " ('INSUFFICIENT_FUNDS', 'WALLET_NOT_POSTABLE')"},
         {"lending.LoanFeeAssessed", "SELECT loan_id, 1 FROM lending.fee_assessment"},
         {"lending.LoanFeeWaived", "SELECT w.loan_id, 1 FROM lending.waiver w JOIN lending.waiver_decision d"
                 + " ON d.waiver_id = w.id WHERE w.kind = 'FEE' AND d.outcome = 'APPROVED'"},
@@ -394,6 +430,8 @@ final class LendingStormCensus {
                 "SELECT count(*) FROM lending.loan_payout p JOIN lending.loan l ON l.id = p.loan_id WHERE p.status IN"
                         + " ('PAID_OUT', 'FAILED', 'NOT_DISPATCHED') AND l.status <> 'CANCELLED' AND NOT EXISTS (SELECT 1"
                         + " FROM lending.accrual_start s WHERE s.loan_id = p.loan_id)");
+        zero.put("C9 an account whose DPD is not its business date less its oldest unpaid due date (INV-LND-12)",
+                "SELECT count(*) FROM " + DPD + " d WHERE lending.days_past_due(d.loan_id, d.today) <> d.dpd");
         zero.put("rest: an account in servicing not yet serviced for its business date",
                 "SELECT count(*) FROM lending.loan WHERE status IN ('ACTIVE', 'CLOSING')"
                         + " AND next_servicing_at <= transaction_timestamp()");
