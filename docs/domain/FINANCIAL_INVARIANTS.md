@@ -1821,8 +1821,10 @@ projection; concurrent repayments serialise on L3 and each allocates against wha
 `RepaymentDatabaseTest#twoRepaymentsOnOneInstalmentSerialiseAndConserve` (`P11-TSK-018`): Σ
 allocations = Σ amounts, no due account negative, never over-allocated; the allocation engine's
 properties — conservation, order, never above due, both overpayment treatments (`P11-TSK-006`…`009`);
-the task's probe — reading the projection for allocation turns scenario 3 red under a racing reversal
-(`MUTATION_TESTING.md` §2); the subledger proof's non-negativity arm (`P11-TSK-029`); the storm's Σ
+the task's probe — reading the projection for allocation turns scenario 3 red under a planted projection drift
+*(read "under a racing reversal" until `P11-DOC-001`, 2026-10-15: the projection is maintained in each posting's own
+transaction, so no racing reversal can open the gap - every performance planted the drift, `P11-TSK-018`'s and the
+storm's P5)* (`MUTATION_TESTING.md` §2); the subledger proof's non-negativity arm (`P11-TSK-029`); the storm's Σ
 allocations = Σ repayments at rest (`P11-TST-001`).
 *(As built by `P11-TSK-008`, 2026-10-11 - the engine half: `AllocationEngineV1` asserts conservation and never-above-due
 before its lines return, and `AllocationEngineV1PropertiesTest` holds them over generated inputs under all six component
@@ -2213,7 +2215,8 @@ the interest waiver, a waiver racing a repayment of the fee, a waiver of the las
 **Statement:** Days past due is the number of days between the oldest past-due item's due date and
 the current business date (the database clock, the agreement's zone), zero when nothing is past due —
 never a stored counter; the bucket and the default flag (DPD ≥ the agreement's threshold, 90 by
-default) follow from it; each condition change is recorded once, only on a change, and never
+default, held until cure - as built, `DPD ≥ threshold` or (already defaulted and DPD > 0), `DelinquencyState`;
+the statement read "follow from it" until `P11-DOC-001`, 2026-10-15) follow from it; each condition change is recorded once, only on a change, and never
 rewritten or deleted.
 **Why:** A counter drifts with every missed or repeated run; a rewritten condition history hides what
 the borrower and the collections owner were told and when.
@@ -2272,6 +2275,12 @@ acceptances over-deploy (`MUTATION_TESTING.md` §2); the capital proof in every 
 headroom contested (`P11-TST-001`).
 *(The first consumer built by `P11-TSK-012`, 2026-10-11 - a loan's acceptance judges headroom under L6, the committed term the agreement principal of the loans `PENDING_DISBURSEMENT`, read before the outstanding; a line commits none (A28); verified by `LoanAcceptanceDatabaseTest#acceptancesRacingForTheLastCapitalAdmitOne` (the lock-wait and ten loans for one loan's headroom, one admitted) and `#aLineCommitsNoCapital`.)*
 *(The second consumer built by `P11-TSK-021`, 2026-10-12 - a draw judges headroom under L6 after the line's lock (L3) and its available limit; verified by `CreditLineDrawDatabaseTest#drawsRacingForTheLastCapitalAdmitOne` (the lock-wait, then five draws and five acceptances for exactly one's headroom - one admitted, headroom exactly zero) and `#drawingTakesTheLineThenTheCapital`.)*
+*(Read at the exit review, `P11-DOC-001` (2026-10-15): "at every commit" holds for every commit that DEPLOYS capital -
+each judges headroom under L6. One commit withdraws it: a repudiated bank statement reversing a recognised contribution
+(`REPUDIATE_BATCH`), serialised against every L6 holder by its foreign-key share but free to leave headroom below zero
+when the capital was already deployed - the bank's evidence withdrawn after the fact. The capital proof reports it
+(`finapp.lending.capital.proof`, alerting) and every later consumer is refused; decided by `P11-TSK-012` (neither
+prevented nor locked further) and confirmed by this review - `CURRENT_STATE.md` §Known Architectural Debt.)*
 **Phase:** 11
 
 ### INV-LND-14 — A draw never exceeds the available limit
@@ -2289,7 +2298,10 @@ defaulted).
 **Verify:** Two draws racing for the available limit, one admitted and the other `422
 lending.LimitExceeded`; ten draws under one key, one entry; a suspended line refusing a draw
 (`P11-TSK-021`); the battery's ≥ 2,000 generated lines replayed `IDENTICAL` (`P11-TST-002`); the
-storm's no line's drawn principal above its limit at rest (`P11-TST-001`).
+storm's no line's drawn principal above its limit at rest (`P11-TST-001`) - *but by the repayments a four-eyes
+reversal restored (`-023`'s owner-approved path: a paydown reversed after a re-draw re-establishes drawn principal and
+may lift it above the limit, the available limit then zero); since `P11-DOC-001` (2026-10-15) the storm's C10 bounds
+such a line by exactly its approved reversals, where it had excused it for ever*.
 *(Built by `P11-TSK-021`, 2026-10-12 - `CreditLineDraws` derives the limit from the line's journal lines under L3 and refuses
 `422 lending.LimitExceeded` before the capital lock; `lending V013`'s trigger holds every writer to an `ACTIVE` line, its
 governing agreement version and an amount within the limit; verified by `CreditLineDrawDatabaseTest#twoDrawsRacingForTheLimitAdmitOne`

@@ -281,6 +281,14 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   while an instalment of it already due is unbilled - the step order's "billing first" held beneath the domain, so no due
   instalment and none of its period's accrued interest is stranded; and every `lending.LoanAmended` names its `origin`
   (`AMENDMENT`, `PREPAYMENT`).
+- **The interest waiver's lock order, corrected in the code** (`P11-DOC-001`, 2026-10-15). T-wvr took the borrower's
+  wallet (L7) before posting rule 9 to the currency's shared `LOAN_INTEREST_INCOME` row, while the servicing step's
+  accrual, the payoff's and the prepayment's catch-up accrual take that row BEFORE their wallet - over two accounts of
+  one party, a cycle (`40P01`; liveness, not money - recorded for the owner by `P11-TSK-028`). The exit review moved
+  the interest waiver into the order everyone else keeps: `Waivers.approve` takes the income row
+  (`PostingService.lockBalancesInOrder`) before L7; the fee kinds keep L7 first (T-dis path X holds the wallet while it
+  posts `LOAN_FEE_INCOME`). Proven by `FeeAndWaiverDatabaseTest#anInterestWaiverTakesTheIncomeRowBeforeTheWallet` and
+  probed (`MUTATION_TESTING.md` §2); `DISTRIBUTED_EXECUTION.md` §3 records it.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

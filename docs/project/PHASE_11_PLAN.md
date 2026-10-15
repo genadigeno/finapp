@@ -1809,7 +1809,10 @@ rest are recorded here, each the truth that holds.
   `DecisionRequests.cancel` after L1. Credit never waits on a lending lock, so neither closes a cycle (ADR-0091 point
   8, corrected). A draw judges its available limit under L3 **before** L6 and takes no L5 lock - the draw row is born
   whole after its posting (ADR-0100's Follow-up); path X's T-dis takes L7 **before** the posting (ADR-0097 point 3,
-  corrected).
+  corrected). "L8 — postings last" was never true of the currency's shared `LOAN_INTEREST_INCOME` row: the servicing
+  step's accrual, the payoff's and the prepayment's catch-up accrual take it before their wallet (L7), and the interest
+  waiver took it after - a cycle over two accounts of one party, corrected in the code by the exit review (the waiver
+  now takes the row before L7; ADR-0099's Follow-up, `DISTRIBUTED_EXECUTION.md` §3).
 - **§7.4 has 29 contention rows**, not the 25 the gate's text counts (`PHASE_GATES.md` §5 Phase 11's
   multi-instance criterion).
 - **§8's table omits tables and migrations that were built.** Tables: `credit_balance_allocation` (`-017`, `V012`;
