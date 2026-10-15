@@ -639,8 +639,13 @@ class LoanOriginationDatabaseTest {
         }
     }
 
+    /**
+     * The offer here is OFFERED: an ACCEPTED edge without its loan and a moved expiry are refused. Nothing out of a
+     * terminal offer - EXPIRED, DECLINED, ACCEPTED, for both roles - is {@code
+     * LoanAcceptanceDatabaseTest#nothingLeavesATerminalOfferForAnyRole}, where real terminal offers are made.
+     */
     @Test
-    @DisplayName("raw SQL cannot skip an edge for any role: no ACCEPTED here, nothing out of a terminal offer, an"
+    @DisplayName("raw SQL cannot skip an edge for any role: no ACCEPTED here without its loan, the expiry never moved, an"
             + " application never OFFERED without its offer, an offer never committed without its application's edge,"
             + " the terms immutable and their hash the bytes', nothing deleted")
     void rawSqlCannotSkipAnEdgeForAnyRole() throws Exception {

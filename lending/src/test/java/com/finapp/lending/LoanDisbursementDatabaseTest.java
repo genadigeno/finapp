@@ -485,6 +485,82 @@ class LoanDisbursementDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("nothing leaves a terminal loan or disbursement, for every role (INV-LIFE-04): a real CANCELLED loan (its"
+            + " standing lost, its disbursement FAILED), a real CLOSED instalment loan (repaid, its disbursement POSTED) and"
+            + " a real CLOSED credit line - each loan refused by raw SQL, as the owner and as the application role, to"
+            + " every other status (PENDING_DISBURSEMENT, ACTIVE, CLOSING, CLOSED, CANCELLED) and its permit never moved;"
+            + " each disbursement refused out of FAILED and out of POSTED - P0001, every row unmoved")
+    void nothingLeavesATerminalLoanOrDisbursementForAnyRole() throws Exception {
+        DisbursementWorld.Accepted cancelling = acceptedLoan(1_500_00, 12);
+        STANDING.put(cancelling.party(), false);
+        try {
+            assertThat(disburse(cancelling.loan()).kind()).isEqualTo(LoanDisbursements.Outcome.Kind.CANCELLED);
+        } finally {
+            STANDING.remove(cancelling.party());
+        }
+        LoanId repaid = InterestAccrualDatabaseTest.disbursed(2_000_00, 6);
+        RepaymentDatabaseTest.topUp(InstalmentBillingDatabaseTest.partyOf(repaid), 500_00);
+        RepaymentDatabaseTest.payEveryInstalment(repaid, 0);
+        DisbursementWorld.Accepted line = DisbursementWorld.acceptedLine(1_000_00);
+        CreditLineRepaymentDatabaseTest.requestClosure(line, RepaymentDatabaseTest.key());
+
+        Map<LoanId, String> loans = Map.of(cancelling.loan(), "CANCELLED", repaid, "CLOSED", line.loan(), "CLOSED");
+        Map<LoanId, String> disbursements = Map.of(cancelling.loan(), "FAILED", repaid, "POSTED");
+        for (Map.Entry<LoanId, String> loan : loans.entrySet()) {
+            assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?", loan.getKey().value()))
+                    .isEqualTo(loan.getValue());
+        }
+        for (Map.Entry<LoanId, String> loan : disbursements.entrySet()) {
+            assertThat(scalar("SELECT status FROM lending.loan_disbursement WHERE loan_id = ?", loan.getKey().value()))
+                    .isEqualTo(loan.getValue());
+        }
+        long events = count("SELECT count(*) FROM lending.loan_event WHERE loan_id IN (?, ?, ?)",
+                cancelling.loan().value(), repaid.value(), line.loan().value());
+
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (writer) {
+                for (Map.Entry<LoanId, String> loan : loans.entrySet()) {
+                    String where = " WHERE id = '" + loan.getKey().value() + "'";
+                    for (String to : List.of("PENDING_DISBURSEMENT", "ACTIVE", "CLOSING", "CLOSED", "CANCELLED")) {
+                        if (to.equals(loan.getValue())) {
+                            continue;
+                        }
+                        InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan SET status = '" + to + "'" + where,
+                                "P0001", loan.getValue() + " -> " + to + " is not an edge");
+                    }
+                    InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan SET next_servicing_at ="
+                            + " statement_timestamp()" + where, "P0001",
+                            "a " + loan.getValue() + " loan moves only its servicing permit");
+                }
+                for (Map.Entry<LoanId, String> loan : disbursements.entrySet()) {
+                    String where = " WHERE loan_id = '" + loan.getKey().value() + "'";
+                    for (String to : List.of("PENDING", "POSTED", "FAILED")) {
+                        if (to.equals(loan.getValue())) {
+                            continue;
+                        }
+                        InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan_disbursement SET status = '" + to
+                                + "'" + where, "P0001", "a " + loan.getValue() + " disbursement is terminal");
+                    }
+                    InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan_disbursement SET next_attempt_at ="
+                            + " statement_timestamp()" + where, "P0001",
+                            "a " + loan.getValue() + " disbursement is terminal");
+                }
+            }
+        }
+        for (Map.Entry<LoanId, String> loan : loans.entrySet()) {
+            assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?", loan.getKey().value())).as("unmoved")
+                    .isEqualTo(loan.getValue());
+        }
+        for (Map.Entry<LoanId, String> loan : disbursements.entrySet()) {
+            assertThat(scalar("SELECT status FROM lending.loan_disbursement WHERE loan_id = ?", loan.getKey().value()))
+                    .as("unmoved").isEqualTo(loan.getValue());
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_event WHERE loan_id IN (?, ?, ?)",
+                cancelling.loan().value(), repaid.value(), line.loan().value())).as("no history row added")
+                .isEqualTo(events);
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** One disbursement of {@code loan}: one entry, one ACTIVE edge, the wallet credited once, one of every fact. */

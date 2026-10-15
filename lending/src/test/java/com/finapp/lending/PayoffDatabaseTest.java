@@ -470,6 +470,93 @@ class PayoffDatabaseTest {
     }
 
     @Test
+    @DisplayName("a crash after the payoff's posting is re-driven by another instance with nothing doubled: an instance dying"
+            + " after the execution, the catch-up accruals, the early billings, the repayment's entry, the closure and the"
+            + " event rows leaves none of them - the loan ACTIVE, the wallet and every balance unmoved; the same quote under"
+            + " the same key, re-driven on another thread, pays off once - one execution, one PAYOFF repayment and entry,"
+            + " one closure, one LoanClosed, one accrual row and entry per date, all six balances zero")
+    void aCrashAfterThePayoffsPostingIsReDrivenOnce() throws Exception {
+        LoanId loan = midLife(3_500_00);
+        UUID party = partyOf(loan);
+        PayoffQuote quote = quote(loan, key(), Optional.empty()).quote();
+        assertThat(quote.interestAccrued().isPositive()).as("the quote accrued unbilled days the execution re-uses")
+                .isTrue();
+        long entries = loanEntries(loan);
+        long accrualsBefore = accruals(loan);
+        long billingsBefore = count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?", loan.value());
+        Money walletBefore = netDebit(walletOf(party)).negated();
+        Money owedBefore = owedNow(loan);
+
+        // The instance dies after everything is written - the repayment's event row is the last write of the payoff.
+        com.finapp.platform.outbox.OutboxWriter<Connection> crashing = (unitOfWork, envelope, payload, mediaType) -> {
+            new JdbcOutboxWriter().write(unitOfWork, envelope, payload, mediaType);
+            if (envelope.eventType().equals(Repayments.RECEIVED_EVENT)) {
+                throw new IllegalStateException("the instance died after the posting, the closure and the event rows");
+            }
+        };
+        Payoffs dying = new Payoffs(LOAN_STORE, PAYOFF_STORE, TERMS_STORE, SERVICING, SERVICING_STORE, BILLINGS,
+                STATEMENTS, BILLING_STORE, REPAYMENT_STORE, WALLETS,
+                new AvailableBalance<>(new JdbcBalanceDerivation(), HOLD_STORE), LEDGER_ACCOUNTS, BALANCES,
+                DisbursementWorld.repayments(REPAYMENT_STORE, crashing), CLOSURES, LINE_CLOSURES, IDS);
+        String executionKey = key();
+        assertThatThrownBy(() -> inOneTransaction(uow -> {
+            Actor actor = customer(party);
+            CorrelationId correlation = correlation();
+            try (SecurityContext.Scope scope = SecurityContext.enter(actor);
+                    CorrelationContext.Scope flow = CorrelationContext.enter(
+                            Correlation.startingWith(correlation).causing(CausationId.of(correlation.value())))) {
+                return dying.execute(uow, loan, party, executionKey, quote.id(), actor, correlation);
+            }
+        })).hasMessageContaining("instance died");
+
+        assertThat(count("SELECT count(*) FROM lending.payoff_execution WHERE loan_id = ?", loan.value()))
+                .as("no execution").isZero();
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ? AND kind = 'PAYOFF'", loan.value()))
+                .as("no payoff repayment").isZero();
+        assertThat(count("SELECT count(*) FROM lending.loan_closure WHERE loan_id = ?", loan.value())).as("no closure")
+                .isZero();
+        assertThat(loanStatus(loan)).isEqualTo("ACTIVE");
+        assertThat(loanEntries(loan)).as("no entry on the loan's accounts").isEqualTo(entries);
+        assertThat(accruals(loan)).as("no catch-up accrual").isEqualTo(accrualsBefore);
+        assertThat(count("SELECT count(*) FROM lending.instalment_billing WHERE loan_id = ?", loan.value()))
+                .as("no early billing").isEqualTo(billingsBefore);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = ?",
+                loan.value(), LoanClosures.CLOSED_EVENT)).as("no LoanClosed").isZero();
+        assertThat(netDebit(walletOf(party)).negated()).as("the wallet unmoved").isEqualTo(walletBefore);
+        assertThat(owedNow(loan)).as("every balance unmoved").isEqualTo(owedBefore);
+
+        // Another instance re-drives the same quote under the same key - once.
+        ExecutorService instance = Executors.newSingleThreadExecutor();
+        Payoffs.Executed redriven;
+        try {
+            redriven = instance.submit(() -> execute(loan, quote, executionKey)).get(60, TimeUnit.SECONDS);
+        } finally {
+            instance.shutdownNow();
+        }
+        assertThat(redriven.replayed()).as("re-driven: paid off, not replayed").isFalse();
+        assertThat(redriven.repayment().orElseThrow().amount()).isEqualTo(quote.outstanding());
+        assertPaidOff(loan, ClosureReason.PAID_OFF_EARLY);
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ? AND kind = 'PAYOFF'", loan.value()))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                "ledger.post:lending.repayment:" + redriven.repayment().orElseThrow().id()))
+                .as("one entry for the payoff's repayment").isEqualTo(1);
+        assertThat(count("SELECT count(DISTINCT e.id) FROM ledger.journal_entry e JOIN ledger.journal_line l"
+                + " ON l.entry_id = e.id JOIN ledger.ledger_account a ON a.id = l.ledger_account_id WHERE a.owner_ref = ?"
+                + " AND e.idempotency_scope LIKE 'ledger.post:lending.repayment:%'", loan.value()))
+                .as("the part payment's entry and the payoff's - none left by the dead instance").isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = ?",
+                loan.value(), LoanClosures.CLOSED_EVENT)).isEqualTo(1);
+        assertThat(count("SELECT count(*) - count(DISTINCT accrual_date) FROM lending.interest_accrual WHERE loan_id = ?",
+                loan.value())).as("one accrual row per date").isZero();
+        assertThat(netDebit(walletOf(party)).negated()).as("the wallet paid exactly the quote, once")
+                .isEqualTo(walletBefore.minus(quote.outstanding()));
+        assertThat(execute(loan, quote, executionKey).replayed()).as("a later retry converges").isTrue();
+        assertThat(count("SELECT count(*) FROM lending.payoff_execution WHERE loan_id = ?", loan.value())).isEqualTo(1);
+        assertSubledgerProves(loan);
+    }
+
+    @Test
     @DisplayName("payoff is permitted in any condition: a loan past 90 days and defaulted is paid off and closed - its"
             + " default history kept, nothing evaluated after the closure")
     void payoffIsPermittedInAnyCondition() {

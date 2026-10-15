@@ -428,6 +428,137 @@ class LoanAcceptanceDatabaseTest {
                 + " '" + currency + "', '" + offer.id().value() + "', '" + offer.decision() + "', now(), 'raw')";
     }
 
+    // ------------------------------------------------------------------ the evidence
+
+    @Test
+    @DisplayName("the acceptance evidence holds every field the gate names: the offer, agreement version 1, the terms hash"
+            + " equal to the offer's (and the agreement's), the template id and version, the SHA-256 of the document"
+            + " shown (re-rendered here from the offer), the identity, session and assurance level, the database's"
+            + " instant of the accepting transaction (to the VM clock's step), the channel, the client address and the user"
+            + " agent - and no"
+            + " consent purpose or consent record is created (acceptance is not consent, INV-IDN-04)")
+    void theAcceptanceEvidenceHoldsEveryField() throws Exception {
+        Offer offer = offered(LOAN, 1_900_00, Optional.of(12), Duration.ofDays(30), PayoutPreference.WALLET);
+        fund(offer.amount());
+        LoanOffer shown = inOneTransaction(uow -> OFFER_STORE.ownedBy(uow, offer.id(), offer.party())).orElseThrow();
+        String documentShown = hex(CanonicalOfferTerms.sha256(
+                OfferDocument.render(shown.id(), shown.product(), shown.terms())));
+        long consentTexts = count("SELECT count(*) FROM consent.consent_text");
+        long consentRecords = count("SELECT count(*) FROM consent.consent_record");
+        UUID identity = UUID.randomUUID();
+        UUID session = UUID.randomUUID();
+        AcceptanceEvidence evidence = new AcceptanceEvidence(identity, session, "MULTI_FACTOR",
+                Optional.of("198.51.100.23"), Optional.of("finapp-evidence-suite/2.1 (gate)"));
+        CorrelationId correlation = correlation();
+
+        Instant before = databaseNow();
+        LoanAcceptances.Accepted accepted = inOneTransaction(uow -> ACCEPTANCES.accept(uow, offer.id(), offer.party(),
+                new LoanAcceptances.Acceptance(offer.termsSha256(), Optional.empty(), evidence),
+                customer(offer.party()), correlation));
+        Instant after = databaseNow();
+        UUID loan = accepted.loan().id().value();
+
+        assertThat(count("SELECT count(*) FROM lending.loan_acceptance WHERE loan_id = ?", loan)).isEqualTo(1);
+        String row = "SELECT %s FROM lending.loan_acceptance WHERE loan_id = ?";
+        assertThat(scalar(String.format(row, "offer_id::text"), loan)).isEqualTo(offer.id().value().toString());
+        assertThat(scalar(String.format(row, "agreement_id::text"), loan)).isEqualTo(scalar(
+                "SELECT id::text FROM lending.loan_agreement WHERE loan_id = ? AND version = 1", loan));
+        assertThat(scalar(String.format(row, "agreement_version::text"), loan)).isEqualTo("1");
+        assertThat(scalar(String.format(row, "encode(terms_sha256, 'hex')"), loan)).as("the offer's terms hash")
+                .isEqualTo(offer.termsSha256())
+                .isEqualTo(scalar("SELECT encode(terms_sha256, 'hex') FROM lending.loan_agreement WHERE loan_id = ?",
+                        loan));
+        assertThat(scalar(String.format(row, "agreement_template_id || ':' || agreement_template_version"), loan))
+                .as("the template")
+                .isEqualTo(shown.terms().template().id() + ":" + shown.terms().template().version())
+                .isEqualTo(scalar("SELECT agreement_template_id || ':' || agreement_template_version"
+                        + " FROM lending.loan_offer_terms WHERE offer_id = ?", offer.id().value()));
+        assertThat(scalar(String.format(row, "encode(document_sha256, 'hex')"), loan))
+                .as("the SHA-256 of the document bytes shown").isEqualTo(documentShown);
+        assertThat(scalar(String.format(row, "identity_id::text"), loan)).isEqualTo(identity.toString());
+        assertThat(scalar(String.format(row, "session_id::text"), loan)).isEqualTo(session.toString());
+        assertThat(scalar(String.format(row, "assurance_level"), loan)).isEqualTo("MULTI_FACTOR");
+        Instant acceptedAt = Instant.parse(scalar(String.format(row,
+                "to_char(accepted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')"), loan));
+        // The database's instant, within the accepting transaction: read between two database clock readings taken
+        // around it - widened by ClockStep.STEP, because the test database's VM clock is corrected in steps of up to
+        // 1.7 s, so "after" can read earlier than "before" (met here once: after 0.49 s before before).
+        assertThat(acceptedAt).as("the database's instant, within the accepting transaction")
+                .isBetween(before.minus(ClockStep.STEP), after.plus(ClockStep.STEP));
+        assertThat(accepted.acceptedAt()).as("the instant the step answered is the row's")
+                .isEqualTo(acceptedAt);
+        assertThat(scalar(String.format(row, "channel"), loan)).isEqualTo(AcceptanceEvidence.CHANNEL).isEqualTo("API");
+        assertThat(scalar(String.format(row, "host(client_ip)"), loan)).isEqualTo("198.51.100.23");
+        assertThat(scalar(String.format(row, "user_agent"), loan)).isEqualTo("finapp-evidence-suite/2.1 (gate)");
+        assertThat(scalar(String.format(row, "correlation_id"), loan)).isEqualTo(correlation.value());
+
+        assertThat(count("SELECT count(*) FROM consent.consent_text")).as("no consent purpose or text created")
+                .isEqualTo(consentTexts);
+        assertThat(count("SELECT count(*) FROM consent.consent_record")).as("no consent record written")
+                .isEqualTo(consentRecords);
+        assertThat(count("SELECT count(*) FROM consent.consent_record WHERE party_id = ?", offer.party()))
+                .as("nothing recorded for the party").isZero();
+    }
+
+    // ------------------------------------------------------------------ the terminal offers
+
+    @Test
+    @DisplayName("nothing leaves a terminal offer, for every role (LENDING_LIFECYCLES.md section 4.4): a real EXPIRED offer"
+            + " (the sweep's), a DECLINED one (the customer's) and an ACCEPTED one (beside its loan) - each refused by raw"
+            + " SQL, as the owner and as the application role, back to OFFERED and on to every other status, above all"
+            + " EXPIRED -> ACCEPTED, P0001 'terminal' and never the customer's LNEXP; its permit never moved; every offer"
+            + " and its history unmoved")
+    void nothingLeavesATerminalOfferForAnyRole() throws Exception {
+        Offer expired = offered(LINE, 700_00, Optional.empty(), Duration.ofSeconds(2), PayoutPreference.WALLET);
+        awaitDatabase("SELECT expires_at <= statement_timestamp() FROM lending.loan_offer WHERE id = ?",
+                expired.id().value());
+        Optional<LoanProduct> swept = inOneTransaction(uow -> ORIGINATION.expire(uow, expired.id(), SYSTEM));
+        assertThat(swept).as("expired by the sweep").isPresent();
+        Offer declined = offered(LINE, 710_00, Optional.empty(), Duration.ofDays(30), PayoutPreference.WALLET);
+        LoanOffers offers = new LoanOffers(OFFER_STORE, TERMS_STORE, new JdbcOutboxWriter(), IDS, CLOCK);
+        inOneTransaction(uow -> offers.decline(uow, declined.id(), declined.party(), customer(declined.party()),
+                correlation()));
+        Offer acceptedOffer = offered(LINE, 720_00, Optional.empty(), Duration.ofDays(30), PayoutPreference.WALLET);
+        accept(acceptedOffer, acceptedOffer.termsSha256(), Optional.empty());
+        Map<Offer, String> terminal = Map.of(expired, "EXPIRED", declined, "DECLINED", acceptedOffer, "ACCEPTED");
+        for (Map.Entry<Offer, String> offer : terminal.entrySet()) {
+            assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?", offer.getKey().id().value()))
+                    .isEqualTo(offer.getValue());
+        }
+        long history = count("SELECT count(*) FROM lending.loan_offer_event WHERE offer_id = ANY (?)",
+                (Object) ids(List.copyOf(terminal.keySet())));
+
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (writer) {
+                for (Map.Entry<Offer, String> offer : terminal.entrySet()) {
+                    String where = " WHERE id = '" + offer.getKey().id().value() + "'";
+                    for (String to : List.of("OFFERED", "ACCEPTED", "DECLINED", "EXPIRED")) {
+                        if (to.equals(offer.getValue())) {
+                            continue;
+                        }
+                        InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan_offer SET status = '" + to + "'"
+                                + where, "P0001", "a " + offer.getValue() + " loan offer is terminal");
+                    }
+                    InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan_offer SET next_step_at ="
+                            + " statement_timestamp() + interval '1 day'" + where, "P0001",
+                            "only an OFFERED offer has a permit to move");
+                }
+            }
+        }
+        for (Map.Entry<Offer, String> offer : terminal.entrySet()) {
+            assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?", offer.getKey().id().value()))
+                    .as("unmoved").isEqualTo(offer.getValue());
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_offer_event WHERE offer_id = ANY (?)",
+                (Object) ids(List.copyOf(terminal.keySet())))).as("no history row added").isEqualTo(history);
+        assertThat(count("SELECT count(*) FROM lending.loan WHERE offer_id = ANY (?)",
+                (Object) ids(List.of(expired, declined)))).as("no loan for the expired or the declined offer").isZero();
+    }
+
+    private static String hex(byte[] bytes) {
+        return java.util.HexFormat.of().formatHex(bytes);
+    }
+
     // ------------------------------------------------------------------ the refusals
 
     @Test
