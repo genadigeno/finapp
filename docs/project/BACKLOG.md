@@ -18335,6 +18335,24 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   still a `500`, also on an amendment expired at the insert; the expiry refusal `LNAEX` and every other `P0001`, for every
   writer; the probes caught; the amendment suites green.
 - **Definition of done**: `DOD-API`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Probes performed** (2026-10-15, on the committed tree, each restored byte-identical - sha256 and `git diff
+  --exit-code`): (1) the mapping removed (`LoanAmendments.accept` catching an unrelated `IllegalCallerException` in place
+  of `LoanStore.AmendmentExpired`) - the race case red, the refusal surfacing as `LoanStore.AmendmentExpired` (unmapped
+  at the desk: a `500`), the other 12 green; (2) `V027`'s lapse back on `P0001` (`USING ERRCODE = 'P0001'`) - three red:
+  the race with `LendingStorageException: lending storage failed inserting a loan agreement: SQLSTATE P0001`, the defect
+  exactly, and `#onlyTheLapseIsTheCustomers` and `#theAmendmentExpiresUnaccepted` on the raw version (`P0001` where `LNAEX`
+  was expected). `MUTATION_TESTING.md` §2, two `INV-LND-10` rows.
+- **Verified** (fresh, 2026-10-15, targeted - other agents' runs share the machine): lending `databaseTest --rerun`
+  `AmendmentDatabaseTest` 13, `PrepaymentDatabaseTest` 9, `LoanAcceptanceDatabaseTest` 16, `LendingMigrationTest` 6,
+  `LendingSchemaHasNoMutableMoneyTest` 8 (52) - one red in that run not this item's,
+  `LoanAcceptanceDatabaseTest#acceptanceTakesTheProfileFirst` (its observer read an empty `pg_stat_activity.query` for the
+  session blocked on L0 - before any agreement insert, on a path this item does not touch), green with its class (16, 0
+  failures) in the immediate re-run; lending `unitTest --rerun` 190 across 22; lending `architectureTest --rerun` 3; app
+  `ownContainerDatabaseTest` `LoanAccountDatabaseTest` 23 (0 failures, the new case 13 s); app `architectureTest --rerun`
+  `MutationDemonstrationTest` 9 (after the §2 rows), `TestTaxonomyTest` 17, `ErrorCodeRegistryTest` 6 (after
+  `ERROR_CONTRACT.md`). Not run: the whole lending `databaseTest`, the fleet tiers (the standing criterion-7 deviation; the
+  coordinator's post-merge run). **Base**: built on `P11-TSK-034`'s branch (`V026`, unmerged to `master` at the time) -
+  `V027` must merge after it (Flyway `outOfOrder = false`).
 
 **P11-TST-001 — The lending storm** — `READY` *(marked by `P11-TSK-030`'s completion gate, 2026-10-14: its dependency `-030` - and with it every built task - is `COMPLETE`; the next unfinished item in backlog order with every dependency met. `P11-TST-002` (dependency `-029`) is eligible beside it and stands after it in the backlog's order, left `PLANNED`)*
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
