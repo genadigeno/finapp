@@ -284,6 +284,19 @@ final class LendingStormWorld {
         return false;
     }
 
+    /**
+     * Judges an act that must be REFUSED - a self-approval, self-dealing: as {@link #judged}, except that a 2xx is the
+     * breach itself (four eyes, INV-LND-11) and an unexplained failure (C15), never a counted answer.
+     */
+    static boolean refused(Tally tally, String act, Answer answer, String... expected) {
+        if (answer.status() >= 200 && answer.status() < 300) {
+            tally.count(act + " UNEXPLAINED " + answer.status());
+            tally.unexplained(act + " answered " + answer.status() + " - a refusal was due");
+            return false;
+        }
+        return judged(tally, act, answer, expected);
+    }
+
     /** The route template of {@code path} - its identifiers replaced, so a tally names no loan and no party. */
     static String template(String path) {
         return path.replaceAll("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "{id}")

@@ -11,6 +11,7 @@ import static com.finapp.app.lending.LendingStormWorld.REPORTS;
 import static com.finapp.app.lending.LendingStormWorld.count;
 import static com.finapp.app.lending.LendingStormWorld.decimal;
 import static com.finapp.app.lending.LendingStormWorld.judged;
+import static com.finapp.app.lending.LendingStormWorld.refused;
 import static com.finapp.app.lending.LendingStormWorld.key;
 import static com.finapp.app.lending.LendingStormWorld.row;
 import static com.finapp.app.lending.LendingStormWorld.rows;
@@ -826,7 +827,12 @@ class LendingStormDatabaseTest {
             throws Exception {
         if (RANDOMNESS.nextInt(5) == 0) {
             Answer self = on.door().post(proposal + "/approval", decision, proposer, key());
-            judged(tally, kind + " self-approval", self, "403 lending.SelfApprovalRefused");
+            // Never the proposer's own approval; but the proposal may already have stopped being decidable under the
+            // storm - lapsed, closed, decided, the reversal unreversible - exactly as the approver's step below admits
+            // (P11-TST-001: an amendment lapsed before its self-approval was a 409, not a four-eyes breach).
+            refused(tally, kind + " self-approval", self, "403 lending.SelfApprovalRefused",
+                    "409 lending.ProposalNotPending", "409 lending.RepaymentNotReversible", "409 lending.LoanClosed",
+                    "409 lending.AmendmentLapsed", "409 lending.LoanNotRepayable");
         }
         boolean reject = RANDOMNESS.nextInt(6) == 0;
         Answer decided = on.door().post(proposal + (reject ? "/rejection" : "/approval"), decision, approver, key());

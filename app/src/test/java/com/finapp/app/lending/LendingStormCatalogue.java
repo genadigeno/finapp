@@ -10,6 +10,7 @@ import static com.finapp.app.lending.LendingStormWorld.OFFERS;
 import static com.finapp.app.lending.LendingStormWorld.OPERATOR_LOANS;
 import static com.finapp.app.lending.LendingStormWorld.count;
 import static com.finapp.app.lending.LendingStormWorld.judged;
+import static com.finapp.app.lending.LendingStormWorld.refused;
 import static com.finapp.app.lending.LendingStormWorld.key;
 import static com.finapp.app.lending.LendingStormWorld.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -371,7 +372,7 @@ final class LendingStormCatalogue {
                 continue;
             }
             String waiver = waivers + "/" + proposed.field("waiverId");
-            judged(tally, "waiver self-approval", b().door().post(waiver + "/approval", "{\"reason\":\"mine\"}",
+            refused(tally, "waiver self-approval", b().door().post(waiver + "/approval", "{\"reason\":\"mine\"}",
                     agents[0], key()), "403 lending.SelfApprovalRefused");
             Answer approved = b().door().post(waiver + "/approval", "{\"reason\":\"checked\"}", agents[1], key());
             judged(tally, "waiver approve", approved);
@@ -737,7 +738,7 @@ final class LendingStormCatalogue {
                 aged.borrower().customer().party())), RoleName.LOAN_SERVICING_AGENT);
         Answer insider = b().door().post(OPERATOR_LOANS + "/" + aged.loan() + "/repayments/" + repaid.field("repaymentId")
                 + "/reversal", "{\"reason\":\"my own loan\"}", aged.token(), key());
-        judged(tally, "self-dealing", insider, "403 lending.SelfDealingRefused");
+        refused(tally, "self-dealing", insider, "403 lending.SelfDealingRefused");
         if (insider.is(403, "lending.SelfDealingRefused")) {
             tally.count("self-dealing refused");
         }
