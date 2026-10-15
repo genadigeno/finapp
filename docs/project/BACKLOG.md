@@ -18185,7 +18185,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Scope**: `PHASE_11_PLAN.md` §13.3: two application instances, clocks ±5 s, shared parties across
   both products; applications through credit's simulators; acceptances racing decisions for the other
   product; capital headroom contested; disbursements on both paths with payout faults (lost responses,
-  failures, returns); draws, repayments, auto-collections, reversals, waivers, amendments, payoffs,
+  failures, returns - *a payout `FAILED` and the borrower's bank returning funds as an inbound pay-in, the loan
+  unaffected: the owner's ruling (Q2) at the design, 2026-10-14, since `PayoutStatus` has no `RETURNED` producer*); draws, repayments, auto-collections, reversals, waivers, amendments, payoffs,
   statements (and prepayments if built); the servicing sweep across ≥ 3 real business-date boundaries
   (fixed-offset zones per cohort, A15); a terms activation mid-storm; **every one of the ten scenarios**;
   crash points incl. two killed backends. At rest, every round, one `REPEATABLE READ` snapshot: the
@@ -18217,6 +18218,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   drop the accrual unique; consume without the profile lock; skip the capital lock; re-dispatch a payout
   on `UNKNOWN`; read the projection for allocation; judge the accrual boundary on the instance clock;
   take the wallet before the loan.
+- **As built (work in progress) - Probes** *(2026-10-15; `MUTATION_TESTING.md` section 2, seven rows, and section 4)*: all seven performed, each on the whole storm in its own container with the expiry-race defect (`P11-TSK-034`) unfixed, each restore byte-identical (sha256-verified). **Six caught**: the accrual unique (C6 + C2 at scenario 4's lock-bypass writer), the capital lock (C4 at the first last-capital race), the payout on `UNKNOWN` (C7, load round 1), the projection read (C15 at scenario 3, the ten repayments raced under the planted drift refused - on its second run; the first went red in load round 5's rest bound, a payout `DISPATCHED` after the restart's killed backends, outside the probe and not yet root-caused), the instance clock (C15 at the first real midnight, load round 11) and the wallet before the loan (C14 + C15, load round 1). **One SURVIVED - the profile lock**: the storm ran green under it (12 rounds, every scene exact); C17 accepts any session waiting behind the held profile row and never checks that the waiter is the acceptance, so the census must be corrected and the probe re-performed. The probes are re-performed on the final storm after `P11-TSK-034` and the three green runs.
 - **Acceptance criteria**: three consecutive green runs; every probe caught; every scenario exercised.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN` (F1–F8 binding over the storm's postings). **Risk**:
   High. **Cx**: XL.
