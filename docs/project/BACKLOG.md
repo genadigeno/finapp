@@ -18185,7 +18185,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Scope**: `PHASE_11_PLAN.md` §13.3: two application instances, clocks ±5 s, shared parties across
   both products; applications through credit's simulators; acceptances racing decisions for the other
   product; capital headroom contested; disbursements on both paths with payout faults (lost responses,
-  failures, returns); draws, repayments, auto-collections, reversals, waivers, amendments, payoffs,
+  failures, returns - *a payout `FAILED` and the borrower's bank returning funds as an inbound pay-in, the loan
+  unaffected: the owner's ruling (Q2) at the design, 2026-10-14, since `PayoutStatus` has no `RETURNED` producer*); draws, repayments, auto-collections, reversals, waivers, amendments, payoffs,
   statements (and prepayments if built); the servicing sweep across ≥ 3 real business-date boundaries
   (fixed-offset zones per cohort, A15); a terms activation mid-storm; **every one of the ten scenarios**;
   crash points incl. two killed backends. At rest, every round, one `REPEATABLE READ` snapshot: the
