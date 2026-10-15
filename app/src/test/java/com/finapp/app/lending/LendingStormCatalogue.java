@@ -42,7 +42,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -500,8 +502,17 @@ final class LendingStormCatalogue {
 
     /**
      * The exposure race (INV-LND-06, INV-CRD-09; P2's reach): per racing party, under a held profile row (L0), a loan
-     * offer accepted on A while the party's line is applied for on B - the acceptance observed waiting on credit's
-     * profile row, holding no offer lock (C17), then both complete; the census reads the party's exposure.
+     * offer accepted on A while the party's line is applied for on B - the acceptance's own backend observed waiting on
+     * credit's profile row, unanswered, holding no offer lock (C17), then both complete; the census reads the party's
+     * exposure.
+     *
+     * <p><strong>Whose backend C17 saw</strong>: not any session behind the held row - an acceptance that skipped L0
+     * commits at once, and the disbursement sweep then waits on that same row for the loan it just made (P2's first
+     * performance survived exactly so). The acceptance claims its key before L0, so its blocked backend already holds a
+     * transaction id; the acceptance row it commits after the release carries that id as its {@code xmin} (append-only,
+     * never rewritten - unlike the loan row the sweep later updates). C17 holds when, with L0 still held, a waiter in
+     * credit's profile statement was seen, the acceptance had not answered and the offer was free to {@code NOWAIT} - and,
+     * for a committed acceptance, its row's {@code xmin} is one of the seen waiters' transaction ids.
      */
     private void exposureRace() throws Exception {
         for (int i = 0; i < 4; i++) {
@@ -511,29 +522,37 @@ final class LendingStormCatalogue {
             String hash = LendingStormWorld.termsHash(a().door(), racer.token(), offer);
             String line = LendingStormWorld.lineApplication(2_000_00, 10);
             if (i % 2 == 0) {
-                // C17: behind a held L0 - the party has no other request open, so the one waiter is the acceptance -
-                // the acceptance waits in credit's profile statement holding no offer lock (NOWAIT free). Then the
-                // party's line is decided over the commitment.
+                // C17: behind a held L0 the acceptance's OWN backend waits in credit's profile statement, unanswered,
+                // holding no offer lock (NOWAIT free) - identified by its transaction id, never by "some waiter".
+                // Then the party's line is decided over the commitment.
                 ExecutorService pool = Executors.newSingleThreadExecutor();
                 try (Connection holder = DatabaseRoles.application()) {
                     holder.setAutoCommit(false);
                     lock(holder, "SELECT 1 FROM credit.credit_profile WHERE party_id = ? FOR UPDATE", racer.party());
                     Future<Answer> accepting = pool.submit(() -> a().door().post(OFFERS + "/" + offer + "/acceptance",
                             LendingStormWorld.acceptance(hash, null), racer.token(), key()));
-                    String waiting = awaitBlockedBy(pid(holder), "loan_offer");
+                    List<Waiter> waiting = awaitBlockedBy(pid(holder), "credit_profile");
                     boolean offerFree = lockableNoWait("SELECT 1 FROM lending.loan_offer WHERE id = ?::uuid"
                             + " FOR UPDATE NOWAIT", offer);
+                    // Read while L0 is still held: an acceptance that waits there cannot have answered.
+                    boolean unanswered = !accepting.isDone();
                     holder.rollback();
-                    judged(tally, "exposure race acceptance", accepting.get(2, TimeUnit.MINUTES),
-                            "422 lending.CapitalUnavailable");
-                    if (waiting == null || !waiting.contains("credit_profile") || !offerFree) {
-                        tally.unexplained("C17: the acceptance did not wait behind the held profile lock (L0) holding"
-                                + " no later-order lock - waiting on: " + (waiting == null ? "nothing"
-                                : waiting.replaceAll("\\s+", " ").substring(0, Math.min(120,
-                                        waiting.replaceAll("\\s+", " ").length())))
-                                + ", the offer free: " + offerFree);
+                    Answer accepted = accepting.get(2, TimeUnit.MINUTES);
+                    judged(tally, "exposure race acceptance", accepted, "422 lending.CapitalUnavailable");
+                    // A committed acceptance names its transaction: the one its blocked backend already held.
+                    String committedBy = accepted.is(201) ? scalar("SELECT xmin::text FROM lending.loan_acceptance"
+                            + " WHERE offer_id = ?::uuid AND agreement_version = 1", offer) : null;
+                    boolean own = committedBy != null && waiting.stream().anyMatch(w -> committedBy.equals(w.xid()));
+                    if (waiting.isEmpty() || !unanswered || !offerFree || (accepted.is(201) && !own)) {
+                        tally.unexplained("C17: the acceptance's own backend was not seen waiting behind the held"
+                                + " profile lock (L0) holding no later-order lock - waiters seen: " + waiting
+                                + ", the acceptance unanswered while L0 was held: " + unanswered + ", the offer free: "
+                                + offerFree + ", the acceptance committed by transaction: " + committedBy);
                     }
-                    storm.coverage("C17 lock order observed behind a held L0", waiting != null && offerFree ? 1 : 0);
+                    System.out.printf("P11-TST-001 C17: the acceptance %d %s, committed by %s; waiters seen %s;"
+                            + " unanswered while L0 held %s; the offer free %s%n", accepted.status(), accepted.code(),
+                            committedBy, waiting, unanswered, offerFree);
+                    storm.coverage("C17 lock order observed behind a held L0", own && unanswered && offerFree ? 1 : 0);
                 } finally {
                     pool.shutdownNow();
                 }
@@ -1265,29 +1284,50 @@ final class LendingStormCatalogue {
         }
     }
 
-    /** The statement of a session blocked behind {@code blocker} - preferring one that mentions {@code avoiding} least. */
-    private static String awaitBlockedBy(int blocker, String avoiding) throws Exception {
+    /** A session seen blocked behind a held lock: its backend, its transaction's id (null before it writes), its statement. */
+    private record Waiter(int pid, String xid, String query) {
+
+        @Override
+        public String toString() {
+            String statement = query == null ? "" : query.replaceAll("\\s+", " ");
+            return "[pid " + pid + ", xid " + xid + ": " + statement.substring(0, Math.min(100, statement.length())) + "]";
+        }
+    }
+
+    /**
+     * Every session seen blocked behind {@code blocker} in a statement mentioning {@code statement} - polled, the
+     * sightings unioned, until one of them holds a transaction id (an acceptance has claimed its key before L0) or 20 s
+     * pass. Who they are is judged by the caller, never assumed here.
+     */
+    private static List<Waiter> awaitBlockedBy(int blocker, String statement) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        String found = null;
+        Map<Integer, Waiter> seen = new LinkedHashMap<>();
         while (System.nanoTime() < deadline) {
             // Read as the bootstrap owner: another role's statement text reads "<insufficient privilege>" otherwise.
+            // pg_stat_activity is a per-transaction snapshot while pg_blocking_pids reads the live lock table: a row
+            // qualifies only when it itself shows the session waiting on a lock, so its statement and transaction id
+            // are the waiting ones - never a previous statement's text ('' for a fresh connection).
             try (Connection owner = DatabaseRoles.bootstrap();
-                    PreparedStatement select = owner.prepareStatement("SELECT query FROM pg_stat_activity WHERE ?"
-                            + " = ANY (pg_blocking_pids(pid))")) {
+                    PreparedStatement select = owner.prepareStatement("SELECT pid, backend_xid::text, query FROM"
+                            + " pg_stat_activity WHERE ? = ANY (pg_blocking_pids(pid)) AND state = 'active'"
+                            + " AND wait_event_type = 'Lock'")) {
                 select.setInt(1, blocker);
                 try (ResultSet waiting = select.executeQuery()) {
                     while (waiting.next()) {
-                        String query = waiting.getString(1);
-                        if (query != null && query.contains("credit_profile")) {
-                            return query;
+                        String query = waiting.getString(3);
+                        if (query != null && query.contains(statement)) {
+                            Waiter waiter = new Waiter(waiting.getInt(1), waiting.getString(2), query);
+                            seen.merge(waiter.pid(), waiter, (before, now) -> now.xid() != null ? now : before);
                         }
-                        found = query;
                     }
                 }
             }
+            if (seen.values().stream().anyMatch(waiter -> waiter.xid() != null)) {
+                break;
+            }
             Thread.sleep(25);
         }
-        return found;
+        return List.copyOf(seen.values());
     }
 
     private static boolean lockableNoWait(String sql, String id) throws SQLException {
