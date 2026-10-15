@@ -30,6 +30,13 @@ public final class JdbcLoanStore implements LoanStore {
      */
     static final String OFFER_EXPIRED_SQLSTATE = "LNEXP";
 
+    /**
+     * The amendment's lapse at its agreement version's birth - its own SQLSTATE ({@code lending V027}, `P11-TSK-035`), a
+     * sibling of {@link #OFFER_EXPIRED_SQLSTATE}: the decision's {@code expires_at} passed on the database clock; every
+     * other refusal of the agreement's trigger is {@code P0001}.
+     */
+    static final String AMENDMENT_LAPSED_SQLSTATE = "LNAEX";
+
     private static final String COLUMNS =
             "l.id, l.party_id, l.product, l.status, l.currency, l.offer_id, l.decision_id, l.opened_at, l.closed_at,"
                     + " l.correlation_id, a.id AS agreement_id, a.version, a.offer_id AS agreement_offer_id, a.amendment_id,"
@@ -137,6 +144,9 @@ public final class JdbcLoanStore implements LoanStore {
                 return row.getTimestamp(1).toInstant();
             }
         } catch (SQLException failure) {
+            if (AMENDMENT_LAPSED_SQLSTATE.equals(failure.getSQLState())) {
+                throw new AmendmentExpired();
+            }
             throw failed("inserting a loan agreement", failure);
         }
     }

@@ -13,6 +13,7 @@ import static com.finapp.lending.DisbursementWorld.POSTINGS;
 import static com.finapp.lending.DisbursementWorld.TERMS_STORE;
 import static com.finapp.lending.DisbursementWorld.acceptedLine;
 import static com.finapp.lending.DisbursementWorld.asOwner;
+import static com.finapp.lending.DisbursementWorld.awaitBlockedBy;
 import static com.finapp.lending.DisbursementWorld.businessDate;
 import static com.finapp.lending.DisbursementWorld.correlation;
 import static com.finapp.lending.DisbursementWorld.count;
@@ -21,6 +22,7 @@ import static com.finapp.lending.DisbursementWorld.employee;
 import static com.finapp.lending.DisbursementWorld.inOneTransaction;
 import static com.finapp.lending.DisbursementWorld.loanAccount;
 import static com.finapp.lending.DisbursementWorld.netDebit;
+import static com.finapp.lending.DisbursementWorld.pid;
 import static com.finapp.lending.DisbursementWorld.race;
 import static com.finapp.lending.DisbursementWorld.scalar;
 import static com.finapp.lending.InstalmentBillingDatabaseTest.advance;
@@ -35,6 +37,8 @@ import static com.finapp.lending.RepaymentDatabaseTest.due;
 import static com.finapp.lending.RepaymentDatabaseTest.events;
 import static com.finapp.lending.RepaymentDatabaseTest.key;
 import static com.finapp.lending.RepaymentDatabaseTest.loanStatus;
+import static com.finapp.lending.RepaymentDatabaseTest.lock;
+import static com.finapp.lending.RepaymentDatabaseTest.lockableNoWait;
 import static com.finapp.lending.RepaymentDatabaseTest.refusedAlone;
 import static com.finapp.lending.RepaymentDatabaseTest.repay;
 import static com.finapp.lending.RepaymentReversalDatabaseTest.ACTING;
@@ -43,6 +47,7 @@ import static com.finapp.lending.RepaymentReversalDatabaseTest.UNPLACEABLE;
 import static com.finapp.lending.RepaymentReversalDatabaseTest.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.platform.audit.JdbcAuditWriter;
@@ -50,17 +55,26 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.math.BigDecimal;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.math.RoundingMode;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -467,9 +481,164 @@ class AmendmentDatabaseTest {
         expire(amendment.id());
         assertThat(read(loan, amendment.id()).amendment().status()).isEqualTo(LoanAmendmentStatus.LAPSED);
         assertThatExceptionOfType(LoanAmendments.AmendmentLapsed.class).isThrownBy(() -> accept(loan, amendment.id(), hash));
-        refusedAlone(rawAmendedAgreement(amendment.id(), 0), "P0001", "unexpired");
+        // The lapse at the version's birth: lending V027's own SQLSTATE (P11-TSK-035).
+        refusedAlone(rawAmendedAgreement(amendment.id(), 0), JdbcLoanStore.AMENDMENT_LAPSED_SQLSTATE, "its offer expired");
         assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?", loan.value())).isEqualTo(1);
         assertThat(propose(loan, rate, 15, false, employee()).status()).isEqualTo(LoanAmendmentStatus.PROPOSED);
+    }
+
+    // ------------------------------------------------------------------ the lapse crossed during the work (P11-TSK-035)
+
+    @Test
+    @DisplayName("an amendment whose offer expires while its acceptance waits on the loan's ledger accounts - past its L5"
+            + " read, accruing the elapsed date - is refused 409 AmendmentLapsed at the version's birth, never a storage"
+            + " failure, and writes nothing: no version, no schedule, no accrual, no event, no audit; it then reads LAPSED"
+            + " (P11-TSK-035, P11-TSK-034's race on the amendment)")
+    void anAmendmentLapsingWhileTheAcceptanceWaitsIsLapsed() throws Exception {
+        // A freshly disbursed loan, never serviced, opened two days earlier: the acceptance's own catch-up has two elapsed
+        // dates to accrue, and its postings meet the loan's ledger accounts.
+        LoanId loan = InterestAccrualDatabaseTest.disbursed(7_100_00, 12);
+        openedEarlier(loan, 2);
+        LoanAmendment amendment = propose(loan, lowerRate(loan), 14, false, employee());
+        approve(loan, amendment.id(), employee());
+        String hash = read(loan, amendment.id()).amendment().documentSha256Hex();
+        // The fixture's clock: the offer due to expire ten seconds from now on the database clock.
+        asOwner("UPDATE lending.loan_amendment_decision SET expires_at = statement_timestamp() + interval '10 seconds'"
+                + " WHERE amendment_id = '" + amendment.id() + "'");
+        long accruals = count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ?", loan.value());
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            lock(holder, "SELECT 1 FROM ledger.ledger_account WHERE owner_ref = ? FOR UPDATE", loan.value());
+            Future<LoanAmendments.Accepted> accepting = pool.submit(() -> accept(loan, amendment.id(), hash));
+            assertThat(awaitBlockedBy(pid(holder)).query()).as("past its L5 read, accruing - waiting on the loan's accounts")
+                    .contains("ledger");
+            assertThat(lockableNoWait("SELECT 1 FROM lending.loan WHERE id = ? FOR UPDATE NOWAIT", loan.value()))
+                    .as("holding the loan (L3) while it waits").isFalse();
+            awaitDatabase("SELECT expires_at <= statement_timestamp() FROM lending.loan_amendment_decision"
+                    + " WHERE amendment_id = ?", amendment.id());
+            holder.commit();
+            assertThatThrownBy(() -> accepting.get(60, TimeUnit.SECONDS))
+                    .as("the version's backstop refused it in LNAEX, mapped to the customer's refusal")
+                    .hasCauseInstanceOf(LoanAmendments.AmendmentLapsed.class);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertNothingAmended(loan, amendment.id());
+        assertThat(count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ?", loan.value()))
+                .as("the catch-up rolled back with it").isEqualTo(accruals);
+        assertThat(read(loan, amendment.id()).amendment().status()).isEqualTo(LoanAmendmentStatus.LAPSED);
+        assertSubledgerProves(loan);
+    }
+
+    @Test
+    @DisplayName("only the lapse is the customer's: a breach at the version's birth - a term the amendment never named -"
+            + " stays a storage failure (500), never 409, and so does the same breach on an amendment whose offer expired"
+            + " a moment before the insert (the lapse is judged last); for every writer a raw version for an expired"
+            + " amendment is LNAEX, and P0001 once it also breaches - more credit, or the agreement moved (P11-TSK-035)")
+    void onlyTheLapseIsTheCustomers() throws Exception {
+        LoanId loan = current(7_200_00);
+        BigDecimal rate = lowerRate(loan);
+        LoanAmendment amendment = propose(loan, rate, 14, false, employee());
+        approve(loan, amendment.id(), employee());
+        String hash = read(loan, amendment.id()).amendment().documentSha256Hex();
+        AtomicBoolean expireFirst = new AtomicBoolean(false);
+        LoanStore forging = (LoanStore) Proxy.newProxyInstance(LoanStore.class.getClassLoader(),
+                new Class<?>[] {LoanStore.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("insertAgreement")) {
+                        if (expireFirst.get()) {
+                            expire(amendment.id());
+                        }
+                        args[1] = withAnotherTerm((LoanAgreement) args[1]);
+                    }
+                    try {
+                        return method.invoke(LOAN_STORE, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+        LoanAmendments breaching = new LoanAmendments(forging, AMENDMENT_STORE, OFFER_STORE, TERMS_STORE,
+                LoanTermsFixtures.BOUNDS, SERVICING, SERVICING_STORE, BILLINGS, BILLING_STORE, DISBURSEMENT_STORE,
+                LEDGER_ACCOUNTS, BALANCES, POSTINGS, ACTING_PARTY, new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
+        for (boolean expired : List.of(false, true)) {
+            expireFirst.set(expired);
+            assertThatThrownBy(() -> accept(breaching, loan, amendment.id(), hash))
+                    .as(expired ? "breached and expired at the insert: the breach" : "breached")
+                    .isInstanceOf(LendingStorageException.class)
+                    .hasMessageContaining("inserting a loan agreement: SQLSTATE P0001");
+            assertNothingAmended(loan, amendment.id());
+        }
+        assertThat(read(loan, amendment.id()).amendment().status()).as("expired by the second").isEqualTo(
+                LoanAmendmentStatus.LAPSED);
+
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (writer) {
+                InterestAccrualDatabaseTest.refused(writer, rawAmendedAgreement(amendment.id(), 0),
+                        JdbcLoanStore.AMENDMENT_LAPSED_SQLSTATE, "its offer expired");
+                InterestAccrualDatabaseTest.refused(writer, rawAmendedAgreement(amendment.id(), 1), "P0001",
+                        "never more credit");
+            }
+        }
+        // The agreement moved under the expired amendment: the version conditional, judged before the lapse.
+        LoanAmendment moving = propose(loan, rate, 15, false, employee());
+        approve(loan, moving.id(), employee());
+        accept(loan, moving.id());
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (writer) {
+                InterestAccrualDatabaseTest.refused(writer, rawAmendedAgreement(amendment.id(), 0), "P0001", "it lapsed");
+            }
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?", loan.value())).isEqualTo(2);
+        assertSubledgerProves(loan);
+    }
+
+    /** No version, schedule, evidence, rule 13 entry, {@code lending.LoanAmended} or acceptance audit for the amendment. */
+    private static void assertNothingAmended(LoanId loan, UUID amendment) {
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?", loan.value())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE amendment_id = ?", amendment)).isZero();
+        assertThat(count("SELECT count(*) FROM lending.repayment_schedule WHERE loan_id = ?", loan.value())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_acceptance WHERE loan_id = ?", loan.value())).isEqualTo(1);
+        assertThat(events(loan, LoanAmendments.AMENDED_EVENT)).isZero();
+        assertThat(audits(amendment, "lending.AmendmentAccepted")).isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                "ledger.post:" + LoanAmendments.POSTING_KEY_PREFIX + amendment)).isZero();
+    }
+
+    /**
+     * The fixture's clock: a never-serviced loan opened {@code days} days earlier - its disbursement, accrual start and
+     * first period's start moved back, the first period lengthened and every due date kept on its day (never a path).
+     */
+    private static void openedEarlier(LoanId loan, int days) {
+        UUID id = loan.value();
+        asOwner("UPDATE ledger.journal_entry SET posting_date = posting_date - " + days + ", value_date = value_date - "
+                + days + " WHERE id = (SELECT journal_entry_id FROM lending.loan_disbursement WHERE loan_id = '" + id + "');"
+                + " UPDATE lending.loan_disbursement SET value_date = value_date - " + days + " WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.accrual_start SET start_date = start_date - " + days + " WHERE loan_id = '" + id + "';"
+                + " UPDATE lending.repayment_schedule SET start_date = start_date - " + days + " WHERE loan_id = '" + id
+                + "'; UPDATE lending.loan_instalment SET period_start = period_start - " + days + ", days = days + " + days
+                + " WHERE loan_id = '" + id + "' AND sequence = 1");
+    }
+
+    /** {@code agreement} one month longer than the amendment named - a breach of "never more credit". */
+    private static LoanAgreement withAnotherTerm(LoanAgreement agreement) {
+        return new LoanAgreement(agreement.id(), agreement.loan(), agreement.version(), agreement.offer(),
+                agreement.amendment(), agreement.prepayment(), agreement.decision(), agreement.termsVersionId(),
+                agreement.product(), agreement.amount(), agreement.termMonths().map(months -> months + 1),
+                agreement.nominalAnnualRate(), agreement.repaymentDay(), agreement.scheduleEngine(),
+                agreement.accrualEngine(), agreement.allocationEngine(), agreement.statementEngine(), agreement.template(),
+                agreement.canonicalTerms(), agreement.termsSha256(), agreement.effectiveFrom());
+    }
+
+    /** Waits until the database itself says {@code booleanQuery} - never the JVM's clock. */
+    private static void awaitDatabase(String booleanQuery, Object... parameters) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            if ("t".equals(scalar(booleanQuery, parameters))) {
+                return;
+            }
+            Thread.sleep(5);
+        }
+        throw new AssertionError("the database never said: " + booleanQuery);
     }
 
     @Test
@@ -592,13 +761,17 @@ class AmendmentDatabaseTest {
     }
 
     static LoanAmendments.Accepted accept(LoanId loan, UUID amendment, String hash) {
+        return accept(AMENDMENTS, loan, amendment, hash);
+    }
+
+    static LoanAmendments.Accepted accept(LoanAmendments amendments, LoanId loan, UUID amendment, String hash) {
         UUID party = partyOf(loan);
         Actor actor = customer(party);
         CorrelationId correlation = correlation();
         try (SecurityContext.Scope scope = SecurityContext.enter(actor);
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(correlation).causing(CausationId.of(correlation.value())))) {
-            return inOneTransaction(uow -> AMENDMENTS.accept(uow, loan, party, amendment,
+            return inOneTransaction(uow -> amendments.accept(uow, loan, party, amendment,
                     new LoanAmendments.Acceptance(hash, new AcceptanceEvidence(UUID.randomUUID(), UUID.randomUUID(),
                             "MULTI_FACTOR", Optional.empty(), Optional.empty())), actor, correlation));
         }

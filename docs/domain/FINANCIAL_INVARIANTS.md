@@ -2143,6 +2143,16 @@ the acceptance maps exactly that code to `409 lending.OfferNotAcceptable`; no ru
 `app`'s `LoanAccountDatabaseTest#anOfferExpiringWhileTheAcceptanceWaitsIsA409`; two probes, `MUTATION_TESTING.md` §2's
 `P11-TSK-034` rows.)*
 
+*(The amendment's window at its version's birth, `P11-TSK-035`, 2026-10-15: the same two ranks on the amendment - the
+acceptance judges the amendment's offer on the database clock at its read under L3, then accrues, bills and plans, and
+`loan_agreement_is_born_once` re-judges the decision's `expires_at` on its own statement's clock. An offer that expired
+between them (found by `P11-TSK-034`'s gate) was refused in the generic `P0001` - a `500`. `lending V027` judges that
+expiry last, after every identity and credit check, in its own SQLSTATE, `LNAEX`, and the acceptance maps exactly that
+code to `409 lending.AmendmentLapsed`; no rule changed. Verified by
+`AmendmentDatabaseTest#anAmendmentLapsingWhileTheAcceptanceWaitsIsLapsed`, `#onlyTheLapseIsTheCustomers` and `app`'s
+`LoanAccountDatabaseTest#anAmendmentLapsingWhileTheAcceptanceWaitsIsA409`; two probes, `MUTATION_TESTING.md` §2's
+`P11-TSK-035` rows.)*
+
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
 carry a reason, are proposed by one person and approved by another — never the proposer, never an

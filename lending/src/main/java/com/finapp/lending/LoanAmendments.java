@@ -87,7 +87,9 @@ import lombok.RequiredArgsConstructor;
  *       a refusal is {@code TermsInvalid}, nothing written;
  *   <li>then the writes: agreement version n+1 (canonical terms format 3 - {@link CanonicalOfferTerms#renderAmendment}),
  *       its evidence, rule 13 and the re-scheduled items, schedule version n+1 and its instalments,
- *       {@code lending.LoanAmended}, the audit record.
+ *       {@code lending.LoanAmended}, the audit record. The version's trigger re-judges the offer's expiry on its own
+ *       statement's clock, last: an offer that expired during the work above is refused there in {@code lending V027}'s
+ *       {@code LNAEX} and answered {@link AmendmentLapsed}, as at L5 (`P11-TSK-035`).
  * </ol>
  *
  * <p><strong>No L0</strong>: the exposure measure ({@code LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE}, and the latest agreement's
@@ -427,7 +429,16 @@ public final class LoanAmendments {
                         offered.remainingInstalments(), plan.schedule().principal(), plan.arrears()));
         LoanAgreement unstamped = agreement.amended(LoanAgreementId.next(ids), amendment, rate, plan.termMonths(),
                 canonical, now);
-        Instant effective = loans.insertAgreement(unitOfWork, unstamped);
+        Instant effective;
+        try {
+            effective = loans.insertAgreement(unitOfWork, unstamped);
+        } catch (LoanStore.AmendmentExpired expired) {
+            // The clock crossed the offer's expires_at while this acceptance accrued, billed and planned (waiting on the
+            // loan's ledger accounts among them): the version's backstop refused it in its own SQLSTATE - the customer's
+            // 409, exactly as at the L5 read (P11-TSK-035). Thrown at once: the unit of work is aborted and nothing more
+            // runs on it. Any other refusal of the birth is a breach and stays a storage failure.
+            throw new AmendmentLapsed();
+        }
         LoanAgreement amended = agreement.amended(unstamped.id(), amendment, rate, plan.termMonths(), canonical,
                 effective);
         loans.insertAcceptance(unitOfWork, ids.next(), amended, offered.documentSha256(), acceptance.evidence(),
