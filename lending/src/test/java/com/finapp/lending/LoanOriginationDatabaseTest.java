@@ -430,8 +430,9 @@ class LoanOriginationDatabaseTest {
                 OFFERS.decline(uow, expiring, unswept.party(), customer(unswept), correlation())));
         for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
             try (writer) {
+                // The customer's side past the instant: lending V026's own SQLSTATE (P11-TSK-034).
                 refused(writer, "UPDATE lending.loan_offer SET status = 'DECLINED' WHERE id = '" + expiring.value() + "'",
-                        "P0001");
+                        JdbcLoanStore.OFFER_EXPIRED_SQLSTATE);
             }
         }
         assertThat(offerStatus(unswept)).as("an expired offer is not declined; the sweep expires it").isEqualTo("OFFERED");
@@ -946,7 +947,10 @@ class LoanOriginationDatabaseTest {
         while (System.nanoTime() < deadline) {
             try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement();
                     ResultSet row = statement.executeQuery("SELECT query FROM pg_stat_activity WHERE " + blocker
-                            + " = ANY (pg_blocking_pids(pid))")) {
+                            + " = ANY (pg_blocking_pids(pid))"
+                            // The activity row is a snapshot and the blocking pids are live: only a row that itself shows
+                            // the session active and waiting on a lock carries the statement that waits (P11-TSK-035's gate).
+                            + " AND state = 'active' AND wait_event_type = 'Lock'")) {
                 if (row.next()) {
                     return row.getString(1);
                 }

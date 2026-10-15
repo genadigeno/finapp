@@ -192,6 +192,9 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
             update.setObject(1, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
+            if (JdbcLoanStore.OFFER_EXPIRED_SQLSTATE.equals(failure.getSQLState())) {
+                return false; // the trigger's expiry, the predicate's own answer (lending V026, P11-TSK-034)
+            }
             throw failed("declining a loan offer", failure);
         }
     }
@@ -204,6 +207,9 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
             update.setObject(1, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
+            if (JdbcLoanStore.OFFER_EXPIRED_SQLSTATE.equals(failure.getSQLState())) {
+                return false; // the trigger's expiry, the predicate's own answer (lending V026, P11-TSK-034)
+            }
             throw failed("accepting a loan offer", failure);
         }
     }

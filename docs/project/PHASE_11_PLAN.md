@@ -840,7 +840,7 @@ publication cannot lose or invent one).
 | `LoanOffered` / `LoanOfferClosed` | offer | T-off / declined, expired | offer id, decision id, principal or limit, currency, term, rate, expiry, terms version |
 | `LoanAccepted` | loan | T-acc | account id, kind, agreement id + hash, decision id, offer id |
 | `LoanDisbursed` / `LoanCancelled` | loan | T-dis / cancellation | entry id, value date, principal, currency, path; reason |
-| `LoanPayoutConcluded` | loan | T-pyr | outcome (`PAID_OUT`/`FAILED`/`RETURNED`/`NOT_DISPATCHED`), payments' reference |
+| `LoanPayoutConcluded` | loan | T-pyr | outcome (`PAID_OUT`/`FAILED`/`NOT_DISPATCHED`), payments' reference *(read `PAID_OUT`/`FAILED`/`RETURNED`/`NOT_DISPATCHED` until `P11-TST-001` found the drift: `RETURNED` has no producer - section 5.4's as-built note, `PayoutStatus`)* |
 | `InstalmentBilled` / `CreditLineStatementIssued` | loan | billing / statement | due date, interest, principal, fees due; minimum payment |
 | `CreditLineDrawn` | loan | T-drw | draw id, amount, entry id |
 | `RepaymentReceived` / `RepaymentReversed` | loan | T-rep, collection, payoff / reversal | amount, allocation summary per component, entry id |
@@ -1104,7 +1104,8 @@ credit decision APPROVED → offer → accept (T-acc: L0; decision consumed; cap
      path X: a ledger hold of P (− f) on the wallet (L7); the payout PENDING; no schedule, no accrual yet
 → path X: T-pyo — payments' system-actor withdrawal on the recorded instruction, adopting the hold
      (payments' own routing, dispatch, UNKNOWN held, inquiry-only outcome, return, expectation)
-  → T-pyr — lending reads payments' outcome: PAID_OUT | FAILED | RETURNED | NOT_DISPATCHED;
+  → T-pyr — lending reads payments' outcome: PAID_OUT | FAILED | NOT_DISPATCHED;
+     (read "| RETURNED" here until P11-TST-001's gate, 2026-10-15: RETURNED has no producer, section 5.4)
      accrual start = payments' conclusion instant in the pinned zone; schedule v1 generated
 → rail → settlement → reconciliation (payments' and Phase 8's existing machinery)
 ```
@@ -1132,9 +1133,12 @@ date. *Path X (external bank account):* the **disbursement** (lending's financia
 made the borrower's) succeeds at T-dis's commit exactly as in path W; the **payout** succeeds when
 payments concludes the withdrawal `COMPLETED` from an authenticated answer (ADR-0083) and is later
 matched to the settlement by Phase 8. Interest starts at the payout's terminal outcome (A30): on
-`PAID_OUT` the funds reached the borrower's bank; on `FAILED`, `RETURNED` or `NOT_DISPATCHED` the
+`PAID_OUT` the funds reached the borrower's bank; on `FAILED` or `NOT_DISPATCHED` the
 funds are back (or still) in the borrower's wallet, available — either way the borrower has the money
-from that instant, and the platform bore the ambiguity in between.
+from that instant, and the platform bore the ambiguity in between. *(Read "on `FAILED`, `RETURNED` or
+`NOT_DISPATCHED`" until `P11-TST-001`'s gate, 2026-10-15: `RETURNED` has no producer - section 5.4's as-built
+note, `PayoutStatus`; money the borrower's bank sends back is an inbound pay-in to the wallet, the loan
+unaffected - the owner's ruling, design Q2.)*
 
 **Why the wallet is the transit account, and why there is no cycle.** A direct `DR LOAN_PRINCIPAL /
 CR clearing` would make the loan's birth depend on a provider's ambiguous answer and would make
@@ -1448,8 +1452,11 @@ term is the agreement principal of the currency's loans `PENDING_DISBURSEMENT`, 
 outstanding term - a disbursement committing between them is counted twice (headroom low, a refusal at worst), never in
 neither.)* The one capital row per
 currency is a hot row — every acceptance and draw in a currency serialise on it; correct by
-construction, measured in the storm, and partitioned into capital tranches by Phase 16 if the
-characterisation demands.
+construction, its correctness under contention proven in the storm (`P11-TST-001`: the last-capital races
+on both instances, the capital proof at every reading), its contention NOT measured - a debt row
+(`CURRENT_STATE.md` §Known Architectural Debt) - and partitioned into capital tranches by Phase 16 if a
+characterisation demands. *(Read "correct by construction, measured in the storm" until `P11-TST-001`'s
+gate, 2026-10-15: the storm measures no lock wait or latency on the row.)*
 
 **The safeguarding position stays exact.** Every unit of wallet money a disbursement or draw creates
 is matched by a unit of recognised platform capital still in the pool and not yet deployed:
@@ -1587,7 +1594,9 @@ clock skew across the accrual boundary.
 - **`P11-TST-001` — the lending storm:** two application instances, clocks ±5 s, shared parties
   across both products; applications through credit's simulators; acceptances racing decisions for
   the other product; capital headroom contested; disbursements on both paths with payout faults
-  (lost responses, failures, returns); draws, repayments, auto-collections, reversals, waivers,
+  (lost responses, failures, returns *(as ruled by the owner at `P11-TST-001`'s design, 2026-10-14: a payout
+  `FAILED` - the funds back in the wallet - and the economic return as the borrower's bank sending money back as an
+  inbound pay-in to the wallet, the loan unaffected; a payout `RETURNED` has no producer, section 5.4)*); draws, repayments, auto-collections, reversals, waivers,
   amendments, payoffs and statements; the servicing sweep across ≥ 3 real business-date boundaries
   (fixed-offset zones per cohort, A15); every one of the ten scenarios exercised; crash points incl.
   two killed backends. At rest, every round, one `REPEATABLE READ` snapshot: subledger proof zero for
@@ -1734,7 +1743,8 @@ reviewer finding any of it in a Phase 11 change refuses the change.
   evidence, the capital proof.
 - **A payout's ambiguity leaking into the loan** — the wallet as transit, payments' machinery, lending
   reading never called, interest from the conclusion.
-- **The capital row as a hot row** — measured in the storm; tranches in Phase 16 if needed.
+- **The capital row as a hot row** — correctness proven in the storm, contention unmeasured (a debt row);
+  tranches in Phase 16 if needed. *(Read "measured in the storm" until `P11-TST-001`'s gate, 2026-10-15.)*
 - **Production cannot originate** (§1.1) — accepted and recorded; the activation runbook is the gate.
 - **Two products in one phase** — one account model and one set of engines; the line adds only draws,
   statements and closure.

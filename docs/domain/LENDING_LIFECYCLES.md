@@ -252,6 +252,16 @@ nothing under the customer's key); its `expires_at <= valid_until` is then past 
 it. The binding of agreement and consumption is credit's `UNIQUE (consumer_kind, consumer_ref)` over the agreement's id
 and the one transaction - no lending trigger reads credit's table (A16 at the database).*
 
+*The expiry crossed during the acceptance's waits (`P11-TSK-034`, 2026-10-15; found by `P11-TST-001`'s storm): the
+acceptance judges the offer unexpired after L2 and then waits - credit's consumption, L6 - so the database clock may pass
+`expires_at` before the loan is born. The loan's edge trigger re-judges the expiry at the INSERT and refuses it - the
+strict backstop: no loan is born for an offer expired at that instant - but it refused in the generic `P0001` every
+breach of the trigger shares, and the customer got `500`. `lending V026` gives that refusal, and the offer's own refusal
+of `ACCEPTED` or `DECLINED` past the instant, their own SQLSTATE, `LNEXP`, judged after the offer's identity (a foreign,
+moved or mismatched offer is refused `P0001` even when expired); the acceptance maps exactly `LNEXP` to `409
+lending.OfferNotAcceptable` and writes nothing, the offer left `OFFERED` for the sweep. Every other refusal of the loan's
+birth is an invariant breach and stays a `500`.*
+
 ### 4.5 Loan (`lending.loan`), both kinds — `P11-TSK-012`, `-014`, `-023`, `-026`
 
 ```
@@ -491,6 +501,18 @@ elapsed date and bills everything due (the servicing step's own accrual and bill
 amendment's document hash, no offer), rule 13 and one `loan_amendment_rescheduling` row per past-due item re-scheduled,
 and schedule v n+1 - two deferred checks hold the agreement beside its evidence and its schedule, and the schedule
 continuing the open period. The customer reads only an amendment ever approved (a `PROPOSED` one is `404`).*
+
+*The lapse crossed during the acceptance's work (`P11-TSK-035`, 2026-10-15; found by `P11-TSK-034`'s gate - the offer's
+race, on the amendment): the acceptance judges the amendment's offer unexpired at its read under L3 and then accrues,
+bills and plans - waiting, among others, on the loan's ledger accounts and the shared interest income row - so the
+database clock may pass the decision's `expires_at` before agreement v n+1 is born. The version's trigger re-judges the
+expiry at the INSERT and refuses it - the strict backstop: no version is born for an amendment lapsed at that instant -
+but it refused in the generic `P0001` every breach of the trigger shares, and the customer got `500`. `lending V027`
+gives that refusal its own SQLSTATE, `LNAEX`, judged **last** - after the loan `ACTIVE`, the amendment the loan's own
+and `APPROVED`, the version conditional and "never more credit" (a breach is refused `P0001` even when the offer has
+expired); the acceptance maps exactly `LNAEX` to `409 lending.AmendmentLapsed` and writes nothing, the catch-up rolled
+back with it, the amendment then derived `LAPSED`. Every other refusal of the version's birth is an invariant breach and
+stays a `500`.*
 
 ### 4.10 Payoff quote and execution — `P11-TSK-026`
 

@@ -208,7 +208,7 @@ class LoanAcceptanceDatabaseTest {
         for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
             try (writer) {
                 refused(writer, "UPDATE lending.loan_offer SET status = 'ACCEPTED' WHERE id = '"
-                        + expiring.id().value() + "'", "P0001");
+                        + expiring.id().value() + "'", JdbcLoanStore.OFFER_EXPIRED_SQLSTATE);
             }
         }
         assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?", expiring.id().value()))
@@ -326,6 +326,106 @@ class LoanAcceptanceDatabaseTest {
         assertThat(headroomNow().committed()).isEqualTo(committedBefore);
         assertThat(count("SELECT count(*) FROM lending.loan_disbursement d JOIN lending.loan l ON l.id = d.loan_id"
                 + " WHERE l.offer_id = ?", line.id().value())).as("a line draws; it is never disbursed").isZero();
+    }
+
+    // ------------------------------------------------------------------ the expiry crossed during the waits (P11-TSK-034)
+
+    @Test
+    @DisplayName("an offer that expires while its acceptance waits on the capital row (L6) - past its expiry check after"
+            + " L2 - is refused 409 lending.OfferNotAcceptable at the loan's birth, never a storage failure, and writes"
+            + " nothing; the sweep then expires it (P11-TSK-034, the P11-TST-001 storm's reproduction)")
+    void anOfferExpiringWhileTheAcceptanceWaitsIsNotAcceptable() throws Exception {
+        fund(Money.ofMinorUnits(1_200_00, LoanTermsFixtures.EUR));
+        Offer offer = offered(LOAN, 1_200_00, Optional.of(12), Duration.ofSeconds(10), PayoutPreference.WALLET);
+        long loanAccounts = count("SELECT count(*) FROM ledger.ledger_account WHERE owner_kind = 'LOAN'");
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            HEADROOM.underLock(holder, LoanTermsFixtures.EUR);
+            Future<LoanAcceptances.Accepted> accepting =
+                    pool.submit(() -> accept(offer, offer.termsSha256(), Optional.empty()));
+            String waiting = awaitAStatementBlockedBy(pid(holder));
+            assertThat(waiting).as("past its expiry check and credit's consumption, waiting on L6")
+                    .contains("ledger.ledger_account");
+            awaitDatabase("SELECT expires_at <= statement_timestamp() FROM lending.loan_offer WHERE id = ?",
+                    offer.id().value());
+            holder.commit();
+            assertThatThrownBy(() -> accepting.get(60, TimeUnit.SECONDS))
+                    .as("the birth's backstop refused it in LNEXP, mapped to the customer's refusal")
+                    .hasCauseInstanceOf(LoanOffers.OfferNotAcceptable.class)
+                    .hasMessageContaining("the offer has expired");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertNothingWritten(offer, loanAccounts);
+        Optional<LoanProduct> swept = inOneTransaction(uow -> ORIGINATION.expire(uow, offer.id(), SYSTEM));
+        assertThat(swept).as("left OFFERED past its instant, for the sweep").isPresent();
+        assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?", offer.id().value())).isEqualTo("EXPIRED");
+    }
+
+    @Test
+    @DisplayName("only the expiry is the customer's: a breach at the loan's birth - the loan naming another party - stays"
+            + " a storage failure (500), never 409; for every writer the expiry refusals carry LNEXP - the loan's birth,"
+            + " the offer ACCEPTED or DECLINED past its instant - and a breach P0001, even on an expired offer"
+            + " (P11-TSK-034)")
+    void onlyTheExpiryIsTheCustomers() throws Exception {
+        Offer offer = offered(LINE, 800_00, Optional.empty(), Duration.ofDays(30), PayoutPreference.WALLET);
+        long loanAccounts = count("SELECT count(*) FROM ledger.ledger_account WHERE owner_kind = 'LOAN'");
+        LoanStore forging = (LoanStore) Proxy.newProxyInstance(LoanStore.class.getClassLoader(),
+                new Class<?>[] {LoanStore.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("insert")) {
+                        LoanStore.NewLoan born = (LoanStore.NewLoan) args[1];
+                        args[1] = new LoanStore.NewLoan(born.id(), UUID.randomUUID(), born.product(), born.currency(),
+                                born.offer(), born.decision(), born.correlation());
+                    }
+                    try {
+                        return method.invoke(LOAN_STORE, args);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+        LoanAcceptances breaching = acceptances(CLOCK, forging, OFFER_STORE, LEDGER_ACCOUNTS, new JdbcOutboxWriter(),
+                new JdbcAuditWriter());
+        assertThatThrownBy(() -> inOneTransaction(uow -> breaching.accept(uow, offer.id(), offer.party(),
+                acceptance(offer.termsSha256(), Optional.empty()), customer(offer.party()), correlation())))
+                .isInstanceOf(LendingStorageException.class)
+                .hasMessageContaining("inserting a loan: SQLSTATE P0001");
+        assertNothingWritten(offer, loanAccounts);
+
+        Offer expired = offered(LINE, 800_00, Optional.empty(), Duration.ofSeconds(2), PayoutPreference.WALLET);
+        awaitDatabase("SELECT expires_at <= statement_timestamp() FROM lending.loan_offer WHERE id = ?",
+                expired.id().value());
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (writer) {
+                refused(writer, rawLoan(expired, expired.party()), JdbcLoanStore.OFFER_EXPIRED_SQLSTATE);
+                refused(writer, rawLoan(expired, UUID.randomUUID()), "P0001");
+                refused(writer, rawLoan(expired, expired.party(), "USD"), "P0001"); // the currency, judged before the expiry
+                refused(writer, rawLoan(offer, UUID.randomUUID()), "P0001");
+                for (String edge : List.of("ACCEPTED", "DECLINED")) {
+                    refused(writer, "UPDATE lending.loan_offer SET status = '" + edge + "' WHERE id = '"
+                            + expired.id().value() + "'", JdbcLoanStore.OFFER_EXPIRED_SQLSTATE);
+                }
+            }
+        }
+        Boolean edged = inOneTransaction(uow -> OFFER_STORE.accept(uow, expired.id()));
+        assertThat(edged).as("the store's conditional edge refuses the expired offer - its WHERE reads the same statement"
+                + " clock, so the LNEXP branch behind it is a backstop this case does not reach").isFalse();
+        assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?", expired.id().value()))
+                .isEqualTo("OFFERED");
+        assertThat(count("SELECT count(*) FROM lending.loan WHERE offer_id = ANY (?)",
+                (Object) ids(List.of(offer, expired)))).isZero();
+    }
+
+    /** A raw credit line of {@code offer}'s, born for {@code party}. */
+    private static String rawLoan(Offer offer, UUID party) {
+        return rawLoan(offer, party, "EUR");
+    }
+
+    /** A raw credit line of {@code offer}'s, born for {@code party} in {@code currency}. */
+    private static String rawLoan(Offer offer, UUID party, String currency) {
+        return "INSERT INTO lending.loan (id, party_id, product, kind, status, currency, offer_id, decision_id, opened_at,"
+                + " correlation_id) VALUES (gen_random_uuid(), '" + party + "', 'CREDIT_LINE', 'REVOLVING', 'ACTIVE',"
+                + " '" + currency + "', '" + offer.id().value() + "', '" + offer.decision() + "', now(), 'raw')";
     }
 
     // ------------------------------------------------------------------ the refusals
@@ -936,7 +1036,10 @@ class LoanAcceptanceDatabaseTest {
         while (System.nanoTime() < deadline) {
             try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement();
                     ResultSet row = statement.executeQuery("SELECT query FROM pg_stat_activity WHERE " + blocker
-                            + " = ANY (pg_blocking_pids(pid))")) {
+                            + " = ANY (pg_blocking_pids(pid))"
+                            // The activity row is a snapshot and the blocking pids are live: only a row that itself shows
+                            // the session active and waiting on a lock carries the statement that waits (P11-TSK-035's gate).
+                            + " AND state = 'active' AND wait_event_type = 'Lock'")) {
                 if (row.next()) {
                     return row.getString(1);
                 }

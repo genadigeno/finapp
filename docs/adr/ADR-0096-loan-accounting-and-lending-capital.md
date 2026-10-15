@@ -203,8 +203,12 @@ Positive:
 Negative:
 - Six ledger accounts per loan; the chart grows with the book.
 - The capital row per currency is a hot row: every acceptance and draw in a currency serialise on
-  it — correct by construction, measured in the storm, partitioned into tranches by Phase 16 if the
-  characterisation demands.
+  it — correct by construction, its correctness under contention proven in the storm (`P11-TST-001`:
+  ten acceptances on two instances racing capital that fits one, the capital proof exact at every
+  reading), its contention not measured (a debt row, `CURRENT_STATE.md` §Known Architectural Debt),
+  partitioned into tranches by Phase 16 if a characterisation demands. *(Read "correct by construction,
+  measured in the storm" until `P11-TST-001`'s completion gate, 2026-10-15: nothing in the storm measures
+  a lock wait or a latency on the row - the gate's finding I10, corrected rather than measured.)*
 - No acceptance or draw can occur until a treasury officer's contribution is recognised.
 
 Operational impact: `finapp.lending.subledger.proof`, `finapp.lending.capital.proof`,
