@@ -219,7 +219,9 @@ class LoanChartDatabaseTest {
             assertThatThrownBy(() -> loanAccounts.openFor(app, loan, EUR))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("LOAN_CREDIT_BALANCE")
-                    .hasMessageContaining("INV-LED-06");
+                    .hasMessageContaining("INV-LED-06")
+                    // No loan id in an exception message (the gate's Security criterion; P11-DOC-001).
+                    .hasMessageNotContaining(loan.value().toString());
             app.rollback();
         }
     }

@@ -1,6 +1,6 @@
 # ADR-0090 — The lending bounded context: the contract and its servicing facts, none of the money; two products, one account model
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Credit · Ledger · Accounts · Payments · Reconciliation · Platform
@@ -62,7 +62,13 @@ ADR-0084 §4 (credit decides and moves no money; lending begins where credit sto
      `INSERT`-only table); the application role holds `SELECT, INSERT` on fact tables and a
      conditional `UPDATE` of status and permit columns only on the machine tables
      (`loan_application`, `loan_offer`, `loan`, `loan_disbursement`, `loan_payout`, the proposal
-     tables); never `DELETE`.
+     tables); never `DELETE`. *(As built (`P11-DOC-001`, 2026-10-15): the conditional `UPDATE`s are on
+     `loan_terms_version` (`V003`), `loan_application` (`V004`, `V005`), `loan_offer` (`V005`), `loan`
+     (`V008`, `V010`, `V014`), `loan_disbursement` (`V008`), `loan_payout` (`V009`) and
+     `repayment_reversal` (`V016`) - the two proposal tables that carry a decision on their own row. The
+     waiver and the amendment are `INSERT`-only, decided by born-once `waiver_decision` and
+     `loan_amendment_decision` rows (`V021`, `V023`), and the capital contribution by its
+     `capital_contribution_event` history (`V002`).)*
 
 3. **Two products, one account model.**
 
@@ -94,14 +100,25 @@ ADR-0084 §4 (credit decides and moves no money; lending begins where credit sto
 
    | Port | Over | Used by |
    |---|---|---|
-   | `LoanCreditDecisions` | `DecisionRequests.submit` / cancel; `CreditDecisions`; `CreditDecisionConsumptions.consume`; `lockExposure` over the profile lock | application, offer, acceptance, every exposure-raising transaction (ADR-0091) |
-   | `LoanPartyStanding` | `CreditPartyStanding` / `AccountHolderVerification` | application, acceptance, disbursement, draw |
+   | `LoanCreditDecisions` | `open` and `cancel` over `DecisionRequests.submit` / `cancel`; `CreditDecisions`; `CreditDecisionConsumptions.consume`; `lockExposure` over the profile lock | application, offer, acceptance, every exposure-raising transaction (ADR-0091) |
+   | `LoanPartyStanding` | `CreditPartyStanding` | application, acceptance, disbursement, draw |
    | `LoanWallets` | `WalletAccounts`, `AccountOpening` — resolve or open the borrower's `CUSTOMER_WALLET` in the currency | disbursement, draw, repayment |
    | `LoanPayouts` | payments' system-actor withdrawal entry (`dispatch`) and a plain read of its outcome (`outcome`) | the external payout (ADR-0097) |
    | `LoanPayoutDestinations` | the borrower's own verified payment method (the ADR-0056 shape), answering an opaque reference | acceptance (path X) |
+   | `CapitalExpectations` | reconciliation's expectation opener — the contribution's `LENDING_CAPITAL_CONTRIBUTION` expectation | the capital contribution's approval (ADR-0096 §4) |
+   | `CapitalRecognitions` | reconciliation's readings of those expectations and their recognitions | the derived recognition status, the capital proof (ADR-0096 §4, §6) |
+   | `LoanProductBounds` | credit's `CreditProduct` amount and term bounds | the terms proposal's amortisation judgement (ADR-0092 §3) |
+   | `LoanActingParty` | identity's party of an acting person (`app`'s `IdentityActingParty`, credit's `CreditActingParty` read) | the servicing proposals' self-dealing refusal (ADR-0099 §2) |
 
-   Plus `LendingObserver` (meters) and `TransactionRunner`. No account identifier, score,
-   attribute or policy threshold ever crosses into `lending` (`INV-RAIL-03`).
+   Plus `LendingUnitOfWork`, the one-transaction seam (`app`'s `LendingTransactions`). Meters are
+   `app`'s, one `*Metrics` class per flow around the lending call; lending declares no observer port.
+   No account identifier, score, attribute or policy threshold ever crosses into `lending`
+   (`INV-RAIL-03`). *(As built (`P11-DOC-001`, 2026-10-15): this read "`LoanCreditDecisions` |
+   `DecisionRequests.submit`", "`CreditPartyStanding` / `AccountHolderVerification`" and "Plus
+   `LendingObserver` (meters) and `TransactionRunner`"; the port's method is `open`, the standing adapter
+   (`CreditLoanPartyStanding`) reads `CreditPartyStanding` alone, neither `LendingObserver` nor
+   `TransactionRunner` was built, and the last four rows were built (`P11-TSK-004`, `-006`, `-020`) without
+   being listed.)*
 
 7. **What lending never does.** It never writes another module's table (consumption is credit's
    port, ADR-0091); never reads a score, attribute or threshold; never judges exposure (it supplies
@@ -195,7 +212,11 @@ Positive:
 Negative:
 - Reads compose rows and ledger lines rather than reading a column; every balance-dependent
   decision pays for a derivation under L3.
-- Five `app` adapters and three neighbour migrations make the phase's first milestone wide.
+- Nine ports and the unit of work implemented in `app` (`com.finapp.app.lending`'s nine adapters, and
+  `IdentityActingParty` serving `LoanActingParty` beside credit's read) and five neighbour
+  migrations (credit `V021`, ledger `V026`, identity `V021`, reconciliation `V022`, payments `V032`)
+  make the phase wide. *(Corrected by `P11-DOC-001`, 2026-10-15: this read "Five `app` adapters and
+  three neighbour migrations make the phase's first milestone wide".)*
 - Production originates nothing in Phase 11 — accepted and recorded as a debt row (owner: the
   phase that answers #13/#14, Phase 15 at the latest).
 
@@ -263,5 +284,6 @@ ADR-0001, ADR-0006, ADR-0084.
   business date** (it is recorded only on a change): C9 proves every stored DPD names a billed item's due date
   and, at rest, the platform's live derivation equal to the census's own date difference. (9) **The capital row's
   contention is not measured** - correctness only (ADR-0096's corrected sentence, a debt row).
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); the Phase 11 review
-  (`P11-DOC-001`) reads it against the code, corrects it in place with dated notes, and accepts it.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

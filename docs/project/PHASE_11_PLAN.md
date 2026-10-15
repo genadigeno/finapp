@@ -20,9 +20,11 @@ in [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md); the exit crit
 `PHASE_GATES.md` §5 Phase 11, extended by this transition; the tasks are `P11-TSK-001`…`030`,
 `P11-TST-001`…`002` and `P11-DOC-001` in [`BACKLOG.md`](BACKLOG.md).
 
-*Nothing in this document is built yet. Each task that builds a part corrects this plan where the
-code teaches otherwise, and the Phase 11 exit review (`P11-DOC-001`) reads the whole of it against
-the code.* The owner's transition decisions L1–L12 (§2.3, recorded in `BACKLOG.md` §Phase 11) are
+*Every task is built (the exit review `P11-DOC-001`, 2026-10-15, read this plan against the code and
+made it true - inline where a statement was materially wrong, each marked "corrected by `P11-DOC-001`"
+or "until `P11-DOC-001`", and in §21's errata for the rest). (This read "Nothing in this document is
+built yet. Each task that builds a part corrects this plan where the code teaches otherwise, and the
+Phase 11 exit review (`P11-DOC-001`) reads the whole of it against the code" until the exit review.)* The owner's transition decisions L1–L12 (§2.3, recorded in `BACKLOG.md` §Phase 11) are
 folded into the sections below; the recorded assumptions A1–A30 (§2.4) are the product defaults
 the plan builds on, each configurable on a versioned terms row.
 
@@ -217,7 +219,7 @@ jurisdiction's rules become configuration plus review, never code archaeology.
 | **Delinquency** (DPD, bucket, cure) | `lending` | yes | A derived **condition**, recorded as append-only changes |
 | **Default** | `lending` | yes, a flag | No acceleration, no write-off posting |
 | **Early Repayment — Payoff** | `lending` | yes | Quote + execution, both products |
-| **Early Repayment — partial Prepayment** | `lending` | cut candidate (`-028`) | A repayment kind with recalculation |
+| **Early Repayment — partial Prepayment** | `lending` | yes (`-028`, built - *"cut candidate" until `P11-DOC-001`, 2026-10-15*) | A repayment kind with recalculation |
 | **Restructuring** (amendment) | `lending` | yes (`-027`) — scenario 8 | Agreement version n+1, four-eyes plus the customer's acceptance |
 | **Lending Capital** | `lending` (the administration), `ledger` (the account) | yes (`-004`) | Contributions four-eyes, recognised from bank evidence |
 | Refinance | `lending` + `credit` | **deferred** — owner: the Phase 11 → 12 transition decides the later lending phase that takes it | A new decision and a two-account atomic payoff |
@@ -243,14 +245,22 @@ allocated, accrued, assessed) is an immutable born-once row whose sum is proven 
     `CreditDecisions`; `consume(uow, decisionId, consumerRef)` over `CreditDecisionConsumptions`;
     `lockExposure(uow, party)` over the profile lock (exposed alone so every exposure-raising
     lending transaction takes element (1) first).
-  - `LoanPartyStanding` — over `CreditPartyStanding` / `AccountHolderVerification`.
+  - `LoanPartyStanding` — over `CreditPartyStanding` *(corrected by `P11-DOC-001`, 2026-10-15: this read
+    "`CreditPartyStanding` / `AccountHolderVerification`"; `CreditLoanPartyStanding` reads credit's standing alone)*.
   - `LoanWallets` — resolve, open if absent, the borrower's `CUSTOMER_WALLET` in the currency.
   - `LoanPayouts` — `dispatch(key, instruction, amount, adoptHold)` over payments' system-actor
     withdrawal entry; `outcome(withdrawalReference)` — a **read** over payments' withdrawal store.
   - `LoanPayoutDestinations` — verify the borrower's own payment method at acceptance (the
     ADR-0056 shape), returning an opaque reference (`INV-RAIL-03`: no account identifier enters
     lending).
-  - `LendingObserver` (meters), `TransactionRunner`.
+  - `CapitalExpectations` and `CapitalRecognitions` — over reconciliation's expectation opener and
+    its readings (`-004`); `LoanProductBounds` — over credit's `CreditProduct` (`-006`);
+    `LoanActingParty` — the acting person's party, for the self-dealing refusal (`-020`, `app`'s
+    `IdentityActingParty`).
+  - `LendingUnitOfWork` (`app`'s `LendingTransactions`). *(Corrected by `P11-DOC-001`, 2026-10-15: this
+    read "`LendingObserver` (meters), `TransactionRunner`" - neither was built; meters are `app`'s
+    `*Metrics` classes around each lending call, and the four ports above were built without being
+    listed.)*
 - **Credit publishes** `CreditDecisionConsumptions` (new, `-001`); `app` gains
   `LendingCreditExposure` (v2, `-013`). `credit` keeps its edges (`platform`, `sharedkernel`).
 - **Payments publishes** a system-actor withdrawal entry admitting a recorded instruction and a
@@ -609,7 +619,7 @@ party's accounts the wallet row is always taken after every income-row lock of t
 `lending.payoff-quote:<type>:<id>`, the platform's conditional step-up): L3, the catch-up accrual (rule 2, L8 on the income
 row), the row; no L7.)*
 
-### 7.2 The lending lock order (a planned `DISTRIBUTED_EXECUTION.md` §3 row)
+### 7.2 The lending lock order (`DISTRIBUTED_EXECUTION.md` §3's row "The Phase 11 lock order" — *"a planned … row" until `P11-DOC-001`, 2026-10-15*)
 
 One order for every lending writer holding more than one of them:
 
@@ -759,7 +769,8 @@ lending's definer view for the exposure read (`-013`). *(As built: the view is l
 - so `-014`'s schedule and disbursement edges are lending `V008`.)*
 
 **Retention.** Agreement versions, acceptance evidence, servicing rows and journal entries are kept
-for the loan's life plus the jurisdiction's limitation period; `retain_until` is set at closure; the
+for the loan's life plus the jurisdiction's limitation period; `retain_until` is set at closure *(not
+built - no lending table carries a `retain_until`; `P11-DOC-001`, 2026-10-15)*; the
 purge is Phase 15's (a debt row beside credit's evidence purge).
 
 ---
@@ -785,7 +796,7 @@ negatives.
 | `POST /v1/me/loans/{id}/draws` | customer, `MULTI_FACTOR` | draw to the wallet (line) | `lending.draw:CUSTOMER:<id>` | sync |
 | `POST /v1/me/loans/{id}/closure` | customer, `MULTI_FACTOR` | request the line's closure | `lending.closure:CUSTOMER:<id>` | sync |
 | `POST /v1/me/loans/{id}/payoff-quotes` · `/payoff` | customer (payoff `MULTI_FACTOR`) | quote; execute | `lending.payoff-quote:…`, `lending.payoff:CUSTOMER:<id>` | sync |
-| `POST /v1/me/loans/{id}/prepayments` | customer, step-up | partial prepayment (cut candidate) | `lending.prepayment:CUSTOMER:<id>` | sync |
+| `POST /v1/me/loans/{id}/prepayments` | customer, step-up | partial prepayment (`-028`, built; *"cut candidate" until `P11-DOC-001`*) | `lending.prepayment:CUSTOMER:<id>` | sync |
 | `GET /v1/me/loans/{id}/amendments/{aid}` · `POST …/acceptance` | customer, `MULTI_FACTOR` | read; accept | `lending.amendment-acceptance:CUSTOMER:<id>` | sync |
 | `GET /v1/operator/loans/{id}` (+ `/explanation`) | `LOAN_SERVICE` / `LENDING_INVESTIGATE` | read; explanation from rows (audited) | read | — |
 | `POST /v1/operator/loans/{id}/waivers` (+ `/{wid}/approval`, `/rejection`) | `LOAN_SERVICE` / `LOAN_SERVICE_APPROVE` | waive | `lending.servicing:EMPLOYEE:<id>` | sync |
@@ -1259,7 +1270,7 @@ yet due), the repayment pays the whole receivable and the closure refunds the ba
 `ScheduleEngineV1`'s full-period interest is never charged: interest stops the day the payoff is made - no rebate exists to
 compute (`PayoffDatabaseTest#noRebateArithmeticExists`).)*
 
-**Partial prepayment** (cut candidate `-028`): a repayment kind `PREPAYMENT` crediting
+**Partial prepayment** (`-028`, built - *"cut candidate `-028`" until `P11-DOC-001`, 2026-10-15*): a repayment kind `PREPAYMENT` crediting
 `LOAN_PRINCIPAL`, with agreement and schedule version n+1 (shorter term, same instalment) in one
 transaction; refused while past due (`409 lending.ArrearsFirst`).
 
@@ -1389,14 +1400,14 @@ currency by construction):
 | 0 | Capital contributed (bank evidence) | `CapitalRecognition` (reconciliation's bank recognition) | `CASH_AT_BANK` | `LENDING_CAPITAL` | the platform's own cash enters the pool as lending capital; cash recognised only from a statement (`INV-SET-06`) | reconciliation's recognition key |
 | 1 | Loan disbursed / line drawn | `Disbursement` / `Draw` | `LOAN_PRINCIPAL` P | `CUSTOMER_WALLET` P − f; `LOAN_FEE_INCOME` f | the platform acquires a claim on the borrower and owes the borrower the funds now in their wallet — wallet money backed by recognised capital, never created unbacked (`INV-LND-13`) | `lending.disbursement:<loan>` / `lending.draw:<draw>` |
 | 2 | A day's interest earned | `InterestAccrual` | `LOAN_INTEREST_ACCRUED` | `LOAN_INTEREST_INCOME` | income recognised as earned; a receivable not yet payable | `lending.accrual:<loan>:<date>` |
-| 3 | An instalment falls due / a statement is issued | `InstalmentBilling` / `Statement` | `LOAN_INTEREST_DUE` I; `LOAN_PRINCIPAL_DUE` Pj | `LOAN_INTEREST_ACCRUED` I; `LOAN_PRINCIPAL` Pj | re-classification: the same claim becomes payable (DPD readable from the ledger) | `lending.billing:<instalment>` / `lending.statement:<statement>` |
-| 4 | A late fee assessed | `FeeAssessment` | `LOAN_FEES_DUE` | `LOAN_FEE_INCOME` | contractual fee earned and payable | `lending.fee:<assessment>` |
+| 3 | An instalment falls due / a statement is issued | `InstalmentBilling` / `Statement` | `LOAN_INTEREST_DUE` I; `LOAN_PRINCIPAL_DUE` Pj | `LOAN_INTEREST_ACCRUED` I; `LOAN_PRINCIPAL` Pj | re-classification: the same claim becomes payable (DPD readable from the ledger) | `lending.billing:<instalment>` (post-maturity: `<loan>:<period end>`) / `lending.statement:<line>:<statement date>` *(corrected by `P11-DOC-001`: read `lending.statement:<statement>`)* |
+| 4 | A late fee assessed | `FeeAssessment` | `LOAN_FEES_DUE` | `LOAN_FEE_INCOME` | contractual fee earned and payable | `lending.fee:<billed item>:LATE` *(corrected by `P11-DOC-001`: read `<assessment>`)* |
 | 5 | Repayment from the wallet | `Repayment` | `CUSTOMER_WALLET` A | due accounts per allocation; `LOAN_PRINCIPAL` (line paydown); `LOAN_CREDIT_BALANCE` rest | the borrower's funds settle the claim; any excess is owed back | `lending.repayment:<repayment>` |
-| 6 | Credit balance applied | `CreditBalanceApplication` | `LOAN_CREDIT_BALANCE` | due accounts per allocation | the excess held now settles what became due | `lending.credit-application:<billing>` |
-| 7 | Payoff | `Payoff` | rules 2, 3, 5, then `LOAN_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | every receivable to zero, nothing owed back | `lending.payoff:<quote>` (+ the rule keys) |
+| 6 | Credit balance applied | `CreditBalanceApplication` | `LOAN_CREDIT_BALANCE` | due accounts per allocation | the excess held now settles what became due | `lending.credit-application:<billed item>` |
+| 7 | Payoff | `Payoff` | rules 2, 3, 5, then `LOAN_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | every receivable to zero, nothing owed back | each rule's own key - rule 5 `lending.repayment:<repayment>`, the refund `lending.closure-refund:<loan>` *(corrected by `P11-DOC-001`, 2026-10-15: read "`lending.payoff:<quote>` (+ the rule keys)"; `lending.payoff:` is only the API idempotency scope)* |
 | 8 | Fee waived | `Waiver(FEE)` | `LOAN_FEE_INCOME` | `LOAN_FEES_DUE` | `ReversalService` of rule 4's entry, bounded | scope `ledger.reverse` |
 | 8a | Paid fee refunded | `Waiver(FEE_REFUND)` | `LOAN_FEE_INCOME` | `LOAN_CREDIT_BALANCE` | the fee already paid is owed back | `lending.waiver:<waiver>` |
-| 9 | Interest waived | `Waiver(INTEREST)` | `LOAN_INTEREST_INCOME` | `LOAN_INTEREST_DUE` / `…ACCRUED` | income forgone, claim released | `lending.waiver:<waiver>` |
+| 9 | Interest waived | `Waiver(INTEREST)` | `LOAN_INTEREST_INCOME` | `LOAN_INTEREST_DUE` *(the `…ACCRUED` arm never built - `P11-DOC-001`)* | income forgone, claim released | `lending.waiver:<waiver>` |
 | 10 | Repayment reversed | `RepaymentReversal` | rule 5's credits | `CUSTOMER_WALLET` | `ReversalService` of rule 5's entry, exact | `lending.repayment-reversal:<reversal>` |
 | 11 | Disbursement failed | — | — | — | nothing to compensate: a failed disbursement posts nothing (whole commit or savepoint rollback) | — |
 | 12 | Payout (path X) | payments' `Withdrawal` | `CUSTOMER_WALLET` | `INSTANT_CLEARING` (payments' own posting) | the borrower's funds leave for their bank — payments' entry, payments' reversal on failure, payments' return | payments' keys |
@@ -1425,7 +1436,8 @@ proposes a contribution (amount, currency, reference) and a second approves it (
 expectation through reconciliation's opener; when the platform's corporate transfer appears on the
 settlement bank's statement, bank recognition — still the one poster of `CASH_AT_BANK` — matches the
 line to the expectation and posts `DR CASH_AT_BANK / CR LENDING_CAPITAL` (rule 0). An unmatched line
-is a break like any other; an expectation ageing out unmatched lapses the contribution. Capital is
+is a break like any other; an expectation ageing out unmatched lapses the contribution *(as built: the expectation is never
+aged - the lapse is derived by date, §14's corrected row)*. Capital is
 never adjusted to fit, never posted by a person, and never withdrawn in Phase 11 (a capital return is
 a later treasury task).
 
@@ -1578,7 +1590,7 @@ built here with its gauge, the bureau's balance left out of it.*
 | 5 | A provider succeeds but the response is lost | `LoanPayoutDatabaseTest#aLostResponseIsHeldThenConcludedByInquiryAndNeverResent` (`-015`) | the payout `DISPATCHED` while payments is `UNKNOWN`; no re-dispatch; concluded by inquiry; accrual starts at the conclusion; one withdrawal at the provider |
 | 6 | A repayment is reversed after allocation | `RepaymentReversalDatabaseTest#aReversalAfterAllocationReopensWhatItPaid` (`-020`) | the entry swapped exactly; allocations negated by rows; later allocations untouched; the subledger proof zero |
 | 7 | Payoff is requested while a repayment is processing | `PayoffDatabaseTest#payoffDuringARepaymentIsStaleOrClosedNeverWrong` (`-026`) | exactly one outcome in both orders; balances zero only after the payoff |
-| 8 | A loan schedule is changed under an approved contractual operation | `AmendmentDatabaseTest#anApprovedAmendmentChangesTheScheduleOnce` (`-027`) | agreement and schedule v n+1 once; billed instalments kept; principal conserved; a moved agreement lapses it |
+| 8 | A loan schedule is changed under an approved contractual operation | `AmendmentDatabaseTest#anApprovedAmendmentChangesTheScheduleOnce` (`-027`) | agreement and schedule v n+1 once; billed instalments kept; principal conserved; a moved agreement lapses it *(as built, read by `P11-DOC-001`, 2026-10-15: the named test asserts the change once; the lapse and the duplicates are its sibling cases `#aMovedAgreementLapsesTheAmendment` and `#tenAcceptancesOneVersion`, and `#billedInstalmentsAreKept` and `#arrearsRescheduledConservePrincipal` beside them)* |
 | 9 | A service crashes after ledger posting but before event publication | `LendingOutboxAtomicityDatabaseTest#aCrashBetweenPostingAndPublicationLosesNothing` (`-014`); the storm's crash points | rollback → neither; commit then relay killed → the event published once after restart |
 | 10 | A loan is paid off while a scheduled delinquency worker is running | `PayoffDatabaseTest#payoffBesideTheDelinquencyWorkerWritesNoConditionAfterClosure` (`-026`) | serialised on L3; no condition written after `CLOSED`; DPD never computed on a closed account |
 
@@ -1603,7 +1615,9 @@ clock skew across the accrual boundary.
   every account, replay `IDENTICAL` for every account, exposure census, capital proof, trial balance
   zero per currency, every accrual date present exactly once, one disbursement per non-cancelled
   loan, Σ allocations = Σ repayments, every act counted, gauges zero. `PASS` = three consecutive green
-  runs and its probes caught.
+  runs and its probes caught. *(As built: "every act counted, gauges zero" - with four other censuses - holds at the
+  final rest only, not at every round's: the owner-approved deviation I2 of `P11-TST-001`'s gate; the others are in
+  §21.)*
 - **`P11-TST-002` — the amortisation, accrual and statement battery:** ≥ 10,000 generated loans and
   ≥ 2,000 generated lines (amounts, rates incl. 0, terms, days, start dates across leap/non-leap years
   and month ends; draw and payment behaviour on a simulated calendar), every figure replayed
@@ -1617,7 +1631,8 @@ the accrual unique → scenario 4 red; read the projection for allocation → sc
 racing reversal; judge the accrual boundary on the instance clock → the skew test red; take the
 wallet before the loan → `40P01` in scenario 3; consume without the profile lock → the serialisation
 test red; skip the capital lock → two acceptances over-deploy; re-dispatch a payout on `UNKNOWN` →
-scenario 5 red).
+scenario 5 red). *(The last - the re-dispatch probe against scenario 5's named test - performed by
+`P11-DOC-001`, `MUTATION_TESTING.md` §2.)*
 
 ---
 
@@ -1634,7 +1649,7 @@ scenario 5 red).
 | Two requests race | §7.4: an arbiter per contention |
 | Settlement arrives late | payments' expectation ages; lending unaffected |
 | Reconciliation detects a break on a payout | payments' and Phase 8's resolution; the loan is unaffected; the funds are the borrower's |
-| Capital contribution never arrives at the bank | the expectation ages out; the contribution lapses; no capital, no acceptance |
+| Capital contribution never arrives at the bank | the contribution lapses, derived by date - the database's date past the expectation's window with no recognition (`CapitalRecognitionStatus.derive`); the expectation itself is never aged; no capital, no acceptance *(corrected by `P11-DOC-001`, 2026-10-15: read "the expectation ages out")* |
 | Accrual job crashes mid-run / runs twice | born-once per date; catch-up; no double accrual |
 | Repayment arrives for a closed loan | `409 lending.LoanNotRepayable`, nothing posted |
 | Clock skew across the accrual boundary | the database clock under L3 decides |
@@ -1682,7 +1697,8 @@ scenario 5 red).
 
 ADR-0072: counts, ages and verdicts only — never an amount, party or loan id in a tag. Portfolio
 outstanding, delinquency sums, capital headroom amounts and schedule-vs-actual drift are **audited
-reports**, not series. Spans per step linked by the account's correlation (the `CreditFlowScope`
+reports**, not series. *(As built: the schedule-vs-actual drift report was not built - a debt row,
+`CURRENT_STATE.md` §Known Architectural Debt; `P11-DOC-001`, 2026-10-15.)* Spans per step linked by the account's correlation (the `CreditFlowScope`
 precedent). A dashboard row and `infra/prometheus/rules/lending.yml`, resolved against a live scrape
 (`P11-TSK-030`). Every series registered eagerly at startup with its closed tags.
 
@@ -1713,7 +1729,7 @@ The subledger and replay gauges read behind `finapp.lending.proofs.refresh`, 15 
 | **M11.4 Disbursement** | loans born once, unambiguously, to the wallet and to an external account | `-014`, `-015` |
 | **M11.5 Loan servicing** | accrual, billing, repayment, auto-collection, reversal | `-016`…`-020` |
 | **M11.6 Revolving credit line** | draws, statements and minimum payment, repayment and closure | `-021`…`-023` |
-| **M11.7 Delinquency, fees and change** | conditions derived; fees once; waivers four-eyes; payoff; restructuring; prepayment (if not cut) | `-024`…`-028` |
+| **M11.7 Delinquency, fees and change** | conditions derived; fees once; waivers four-eyes; payoff; restructuring; prepayment (built; *"if not cut" until `P11-DOC-001`*) | `-024`…`-028` |
 | **M11.8 Proof and operations** | every account proven and replayed; operable | `-029`, `-030` |
 | **M11.9 Exit** | the storm, the battery, the review | `P11-TST-001`, `P11-TST-002`, `P11-DOC-001` |
 
@@ -1721,7 +1737,8 @@ The subledger and replay gauges read behind `finapp.lending.proofs.refresh`, 15 
 `-025` (the fee lifecycle stays exercised by the origination fee and the waivers). Each deferral is
 recorded with its owner. **Never cut:** the consumption port, the exposure read, lending capital, both
 disbursement paths, the credit line, the accrual uniqueness, the allocation engine, the reversal,
-payoff, restructuring (scenario 8), the proofs, the storm, the battery.
+payoff, restructuring (scenario 8), the proofs, the storm, the battery. *(Nothing was cut: `-028` and
+the late fee were both built.)*
 
 ## 17. What Phase 11 must NOT implement
 
@@ -1766,3 +1783,83 @@ contract, disbursement, schedule, interest and fees, allocation, payoff, delinqu
 line, capital and exposure, multi-instance, idempotency, failure recovery, security and audit,
 observability, testing, documentation — each with its evidence, are written into `PHASE_GATES.md`
 §5 Phase 11 by this transition.
+
+## 21. Errata — as built, read at the exit review (`P11-DOC-001`, 2026-10-15)
+
+The exit review read this plan, `LENDING_LIFECYCLES.md` and ADR-0090…0100 against the code (`lending` and its
+migrations `V001`…`V028`, the doors and adapters in `app`, credit `V021`, ledger `V026`). Material statements were
+corrected where they stand (the header; §3.1's prepayment row; §3.2's ports; §7.2's heading; §8's retention; §9's
+prepayment row; §12.5's prepayment; §12.8's keys for rules 3, 4, 6, 7 and 9; §12.9's ageing; §13.2's scenario 8;
+§13.3's census cadence; §13.4's last probe; §14's capital row; §15's drift report; §16's milestone and cut order); the
+rest are recorded here, each the truth that holds.
+
+- **`P11-TSK-028` was built, not cut.** Partial prepayment with recalculation (`Prepayments`, lending `V024`): a
+  repayment kind `PREPAYMENT`, agreement version n+1 in canonical terms format 4 and schedule version n+1 by
+  `ScheduleEngineV1.recalculateAtInstalment` - the same level instalment over the least term. Nothing in §16's cut
+  order was cut; every "cut candidate" and "if not cut" in this plan is corrected where it stands.
+- **The ports (§3.2).** `LendingObserver` and `TransactionRunner` were never built: the meters are `app`'s, one
+  `*Metrics` class per flow (`LoanDisbursementMetrics`, `RepaymentMetrics`, …), and the one transaction seam is
+  `LendingUnitOfWork` (`app`'s `LendingTransactions`). Built and unlisted: `CapitalExpectations` and
+  `CapitalRecognitions` (`-004`, `app`'s `ReconciliationCapitalExpectations` / `ReconciliationCapitalRecognitions`),
+  `LoanProductBounds` (`-006`, `CreditLoanProductBounds`) and `LoanActingParty` (`-020`, `IdentityActingParty`). Nine
+  ports and the unit of work in all; `LoanCreditDecisions.open` is the method over `DecisionRequests.submit`.
+- **The lock order's register row (§7.2)** is written: `DISTRIBUTED_EXECUTION.md` §3, "The Phase 11 lock order".
+  Two credit locks are held by lending, not one: L0 (the profile, first - by the acceptance, the disbursement and the
+  repayment reversal) and credit's decision-request row, taken by the application withdrawal through
+  `DecisionRequests.cancel` after L1. Credit never waits on a lending lock, so neither closes a cycle (ADR-0091 point
+  8, corrected). A draw judges its available limit under L3 **before** L6 and takes no L5 lock - the draw row is born
+  whole after its posting (ADR-0100's Follow-up); path X's T-dis takes L7 **before** the posting (ADR-0097 point 3,
+  corrected). "L8 — postings last" was never true of the currency's shared `LOAN_INTEREST_INCOME` row: the servicing
+  step's accrual, the payoff's and the prepayment's catch-up accrual take it before their wallet (L7), and the interest
+  waiver took it after - a cycle over two accounts of one party, corrected in the code by the exit review (the waiver
+  now takes the row before L7; ADR-0099's Follow-up, `DISTRIBUTED_EXECUTION.md` §3).
+- **§7.4 has 29 contention rows**, not the 25 the gate's text counts (`PHASE_GATES.md` §5 Phase 11's
+  multi-instance criterion).
+- **§8's table omits tables and migrations that were built.** Tables: `credit_balance_allocation` (`-017`, `V012`;
+  `UNIQUE (application_id, billing_id, component)`), `loan_closure` (`-018`, `V014`; `UNIQUE (loan_id)`, `UNIQUE
+  (refund_journal_entry_id)`), `waiver_decision` (`-025`, `V021`; `UNIQUE (waiver_id)`, four-eyes `CHECK`),
+  `loan_amendment_decision` (`-027`, `V023`; `UNIQUE (amendment_id)`) and `loan_amendment_rescheduling` (`-027`,
+  `V023`; `UNIQUE (amendment_id, billing_id)`, rule 13's per-item rows); the sequence `lending.record_order`
+  (`V025`). Migrations beyond the table: `V011` (canonical offer terms format 2, `-031` - the `credit_line_draw` row's
+  "`V011` left free" is stale), `V019` (the payout's conclusion under a backward clock, `-033`), `V024` (partial
+  prepayment, `-028`), `V025` (the record orders every money fact - `recorded_order` drawn under L3, `-029`), `V026`
+  (the offer's expiry at the loan's birth in its own SQLSTATE, `-034`), `V027` (the amendment's lapse at the
+  agreement's birth likewise, `-035`) and `V028` (the write path under a backward clock, `-036`). §8's "the proposal
+  tables" with a conditional `UPDATE` are `loan_terms_version` and `repayment_reversal` only: the waiver, the
+  amendment and the capital contribution are `INSERT`-only, decided by born-once rows. No lending table carries a
+  `retain_until`.
+- **The remediation items `P11-TSK-031`…`-036`** were added out of turn on the owner's instruction, outside the
+  milestones (§16), each reopening none: `-031` canonical offer terms format 2 (a servicing zone east of UTC),
+  `-032` date-window-safe lending fixtures, `-033` the payout conclusion clamp under a backward database clock, `-034`
+  the offer's expiry answered `409` (found by `P11-TST-001`'s storm), `-035` the amendment's lapse answered `409`
+  (found by `-034`'s gate), `-036` the lending write path under a backward database clock (the offering instant the
+  insert's own stamp; the business-date ranks judged against `lending.business_date_earliest` / `_latest`).
+- **The schedule-vs-actual drift report (§15) was not built.** Lending's operator reports are the portfolio,
+  delinquency, accrual and capital reports (`LendingReportController`); the drift report is a debt row in
+  `CURRENT_STATE.md` §Known Architectural Debt.
+- **Not measured, where this plan and its ADRs said "measured in the storm".** The storm proved correctness and
+  measured no cost: the capital row's contention (corrected by `P11-TST-001`'s gate, §12.9, §18), the servicing
+  sweep's volume (ADR-0094) and the DPD derivation's cost (ADR-0098) - each a debt row, partitioning in Phase 16 if a
+  measurement demands it.
+- **`P11-TST-001`'s owner-approved deviations (§13.3)**, recorded at its gate (2026-10-15): **I2** - five censuses
+  (C13, C16, C18, C19, C21) run once at the end, so "every act counted, gauges zero" holds at the final rest, not at
+  every round's; **I4** - "acceptances racing decisions for the other product" is not evidenced as a race; **M3** - the
+  multi-instance evidence is partial (L3, L6 and L7 waits uncounted; scenario 2's key and scenario 1's two disbursers
+  not shown contending); and at the second pass **I6** (C9's DPD check reuses the platform's paid/billed definition),
+  **C12** (no scene produces a failed collection, so `lending.CollectionFailed` is likely 0 = 0) and **C19** (the
+  meters checked over the catalogue's window only, the concurrent load unmetered against the rows).
+- **§13.4's re-dispatch probe** (re-dispatch a payout on `UNKNOWN` → scenario 5 red) was performed by `P11-DOC-001`,
+  `MUTATION_TESTING.md` §2.
+- **§13.2 scenario 8**: `AmendmentDatabaseTest#anApprovedAmendmentChangesTheScheduleOnce` asserts the schedule change
+  once; "a moved agreement lapses it" and the duplicates are its sibling cases `#aMovedAgreementLapsesTheAmendment` and
+  `#tenAcceptancesOneVersion`.
+- **§14's capital row**: an approved contribution's expectation is never aged - reconciliation's ageing sweep skips
+  the kind - and the lapse is derived by date (`CapitalRecognitionStatus.derive`: the database's date past the window
+  with no recognition), final because recognition refuses a lapsed contribution on the same clock.
+- **§12.8 rule 7** names no ledger key `lending.payoff:<quote>`: the payoff posts each rule under its own key - its
+  catch-up accruals and early billing under rules 2 and 3's, rule 5 under `lending.repayment:<repayment>`, the refund
+  under `lending.closure-refund:<loan>`; `lending.payoff:` is only the payoff command's API idempotency scope
+  (`LoanPayoffDesk`). Rule 9's `…ACCRUED` arm - waiving accrued, unbilled interest - was never built.
+- **The payout's `RETURNED`** (§5.4, §12.4) has no producer and is not a state - not in `PayoutStatus`, not in lending
+  `V009`'s `CHECK`: payments keeps no return record for an instant withdrawal (`P11-TSK-015`'s refinement,
+  `LENDING_LIFECYCLES.md` §4.7) - already annotated where it stands in §5.4, §10 and §12.4.

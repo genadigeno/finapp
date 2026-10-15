@@ -658,7 +658,9 @@ Credit Policy, Credit Product and Underwriting Case corrected to the code.)*
 *(The Phase 10 → 11 transition, 2026-10-10, sharpened Loan Application, Loan Offer, Loan,
 Instalment and Delinquency to `PHASE_11_PLAN.md`, gave Decision Consumption its owner — credit's
 port, `P11-TSK-001` — and Exposure its version-2 measure (`P11-TSK-013`), each with a dated note.
-Those corrections are planned, not built. The twenty-three new lending terms are in §7a.)*
+Those corrections were planned then; Phase 11 built them, read against the code by the Phase 11 exit
+review, `P11-DOC-001`, 2026-10-15 (this read "Those corrections are planned, not built" until then).
+The twenty-three new lending terms are in §7a.)*
 
 ### Credit Profile
 **Is:** a Party's credit identity in this platform — one row per party, born once, holding no
@@ -695,7 +697,7 @@ approved amount and term, its validity, the ordered Reason Codes, who decided (t
 person), the pinned Policy Version, Model Version and engine version, and its Decision Snapshot's
 hash — born once, never updated or deleted by any role.
 **Not:** a score, and not Underwriting (the assessment that produced it). Nor a loan, or a Loan
-Offer: Phase 11's Loan Application will reference a decision; the decision moves no money.
+Offer: Phase 11's Loan Application references a decision; the decision moves no money.
 `INV-CRD-01` requires it to be reproducible; `INV-CRD-02` requires reason codes sufficient for an
 adverse-action explanation. A change of mind is a new request, never an update; its consumption
 by a Phase 11 loan is a separate born-once fact, the Decision Consumption, never a change to the
@@ -799,7 +801,10 @@ transition, 2026-10-10.)*
 with its Days Past Due and bucket (`1–29`, `30–59`, `60–89`, `90+`, the pinned terms' bounds) —
 derived daily by the servicing step from billed and allocated rows on the database clock, and
 recorded only as append-only changes, once per account, business date and kind; cured when every
-billed amount is paid (`INV-LND-12`). Planned (`P11-TSK-024`).
+billed amount is paid (`INV-LND-12`). Built by `P11-TSK-024` (`lending V020`'s `loan_condition_event`,
+`LoanConditions`, `DelinquencyState`): derived live by every decision that needs it, recorded by the
+servicing step's daily evaluation at most once a business date - a repayment that cures is recorded by the
+next evaluation, not by itself.
 **Not:** a lifecycle state — a delinquent loan stays `ACTIVE`. Nor a Default, which is a flag set
 at 90 days past due and posts nothing, and not a Write-off, the deferred accounting event with its
 own posting. Delinquency is recoverable, and lending only records it: contact strategy and
@@ -973,7 +978,7 @@ referral; `READY → COLLECTING` when a record is found stale at the freeze), or
 `ABANDONED` (closed by the platform with a reason — `STANDING_LOST`, `CONSENT_WITHDRAWN`); at
 most one open per party and product, decided at most once (`INV-CRD-06`).
 **Not:** a Loan Application. A decision request asks only for a decision; Phase 11's loan
-application is the lending aggregate that will reference the decision. Nor the Credit Decision:
+application is the lending aggregate that references the decision. Nor the Credit Decision:
 a request may close with none.
 **Owned by:** `credit`
 
@@ -1062,8 +1067,10 @@ Decision, recorded once.
 
 *(Added by the Phase 10 → 11 transition, 2026-10-10 — ADR-0090…0100 (`Proposed`),
 `PHASE_11_PLAN.md` §3 and §12. Twenty-three Phase 11 terms, in the order `DOMAIN_MODEL.md` lists
-them. Nothing of Phase 11 is built: every entry is the planned design, and the task that builds a
-concept corrects its entry to the code. The machines they name are in
+them. Phase 11 built every concept below except those marked **Deferred** (Refinance, Write-off,
+Collections) - each entry states what was built, read against the code by the Phase 11 exit review,
+`P11-DOC-001`, 2026-10-15; this note read "Nothing of Phase 11 is built: every entry is the planned
+design, and the task that builds a concept corrects its entry to the code" until then. The machines they name are in
 [`LENDING_LIFECYCLES.md`](LENDING_LIFECYCLES.md). Loan Application, Loan Offer, Loan, Instalment,
 Exposure, Delinquency and Decision Consumption stay in §7, sharpened.)*
 
@@ -1076,7 +1083,9 @@ engine and template versions) and their SHA-256, beside the acceptance evidence 
 saw and how they were authenticated. Every servicing row names the agreement version it was
 computed under. Version 1 built by `P11-TSK-012`: the offer's canonical terms (in the offer's format - 1, or 2 from `P11-TSK-031`) and their hash copied byte
 for byte - text, never re-serialised - held to the offer's terms by trigger and to its bytes by `CHECK`; its id is the
-consumer reference under which credit records the decision's consumption.
+consumer reference under which credit records the decision's consumption. Version n+1 built by
+`P11-TSK-027` (an accepted amendment's, canonical terms format 3) and `P11-TSK-028` (a prepayment's, format 4);
+every version's hash re-verified by the replay (`P11-TSK-029`).
 **Not:** the Loan Offer (a proposal that may expire) or the Loan (the account and its state). Nor
 the Loan Product Terms Version it was built from: a later terms version never changes a signed
 agreement (`INV-LND-05`). And acceptance is not Consent (`INV-IDN-04`): no consent purpose is
@@ -1104,7 +1113,9 @@ rounded once, due dates clamped to month end from the intended day) from an agre
 the accrual start, and again from agreement v n+1 after an accepted change. Principal is conserved
 exactly (`INV-LND-03`); billed instalments of an old version are kept and unbilled ones superseded,
 nothing updated. The engine is built (`P11-TSK-006`: the level instalment is the actual-day annuity,
-of which the textbook `P·i/(1−(1+i)^−n)` is the equal-month case); persistence is `-014`'s.
+of which the textbook `P·i/(1−(1+i)^−n)` is the equal-month case); persisted (`lending V008`'s `repayment_schedule`
+and `loan_instalment`) at the accrual start by `-014` (path W) and `-015` (path X), and recalculated by `-027` (an amendment's
+`recalculate`) and `-028` (a prepayment's `recalculateAtInstalment`, the same instalment over the least term).
 **Not:** the bill. The schedule projects; Instalment Billing bills the interest actually accrued, so
 a late payment changes what becomes due while the projection stands. Nor a Credit Line's terms — a
 line has statements, not a schedule — and not the offer's illustrative schedule, which is labelled
@@ -1130,7 +1141,9 @@ principal outstanding, never on interest or fees, cumulatively rounded so a peri
 its exact interest rounded once — born once per account and date with its entry
 `DR LOAN_INTEREST_ACCRUED / CR LOAN_INTEREST_INCOME`. A date is accruable only once the database
 clock, read under the loan's lock, is past its end in the agreement's servicing zone (`INV-LND-02`,
-`INV-LND-09`, `INV-LND-10`). Planned (`P11-TSK-007`, `-016`).
+`INV-LND-09`, `INV-LND-10`). Built by `P11-TSK-007` (`AccrualEngineV1` over `Act365Fixed`) and `-016`
+(`lending V010`: `interest_accrual`, `UNIQUE (loan_id, accrual_date)`; `LoanServicing`, posting rule 2 under
+`lending.accrual:<loan>:<date>`).
 **Not:** interest *due* (the billing) or *paid* (an allocation): accrued, due, paid and outstanding
 are four words for four things. Nor an event — no per-day event is published; the row and the entry
 are the record. Penalty interest and interest on interest are not built.
@@ -1143,7 +1156,9 @@ journal entry debiting the wallet, in a single transaction (a row exists only on
 and `REVERSED` only by an approved, four-eyes repayment reversal (`INV-LND-11`). Built for the customer
 (`P11-TSK-018`: `repayment`, `Repayments`, `POST /v1/me/loans/{id}/repayments`) and for auto-collection (`P11-TSK-019`: kind
 `AUTO_COLLECTION`, through the same posting half, named by its collection attempt, `LENDING_LIFECYCLES.md` section 4.8) and
-for the payoff (`P11-TSK-026`: kind `PAYOFF`, the one repayment of a payoff's execution, keyed by its quote).
+for the payoff (`P11-TSK-026`: kind `PAYOFF`, the one repayment of a payoff's execution, keyed by its quote), and as a
+partial prepayment (`P11-TSK-028`: kind `PREPAYMENT`, principal not yet due, beside agreement and schedule v n+1). The row
+carries no status column: `ALLOCATED` and `REVERSED` are derived (the latter from an approved Repayment Reversal).
 **Not:** an Instalment (what was scheduled) or an Instalment Billing (what became due): a repayment
 is an event that may settle several, part of one, or none. Nor a failed collection, which is a
 collection attempt and never a repayment, and not a Transfer — it credits receivables, not a
@@ -1213,7 +1228,8 @@ receivable: it is subtracted from what is outstanding, and a closed loan's credi
 **Is:** the days between the oldest past-due item's due date and the current business date
 (database clock, servicing zone), 0 when nothing is past due — derived from billing and allocation
 rows each time it is needed, never stored as a counter — from which the bucket, the late fee and
-Default follow (`INV-LND-12`). Planned (`P11-TSK-024`).
+Default follow (`INV-LND-12`). Built by `P11-TSK-024`: `lending.days_past_due(loan, date)` in SQL and
+`DelinquencyState.derive` in Java, one rule.
 **Not:** the bucket, which is the range DPD falls in from the terms' bounds (`1–29`, `30–59`,
 `60–89`, `90+`), and not Delinquency, the condition. Grace delays only the late fee, never DPD; a
 partial payment does not reset it — it runs from the oldest due date still unpaid.
@@ -1222,7 +1238,8 @@ partial payment does not reset it — it runs from the oldest due date still unp
 ### Default
 **Is:** a flag on a Loan, set when Days Past Due reaches 90 (the pinned terms' threshold) and
 cleared when the account is current again, without probation — announced, suspending a line's
-draws, and recorded as an append-only condition change. Planned (`P11-TSK-024`).
+draws, and recorded as an append-only condition change. Built by `P11-TSK-024` (`loan_condition_event`,
+`LoanConditions`): set at the threshold, held while anything is past due, cleared at cure.
 **Not:** a lifecycle state, and not acceleration: Phase 11 accelerates nothing, charges no default
 interest and posts nothing on default. Nor a Write-off (the deferred recognition of the loss), and
 not Delinquency, the graduated condition of which default is one threshold.
@@ -1242,7 +1259,7 @@ billed early beside it (a line's current cycle stated early), stale when the rec
 fact; **Payoff Execution**: its born-once execution (`UNIQUE (quote_id)`, `UNIQUE (loan_id)`), which alone admits the
 early billing and the `PAID_OFF_EARLY` closure.
 **Not:** a partial prepayment (principal paid early while the loan continues under a new agreement
-version — the cut candidate `P11-TSK-028`), and not a Refinance (a new loan paying off the old,
+version — built by `P11-TSK-028`, *"the cut candidate" until `P11-DOC-001`, 2026-10-15*), and not a Refinance (a new loan paying off the old,
 deferred). No prepayment fee, and no rebate arithmetic: daily accrual makes an early-settlement
 rebate zero by construction.
 **Owned by:** `lending`
@@ -1252,7 +1269,9 @@ rebate zero by construction.
 per loan at acceptance, `POSTED` in the one transaction that credits the borrower's wallet, debits
 `LOAN_PRINCIPAL` (less any deducted origination fee) and makes the loan `ACTIVE`, or `FAILED` when
 the loan is cancelled. The receivable is born exactly with the wallet credit, at most once
-(`INV-LND-07`). Planned (`P11-TSK-014`).
+(`INV-LND-07`). Built by `P11-TSK-014` (`lending V008`, `LoanDisbursements`, rule 1 under
+`lending.disbursement:<loan>`); the cancellation `DISBURSEMENT_FAILED` follows only an attempt that fails at or
+after the deadline.
 **Not:** the Loan Payout (the optional external leg that follows and posts nothing of lending's),
 and not payments' Withdrawal. Nor a Credit Line Draw, which happens many times against the available
 limit. A failed disbursement posts nothing, so nothing is compensated.
@@ -1262,9 +1281,11 @@ limit. A failed disbursement posts nothing, so nothing is compensated.
 **Is:** lending's record of a disbursement's external leg, for a borrower who chose to receive the
 loan in their own bank account — born `PENDING` with a ledger hold on the funds in the wallet,
 dispatched as payments' system-actor withdrawal on the recorded instruction (adopting the hold), and
-moving `PENDING → DISPATCHING → DISPATCHED → PAID_OUT | FAILED | RETURNED`, or
+moving `PENDING → DISPATCHING → DISPATCHED → PAID_OUT | FAILED`, or
 `DISPATCHING → NOT_DISPATCHED` when payments refuses it, by *reading* payments' outcome. Interest starts at its terminal outcome.
-Planned (`P11-TSK-015`).
+Built by `P11-TSK-015` (`lending V009`: `loan_payout`; `LoanPayoutSteps`; payments `V032`). *(The planned
+`RETURNED` has no producer and is not a state - payments keeps no return record for an instant withdrawal; this
+read "`PAID_OUT | FAILED | RETURNED`" until `P11-DOC-001`, 2026-10-15.)*
 **Not:** the Disbursement — the receivable was born before it — and not the Withdrawal itself, which
 is payments', with its entry, ambiguity, return and reconciliation. Lending never re-dispatches, no
 payout outcome creates, duplicates or undoes the loan (`INV-LND-07`), and no account identifier
@@ -1336,7 +1357,9 @@ wallet's available balance.
 approved by a second, accepted by the customer (`MULTI_FACTOR`, with its own acceptance evidence),
 and conditional on the agreement version it was proposed against — yielding agreement and schedule
 version n+1 on the same loan, possibly re-scheduling arrears as principal not yet due; overdue
-interest is never capitalised in Phase 11 (`INV-LND-11`). Planned (`P11-TSK-027`).
+interest is never capitalised in Phase 11 (`INV-LND-11`). Built by `P11-TSK-027` (`lending V023`:
+`loan_amendment`, `loan_amendment_decision`, `loan_amendment_rescheduling`; `LoanAmendments`), the amendment's
+state derived from its rows and the clock, never written.
 **Not:** a lifecycle state, and not an edit — the agreement and schedule are new versions, the old
 kept. Nor a Refinance, which needs a new decision and a new loan, and not an operator's override of
 a computed figure, which does not exist.
@@ -1375,7 +1398,8 @@ capital contribution matched to a bank statement line (`DR CASH_AT_BANK / CR LEN
 Every acceptance, draw and principal-re-instating repayment reversal checks, under that account's row lock, that recognised capital less
 committed and outstanding principal stays at or above zero (`INV-LND-13`), so loan-funded wallet
 money is platform-funded. Lending administers the contributions; the account is the ledger's.
-Planned (`P11-TSK-003`, `-004`).
+Built by `P11-TSK-003` (ledger `V026`, the account) and `-004` (`lending V002`'s contributions, reconciliation
+`V022`'s recognition, `LendingCapitalHeadroom`, `LendingCapitalProof`).
 **Not:** a wallet — it is nobody's money held for a customer — and not `CASH_AT_BANK`, the cash
 itself, posted only by bank recognition (`INV-SET-06`): capital is the source of funds, the loan its
 use, and a disbursement does not debit it. Interest and fee income is not capital in Phase 11, and no

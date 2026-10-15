@@ -1,6 +1,6 @@
 # ADR-0097 — Disbursement to the borrower's wallet and to an external bank account: the receivable is born with the wallet credit, and the external leg is a payments withdrawal lending only reads
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Payments · Ledger · Accounts · Payment Methods · Settlement · Reconciliation
@@ -47,15 +47,22 @@ completion opens its expectation) and `INV-RAIL-02`, `-03`. Rests on `PHASE_11_P
 3. **Path X (external account): disbursement, then a payout of the borrower's funds.** At
    acceptance the borrower names a destination verified through `LoanPayoutDestinations` (their own
    payment method, the ADR-0056 shape; an opaque payments reference, never an account identifier,
-   `INV-RAIL-03`); a payout instruction is born with the loan. In T-dis, after the posting, **(L7)**
-   the wallet `FOR UPDATE` and a `HoldService` hold of `P − f`; the `loan_payout` born `PENDING`
-   (`UNIQUE (loan_id)`); **no schedule and no accrual yet**.
+   `INV-RAIL-03`); a payout instruction is born with the loan. In T-dis, **(L7)** the wallet
+   `FOR UPDATE` before the posting, then, after it, a `HoldService` hold of `P − f`; the `loan_payout`
+   born `PENDING` (`UNIQUE (loan_id)`); **no schedule and no accrual yet**. *(Corrected by
+   `P11-DOC-001`, 2026-10-15: this read "after the posting, (L7) the wallet `FOR UPDATE`"; as built the
+   wallet's row is taken before the posting's projections (L8), the hold judged under it - the
+   Follow-up's `P11-TSK-015` entry, `LoanDisbursements`.)*
 
 4. **The payout machine; lending only observes** (`P11-TSK-015`): `PENDING → DISPATCHING →
    DISPATCHED → PAID_OUT | FAILED | RETURNED`; `DISPATCHING → NOT_DISPATCHED` (payments refuses the
    withdrawal or cannot route it — met while dispatching, not before: the hold released, funds free
    in the wallet). Payments' withdrawal machine has no `RETURNED` state: lending maps `RETURNED`
-   from payments' return record for the withdrawal, read the same way as its status.
+   from payments' return record for the withdrawal, read the same way as its status. *(As built
+   (`P11-DOC-001`, 2026-10-15): `RETURNED` has no producer and is not a state - not in `PayoutStatus`,
+   not in `lending V009`'s `CHECK` - because payments keeps no return record for an instant withdrawal
+   (the Follow-up's `P11-TSK-015` entry). The machine as built is `PENDING → DISPATCHING → DISPATCHED →
+   PAID_OUT | FAILED` and `DISPATCHING → NOT_DISPATCHED`; every `RETURNED` below is the design, unbuilt.)*
    - **T-pyo** (a) claims the payout `PENDING → DISPATCHING` with a database-stamped permit and
      **commits**; (b) calls `LoanPayouts.dispatch` with no lending lock held — payments' own Tx1 /
      wire / Tx2, keyed `payments.withdrawal:lending:<loanId>`, adopting the hold; (c) under (L3)
@@ -83,7 +90,8 @@ completion opens its expectation) and `INV-RAIL-02`, `-03`. Rests on `PHASE_11_P
    still) in the borrower's wallet, and the receivable stands (`INV-LND-07`).
 
 7. **Interest starts at the payout's terminal outcome** (A30). On `PAID_OUT` the funds reached the
-   borrower's bank; on `FAILED`, `RETURNED` or `NOT_DISPATCHED` they are available in the wallet —
+   borrower's bank; on `FAILED`, `RETURNED` (no producer, point 4's note) or `NOT_DISPATCHED` they
+   are available in the wallet —
    either way the borrower has the money from that instant. Between dispatch and conclusion the
    platform, not the borrower, bears the provider's ambiguity: no interest accrues on money the
    borrower cannot use.
@@ -107,7 +115,7 @@ completion opens its expectation) and `INV-RAIL-02`, `-03`. Rests on `PHASE_11_P
    | Ten payout dispatchers | the payout's conditional claim + payments' key: one withdrawal |
    | Provider succeeded, response lost (scenario 5) | payments `UNKNOWN`, held; lending `DISPATCHED`, no interest; concluded by inquiry |
    | Payout refused or unroutable by payments | `DISPATCHING → NOT_DISPATCHED`, hold released, interest starts |
-   | Return recorded before lending concludes | `RETURNED` (from payments' return record); the funds back in the wallet; interest starts |
+   | Return recorded before lending concludes | `RETURNED` (from payments' return record); the funds back in the wallet; interest starts — *no producer as built (point 4's note): payments records no return for an instant withdrawal* |
    | Return after lending concluded `PAID_OUT` | payments' return path credits the wallet; the payout stays `PAID_OUT` (terminal); the loan and its interest unaffected |
 
 ## Alternatives Considered
@@ -171,7 +179,9 @@ Negative:
 - Path X adds a machine, a sweep and a payments change (V032).
 - The platform forgoes interest for the payout's ambiguous window.
 
-Operational impact: `finapp.lending.disbursement{path,outcome}`, `…disbursement.pending.age`
+Operational impact: `finapp.lending.disbursement{payout,outcome}` *(read `{path,outcome}` until
+`P11-DOC-001`, 2026-10-15: `path` is a forbidden tag fragment, so the key is `payout` -
+`LoanDisbursementMetrics`)*, `…disbursement.pending.age`
 (alerting above the deadline), `finapp.lending.payout{outcome}`, `…payout.dispatched.age`
 (alerting above payments' outcome objective); two sweepers' enabled gauges.
 Security impact: no account identifier enters lending; the payout destination is verified at
@@ -240,5 +250,6 @@ outcome creates, duplicates or undoes it), `INV-RAIL-02`, `INV-RAIL-03`, `INV-PA
   thirty minutes after its birth - payments' instant rail answers in seconds and its resolution sweep inquires a
   `DISPATCHED` withdrawal after ten minutes, so thirty leave the claim, the dispatch and two resolution passes.
   `LendingAlertRulesTest` and `AlertRulesResolveTest#theLendingRulesResolve` hold the rules to these.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

@@ -34,7 +34,9 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-10-10).** **Phases 0 through 10 are `COMPLETE`; Phase 11 — Lending Infrastructure — is `READY`.** Phase 10 closed on its
+**Current position (2026-10-16).** **Phases 0 through 11 are `COMPLETE`.** Phase 11 — Lending Infrastructure — closed on its exit review (`P11-DOC-001`, 2026-10-16): the personal loan and the revolving credit line from application to closure, every figure a ledger balance, every loan funded from lending capital recognised from bank evidence, proven by the storm on two instances and the battery; the review corrected a lock-order cycle in the interest waiver, probed every born-once arbiter alone, closed twenty test gaps on gate clauses and accepted ADR-0090…0100. Production originates no loan until a real bureau is connected (#13, #14) - an accepted limitation. **The Phase 11 → 12 transition is the owner's to open.** *(This position read "(2026-10-10) … Phase 11 … is `READY`" until `P11-DOC-001`; the paragraph below is that position, kept.)*
+
+**Position at 2026-10-10.** **Phases 0 through 10 are `COMPLETE`; Phase 11 — Lending Infrastructure — is `READY`.** Phase 10 closed on its
 exit review (`P10-DOC-001`, 2026-10-09 — `PHASE_10_PLAN.md` and `CREDIT_DECISIONING_LIFECYCLES.md`
 read against the code and made true, inline where a statement was wrong and in the plan's errata
 for the rest; ADR-0084…0089 read against the code and accepted). Among what the review found and

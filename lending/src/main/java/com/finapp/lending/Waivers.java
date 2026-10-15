@@ -78,6 +78,10 @@ import lombok.RequiredArgsConstructor;
  *       ({@code UNIQUE (waiver_id)}): {@code PROPOSED}, not the approver's own ({@link SelfApprovalRefused}; the four-eyes
  *       {@code CHECK} beneath); the same approver's retry converges;
  *   <li>an {@code ACTIVE} or {@code CLOSING} account ({@link LoanClosed}); the database clock after the locks; the bound;
+ *   <li>for an {@link WaiverKind#INTEREST interest} waiver only, the currency's shared {@code LOAN_INTEREST_INCOME}
+ *       projection row ({@link PostingService#lockBalancesInOrder}) - BEFORE the wallet, the order in which the servicing
+ *       step's accrual and the payoff's and the prepayment's catch-up accrual already take it ahead of their wallet; taken
+ *       after the wallet, rule 9 met them in a cycle over two accounts of one party ({@code P11-DOC-001}'s finding);
  *   <li><strong>(L7)</strong> the borrower's existing wallet row {@code FOR UPDATE}, BEFORE any posting: a waiver that
  *       zeroes the last receivable closes the account and refunds its credit balance to the wallet in this transaction, and
  *       the posting's projection rows include a shared income account - a wallet taken after it could meet a disbursement
@@ -248,6 +252,14 @@ public final class Waivers {
                 .accounts(unitOfWork, loan, account.currency());
         if (proposal.amount().compareTo(room(unitOfWork, account, proposal.kind(), resolved, principal)) > 0) {
             throw new WaiverExceedsDue(proposal.kind());
+        }
+        // The currency's LOAN_INTEREST_INCOME row BEFORE L7, for an interest waiver (P11-DOC-001): every other writer that
+        // posts to that shared row and takes a wallet takes the row first - the servicing step's accrual before its
+        // collection or its closure refund, the payoff's and the prepayment's catch-up accrual before the wallet. Taken
+        // after the wallet here, rule 9 closed a cycle with them over two accounts of one party (40P01).
+        if (proposal.kind() == WaiverKind.INTEREST) {
+            postings.lockBalancesInOrder(unitOfWork,
+                    List.of(operational(unitOfWork, AccountPurpose.LOAN_INTEREST_INCOME, account)));
         }
         // (L7) The borrower's existing wallet, before any posting: the closure's refund never takes it after L8.
         wallets.existingWallet(unitOfWork, party, account.currency())

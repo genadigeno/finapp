@@ -183,7 +183,8 @@ class AmendmentDatabaseTest {
     @DisplayName("four eyes at both ranks: the proposer's approval 403 SelfApprovalRefused, nothing decided; a raw"
             + " self-approval refused by the four-eyes CHECK, a decision copying another proposer by the composite key;"
             + " reasons screened by the domain and by the database; ten approvers, one decision (nine ProposalNotPending)"
-            + " and the winner's retry converges; one open amendment per loan (ProposalPending), ten proposers one")
+            + " and the winner's retry converges; one open amendment per loan (ProposalPending), ten proposers one; a"
+            + " withdrawal by the proposer and a rejection by another each audited once lending.AmendmentRejected")
     void fourEyesAtBothRanks() throws Exception {
         LoanId loan = current(6_100_00);
         BigDecimal rate = lowerRate(loan);
@@ -235,6 +236,12 @@ class AmendmentDatabaseTest {
                 new Actor(scalar("SELECT proposed_by FROM lending.loan_amendment WHERE loan_id = ?", other.value()),
                         com.finapp.platform.security.ActorType.EMPLOYEE)).amendment();
         assertThat(withdrawn.status()).as("the proposer may withdraw it").isEqualTo(LoanAmendmentStatus.REJECTED);
+        assertRejectionAudited(withdrawn.id(), withdrawn.proposedBy(), true);
+        // Rejected by another employee - not its proposer: audited the same way, byProposer=false.
+        LoanAmendment declined = propose(other, otherRate, 15, false, employee());
+        Actor rejecter = employee();
+        assertThat(reject(other, declined.id(), rejecter).amendment().status()).isEqualTo(LoanAmendmentStatus.REJECTED);
+        assertRejectionAudited(declined.id(), rejecter.id(), false);
         refusedAlone("INSERT INTO lending.loan_amendment SELECT gen_random_uuid(), m.loan_id, m.amends_agreement_id,"
                 + " m.amends_version, m.nominal_annual_rate, m.remaining_instalments, m.reschedule_arrears,"
                 + " m.document_sha256, 'raw', 'EMPLOYEE', now(), 'to DE89 3704 0044 0532 0130 00', 'p11t27-raw'"
@@ -822,6 +829,21 @@ class AmendmentDatabaseTest {
     static long audits(UUID target, String action) {
         return count("SELECT count(*) FROM platform.audit_record WHERE operation = ? AND target_id = ?", action,
                 target.toString());
+    }
+
+    /**
+     * Exactly one {@code lending.AmendmentRejected} audit record for {@code amendment}: its actor the rejecter, its reason
+     * the one given, outcome {@code SUCCEEDED}, its summary naming whether the proposer withdrew it - and no other
+     * decision recorded for it (the gate's "rejected or withdrawn, audited" clause, as {@code lending.WaiverRejected} is).
+     */
+    static void assertRejectionAudited(UUID amendment, String rejecter, boolean byProposer) {
+        assertThat(audits(amendment, "lending.AmendmentRejected")).as("one rejection audited").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.AmendmentRejected'"
+                + " AND target_id = ? AND actor_id = ? AND reason = 'not warranted' AND outcome = 'SUCCEEDED'"
+                + " AND change_summary LIKE ?", amendment.toString(), rejecter, "%byProposer=" + byProposer + "%"))
+                .as("its actor, reason, outcome and summary").isEqualTo(1);
+        assertThat(audits(amendment, "lending.AmendmentApproved")).as("no approval beside it").isZero();
+        assertThat(decisions(amendment)).as("one decision").isEqualTo(1);
     }
 
     /** An application-role decision approving {@code amendment}, copying {@code proposer} and decided by {@code decider}. */

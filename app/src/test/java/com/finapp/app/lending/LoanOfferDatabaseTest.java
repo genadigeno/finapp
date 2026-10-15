@@ -149,6 +149,24 @@ class LoanOfferDatabaseTest {
     }
 
     @Test
+    @DisplayName("ten declines under one key are one (INV-IDEM-01, the gate's idempotency clause): every answer the one"
+            + " receipt or 409 api.IdempotencyInProgress - the offer DECLINED once, one offer event, credit's decision"
+            + " never consumed")
+    void tenDeclinesUnderOneKeyAreOne() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, line("2100.00"));
+        String declineKey = key();
+        HttpResponse<String> declined = OneKeyRace.tenUnderOneKey(200, () -> client.post(OFFERS + "/" + offer
+                + "/decline", null, customer.token(), declineKey));
+        assertThat(field(declined.body(), "status")).isEqualTo("DECLINED");
+        assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?::uuid", offer)).isEqualTo("DECLINED");
+        assertThat(count("SELECT count(*) FROM lending.loan_offer_event WHERE offer_id = ?::uuid AND to_status ="
+                + " 'DECLINED'", offer)).as("declined once").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM credit.credit_decision_consumption c JOIN lending.loan_offer o"
+                + " ON o.decision_id = c.decision_id WHERE o.id = ?::uuid", offer)).isZero();
+    }
+
+    @Test
     @DisplayName("another party's offer is the uniform 404 to read and to decline - nothing written")
     void anotherPartysOfferIsNotFound() throws Exception {
         CreditFixtures.Customer owner = customers.consentingCustomer();

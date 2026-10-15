@@ -132,6 +132,40 @@ class LoanTermsDatabaseTest {
         assertThat(status(active)).isEqualTo("ACTIVE");
     }
 
+    @Test
+    @DisplayName("nothing leaves a RETIRED or a REJECTED terms version, for every role: a real retired version (its"
+            + " successor activated) and a real rejected proposal - each refused by raw SQL, as the owner and as the"
+            + " application role, back to PROPOSED, to ACTIVE and to the other terminal status: P0001 'not an edge';"
+            + " both unmoved")
+    void nothingLeavesATerminalVersionForAnyRole() throws SQLException {
+        LoanTermsVersionId retired = activate(LOAN, "0.0711");
+        activate(LOAN, "0.0712");
+        LoanTermsAdministration.Proposed proposal = propose(LOAN, "0.0713", employee());
+        inOneTransaction(uow -> ADMINISTRATION.reject(uow, proposal.id(), employee(), "not warranted", correlation()));
+        LoanTermsVersionId rejected = proposal.id();
+        Map<LoanTermsVersionId, String> terminal = Map.of(retired, "RETIRED", rejected, "REJECTED");
+        for (Map.Entry<LoanTermsVersionId, String> version : terminal.entrySet()) {
+            assertThat(status(version.getKey())).isEqualTo(version.getValue());
+        }
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (writer) {
+                for (Map.Entry<LoanTermsVersionId, String> version : terminal.entrySet()) {
+                    for (String to : List.of("PROPOSED", "ACTIVE", "RETIRED", "REJECTED")) {
+                        if (to.equals(version.getValue())) {
+                            continue;
+                        }
+                        InterestAccrualDatabaseTest.refused(writer, "UPDATE lending.loan_terms_version SET status = '"
+                                + to + "' WHERE id = '" + version.getKey().value() + "'", "P0001",
+                                version.getValue() + " -> " + to + " is not an edge");
+                    }
+                }
+            }
+        }
+        for (Map.Entry<LoanTermsVersionId, String> version : terminal.entrySet()) {
+            assertThat(status(version.getKey())).as("unmoved").isEqualTo(version.getValue());
+        }
+    }
+
     // ------------------------------------------------------------------ the history
 
     @Test

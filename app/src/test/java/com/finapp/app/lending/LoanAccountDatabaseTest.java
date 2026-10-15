@@ -1513,6 +1513,444 @@ class LoanAccountDatabaseTest {
         return meterRegistry.find(LoanAmendmentMetrics.AMENDMENT).tag("outcome", outcome).counter().count();
     }
 
+    // ------------------------------------------------------------------ the exit review's doors (P11-DOC-001)
+
+    @Test
+    @DisplayName("another party's REAL loan and amendment are the uniform 404 lending.NotFound (the gate's security"
+            + " clause): a stranger's payoff quote on the owner's loan, their read of the owner's approved amendment -"
+            + " through the owner's loan and through their own - and their acceptance of it echoing its true document,"
+            + " each 404 with nothing written; the owner reads it and is quoted")
+    void anotherPartysRealLoanAndAmendmentAreNotFound() throws Exception {
+        CreditFixtures.Customer owner = customers.consentingCustomer();
+        String loanId = disbursedLoan(owner, "4100.00");
+        String amendment = approvedAmendment(loanId);
+        String mine = LOANS + "/" + loanId + "/amendments/" + amendment;
+        HttpResponse<String> offeredToOwner = client.get(mine, owner.token());
+        assertThat(offeredToOwner.statusCode()).as(offeredToOwner.body()).isEqualTo(200);
+        String document = field(offeredToOwner.body(), "documentSha256");
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        String strangersLine = acceptedLine(stranger, "1200.00");
+
+        HttpResponse<String> quote = client.post(LOANS + "/" + loanId + "/payoff-quotes", "{}", stranger.token(), key());
+        assertThat(quote.statusCode()).as(quote.body()).isEqualTo(404);
+        assertThat(quote.body()).contains("lending.NotFound").doesNotContain("4100");
+        assertThat(count("SELECT count(*) FROM lending.payoff_quote WHERE loan_id = ?::uuid", loanId))
+                .as("no quote written").isZero();
+
+        for (String path : List.of(mine, LOANS + "/" + strangersLine + "/amendments/" + amendment)) {
+            HttpResponse<String> read = client.get(path, stranger.token());
+            assertThat(read.statusCode()).as(path + ": " + read.body()).isEqualTo(404);
+            assertThat(read.body()).contains("lending.NotFound").doesNotContain(document).doesNotContain("LOAN AMENDMENT");
+            HttpResponse<String> accept = client.post(path + "/acceptance", "{\"documentSha256\":\"" + document + "\"}",
+                    stranger.token(), key());
+            assertThat(accept.statusCode()).as(path + ": " + accept.body()).isEqualTo(404);
+            assertThat(accept.body()).contains("lending.NotFound");
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", loanId))
+                .as("no agreement version made").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", strangersLine))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.AmendmentAccepted'"
+                + " AND target_id = ?", amendment)).isZero();
+
+        HttpResponse<String> ownersQuote = client.post(LOANS + "/" + loanId + "/payoff-quotes", "{}", owner.token(),
+                key());
+        assertThat(ownersQuote.statusCode()).as("the record is real: " + ownersQuote.body()).isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("a lesser session is refused with nothing written on the offer and the line (A19, the gate's security"
+            + " clause): an enrolled customer on a password-only session accepting their OFFERED offer, drawing on and"
+            + " closing their ACTIVE line - each 403 identity.AssuranceRequired, the offer still OFFERED with no loan"
+            + " and credit's decision unconsumed, no draw, no closure request; the same key from a MULTI_FACTOR session"
+            + " then acts - the refusal stored nothing under it")
+    void aLesserSessionIsRefusedOnTheOfferAndTheLine() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String lesser = customers.login(customer);
+        String offer = offered(customer, line("1900.00"));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+
+        String acceptKey = key();
+        assertRefusedAssurance(accept(lesser, offer, hash, null, acceptKey));
+        assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?::uuid", offer)).isEqualTo("OFFERED");
+        assertThat(count("SELECT count(*) FROM lending.loan WHERE offer_id = ?::uuid", offer)).isZero();
+        assertThat(count("SELECT count(*) FROM credit.credit_decision_consumption c JOIN lending.loan_offer o"
+                + " ON o.decision_id = c.decision_id WHERE o.id = ?::uuid", offer)).isZero();
+        HttpResponse<String> accepted = accept(customer.token(), offer, hash, null, acceptKey);
+        assertThat(accepted.statusCode()).as("the same key, MULTI_FACTOR: " + accepted.body()).isEqualTo(201);
+        String lineId = field(accepted.body(), "loanId");
+
+        String drawKey = key();
+        assertRefusedAssurance(draw(lesser, lineId, "100.00", drawKey));
+        assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", lineId)).isZero();
+        String closureKey = key();
+        assertRefusedAssurance(client.post(LOANS + "/" + lineId + "/closure", null, lesser, closureKey));
+        assertThat(count("SELECT count(*) FROM lending.line_closure_request WHERE loan_id = ?::uuid", lineId)).isZero();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", lineId)).isEqualTo("ACTIVE");
+
+        assertThat(draw(customer.token(), lineId, "100.00", drawKey).statusCode()).as("the same key, MULTI_FACTOR")
+                .isEqualTo(201);
+        assertThat(client.post(LOANS + "/" + lineId + "/closure", null, customer.token(), closureKey).statusCode())
+                .as("the same key, MULTI_FACTOR").isEqualTo(201);
+        assertThat(count("SELECT count(*) FROM lending.credit_line_draw WHERE loan_id = ?::uuid", lineId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.line_closure_request WHERE loan_id = ?::uuid", lineId))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a lesser session is refused with nothing written on the loan (A19, the gate's security clause): an"
+            + " enrolled customer on a password-only session prepaying their ACTIVE loan, paying it off on a real quote"
+            + " and accepting its APPROVED amendment - each 403 identity.AssuranceRequired: no prepayment, no new"
+            + " agreement or schedule version, no payoff execution, the loan ACTIVE, the amendment not accepted; the same"
+            + " key from a MULTI_FACTOR session then acts - the refusal stored nothing under it")
+    void aLesserSessionIsRefusedOnTheLoan() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String lesser = customers.login(customer);
+        String amended = disbursedLoan(customer, "3900.00");
+        String amendment = approvedAmendment(amended);
+        String mine = LOANS + "/" + amended + "/amendments/" + amendment;
+        String acceptance = "{\"documentSha256\":\"" + field(client.get(mine, customer.token()).body(), "documentSha256")
+                + "\"}";
+        String acceptanceKey = key();
+        assertRefusedAssurance(client.post(mine + "/acceptance", acceptance, lesser, acceptanceKey));
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", amended)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.repayment_schedule WHERE loan_id = ?::uuid", amended)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.AmendmentAccepted'"
+                + " AND target_id = ?", amendment)).isZero();
+        assertThat(client.get(mine, customer.token()).body()).contains("\"status\":\"APPROVED\"");
+        HttpResponse<String> accepted = client.post(mine + "/acceptance", acceptance, customer.token(), acceptanceKey);
+        assertThat(accepted.statusCode()).as("the same key, MULTI_FACTOR: " + accepted.body()).isEqualTo(201);
+
+        String loanId = disbursedLoan(customer, "4300.00");
+        String prepayments = LOANS + "/" + loanId + "/prepayments";
+        String body = "{\"amount\":\"1000.00\",\"currency\":\"EUR\"}";
+        String prepaymentKey = key();
+        assertRefusedAssurance(client.post(prepayments, body, lesser, prepaymentKey));
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId)).isZero();
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        assertThat(client.post(prepayments, body, customer.token(), prepaymentKey).statusCode())
+                .as("the same key, MULTI_FACTOR").isEqualTo(201);
+
+        topUpWallet(customer.party(), Money.ofMinorUnits(500_00, EUR));
+        HttpResponse<String> quoted = client.post(LOANS + "/" + loanId + "/payoff-quotes", "{}", customer.token(), key());
+        assertThat(quoted.statusCode()).as(quoted.body()).isEqualTo(201);
+        String payoff = "{\"quoteId\":\"" + field(quoted.body(), "quoteId") + "\"}";
+        String payoffKey = key();
+        assertRefusedAssurance(client.post(LOANS + "/" + loanId + "/payoff", payoff, lesser, payoffKey));
+        assertThat(count("SELECT count(*) FROM lending.payoff_execution WHERE loan_id = ?::uuid", loanId)).isZero();
+        assertThat(count("SELECT count(*) FROM lending.loan_closure WHERE loan_id = ?::uuid", loanId)).isZero();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        HttpResponse<String> paidOff = client.post(LOANS + "/" + loanId + "/payoff", payoff, customer.token(), payoffKey);
+        assertThat(paidOff.statusCode()).as("the same key, MULTI_FACTOR: " + paidOff.body()).isEqualTo(201);
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("CLOSED");
+    }
+
+    @Test
+    @DisplayName("self-dealing is refused through the API and audited FAILED for the waiver's and the amendment's acts"
+            + " (the gate's security clause): the borrower, granted the servicing role, proposing, approving and"
+            + " rejecting a waiver of their own loan's fee and an amendment of their own loan over the operator doors -"
+            + " each 403 lending.SelfDealingRefused with exactly one lending.SelfDealingRefused FAILED record naming the"
+            + " act, and nothing else written: no waiver, no amendment, no decision, no other audit record")
+    void selfDealingIsRefusedThroughTheApiForWaiversAndAmendments() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String feeLoan = disbursedLoan(customer, "3600.00");
+        toFirstDueDate(feeLoan, 5);
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        String assessment = scalar("SELECT id::text FROM lending.fee_assessment WHERE loan_id = ?::uuid", feeLoan);
+        assertThat(assessment).as("the late fee assessed").isNotNull();
+        String amendedLoan = disbursedLoan(customer, "3700.00");
+        assign(UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE party_id = ?::uuid",
+                customer.party().toString())), RoleName.LOAN_SERVICING_AGENT);
+        String insider = customer.token();
+        String agent = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+
+        String waivers = "/v1/operator/loans/" + feeLoan + "/waivers";
+        String proposal = "{\"kind\":\"FEE\",\"targetId\":\"" + assessment + "\",\"amount\":\"15.00\",\"currency\":\"EUR\","
+                + "\"reason\":\"branch outage on the due date, documented\"}";
+        assertSelfDealing(client.post(waivers, proposal, insider, key()), feeLoan, "waiver:propose");
+        assertThat(count("SELECT count(*) FROM lending.waiver WHERE loan_id = ?::uuid", feeLoan)).isZero();
+        HttpResponse<String> proposed = client.post(waivers, proposal, agent, key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String waiver = field(proposed.body(), "waiverId");
+        long waiverAudit = count("SELECT count(*) FROM platform.audit_record WHERE target_id IN (?, ?)"
+                + " AND operation <> 'lending.SelfDealingRefused'", feeLoan, waiver);
+        String decision = "{\"reason\":\"matched the outage log\"}";
+        assertSelfDealing(client.post(waivers + "/" + waiver + "/approval", decision, insider, key()), feeLoan,
+                "waiver:approve");
+        assertSelfDealing(client.post(waivers + "/" + waiver + "/rejection", decision, insider, key()), feeLoan,
+                "waiver:reject");
+        assertThat(count("SELECT count(*) FROM lending.waiver_decision WHERE waiver_id = ?::uuid", waiver)).isZero();
+        assertThat(count("SELECT count(*) FROM lending.waiver WHERE loan_id = ?::uuid", feeLoan)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id IN (?, ?)"
+                + " AND operation <> 'lending.SelfDealingRefused'", feeLoan, waiver)).as("nothing else audited")
+                .isEqualTo(waiverAudit);
+
+        String amendments = "/v1/operator/loans/" + amendedLoan + "/amendments";
+        String amendmentProposal = amendmentProposal(amendedLoan);
+        assertSelfDealing(client.post(amendments, amendmentProposal, insider, key()), amendedLoan, "amendment:propose");
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment WHERE loan_id = ?::uuid", amendedLoan)).isZero();
+        HttpResponse<String> amendmentProposed = client.post(amendments, amendmentProposal, agent, key());
+        assertThat(amendmentProposed.statusCode()).as(amendmentProposed.body()).isEqualTo(201);
+        String amendment = field(amendmentProposed.body(), "amendmentId");
+        long amendmentAudit = count("SELECT count(*) FROM platform.audit_record WHERE target_id IN (?, ?)"
+                + " AND operation <> 'lending.SelfDealingRefused'", amendedLoan, amendment);
+        String amendmentDecision = "{\"reason\":\"affordability reviewed\"}";
+        assertSelfDealing(client.post(amendments + "/" + amendment + "/approval", amendmentDecision, insider, key()),
+                amendedLoan, "amendment:approve");
+        assertSelfDealing(client.post(amendments + "/" + amendment + "/rejection", amendmentDecision, insider, key()),
+                amendedLoan, "amendment:reject");
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment_decision WHERE amendment_id = ?::uuid",
+                amendment)).isZero();
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment WHERE loan_id = ?::uuid", amendedLoan)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id IN (?, ?)"
+                + " AND operation <> 'lending.SelfDealingRefused'", amendedLoan, amendment)).as("nothing else audited")
+                .isEqualTo(amendmentAudit);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfDealingRefused'"
+                + " AND target_id IN (?, ?)", feeLoan, amendedLoan)).as("one record per refusal, six in all").isEqualTo(6);
+    }
+
+    @Test
+    @DisplayName("every customer loan door under one key is one (INV-IDEM-01, the gate's idempotency clause): ten"
+            + " closures, prepayments, payoff quotes, payoffs and amendment acceptances - each raced under one key -"
+            + " answer one receipt (or 409 api.IdempotencyInProgress) and make one closure request, one prepayment, one"
+            + " quote, one payoff and one accepted agreement version")
+    void everyCustomerLoanDoorUnderOneKeyIsOne() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String lineId = acceptedLine(customer, "1600.00");
+        String closureKey = key();
+        OneKeyRace.tenUnderOneKey(201, () -> client.post(LOANS + "/" + lineId + "/closure", null, customer.token(),
+                closureKey));
+        assertThat(count("SELECT count(*) FROM lending.line_closure_request WHERE loan_id = ?::uuid", lineId))
+                .as("one closure request").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_closure WHERE loan_id = ?::uuid", lineId))
+                .as("nothing outstanding: closed once").isEqualTo(1);
+
+        String loanId = disbursedLoan(customer, "4400.00");
+        String prepaymentKey = key();
+        OneKeyRace.tenUnderOneKey(201, () -> client.post(LOANS + "/" + loanId + "/prepayments",
+                "{\"amount\":\"1000.00\",\"currency\":\"EUR\"}", customer.token(), prepaymentKey));
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid AND kind = 'PREPAYMENT'",
+                loanId)).as("one prepayment").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", loanId))
+                .as("one new agreement version").isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM lending.repayment_schedule WHERE loan_id = ?::uuid", loanId)).isEqualTo(2);
+
+        topUpWallet(customer.party(), Money.ofMinorUnits(500_00, EUR));
+        String quoteKey = key();
+        HttpResponse<String> quoted = OneKeyRace.tenUnderOneKey(201, () -> client.post(LOANS + "/" + loanId
+                + "/payoff-quotes", "{}", customer.token(), quoteKey));
+        assertThat(count("SELECT count(*) FROM lending.payoff_quote WHERE loan_id = ?::uuid", loanId))
+                .as("one quote").isEqualTo(1);
+        String payoff = "{\"quoteId\":\"" + field(quoted.body(), "quoteId") + "\"}";
+        String payoffKey = key();
+        OneKeyRace.tenUnderOneKey(201, () -> client.post(LOANS + "/" + loanId + "/payoff", payoff, customer.token(),
+                payoffKey));
+        assertThat(count("SELECT count(*) FROM lending.payoff_execution WHERE loan_id = ?::uuid", loanId))
+                .as("one payoff").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_closure WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.repayment WHERE loan_id = ?::uuid", loanId))
+                .as("the prepayment and the payoff's one repayment").isEqualTo(2);
+
+        String amendedLoan = disbursedLoan(customer, "3800.00");
+        String amendment = approvedAmendment(amendedLoan);
+        String mine = LOANS + "/" + amendedLoan + "/amendments/" + amendment;
+        String acceptance = "{\"documentSha256\":\"" + field(client.get(mine, customer.token()).body(), "documentSha256")
+                + "\"}";
+        String acceptanceKey = key();
+        OneKeyRace.tenUnderOneKey(201, () -> client.post(mine + "/acceptance", acceptance, customer.token(),
+                acceptanceKey));
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", amendedLoan))
+                .as("one accepted agreement version").isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM lending.repayment_schedule WHERE loan_id = ?::uuid", amendedLoan))
+                .isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.AmendmentAccepted'"
+                + " AND target_id = ?", amendment)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("every servicing act under one key is one (INV-IDEM-01, the gate's idempotency clause): a waiver's, a"
+            + " repayment reversal's and an amendment's proposal, rejection and approval - each raced ten times under one"
+            + " key - answer one receipt (or 409 api.IdempotencyInProgress) and make one proposal, one decision, one"
+            + " entry and one audit record each")
+    void everyServicingActUnderOneKeyIsOne() throws Exception {
+        String proposer = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        String approver = sessionWith(RoleName.LOAN_SERVICING_AGENT);
+        LoanServicingSchedule servicing = new LoanServicingSchedule(loanServicing, lendingTransactions, servicingMetrics,
+                Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
+
+        // The waiver: proposed and rejected, proposed again and approved.
+        CreditFixtures.Customer feeCustomer = customers.consentingCustomer();
+        String feeLoan = disbursedLoan(feeCustomer, "3550.00");
+        toFirstDueDate(feeLoan, 5);
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        String assessment = scalar("SELECT id::text FROM lending.fee_assessment WHERE loan_id = ?::uuid", feeLoan);
+        String feeEntry = scalar("SELECT journal_entry_id::text FROM lending.fee_assessment WHERE id = ?::uuid", assessment);
+        String waivers = "/v1/operator/loans/" + feeLoan + "/waivers";
+        String waiverProposal = "{\"kind\":\"FEE\",\"targetId\":\"" + assessment + "\",\"amount\":\"15.00\","
+                + "\"currency\":\"EUR\",\"reason\":\"branch outage on the due date, documented\"}";
+        String proposalKey = key();
+        String rejectedWaiver = field(OneKeyRace.tenUnderOneKey(201, () -> client.post(waivers, waiverProposal, proposer,
+                proposalKey)).body(), "waiverId");
+        assertThat(count("SELECT count(*) FROM lending.waiver WHERE loan_id = ?::uuid", feeLoan)).as("one waiver")
+                .isEqualTo(1);
+        assertThat(audits("lending.WaiverProposed", rejectedWaiver)).isEqualTo(1);
+        String waiverDecision = "{\"reason\":\"not documented after all\"}";
+        String rejectionKey = key();
+        OneKeyRace.tenUnderOneKey(200, () -> client.post(waivers + "/" + rejectedWaiver + "/rejection", waiverDecision,
+                approver, rejectionKey));
+        assertThat(count("SELECT count(*) FROM lending.waiver_decision WHERE waiver_id = ?::uuid AND outcome ="
+                + " 'REJECTED'", rejectedWaiver)).as("one rejection").isEqualTo(1);
+        assertThat(audits("lending.WaiverRejected", rejectedWaiver)).isEqualTo(1);
+        HttpResponse<String> again = client.post(waivers, waiverProposal, proposer, key());
+        assertThat(again.statusCode()).as(again.body()).isEqualTo(201);
+        String approvedWaiver = field(again.body(), "waiverId");
+        String approvalKey = key();
+        OneKeyRace.tenUnderOneKey(200, () -> client.post(waivers + "/" + approvedWaiver + "/approval",
+                "{\"reason\":\"matched the outage log\"}", approver, approvalKey));
+        assertThat(count("SELECT count(*) FROM lending.waiver_decision WHERE waiver_id = ?::uuid AND outcome ="
+                + " 'APPROVED'", approvedWaiver)).as("one approval").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reverses_entry_id = ?::uuid", feeEntry))
+                .as("one entry posted").isEqualTo(1);
+        assertThat(audits("lending.WaiverApproved", approvedWaiver)).isEqualTo(1);
+
+        // The repayment reversal: proposed and rejected, proposed again and approved.
+        CreditFixtures.Customer payer = customers.consentingCustomer();
+        String repaidLoan = disbursedLoan(payer, "3650.00");
+        toFirstDueDate(repaidLoan);
+        while (servicing.sweepOnce() == 500) {
+            // every due account serviced
+        }
+        long owed = count("SELECT interest_due_minor + principal_due_minor FROM lending.instalment_billing"
+                + " WHERE loan_id = ?::uuid", repaidLoan);
+        HttpResponse<String> repaid = repay(payer.token(), repaidLoan, Money.ofMinorUnits(owed, EUR).toBigDecimal()
+                .toPlainString(), key());
+        assertThat(repaid.statusCode()).as(repaid.body()).isEqualTo(201);
+        String repaymentId = field(repaid.body(), "repaymentId");
+        String reversalPath = "/v1/operator/loans/" + repaidLoan + "/repayments/" + repaymentId + "/reversal";
+        String reason = "{\"reason\":\"the operator keyed the customer's transfer twice\"}";
+        String reversalKey = key();
+        String rejectedReversal = field(OneKeyRace.tenUnderOneKey(201, () -> client.post(reversalPath, reason, proposer,
+                reversalKey)).body(), "reversalId");
+        assertThat(count("SELECT count(*) FROM lending.repayment_reversal WHERE repayment_id = ?::uuid", repaymentId))
+                .as("one reversal proposed").isEqualTo(1);
+        assertThat(audits("lending.RepaymentReversalProposed", rejectedReversal)).isEqualTo(1);
+        String rejectReversalKey = key();
+        OneKeyRace.tenUnderOneKey(200, () -> client.post(reversalPath + "/rejection", "{\"reversalId\":\""
+                + rejectedReversal + "\",\"reason\":\"the bank shows one transfer\"}", approver, rejectReversalKey));
+        assertThat(scalar("SELECT status FROM lending.repayment_reversal WHERE id = ?::uuid", rejectedReversal))
+                .isEqualTo("REJECTED");
+        assertThat(audits("lending.RepaymentReversalRejected", rejectedReversal)).isEqualTo(1);
+        HttpResponse<String> reproposed = client.post(reversalPath, reason, proposer, key());
+        assertThat(reproposed.statusCode()).as(reproposed.body()).isEqualTo(201);
+        String approvedReversal = field(reproposed.body(), "reversalId");
+        String approveReversalKey = key();
+        OneKeyRace.tenUnderOneKey(200, () -> client.post(reversalPath + "/approval", "{\"reversalId\":\""
+                + approvedReversal + "\",\"reason\":\"matched the bank statement\"}", approver, approveReversalKey));
+        assertThat(scalar("SELECT status FROM lending.repayment_reversal WHERE id = ?::uuid", approvedReversal))
+                .isEqualTo("APPROVED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry e JOIN lending.repayment_reversal r"
+                + " ON r.journal_entry_id = e.id WHERE r.repayment_id = ?::uuid", repaymentId)).as("one entry posted")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.repayment_reversal WHERE repayment_id = ?::uuid", repaymentId))
+                .as("the rejected and the approved, no more").isEqualTo(2);
+        assertThat(audits("lending.RepaymentReversalApproved", approvedReversal)).isEqualTo(1);
+
+        // The amendment: proposed and rejected, proposed again and approved.
+        CreditFixtures.Customer borrower = customers.consentingCustomer();
+        String amendedLoan = disbursedLoan(borrower, "4250.00");
+        String amendments = "/v1/operator/loans/" + amendedLoan + "/amendments";
+        String amendmentProposal = amendmentProposal(amendedLoan);
+        String amendmentKey = key();
+        String rejectedAmendment = field(OneKeyRace.tenUnderOneKey(201, () -> client.post(amendments, amendmentProposal,
+                proposer, amendmentKey)).body(), "amendmentId");
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment WHERE loan_id = ?::uuid", amendedLoan))
+                .as("one amendment proposed").isEqualTo(1);
+        assertThat(audits("lending.AmendmentProposed", rejectedAmendment)).isEqualTo(1);
+        String rejectAmendmentKey = key();
+        OneKeyRace.tenUnderOneKey(200, () -> client.post(amendments + "/" + rejectedAmendment + "/rejection",
+                "{\"reason\":\"the customer withdrew the hardship claim\"}", approver, rejectAmendmentKey));
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment_decision WHERE amendment_id = ?::uuid AND outcome"
+                + " = 'REJECTED'", rejectedAmendment)).as("one rejection").isEqualTo(1);
+        assertThat(audits("lending.AmendmentRejected", rejectedAmendment)).isEqualTo(1);
+        HttpResponse<String> reproposedAmendment = client.post(amendments, amendmentProposal, proposer, key());
+        assertThat(reproposedAmendment.statusCode()).as(reproposedAmendment.body()).isEqualTo(201);
+        String approvedAmendment = field(reproposedAmendment.body(), "amendmentId");
+        String approveAmendmentKey = key();
+        OneKeyRace.tenUnderOneKey(200, () -> client.post(amendments + "/" + approvedAmendment + "/approval",
+                "{\"reason\":\"affordability reviewed\"}", approver, approveAmendmentKey));
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment_decision WHERE amendment_id = ?::uuid AND outcome"
+                + " = 'APPROVED'", approvedAmendment)).as("one approval").isEqualTo(1);
+        assertThat(audits("lending.AmendmentApproved", approvedAmendment)).isEqualTo(1);
+    }
+
+    private static long audits(String operation, String target) throws Exception {
+        return count("SELECT count(*) FROM platform.audit_record WHERE operation = ? AND target_id = ?", operation, target);
+    }
+
+    private static void assertRefusedAssurance(HttpResponse<String> response) {
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(403);
+        assertThat(response.body()).contains("identity.AssuranceRequired");
+    }
+
+    /** A 403 lending.SelfDealingRefused, recorded once FAILED on {@code loanId} naming {@code act}. */
+    private static void assertSelfDealing(HttpResponse<String> response, String loanId, String act) throws Exception {
+        assertThat(response.statusCode()).as(act + ": " + response.body()).isEqualTo(403);
+        assertThat(response.body()).contains("lending.SelfDealingRefused");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfDealingRefused'"
+                + " AND outcome = 'FAILED' AND target_id = ? AND change_summary LIKE ?", loanId,
+                "%act=" + act + " refused%")).as("one FAILED record of " + act).isEqualTo(1);
+    }
+
+    /** {@code customer}'s instalment loan of {@code amount} EUR, accepted over the door and disbursed by the sweep. */
+    private String disbursedLoan(CreditFixtures.Customer customer, String amount) throws Exception {
+        String offer = offered(customer, loan(amount, 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        HttpResponse<String> accepted = accept(customer.token(), offer, hash, null, key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String loanId = field(accepted.body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        return loanId;
+    }
+
+    /** {@code customer}'s credit line with a limit of {@code limit} EUR, accepted over the door - ACTIVE. */
+    private String acceptedLine(CreditFixtures.Customer customer, String limit) throws Exception {
+        String offer = offered(customer, line(limit));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        HttpResponse<String> accepted = accept(customer.token(), offer, hash, null, key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        return field(accepted.body(), "loanId");
+    }
+
+    /** A lower rate over 18 instalments, with a reason - the restructuring end to end's proposal. */
+    private static String amendmentProposal(String loanId) throws Exception {
+        String rate = new java.math.BigDecimal(scalar("SELECT nominal_annual_rate FROM lending.loan_agreement"
+                + " WHERE loan_id = ?::uuid", loanId)).divide(java.math.BigDecimal.valueOf(2), 4,
+                java.math.RoundingMode.DOWN).stripTrailingZeros().toPlainString();
+        return "{\"nominalAnnualRate\":\"" + rate + "\",\"remainingInstalments\":18,\"rescheduleArrears\":false,"
+                + "\"reason\":\"hardship after a documented job loss\"}";
+    }
+
+    /** {@code loanId}'s amendment proposed by one agent and approved by another - offered to the borrower. */
+    private String approvedAmendment(String loanId) throws Exception {
+        String amendments = "/v1/operator/loans/" + loanId + "/amendments";
+        HttpResponse<String> proposed = client.post(amendments, amendmentProposal(loanId),
+                sessionWith(RoleName.LOAN_SERVICING_AGENT), key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String amendment = field(proposed.body(), "amendmentId");
+        HttpResponse<String> approved = client.post(amendments + "/" + amendment + "/approval",
+                "{\"reason\":\"affordability reviewed\"}", sessionWith(RoleName.LOAN_SERVICING_AGENT), key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        return amendment;
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private double reversals(String outcome) {

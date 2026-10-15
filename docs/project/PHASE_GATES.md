@@ -1301,6 +1301,28 @@ build its proof (**Owners**). A criterion that rests on the cut candidate `-028`
 prepayment) is met by the task or by its deferral recorded with an owner. Nothing of Phase 11 is
 built at the transition.*
 
+*Read at the exit review (`P11-DOC-001`, 2026-10-15), every clause against the code and its counted tests
+([`reviews/PHASE_11_REVIEW.md`](reviews/PHASE_11_REVIEW.md)). Eight clauses are met in a form their words did not anticipate,
+each recorded rather than re-worded: **Multi-instance correctness**'s "twenty-five contention rows" are twenty-nine since
+`P11-TSK-023` and `-028` added four, each raised by its named test, the rows that are fault scenarios rather than races
+(scenarios 5 and 9, the hint twice, late or never) by their scenario tests and "exposure read vs a disbursement" by a
+deterministic interleaving (`LendingCreditExposureDatabaseTest#aDisbursementDuringTheReadIsNeverMissed`); **Loan
+lifecycle**'s "refused ... by the status `CHECK`" is a vocabulary rank - a `CHECK` of known states cannot refuse an edge
+between two of them, and the repayment, waiver, amendment and capital contribution derive their status - the edges are the
+every-writer triggers', proven for both roles; **Disbursement**'s "past `disbursement_deadline` ends `CANCELLED`" is an
+attempt failing at or after the deadline (a wallet postable after it is still disbursed - `LENDING_LIFECYCLES.md`), and its
+"`RETURNED`" payout has no producer (`P11-TSK-015`, owner judgement); **Schedule**'s "`422 lending.TermsNotAmortising` at
+the offer" is raised at the terms proposal, and an offer that cannot amortise closes its application `CLOSED_UNDECIDED`;
+**Revolving credit line**'s "no line's drawn principal above its limit at rest" holds but by a four-eyes reversal of a
+paydown after a re-draw (`P11-TSK-023`; the storm's C10 bounds it by exactly the approved reversals); **Capital and
+exposure**'s "headroom ≥ 0 at every commit" holds for every commit that deploys capital, a repudiated statement's
+withdrawal of capital already deployed being the alerted exception `P11-TSK-012` decided and the review confirmed
+(`INV-LND-13`); and the first original's "golden cases checked by hand" for every day of a leap and a non-leap year are the
+schedule engine's property grid, the hand-checked goldens being 31 January, 29 February and the clamp. The review's own
+corrections - the interest waiver's lock order, the born-once arbiters probed alone, the terminal edges, the payoff's
+re-drive, the proof's arms, the evidence fields, the lesser sessions, the keyed doors under one key, the dispatch's
+connection, DPD over generated histories, the ledger census - are each recorded in the review with its probe.*
+
 ### Phase 12 — BNPL
 - Refund at every point in the instalment lifecycle produces correct, value-preserving
   adjustments.

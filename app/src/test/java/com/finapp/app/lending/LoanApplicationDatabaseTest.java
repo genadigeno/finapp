@@ -536,6 +536,33 @@ class LoanApplicationDatabaseTest {
         }
     }
 
+    // ------------------------------------------------------------------ the keyed withdrawal (P11-DOC-001)
+
+    @Test
+    @Order(13)
+    @DisplayName("ten withdrawals under one key are one (INV-IDEM-01, the gate's idempotency clause): every answer the"
+            + " one receipt or 409 api.IdempotencyInProgress - one WITHDRAWN event, one closed event each side, credit's"
+            + " request CANCELLED once")
+    void tenWithdrawalsUnderOneKeyAreOne() throws Exception {
+        termsInForce();
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        HttpResponse<String> submitted = client.submit(customer.token(), loan("9000.00", 36), key());
+        assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(202);
+        String id = field(submitted.body(), "applicationId");
+        UUID request = UUID.fromString(field(submitted.body(), "decisionRequestId"));
+        String withdrawalKey = key();
+        HttpResponse<String> withdrawn = OneKeyRace.tenUnderOneKey(200, () -> client.withdraw(customer.token(), id,
+                withdrawalKey));
+        assertThat(field(withdrawn.body(), "status")).isEqualTo("WITHDRAWN");
+        assertThat(count("SELECT count(*) FROM lending.loan_application_event WHERE application_id = ? AND to_status ="
+                + " 'WITHDRAWN'", UUID.fromString(id))).as("withdrawn once").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'lending.LoanApplicationClosed'"
+                + " AND aggregate_id = ?", UUID.fromString(id))).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'credit.CreditDecisionRequestClosed'"
+                + " AND aggregate_id = ?", request)).isEqualTo(1);
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = ?", request)).isEqualTo("CANCELLED");
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** Both products' terms in force, activated by two persons, unless already. */
