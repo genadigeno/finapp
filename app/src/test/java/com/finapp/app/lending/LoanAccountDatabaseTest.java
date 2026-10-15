@@ -1339,6 +1339,91 @@ class LoanAccountDatabaseTest {
     }
 
     @Test
+    @DisplayName("an amendment whose offer expires while its acceptance waits on the loan's ledger accounts - past its"
+            + " L5 read, accruing the elapsed dates - is 409 lending.AmendmentLapsed over the door, never 500"
+            + " api.InternalError: nothing written, counted lapsed, and the same key retried is the same 409 (P11-TSK-035)")
+    void anAmendmentLapsingWhileTheAcceptanceWaitsIsA409() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("4400.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        String loanId = field(accept(customer.token(), offer, hash, null, key()).body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+        String rate = new java.math.BigDecimal(scalar("SELECT nominal_annual_rate FROM lending.loan_agreement"
+                + " WHERE loan_id = ?::uuid", loanId)).divide(java.math.BigDecimal.valueOf(2), 4,
+                java.math.RoundingMode.DOWN).stripTrailingZeros().toPlainString();
+        String amendments = "/v1/operator/loans/" + loanId + "/amendments";
+        HttpResponse<String> proposed = client.post(amendments, "{\"nominalAnnualRate\":\"" + rate + "\","
+                + "\"remainingInstalments\":18,\"rescheduleArrears\":false,\"reason\":\"hardship after a documented job"
+                + " loss\"}", sessionWith(RoleName.LOAN_SERVICING_AGENT), key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String amendment = field(proposed.body(), "amendmentId");
+        HttpResponse<String> approved = client.post(amendments + "/" + amendment + "/approval",
+                "{\"reason\":\"affordability reviewed\"}", sessionWith(RoleName.LOAN_SERVICING_AGENT), key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        String mine = LOANS + "/" + loanId + "/amendments/" + amendment;
+        String acceptance = "{\"documentSha256\":\"" + field(client.get(mine, customer.token()).body(), "documentSha256")
+                + "\"}";
+        // The fixture's clock (the bootstrap owner, triggers suspended - never a path): the loan opened two days earlier,
+        // its first period lengthened and every due date kept on its day, so the acceptance's own catch-up has two
+        // elapsed dates to accrue - its postings meet the loan's ledger accounts; and the amendment's offer due to expire
+        // ten seconds from now on the database clock.
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE ledger.journal_entry SET posting_date = posting_date - 2, value_date = value_date"
+                        + " - 2 WHERE id = (SELECT journal_entry_id FROM lending.loan_disbursement WHERE loan_id = '"
+                        + loanId + "'); UPDATE lending.loan_disbursement SET value_date = value_date - 2 WHERE loan_id = '"
+                        + loanId + "'; UPDATE lending.accrual_start SET start_date = start_date - 2 WHERE loan_id = '"
+                        + loanId + "'; UPDATE lending.repayment_schedule SET start_date = start_date - 2 WHERE loan_id = '"
+                        + loanId + "'; UPDATE lending.loan_instalment SET period_start = period_start - 2, days = days + 2"
+                        + " WHERE loan_id = '" + loanId + "' AND sequence = 1");
+                statement.execute("UPDATE lending.loan_amendment_decision SET expires_at = statement_timestamp()"
+                        + " + interval '10 seconds' WHERE amendment_id = '" + amendment + "'");
+            }
+            owner.commit();
+        }
+        double lapsedBefore = amended("lapsed");
+        String acceptKey = key();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock = holder.prepareStatement(
+                    "SELECT 1 FROM ledger.ledger_account WHERE owner_ref = ?::uuid FOR UPDATE")) {
+                lock.setString(1, loanId);
+                lock.executeQuery().close();
+            }
+            Future<HttpResponse<String>> accepting =
+                    pool.submit(() -> client.post(mine + "/acceptance", acceptance, customer.token(), acceptKey));
+            String waiting = awaitAStatementBlockedBy(pid(holder));
+            assertThat(waiting).as("past its L5 read, accruing - waiting on the loan's accounts").contains("ledger");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (!"t".equals(scalar("SELECT expires_at <= statement_timestamp() FROM lending.loan_amendment_decision"
+                    + " WHERE amendment_id = ?::uuid", amendment))) {
+                assertThat(System.nanoTime()).as("the offer's instant passes on the database clock").isLessThan(deadline);
+                Thread.sleep(5);
+            }
+            holder.commit();
+            HttpResponse<String> refused = accepting.get(60, TimeUnit.SECONDS);
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+            assertThat(refused.body()).contains("lending.AmendmentLapsed");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.repayment_schedule WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.interest_accrual WHERE loan_id = ?::uuid", loanId))
+                .as("the catch-up rolled back with the claim").isZero();
+        HttpResponse<String> retried = client.post(mine + "/acceptance", acceptance, customer.token(), acceptKey);
+        assertThat(retried.statusCode()).as("a refusal stores nothing under the key: " + retried.body()).isEqualTo(409);
+        assertThat(retried.body()).contains("lending.AmendmentLapsed");
+        assertThat(amended("lapsed")).as("each refusal counted lapsed").isEqualTo(lapsedBefore + 2);
+        assertThat(count("SELECT count(*) FROM lending.loan_agreement WHERE loan_id = ?::uuid", loanId)).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("a loan is prepaid end to end (P11-TSK-028): a freshly disbursed loan prepaid EUR 1,000.00 over the door"
             + " from a MULTI_FACTOR session - 201 with agreement version 2 and schedule version 2, the level instalment"
             + " unchanged over fewer instalments, the key replaying its receipt byte for byte; the customer's schedule door"
@@ -1606,14 +1691,17 @@ class LoanAccountDatabaseTest {
         while (System.nanoTime() < deadline) {
             try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement();
                     ResultSet row = statement.executeQuery("SELECT query FROM pg_stat_activity WHERE " + blocker
-                            + " = ANY (pg_blocking_pids(pid))")) {
+                            + " = ANY (pg_blocking_pids(pid))"
+                            // The activity row is a snapshot and the blocking pids are live: only a row that itself shows
+                            // the session active and waiting on a lock carries the statement that waits (P11-TSK-035's gate).
+                            + " AND state = 'active' AND wait_event_type = 'Lock'")) {
                 if (row.next()) {
                     return row.getString(1);
                 }
             }
             Thread.sleep(25);
         }
-        throw new AssertionError("no acceptance ever waited behind the profile lock");
+        throw new AssertionError("no statement ever waited behind the blocker's lock");
     }
 
     private static Actor employee() {

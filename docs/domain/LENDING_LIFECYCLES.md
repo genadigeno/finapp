@@ -500,6 +500,18 @@ amendment's document hash, no offer), rule 13 and one `loan_amendment_rescheduli
 and schedule v n+1 - two deferred checks hold the agreement beside its evidence and its schedule, and the schedule
 continuing the open period. The customer reads only an amendment ever approved (a `PROPOSED` one is `404`).*
 
+*The lapse crossed during the acceptance's work (`P11-TSK-035`, 2026-10-15; found by `P11-TSK-034`'s gate - the offer's
+race, on the amendment): the acceptance judges the amendment's offer unexpired at its read under L3 and then accrues,
+bills and plans - waiting, among others, on the loan's ledger accounts and the shared interest income row - so the
+database clock may pass the decision's `expires_at` before agreement v n+1 is born. The version's trigger re-judges the
+expiry at the INSERT and refuses it - the strict backstop: no version is born for an amendment lapsed at that instant -
+but it refused in the generic `P0001` every breach of the trigger shares, and the customer got `500`. `lending V027`
+gives that refusal its own SQLSTATE, `LNAEX`, judged **last** - after the loan `ACTIVE`, the amendment the loan's own
+and `APPROVED`, the version conditional and "never more credit" (a breach is refused `P0001` even when the offer has
+expired); the acceptance maps exactly `LNAEX` to `409 lending.AmendmentLapsed` and writes nothing, the catch-up rolled
+back with it, the amendment then derived `LAPSED`. Every other refusal of the version's birth is an invariant breach and
+stays a `500`.*
+
 ### 4.10 Payoff quote and execution — `P11-TSK-026`
 
 The **quote** is an immutable born-once fact (C, `POST …/payoff-quotes`, keyed, either kind, any

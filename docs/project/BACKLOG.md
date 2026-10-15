@@ -18269,18 +18269,91 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   the whole lending `databaseTest`, the fleet tiers (the standing criterion-7 deviation; the coordinator's post-merge run).
 - **Gate** (2026-10-15, `COMPLETE`): an independent read-only review - V026's two function bodies diffed mechanically against their latest versions (`loan_permits_only_machine_edges`, V022; `loan_offer_permits_only_machine_edges`, V006): no check dropped, the only differences the expiry split, the headers, grants and trigger bindings untouched; `LNEXP` a valid SQLSTATE outside every PostgreSQL and pool class, matched exactly; `LoanStore.insert`'s one caller; the claim, credit's consumption and L0/L2/L6 rolled back together and a same-key retry the same `409`; no statement on an aborted unit of work - found no CRITICAL item and **two IMPORTANT**: (1) **fixed** - V026 judged the expiry before the currency check, so a loan in the wrong currency for an expired offer was answered as a lapse (`LNEXP`, `409`), contradicting design point (4), `LENDING_LIFECYCLES.md` §4.4 and `ERROR_CONTRACT.md`; the currency is now judged before the expiry, which is judged last (V026 is unapplied outside this branch - changed before its first merge to `master`), `#onlyTheExpiryIsTheCustomers` asserts the raw wrong-currency loan on an expired offer `P0001` for both writers, and the probe (the currency moved back after the expiry) turned the case red - `MUTATION_TESTING.md` §2; (2) **recorded** - the amendment acceptance has the identical race (`lending.loan_agreement_is_born_once` re-judging the decision's lapse in `P0001` after `LoanAmendments.accept` judged it under L5), answering `500` where `AmendmentLapsed` is due: `P11-TSK-035`, started beside the storm on the owner's instruction. **MINOR, fixed**: the race tests' windows 3 s -> 10 s (a late L2 under load was a red flake, never a false pass); `LoanOfferStore.accept`/`decline` document that a `false` from the trigger's `LNEXP` leaves the unit of work aborted (both callers refuse at once); the store-edge assertion's message no longer claims the `LNEXP` branch it does not reach; this entry's count of changed assertions (two); an over-long line in `ERROR_CONTRACT.md`. **Re-verified fresh on the final code**: the whole lending `databaseTest` 23 suites, 267 tests, 0 failures; `unitTest` 190 across 22; `architectureTest` 3; app `ownContainerDatabaseTest` `LoanAccountDatabaseTest` and `LoanOfferDatabaseTest` 26, 0 failures; app `architectureTest` `MutationDemonstrationTest`, `TestTaxonomyTest`, `ErrorCodeRegistryTest` 55 across 11, 0 failures. **Multi-instance**: `PASS` - no new state, lock or schedule; the refusal's code depends only on the locked offer row and the one database clock; the sweep's `EXPIRED` edge serialises behind L2. **DoD**: `DOD-API` (the error contract: `409` for the customer's lapse, `500` for every breach), `DOD-TEST`, `DOD-DOC` held. Marks no task: `P11-TST-001` stays `READY`, its storm unblocked once this merges.
 
-**P11-TSK-035 — Remediation: the amendment's lapse at the agreement's birth answered 409, not 500** — `PLANNED` *(found by `P11-TSK-034`'s completion gate, 2026-10-15, and recorded there; a Phase 11 remediation item outside the milestones, the owner to schedule - recommended before `P11-TST-001`'s three green runs, whose storm accepts amendments; marks no task)*
-- **Objective**: the same answer for the same race on the amendment path that `P11-TSK-034` gave the offer's.
+**P11-TSK-035 — Remediation: the amendment's lapse at the agreement's birth answered 409, not 500** — `IN_PROGRESS` (implemented 2026-10-15, awaiting its completion gate) *(found by `P11-TSK-034`'s completion gate, 2026-10-15, and recorded there; a Phase 11 remediation item outside the milestones, run beside `P11-TST-001` on the owner's instruction in `P11-TSK-034`'s owner-approved shape - recommended before `P11-TST-001`'s three green runs, whose storm accepts amendments; belongs to no milestone, reopens none, marks no task - `P11-TST-001` stays the current task)*
 - **The defect**: `LoanAmendments.accept` judges the amendment `LAPSED` at its L5 read (`JdbcLoanAmendmentStore`), then
   runs the catch-up accrual, billing and planning before `JdbcLoanStore.insertAgreement`; `lending.loan_agreement_is_born_once`
-  (latest `V024`) re-judges `decision.expires_at <= statement_timestamp()` in the generic `P0001`, which
-  `insertAgreement` wraps as `LendingStorageException` - so a decision lapsing in between answers `500 api.InternalError`
-  where `AmendmentLapsed` (`409`, `LoanAmendmentDesk`) is due. No money: the transaction rolls back.
-- **Scope**: `P11-TSK-034`'s shape - a migration replacing that trigger function verbatim but for the lapse, judged after
-  every identity check in its own SQLSTATE; `insertAgreement` raising a typed refusal for exactly it; `accept` mapping it to
-  `AmendmentLapsed`; the race reproduced deterministically as a permanent test (the lock the acceptance waits on held
-  across the lapse); a breach on a lapsed amendment still `P0001`; the probe; the records.
+  (latest `V024` - every lending migration grepped: `V006`, `V023`, `V024`) re-judges `decision.expires_at <=
+  statement_timestamp()` in the generic `P0001`, which `insertAgreement` wraps as `LendingStorageException` - so a decision
+  lapsing in between answers `500 api.InternalError` where `AmendmentLapsed` (`409`, `LoanAmendmentDesk`) is due. No money:
+  the transaction rolls back, the catch-up with it. Severity IMPORTANT (a contract defect under concurrency; no amount
+  wrong). The wait is real: the catch-up posts rule 2 to the loan's accounts and the shared `LOAN_INTEREST_INCOME` row,
+  which every instance's servicing contends on.
+- **Design** (2026-10-15, `P11-TSK-034`'s template; 23 points, terse): (1) **Objective** - the amendment's offer expiring
+  during the acceptance's work answered as every lapsed amendment is, `409 lending.AmendmentLapsed`, nothing written; a
+  breach at the version's birth still a `500`. (2) **Meaning** - the customer's acceptance window passed; their lapse, not
+  the platform's fault. (3) **Context** - Lending (T-amd). (4) **Aggregates** - the amendment (`APPROVED` → derived
+  `LAPSED`), the loan's agreement versions. (5) **Lifecycle** - unchanged: `APPROVED → ACCEPTED` only while unexpired,
+  past the instant derived `LAPSED`. (6) **Invariants** - `INV-LND-10` (the window judged on the database clock at every
+  rank), `INV-LND-11` (an amended version only for an `APPROVED`, unexpired amendment - unchanged), `INV-LND-05`. (7)
+  **Data model** - none. (8) **Constraints** - lending **`V027`** `CREATE OR REPLACE`s `loan_agreement_is_born_once`,
+  `V024`'s body verbatim but for one split: the amendment branch's first check loses its expiry arm (its message
+  unchanged) and the expiry is judged **last** - after the loan `ACTIVE`, the amendment's identity and decision, the
+  version conditional and "never more credit" - in its own SQLSTATE; version 1 and a prepayment's version judge no expiry
+  and are untouched. **The SQLSTATE, `LNAEX`** - a sibling of `LNEXP`, not `LNEXP`: the window is the same kind (the
+  customer's, on the database clock) but of another aggregate answered by another refusal (`AmendmentLapsed`, not
+  `OfferNotAcceptable`); one code naming one refusal keeps the SQLSTATE → refusal table statement-independent, so a future
+  offer-expiry check on version 1 (the same trigger) in `LNEXP` could never be routed to `AmendmentLapsed`; custom, in no
+  class PostgreSQL defines (`FXCAP`, `LNEXP` precedent). (9) **Transactions** - unchanged: one transaction; the refusal
+  thrown at once on the aborted unit of work (no further statement), the door's claim rolled back. (10) **Consistency** -
+  the trigger stays the strict backstop for every writer; only the code changes. (11) **API** - none new; the acceptance's
+  `409 lending.AmendmentLapsed` also covers the lapse crossed during its work. (12) **Events** - none (refused, no
+  `LoanAmended`). (13) **Idempotency** - a same-key retry re-runs (nothing stored) and is refused at L5 - the same `409`.
+  (14) **Concurrency** / (15) **Multi-instance: PASS** - the defect is a race between instances' waits and the one
+  database clock; the fix adds no state, lock or schedule; the code a refusal carries is a pure function of the rows read
+  under L3 and the statement's clock, judged in the statement that births the version - ten instances on any clocks agree.
+  Isolation `READ COMMITTED` under L3 for the whole transaction. (16) **Failures** - timeout, lost response, crash: the
+  transaction rolls back (catch-up included), a retry is refused at L5. (17) **Security** - none (the SQLSTATE never leaves
+  the service; the problem body names no figure). (18) **Audit** - none (a refusal writes no audit row, as before). (19)
+  **Reconciliation** - N/A (no money moves; the catch-up's postings roll back). (20) **Observability** - the refusal meters
+  `finapp.lending.amendment{outcome=lapsed}` instead of surfacing as an unhandled `500`. (21) **Tests** / (22)
+  **Acceptance** - below. (23) **Out of scope** - every other trigger refusal (each a breach); `P11-TSK-033`'s recorded
+  clock-crossing class; the storm.
+- **The callers of `insertAgreement`** (every one): `LoanAmendments.accept` - reaches `LNAEX` (its race), maps it to
+  `AmendmentLapsed`; `LoanAcceptances.accept` (version 1) and `Prepayments` (a prepayment's version n+1) - the trigger's
+  branches for them judge no expiry, so `LNAEX` is unreachable; neither catches `LoanStore.AmendmentExpired`, so were it
+  ever raised there it would stay an unmapped failure (`500`) - not the customer's race, a breach.
+- **As built** (2026-10-15): lending **`V027__the_amendment_lapse_in_its_own_sqlstate.sql`** - the function copied
+  mechanically from `V024` (lines 239-358) and the split applied by script; `diff` against `V024`'s body shows exactly the
+  combined `IF` losing `OR decision.expires_at <= statement_timestamp()` and the new `IF ... USING ERRCODE = 'LNAEX'` (with
+  its comment) after "never more credit" - nothing else (migrator-owned; schema-qualified, invoker's rights, no
+  `search_path` - as `V023`'s and `V024`'s). **Java**: `JdbcLoanStore.AMENDMENT_LAPSED_SQLSTATE` (`"LNAEX"`, matched with
+  `.equals`); `insertAgreement` throws the port's new `LoanStore.AmendmentExpired` for exactly that code (any other code the
+  `LendingStorageException` it was); `LoanAmendments.accept` answers it `new AmendmentLapsed()` at once. No door, error
+  code, event, audit row, metric or grant changes: the desk already maps `AmendmentLapsed` (and meters it `LAPSED`).
+- **Tests**: `AmendmentDatabaseTest#anAmendmentLapsingWhileTheAcceptanceWaitsIsLapsed` (the race, permanent: a never-serviced
+  loan opened two days earlier, so the acceptance's catch-up accrues; its offer due in 10 s; the loan's `ledger_account`
+  rows held `FOR UPDATE`; the acceptance past L3 and L5 waiting in its accrual posting; the database clock past
+  `expires_at`; released - `AmendmentLapsed`, no version, schedule, evidence, accrual, event, entry or audit; reads
+  `LAPSED`; the subledger proof holds); `#onlyTheLapseIsTheCustomers` (a version forged one month longer at the insert -
+  `LendingStorageException ... inserting a loan agreement: SQLSTATE P0001`, and the same when the offer expires inside
+  the insert's call, so the breach wins over the lapse; for the migrator and the application role a raw version for the
+  expired amendment `LNAEX`, with a principal one unit higher `P0001`, and once the agreement moved under it `P0001`);
+  `#theAmendmentExpiresUnaccepted`'s raw version for an expired amendment now expects `LNAEX` (the assertion followed the
+  code, not the rule). `app`'s `LoanAccountDatabaseTest#anAmendmentLapsingWhileTheAcceptanceWaitsIsA409` - the same race
+  over `POST /v1/me/loans/{id}/amendments/{aid}/acceptance`: `409 lending.AmendmentLapsed`, no version, no schedule, no
+  accrual, counted `lapsed`, the same key retried the same `409`.
+- **Acceptance criteria**: the race answered `409` at the service and over the door; a breach at the version's birth
+  still a `500`, also on an amendment expired at the insert; the expiry refusal `LNAEX` and every other `P0001`, for every
+  writer; the probes caught; the amendment suites green.
 - **Definition of done**: `DOD-API`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **Probes performed** (2026-10-15, on the committed tree, each restored byte-identical - sha256 and `git diff
+  --exit-code`): (1) the mapping removed (`LoanAmendments.accept` catching an unrelated `IllegalCallerException` in place
+  of `LoanStore.AmendmentExpired`) - the race case red, the refusal surfacing as `LoanStore.AmendmentExpired` (unmapped
+  at the desk: a `500`), the other 12 green; (2) `V027`'s lapse back on `P0001` (`USING ERRCODE = 'P0001'`) - three red:
+  the race with `LendingStorageException: lending storage failed inserting a loan agreement: SQLSTATE P0001`, the defect
+  exactly, and `#onlyTheLapseIsTheCustomers` and `#theAmendmentExpiresUnaccepted` on the raw version (`P0001` where `LNAEX`
+  was expected). `MUTATION_TESTING.md` §2, two `INV-LND-10` rows.
+- **Verified** (fresh, 2026-10-15, targeted - other agents' runs share the machine): lending `databaseTest --rerun`
+  `AmendmentDatabaseTest` 13, `PrepaymentDatabaseTest` 9, `LoanAcceptanceDatabaseTest` 16, `LendingMigrationTest` 6,
+  `LendingSchemaHasNoMutableMoneyTest` 8 (52) - one red in that run not this item's,
+  `LoanAcceptanceDatabaseTest#acceptanceTakesTheProfileFirst` (its observer read an empty `pg_stat_activity.query` for the
+  session blocked on L0 - before any agreement insert, on a path this item does not touch), green with its class (16, 0
+  failures) in the immediate re-run; lending `unitTest --rerun` 190 across 22; lending `architectureTest --rerun` 3; app
+  `ownContainerDatabaseTest` `LoanAccountDatabaseTest` 23 (0 failures, the new case 13 s); app `architectureTest --rerun`
+  `MutationDemonstrationTest` 9 (after the §2 rows), `TestTaxonomyTest` 17, `ErrorCodeRegistryTest` 6 (after
+  `ERROR_CONTRACT.md`). Not run: the whole lending `databaseTest`, the fleet tiers (the standing criterion-7 deviation; the
+  coordinator's post-merge run). **Base**: built on `P11-TSK-034`'s branch (`V026`, unmerged to `master` at the time) -
+  `V027` must merge after it (Flyway `outOfOrder = false`).
 
 **P11-TST-001 — The lending storm** — `READY` *(marked by `P11-TSK-030`'s completion gate, 2026-10-14: its dependency `-030` - and with it every built task - is `COMPLETE`; the next unfinished item in backlog order with every dependency met. `P11-TST-002` (dependency `-029`) is eligible beside it and stands after it in the backlog's order, left `PLANNED`)*
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
