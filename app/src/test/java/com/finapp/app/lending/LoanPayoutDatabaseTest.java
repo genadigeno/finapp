@@ -113,6 +113,13 @@ class LoanPayoutDatabaseTest {
     @Autowired private LoanPayouts loanPayouts;
     @Autowired private WithdrawalResolution resolution;
     @Autowired private Withdrawals withdrawals;
+    @Autowired private com.finapp.lending.LoanStore loanStore;
+    @Autowired private com.finapp.lending.LoanPayoutStore loanPayoutStore;
+    @Autowired private com.finapp.lending.LoanDisbursementStore loanDisbursementStore;
+    @Autowired private com.finapp.ledger.HoldService holdService;
+    @Autowired private com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter;
+    @Autowired private java.time.Clock clock;
+    @Autowired private javax.sql.DataSource dataSource;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -389,6 +396,108 @@ class LoanPayoutDatabaseTest {
         assertThat(count("SELECT count(*) FROM payments.withdrawal WHERE instruction_reference = ?",
                 "lending:" + loan.loanId())).isEqualTo(1);
         assertThat(sends(reference)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("no connection is held across payments' dispatch (section 7.3 (d), the gate's multi-instance clause):"
+            + " at the moment the real sweep hands the instruction to payments' real port, the stepping thread is bound"
+            + " to no transaction and holds no connection of the pool, the loan and its payout are lockable NOWAIT from"
+            + " another connection, and no backend sits idle in transaction holding a lending lock; the payout then"
+            + " PAID_OUT as ever")
+    void noConnectionIsHeldAcrossPaymentsDispatch() throws Exception {
+        schemeAccepts();
+        Disbursed loan = disbursedExternally("1450.00");
+        java.util.concurrent.atomic.AtomicReference<String> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        LoanPayouts hooked = new LoanPayouts() {
+            @Override
+            public Dispatch dispatch(Instruction instruction) {
+                if (instruction.loan().value().toString().equals(loan.loanId())) {
+                    seen.set(atTheDispatch(loan.loanId()));
+                }
+                return loanPayouts.dispatch(instruction);
+            }
+
+            @Override
+            public Outcome outcome(Connection unitOfWork, LoanId id, UUID withdrawal) {
+                return loanPayouts.outcome(unitOfWork, id, withdrawal);
+            }
+        };
+        LoanPayoutSteps steps = new LoanPayoutSteps(loanStore, loanPayoutStore, loanDisbursementStore, termsStore, hooked,
+                holdService, outboxWriter, ids, clock);
+        new LoanPayoutSchedule(steps, lendingTransactions, payoutMetrics, Duration.ofSeconds(5), 100, AT_ONCE)
+                .sweepOnce();
+        assertThat(seen.get()).as("the hook saw the dispatch").isNotNull();
+        assertThat(seen.get()).as("the thread's transaction | its pooled connection | loan NOWAIT | payout NOWAIT |"
+                + " backends idle in transaction holding a lending lock")
+                .isEqualTo("no transaction|no connection|lockable|lockable|none");
+        assertThat(payoutStatus(loan)).isEqualTo("PAID_OUT");
+    }
+
+    /**
+     * What is held at the moment of the dispatch, seen from the dispatching thread and - for the database - from a
+     * connection of its own: the thread's Spring transaction and pooled connection, the loan's and the payout's rows
+     * locked NOWAIT, and every backend idle in transaction holding a lock on a {@code lending} relation (sampled three
+     * times; only one present in every sample counts - a transient neighbour is not the step).
+     */
+    private String atTheDispatch(String loanId) {
+        try {
+            String transaction = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive() ? "in a transaction" : "no transaction";
+            String connection = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .hasResource(dataSource) ? "holding a connection" : "no connection";
+            String loanRow = lockableNoWait("SELECT 1 FROM lending.loan WHERE id = ?::uuid FOR UPDATE NOWAIT", loanId);
+            String payoutRow = lockableNoWait("SELECT 1 FROM lending.loan_payout WHERE loan_id = ?::uuid FOR UPDATE NOWAIT",
+                    loanId);
+            java.util.Set<String> idle = null;
+            for (int sample = 0; sample < 3; sample++) {
+                java.util.Set<String> now = idleInTransactionHoldingLending();
+                if (idle == null) {
+                    idle = now;
+                } else {
+                    idle.retainAll(now);
+                }
+                Thread.sleep(50);
+            }
+            return transaction + "|" + connection + "|" + loanRow + "|" + payoutRow + "|"
+                    + (idle.isEmpty() ? "none" : String.join(",", idle));
+        } catch (Exception failure) {
+            return "the probe failed: " + failure;
+        }
+    }
+
+    private static String lockableNoWait(String sql, String loanId) throws java.sql.SQLException {
+        try (Connection probe = DatabaseRoles.application()) {
+            probe.setAutoCommit(false);
+            try (java.sql.PreparedStatement lock = probe.prepareStatement(sql)) {
+                lock.setString(1, loanId);
+                try (java.sql.ResultSet row = lock.executeQuery()) {
+                    return row.next() ? "lockable" : "absent";
+                }
+            } catch (java.sql.SQLException held) {
+                if ("55P03".equals(held.getSQLState())) {
+                    return "held";
+                }
+                throw held;
+            } finally {
+                probe.rollback();
+            }
+        }
+    }
+
+    /** Every other backend of this database idle in transaction with a lock on a {@code lending} relation: pid and query. */
+    private static java.util.Set<String> idleInTransactionHoldingLending() throws java.sql.SQLException {
+        java.util.Set<String> found = new java.util.HashSet<>();
+        try (Connection observer = DatabaseRoles.bootstrap(); Statement statement = observer.createStatement();
+                java.sql.ResultSet row = statement.executeQuery("SELECT a.pid || ':' || left(a.query, 120)"
+                        + " FROM pg_stat_activity a WHERE a.pid <> pg_backend_pid() AND a.datname = current_database()"
+                        + " AND a.state LIKE 'idle in transaction%' AND EXISTS (SELECT 1 FROM pg_locks l"
+                        + " JOIN pg_class c ON c.oid = l.relation JOIN pg_namespace n ON n.oid = c.relnamespace"
+                        + " WHERE l.pid = a.pid AND l.granted AND n.nspname = 'lending')")) {
+            while (row.next()) {
+                found.add(row.getString(1));
+            }
+        }
+        return found;
     }
 
     @Test

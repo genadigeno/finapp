@@ -200,6 +200,50 @@ class LoanTermsEndpointDatabaseTest {
         assertThat(versions()).as("no refused caller wrote a version").isEqualTo(versions);
     }
 
+    @Test
+    @Order(4)
+    @DisplayName("every terms act under one key is one (INV-IDEM-01, the gate's idempotency clause): ten proposals, ten"
+            + " rejections and ten approvals - each raced under one key - answer one receipt (or 409"
+            + " api.IdempotencyInProgress) and make one version and one event each")
+    void everyTermsActUnderOneKeyIsOne() throws Exception {
+        String proposer = sessionWith(RoleName.LENDING_OFFICER);
+        String decider = sessionWith(RoleName.LENDING_OFFICER);
+        long before = versions();
+        String body = terms("PERSONAL_LOAN", "0.0777", Map.of());
+        String proposalKey = someKey();
+        String rejected = field(OneKeyRace.tenUnderOneKey(201, () -> post(TERMS, body, proposer, proposalKey)).body(),
+                "id");
+        assertThat(versions()).as("one version proposed").isEqualTo(before + 1);
+        assertThat(events(rejected, "PROPOSED")).isEqualTo(1);
+        String rejectionKey = someKey();
+        OneKeyRace.tenUnderOneKey(200, () -> post(TERMS + "/" + rejected + "/rejection", decision("raced rejection"),
+                decider, rejectionKey));
+        assertThat(status(rejected)).isEqualTo("REJECTED");
+        assertThat(events(rejected, "REJECTED")).as("rejected once").isEqualTo(1);
+
+        String activated = field(post(TERMS, body, proposer, someKey()).body(), "id");
+        String approvalKey = someKey();
+        HttpResponse<String> approved = OneKeyRace.tenUnderOneKey(200, () -> post(TERMS + "/" + activated + "/approval",
+                decision("raced approval"), decider, approvalKey));
+        assertThat(field(approved.body(), "status")).isEqualTo("ACTIVE");
+        assertThat(status(activated)).isEqualTo("ACTIVE");
+        assertThat(events(activated, "ACTIVE")).as("activated once").isEqualTo(1);
+        assertThat(versions()).as("the rejected and the activated, no more").isEqualTo(before + 2);
+    }
+
+    private static long events(String version, String toStatus) throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement("SELECT count(*) FROM lending.loan_terms_version_event"
+                        + " WHERE terms_version_id = ? AND to_status = ?")) {
+            select.setObject(1, UUID.fromString(version));
+            select.setString(2, toStatus);
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
 
     /**
