@@ -1691,14 +1691,17 @@ class LoanAccountDatabaseTest {
         while (System.nanoTime() < deadline) {
             try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement();
                     ResultSet row = statement.executeQuery("SELECT query FROM pg_stat_activity WHERE " + blocker
-                            + " = ANY (pg_blocking_pids(pid))")) {
+                            + " = ANY (pg_blocking_pids(pid))"
+                            // The activity row is a snapshot and the blocking pids are live: only a row that itself shows
+                            // the session active and waiting on a lock carries the statement that waits (P11-TSK-035's gate).
+                            + " AND state = 'active' AND wait_event_type = 'Lock'")) {
                 if (row.next()) {
                     return row.getString(1);
                 }
             }
             Thread.sleep(25);
         }
-        throw new AssertionError("no acceptance ever waited behind the profile lock");
+        throw new AssertionError("no statement ever waited behind the blocker's lock");
     }
 
     private static Actor employee() {
