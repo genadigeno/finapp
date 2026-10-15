@@ -1971,7 +1971,12 @@ withdrawal at the provider; scenario 9 —
 `LendingOutboxAtomicityDatabaseTest#aCrashBetweenPostingAndPublicationLosesNothing` (`P11-TSK-014`);
 a returned or failed payout leaving the receivable and the disbursement entry unchanged
 (`P11-TSK-015`); the probe re-dispatching a payout on `UNKNOWN` turning scenario 5 red
-(`MUTATION_TESTING.md` §2); the storm's one disbursement per non-cancelled loan at rest
+(`MUTATION_TESTING.md` §2) *(as performed by `P11-DOC-001`, 2026-10-15 - the tasks had performed "conclude on
+`UNKNOWN`" in its place: it SURVIVED, an equivalent mutant, payments' key being the loan's own instruction - one
+withdrawal, one send; "never re-dispatched" rests on the machine and payments' key, the money on scenario 5's one send)*;
+the born-once disbursement and payout uniques each refusing a copy alone with every trigger off and every `CHECK`
+dropped (`LendingBornOnceArbitersDatabaseTest`, `P11-DOC-001`); no lending connection or transaction held across
+payments' dispatch (`LoanPayoutDatabaseTest#noConnectionIsHeldAcrossPaymentsDispatch`, `P11-DOC-001`); the storm's one disbursement per non-cancelled loan at rest
 (`P11-TST-001`).
 **Phase:** 11
 

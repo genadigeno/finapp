@@ -81,6 +81,7 @@ final class LendingStormCensus {
                 softly.assertThat(new TrialBalance().sweep(snapshot).outOfBalance())
                         .as("%s: C5 the trial balance - zero per currency (INV-LED-01)", when).isEmpty();
                 zeroes(snapshot, when, softly, safety());
+                stampDiagnostics(snapshot, when);
                 if (atRest) {
                     zeroes(snapshot, when + " (at rest)", softly, liveness());
                     dpdChecked = one(snapshot, "SELECT count(*) FROM " + DPD + " d");
@@ -161,6 +162,40 @@ final class LendingStormCensus {
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         } catch (java.io.IOException ignored) {
             // forensics only - the census's own assertion carries the verdict
+        }
+    }
+
+    /**
+     * A diagnostic, never an assertion (`P11-DOC-001`): the facts whose own clock reading falls after their loan's
+     * closure, listed with the record's order and the writing transaction beside it - so a run tells a fact truly written
+     * after the closure (a later record order, another transaction; C11 above is red too) from one written before it in
+     * the closing transaction on a database clock stepped back between two statements (an earlier record order, the
+     * closure's own transaction). Written to the census file only when there is any.
+     */
+    private static void stampDiagnostics(Connection snapshot, String when) throws SQLException {
+        String sql = "SELECT count(*) FROM ("
+                + "SELECT 'repayment' AS fact, r.loan_id, r.created_at, l.closed_at, r.recorded_order AS fact_order,"
+                + " c.recorded_order AS closure_order, r.xmin::text AS fact_xmin, c.xmin::text AS closure_xmin FROM"
+                + " lending.repayment r JOIN lending.loan l ON l.id = r.loan_id JOIN lending.loan_closure c ON"
+                + " c.loan_id = l.id WHERE r.created_at > l.closed_at UNION ALL SELECT 'draw' AS fact, d.loan_id,"
+                + " d.created_at, l.closed_at, d.recorded_order AS fact_order, c.recorded_order AS closure_order,"
+                + " d.xmin::text AS fact_xmin, c.xmin::text AS closure_xmin FROM lending.credit_line_draw d JOIN"
+                + " lending.loan l ON l.id = d.loan_id JOIN lending.loan_closure c ON c.loan_id = l.id WHERE"
+                + " d.created_at > l.closed_at UNION ALL SELECT 'billing' AS fact, b.loan_id, b.created_at,"
+                + " l.closed_at, b.recorded_order AS fact_order, c.recorded_order AS closure_order, b.xmin::text AS"
+                + " fact_xmin, c.xmin::text AS closure_xmin FROM lending.instalment_billing b JOIN lending.loan l ON"
+                + " l.id = b.loan_id JOIN lending.loan_closure c ON c.loan_id = l.id WHERE b.created_at > l.closed_at"
+                + " UNION ALL SELECT 'statement' AS fact, s.loan_id, s.created_at, l.closed_at, s.recorded_order AS"
+                + " fact_order, c.recorded_order AS closure_order, s.xmin::text AS fact_xmin, c.xmin::text AS"
+                + " closure_xmin FROM lending.credit_line_statement s JOIN lending.loan l ON l.id = s.loan_id JOIN"
+                + " lending.loan_closure c ON c.loan_id = l.id WHERE s.created_at > l.closed_at UNION ALL SELECT"
+                + " 'condition' AS fact, e.loan_id, e.created_at, l.closed_at, NULL::bigint AS fact_order,"
+                + " c.recorded_order AS closure_order, e.xmin::text AS fact_xmin, c.xmin::text AS closure_xmin FROM"
+                + " lending.loan_condition_event e JOIN lending.loan l ON l.id = e.loan_id JOIN lending.loan_closure c"
+                + " ON c.loan_id = l.id WHERE e.created_at > l.closed_at"
+                + ") stamped";
+        if (one(snapshot, sql) != 0) {
+            forensics(snapshot, when + ": DIAGNOSTIC (not asserted) - facts stamped after their loan's closure", sql);
         }
     }
 
@@ -317,17 +352,30 @@ final class LendingStormCensus {
                         + " e.loan_id WHERE e.business_date > c.closed_on)");
         // A payoff bills every unbilled instalment early (and states a line's current cycle early) BESIDE its closure -
         // due dates after the closure by design (lending V022); what may never be is a billing written after it.
-        zero.put("C11 a billing or statement written after its loan's closure",
-                "SELECT (SELECT count(*) FROM lending.instalment_billing b JOIN lending.loan l ON l.id = b.loan_id"
-                        + " WHERE l.status = 'CLOSED' AND b.created_at > l.closed_at) + (SELECT count(*) FROM"
-                        + " lending.credit_line_statement s JOIN lending.loan l ON l.id = s.loan_id WHERE l.status ="
-                        + " 'CLOSED' AND s.created_at > l.closed_at)");
-        zero.put("C11 a repayment, draw or condition written after the loan's closure",
-                "SELECT (SELECT count(*) FROM lending.repayment r JOIN lending.loan l ON l.id = r.loan_id WHERE"
-                        + " l.status = 'CLOSED' AND r.created_at > l.closed_at) + (SELECT count(*) FROM"
-                        + " lending.credit_line_draw d JOIN lending.loan l ON l.id = d.loan_id WHERE l.status = 'CLOSED'"
-                        + " AND d.created_at > l.closed_at) + (SELECT count(*) FROM lending.loan_condition_event e JOIN"
-                        + " lending.loan l ON l.id = e.loan_id WHERE l.status = 'CLOSED' AND e.created_at > l.closed_at)");
+        // "After" is the record's own order (lending V025's recorded_order, drawn under the loan's row lock), never two
+        // statements' clock readings: on a database clock stepped back between the closing transaction's statements, a
+        // fact written BEFORE the closure in that same transaction reads "after" it. The first run of the storm on the
+        // final code (P11-DOC-001, 2026-10-15) was red here - two rows, round 1, unlisted - and these censuses read
+        // "b.created_at > l.closed_at" (and its siblings) until then; split one per fact so a failing census lists its rows.
+        zero.put("C11 a billing written after its loan's closure (the record's order)",
+                "SELECT count(*) FROM lending.instalment_billing b JOIN lending.loan_closure c ON c.loan_id = b.loan_id"
+                        + " WHERE b.recorded_order > c.recorded_order");
+        zero.put("C11 a statement written after its line's closure (the record's order)",
+                "SELECT count(*) FROM lending.credit_line_statement s JOIN lending.loan_closure c ON c.loan_id = s.loan_id"
+                        + " WHERE s.recorded_order > c.recorded_order");
+        zero.put("C11 a repayment written after the loan's closure (the record's order)",
+                "SELECT count(*) FROM lending.repayment r JOIN lending.loan_closure c ON c.loan_id = r.loan_id"
+                        + " WHERE r.recorded_order > c.recorded_order");
+        zero.put("C11 a draw written after its line's closure (the record's order)",
+                "SELECT count(*) FROM lending.credit_line_draw d JOIN lending.loan_closure c ON c.loan_id = d.loan_id"
+                        + " WHERE d.recorded_order > c.recorded_order");
+        // A condition carries no record order: written by another transaction than the closure's (its xmin), and more
+        // than the database clock's largest backward step (ClockStep's 2 s, with margin) after it. The every-writer
+        // trigger refuses a condition on a terminal account outright (lending V020); this is its census.
+        zero.put("C11 a condition written after the loan's closure",
+                "SELECT count(*) FROM lending.loan_condition_event e JOIN lending.loan l ON l.id = e.loan_id"
+                        + " JOIN lending.loan_closure c ON c.loan_id = l.id WHERE e.xmin::text <> c.xmin::text"
+                        + " AND e.created_at > l.closed_at + interval '5 seconds'");
         // A line's closure request and a draw are written under the line's row lock (L3), each stamped with its own
         // statement's database clock: a draw stamped after the request was drawn on a line already closing (I5).
         zero.put("C11 a draw written after its line's closure request",
