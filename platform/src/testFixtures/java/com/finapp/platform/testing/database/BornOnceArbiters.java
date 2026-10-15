@@ -21,10 +21,12 @@ import java.util.regex.Pattern;
  *
  * <p>A born-once fact is protected three ways - the domain's precondition under a row lock, the every-writer trigger, and
  * beneath them the {@code UNIQUE} itself - and the gate asks that the last stand alone: with every user trigger and every
- * foreign-key trigger suspended ({@code session_replication_role = replica}, as the bootstrap superuser), a copy of an
- * existing row under a fresh primary key must be refused {@code 23505} by THAT constraint. Each copy keeps the probed
- * constraint's columns and freshens the primary key and every column of every OTHER unique of the table, so no sibling
- * can refuse it first - the copy is refused by the probed unique alone, or the probe says so.
+ * foreign-key trigger suspended ({@code session_replication_role = replica}, as the bootstrap superuser) and every
+ * {@code CHECK} of the table dropped inside the probe's own savepoint, a copy of an existing row under a fresh primary key
+ * must be refused {@code 23505} by THAT constraint. Each copy keeps the probed constraint's columns and freshens the
+ * primary key and every non-null column of every OTHER unique of the table, so no sibling can refuse it first - the copy
+ * is refused by the probed unique alone, or the probe says so. A partial index with no row inside its predicate may be
+ * given a seed: a statement run in the same savepoint that puts one row inside it.
  *
  * <p>Read from {@code pg_index}, never from a list: a unique added later is probed without anyone remembering, and one
  * dropped by a mutation is found admitting its copy. A unique whose columns include the whole primary key is a foreign-key
@@ -69,6 +71,14 @@ public final class BornOnceArbiters {
 
     /** Probes every unique index of every ordinary table of {@code schema}. */
     public static List<Probe> probe(String schema) throws SQLException {
+        return probe(schema, Map.of());
+    }
+
+    /**
+     * Probes every unique index of every ordinary table of {@code schema}; {@code seeds} maps an index's name to a statement
+     * run in its probe's savepoint before the copy - to put a row inside a partial index's predicate when none stands.
+     */
+    public static List<Probe> probe(String schema, Map<String, String> seeds) throws SQLException {
         try (Connection owner = DatabaseRoles.bootstrap()) {
             owner.setAutoCommit(false);
             try {
@@ -81,7 +91,7 @@ public final class BornOnceArbiters {
                 List<Probe> probes = new ArrayList<>();
                 for (Unique unique : uniques) {
                     probes.add(probe(owner, schema, unique, primaryKeys.getOrDefault(unique.table(), List.of()),
-                            uniques));
+                            uniques, seeds.get(unique.name())));
                 }
                 return probes;
             } finally {
@@ -91,7 +101,7 @@ public final class BornOnceArbiters {
     }
 
     private static Probe probe(Connection owner, String schema, Unique unique, List<String> primaryKey,
-            List<Unique> all) throws SQLException {
+            List<Unique> all, String seed) throws SQLException {
         if (unique.expression()) {
             return new Probe(unique.name(), unique.table(), Verdict.EXPRESSION_INDEX, "");
         }
@@ -109,6 +119,15 @@ public final class BornOnceArbiters {
         }
         fresh.removeAll(unique.columns());
         List<Column> columns = columns(owner, schema, unique.table());
+        // A column the probed index's own predicate reads stays as the source row holds it: freshened, the copy would
+        // leave the partial index and be admitted for a reason that is not the unique's.
+        if (unique.predicate() != null) {
+            for (Column column : columns) {
+                if (Pattern.compile("\\b" + Pattern.quote(column.name()) + "\\b").matcher(unique.predicate()).find()) {
+                    fresh.remove(column.name());
+                }
+            }
+        }
         StringBuilder names = new StringBuilder();
         StringBuilder values = new StringBuilder();
         for (Column column : columns) {
@@ -117,7 +136,9 @@ public final class BornOnceArbiters {
                 values.append(", ");
             }
             names.append('"').append(column.name()).append('"');
-            values.append(fresh.contains(column.name()) ? freshened(column) : "\"" + column.name() + "\"");
+            values.append(fresh.contains(column.name())
+                    ? "CASE WHEN \"" + column.name() + "\" IS NULL THEN NULL ELSE " + freshened(column) + " END"
+                    : "\"" + column.name() + "\"");
         }
         StringBuilder source = new StringBuilder("TRUE");
         for (String column : unique.columns()) {
@@ -131,6 +152,13 @@ public final class BornOnceArbiters {
                 + table + " WHERE " + source + " LIMIT 1";
         Savepoint savepoint = owner.setSavepoint();
         try (Statement statement = owner.createStatement()) {
+            // Every CHECK of the table dropped - inside this savepoint, so the rollback restores it: the unique alone.
+            for (String check : checks(owner, schema, unique.table())) {
+                statement.execute("ALTER TABLE " + table + " DROP CONSTRAINT \"" + check + "\"");
+            }
+            if (seed != null) {
+                statement.execute(seed);
+            }
             int copied = statement.executeUpdate(insert);
             return copied == 0
                     ? new Probe(unique.name(), unique.table(), Verdict.NO_SOURCE_ROW, "")
@@ -214,6 +242,22 @@ public final class BornOnceArbiters {
             }
         }
         return keys;
+    }
+
+    private static List<String> checks(Connection connection, String schema, String table) throws SQLException {
+        String sql = "SELECT k.conname FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid"
+                + " JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ? AND c.relname = ? AND k.contype = 'c'";
+        List<String> checks = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            try (ResultSet row = statement.executeQuery()) {
+                while (row.next()) {
+                    checks.add(row.getString(1));
+                }
+            }
+        }
+        return checks;
     }
 
     private static List<Column> columns(Connection connection, String schema, String table) throws SQLException {

@@ -696,6 +696,28 @@ class LendingCapitalDatabaseTest {
         assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?", rejected)).isZero();
     }
 
+    @Test
+    @Order(14)
+    @DisplayName("every capital arbiter refuses a copy alone, triggers off (P11-DOC-001): each unique of the contribution's"
+            + " two tables, read from the catalogue, refuses a copy of a real row under a fresh key by itself - every"
+            + " trigger suspended and every CHECK dropped in the probe's rolled-back savepoint")
+    void everyCapitalArbiterRefusesACopyWithEveryTriggerOff() throws Exception {
+        List<com.finapp.platform.testing.database.BornOnceArbiters.Probe> probes =
+                com.finapp.platform.testing.database.BornOnceArbiters.probe("lending").stream()
+                        .filter(probe -> probe.table().startsWith("capital_contribution"))
+                        .toList();
+        System.out.println("P11-DOC-001 CAPITAL ARBITERS: " + probes);
+        assertThat(probes).as("the capital tables' born-once uniques").extracting(
+                        com.finapp.platform.testing.database.BornOnceArbiters.Probe::constraint)
+                .contains("capital_contribution_reference_once", "capital_contribution_born_once",
+                        "capital_contribution_decided_once", "capital_contribution_event_expectation_once");
+        // Every one refused alone but the proposer copy's composite foreign-key target, which binds the whole key.
+        assertThat(probes).allSatisfy(probe -> assertThat(probe.verdict()).as(probe.toString()).isEqualTo(
+                probe.constraint().equals("capital_contribution_proposer_pinned")
+                        ? com.finapp.platform.testing.database.BornOnceArbiters.Verdict.PRIMARY_KEY_BOUND
+                        : com.finapp.platform.testing.database.BornOnceArbiters.Verdict.REFUSED_ALONE));
+    }
+
     // ----------------------------------------------------------------- fixtures
 
     private Boolean reserve(LoanLedgerAccounts loan, Money amount, CountDownLatch start, CountDownLatch bothRead)
