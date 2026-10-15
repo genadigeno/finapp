@@ -985,14 +985,25 @@ class LendingStormDatabaseTest {
     }
 
     /**
-     * The scheme answers its inquiries truthfully: for every withdrawal payments holds UNKNOWN, if the scheme saw the
-     * reference it executed it (accepted); and every pay-in initiation awaiting its payer, executed.
+     * The scheme answers its inquiries truthfully, at every inquiry: for every withdrawal payments holds DISPATCHED or
+     * UNKNOWN, accepted once the scheme has recorded our reference (it executed it), unrecognised until then - and an
+     * answer once "unrecognised" is re-armed "accepted" the moment the record shows the send; and every pay-in initiation
+     * awaiting its payer, executed.
+     *
+     * <p><strong>Never frozen at the first sighting</strong> (the round-5 stall of P5's first performance): payments
+     * commits a withdrawal DISPATCHED before its send reaches the scheme, and the scheme's record trails the wire - so a
+     * sighting in that window saw no send. Armed once, "unrecognised" then outlived the send it denied: with the response
+     * lost, payments held the withdrawal UNKNOWN and - correctly, ADR-0062 section 3 - would conclude the scheme's word
+     * NEVER_RECEIVED only past the rail's declared 90 s outcome deadline plus the 1 s margin, beyond the rest bound; and
+     * once concluded it would have been a lie about a transfer the scheme executed. Serialised, so a stale snapshot of
+     * the record can never re-arm "unrecognised" over an "accepted" a fresher one armed.
      */
-    private void answerInquiries() throws SQLException {
+    private synchronized void answerInquiries() throws SQLException {
         Set<String> sent = Set.copyOf(scheme.headerValues(SimulatedInstantSchemeAdapter.TRANSFERS_PATH, "Idempotency-Key"));
         for (String reference : strings("SELECT end_to_end_reference FROM payments.withdrawal WHERE status IN"
                 + " ('DISPATCHED', 'UNKNOWN') AND instruction_reference LIKE 'lending:%'")) {
-            if (answered.add(reference)) {
+            if (sent.contains(reference) ? inquiryAccepts.add(reference)
+                    : !inquiryAccepts.contains(reference) && answered.add(reference)) {
                 scheme.succeedsWith(SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + reference, 200,
                         sent.contains(reference) ? "{\"status\":\"accepted\",\"reference\":\"sch-inq-" + reference
                                 + "\",\"cycle\":\"C2\"}" : "{\"status\":\"unrecognised\"}");
@@ -1011,7 +1022,10 @@ class LendingStormDatabaseTest {
         }
     }
 
+    /** References whose inquiry answers "unrecognised" (withdrawals) or executed (pay-ins): armed once each. */
     private final Set<String> answered = ConcurrentHashMap.newKeySet();
+    /** Withdrawal references whose inquiry answers "accepted": the scheme's record shows the send. */
+    private final Set<String> inquiryAccepts = ConcurrentHashMap.newKeySet();
 
     /** Terms v4 mid-load, four eyes across instances: offers outstanding keep their pinned version. */
     private Void activateTermsMidLoad() throws Exception {
@@ -1380,6 +1394,9 @@ class LendingStormDatabaseTest {
         minimum.put("scenario 4 a step killed mid-run", 1);
         minimum.put("crash points", 12);
         minimum.put("a waiver approved across instances", 1);
+        // The acceptance's own backend identified behind a held L0 (C17): at least one of its two held-lock sightings
+        // committed, so its transaction id was matched - a refused (422) sighting has no row to match.
+        minimum.put("C17 lock order observed behind a held L0", 1);
         minimum.put("boundary 1 crossed", 1);
         minimum.put("boundary 2 crossed", 1);
         minimum.put("boundary 3 crossed", 1);
