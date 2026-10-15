@@ -593,6 +593,109 @@ class LendingCapitalDatabaseTest {
         }
     }
 
+    // ----------------------------------------------------------------- the doors closed (P11-DOC-001's exit review)
+
+    @Test
+    @Order(12)
+    @DisplayName("every capital door is closed to no session (401); a pending contribution's approval and rejection to a"
+            + " session without LENDING_CAPITAL_ADMINISTER (403), the report to one without LENDING_INVESTIGATE (403);"
+            + " an unknown or malformed contribution is 404 lending.NotFound to approve and to reject - nothing written by"
+            + " any refused caller, the contribution still PROPOSED")
+    void theCapitalDoorsAreClosed() throws Exception {
+        String proposer = sessionWith(RoleName.LENDING_TREASURY_OFFICER);
+        String treasurer = sessionWith(RoleName.LENDING_TREASURY_OFFICER);
+        String officer = sessionWith(RoleName.LENDING_OFFICER);
+        String nobody = sessionWith(null);
+        HttpResponse<String> proposed = post(CONTRIBUTIONS, proposal("EUR", 123_00, reference(), "the doors' case"),
+                proposer, key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String contribution = field(proposed.body(), "id");
+        long events = count("SELECT count(*) FROM lending.capital_contribution_event");
+        long contributions = count("SELECT count(*) FROM lending.capital_contribution");
+        long audited = count("SELECT count(*) FROM platform.audit_record WHERE operation LIKE 'lending.CapitalContribution%'");
+
+        String approval = CONTRIBUTIONS + "/" + contribution + "/approval";
+        String rejection = CONTRIBUTIONS + "/" + contribution + "/rejection";
+        assertThat(post(CONTRIBUTIONS, proposal("GBP", 1_00, reference(), "no session"), null, key()).statusCode())
+                .as("no session proposes").isEqualTo(401);
+        for (String door : List.of(approval, rejection)) {
+            assertThat(post(door, decision("no session"), null, key()).statusCode()).as("no session " + door)
+                    .isEqualTo(401);
+            HttpResponse<String> lending = post(door, decision("not mine to decide"), officer, key());
+            assertThat(lending.statusCode()).as("LENDING_OFFICER " + door + ": " + lending.body()).isEqualTo(403);
+            HttpResponse<String> roleless = post(door, decision("not mine to decide"), nobody, key());
+            assertThat(roleless.statusCode()).as("no role " + door + ": " + roleless.body()).isEqualTo(403);
+        }
+        assertThat(get(CAPITAL, null).statusCode()).as("no session reads").isEqualTo(401);
+        assertThat(get(CAPITAL, nobody).statusCode()).as("no role reads").isEqualTo(403);
+        assertThat(get(CAPITAL, treasurer).statusCode()).as("LENDING_TREASURY_OFFICER lacks LENDING_INVESTIGATE")
+                .isEqualTo(403);
+        for (String unknown : List.of(UUID.randomUUID().toString(), IDS.next().toString(), "not-a-uuid")) {
+            for (String act : List.of("/approval", "/rejection")) {
+                HttpResponse<String> absent = post(CONTRIBUTIONS + "/" + unknown + act, decision("unknown"), treasurer,
+                        key());
+                assertThat(absent.statusCode()).as(unknown + act + ": " + absent.body()).isEqualTo(404);
+                assertThat(absent.body()).contains("lending.NotFound");
+            }
+        }
+
+        assertThat(count("SELECT count(*) FROM lending.capital_contribution_event")).as("no decision recorded")
+                .isEqualTo(events);
+        assertThat(count("SELECT count(*) FROM lending.capital_contribution")).as("no contribution proposed")
+                .isEqualTo(contributions);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation LIKE"
+                + " 'lending.CapitalContribution%'")).as("no act audited").isEqualTo(audited);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?", contribution))
+                .as("no expectation opened").isZero();
+        assertThat(one("SELECT to_status FROM lending.capital_contribution_event WHERE contribution_id = ?::uuid"
+                + " ORDER BY occurred_at DESC LIMIT 1", contribution)).isEqualTo("PROPOSED");
+
+        HttpResponse<String> withdrawn = post(rejection, decision("the doors' case is done"), proposer, key());
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
+    }
+
+    @Test
+    @Order(13)
+    @DisplayName("every capital act under one key is one (INV-IDEM-01): ten proposals, ten approvals and ten rejections"
+            + " - each raced under one key - answer one receipt (or 409 api.IdempotencyInProgress) and make one"
+            + " contribution, one decision, one expectation and one audit record each")
+    void everyCapitalActUnderOneKeyIsOne() throws Exception {
+        String proposer = sessionWith(RoleName.LENDING_TREASURY_OFFICER);
+        String approver = sessionWith(RoleName.LENDING_TREASURY_OFFICER);
+        String reference = reference();
+        String body = proposal("EUR", 77_00, reference, "a raced proposal");
+        String proposalKey = key();
+        HttpResponse<String> proposed = OneKeyRace.tenUnderOneKey(201, () -> post(CONTRIBUTIONS, body, proposer,
+                proposalKey));
+        String contribution = field(proposed.body(), "id");
+        assertThat(count("SELECT count(*) FROM lending.capital_contribution WHERE reference = ?", reference)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                + " AND operation = 'lending.CapitalContributionProposed'", contribution)).isEqualTo(1);
+
+        String approvalKey = key();
+        HttpResponse<String> approved = OneKeyRace.tenUnderOneKey(200, () -> post(CONTRIBUTIONS + "/" + contribution
+                + "/approval", decision("raced approval"), approver, approvalKey));
+        assertThat(field(approved.body(), "status")).isEqualTo("APPROVED");
+        assertThat(count("SELECT count(*) FROM lending.capital_contribution_event WHERE contribution_id = ?::uuid"
+                + " AND to_status <> 'PROPOSED'", contribution)).as("one decision").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?", contribution))
+                .as("one expectation").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                + " AND operation = 'lending.CapitalContributionApproved'", contribution)).isEqualTo(1);
+
+        String rejected = field(post(CONTRIBUTIONS, proposal("EUR", 66_00, reference(), "to be rejected"), proposer,
+                key()).body(), "id");
+        String rejectionKey = key();
+        HttpResponse<String> rejection = OneKeyRace.tenUnderOneKey(200, () -> post(CONTRIBUTIONS + "/" + rejected
+                + "/rejection", decision("raced rejection"), approver, rejectionKey));
+        assertThat(field(rejection.body(), "status")).isEqualTo("REJECTED");
+        assertThat(count("SELECT count(*) FROM lending.capital_contribution_event WHERE contribution_id = ?::uuid"
+                + " AND to_status <> 'PROPOSED'", rejected)).as("one decision").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                + " AND operation = 'lending.CapitalContributionRejected'", rejected)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?", rejected)).isZero();
+    }
+
     // ----------------------------------------------------------------- fixtures
 
     private Boolean reserve(LoanLedgerAccounts loan, Money amount, CountDownLatch start, CountDownLatch bothRead)
@@ -788,7 +891,7 @@ class LendingCapitalDatabaseTest {
                 .causing(CausationId.of("p11t4-cause"));
     }
 
-    /** A signed-in session holding {@code role}. */
+    /** A signed-in session holding {@code role}, or no role at all when it is {@code null}. */
     private String sessionWith(RoleName role) throws Exception {
         String login = "lc." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations",
@@ -797,12 +900,14 @@ class LendingCapitalDatabaseTest {
                         null, key()).statusCode())
                 .isEqualTo(201);
         UUID identity = (UUID) one("SELECT id FROM identity.identity WHERE login_identifier = ?", login);
-        try (CorrelationContext.Scope scope = CorrelationContext.enter(flow());
-                SecurityContext.Scope actor = SecurityContext.enterSystem();
-                Connection app = DatabaseRoles.application()) {
-            app.setAutoCommit(false);
-            authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
-            app.commit();
+        if (role != null) {
+            try (CorrelationContext.Scope scope = CorrelationContext.enter(flow());
+                    SecurityContext.Scope actor = SecurityContext.enterSystem();
+                    Connection app = DatabaseRoles.application()) {
+                app.setAutoCommit(false);
+                authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
+                app.commit();
+            }
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, key());
