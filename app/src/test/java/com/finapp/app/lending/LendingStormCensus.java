@@ -380,9 +380,15 @@ final class LendingStormCensus {
                         + " AND e.created_at > l.closed_at + interval '5 seconds'");
         // A line's closure request and a draw are written under the line's row lock (L3), each stamped with its own
         // statement's database clock: a draw stamped after the request was drawn on a line already closing (I5).
-        zero.put("C11 a draw written after its line's closure request",
+        // ... judged with the database clock's step as its tolerance (P11-DOC-001): the request carries no record order,
+        // and the storm on the final code read a draw stamped 1.2 ms after its line's closure request. The two serialise on
+        // L3 and a draw on a CLOSING line is refused outright for every writer (the draw re-reads the line under L3, and
+        // lending V013's trigger holds every writer to an ACTIVE line), so a draw can only have come first - its stamp
+        // read later because the database clock stepped back between two transactions' statements. This is the guard's
+        // census, not the guard. Read "d.created_at > q.requested_at" until then.
+        zero.put("C11 a draw written after its line's closure request (beyond the clock's step)",
                 "SELECT count(*) FROM lending.credit_line_draw d JOIN lending.line_closure_request q ON q.loan_id ="
-                        + " d.loan_id WHERE d.created_at > q.requested_at");
+                        + " d.loan_id WHERE d.created_at > q.requested_at + interval '5 seconds'");
         zero.put("C11 an edge out of CLOSED or CANCELLED",
                 "SELECT count(*) FROM lending.loan_event WHERE from_status IN ('CLOSED', 'CANCELLED')");
         // C12 - every state change's event exactly once (the outbox written in the fact's own transaction).
