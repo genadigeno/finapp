@@ -298,6 +298,8 @@ class LendingStormDatabaseTest {
         // 4. AT REST.
         rest("drained");
         census("drained", true);
+        System.out.printf("P11-TST-001 DPD: %d accounts in servicing judged at rest, %d of them past due%n",
+                census.dpdChecked, census.dpdPastDue);
         assertThat(census.dpdChecked).as("C9 the date difference was judged on accounts in servicing").isPositive();
         assertThat(census.dpdPastDue).as("C9 ... among them accounts past due (DPD above zero)").isPositive();
         assertTheAuditCountsEveryAct();
