@@ -45,7 +45,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The lending write path on a database clock stepped back (`P11-TSK-034`; ADR-0063 decision 2 and its follow-ups,
+ * The lending write path on a database clock stepped back (`P11-TSK-036`; ADR-0063 decision 2 and its follow-ups,
  * `INV-LND-10`). The test database's clock is corrected in steps of up to 1.7 s, so within ONE transaction a later
  * statement can read the clock earlier than an earlier statement did, and the transaction's start can stand after both.
  * {@link ClockStep} makes such a step on demand, between a step's own clock read and the writes it makes from it, through
@@ -54,18 +54,18 @@ import org.junit.jupiter.api.Test;
  * <ul>
  *   <li><strong>the offering instant</strong> - {@code lending V005}/{@code V006} refused an offer whose instant, read by
  *       an earlier statement, stood after the insert's clock (or before the transaction's start): the recurring
- *       "inserting a loan offer: SQLSTATE P0001" fixture failure. {@code lending V026} stamps it in the insert itself;
+ *       "inserting a loan offer: SQLSTATE P0001" fixture failure. {@code lending V028} stamps it in the insert itself;
  *   <li><strong>the business dates</strong> - every "never after today" and "never before today" rank judged a date
  *       the step read from one clock reading against ANOTHER single reading ({@code statement_timestamp()} or
  *       {@code transaction_timestamp()}), which a step across a midnight in the pinned zone puts on different days. They
- *       now judge against the earliest and latest business dates the transaction read ({@code V026}'s two functions);
+ *       now judge against the earliest and latest business dates the transaction read ({@code V028}'s two functions);
  *   <li><strong>the servicing permit</strong> - a sweep on a clock behind the permit an account was born with claims
  *       nothing until the clock passes it: a liveness delay of at most the step, kept (ADR-0063 decision 4) - and the
  *       billing suite's "no billing found" symptom, which its fixture now cannot meet.
  * </ul>
  */
 @Tag("database")
-@DisplayName("the lending write path on a database clock stepped back (P11-TSK-034)")
+@DisplayName("the lending write path on a database clock stepped back (P11-TSK-036)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class BackwardClockDatabaseTest {
 
@@ -233,7 +233,7 @@ class BackwardClockDatabaseTest {
         LoanId loan = disbursed(3_500_00, 12);
         int days = daysTo(loan, 2);
         // The permit the account was born with, ahead of the sweep's clock - as a step back after the opening leaves it,
-        // and as InstalmentBillingDatabaseTest#tenSweepersBillOnce's fixture left it before P11-TSK-034 (backdate moved
+        // and as InstalmentBillingDatabaseTest#tenSweepersBillOnce's fixture left it before P11-TSK-036 (backdate moved
         // the history, never the permit). Planted a minute ahead, so the case never races the real clock past it.
         asOwner("UPDATE lending.loan SET next_servicing_at = statement_timestamp() + interval '1 minute' WHERE id = '"
                 + loan.value() + "'");

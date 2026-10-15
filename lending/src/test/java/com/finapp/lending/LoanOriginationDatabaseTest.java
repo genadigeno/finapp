@@ -410,7 +410,7 @@ class LoanOriginationDatabaseTest {
         }
 
         Application unswept = application(LINE, 10);
-        // Valid a second on the DATABASE's clock - the clock the origination judges the lapse on (P11-TSK-034): planted
+        // Valid a second on the DATABASE's clock - the clock the origination judges the lapse on (P11-TSK-036): planted
         // on this JVM's clock, which the test VM's database clock runs up to 650 ms ahead of (ADR-0063), a 600 ms validity
         // had lapsed before the step read it and the application closed CLOSED_UNDECIDED.
         CREDIT.approve(unswept, Money.ofMinorUnits(1_500_00, LoanTermsFixtures.EUR), Optional.empty(),
@@ -603,7 +603,7 @@ class LoanOriginationDatabaseTest {
     // ------------------------------------------------------------------ the ranks, for every writer
 
     @Test
-    @DisplayName("the offering instant is the database's for every writer (P11-TSK-034, lending V026): a raw offer naming"
+    @DisplayName("the offering instant is the database's for every writer (P11-TSK-036, lending V028): a raw offer naming"
             + " one in 2999 or in 2001 is born at the insert's own clock - GREATEST(statement_timestamp(),"
             + " transaction_timestamp()) - never at the writer's value; the expiry and the permit from it")
     void theOfferingInstantIsTheDatabasesForEveryWriter() throws Exception {
@@ -728,7 +728,7 @@ class LoanOriginationDatabaseTest {
 
     /**
      * Credit approves {@code application} for {@code minor} (and a term), valid {@code validity} from now on the database's
-     * clock - the clock the origination judges the lapse on (P11-TSK-034), never this JVM's.
+     * clock - the clock the origination judges the lapse on (P11-TSK-036), never this JVM's.
      */
     private static UUID approve(Application application, long minor, Optional<Integer> term, Duration validity) {
         return CREDIT.approve(application, Money.ofMinorUnits(minor, LoanTermsFixtures.EUR), term,

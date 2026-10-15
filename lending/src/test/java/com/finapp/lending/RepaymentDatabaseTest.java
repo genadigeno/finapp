@@ -172,7 +172,7 @@ class RepaymentDatabaseTest {
             assertThat(item.paid().minorUnits()).as("never over-allocated").isEqualTo(bill);
             assertThat(due(loan)).isZero();
             assertThat(held(loan)).as("the rest held").isEqualTo(2 * each - bill);
-            // Newest first in the record's order (L3's), never the clock's (P11-TSK-034): a step between the two would
+            // Newest first in the record's order (L3's), never the clock's (P11-TSK-036): a step between the two would
             // otherwise flip them.
             Repayment first = both.get(1);
             Repayment second = both.get(0);

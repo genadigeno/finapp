@@ -141,7 +141,7 @@ class LoanPayoutStepsDatabaseTest {
         LoanPayoutStore.Claimed second = claimed(claimPayouts(AT_ONCE), loan.loan()).orElseThrow();
         assertThat(second.status()).as("re-driven, still DISPATCHING").isEqualTo(PayoutStatus.DISPATCHING);
         // A new permit - the re-claim's fencing token. Not "later": both are database clock readings, and a clock stepped
-        // back between the two claims stamps the second earlier (P11-TSK-034); the overtaken step's conditional writes
+        // back between the two claims stamps the second earlier (P11-TSK-036); the overtaken step's conditional writes
         // below are what the token protects.
         assertThat(second.permit()).isNotEqualTo(first.permit());
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
@@ -231,7 +231,7 @@ class LoanPayoutStepsDatabaseTest {
         assertThat(scalar("SELECT status FROM lending.loan_payout WHERE loan_id = ?", id)).isEqualTo("PAID_OUT");
         // Payments' instant, exactly - held only by the recording statement's own clock (decided_at) and the birth: on a
         // clock that did not step, the instant itself; on one stepped back below it, that clock - never a later reading's
-        // judgement, which a step would contradict (P11-TSK-034, as P11-TSK-033's case).
+        // judgement, which a step would contradict (P11-TSK-036, as P11-TSK-033's case).
         assertThat(scalar("SELECT (concluded_at = GREATEST(LEAST(?::timestamptz, decided_at), created_at))::text"
                 + " FROM lending.loan_payout WHERE loan_id = ?", java.sql.Timestamp.from(concluded), id))
                 .as("payments' instant, held within the payout's life").isEqualTo("true");
@@ -345,7 +345,7 @@ class LoanPayoutStepsDatabaseTest {
         assertThat(available(walletOf(loan.party()))).isEqualTo(loan.principal());
         // Interest from the refusal's instant: the recording statement's clock held at the birth (V019), its business date
         // - read against the row's own stamps, never a later now(), which a clock stepped back across a midnight would
-        // contradict (P11-TSK-034).
+        // contradict (P11-TSK-036).
         assertThat(scalar("SELECT (p.concluded_at = GREATEST(p.decided_at, p.created_at)"
                 + " AND s.start_date = lending.business_date(p.concluded_at, 'UTC'))::text FROM lending.accrual_start s"
                 + " JOIN lending.loan_payout p ON p.loan_id = s.loan_id WHERE s.loan_id = ? AND s.origin = 'PAYOUT_CONCLUDED'",

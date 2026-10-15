@@ -402,7 +402,7 @@ class InterestAccrualDatabaseTest {
             assertThat(scalar("SELECT (next_servicing_at > statement_timestamp())::text FROM lending.loan WHERE id = ?",
                     loan.value())).isEqualTo("true");
             // The first round with the payout PENDING; the second with it DISPATCHED and payments undecided - each made
-            // due on the database's clock first (P11-TSK-034: never a sleep past a 1 ms permit).
+            // due on the database's clock first (P11-TSK-036: never a sleep past a 1 ms permit).
             DisbursementWorld.duePayout(loan);
             assertThat(DisbursementWorld.sweepPayouts(java.time.Duration.ofMillis(1))).containsKey(loan);
         }
@@ -586,7 +586,7 @@ class InterestAccrualDatabaseTest {
 
     /**
      * Moves every dated fact of {@code loan} {@code days} into the past - the fixture's clock, never a path. The servicing
-     * permit moves with the opening it was stamped at (`P11-TSK-034`): left at the opening's database instant, a sweep on a
+     * permit moves with the opening it was stamped at (`P11-TSK-036`): left at the opening's database instant, a sweep on a
      * database clock stepped back behind it claimed nothing - {@code InstalmentBillingDatabaseTest#tenSweepersBillOnce}'s
      * "no billing found" - so the fixture makes it due on any clock, as {@code X-TSK-013}'s aged permits do.
      */

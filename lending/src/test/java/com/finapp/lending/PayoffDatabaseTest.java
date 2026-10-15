@@ -691,7 +691,7 @@ class PayoffDatabaseTest {
      * No condition change written by the closure's transaction or any after it - judged by the writing transactions' ids
      * (assigned in order, never reused in a fresh test database), never by the rows' {@code created_at}: a database clock
      * stepped back between the last servicing step and the payoff stamps the closure before conditions written before it
-     * (`P11-TSK-034` - met once as "expected 0 but was 2").
+     * (`P11-TSK-036` - met once as "expected 0 but was 2").
      */
     static void assertNoConditionAfterClosure(LoanId loan) {
         assertThat(count("SELECT count(*) FROM lending.loan_condition_event e JOIN lending.loan_closure c"

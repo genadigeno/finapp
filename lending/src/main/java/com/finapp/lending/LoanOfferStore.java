@@ -23,7 +23,7 @@ public interface LoanOfferStore {
 
     /**
      * Births the offer {@code OFFERED}; the database stamps and answers its offering instant - read by the insert itself
-     * (`P11-TSK-034`, {@code lending V026}) - and its expiry.
+     * (`P11-TSK-036`, {@code lending V028}) - and its expiry.
      */
     Offered insert(Connection unitOfWork, NewOffer offer);
 
@@ -81,7 +81,7 @@ public interface LoanOfferStore {
 
     /**
      * What the database stamped at the offer's birth: the offering instant - its clock at the insert, never before the
-     * transaction's start - and the expiry from it (`P11-TSK-034`).
+     * transaction's start - and the expiry from it (`P11-TSK-036`).
      */
     record Offered(Instant offeredAt, Instant expiresAt) {
 
@@ -93,7 +93,7 @@ public interface LoanOfferStore {
 
     /**
      * An offer at birth - identity, decision and pin; the offering instant and the expiry are the database's
-     * (`P11-TSK-034`: never a clock value an earlier statement read).
+     * (`P11-TSK-036`: never a clock value an earlier statement read).
      */
     record NewOffer(
             LoanOfferId id,

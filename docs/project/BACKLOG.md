@@ -18356,7 +18356,11 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   `V027` must merge after it (Flyway `outOfOrder = false`).
 - **Gate** (2026-10-15, `COMPLETE`): an independent read-only review - V027's function body diffed mechanically against V024's (the latest of V006/V023/V024): the only differences the lapse dropped from the amendment branch's first `IF` and judged last, after the loan `ACTIVE`, the amendment's identity and decision, the version conditional and never more credit, in `LNAEX`; no grant, comment or binding lost; `LNAEX` matched exactly and apart from `LNEXP`; `insertAgreement`'s three callers (the amendment handled, version 1 and the prepayment unable to reach it, a `500` if they ever did); no statement on the aborted unit of work; the claim rolled back and a same-key retry the same `409`; the `lapsed` meter counted after the rollback, once per attempt as the L5 refusal - found no CRITICAL item and **two IMPORTANT, both fixed**: (1) the blocked-session observers paired `pg_stat_activity`'s snapshot (a session's previous statement - for a fresh connection the empty text that turned `LoanAcceptanceDatabaseTest#acceptanceTakesTheProfileFirst` red once) with `pg_blocking_pids`' live lock table, a flake the new race tests shared - every lending observer (`DisbursementWorld`, `LoanAcceptanceDatabaseTest`, `LoanTermsDatabaseTest`, `LoanOriginationDatabaseTest`) and `app`'s `LoanAccountDatabaseTest` now read only a row that itself shows the session `active` and waiting on a `Lock` (`LoanTermsDatabaseTest`'s activation case went red once in the gate's full lending run on exactly this, before its observer was given the same filter); (2) the order was unprobed although a wrong order is what `P11-TSK-034`'s gate found - probed: the lapse moved ahead of never more credit, `#onlyTheLapseIsTheCustomers` red (`AmendmentLapsed` where the breach was due), restored byte-identical, `MUTATION_TESTING.md` §2. **MINOR**: fixed - the app helper's message, a line of `LENDING_LIFECYCLES.md` §4.9 rewrapped; accepted - the opened-earlier fixture duplicated across `lending`'s and `app`'s test sets (no shared fixture between them), no raw case for a closed loan or a foreign amendment under a lapse (the Java path refuses both at L3/L5, the order probed). **Recorded**: the same stale-snapshot observer in `app`'s `CreditDecisionDatabaseTest`, `UnderwritingCaseDatabaseTest`, `DecisionOrchestrationDatabaseTest`, `LendingCreditExposureDatabaseTest` and the storm's `LendingStormCatalogue` - the storm's to take before its green runs, the credit suites a follow-up. **Re-verified fresh on the merged code** (`V026`, `V027`): the whole lending `databaseTest` 23 suites, 269 tests - 268 and the terms observer's one red, then the five observer suites (`LoanTermsDatabaseTest`, `LoanOriginationDatabaseTest`, `LoanAcceptanceDatabaseTest`, `AmendmentDatabaseTest`, `LoanDisbursementDatabaseTest`) twice after the fix, 68 of 68 each; `unitTest` 190 across 22; `architectureTest` 3; app `LoanAccountDatabaseTest` and `LoanOfferDatabaseTest` 27; app `architectureTest` guards 55 across 11 - 0 failures. **Multi-instance**: `PASS` - no new state, lock or schedule; `LAPSED` is derived, never swept; the refusal's code depends only on rows read under L3 and the statement's clock. **DoD**: `DOD-API`, `DOD-TEST`, `DOD-DOC` held. Marks no task: `P11-TST-001` stays `READY`.
 
-**P11-TSK-034 — Remediation: the lending write path under a backward database clock** — `COMPLETE` (2026-10-15) *(added out of turn on the owner's instruction, 2026-10-14 ("fix the clock first") - a Phase 11 remediation item; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TST-001` stays `READY` and must not start before this lands; found by `P11-TSK-033` (the offer insert, "found, not caused") and by `P11-TSK-030`'s run (`InstalmentBillingDatabaseTest#tenSweepersBillOnce`, "no billing found"))*
+**P11-TSK-036 — Remediation: the lending write path under a backward database clock** — `COMPLETE` (2026-10-15) *(added out of turn on the owner's instruction, 2026-10-14 ("fix the clock first") - a Phase 11 remediation item; it belongs to no milestone and reopens none, and marks no task `READY` - `P11-TST-001` stays `READY` and must not start before this lands; found by `P11-TSK-033` (the offer insert, "found, not caused") and by `P11-TSK-030`'s run (`InstalmentBillingDatabaseTest#tenSweepersBillOnce`, "no billing found"))*
+- **Renumbered** (2026-10-15, at the integration of PR #9): first recorded as `P11-TSK-034` with lending `V026`, and
+  renumbered `P11-TSK-036` / `V028` because PR #9's `P11-TSK-034` (the offer's expiry, `V026`) and `P11-TSK-035` (`V027`)
+  took those identities; `V028` runs after `V027`, its `loan_offer_permits_only_machine_edges` is `V026`'s body (the
+  customer-side expiry in `LNEXP` kept) with this item's offering-instant change alone.
 - **The defect**: the database clock is not monotonic (an NTP or hypervisor correction steps it back - measured on the
   local VM by up to 1.7 s, ADR-0063, `X-TSK-017`, `P11-TSK-033`), so within ONE transaction a later statement's
   `statement_timestamp()` can read earlier than an earlier statement's, and `transaction_timestamp()` can stand after
@@ -18448,7 +18452,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   `ORDER BY created_at LIMIT 1` (a selection, any fee serves); `LoanOriginationDatabaseTest.sweepUntilClaimed` (a bounded
   retry that outlasts a step); app `LoanPayoutDatabaseTest`'s `Thread.sleep(80)` before payments' resolution sweep
   (payments' database-stamped inquiry permit - another module's).
-- **As built** (2026-10-14): lending **`V026`** (`V026__the_lending_write_path_under_a_backward_clock.sql`) - the two
+- **As built** (2026-10-14): lending **`V028`** (`V028__the_lending_write_path_under_a_backward_clock.sql`) - the two
   functions, `COMMENT ON COLUMN lending.loan_offer.offered_at`, and sixteen trigger functions replaced, each generated by
   script from its latest body (`V006`, `V009`, `V013`, `V017`, `V018`, `V019`, `V020`, `V021`, `V022` x3, `V023` x2,
   `V024` x3) and diffed against it: only the stated comparisons, the offer's stamp and their comments change (the census
@@ -18477,14 +18481,14 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 - **Objective**: no legitimate lending act is refused, and no fixture fails, because the database clock stepped back within
   a transaction or between two. **Bounded context**: Lending. **Dependencies**: none (`-033`'s `V019` and `-029`'s `V025`
   are carried forward).
-- **Domain changes**: none. **Persistence**: `lending V026` (two functions, sixteen trigger functions replaced, a column
+- **Domain changes**: none. **Persistence**: `lending V028` (two functions, sixteen trigger functions replaced, a column
   comment). **APIs**: none (`GET /v1/me/loans/{id}/repayments` newest first by the record's order). **Events**: none
   (`LoanOffered`'s expiry unchanged). **Financial impact**: none on amounts; an offer is dated its insert's instant (at
   most milliseconds later than before; on a stepped clock the transaction's start). **Invariants**: `INV-LND-10`,
   `INV-LND-05`, `INV-HIST-01`. **Distributed-system concerns**: none new - every stamp and rank is a pure function of the
   one database clock's readings in its own transaction. **Security**, **Audit**, **Observability**, **Reconciliation**:
   none.
-- **Acceptance criteria**: every new case red on the unfixed tree and green on `V026`; each production fix probed; the
+- **Acceptance criteria**: every new case red on the unfixed tree and green on `V028`; each production fix probed; the
   site list recorded; `:lending:databaseTest` whole green on at least three runs; the app's lending own-container suites
   green. **Definition of done**: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium (sixteen trigger bodies replaced -
   generated from their latest bodies by script and diffed: only the stated lines change). **Cx**: M.
@@ -18527,8 +18531,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   earliest; two midnight crossings inside one transaction remain a refusal and a re-run; (3) the expiry and deadline
   judgements and the birth permits are kept (ADR-0063 decision 4); (4) the repayment history's order fixed in the same
   item (a read, the same class); (5) `ClockStep`'s schema is the test database's only - created by the bootstrap superuser,
-  dropped after its suite, never a migration; (6) `V026` follows `V025` (`outOfOrder = false`), so it merges after `-029`,
-  as it already does on this branch.
+  dropped after its suite, never a migration; (6) `V028` follows `V025` (`outOfOrder = false`), so it merges after `-029`,
+  as it already does on this branch *(written as `V026`; since the renumbering `V028` follows PR #9's `V027`)*.
 
 **P11-TST-001 — The lending storm** — `COMPLETE` *(2026-10-15, at its completion gate's second pass - the gate's record below; marked by `P11-TSK-030`'s completion gate, 2026-10-14: its dependency `-030` - and with it every built task - is `COMPLETE`; the next unfinished item in backlog order with every dependency met. `P11-TST-002` (dependency `-029`) is eligible beside it and stands after it in the backlog's order, left `PLANNED`)*
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,
