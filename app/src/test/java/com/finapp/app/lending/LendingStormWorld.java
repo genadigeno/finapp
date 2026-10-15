@@ -767,11 +767,76 @@ final class LendingStormWorld {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /**
+     * The schema owner's connections, reused across reads (`P11-DOC-001`): a fresh connection per read left some seven
+     * thousand sockets in TIME_WAIT within minutes, and on this host's sixteen thousand ephemeral ports the storm on the
+     * final code exhausted them ("Address already in use") before it could judge anything. A small idle set, borrowed and
+     * returned around ONE autocommit statement - so no snapshot or transaction is ever shared; a connection the database
+     * closed (a killed backend, a restart) is dropped and the read retried once on a fresh one.
+     */
+    private static final java.util.concurrent.ConcurrentLinkedDeque<Connection> IDLE =
+            new java.util.concurrent.ConcurrentLinkedDeque<>();
+
+    private static final int MOST_IDLE = 16;
+
+    @FunctionalInterface
+    private interface OwnerWork<T> {
+        T apply(Connection owner) throws SQLException;
+    }
+
+    private static <T> T asOwner(OwnerWork<T> work) throws SQLException {
+        try {
+            return borrowed(work);
+        } catch (SQLException failure) {
+            if (!connectionLost(failure)) {
+                throw failure;
+            }
+            return borrowed(work);
+        }
+    }
+
+    private static <T> T borrowed(OwnerWork<T> work) throws SQLException {
+        Connection owner = IDLE.pollFirst();
+        if (owner == null || owner.isClosed() || !owner.getAutoCommit()) {
+            closeQuietly(owner);
+            owner = DatabaseRoles.migrator();
+        }
+        boolean healthy = false;
+        try {
+            T result = work.apply(owner);
+            healthy = true;
+            return result;
+        } catch (SQLException failure) {
+            healthy = !connectionLost(failure);
+            throw failure;
+        } finally {
+            if (healthy && IDLE.size() < MOST_IDLE) {
+                IDLE.offerFirst(owner);
+            } else {
+                closeQuietly(owner);
+            }
+        }
+    }
+
+    private static void closeQuietly(Connection connection) {
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (SQLException ignored) {
+                // already gone
+            }
+        }
+    }
+
+    /** A statement that failed for want of its connection (closed, terminated, shut down). */
+    private static boolean connectionLost(SQLException failure) {
+        String state = String.valueOf(failure.getSQLState());
+        return state.startsWith("08") || state.startsWith("57P");
+    }
+
     /** Rows read as the schema owner - every table, every column - outside any snapshot. */
     static List<String[]> rows(String sql, Object... parameters) throws SQLException {
-        try (Connection owner = DatabaseRoles.migrator()) {
-            return rows(owner, sql, parameters);
-        }
+        return asOwner(owner -> rows(owner, sql, parameters));
     }
 
     static List<String[]> rows(Connection connection, String sql, Object... parameters) throws SQLException {
@@ -795,12 +860,16 @@ final class LendingStormWorld {
     }
 
     static void execute(String sql, Object... parameters) throws SQLException {
-        try (Connection owner = DatabaseRoles.migrator(); PreparedStatement statement = owner.prepareStatement(sql)) {
-            for (int i = 0; i < parameters.length; i++) {
-                statement.setObject(i + 1, parameters[i]);
+        // Never retried: a write whose connection was lost may have committed.
+        borrowed(owner -> {
+            try (PreparedStatement statement = owner.prepareStatement(sql)) {
+                for (int i = 0; i < parameters.length; i++) {
+                    statement.setObject(i + 1, parameters[i]);
+                }
+                statement.execute();
             }
-            statement.execute();
-        }
+            return null;
+        });
     }
 
     static Instant databaseNow() throws SQLException {
