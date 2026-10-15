@@ -378,7 +378,8 @@ otherwise - the criterion is graded **`PARTIAL`**, as the Phase 10 → 11 transi
 - The **hermetic** tier was run **fleet-wide on the final tree** - `./gradlew cleanTest test --continue`: **3,007 tests across
   497 suites in 20 modules, 0 failures** (lending 195 across 24, app 875 across 174 - the battery and every document guard
   among them); the **architecture** tier `cleanArchitectureTest architectureTest`: **216 across 52 suites in 20 modules, 0
-  failures** (app 171 across 32). Both re-run after the last record edits for app's document-reading suites (below).
+  failures** (app 171 across 32). Both re-run for app after the last record edits, every document guard among them: **app's hermetic tier 875 across
+  174, its architecture tier 171 across 32, 0 failures**.
 - The **database** tier was run over every lending suite, fresh: lending's whole `databaseTest` (date-shifted by design)
   **289 tests across 25 suites**; app's own-container lending suites, in their own invocation, **84 across 7** (the storm
   apart); app's shared-tier lending suites **41 across 13**; platform's `ColumnClassificationTest` and
