@@ -70,7 +70,7 @@ public interface RepaymentStore {
 
     /**
      * {@code party}'s loan {@code loan}'s repayments with their allocations, newest first in the record's order (never
-     * the clock's, `P11-TSK-034`), at most {@code limit} - owner-scoped in the statement: another party's loan is the same
+     * the clock's, `P11-TSK-036`), at most {@code limit} - owner-scoped in the statement: another party's loan is the same
      * empty answer as a loan never repaid.
      */
     List<Repayment> ownedBy(Connection unitOfWork, LoanId loan, UUID party, int limit);

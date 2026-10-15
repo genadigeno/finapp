@@ -19,13 +19,25 @@ import java.util.UUID;
  */
 public interface LoanStore {
 
-    /** Births the loan; the database stamps and answers the opening instant. */
+    /**
+     * Births the loan; the database stamps and answers the opening instant.
+     *
+     * @throws OfferExpired the offer's {@code expires_at} has passed on the database clock at this statement - the one
+     *     refusal of the loan's birth that is the customer's, not a breach (`P11-TSK-034`, {@code lending V026})
+     */
     Instant insert(Connection unitOfWork, NewLoan loan);
 
     /** Appends one history row; the database stamps the time. */
     void appendEvent(Connection unitOfWork, HistoryRow row);
 
-    /** Births an agreement version - the database holds version 1 to its offer's terms and answers its effective instant. */
+    /**
+     * Births an agreement version - the database holds version 1 to its offer's terms and answers its effective instant.
+     *
+     * @throws AmendmentExpired an amendment's version whose offer's {@code expires_at} has passed on the database clock at
+     *     this statement - the one refusal of the birth that is the customer's, not a breach (`P11-TSK-035`,
+     *     {@code lending V027}); only the amendment's acceptance can meet it - version 1 and a prepayment's version judge
+     *     no expiry
+     */
     Instant insertAgreement(Connection unitOfWork, LoanAgreement agreement);
 
     /** Births the acceptance evidence for {@code agreement}; the database stamps and answers the instant. */
@@ -167,6 +179,33 @@ public interface LoanStore {
         @Override
         public String toString() {
             return "Owned[" + loan + "]";
+        }
+    }
+
+    /**
+     * The loan's birth refused because its offer expired on the database clock between the acceptance's own judgement
+     * and the insert ({@code lending V026}'s SQLSTATE {@code LNEXP}, `P11-TSK-034`) - the acceptance answers it as the
+     * offer no longer acceptable. Every other refusal of the birth is a {@link LendingStorageException}.
+     */
+    final class OfferExpired extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public OfferExpired() {
+            super("the offer expired before the loan was born");
+        }
+    }
+
+    /**
+     * An amendment's agreement version refused because the amendment's offer expired on the database clock between the
+     * acceptance's own judgement (its L5 read) and the insert ({@code lending V027}'s SQLSTATE {@code LNAEX},
+     * `P11-TSK-035`) - the amendment's acceptance answers it as the amendment lapsed. Every other refusal of the birth is a
+     * {@link LendingStorageException}; any other caller meeting this one has no mapping for it, so it stays a failure.
+     */
+    final class AmendmentExpired extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public AmendmentExpired() {
+            super("the amendment's offer expired before its agreement version was born");
         }
     }
 }

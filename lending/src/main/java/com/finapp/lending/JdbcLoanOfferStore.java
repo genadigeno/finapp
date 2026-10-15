@@ -56,7 +56,7 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO lending.loan_offer (id, application_id, party_id, product, status, decision_id,"
                         + " terms_version_id, decision_valid_until, expires_at, next_step_at, correlation_id)"
-                        // The offering instant, the expiry and the permit are the trigger's (lending V026: the offering
+                        // The offering instant, the expiry and the permit are the trigger's (lending V028: the offering
                         // instant this statement's own clock); the placeholders are overwritten.
                         + " VALUES (?, ?, ?, ?, 'OFFERED', ?, ?, ?, ?, ?, ?) RETURNING offered_at, expires_at")) {
             insert.setObject(1, offer.id().value());
@@ -192,6 +192,9 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
             update.setObject(1, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
+            if (JdbcLoanStore.OFFER_EXPIRED_SQLSTATE.equals(failure.getSQLState())) {
+                return false; // the trigger's expiry, the predicate's own answer (lending V026, P11-TSK-034)
+            }
             throw failed("declining a loan offer", failure);
         }
     }
@@ -204,6 +207,9 @@ public final class JdbcLoanOfferStore implements LoanOfferStore {
             update.setObject(1, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
+            if (JdbcLoanStore.OFFER_EXPIRED_SQLSTATE.equals(failure.getSQLState())) {
+                return false; // the trigger's expiry, the predicate's own answer (lending V026, P11-TSK-034)
+            }
             throw failed("accepting a loan offer", failure);
         }
     }

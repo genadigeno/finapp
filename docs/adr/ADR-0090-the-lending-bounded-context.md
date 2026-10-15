@@ -240,5 +240,28 @@ ADR-0001, ADR-0006, ADR-0084.
   capital recognised, a four-eyes terms activation - and, last, the environment's scrape targets labelled
   `lending_offered="true"`, which arms `LendingTermsNoneActive` (`infra/prometheus/rules/lending.yml`):
   production's no-terms state is expected, so the alert is enabled per environment, never by default.
+- *As built by `P11-TST-001` (2026-10-15), the storm* - `LendingStormDatabaseTest` with its world, census,
+  catalogue and faults (`app`, `com.finapp.app.lending`) and `LendingStormCredit` (a bridge in
+  `com.finapp.app.credit`, so credit's simulators stay package-private where they live): two application contexts
+  over one database, clocks five seconds either side of the server, both products from application to closure. Its
+  judgement calls, recorded here as the credit storm's went to ADR-0087. (1) **Two instances model N**: every arbiter
+  is in the database, so what distinguishes instances is clock, memory, connections and lifecycle - each varied
+  (±5 s, separate contexts, production's pool of eight, B killed and restarted); the four lending schedules run as
+  their real lifecycles on both, with duplicate ticks beside them. (2) **Real midnights, not a clock seam** (A15):
+  three terms cohorts in fixed-offset zones whose local midnight falls minutes into the run, and an owner-rank
+  "born in the past" fixture applied only to an account no step has serviced. (3) **The probes' reach is
+  choreographed, and says so** (design Q4): a lock-bypass writer beneath the accrual unique, a planted projection
+  drift, a held profile lock, direct steps before a real midnight - each a stronger layer removed on purpose.
+  (4) **The lock-order observation (C17) names the racer's own backend** - its transaction id matched to the
+  committed row's `xmin`, read only from a session shown waiting on a lock - and is made behind a held L0 only.
+  (5) **"Returns" are a payout `FAILED` and an inbound pay-in** to the wallet, the loan unaffected (design Q2):
+  `RETURNED` has no producer. (6) **Census strengths**: the safety censuses at every reading, the liveness ones
+  at rest each round, C13/C16/C18/C19/C21 once at the end (their cost - the owner's approved deviation, gate
+  finding I2). (7) **C19 counts over the catalogue's window**, B's restart behind it: a killed context's meters
+  die with it; the servicing step's own series are bounded, because a door's catch-up (payoff, prepayment,
+  amendment) writes accruals and billings its meter does not count. (8) **A stored condition is as of its
+  business date** (it is recorded only on a change): C9 proves every stored DPD names a billed item's due date
+  and, at rest, the platform's live derivation equal to the census's own date difference. (9) **The capital row's
+  contention is not measured** - correctness only (ADR-0096's corrected sentence, a debt row).
 - **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); the Phase 11 review
   (`P11-DOC-001`) reads it against the code, corrects it in place with dated notes, and accepts it.

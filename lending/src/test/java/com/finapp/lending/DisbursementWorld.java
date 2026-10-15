@@ -265,7 +265,7 @@ final class DisbursementWorld {
 
     /**
      * A fresh party's application of {@code product} for {@code minor} AWAITING_DECISION on the terms in force, credit's
-     * decision approved for thirty days - ready for the origination step (`P11-TSK-034` originates it on a stepped clock).
+     * decision approved for thirty days - ready for the origination step (`P11-TSK-036` originates it on a stepped clock).
      */
     static Approved approved(LoanProduct product, long minor, Optional<Integer> term, PayoutPreference payout,
             int repaymentDay) {
@@ -363,7 +363,7 @@ final class DisbursementWorld {
     }
 
     /**
-     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-034`, `X-TSK-013`'s
+     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-036`, `X-TSK-013`'s
      * aged-permit form): moved a minute into the past as the bootstrap owner with the triggers suspended - neither the
      * claim's forward-only rule nor the database's stamp lets a writer age a permit, which is their point. Never a
      * {@code Thread.sleep} past a 1 ms permit: the database clock steps back by up to 1.7 s on the VM, and a sleep shorter
@@ -585,7 +585,10 @@ final class DisbursementWorld {
         while (System.nanoTime() < deadline) {
             try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement();
                     ResultSet row = statement.executeQuery("SELECT pid, query FROM pg_stat_activity WHERE " + blocker
-                            + " = ANY (pg_blocking_pids(pid))")) {
+                            + " = ANY (pg_blocking_pids(pid))"
+                            // The activity row is a snapshot and the blocking pids are live: only a row that itself shows
+                            // the session active and waiting on a lock carries the statement that waits (P11-TSK-035's gate).
+                            + " AND state = 'active' AND wait_event_type = 'Lock'")) {
                 if (row.next()) {
                     return new Blocked(row.getInt(1), row.getString(2));
                 }

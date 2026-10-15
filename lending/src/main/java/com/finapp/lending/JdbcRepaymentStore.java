@@ -138,7 +138,7 @@ public final class JdbcRepaymentStore implements RepaymentStore {
         try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS + " FROM lending.repayment r"
                 + " JOIN lending.loan l ON l.id = r.loan_id WHERE r.loan_id = ? AND l.party_id = ?"
                 // Newest first in the record's order (lending.record_order, drawn under L3) - never the clock's: a
-                // database clock stepped back stamps a later repayment earlier (P11-TSK-034). A row written before V025
+                // database clock stepped back stamps a later repayment earlier (P11-TSK-036). A row written before V025
                 // carries no order and sorts after every ordered one, by its stamp.
                 + " ORDER BY r.recorded_order DESC NULLS LAST, r.created_at DESC, r.id DESC LIMIT ?")) {
             select.setObject(1, loan.value());

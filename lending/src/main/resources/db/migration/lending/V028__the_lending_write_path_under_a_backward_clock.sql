@@ -1,5 +1,7 @@
--- The lending write path under a backward database clock (P11-TSK-034; ADR-0063 decision 2 and its follow-ups, the fifth
--- set of database-own stamps; INV-LND-10, INV-LND-05). The number is V026 - the next free lending version.
+-- The lending write path under a backward database clock (P11-TSK-036; ADR-0063 decision 2 and its follow-ups, the fifth
+-- set of database-own stamps; INV-LND-10, INV-LND-05). The number is V028: first written as V026 (the task as
+-- P11-TSK-034), renumbered when PR #9's P11-TSK-034 and P11-TSK-035 took lending V026 and V027 - it runs after both and
+-- builds on them (Flyway outOfOrder = false).
 --
 -- The database clock is not monotonic: an NTP or hypervisor correction steps it back (measured on the local VM by up to
 -- 1.7 s, ADR-0063; X-TSK-017, P11-TSK-033). Within ONE transaction a later statement's statement_timestamp() can then
@@ -42,7 +44,7 @@
 -- opened_at, closed_at, decided_at, ...), which no rank orders (X-TSK-006's reading of the class).
 --
 -- Replaced, each its latest predecessor's body with exactly the change above: lending.loan_offer_permits_only_machine_edges
--- (V006), lending.accrual_start_is_born_once (V019), lending.collection_attempt_is_born_once (V018),
+-- (V026 - P11-TSK-034's, its customer-side expiry in LNEXP kept), lending.accrual_start_is_born_once (V019), lending.collection_attempt_is_born_once (V018),
 -- lending.credit_line_draw_is_born_once (V013), lending.credit_line_statement_is_born_once (V022),
 -- lending.fee_assessment_is_born_once (V021), lending.instalment_billing_is_born_once (V024),
 -- lending.interest_accrual_is_born_once (V017), lending.loan_condition_event_is_born_once (V020),
@@ -64,7 +66,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION lending.business_date_earliest(text) IS
-    'The earliest business date in the pinned zone the database clock has shown this transaction - its start''s or this statement''s, whichever is earlier (P11-TSK-034, V026): every "never before today" rank''s today. One date on a clock that did not step.';
+    'The earliest business date in the pinned zone the database clock has shown this transaction - its start''s or this statement''s, whichever is earlier (P11-TSK-036, V028): every "never before today" rank''s today. One date on a clock that did not step.';
 
 CREATE OR REPLACE FUNCTION lending.business_date_latest(servicing_zone text)
     RETURNS date
@@ -75,13 +77,13 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION lending.business_date_latest(text) IS
-    'The latest business date in the pinned zone the database clock has shown this transaction - its start''s or this statement''s, whichever is later (P11-TSK-034, V026): every "never after today" rank''s today. One date on a clock that did not step.';
+    'The latest business date in the pinned zone the database clock has shown this transaction - its start''s or this statement''s, whichever is later (P11-TSK-036, V028): every "never after today" rank''s today. One date on a clock that did not step.';
 
 COMMENT ON COLUMN lending.loan_offer.offered_at IS
-    'The offering instant (P11-TSK-011): the offer insert''s own database stamp, GREATEST(statement_timestamp(), transaction_timestamp()) - never a writer''s value, never a reading an earlier statement made (P11-TSK-034, V026). The expiry and the illustration''s first day are taken from it.';
+    'The offering instant (P11-TSK-011): the offer insert''s own database stamp, GREATEST(statement_timestamp(), transaction_timestamp()) - never a writer''s value, never a reading an earlier statement made (P11-TSK-036, V028). The expiry and the illustration''s first day are taken from it.';
 
 -- ---------------------------------------------------------------------------------------------
--- lending.loan_offer_permits_only_machine_edges, replaced: V006's body and the P11-TSK-034 change alone.
+-- lending.loan_offer_permits_only_machine_edges, replaced: V026's body (P11-TSK-034's) and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.loan_offer_permits_only_machine_edges()
     RETURNS trigger
@@ -109,7 +111,7 @@ BEGIN
             RAISE EXCEPTION 'a loan offer pins its product''s ACTIVE terms version (P11-TSK-011, INV-HIST-04)';
         END IF;
         -- The offering instant is a database instant of this transaction, after the step's locks, so the illustrative
-        -- schedule's first day and the expiry are one clock's. P11-TSK-034: stamped HERE, by this statement's clock - never
+        -- schedule's first day and the expiry are one clock's. P11-TSK-036: stamped HERE, by this statement's clock - never
         -- a value an earlier statement read, which a database clock stepped back between the two put after this clock (or
         -- before the transaction's start) and V005/V006 refused - and never before the transaction began (ADR-0063
         -- decision 2, the order of facts over the clock's reading). The step takes it back from RETURNING.
@@ -149,10 +151,12 @@ BEGIN
         RAISE EXCEPTION 'a % loan offer is terminal (P11-TSK-011)', OLD.status;
     END IF;
     -- The three clock-sided edges: the customer's two while expires_at > the database clock, the expiry once <=  -
-    -- exactly one of them at the boundary instant.
+    -- exactly one of them at the boundary instant. The customer's side refused past the instant in its own SQLSTATE
+    -- (P11-TSK-034), as the loan's birth is.
     IF NEW.status IN ('DECLINED', 'ACCEPTED') THEN
         IF OLD.expires_at <= statement_timestamp() THEN
-            RAISE EXCEPTION 'an expired loan offer cannot be % - it expires (P11-TSK-011, P11-TSK-012)', lower(NEW.status);
+            RAISE EXCEPTION 'an expired loan offer cannot be % - it expires (P11-TSK-011, P11-TSK-012)', lower(NEW.status)
+                USING ERRCODE = 'LNEXP';
         END IF;
         -- ACCEPTED only beside its loan (P11-TSK-012): the loan is born first, in the same transaction, and the deferred
         -- check holds its agreement and evidence beside it at commit.
@@ -172,7 +176,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.accrual_start_is_born_once, replaced: V019's body and the P11-TSK-034 change alone.
+-- lending.accrual_start_is_born_once, replaced: V019's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.accrual_start_is_born_once()
     RETURNS trigger
@@ -201,7 +205,7 @@ BEGIN
         -- business date of the payout's conclusion in the pinned zone - never before the disbursement's value date, never
         -- after this statement's business date.
         -- P11-TSK-033: "this statement's" read as GREATEST(the clock, the payout's birth) - the conclusion's own reference.
-        -- P11-TSK-034: "the clock" the latest business date this transaction read (its start's or this statement's).
+        -- P11-TSK-036: "the clock" the latest business date this transaction read (its start's or this statement's).
         SELECT d.* INTO disbursement
           FROM lending.loan_disbursement d JOIN lending.loan l ON l.id = d.loan_id
          WHERE d.loan_id = NEW.loan_id AND l.kind = 'INSTALMENT' AND l.status = 'ACTIVE';
@@ -226,7 +230,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.collection_attempt_is_born_once, replaced: V018's body and the P11-TSK-034 change alone.
+-- lending.collection_attempt_is_born_once, replaced: V018's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.collection_attempt_is_born_once()
     RETURNS trigger
@@ -311,7 +315,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.credit_line_draw_is_born_once, replaced: V013's body and the P11-TSK-034 change alone.
+-- lending.credit_line_draw_is_born_once, replaced: V013's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.credit_line_draw_is_born_once()
     RETURNS trigger
@@ -345,7 +349,7 @@ BEGIN
         RAISE EXCEPTION 'a draw names its line''s governing agreement version, in its currency and scale, and never exceeds its limit (P11-TSK-021, INV-LND-14)';
     END IF;
     -- The value date is this transaction's business date in the pinned servicing zone (A10, INV-LND-10): read by the step
-    -- after its locks, so between the transaction's start and this statement - P11-TSK-034: in whichever order the clock
+    -- after its locks, so between the transaction's start and this statement - P11-TSK-036: in whichever order the clock
     -- read the two, which a clock stepped back across a midnight reverses (business_date_earliest / business_date_latest).
     IF NEW.value_date < lending.business_date_earliest(zone)
             OR NEW.value_date > lending.business_date_latest(zone) THEN
@@ -357,7 +361,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.credit_line_statement_is_born_once, replaced: V022's body and the P11-TSK-034 change alone.
+-- lending.credit_line_statement_is_born_once, replaced: V022's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.credit_line_statement_is_born_once()
     RETURNS trigger
@@ -432,7 +436,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.fee_assessment_is_born_once, replaced: V021's body and the P11-TSK-034 change alone.
+-- lending.fee_assessment_is_born_once, replaced: V021's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.fee_assessment_is_born_once()
     RETURNS trigger
@@ -497,7 +501,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.instalment_billing_is_born_once, replaced: V024's body and the P11-TSK-034 change alone.
+-- lending.instalment_billing_is_born_once, replaced: V024's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.instalment_billing_is_born_once()
     RETURNS trigger
@@ -617,7 +621,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.interest_accrual_is_born_once, replaced: V017's body and the P11-TSK-034 change alone.
+-- lending.interest_accrual_is_born_once, replaced: V017's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.interest_accrual_is_born_once()
     RETURNS trigger
@@ -686,7 +690,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.loan_condition_event_is_born_once, replaced: V020's body and the P11-TSK-034 change alone.
+-- lending.loan_condition_event_is_born_once, replaced: V020's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.loan_condition_event_is_born_once()
     RETURNS trigger
@@ -751,7 +755,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.loan_disbursement_permits_only_machine_edges, replaced: V009's body and the P11-TSK-034 change alone.
+-- lending.loan_disbursement_permits_only_machine_edges, replaced: V009's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.loan_disbursement_permits_only_machine_edges()
     RETURNS trigger
@@ -824,7 +828,7 @@ BEGIN
             RAISE EXCEPTION 'a POSTED disbursement names its journal entry and value date, and no failure (P11-TSK-014)';
         END IF;
         -- The value date is this transaction's business date in the pinned servicing zone (A10, INV-LND-10): read by the
-        -- step after its locks, so between the transaction's start and this statement - P11-TSK-034: in whichever order
+        -- step after its locks, so between the transaction's start and this statement - P11-TSK-036: in whichever order
         -- the clock read the two, which a clock stepped back across a midnight reverses (business_date_earliest / _latest).
         IF NEW.value_date < lending.business_date_earliest(zone)
                 OR NEW.value_date > lending.business_date_latest(zone) THEN
@@ -846,7 +850,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.payoff_execution_is_born_once, replaced: V022's body and the P11-TSK-034 change alone.
+-- lending.payoff_execution_is_born_once, replaced: V022's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.payoff_execution_is_born_once()
     RETURNS trigger
@@ -883,7 +887,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.payoff_quote_is_born_once, replaced: V022's body and the P11-TSK-034 change alone.
+-- lending.payoff_quote_is_born_once, replaced: V022's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.payoff_quote_is_born_once()
     RETURNS trigger
@@ -932,7 +936,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.repayment_is_born_once, replaced: V024's body and the P11-TSK-034 change alone.
+-- lending.repayment_is_born_once, replaced: V024's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.repayment_is_born_once()
     RETURNS trigger
@@ -1001,7 +1005,7 @@ BEGIN
         RAISE EXCEPTION 'a repayment names its loan''s governing agreement version, its currency and scale and its pinned allocation engine (P11-TSK-018, INV-LND-09)';
     END IF;
     -- The value date is this transaction's business date in the pinned servicing zone (ADR-0094 point 8, INV-LND-10): read
-    -- by the repayment after its locks, so between the transaction's start and this statement - P11-TSK-034: in whichever
+    -- by the repayment after its locks, so between the transaction's start and this statement - P11-TSK-036: in whichever
     -- order the clock read the two, which a clock stepped back across a midnight reverses (business_date_earliest/_latest).
     IF NEW.value_date < lending.business_date_earliest(zone)
             OR NEW.value_date > lending.business_date_latest(zone) THEN
@@ -1013,7 +1017,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.repayment_schedule_is_born_once, replaced: V024's body and the P11-TSK-034 change alone.
+-- lending.repayment_schedule_is_born_once, replaced: V024's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.repayment_schedule_is_born_once()
     RETURNS trigger
@@ -1100,7 +1104,7 @@ BEGIN
         -- date come by the transaction's business date in the pinned zone - is superseded unbilled, so neither it nor the
         -- interest its period accrued is stranded (PHASE_11_PLAN.md section 12.2 step 7). The transaction's start, never a
         -- later statement's: the domain bills through a date read after its lock, never earlier, so this never refuses it.
-        -- P11-TSK-034: the earliest business date this transaction read - its start's, or this statement's when a database
+        -- P11-TSK-036: the earliest business date this transaction read - its start's, or this statement's when a database
         -- clock stepped back across a midnight put the domain's read on the day before its start.
         IF EXISTS (SELECT 1 FROM lending.loan_instalment i
                     WHERE i.schedule_id = previous.id
@@ -1115,7 +1119,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.loan_amendment_rescheduling_is_born_once, replaced: V023's body and the P11-TSK-034 change alone.
+-- lending.loan_amendment_rescheduling_is_born_once, replaced: V023's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.loan_amendment_rescheduling_is_born_once()
     RETURNS trigger
@@ -1164,7 +1168,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------
--- lending.repayment_schedule_continues_its_period, replaced: V023's body and the P11-TSK-034 change alone.
+-- lending.repayment_schedule_continues_its_period, replaced: V023's body and the P11-TSK-036 change alone.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION lending.repayment_schedule_continues_its_period()
     RETURNS trigger

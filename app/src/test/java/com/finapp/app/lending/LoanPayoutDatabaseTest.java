@@ -472,7 +472,7 @@ class LoanPayoutDatabaseTest {
     }
 
     /**
-     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-034`, `X-TSK-013`'s
+     * {@code loan}'s payout permit made due on the database's clock, deterministically (`P11-TSK-036`, `X-TSK-013`'s
      * aged-permit form) - never a {@code Thread.sleep} past a 1 ms permit, which a database clock stepped back (up to 1.7 s
      * on the VM) outlasts; born "due at once", a permit is due only once the clock passes the birth.
      */

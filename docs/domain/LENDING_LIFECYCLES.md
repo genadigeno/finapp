@@ -104,13 +104,13 @@ instance skew cannot move a date:
 |---|---|
 | Offer expiry | stamped `expires_at = LEAST(decision.valid_until, offered_at + offer_validity)` at birth; acceptance on `expires_at > statement_timestamp()`, expiry on `<=` — exactly one at the instant |
 | Decision consumable | credit's port: `valid_until > statement_timestamp()` under L0, the complement of the reservation's predicate |
-| A business date ("a day", "midnight") | the database clock in the agreement's pinned `servicing_zone` (`UTC`, A2); date `d` is accruable only once the clock, read after L3, is past the end of `d`. The every-writer ranks judge the step's date against the range the transaction read - `lending.business_date_earliest(zone)` for a floor, `lending.business_date_latest(zone)` for a ceiling, the earlier and later of its start's and this statement's dates (`lending V026`, `P11-TSK-034`) - so a database clock stepped back across a midnight between the step's read and its write refuses nothing a reading admitted |
+| A business date ("a day", "midnight") | the database clock in the agreement's pinned `servicing_zone` (`UTC`, A2); date `d` is accruable only once the clock, read after L3, is past the end of `d`. The every-writer ranks judge the step's date against the range the transaction read - `lending.business_date_earliest(zone)` for a floor, `lending.business_date_latest(zone)` for a ceiling, the earlier and later of its start's and this statement's dates (`lending V028`, `P11-TSK-036`) - so a database clock stepped back across a midnight between the step's read and its write refuses nothing a reading admitted |
 | Value and posting date | every lending entry: the business date of the database clock under L3 (A10); accrual: the accrual date |
 | Due, past due, DPD | an item is due on its date and past due once its date has ended; DPD counts from the oldest unpaid due date to the current business date |
 | Disbursement deadline | stamped at the disbursement's birth (24 h); retries stop and the loan is cancelled at `<=` |
 | Accrual start (path X) | payments' conclusion instant, read from payments' row, in the pinned zone |
 | Amendment acceptance window · payoff good-through date · capital expectation ageing | each stamped from `statement_timestamp()` at birth and compared with it at the act |
-| Sweep permits | stamped from `statement_timestamp()` by the one-statement `FOR UPDATE SKIP LOCKED` claim; a permit binds nothing. A permit "due at once" (stamped at birth) is due to a later statement only once the clock passes it - on a clock stepped back, a delay of at most the step (ADR-0063 decision 4, `P11-TSK-034`) |
+| Sweep permits | stamped from `statement_timestamp()` by the one-statement `FOR UPDATE SKIP LOCKED` claim; a permit binds nothing. A permit "due at once" (stamped at birth) is due to a later statement only once the clock passes it - on a clock stepped back, a delay of at most the step (ADR-0063 decision 4, `P11-TSK-036`) |
 
 ---
 
@@ -231,8 +231,8 @@ is spelled) with `terms_sha256` - a `CHECK` holds the hash to the stored bytes -
 `document_sha256`; `loan_offer_event` the history. Born `OFFERED` under L1 for an application `AWAITING_DECISION` of the
 same party and product, on the product's `ACTIVE` version, `offered_at` a database instant of the transaction - the
 insert's own stamp, `GREATEST(statement_timestamp(), transaction_timestamp())`, never a value the step read in an
-earlier statement, which a database clock stepped back would put after the insert's clock (`lending V026`,
-`P11-TSK-034`); the illustration starts on its business date; `expires_at` and the permit stamped by the trigger; `UNIQUE (application_id)` and `UNIQUE (decision_id)`; committed only
+earlier statement, which a database clock stepped back would put after the insert's clock (`lending V028`,
+`P11-TSK-036`); the illustration starts on its business date; `expires_at` and the permit stamped by the trigger; `UNIQUE (application_id)` and `UNIQUE (decision_id)`; committed only
 beside the application's `OFFERED` edge and with its terms (deferred). The decline (`POST /v1/me/loan-offers/{id}/decline`,
 conditional step-up) is conditional on `OFFERED` and `expires_at > statement_timestamp()`, refused `409
 lending.OfferNotAcceptable` otherwise - so an offer past its instant but not yet swept is not declined; it expires. The
@@ -251,6 +251,16 @@ lending.OfferNotAcceptable` and **writes nothing** - the offer is not expired by
 nothing under the customer's key); its `expires_at <= valid_until` is then past or at the instant, and the sweep expires
 it. The binding of agreement and consumption is credit's `UNIQUE (consumer_kind, consumer_ref)` over the agreement's id
 and the one transaction - no lending trigger reads credit's table (A16 at the database).*
+
+*The expiry crossed during the acceptance's waits (`P11-TSK-034`, 2026-10-15; found by `P11-TST-001`'s storm): the
+acceptance judges the offer unexpired after L2 and then waits - credit's consumption, L6 - so the database clock may pass
+`expires_at` before the loan is born. The loan's edge trigger re-judges the expiry at the INSERT and refuses it - the
+strict backstop: no loan is born for an offer expired at that instant - but it refused in the generic `P0001` every
+breach of the trigger shares, and the customer got `500`. `lending V026` gives that refusal, and the offer's own refusal
+of `ACCEPTED` or `DECLINED` past the instant, their own SQLSTATE, `LNEXP`, judged after the offer's identity (a foreign,
+moved or mismatched offer is refused `P0001` even when expired); the acceptance maps exactly `LNEXP` to `409
+lending.OfferNotAcceptable` and writes nothing, the offer left `OFFERED` for the sweep. Every other refusal of the loan's
+birth is an invariant breach and stays a `500`.*
 
 ### 4.5 Loan (`lending.loan`), both kinds — `P11-TSK-012`, `-014`, `-023`, `-026`
 
@@ -491,6 +501,18 @@ elapsed date and bills everything due (the servicing step's own accrual and bill
 amendment's document hash, no offer), rule 13 and one `loan_amendment_rescheduling` row per past-due item re-scheduled,
 and schedule v n+1 - two deferred checks hold the agreement beside its evidence and its schedule, and the schedule
 continuing the open period. The customer reads only an amendment ever approved (a `PROPOSED` one is `404`).*
+
+*The lapse crossed during the acceptance's work (`P11-TSK-035`, 2026-10-15; found by `P11-TSK-034`'s gate - the offer's
+race, on the amendment): the acceptance judges the amendment's offer unexpired at its read under L3 and then accrues,
+bills and plans - waiting, among others, on the loan's ledger accounts and the shared interest income row - so the
+database clock may pass the decision's `expires_at` before agreement v n+1 is born. The version's trigger re-judges the
+expiry at the INSERT and refuses it - the strict backstop: no version is born for an amendment lapsed at that instant -
+but it refused in the generic `P0001` every breach of the trigger shares, and the customer got `500`. `lending V027`
+gives that refusal its own SQLSTATE, `LNAEX`, judged **last** - after the loan `ACTIVE`, the amendment the loan's own
+and `APPROVED`, the version conditional and "never more credit" (a breach is refused `P0001` even when the offer has
+expired); the acceptance maps exactly `LNAEX` to `409 lending.AmendmentLapsed` and writes nothing, the catch-up rolled
+back with it, the amendment then derived `LAPSED`. Every other refusal of the version's birth is an invariant breach and
+stays a `500`.*
 
 ### 4.10 Payoff quote and execution — `P11-TSK-026`
 

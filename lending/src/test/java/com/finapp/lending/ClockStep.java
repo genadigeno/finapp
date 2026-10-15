@@ -11,7 +11,7 @@ import java.time.Duration;
 import java.util.function.Function;
 
 /**
- * The database clock stepped back on demand, deterministically (`P11-TSK-034`).
+ * The database clock stepped back on demand, deterministically (`P11-TSK-036`).
  *
  * <p>The test database runs in a VM whose clock is corrected in steps - measured back by up to 1.7 s (ADR-0063,
  * `X-TSK-005`, `X-TSK-017`) - so {@code statement_timestamp()} can read EARLIER in a later statement of the same

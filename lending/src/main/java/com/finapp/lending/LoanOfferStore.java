@@ -23,7 +23,7 @@ public interface LoanOfferStore {
 
     /**
      * Births the offer {@code OFFERED}; the database stamps and answers its offering instant - read by the insert itself
-     * (`P11-TSK-034`, {@code lending V026}) - and its expiry.
+     * (`P11-TSK-036`, {@code lending V028}) - and its expiry.
      */
     Offered insert(Connection unitOfWork, NewOffer offer);
 
@@ -44,14 +44,18 @@ public interface LoanOfferStore {
 
     /**
      * {@code OFFERED -> DECLINED}, conditional on {@code OFFERED} and {@code expires_at > statement_timestamp()};
-     * {@code false} when either no longer holds.
+     * {@code false} when either no longer holds. A {@code false} from the trigger's expiry refusal ({@code LNEXP},
+     * `P11-TSK-034` - a backstop the conditional itself pre-empts) leaves {@code unitOfWork} aborted: the caller refuses
+     * and runs nothing more on it.
      */
     boolean decline(Connection unitOfWork, LoanOfferId id);
 
     /**
      * {@code OFFERED -> ACCEPTED} (`P11-TSK-012`), conditional on {@code OFFERED} and {@code expires_at >
      * statement_timestamp()} - the expiry's complement; {@code false} when either no longer holds. {@code lending V006}
-     * admits the edge only beside the offer's loan, and commits it only with its agreement and evidence.
+     * admits the edge only beside the offer's loan, and commits it only with its agreement and evidence. A {@code false}
+     * from the trigger's expiry refusal ({@code LNEXP}, `P11-TSK-034`) leaves {@code unitOfWork} aborted, as
+     * {@link #decline} says.
      */
     boolean accept(Connection unitOfWork, LoanOfferId id);
 
@@ -77,7 +81,7 @@ public interface LoanOfferStore {
 
     /**
      * What the database stamped at the offer's birth: the offering instant - its clock at the insert, never before the
-     * transaction's start - and the expiry from it (`P11-TSK-034`).
+     * transaction's start - and the expiry from it (`P11-TSK-036`).
      */
     record Offered(Instant offeredAt, Instant expiresAt) {
 
@@ -89,7 +93,7 @@ public interface LoanOfferStore {
 
     /**
      * An offer at birth - identity, decision and pin; the offering instant and the expiry are the database's
-     * (`P11-TSK-034`: never a clock value an earlier statement read).
+     * (`P11-TSK-036`: never a clock value an earlier statement read).
      */
     record NewOffer(
             LoanOfferId id,

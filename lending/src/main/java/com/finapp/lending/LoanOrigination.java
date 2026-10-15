@@ -37,7 +37,7 @@ import lombok.RequiredArgsConstructor;
  * with exactly the approved amount and term (A20), the pinned version's whole term set in its canonical terms, the loan's
  * illustrative schedule from the offering day or the line's minimum-payment rule (A5), the application moved
  * {@code OFFERED} beside it. The offering instant is the insert's own database stamp, never the step's read
- * (`P11-TSK-034`, {@code lending V026}). An approval that cannot be offered closes the application {@code CLOSED_UNDECIDED} with its reason and no offer:
+ * (`P11-TSK-036`, {@code lending V028}). An approval that cannot be offered closes the application {@code CLOSED_UNDECIDED} with its reason and no offer:
  * no {@code ACTIVE} terms ({@code PRODUCT_NOT_OFFERED}), the chosen day no longer offered
  * ({@code REPAYMENT_DAY_NOT_OFFERED}), the decision already lapsed ({@code DECISION_LAPSED}), or a loan whose own
  * schedule would not amortise ({@code TERMS_NOT_AMORTISING}).
@@ -187,8 +187,8 @@ public final class LoanOrigination {
             return close(unitOfWork, application, LoanApplicationStatus.CLOSED_UNDECIDED, DAY_NOT_OFFERED_REASON, actor);
         }
         // The database clock, read after the application's lock and the terms pin: what the step judges by - the decision's
-        // lapse and whether a loan's schedule amortises. It is NOT the offering instant (P11-TSK-034): the insert stamps
-        // that itself (lending V026), since a database clock stepped back between this read and the insert would put this
+        // lapse and whether a loan's schedule amortises. It is NOT the offering instant (P11-TSK-036): the insert stamps
+        // that itself (lending V028), since a database clock stepped back between this read and the insert would put this
         // reading after the insert's clock - the refusal V005/V006 met as an opaque P0001.
         Instant now = offers.databaseNow(unitOfWork);
         if (!approved.validUntil().isAfter(now)) {

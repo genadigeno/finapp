@@ -224,7 +224,7 @@ diagnosis. The other modules' tiers are not shifted.
 The test database runs in a Docker VM whose clock is corrected in steps, back by up to 1.7 s
 (ADR-0063). So a permit the database stamped "due at once" may not be due to the next statement,
 `Thread.sleep(20)` past a 1 ms permit races the step, and two rows' `created_at` can stand in the
-reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `P11-TSK-034`):
+reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `P11-TSK-036`):
 
 - **Make a permit due, never wait for it**: move it into the database's past as the owner with the
   triggers suspended — `AgedPermits.age` in `app`, `DisbursementWorld.duePayout` and the lending
