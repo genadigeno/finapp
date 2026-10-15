@@ -336,7 +336,7 @@ class LoanAcceptanceDatabaseTest {
             + " nothing; the sweep then expires it (P11-TSK-034, the P11-TST-001 storm's reproduction)")
     void anOfferExpiringWhileTheAcceptanceWaitsIsNotAcceptable() throws Exception {
         fund(Money.ofMinorUnits(1_200_00, LoanTermsFixtures.EUR));
-        Offer offer = offered(LOAN, 1_200_00, Optional.of(12), Duration.ofSeconds(3), PayoutPreference.WALLET);
+        Offer offer = offered(LOAN, 1_200_00, Optional.of(12), Duration.ofSeconds(10), PayoutPreference.WALLET);
         long loanAccounts = count("SELECT count(*) FROM ledger.ledger_account WHERE owner_kind = 'LOAN'");
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try (Connection holder = DatabaseRoles.application()) {
@@ -399,6 +399,7 @@ class LoanAcceptanceDatabaseTest {
             try (writer) {
                 refused(writer, rawLoan(expired, expired.party()), JdbcLoanStore.OFFER_EXPIRED_SQLSTATE);
                 refused(writer, rawLoan(expired, UUID.randomUUID()), "P0001");
+                refused(writer, rawLoan(expired, expired.party(), "USD"), "P0001"); // the currency, judged before the expiry
                 refused(writer, rawLoan(offer, UUID.randomUUID()), "P0001");
                 for (String edge : List.of("ACCEPTED", "DECLINED")) {
                     refused(writer, "UPDATE lending.loan_offer SET status = '" + edge + "' WHERE id = '"
@@ -407,7 +408,8 @@ class LoanAcceptanceDatabaseTest {
             }
         }
         Boolean edged = inOneTransaction(uow -> OFFER_STORE.accept(uow, expired.id()));
-        assertThat(edged).as("the store's conditional edge answers the expiry false, as the acceptance reads it").isFalse();
+        assertThat(edged).as("the store's conditional edge refuses the expired offer - its WHERE reads the same statement"
+                + " clock, so the LNEXP branch behind it is a backstop this case does not reach").isFalse();
         assertThat(scalar("SELECT status FROM lending.loan_offer WHERE id = ?", expired.id().value()))
                 .isEqualTo("OFFERED");
         assertThat(count("SELECT count(*) FROM lending.loan WHERE offer_id = ANY (?)",
@@ -416,9 +418,14 @@ class LoanAcceptanceDatabaseTest {
 
     /** A raw credit line of {@code offer}'s, born for {@code party}. */
     private static String rawLoan(Offer offer, UUID party) {
+        return rawLoan(offer, party, "EUR");
+    }
+
+    /** A raw credit line of {@code offer}'s, born for {@code party} in {@code currency}. */
+    private static String rawLoan(Offer offer, UUID party, String currency) {
         return "INSERT INTO lending.loan (id, party_id, product, kind, status, currency, offer_id, decision_id, opened_at,"
                 + " correlation_id) VALUES (gen_random_uuid(), '" + party + "', 'CREDIT_LINE', 'REVOLVING', 'ACTIVE',"
-                + " 'EUR', '" + offer.id().value() + "', '" + offer.decision() + "', now(), 'raw')";
+                + " '" + currency + "', '" + offer.id().value() + "', '" + offer.decision() + "', now(), 'raw')";
     }
 
     // ------------------------------------------------------------------ the refusals

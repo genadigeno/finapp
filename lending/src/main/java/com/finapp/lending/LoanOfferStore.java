@@ -41,14 +41,18 @@ public interface LoanOfferStore {
 
     /**
      * {@code OFFERED -> DECLINED}, conditional on {@code OFFERED} and {@code expires_at > statement_timestamp()};
-     * {@code false} when either no longer holds.
+     * {@code false} when either no longer holds. A {@code false} from the trigger's expiry refusal ({@code LNEXP},
+     * `P11-TSK-034` - a backstop the conditional itself pre-empts) leaves {@code unitOfWork} aborted: the caller refuses
+     * and runs nothing more on it.
      */
     boolean decline(Connection unitOfWork, LoanOfferId id);
 
     /**
      * {@code OFFERED -> ACCEPTED} (`P11-TSK-012`), conditional on {@code OFFERED} and {@code expires_at >
      * statement_timestamp()} - the expiry's complement; {@code false} when either no longer holds. {@code lending V006}
-     * admits the edge only beside the offer's loan, and commits it only with its agreement and evidence.
+     * admits the edge only beside the offer's loan, and commits it only with its agreement and evidence. A {@code false}
+     * from the trigger's expiry refusal ({@code LNEXP}, `P11-TSK-034`) leaves {@code unitOfWork} aborted, as
+     * {@link #decline} says.
      */
     boolean accept(Connection unitOfWork, LoanOfferId id);
 

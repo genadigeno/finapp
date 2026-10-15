@@ -51,16 +51,17 @@ BEGIN
                 OR offer.decision_id <> NEW.decision_id THEN
             RAISE EXCEPTION 'a loan is born for its own party''s OFFERED, unexpired offer of the same product, on its decision (P11-TSK-012)';
         END IF;
-        -- The expiry, judged after the offer's identity (a breach of it is never answered as a lapse) and in its own
-        -- SQLSTATE (P11-TSK-034): the acceptance judged the offer unexpired after L2 and then waited (credit's consumption,
-        -- L6), so the database clock may cross expires_at before this statement - the customer's 409, not a breach.
-        IF offer.expires_at <= statement_timestamp() THEN
-            RAISE EXCEPTION 'a loan is never born for an expired offer - it expires (P11-TSK-012, P11-TSK-034)'
-                USING ERRCODE = 'LNEXP';
-        END IF;
         SELECT t.currency INTO offered_currency FROM lending.loan_offer_terms t WHERE t.offer_id = NEW.offer_id;
         IF offered_currency IS DISTINCT FROM NEW.currency THEN
             RAISE EXCEPTION 'a loan is held in its offer''s currency (P11-TSK-012)';
+        END IF;
+        -- The expiry, judged last - after the offer's identity and its currency, so a breach of either is never
+        -- answered as a lapse - and in its own SQLSTATE (P11-TSK-034): the acceptance judged the offer unexpired after
+        -- L2 and then waited (credit's consumption, L6), so the database clock may cross expires_at before this
+        -- statement - the customer's 409, not a breach.
+        IF offer.expires_at <= statement_timestamp() THEN
+            RAISE EXCEPTION 'a loan is never born for an expired offer - it expires (P11-TSK-012, P11-TSK-034)'
+                USING ERRCODE = 'LNEXP';
         END IF;
         NEW.opened_at := statement_timestamp();
         -- Due for servicing at once - an account is claimed only while ACTIVE or CLOSING (P11-TSK-016).

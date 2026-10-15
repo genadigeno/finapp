@@ -18248,7 +18248,8 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   every expiry refusal `LNEXP` and every other `P0001`, for every writer; the probes caught; the lending acceptance and
   guard suites and the app's acceptance suite green.
 - **Out of scope**: the other clock-crossing refusals of the same class recorded by `P11-TSK-033` (`lending V005`'s
-  `offered_at` rank under a backward step); any other trigger refusal (each remains a breach); the storm itself.
+  `offered_at` rank under a backward step); any other trigger refusal (each remains a breach); the storm itself; **the
+  amendment acceptance's identical race**, found by this item's gate - recorded as `P11-TSK-035`.
 - **Definition of done**: `DOD-API` (the error contract), `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
 - **Probes performed** (2026-10-15, each restored byte-identical - sha256 and `git diff --exit-code`): (1) the mapping
   removed (`LoanAcceptances` catching an unrelated exception in place of `LoanStore.OfferExpired`) - the race case red,
@@ -18261,10 +18262,24 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   lending `unitTest --rerun` 190 across 22; lending `architectureTest` 3; app `ownContainerDatabaseTest`
   `LoanAccountDatabaseTest` 22 and `LoanOfferDatabaseTest` 4 (0 failures); app `architectureTest`
   `MutationDemonstrationTest` 9 (after the §2 rows were written), `TestTaxonomyTest` 17 and `ErrorCodeRegistryTest` 6
-(after `ERROR_CONTRACT.md` was edited). One existing assertion
-  followed the code, not the rule: `LoanOriginationDatabaseTest#declineAndExpiryAtTheBoundaryLeaveExactlyOne`'s raw
-  `DECLINED` past the instant now expects `LNEXP` (the sweep-side `EXPIRED` before the instant stays `P0001`). Not run:
+  (after `ERROR_CONTRACT.md` was edited). Two existing assertions followed the code, not the rule:
+  `LoanAcceptanceDatabaseTest#expiryAndAcceptanceLeaveExactlyOne`'s raw `ACCEPTED` and
+  `LoanOriginationDatabaseTest#declineAndExpiryAtTheBoundaryLeaveExactlyOne`'s raw `DECLINED` past the instant now
+  expect `LNEXP` (the sweep-side `EXPIRED` before the instant stays `P0001`). Not run:
   the whole lending `databaseTest`, the fleet tiers (the standing criterion-7 deviation; the coordinator's post-merge run).
+
+**P11-TSK-035 — Remediation: the amendment's lapse at the agreement's birth answered 409, not 500** — `PLANNED` *(found by `P11-TSK-034`'s completion gate, 2026-10-15, and recorded there; a Phase 11 remediation item outside the milestones, the owner to schedule - recommended before `P11-TST-001`'s three green runs, whose storm accepts amendments; marks no task)*
+- **Objective**: the same answer for the same race on the amendment path that `P11-TSK-034` gave the offer's.
+- **The defect**: `LoanAmendments.accept` judges the amendment `LAPSED` at its L5 read (`JdbcLoanAmendmentStore`), then
+  runs the catch-up accrual, billing and planning before `JdbcLoanStore.insertAgreement`; `lending.loan_agreement_is_born_once`
+  (latest `V024`) re-judges `decision.expires_at <= statement_timestamp()` in the generic `P0001`, which
+  `insertAgreement` wraps as `LendingStorageException` - so a decision lapsing in between answers `500 api.InternalError`
+  where `AmendmentLapsed` (`409`, `LoanAmendmentDesk`) is due. No money: the transaction rolls back.
+- **Scope**: `P11-TSK-034`'s shape - a migration replacing that trigger function verbatim but for the lapse, judged after
+  every identity check in its own SQLSTATE; `insertAgreement` raising a typed refusal for exactly it; `accept` mapping it to
+  `AmendmentLapsed`; the race reproduced deterministically as a permanent test (the lock the acceptance waits on held
+  across the lapse); a breach on a lapsed amendment still `P0001`; the probe; the records.
+- **Definition of done**: `DOD-API`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: S.
 
 **P11-TST-001 — The lending storm** — `READY` *(marked by `P11-TSK-030`'s completion gate, 2026-10-14: its dependency `-030` - and with it every built task - is `COMPLETE`; the next unfinished item in backlog order with every dependency met. `P11-TST-002` (dependency `-029`) is eligible beside it and stands after it in the backlog's order, left `PLANNED`)*
 - **Objective**: prove lending correct under N instances, clock skew, provider faults and crashes,

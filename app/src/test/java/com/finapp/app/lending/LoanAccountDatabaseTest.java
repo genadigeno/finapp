@@ -330,8 +330,8 @@ class LoanAccountDatabaseTest {
             owner.setAutoCommit(false);
             try (Statement statement = owner.createStatement()) {
                 statement.execute("SET LOCAL session_replication_role = replica");
-                statement.execute("UPDATE lending.loan_offer SET expires_at = statement_timestamp() + interval '3 seconds',"
-                        + " next_step_at = statement_timestamp() + interval '3 seconds' WHERE id = '" + offer + "'");
+                statement.execute("UPDATE lending.loan_offer SET expires_at = statement_timestamp() + interval '10 seconds',"
+                        + " next_step_at = statement_timestamp() + interval '10 seconds' WHERE id = '" + offer + "'");
             }
             owner.commit();
         }
