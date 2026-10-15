@@ -427,8 +427,9 @@ class LoanOriginationDatabaseTest {
                 OFFERS.decline(uow, expiring, unswept.party(), customer(unswept), correlation())));
         for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
             try (writer) {
+                // The customer's side past the instant: lending V026's own SQLSTATE (P11-TSK-034).
                 refused(writer, "UPDATE lending.loan_offer SET status = 'DECLINED' WHERE id = '" + expiring.value() + "'",
-                        "P0001");
+                        JdbcLoanStore.OFFER_EXPIRED_SQLSTATE);
             }
         }
         assertThat(offerStatus(unswept)).as("an expired offer is not declined; the sweep expires it").isEqualTo("OFFERED");

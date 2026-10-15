@@ -2133,6 +2133,16 @@ Still the database's time, still never an instance's. Verified by
 `LoanPayoutStepsDatabaseTest#aConclusionOnAClockBehindThePayoutsBirthIsHeldAtTheBirth`; three probes,
 `MUTATION_TESTING.md` §2's `P11-TSK-033` rows.)*
 
+*(The acceptance window at the loan's birth, `P11-TSK-034`, 2026-10-15: the acceptance judges the offer's expiry on the
+database clock after L2 and the loan's birth trigger re-judges it on its own statement's clock - two ranks, one clock. An
+offer that expired between them (the acceptance waiting on credit's consumption or L6, found by `P11-TST-001`'s storm)
+was refused by the backstop in the generic `P0001`, so the customer's lapse surfaced as a `500`. `lending V026` gives the
+expiry refusals - the loan's birth, the offer's `ACCEPTED`/`DECLINED` past the instant - their own SQLSTATE, `LNEXP`, and
+the acceptance maps exactly that code to `409 lending.OfferNotAcceptable`; no rule changed. Verified by
+`LoanAcceptanceDatabaseTest#anOfferExpiringWhileTheAcceptanceWaitsIsNotAcceptable`, `#onlyTheExpiryIsTheCustomers` and
+`app`'s `LoanAccountDatabaseTest#anOfferExpiringWhileTheAcceptanceWaitsIsA409`; two probes, `MUTATION_TESTING.md` §2's
+`P11-TSK-034` rows.)*
+
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
 carry a reason, are proposed by one person and approved by another — never the proposer, never an
