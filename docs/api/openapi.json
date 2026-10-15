@@ -10017,7 +10017,7 @@
             "type": "integer"
           },
           "rate": {
-            "maximum": 1,
+            "exclusiveMaximum": 1,
             "minimum": 0,
             "type": "number"
           },
@@ -10075,8 +10075,8 @@
       "CreateSessionRequest": {
         "properties": {
           "amountMinor": {
+            "exclusiveMinimum": 0,
             "format": "int64",
-            "minimum": 0,
             "type": "integer"
           },
           "currency": {
@@ -17220,8 +17220,8 @@
       "RuleBody": {
         "properties": {
           "ceilingAmountMinor": {
+            "exclusiveMinimum": 0,
             "format": "int64",
-            "minimum": 0,
             "type": "integer"
           },
           "currency": {
