@@ -355,7 +355,9 @@ final class LendingStormCensus {
         // "After" is the record's own order (lending V025's recorded_order, drawn under the loan's row lock), never two
         // statements' clock readings: on a database clock stepped back between the closing transaction's statements, a
         // fact written BEFORE the closure in that same transaction reads "after" it. The first run of the storm on the
-        // final code (P11-DOC-001, 2026-10-15) was red here - two rows, round 1, unlisted - and these censuses read
+        // final code (P11-DOC-001, 2026-10-15) was red here - two rows, round 1, unlisted; the next run's diagnostic (below)
+        // listed the class: billings written in the closing transaction itself (one xmin, an earlier record order) stamped
+        // up to a second after the closure, the database clock stepped back between its statements - and these censuses read
         // "b.created_at > l.closed_at" (and its siblings) until then; split one per fact so a failing census lists its rows.
         zero.put("C11 a billing written after its loan's closure (the record's order)",
                 "SELECT count(*) FROM lending.instalment_billing b JOIN lending.loan_closure c ON c.loan_id = b.loan_id"
