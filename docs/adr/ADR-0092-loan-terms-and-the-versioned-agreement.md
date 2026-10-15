@@ -1,6 +1,6 @@
 # ADR-0092 — Loan terms as versioned data and the immutable, versioned agreement
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Identity · Platform · Audit
@@ -32,8 +32,10 @@ and `INV-LND-05`, `INV-LND-09`.
    `PROPOSED → ACTIVE → RETIRED`, `PROPOSED → REJECTED`; one `PROPOSED` and one `ACTIVE` per
    product (partial uniques); activation retires the predecessor in the same transaction. Proposed
    by a person holding `LENDING_ADMINISTER`, approved by a different person (domain and
-   `CHECK (approved_by <> proposed_by)`), serialised per product on advisory namespace `11`
-   (`hashtext(product)`); keyed `lending.terms:EMPLOYEE:<id>`; audited `lending.TermsVersionProposed`
+   `CHECK (decided_by <> proposed_by)`, `lending V003`), serialised per product on advisory namespace
+   `11` (`hashtext(product)`); keyed `lending.terms:EMPLOYEE:<id>`; *(corrected by `P11-DOC-001`,
+   2026-10-15: the column is `decided_by`, the decision's maker whether it activates or rejects; this read
+   "`approved_by`")*; audited `lending.TermsVersionProposed`
    / `…Activated` / `…Rejected`. **Never activated by a migration** (the credit policy's precedent,
    `OPERATIONS_RUNBOOK.md` §6.1): production ships with none active (ADR-0090 §9). The version
    active at any past instant is answerable from the rows (`GET …/terms?product=&at=`).
@@ -77,8 +79,10 @@ and `INV-LND-05`, `INV-LND-09`.
 
 5. **The agreement: immutable versions, one row each** (`P11-TSK-012`). `loan_agreement` is
    `INSERT`-only for every role: `(id, loan_id, version, offer_id | amendment_id, decision_id,
-   terms_version_id, template_id, template_version, engines, canonical_terms jsonb, terms_sha256,
-   effective_from, created_at)`, `UNIQUE (loan_id, version)`. Version 1 is born in the acceptance
+   terms_version_id, template_id, template_version, engines, canonical_terms text, terms_sha256,
+   effective_from, created_at)`, `UNIQUE (loan_id, version)`. *(Corrected by `P11-DOC-001`, 2026-10-15:
+   this read "`canonical_terms jsonb`"; it is `text`, because a `jsonb` value is re-serialised and would
+   break its own hash - the Follow-up's `P11-TSK-012` entry.)* Version 1 is born in the acceptance
    transaction from the offer. `canonical_terms` is **self-contained** — money as minor units plus
    currency, rates as decimal strings, every convention named — so it is readable without joining
    a terms version later retired. Canonicalisation (sorted keys, no insignificant whitespace, no
@@ -88,16 +92,18 @@ and `INV-LND-05`, `INV-LND-09`.
 6. **The customer binds the hash.** The acceptance echoes `terms_sha256`; a mismatch is
    `409 lending.TermsChanged` and nothing is written. `loan_acceptance` (`INSERT` only) records
    the offer, agreement version, `terms_sha256`, template id and version, the SHA-256 of the
-   document bytes shown, the identity, session and assurance level (`MULTI_FACTOR`, A19),
-   `accepted_at` on the database clock, channel, client IP and user agent (`CONFIDENTIAL`, A13).
+   document bytes shown, the identity, session and assurance level (`MULTI_FACTOR` or `STRONG`, A19,
+   held by `CHECK` in `lending V006`; *corrected by `P11-DOC-001`, 2026-10-15: this read "`MULTI_FACTOR`"
+   - the Follow-up's `P11-TSK-012` entry*), `accepted_at` on the database clock, channel, client IP and user agent (`CONFIDENTIAL`, A13).
    Acceptance is not consent (`INV-IDN-04`): no consent purpose is created.
 
 7. **An amendment is agreement version n+1, accepted by the customer.** A person proposes it, a
    second approves it (ADR-0099), and the customer accepts it (`MULTI_FACTOR`); the acceptance is
    conditional on the agreement version the amendment was drawn against still being current, so
    an amendment approved against vN lapses if vN+1 came first (scenario 8,
-   `409 lending.AmendmentLapsed`). A partial prepayment's recalculation (`P11-TSK-028`, cut
-   candidate) is also a version n+1. Nothing is ever updated in place; earlier versions stay
+   `409 lending.AmendmentLapsed`). A partial prepayment's recalculation (`P11-TSK-028`, built, `lending V024`)
+   is also a version n+1 *(corrected by `P11-DOC-001`, 2026-10-15: this read "`P11-TSK-028`, cut
+   candidate" - the task was built, not cut)*. Nothing is ever updated in place; earlier versions stay
    readable for the explanation and the replay.
 
 8. **Every servicing row names its agreement version** — and, where an engine computed it, the
@@ -277,5 +283,6 @@ only by an accepted amendment.
   replay found the database clock stepped back between two transactions, a prepayment's version 2 stamped before the
   catch-up that preceded it. (e) The
   door: `POST /v1/operator/loans/{id}/replay` (`LENDING_INVESTIGATE`, a reason, audited `lending.LoanReplayed`).
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

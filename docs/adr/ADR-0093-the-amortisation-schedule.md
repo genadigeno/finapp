@@ -1,6 +1,6 @@
 # ADR-0093 — The amortisation schedule: a deterministic projection of the agreement, billed from actual accrual
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Shared Kernel
@@ -70,7 +70,8 @@ Rests on `PHASE_11_PLAN.md` §12.2, §12.3, §13.1, §13.3 and `INV-LND-03`, `IN
    disbursement for path W, at the payout's terminal outcome for path X (A30, ADR-0097).
 
 9. **Recalculation is a new version.** After an approved contractual change — an accepted
-   amendment (ADR-0099, scenario 8) or a partial prepayment (`P11-TSK-028`, cut candidate) — the
+   amendment (ADR-0099, scenario 8) or a partial prepayment (`P11-TSK-028`, built; *this read "cut candidate" until
+   `P11-DOC-001`, 2026-10-15*) — the
    engine runs again from agreement v n+1 with `P` = principal outstanding derived from postings at
    `effective_from`, the remaining or new term, and `D1` the next due date. Billed instalments of
    the old version are kept; unbilled ones are superseded by the new version — nothing is updated
@@ -160,7 +161,10 @@ Negative:
 - Scale-20 `BigDecimal.pow(n)` per schedule — trivial at Phase 11's volumes, measured in the battery.
 
 Operational impact: none of its own; schedule-versus-actual drift is an audited report, never a
-metric (ADR-0072).
+metric (ADR-0072). *(As built (`P11-DOC-001`, 2026-10-15): the report was not built - a debt row,
+`CURRENT_STATE.md` §Known Architectural Debt. Lending's operator reports are the portfolio, delinquency, accrual
+and capital reports (`LendingReportController`), none comparing the schedule with the actual; and, as this
+sentence requires, no metric measures the drift.)*
 Security impact: schedule amounts `RESTRICTED-FINANCIAL`.
 Financial impact: fixes the promised repayment profile; billing, not the schedule, posts.
 
@@ -173,7 +177,8 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
 
 - Built by the M11.2 engine task for the schedule (`P11-TSK-006`) as a pure engine with its
   property tests; persisted and generated at the accrual start by `P11-TSK-014` (path W) and
-  `P11-TSK-015` (path X); recalculated by `P11-TSK-027` and, if not cut, `P11-TSK-028`.
+  `P11-TSK-015` (path X); recalculated by `P11-TSK-027` and `P11-TSK-028` (built, not cut; *this read "and, if not cut,
+  `P11-TSK-028`" until `P11-DOC-001`, 2026-10-15*).
 - Probe (recorded in `MUTATION_TESTING.md` §2 by the building task): round the instalment
   `HALF_EVEN` → the "final ≤ regular" property red.
 - **As built by `P11-TSK-006` (2026-10-11) - decisions 1 to 5 and 9, with these refinements, each on the invariant's
@@ -216,7 +221,8 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
   - *Probes* (`MUTATION_TESTING.md` §2): the follow-up's "round the instalment `HALF_EVEN`" is caught by the golden
     cases and by the property "A is never below the exact annuity" - the "final ≤ regular" property alone no longer
     catches it, the least-amount raise repairing the final instalment.
-- **As built by `P11-TSK-028` (2026-10-14) - step 7 for a partial prepayment.** `ScheduleEngineV1.recalculateAtInstalment`
+- **As built by `P11-TSK-028` (2026-10-14) - decision 9 for a partial prepayment** *(read "step 7" until
+  `P11-DOC-001`, 2026-10-15 - recalculation is decision 9)*. `ScheduleEngineV1.recalculateAtInstalment`
   is added beside `recalculate` (no figure of `project` or `recalculate` changes): the superseded schedule's level
   instalment `A` is kept and the term is the least number of monthly instalments, at most the superseded schedule's
   remaining ones, over which `A` amortises the remaining principal - found forward, since the balance path under `A` does
@@ -234,5 +240,6 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
   11's volumes, and nothing changes. The battery also holds every one of its 10,000 schedules and illustrations equal,
   figure for figure, to an independent derivation (`AmortisationOracles`) through the replay, and finds the least-amount
   raise in 140 of them.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

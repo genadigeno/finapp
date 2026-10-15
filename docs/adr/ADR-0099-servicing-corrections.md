@@ -1,6 +1,6 @@
 # ADR-0099 — Servicing corrections: waivers, reversals and restructuring as reasoned, four-eyes acts that post, never edits
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Ledger · Identity · Audit · Credit
@@ -31,12 +31,18 @@ reasons screened, `CreditReasons`). Rests on `PHASE_11_PLAN.md` §2.4 (A10, A12,
 1. **One proposal machine for every correction.** `PROPOSED → APPROVED (posted) | REJECTED`; an
    amendment additionally `APPROVED → ACCEPTED | LAPSED`. Proposed by a person holding
    `LOAN_SERVICE`, approved by a different person holding `LOAN_SERVICE_APPROVE` — never one's own
-   (domain and `CHECK (approved_by <> proposed_by)`, `403 lending.SelfApprovalRefused`); one open
+   (domain and `CHECK (decided_by <> proposed_by)` on an approval, `403 lending.SelfApprovalRefused`); one open
    proposal per subject (`409 lending.ProposalPending`); every act reasoned
    (`422 lending.ReasonRequired`), the reason screened for card and account numbers (the
    `CreditReasons` / R2 precedent, `INV-AUD-02`) by the domain and by twin `CHECK`s. Keyed
    `lending.servicing:EMPLOYEE:<id>`; ten approvers of one proposal produce one decision (the
    proposal row conditional `PROPOSED` under its lock). Always four-eyes, whatever the amount (A14).
+   *(As built (`P11-DOC-001`, 2026-10-15): the column is `decided_by` - `repayment_reversal` (`lending
+   V016`), `waiver_decision` (`V021`), `loan_amendment_decision` (`V023`) - this read "`approved_by`". Only the
+   reversal's proposal row carries its decision; a waiver and an amendment are `INSERT`-only, each decided by a
+   born-once decision row whose uniqueness is the arbiter. An amendment's states are derived, never written
+   (`LoanAmendmentStatus`): `PROPOSED → APPROVED → ACCEPTED | LAPSED` and `PROPOSED → REJECTED | LAPSED` - a
+   proposal lapses too when the agreement it amends moves or the loan closes before any decision.)*
 
 2. **No self-dealing.** An employee never services a loan of their own party: every proposal and
    approval is refused `lending.SelfDealingRefused`, audited `FAILED` (the R1 lesson). Losers of a
@@ -48,7 +54,9 @@ reasons screened, `CreditReasons`). Rests on `PHASE_11_PLAN.md` §2.4 (A10, A12,
    - **Fee, already paid** (rule 8a, kind `FEE_REFUND`): `DR LOAN_FEE_INCOME / CR
      LOAN_CREDIT_BALANCE` — the fee is owed back, applied at the next billing or refunded at closure.
    - **Interest** (rule 9): an explicit posting `DR LOAN_INTEREST_INCOME / CR LOAN_INTEREST_DUE` (or
-     `…ACCRUED` for interest not yet billed), bounded by the component's balance under L3.
+     `…ACCRUED` for interest not yet billed), bounded by the component's balance under L3. *(As built
+     (`P11-DOC-001`, 2026-10-15): the `…ACCRUED` arm was never built - an interest waiver releases a billed
+     item's due interest only, accrued, unbilled interest is never waived (`WaiverKind.INTEREST`).)*
    A waiver that zeroes the last receivable closes the account in its transaction (ADR-0090).
    Events `LoanFeeWaived`, `LoanInterestWaived`; audit `lending.WaiverProposed` / `…Approved` /
    `…Rejected`.
@@ -77,10 +85,11 @@ reasons screened, `CreditReasons`). Rests on `PHASE_11_PLAN.md` §2.4 (A10, A12,
    LOAN_PRINCIPAL_DUE`); overdue interest never capitalised; `LoanAmended`. **An amendment never
    raises principal outstanding or a line's limit** — more credit is a new credit decision.
 
-6. **Partial prepayment** (`P11-TSK-028`, the first cut candidate): a customer's repayment kind
+6. **Partial prepayment** (`P11-TSK-028`, built, `lending V024`; *this read "the first cut candidate"
+   until `P11-DOC-001`, 2026-10-15 - it was not cut*): a customer's repayment kind
    `PREPAYMENT` crediting `LOAN_PRINCIPAL`, with agreement and schedule vN+1 (shorter term, same
-   instalment) in one transaction; refused while past due (`409 lending.ArrearsFirst`). If cut, it
-   is recorded with its owner; payoff and the line's paydown remain.
+   instalment) in one transaction; refused while past due (`409 lending.ArrearsFirst`). *(If cut, it
+   was to be recorded with its owner; it was built.)*
 
 7. **What no operator can do.** Originate a loan, change a rate outside an accepted amendment, draw
    on a line, disburse, post to a loan account through `AdjustmentService` (every lending purpose is
@@ -165,7 +174,7 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
 ## Follow-up
 
 - Built by `P11-TSK-020` (reversal), `P11-TSK-025` (fees and waivers), `P11-TSK-027`
-  (restructuring) and, if not cut, `P11-TSK-028` (prepayment); the audit acts registered in
+  (restructuring) and `P11-TSK-028` (prepayment; *"if not cut" until `P11-DOC-001`, 2026-10-15 - built*); the audit acts registered in
   `AUDITABLE_ACTIONS.md` by each.
 - **Settled at the transition (2026-10-10), found while this ADR was written.** (1) A reversal of
   a repayment allocated to principal re-instates principal and credits the wallet, consuming capital
@@ -272,5 +281,6 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   while an instalment of it already due is unbilled - the step order's "billing first" held beneath the domain, so no due
   instalment and none of its period's accrued interest is stranded; and every `lending.LoanAmended` names its `origin`
   (`AMENDMENT`, `PREPAYMENT`).
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

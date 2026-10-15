@@ -1,6 +1,6 @@
 # ADR-0100 — The revolving credit line: draws against an available limit derived under the line's lock, monthly statements with a minimum payment, closure through `CLOSING`, and exposure that counts the committed limit
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Credit · Ledger · Accounts
@@ -44,7 +44,11 @@ minimum_payment_ratio`). Rests on `PHASE_11_PLAN.md` §2.3 (L3), §2.4 (A23–A2
    `available = L − (LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE)`, **derived from journal lines under L3**,
    ≥ amount, else `422 lending.LimitExceeded` (`INV-LND-14`); posting (projections last, L8)
    `DR LOAN_PRINCIPAL / CR CUSTOMER_WALLET`, key `lending.draw:<drawId>`; `CreditLineDrawn`. Draws go
-   **to the wallet only** (A25): an external leg is the borrower's own withdrawal.
+   **to the wallet only** (A25): an external leg is the borrower's own withdrawal. *(As built
+   (`P11-DOC-001`, 2026-10-15), the order differs: the available limit is judged under L3 **before** L6 - a draw
+   past its own limit never queues on the capital row - and the `credit_line_draw` row is born whole once its
+   posting exists, an insert nothing can wait on, so there is no L5 lock; the wallet is resolved after L6. The
+   Follow-up's `P11-TSK-021` entry, (a) and (b).)*
 
 4. **The available limit is never stored.** Every draw derives it under L3; a principal repayment,
    due or not yet due, restores it at commit; interest and fees never consume it. Two draws racing
@@ -55,7 +59,8 @@ minimum_payment_ratio`). Rests on `PHASE_11_PLAN.md` §2.3 (L3), §2.4 (A23–A2
 
 6. **`STATEMENT_ENGINE_V1`** (`P11-TSK-009` the engine, `P11-TSK-022` the statement): born once per
    (line, cycle end) in T-svc after the cycle's accruals exist (`UNIQUE (loan_id, cycle_end)`, key
-   `lending.statement:<statement>`). It bills the cycle's accrued interest (`ACCRUED → DUE`),
+   `lending.statement:<line>:<statement date>` as built - `CreditLineStatements`; *this read
+   "`lending.statement:<statement>`" until `P11-DOC-001`, 2026-10-15*). It bills the cycle's accrued interest (`ACCRUED → DUE`),
    carries assessed fees, and bills the minimum payment's principal part,
    `min(drawn principal not yet due, max(round_UP(3 % × drawn principal), EUR 25.00 − interest −
    fees, 0))`, as `DR LOAN_PRINCIPAL_DUE / CR LOAN_PRINCIPAL` (rule 3). Minimum payment = interest +
@@ -274,5 +279,6 @@ Financial impact: rule 1 per draw, rule 3 per statement, rule 5 with principal p
   principal not yet due; the line closes `CLOSED_BY_CUSTOMER` through `-023`'s own edges - an `ACTIVE` line's closure
   request (outcome `CLOSED`, `lending.LineClosureRequested`) born by the payoff, a `CLOSING` line's already standing. So the
   Follow-up's judgement (3) has its one-payment path.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

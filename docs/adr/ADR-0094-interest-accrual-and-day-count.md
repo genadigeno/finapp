@@ -1,6 +1,6 @@
 # ADR-0094 — Interest accrual and day count: ACT/365F simple daily interest, born once per account and date, rounded once per period, on the database clock in a declared zone
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Ledger · Platform
@@ -155,8 +155,10 @@ Positive:
 
 Negative:
 - One row per account per day (an account-year is 365 rows) and up to one entry per day; the
-  servicing sweep's volume grows with the book — measured in the storm, partitioned in Phase 16 if
-  needed.
+  servicing sweep's volume grows with the book — not measured - a debt row (`CURRENT_STATE.md` §Known
+  Architectural Debt), partitioning in Phase 16 if a measurement demands it. *(Read "measured in the storm,
+  partitioned in Phase 16 if needed" until `P11-DOC-001`, 2026-10-15: the storm (`P11-TST-001`) proved the
+  sweep correct and measured no volume - the class of its gate's finding I10.)*
 - No back-valuing means a corrected repayment's interest effect is forgone, not recharged (A10) —
   the platform bears it.
 
@@ -226,5 +228,6 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   zero drawn) contribute nothing, exactly as `accrue` chains a period's next accrual onto its latest; no figure of the
   original signature changed (`AccrualEngineV1Test#projectsFromADate`). A projection spanning a billing at which a held
   credit balance is applied goes stale on `G` (rule 6 lowers the base) - stale, never wrong.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

@@ -72,6 +72,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -401,6 +405,43 @@ class FeeAndWaiverDatabaseTest {
                 billings(other).get(0).billing().id(), 1, employee()));
         assertThatExceptionOfType(Waivers.WaiverNotFound.class)
                 .isThrownBy(() -> propose(loan, WaiverKind.INTEREST, UUID.randomUUID(), 1, employee()));
+        assertSubledgerProves(loan);
+    }
+
+    @Test
+    @DisplayName("an interest waiver takes the shared interest-income row before the wallet (P11-DOC-001): with"
+            + " LOAN_INTEREST_INCOME's balance row held by another session, the approval waits on exactly that row - its"
+            + " statement the projection's FOR UPDATE - holding nothing of the borrower's wallet (a third session takes it"
+            + " FOR UPDATE NOWAIT); released, it approves once. The order the servicing step's accrual, the payoff and the"
+            + " prepayment take it in ahead of their wallet, so no cycle runs through two accounts of one party")
+    void anInterestWaiverTakesTheIncomeRowBeforeTheWallet() throws Exception {
+        LoanId loan = dueToday(5_150_00);
+        service(loan);
+        InstalmentBillingStore.BilledItem item = billings(loan).get(0);
+        long interest = item.billing().interestDue().minorUnits();
+        Waiver proposal = propose(loan, WaiverKind.INTEREST, item.billing().id(), interest, employee());
+        com.finapp.ledger.LedgerAccountId wallet = DisbursementWorld.walletOf(partyOf(loan));
+        ExecutorService approver = Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            execute(holder, "SELECT 1 FROM ledger.account_balance WHERE ledger_account_id = '" + interestIncome().value()
+                    + "' FOR UPDATE");
+            Future<Waivers.Decided> approval = approver.submit(() -> approve(loan, proposal.id(), employee()));
+            DisbursementWorld.Blocked waiting = DisbursementWorld.awaitBlockedBy(DisbursementWorld.pid(holder));
+            assertThat(waiting.query()).as("the approval waits on the income row's projection lock")
+                    .contains("ledger.account_balance").contains("FOR UPDATE");
+            try (Connection third = DatabaseRoles.application()) {
+                third.setAutoCommit(false);
+                execute(third, "SELECT 1 FROM ledger.ledger_account WHERE id = '" + wallet.value() + "' FOR UPDATE NOWAIT");
+                third.rollback();
+            }
+            holder.rollback();
+            assertThat(approval.get(1, TimeUnit.MINUTES).waiver().status()).isEqualTo(WaiverStatus.APPROVED);
+        } finally {
+            approver.shutdownNow();
+        }
+        assertThat(decisions(proposal.id())).isEqualTo(1);
+        assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_INTEREST_DUE)).isZero()).isTrue();
         assertSubledgerProves(loan);
     }
 

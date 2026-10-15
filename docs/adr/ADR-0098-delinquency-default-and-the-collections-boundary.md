@@ -1,6 +1,6 @@
 # ADR-0098 — Delinquency, default and the collections boundary: days past due derived from dates, conditions apart from the lifecycle, recorded append-only on change, and nothing legally sensitive built
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Risk · Ledger · Events
@@ -53,7 +53,9 @@ others to consume). Rests on `PHASE_11_PLAN.md` §2.3 (L4, L7, L8), §2.4 (A8, A
    a `loan_condition_event` **only when it differs** from the latest recorded one, born once per
    `(loan_id, business_date, kind)`. Re-running a day writes nothing; a repayment that cures
    re-derives in its own transaction (T-rep) and appends the cure; nothing is ever updated or
-   deleted. Events: `LoanDelinquencyChanged` (old and new bucket, DPD — it also announces cure;
+   deleted. *(As built (`P11-DOC-001`, 2026-10-15): T-rep appends nothing - the cure is recorded by the
+   next daily evaluation, and every decision that matters (a line's draw suspension included) derives the
+   condition live at its own commit; the Follow-up's `P11-TSK-024` entry, point 2, records why.)* Events: `LoanDelinquencyChanged` (old and new bucket, DPD — it also announces cure;
    `DELIVERY_PLAN.md`'s `LoanDelinquent` renamed), `LoanDefaulted`, `LoanDefaultCleared`.
 
 4. **Closed accounts are skipped** (scenario 10). The step claims only `ACTIVE` and `CLOSING`
@@ -140,7 +142,10 @@ Positive:
 Negative:
 - No arrears notices or acceleration in Phase 11 — a defaulted account simply waits for repayment,
   restructuring or Phase 13/14's tooling.
-- The derivation reads billings and allocations per step; measured in the storm.
+- The derivation reads billings and allocations per step; not measured - a debt row
+  (`CURRENT_STATE.md` §Known Architectural Debt). *(Read "measured in the storm" until `P11-DOC-001`,
+  2026-10-15: the storm (`P11-TST-001`) proved the derivation (its census C9) and measured no cost - the
+  class of its gate's finding I10.)*
 
 Operational impact: `finapp.lending.delinquency{product,bucket}` and `finapp.lending.default{product}`
 gauges (counts only); delinquency sums are an audited report (ADR-0072).
@@ -199,5 +204,6 @@ after closure), `INV-LND-10`, `INV-LIFE-01`…`04`, `INV-EVT-01`…`04`.
      `finapp.lending.default{product}` count accounts from the latest recorded rows.
   9. **Not built**, each with its default as in decision 6; the servicing hold (A9) would be a third `kind` set and
      cleared by a person, suspending the late fee and auto-collection - the slot designed, no member added.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

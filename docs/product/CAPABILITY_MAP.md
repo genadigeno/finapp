@@ -73,9 +73,12 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
   named provider until unresolved questions #13 and #14 are answered
 - Affordability assessment — delivered: exact single-currency arithmetic (the annuity at scale
   10, rounded once), a foreign-currency source partial data, never converted
-- Exposure — delivered: the party's bureau balance, the platform's outstanding credit (zero
-  until Phase 11), the reserved exposure of current approvals and the request, judged under the
-  party's profile lock; a policy that does not bound its own limit refused at proposal
+- Exposure — delivered: the party's bureau balance, the platform's outstanding credit (since
+  Phase 11 `PlatformCreditExposure` version 2, `P11-TSK-013`: every loan's committed and
+  outstanding principal and every open credit line's limit, one statement), the reserved exposure
+  of current approvals and the request, judged under the party's profile lock; a policy that does
+  not bound its own limit refused at proposal *(read "the platform's outstanding credit (zero until
+  Phase 11)" until the Phase 11 exit review, `P11-DOC-001`, 2026-10-15)*
 - Decisioning — delivered: a versioned scorecard and a versioned policy of rules as data, both
   four-eyes, through a deterministic engine with its own version; a keyed asynchronous decision
   request decided once from a sealed snapshot, immutable with ordered reason codes; the customer's
@@ -99,32 +102,45 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
 servicing and delinquency to the Lending section below. The risk score is the Risk section's,
 Phase 13: credit consumes a risk signal through a seam and computes none.)*
 
-## Lending *(Phase 11, planned — the Phase 10 → 11 transition, 2026-10-10)*
-- Loan application, offer and acceptance *(planned)* — one customer act opens credit's decision
-  request; an approved decision becomes an expiring offer pinned to a four-eyes terms version; the
-  acceptance commits an immutable, versioned agreement, takes the approval up through credit's
-  consumption port and commits the exposure, atomically under the party's profile lock
-- Personal loan servicing *(planned)* — a deterministic amortisation schedule, ACT/365F simple daily
+## Lending *(Phase 11, delivered 2026-10-15 — `P11-DOC-001`)*
+- Loan application, offer and acceptance — delivered: one customer act opens credit's decision
+  request; an approved decision becomes an expiring offer pinned to the four-eyes terms version
+  active at the offering instant, its canonical terms sealed by a hash; the acceptance (a
+  `MULTI_FACTOR` or stronger session, the hash echoed) commits an immutable, versioned agreement and
+  its evidence, takes the approval up through credit's consumption port and commits the exposure
+  and, for a loan, the capital, atomically under the party's profile lock
+- Personal loan servicing — delivered: a deterministic amortisation schedule, ACT/365F simple daily
   interest accrued once per date and billed from actual accrual, repayment from the wallet and
   scheduled auto-collection, allocation oldest-due first (fees, interest, principal; any excess held
-  as a credit balance), payoff quote and execution
-- Revolving credit line *(planned)* — draws against the approved limit, revolving interest, a monthly
-  statement and minimum payment, the available limit recomputed from postings, closure; exposure
-  counts the committed limit
-- Disbursement *(planned)* — to the borrower's wallet, or on to an external bank account through
-  payments' withdrawal machinery with its ambiguity, return and reconciliation
-- Lending capital *(planned)* — every loan and draw funded from the platform's own capital, recognised
-  only from bank evidence and never over-deployed, so loan-funded wallet money is platform-funded
-- Delinquency and default *(planned)* — days past due derived, buckets, default at 90 days past due,
-  late fees as configured, waivers and reversals four-eyes, restructuring by amendment
-- Loan accounting *(planned)* — per-loan ledger accounts, due split from not-due, every figure a
-  ledger balance, proven by the subledger and replay proofs
+  as a credit balance), payoff quote and execution, and partial prepayment with recalculation (the
+  same instalment over a shorter term)
+- Revolving credit line — delivered: draws to the wallet against the approved limit, revolving
+  interest, a monthly statement and minimum payment, the available limit derived from postings
+  under the line's lock, closure through `CLOSING`; exposure counts the committed limit
+- Disbursement — delivered: to the borrower's wallet, or on to an external bank account through
+  payments' system-actor withdrawal on the borrower's recorded instruction, its ambiguity held by
+  payments and concluded only by inquiry; interest starts at the payout's terminal outcome
+- Lending capital — delivered: every loan and draw funded from the platform's own capital, a
+  four-eyes contribution recognised only from bank evidence and never over-deployed, so loan-funded
+  wallet money is platform-funded, proven per currency by the capital proof
+- Delinquency and default — delivered: days past due derived, buckets, default at 90 days past due,
+  late fees as configured and capped, waivers and repayment reversals four-eyes, restructuring by an
+  amendment the customer accepts
+- Loan accounting — delivered: per-loan ledger accounts, due split from not-due, every figure a
+  ledger balance, proven by the subledger and replay proofs, explained per account to an
+  investigator, and reported (portfolio, delinquency, accrual, capital)
+- **Production constraint** — production originates nothing: no terms version is `ACTIVE` in
+  production, so the application door answers `422 lending.ProductNotOffered` until a real bureau is
+  connected (unresolved #13, #14) and `OPERATIONS_RUNBOOK.md` §7.4's activation gate is passed;
+  Phase 11 proves origination end to end against the simulators
 - Collections operations *(later phases — Phase 13's case management consumes lending's facts)*;
   refinance *(the Phase 11 → 12 transition decides)*; write-off and provisioning *(Phase 14)*
 
 *(Marked "planned" by the Phase 10 → 11 transition, 2026-10-10 (`PHASE_11_PLAN.md`; ADR-0090…0100,
-`Proposed`), to be marked delivered by the Phase 11 exit review, `P11-DOC-001`. Production originates
-nothing until a real bureau is connected: Phase 11 proves origination against the simulators.)*
+then `Proposed`), and marked delivered by the Phase 11 exit review, `P11-DOC-001`, 2026-10-15
+(ADR-0090…0100 `Accepted`) - each capability built by `P11-TSK-001`…`-036` and proven by
+`P11-TST-001` (the lending storm) and `P11-TST-002` (the battery). This note read "to be marked
+delivered by the Phase 11 exit review" until then.)*
 
 ## Risk
 - Fraud

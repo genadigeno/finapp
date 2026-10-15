@@ -251,5 +251,8 @@ subledger proof (`LoanSubledgerProof`, built by `P11-TSK-029`: each of a loan's 
 journal lines equals its rows' figure, and every entry on them is named by a row of the loan). Statically, `LendingBooksHaveOnePosterTest` lets only lending name a
 `LOAN_*` purpose and only the declaration (and, from `P11-TSK-004`, capital recognition and its
 readers) name `LENDING_CAPITAL`. No `*_CLEARING` purpose arrived (`INV-RAIL-04`): lending moves no
-money across a rail itself. Nothing posts to any of the ten yet; the posting rules are ADR-0096 §2's,
-each built by the task that posts it.
+money across a rail itself. The posting rules are ADR-0096 §2's, each built by the task that posts it:
+every one of the ten is posted except `LOAN_WRITE_OFF_EXPENSE` - seeded, posted by nothing, its write-off
+deferred to Phase 14 - `LENDING_CAPITAL` by bank recognition alone (rule 0), the other eight by lending's own
+transactions (rules 1 to 13). *(This read "Nothing posts to any of the ten yet" until the Phase 11 exit review,
+`P11-DOC-001`, 2026-10-15.)*

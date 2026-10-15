@@ -225,7 +225,12 @@ defined in the glossary's §7a with the same guard, and the machines are in
 after Repayment Allocation: the four-eyes correction that negates a repayment's allocation by rows and swaps its entry
 exactly - never an edit and never a re-allocation, a distinction a "refund the repayment" verb would collapse.)* *(`P11-TSK-025`, 2026-10-13, added Fee Assessment and Waiver
 after it: the late fee charged once per billed item and capped, and the four-eyes forgiveness that posts - kept apart from
-the Repayment Reversal, which undoes money applied, and from a write-off.)*
+the Repayment Reversal, which undoes money applied, and from a write-off.)* *(The Phase 11 exit review,
+`P11-DOC-001`, 2026-10-15: Phase 11 is built — `P11-TSK-001`…`-036`, lending `V001`…`V028` — and every lending
+entry was read against the code; every term above is built except the three deferred ends (Refinance, Write-off,
+Collections), so the transition's "Nothing of Phase 11 is built: each is the planned design" no longer holds and the
+glossary's §7a states each as built. No term was added: Loan Amendment, Payoff Quote and Payoff Execution and
+Line Closure Request were built as the glossary names them, under Restructuring, Payoff and Credit Line.)*
 
 ---
 

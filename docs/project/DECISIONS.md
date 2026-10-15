@@ -947,11 +947,15 @@ so it is as immutable and exposure-safe as the system's. A case nobody takes exp
 with a recorded reason, and the review-age gauge alerts first. →
 [ADR-0089](../adr/ADR-0089-underwriting-and-manual-review.md)
 
-### Lending infrastructure (Phase 11, `Proposed` at the Phase 10 → 11 transition)
-Planned by the Phase 10 → 11 transition (2026-10-10) in `PHASE_11_PLAN.md`; nothing of it is built.
-The phase's tasks are `P11-TSK-001`…`P11-TSK-030`, `P11-TST-001`, `P11-TST-002` and `P11-DOC-001`,
-whose review reads each ADR against the code and corrects it before accepting any, the
-`P10-DOC-001` precedent. The invariants are `INV-LND-01`…`14` (fourteen new; the catalogue 128 →
+### Lending infrastructure (Phase 11, `Proposed` at the Phase 10 → 11 transition; `Accepted` at the Phase 11 review, `P11-DOC-001`, each read against the code with its corrected passages marked in place)
+Planned by the Phase 10 → 11 transition (2026-10-10) in `PHASE_11_PLAN.md`; built by
+`P11-TSK-001`…`P11-TSK-030`, the six remediation items `P11-TSK-031`…`P11-TSK-036` (each added out of
+turn on the owner's instruction), `P11-TST-001` and `P11-TST-002`, and read against the code and
+accepted by the Phase 11 review (`P11-DOC-001`, 2026-10-15), which corrected every drifted passage in
+place with a dated note before accepting any, the `P10-DOC-001` precedent. *(This paragraph read
+"nothing of it is built. The phase's tasks are `P11-TSK-001`…`P11-TSK-030`, `P11-TST-001`,
+`P11-TST-002` and `P11-DOC-001`, whose review reads each ADR against the code" until that review.)*
+The invariants are `INV-LND-01`…`14` (fourteen new; the catalogue 128 →
 142). The phase's ADRs are ADR-0090…ADR-0100. Phase 11 moves money; production originates nothing
 until a real bureau is connected (L11).
 
@@ -961,8 +965,10 @@ the loan account of both kinds and every servicing fact as born-once rows; the `
 amount, rate or balance column, every changing amount is a ledger balance, and no `*_minor` column
 sits on a mutable table. Two products — `PERSONAL_LOAN` and the revolving `CREDIT_LINE` — share one
 account model, one set of engines and one lock. `lending` depends on `ledger`, `platform` and
-`sharedkernel` only and reaches credit, standing, wallets and payments through five ports `app`
-implements; it never writes another module's table. Refinance (owner: the Phase 11 → 12
+`sharedkernel` only and reaches credit, standing, wallets, payments, payment methods, reconciliation
+and identity through nine ports `app` implements, beside one unit-of-work seam *(read "credit,
+standing, wallets and payments through five ports" until `P11-DOC-001`, 2026-10-15)*; it never writes
+another module's table. Refinance (owner: the Phase 11 → 12
 transition), write-off and provisioning (Phase 14) and collections (Phase 13) are deferred with
 owners. → [ADR-0090](../adr/ADR-0090-the-lending-bounded-context.md)
 
@@ -1032,7 +1038,7 @@ interest, notices and bureau reporting not built; collections (Phase 13) consume
 `ReversalService`, paid fees refunded to the credit balance, interest waivers by explicit posting;
 repayment reversal exact, profile-lock first, refused for a closing repayment; restructuring by an
 amendment two people approve and the customer accepts, conditional on the agreement version; partial
-prepayment the first cut candidate; reasons screened; self-dealing refused; no operator originates,
+prepayment built (`P11-TSK-028`; *"the first cut candidate" until `P11-DOC-001`, 2026-10-15*); reasons screened; self-dealing refused; no operator originates,
 reprices, draws or disburses. → [ADR-0099](../adr/ADR-0099-servicing-corrections.md)
 
 **The revolving credit line draws against a limit derived under its lock and counts its whole limit
@@ -1151,9 +1157,15 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | Credit evidence purge and crypto-shredding | Phase 15 | `credit_evidence.retain_until` is stored (recorded-at plus the product's 25 months, the database's clock) and every role is refused `DELETE`; a purge is a privileged, audited deletion with its own definer path. The normalised attributes and the snapshot's canonical text, kept for replay, are the purge's scope question too (ADR-0085 §5, `CURRENT_STATE.md` §Known Architectural Debt) |
 | Real bureau and financial-data connectivity; a party's date of birth and residence | When unresolved questions #13 and #14 are answered (never in Phase 10) | Production composes the fail-safe sources (`bureau-none`, `findata-none`) and refuses any named provider at startup (`CreditSourceOrder`); the party facts answer `ABSENT`, so no Phase 10 production decision judges age or residency (ADR-0084, ADR-0085) |
 | The risk score and fraud rules credit consumes | Phase 13 | `CreditRiskSignal` answers `NOT_ASSESSED` with its seam version, recorded in every snapshot, so Phase 10 decisions replay identically after Phase 13 (ADR-0084 §5) |
-| Loan application, offer, acceptance, disbursement and the consumption writer | Phase 11 | Credit decides and reserves exposure; `credit_decision_consumption` exists empty and the `CreditDecisions` port has no consumer outside credit (ADR-0084 §4, ADR-0088). *(Planned by the Phase 10 → 11 transition (2026-10-10): the consumption writer is credit's own port, `P11-TSK-001` (ADR-0091, `Proposed`); application to disbursement are `P11-TSK-010`…`-015` (ADR-0090, ADR-0097).)* |
+| ~~Loan application, offer, acceptance, disbursement and the consumption writer~~ | ~~Phase 11~~ — **settled 2026-10-12** by `P11-TSK-001` and `P11-TSK-010`…`-015` | Credit decides and reserves exposure; `credit_decision_consumption` exists empty and the `CreditDecisions` port has no consumer outside credit (ADR-0084 §4, ADR-0088). *(Planned by the Phase 10 → 11 transition (2026-10-10): the consumption writer is credit's own port, `P11-TSK-001` (ADR-0091, `Proposed`); application to disbursement are `P11-TSK-010`…`-015` (ADR-0090, ADR-0097).)* Built: the consumption port by `P11-TSK-001` (credit `V021`), the application, offer, acceptance and disbursement by `P11-TSK-010`…`-015` (lending `V004`…`V009`). Struck by the Phase 11 review |
 | Refinance (a new loan repaying an old one) | The later lending phase the Phase 11 → 12 transition names | Needs a fresh credit decision and a two-account atomic payoff; Phase 11's payoff and consumption port are the parts it would compose (ADR-0090 §10, recorded by the Phase 10 → 11 transition) |
 | Loan write-off, charge-off, provisioning and IFRS 9 staging | Phase 14 | `LOAN_WRITE_OFF_EXPENSE` is seeded and posted by nothing, and posting rule 14 is designed, so the account plan does not change later; a defaulted loan in Phase 11 is a flag, never a loss (ADR-0096, ADR-0098) |
 | Collections case management and operations | Phase 13 | Lending owns the contractual facts and emits `LoanDelinquencyChanged`, `LoanDefaulted` and `LoanDefaultCleared`; contact strategy, promises to pay and placement are a collections context's, which never writes lending's rows (ADR-0098) |
 | Consumer-credit-law features — statutory APR, withdrawal rights, statutory notices and caps; penalty or default interest, prepayment fees, acceleration | When a real jurisdiction is chosen; never in Phase 11 | The neutral EUR reference jurisdiction (L4, L8); each feature would be a terms field in a new terms schema version and a reviewed engine version, and production activation of any product requires legal review first (ADR-0092, ADR-0098) |
-| Partial prepayment with recalculation | Phase 11 if not cut (`P11-TSK-028`, the phase's first cut candidate); if cut, the deferral is recorded with its owner by the cutting decision | Payoff and the credit line's principal paydown remain; prepayment is an agreement and schedule version n+1, refused while past due (ADR-0099 §6) |
+| ~~Partial prepayment with recalculation~~ | ~~Phase 11 if not cut (`P11-TSK-028`, the phase's first cut candidate); if cut, the deferral is recorded with its owner by the cutting decision~~ — **settled 2026-10-14**: built by `P11-TSK-028` (lending `V024`), not cut | Payoff and the credit line's principal paydown remain; prepayment is an agreement and schedule version n+1, refused while past due (ADR-0099 §6). Struck by the Phase 11 review |
+| Effective-interest amortisation of the origination fee | Phase 14 | The origination fee is recognised upfront in the operational ledger at disbursement (rule 1, A17); spreading it over the loan's life is general-ledger work (ADR-0096 §2; recorded by the Phase 11 review) |
+| Purge of the lending agreement and the acceptance evidence | Phase 15 | `loan_agreement` and `loan_acceptance` are `INSERT`-only for every role and the evidence is `CONFIDENTIAL` (A13); a purge is a privileged, audited deletion with its own definer path, beside credit's evidence purge (ADR-0090 §10; recorded by the Phase 11 review) |
+| A lending-capital return, and recycling interest and fee income into capital | No phase named: the Phase 11 → 12 transition assigns the owner (A29 named none) | Capital is never withdrawn in Phase 11 and interest and fee income is never capital (A29); a return would be a treasury act reducing `LENDING_CAPITAL` under L6 against headroom (ADR-0096 §4, §5; recorded by the Phase 11 review) |
+| Capital tranches - partitioning the per-currency `LENDING_CAPITAL` row | Phase 16, if a measurement demands it | The capital row is a per-currency hot row, correct under contention (proven by `P11-TST-001`) but its contention not measured - a debt row, `CURRENT_STATE.md` §Known Architectural Debt (ADR-0096; recorded by the Phase 11 review) |
+| The safeguarding proof that subtracts `lending_funded` | Phase 14/15 | `LendingCapitalProof` publishes `lending_funded(c) = Σ principal outstanding + committed`, the term a safeguarding proof comparing customer liabilities with cash will subtract; no such proof exists yet (ADR-0096 §6; recorded by the Phase 11 review) |
+| Production origination - a terms version `ACTIVE` in production, on a real bureau | The phase that answers unresolved questions #13 and #14, Phase 15 at the latest | No production credit decision can be `APPROVED` until a real bureau exists, so production activates no terms and the application door answers `422 lending.ProductNotOffered`; `OPERATIONS_RUNBOOK.md` §7.4 is the activation gate (ADR-0090 §9, L11; recorded by the Phase 11 review) |

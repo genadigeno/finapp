@@ -132,7 +132,8 @@ public final class LoanAccounts {
                         && account.ownerRef().filter(loanId.value()::equals).isPresent();
         if (!asDeclared) {
             throw new IllegalStateException(
-                    "loan " + loanId.value() + "'s " + purpose + " account in " + currency.code()
+                    // No loan id in an exception message (PHASE_GATES.md section 5 Phase 11, Security; P11-DOC-001).
+                    "a loan's " + purpose + " account in " + currency.code()
                             + " exists as " + account.accountType() + "/" + account.normalBalance()
                             + " in " + account.currency().code() + ", not the declared " + declared
                             + "/" + declared.normalBalance() + " - refused, never adopted (INV-LED-06)");

@@ -1,10 +1,12 @@
 # Lending Lifecycles
 
-*Written by the Phase 10 → 11 transition (2026-10-10); nothing here is built; each task corrects its
-machine to the code.* No `lending` module, schema, table, trigger, door or sweep exists yet: every
-machine, edge, lock, refusal, event and audit act below is the decided design, and the task named
-beside it corrects this document where the code teaches otherwise. The Phase 11 exit review
-(`P11-DOC-001`) reads the whole of it against the code, statement by statement.
+*Written by the Phase 10 → 11 transition (2026-10-10); built by Phase 11's tasks and read against the
+code, statement by statement, by the Phase 11 exit review (`P11-DOC-001`, 2026-10-15).* Every machine,
+edge, lock, refusal, event and audit act below is now a description of the `lending` module as built
+(`lending/src/main/java/com/finapp/lending`, migrations `lending V001`…`V028`, the doors in `app`); where
+a task or the review found the code and the design apart, the document was corrected, each correction
+noted where it stands. *(This read "nothing here is built … No `lending` module, schema, table, trigger,
+door or sweep exists yet: every machine … is the decided design" until the exit review.)*
 
 Written on the `CREDIT_DECISIONING_LIFECYCLES.md` precedent: the document that names a phase's
 machines is written before the phase's first task. The engineering plan is
@@ -18,8 +20,8 @@ Related: ADR-0090 (the lending bounded context) · ADR-0091 (consumption and exp
 (versioned terms and agreement) · ADR-0093 (the schedule) · ADR-0094 (accrual and day count) ·
 ADR-0095 (allocation) · ADR-0096 (loan accounting and lending capital) · ADR-0097 (disbursement and
 the external payout) · ADR-0098 (delinquency, default, the collections boundary) · ADR-0099
-(servicing corrections) · ADR-0100 (the revolving credit line) — all `Proposed` at the transition,
-indexed in [`docs/adr/README.md`](../adr/README.md).
+(servicing corrections) · ADR-0100 (the revolving credit line) — all written `Proposed` at the
+transition and accepted by the exit review (`P11-DOC-001`, 2026-10-15), indexed in [`docs/adr/README.md`](../adr/README.md).
 
 ---
 
@@ -35,7 +37,7 @@ indexed in [`docs/adr/README.md`](../adr/README.md).
 | **Draw** vs **Disbursement** | Both credit the wallet against `LOAN_PRINCIPAL`; a disbursement happens once per instalment loan, a draw any number of times per line, each bounded by the available limit (`INV-LND-14`) |
 | **Available limit** vs **Exposure** vs **Capital headroom** | Available limit is one line's undrawn amount, derived under the line's lock; exposure is credit's per-party figure (an open line counts at its full **limit**); headroom is the platform's undeployed lending capital per currency (drawn principal only, A28) |
 | **Delinquency** vs **Default** vs **Write-off** | Delinquency is days past due and its bucket; default is a flag at DPD ≥ 90 (L7), cleared at cure, posting nothing; write-off is a deferred accounting event (Phase 14) |
-| **Payoff** vs **Prepayment** vs **Restructuring** vs **Refinance** | Payoff settles everything and closes; a partial prepayment (cut candidate) pays principal early with agreement v n+1; a restructuring is an amendment (agreement and schedule v n+1) on the same loan; a refinance (deferred) is a new decision and a new loan paying off the old |
+| **Payoff** vs **Prepayment** vs **Restructuring** vs **Refinance** | Payoff settles everything and closes; a partial prepayment (`-028`, built - *"cut candidate" until `P11-DOC-001`, 2026-10-15*) pays principal early with agreement v n+1; a restructuring is an amendment (agreement and schedule v n+1) on the same loan; a refinance (deferred) is a new decision and a new loan paying off the old |
 
 ## 2. When each act takes effect
 
@@ -75,7 +77,8 @@ application role is granted `SELECT, INSERT` on fact tables and a conditional `U
 status and permit columns on the machine tables; never `DELETE`; every table carrying money is
 `INSERT`-only (`LendingSchemaHasNoMutableMoneyTest`).
 
-**The lock order** (`PHASE_11_PLAN.md` §7.2; a planned `DISTRIBUTED_EXECUTION.md` §3 row). Every
+**The lock order** (`PHASE_11_PLAN.md` §7.2; `DISTRIBUTED_EXECUTION.md` §3's row "The Phase 11 lock
+order" - *"a planned … row" until `P11-DOC-001`, 2026-10-15: the row is written*). Every
 lending writer holding more than one takes an order-respecting subsequence of:
 
 | Position | Row | Mode | Taken by |
@@ -107,7 +110,7 @@ instance skew cannot move a date:
 | A business date ("a day", "midnight") | the database clock in the agreement's pinned `servicing_zone` (`UTC`, A2); date `d` is accruable only once the clock, read after L3, is past the end of `d`. The every-writer ranks judge the step's date against the range the transaction read - `lending.business_date_earliest(zone)` for a floor, `lending.business_date_latest(zone)` for a ceiling, the earlier and later of its start's and this statement's dates (`lending V028`, `P11-TSK-036`) - so a database clock stepped back across a midnight between the step's read and its write refuses nothing a reading admitted |
 | Value and posting date | every lending entry: the business date of the database clock under L3 (A10); accrual: the accrual date |
 | Due, past due, DPD | an item is due on its date and past due once its date has ended; DPD counts from the oldest unpaid due date to the current business date |
-| Disbursement deadline | stamped at the disbursement's birth (24 h); retries stop and the loan is cancelled at `<=` |
+| Disbursement deadline | stamped at the disbursement's birth (24 h); the attempt that fails at or after it (`deadline_at <= statement_timestamp()`) cancels the loan - a wallet that can be posted is still disbursed after an outage past it (§4.6's as-built note; *"retries stop and the loan is cancelled at `<=`" until `P11-DOC-001`, 2026-10-15*) |
 | Accrual start (path X) | payments' conclusion instant, read from payments' row, in the pinned zone |
 | Amendment acceptance window · payoff good-through date · capital expectation ageing | each stamped from `statement_timestamp()` at birth and compared with it at the act |
 | Sweep permits | stamped from `statement_timestamp()` by the one-statement `FOR UPDATE SKIP LOCKED` claim; a permit binds nothing. A permit "due at once" (stamped at birth) is due to a later statement only once the clock passes it - on a clock stepped back, a delay of at most the step (ADR-0063 decision 4, `P11-TSK-036`) |
@@ -188,7 +191,11 @@ the amount, term and declared income and expenditure are credit's request's; the
 origination step's three edges, and `-011` adds "`→ OFFERED` only beside its offer" and its permit column)*. Terminal:
 `OFFERED` (continued by the offer), `DECLINED`, `CLOSED_UNDECIDED`, `WITHDRAWN`. A decline is never reconsidered — a new
 application. **Invalid:** anything out of a terminal; `SUBMITTED → OFFERED | DECLINED`; `→ OFFERED`
-without its offer beside it, or on a decision not `APPROVED`; `DECLINED → OFFERED`.
+without its offer beside it, or on a decision not `APPROVED`; `DECLINED → OFFERED`. *(As built
+(`P11-DOC-001`, 2026-10-15): "on a decision not `APPROVED`" is refused by the domain alone - the origination
+step offers only on credit's `APPROVED` answer read through `LoanCreditDecisions.decisionFor`; no lending
+trigger can check it, because the decision is credit's and lending's migrations name no other schema (A16).
+Every other invalid edge here is also the trigger's.)*
 
 *As built by `P11-TSK-011` (2026-10-11): the origination step (`LoanOrigination`, swept by `LoanOriginationSchedule`)
 takes the three exits under L1 on credit's answer read through `LoanCreditDecisions.decisionFor` - `OFFERED` (reason
@@ -275,7 +282,7 @@ REVOLVING:   (born at acceptance) ACTIVE ──customer requests closure──> 
 |---|---|---|---|---|---|
 | (birth) → `PENDING_DISBURSEMENT` (instalment) / `ACTIVE` (revolving) | C, the acceptance (§4.4) | inside T-acc, after L0, L2, L6 | §4.4 | `LoanAccepted` | `lending.OfferAccepted` |
 | `PENDING_DISBURSEMENT → ACTIVE` | S, `LoanDisbursementSchedule` (T-dis) — the acceptance is the instruction, no further act (A7) | the claim; **L0**; L3 conditional; L5 disbursement `PENDING → POSTED`; standing re-read; wallet resolved; path X: **L7** and a hold of the net amount; rule 1 under `lending.disbursement:<loan>`; path W: accrual start and schedule v1 | — (failures retry, §4.6) | `LoanDisbursed` | `lending.LoanDisbursed` (system) |
-| `PENDING_DISBURSEMENT → CANCELLED` | S, the same sweep: standing lost (`STANDING_LOST`), or the wallet not postable at the deadline (`DISBURSEMENT_FAILED`) | **L0** (the commitment released), L3, L5 disbursement `→ FAILED`; nothing posted; capital headroom restored; the decision stays consumed | — | `LoanCancelled` | — |
+| `PENDING_DISBURSEMENT → CANCELLED` | S, the same sweep: standing lost (`STANDING_LOST`), or an attempt failing at or after the deadline (`DISBURSEMENT_FAILED`) | **L0** (the commitment released), L3, L5 disbursement `→ FAILED`; nothing posted; capital headroom restored; the decision stays consumed | — | `LoanCancelled` | — |
 | `ACTIVE → CLOSING` (revolving) | C, `MULTI_FACTOR`, `POST /v1/me/loans/{id}/closure`, key `lending.closure:CUSTOMER:<id>` | L3 conditional `ACTIVE`; `line_closure_request` born (`UNIQUE (loan_id)`, outcome `CLOSING`); with nothing outstanding - every receivable zero and every elapsed date accrued - the same transaction closes instead (outcome `CLOSED`) *(as built by `P11-TSK-023`: a second key on a `CLOSING` line is answered with the one request)* | `409 lending.LoanClosed`, `409 lending.LineNotClosable` (an instalment loan) | `LineClosureRequested` | — |
 | `ACTIVE → CLOSED` · `CLOSING → CLOSED` | S — the transaction that zeroes the last receivable: a repayment, a payoff, a credit-balance application or a waiver; the line also at a closure request with nothing outstanding *(as built by `P11-TSK-023` for a line: the customer's repayment, its automatic collection, or the servicing step after rule 6 at a statement - an `ACTIVE` line paid to zero stays open)* | L3; the six balances derived from journal lines under it; any credit balance refunded to the wallet in the same transaction | — | `LoanClosed` (`REPAID`, `PAID_OFF_EARLY`, `CLOSED_BY_CUSTOMER`) | — |
 
@@ -349,7 +356,7 @@ still disbursed after an outage longer than the deadline.*
 ### 4.7 Loan payout (`lending.loan_payout`), path X only — `P11-TSK-015`
 
 ```
- (born in T-dis, hold placed) PENDING ──claimed──> DISPATCHING ──payments accepted the withdrawal──> DISPATCHED ──> PAID_OUT | FAILED | RETURNED
+ (born in T-dis, hold placed) PENDING ──claimed──> DISPATCHING ──payments accepted the withdrawal──> DISPATCHED ──> PAID_OUT | FAILED
                                                        └──unroutable, or refused by payments: the hold released──> NOT_DISPATCHED
 ```
 
@@ -359,17 +366,20 @@ still disbursed after an outage longer than the deadline.*
 | `PENDING → DISPATCHING` | S, `LoanPayoutSchedule` (T-pyo a) | the payout's conditional claim with a permit, committed **before** payments is called | — | — | — |
 | `DISPATCHING → DISPATCHED` | S (T-pyo b, c) | `LoanPayouts.dispatch` — payments' system-actor withdrawal on the recorded instruction, key `payments.withdrawal:lending:<loanId>`, adopting the hold (payments' own transactions); then L3, L5, payments' reference stored. A crash anywhere re-drives under the same key, and payments replays | — | — | — |
 | `DISPATCHING → NOT_DISPATCHED` | S, when payments refuses or cannot route the withdrawal (met after the claim) | L3, L5, L7: the hold released, the funds free in the wallet; accrual start and schedule v1 set | — | `LoanPayoutConcluded` | — |
-| `DISPATCHED → PAID_OUT \| FAILED \| RETURNED` | S (T-pyr), on payments' terminal outcome — `COMPLETED` concluded from an authenticated answer (ADR-0083), its failure, or its return | L3, L5; payments' row **read** plain through `app`, never locked; accrual start = payments' conclusion instant, schedule v1 generated (A30) | — | `LoanPayoutConcluded` | — |
+| `DISPATCHED → PAID_OUT \| FAILED` | S (T-pyr), on payments' terminal outcome — `COMPLETED` concluded from an authenticated answer (ADR-0083), or its failure | L3, L5; payments' row **read** plain through `app`, never locked; accrual start = payments' conclusion instant, schedule v1 generated (A30) | — | `LoanPayoutConcluded` | — |
 
 `UNKNOWN` at payments is `DISPATCHED` here — held, no interest — until payments concludes by inquiry;
 lending never re-dispatches (scenario 5, `INV-RAIL-02`), and a payout outcome never creates,
-duplicates or undoes the loan's receivable (`INV-LND-07`): on `FAILED`, `RETURNED` or
+duplicates or undoes the loan's receivable (`INV-LND-07`): on `FAILED` or
 `NOT_DISPATCHED` the money is the borrower's, in their wallet. No account identifier enters lending,
-only payments' opaque destination reference (`INV-RAIL-03`). **Invalid:** anything out of the four
+only payments' opaque destination reference (`INV-RAIL-03`). **Invalid:** anything out of the three
 terminals; `PENDING → DISPATCHED | PAID_OUT | NOT_DISPATCHED`; `DISPATCHING → PENDING`; `DISPATCHED →
 NOT_DISPATCHED`; `DISPATCHED` without payments' reference. Payments' withdrawal machine has no return
-state (`DISPATCHED → COMPLETED | FAILED | UNKNOWN`), so `RETURNED` is mapped from payments' return
-record of a `COMPLETED` withdrawal.
+state (`DISPATCHED → COMPLETED | FAILED | UNKNOWN`), so `RETURNED` was to be mapped from payments' return
+record of a `COMPLETED` withdrawal - which has no producer (the refinement below). *(The diagram, the
+terminal edge's row and the money sentence above read `PAID_OUT | FAILED | RETURNED` and "on `FAILED`,
+`RETURNED` or `NOT_DISPATCHED`", and "the four terminals", until `P11-DOC-001`, 2026-10-15: the terminals
+are `PAID_OUT`, `FAILED` and `NOT_DISPATCHED` - `PayoutStatus`, `lending V009`'s `CHECK`.)*
 
 *As built by `P11-TSK-015` (2026-10-12): `lending V009` - `loan_payout` born `PENDING` in path X's T-dis beside the loan
 `ACTIVE` and its disbursement `POSTED` (L7 the wallet's row before the posting, then a hold of `P - f`); a deferred check
@@ -525,7 +535,8 @@ L3; L5 the quote; L7 funds; catch-up accrual and billing under the same uniques;
 recomputed amount ≠ the quote → `409 lending.PayoffQuoteStale`, nothing posted (scenario 7); else one
 repayment allocated to every component, the credit balance refunded, the loan `CLOSED`
 (`PAID_OFF_EARLY`; a line `CLOSED_BY_CUSTOMER`) — one transaction. Daily accrual makes an early
-settlement "rebate" zero by construction. Partial prepayment (`-028`, the cut candidate) is a
+settlement "rebate" zero by construction. Partial prepayment (`-028`, built, `lending V024` - *"the cut
+candidate" until `P11-DOC-001`, 2026-10-15*) is a
 repayment kind with agreement and schedule v n+1, refused while past due (`409 lending.ArrearsFirst`).
 
 *As built by `P11-TSK-026` (2026-10-13) - `lending V022`, `Payoffs`. **The quote** (the claim; **L3** owner-scoped; a key
@@ -620,7 +631,10 @@ derivation for every writer.)*
 
 ---
 
-## 6. The ranks, per machine (planned)
+## 6. The ranks, per machine
+
+*(Headed "(planned)" until the Phase 11 exit review, `P11-DOC-001`, 2026-10-15, which read each row
+against the migrations: every rank below is built.)*
 
 | Machine | Table (task) | History | Database rank beyond the edge trigger |
 |---|---|---|---|
@@ -628,10 +642,10 @@ derivation for every writer.)*
 | Capital contribution | `capital_contribution` (`-004`) | `capital_contribution_event` | four-eyes `CHECK`; `UNIQUE (expectation_ref)`; namespace `11` |
 | Loan application | `loan_application` (`-010`) | `loan_application_event` | `UNIQUE (decision_request_id)`; born `SUBMITTED` on the `ACTIVE` terms version and an offered day, never committed `SUBMITTED` (deferred); one open per party and product (partial unique); `→ OFFERED` only beside its offer (`-011`) |
 | Loan offer | `loan_offer` (`-011`) | `loan_offer_event` | `UNIQUE (application_id)`; the complementary expiry and acceptance clock conditionals; `→ ACCEPTED` only beside its loan; canonical terms and hash frozen |
-| Loan | `loan` (`-012`) | its edge history (§8, open) | `UNIQUE (offer_id)`; kind frozen; kind-specific edges; `→ ACTIVE` / `→ CANCELLED` only beside the disbursement's matching state; closure reason `CHECK` |
+| Loan | `loan` (`-012`) | `loan_event` (§8; *"its edge history (§8, open)" until `P11-DOC-001` - §8 settled it*) | `UNIQUE (offer_id)`; kind frozen; kind-specific edges; `→ ACTIVE` / `→ CANCELLED` only beside the disbursement's matching state; closure reason `CHECK` |
 | Disbursement | `loan_disbursement` (`-012`, moved `-014`) | — | `UNIQUE (loan_id)`; moves only beside the loan's edge |
 | Loan payout | `loan_payout` (`-015`) | — | `UNIQUE (loan_id)`; payments' reference required from `DISPATCHED` |
-| Repayment reversal · waiver · amendment | `repayment_reversal` (`-020`), `waiver` and its born-once `waiver_decision` (`-025` - a money row takes no `UPDATE`), `loan_amendment` (`-027`) | the proposal rows' decided columns (a waiver's decision row) | four-eyes `CHECK`; amendment acceptance conditional on the agreement version |
+| Repayment reversal · waiver · amendment | `repayment_reversal` (`-020`), `waiver` and its born-once `waiver_decision` (`-025` - a money row takes no `UPDATE`), `loan_amendment` and its born-once `loan_amendment_decision` (`-027`, the status derived, never written) | the reversal's decided columns; a waiver's and an amendment's decision row | four-eyes `CHECK`; amendment acceptance conditional on the agreement version |
 
 Every trigger is `<table>_permits_only_machine_edges`, written by hand; every status `CHECK` a
 membership list; raw-SQL terminal edges are refused for every role in each task's database tests.
@@ -667,7 +681,9 @@ the code:
 - **The payout's refusal edge** (`-015`): `DISPATCHING → NOT_DISPATCHED` — the claim commits before
   payments is called, so a refusal is met there (§4.7). Payments' withdrawal machine has no return
   state, so `RETURNED` is mapped from payments' return record; a return after `PAID_OUT` is
-  payments' alone.
+  payments' alone. *(As built by `P11-TSK-015`, read by `P11-DOC-001`, 2026-10-15: payments keeps no
+  return record for an instant withdrawal, so `RETURNED` has no producer and is not a state - §4.7's
+  refinement.)*
 - **Capital recognition** (`-004`): derived, never a lending-written edge — read through `app`
   (§4.2); capital correctness never depends on it.
 - **One live reversal proposal per repayment** (`-020`): a partial unique over

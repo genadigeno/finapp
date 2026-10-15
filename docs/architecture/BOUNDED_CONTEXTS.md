@@ -105,11 +105,12 @@ relationships, every one through a port `app` implements and none a build edge (
   `bureau-sim-b`, `findata-sim-a`): production names no provider and selects each kind's fail-safe
   until unresolved questions #13 and #14 are answered.
 
-**Lending (18)** was bounded by the Phase 10 → 11 transition (ADR-0090, `Proposed`, 2026-10-10;
-`PHASE_11_PLAN.md` §3) — *built so far: the module's boundary, its schema floor and its closed
-vocabularies (`P11-TSK-002`, 2026-10-10 — the build edges below are now build-graph facts, pinned by
-`LendingModuleIsolationTest`); everything else is planned, and the task that builds each part
-corrects this paragraph to the code.* One context in one module, `lending`, serving two products —
+**Lending (18)** was bounded by the Phase 10 → 11 transition (ADR-0090, 2026-10-10;
+`PHASE_11_PLAN.md` §3) and built by `P11-TSK-002`…`-036` (lending `V001`…`V028`; the build edges below
+build-graph facts, pinned by `LendingModuleIsolationTest`) — *as built, read against the code by the
+Phase 11 exit review, `P11-DOC-001`, 2026-10-15, which accepted ADR-0090; this read "`Proposed` …
+built so far: the module's boundary, its schema floor and its closed vocabularies … everything else is
+planned" until then.* One context in one module, `lending`, serving two products —
 the amortising personal loan and the revolving credit line — on one account model. **It owns the
 contract and its servicing facts and none of the money**: the application, the versioned product
 terms, the offer, the immutable versioned agreement and its acceptance evidence, the loan account
@@ -125,7 +126,11 @@ only):
 - **Credit (17)** — upstream, customer-supplier: the decision is Credit's; Lending's application
   opens Credit's decision request in its own transaction, its offer reads the decision
   authoritatively, and its acceptance takes the approval up through Credit's consumption port under
-  the party's profile lock — the only credit lock Lending ever holds, always first. Exposure stays
+  the party's profile lock — taken first, by the acceptance, the disbursement and the repayment
+  reversal. The one other credit lock Lending holds is Credit's decision-request row, which the
+  application's withdrawal takes through Credit's cancellation after its own application row; Credit
+  never waits on a lending lock, so neither closes a cycle *(this read "the only credit lock Lending ever holds,
+  always first" until `P11-DOC-001`, 2026-10-15; ADR-0091 point 8)*. Exposure stays
   Credit's judgement over facts Lending supplies (`PlatformCreditExposure` version 2: committed and
   outstanding principal, and an open credit line's limit, in one statement).
 - **Ledger (7)** — downstream conformist to the ledger's contract: ten new account purposes under a

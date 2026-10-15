@@ -286,16 +286,19 @@ final class LendingStormCensus {
                         + " FROM lending.instalment_billing b WHERE b.loan_id = e.loan_id AND b.due_date = e.business_date"
                         + " - e.days_past_due) AND NOT EXISTS (SELECT 1 FROM lending.credit_line_statement s WHERE"
                         + " s.loan_id = e.loan_id AND s.due_date = e.business_date - e.days_past_due)");
-        // C10 - a line's drawn principal never above its limit (INV-LND-14).
-        zero.put("C10 a line's principal above its limit (no reversed paydown to explain it)",
+        // C10 - a line's drawn principal never above its limit (INV-LND-14), but by the repayments a four-eyes reversal
+        // restored: a reversed paydown re-establishes principal the borrower had drawn, and may lift it above a limit
+        // since re-drawn (-023's owner-approved path). Bounded by exactly those reversals - never a line excused for ever
+        // because it once had one (P11-DOC-001; read "AND NOT EXISTS (an APPROVED reversal)" until then).
+        zero.put("C10 a line's principal above its limit beyond what its approved reversals restored",
                 "SELECT count(*) FROM lending.loan l JOIN lending.loan_agreement g ON g.loan_id = l.id AND g.version ="
                         + " (SELECT max(x.version) FROM lending.loan_agreement x WHERE x.loan_id = l.id)"
                         + " WHERE l.kind = 'REVOLVING' AND (SELECT coalesce(sum(CASE j.direction WHEN 'DEBIT' THEN"
                         + " j.amount_minor ELSE -j.amount_minor END), 0) FROM ledger.ledger_account a JOIN"
                         + " ledger.journal_line j ON j.ledger_account_id = a.id WHERE a.owner_kind = 'LOAN' AND"
                         + " a.owner_ref = l.id AND a.purpose IN ('LOAN_PRINCIPAL', 'LOAN_PRINCIPAL_DUE')) > g.amount_minor"
-                        + " AND NOT EXISTS (SELECT 1 FROM lending.repayment_reversal v WHERE v.loan_id = l.id"
-                        + " AND v.status = 'APPROVED')");
+                        + " + (SELECT coalesce(sum(r.amount_minor), 0) FROM lending.repayment_reversal v JOIN"
+                        + " lending.repayment r ON r.id = v.repayment_id WHERE v.loan_id = l.id AND v.status = 'APPROVED')");
         // C11 - closed is closed (INV-LND-08).
         zero.put("C11 a CLOSED loan without its one closure",
                 "SELECT count(*) FROM lending.loan l WHERE l.status = 'CLOSED' AND (SELECT count(*) FROM"
@@ -341,6 +344,15 @@ final class LendingStormCensus {
         zero.put("C22 an acceptance at or after its offer's expiry",
                 "SELECT count(*) FROM lending.loan_acceptance a JOIN lending.loan_offer o ON o.id = a.offer_id"
                         + " WHERE a.accepted_at >= o.expires_at");
+        // C23 - the ledger's dates and the deferred write-off (P11-DOC-001: the gate's Ledger criterion, asserted over
+        // the data rather than the code's names). Every lending entry is posted and valued on one date; nothing posts
+        // to the write-off expense, seeded for Phase 14 and closed until then.
+        zero.put("C23 a lending entry whose posting date is not its value date",
+                "SELECT count(*) FROM ledger.journal_entry e WHERE (e.idempotency_scope LIKE 'ledger.post:lending.%'"
+                        + " OR e.idempotency_scope LIKE 'ledger.reverse:lending.%') AND e.posting_date <> e.value_date");
+        zero.put("C23 a journal line on LOAN_WRITE_OFF_EXPENSE (write-off is Phase 14's)",
+                "SELECT count(*) FROM ledger.journal_line j JOIN ledger.ledger_account a ON a.id = j.ledger_account_id"
+                        + " WHERE a.purpose = 'LOAN_WRITE_OFF_EXPENSE'");
         return zero;
     }
 

@@ -1,6 +1,6 @@
 # ADR-0096 — Loan accounting and lending capital: per-loan ledger accounts with due split from not-due, the posting rules, and a lending-capital equity account recognised from bank evidence that funds every loan
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Ledger · Reconciliation · Settlement · Identity
@@ -64,19 +64,30 @@ anticipated.
    | 0 | Capital contributed (bank evidence) | `CASH_AT_BANK` | `LENDING_CAPITAL` | reconciliation's recognition key |
    | 1 | Loan disbursed / line drawn | `LOAN_PRINCIPAL` P | `CUSTOMER_WALLET` P − f; `LOAN_FEE_INCOME` f | `lending.disbursement:<loan>` / `lending.draw:<draw>` |
    | 2 | A day's interest earned | `LOAN_INTEREST_ACCRUED` | `LOAN_INTEREST_INCOME` | `lending.accrual:<loan>:<date>` |
-   | 3 | Instalment billed / statement issued | `LOAN_INTEREST_DUE` I; `LOAN_PRINCIPAL_DUE` Pj | `LOAN_INTEREST_ACCRUED` I; `LOAN_PRINCIPAL` Pj | `lending.billing:<instalment>` / `lending.statement:<statement>` |
-   | 4 | Late fee assessed | `LOAN_FEES_DUE` | `LOAN_FEE_INCOME` | `lending.fee:<assessment>` |
+   | 3 | Instalment billed / statement issued | `LOAN_INTEREST_DUE` I; `LOAN_PRINCIPAL_DUE` Pj | `LOAN_INTEREST_ACCRUED` I; `LOAN_PRINCIPAL` Pj | `lending.billing:<instalment>` (a post-maturity period: `lending.billing:<loan>:<period end>`) / `lending.statement:<line>:<statement date>` |
+   | 4 | Late fee assessed | `LOAN_FEES_DUE` | `LOAN_FEE_INCOME` | `lending.fee:<billed item>:LATE` |
    | 5 | Repayment from the wallet | `CUSTOMER_WALLET` A | due accounts per allocation; `LOAN_PRINCIPAL` (line paydown); `LOAN_CREDIT_BALANCE` rest | `lending.repayment:<repayment>` |
-   | 6 | Credit balance applied | `LOAN_CREDIT_BALANCE` | due accounts per allocation | `lending.credit-application:<billing>` |
-   | 7 | Payoff | rules 2, 3, 5, then `LOAN_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | `lending.payoff:<quote>` (+ the rule keys) |
+   | 6 | Credit balance applied | `LOAN_CREDIT_BALANCE` | due accounts per allocation | `lending.credit-application:<billed item>` |
+   | 7 | Payoff | rules 2, 3, 5, then `LOAN_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | no key of its own: each rule's key — rule 5 under `lending.repayment:<repayment>`, the refund under `lending.closure-refund:<loan>` |
    | 8 | Fee waived (unpaid) | `LOAN_FEE_INCOME` | `LOAN_FEES_DUE` | `ReversalService` of rule 4's entry, scope `ledger.reverse` |
    | 8a | Paid fee refunded | `LOAN_FEE_INCOME` | `LOAN_CREDIT_BALANCE` | `lending.waiver:<waiver>` |
-   | 9 | Interest waived | `LOAN_INTEREST_INCOME` | `LOAN_INTEREST_DUE` / `…ACCRUED` | `lending.waiver:<waiver>` |
+   | 9 | Interest waived | `LOAN_INTEREST_INCOME` | `LOAN_INTEREST_DUE` | `lending.waiver:<waiver>` |
    | 10 | Repayment reversed | rule 5's credits | `CUSTOMER_WALLET` | `ReversalService`, `lending.repayment-reversal:<reversal>` |
    | 11 | Disbursement failed | — | — | nothing posted: a failed disbursement rolls back whole |
    | 12 | Payout (path X) | `CUSTOMER_WALLET` | `INSTANT_CLEARING` | payments' own posting, reversal and return (ADR-0097) |
    | 13 | Arrears re-scheduled (amendment) | `LOAN_PRINCIPAL` | `LOAN_PRINCIPAL_DUE` | `lending.amendment:<amendment>` |
    | 14 | Write-off (deferred, Phase 14) | `LOAN_WRITE_OFF_EXPENSE` | every LOAN asset account | — |
+
+   *(As built (`P11-DOC-001`, 2026-10-15), read against the posting code: rule 3's statement key is
+   `lending.statement:<line>:<statement date>` (`CreditLineStatements`) and a post-maturity billing's
+   `lending.billing:<loan>:<period end>` (`InstalmentBillings`); rule 4's is `lending.fee:<billed item>:LATE`
+   (`LateFees`), the assessment's natural identity, not its id; rule 6's names the billed item, a billing or a
+   statement. Rule 7 read "`lending.payoff:<quote>` (+ the rule keys)": no ledger key `lending.payoff:` exists -
+   the payoff posts its catch-up accruals (rule 2) and early billing (rule 3) under their own keys, rule 5 under
+   `lending.repayment:<repayment>` (`Repayments`) and the closure's refund under `lending.closure-refund:<loan>`
+   (`LoanClosures`); `lending.payoff:` is only the payoff command's API idempotency scope (`LoanPayoffDesk`). Rule 9
+   read "`LOAN_INTEREST_DUE` / `…ACCRUED`": waiving accrued, unbilled interest was never built - an interest waiver
+   releases a billed item's due interest only (`WaiverKind.INTEREST`, ADR-0099).)*
 
    A multi-entry transaction (payoff) pre-locks the union of its accounts through
    `lockBalancesInOrder` before its first post (the Phase 9 rule). The origination fee (A17) is
@@ -106,7 +117,10 @@ anticipated.
    own transaction. **Recognition is a derived condition, not a lending state:** lending reads
    reconciliation's expectation and the ledger line through an `app`-implemented read port
    (reconciliation never calls lending), and the same read shows a contribution whose expectation
-   aged out unmatched as unrecognised (lapsed). An unmatched line is a break like any other.
+   aged out unmatched as unrecognised (lapsed). An unmatched line is a break like any other. *(As built
+   (`P11-DOC-001`, 2026-10-15): the expectation is never aged - reconciliation's ageing sweep skips the kind
+   (the Follow-up's `P11-TSK-004` entry, (c)); the lapse is derived by date, the database's date past the
+   window with no recognition (`CapitalRecognitionStatus.derive`).)*
    **Headroom reads the `LENDING_CAPITAL` ledger balance, never the contribution's status.** Capital
    is never adjusted, never posted by a person, and never withdrawn in Phase 11 (a capital return
    is a later treasury task).
@@ -318,5 +332,6 @@ Financial impact: the operational ledger gains the loan book and the platform's 
   `CANCELLED` account's six balances are zero like a `CLOSED` one's. (c) It is a pure function of one `LoanRecord`
   read in one read-only `REPEATABLE READ` snapshot (`LendingProofs`), gauged `finapp.lending.subledger.proof{verdict}`
   and shown, figure by figure, by the investigator's explanation. Nothing self-corrects.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

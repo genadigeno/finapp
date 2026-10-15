@@ -788,7 +788,28 @@ class LendingStormDatabaseTest {
         String proposer = on == a ? agent : secondAgent;
         String approver = on == a ? secondAgent : agent;
         int dice = RANDOMNESS.nextInt(100);
-        if (dice < 35) {
+        if (dice < 12) {
+            // An INTEREST waiver of one minor unit of a billed item's interest still owed (P11-DOC-001): rule 9 posts to
+            // the currency's shared LOAN_INTEREST_INCOME row, which the servicing step's accrual, the payoff and the
+            // prepayment take ahead of a wallet - the storm's C14 judges the order under load, not only the fee kind.
+            String[] item = row("SELECT b.loan_id::text, b.id::text FROM lending.instalment_billing b JOIN lending.loan l"
+                    + " ON l.id = b.loan_id WHERE l.status IN ('ACTIVE', 'CLOSING') AND"
+                    + " lending.billing_component_billed(b.id, 'INTEREST') > lending.billing_component_paid(b.id,"
+                    + " 'INTEREST') AND NOT EXISTS (SELECT 1 FROM lending.waiver w WHERE w.due_item_id = b.id"
+                    + " AND w.kind = 'INTEREST') ORDER BY random() LIMIT 1");
+            if (item == null || reserved.contains(item[0])) {
+                return;
+            }
+            String waivers = OPERATOR_LOANS + "/" + item[0] + "/waivers";
+            Answer proposed = on.door().post(waivers, "{\"kind\":\"INTEREST\",\"targetId\":\"" + item[1]
+                    + "\",\"amount\":\"0.01\",\"currency\":\"EUR\",\"reason\":\"the storm's goodwill\"}", proposer, key());
+            judged(tally, "propose waiver", proposed, "422 lending.WaiverExceedsDue", "409 lending.ProposalPending",
+                    "409 lending.LoanClosed");
+            if (proposed.status() == 201) {
+                decide(other(on), waivers + "/" + proposed.field("waiverId"), "{\"reason\":\"checked\"}", proposer,
+                        approver, "waiver");
+            }
+        } else if (dice < 35) {
             String[] fee = row("SELECT f.loan_id::text, f.id::text, f.amount_minor::text FROM lending.fee_assessment f"
                     + " WHERE NOT EXISTS (SELECT 1 FROM lending.waiver w WHERE w.fee_assessment_id = f.id)"
                     + " ORDER BY random() LIMIT 1");

@@ -1,6 +1,6 @@
 # ADR-0095 — Repayment allocation: an explicit, versioned order pinned by the agreement, born with the repayment and conserving by constraint
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Lending · Ledger · Accounts
@@ -285,5 +285,6 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   balance in the same transaction, its wallet judged on the net amount. The quote's figure is never paid approximately: a
   recomputed outstanding that differs is `409 lending.PayoffQuoteStale`, nothing posted (scenario 7). Point 4's wallet rule
   holds: absent or not `ACTIVE` is `InsufficientFunds`. No prepayment fee (L8, owner-accepted) and no rebate.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code and accepted it with no correction in place - the
+  drift it found (the status column) is the Follow-up's own record above.

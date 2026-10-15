@@ -1,6 +1,6 @@
 # ADR-0091 — Taking up a credit decision: a credit-owned consumption under the party's profile lock, and exposure that counts committed principal, outstanding principal and open credit lines' limits
 
-Status: Proposed
+Status: Accepted (2026-10-15, `P11-DOC-001` — read against the code and corrected first)
 Date: 2026-10-10
 Phase: 11
 Context: Credit · Lending · Ledger · App
@@ -131,8 +131,15 @@ through `app`). Rests on `PHASE_11_PLAN.md` §2.2, §7, §12.10 and `INV-LND-06`
 
 8. **No lock cycle.** Credit's deciding transaction takes the profile, then credit's rows, then
    reads lending's facts in one plain statement — it never waits on a lending lock. Lending takes
-   the profile only first. Credit never locks a lending row; consumption is the only place a
-   lending transaction holds a credit lock (`PHASE_11_PLAN.md` §7.3 (a), (e)).
+   the profile only first. Credit never locks a lending row. A lending transaction holds a credit
+   lock in two shapes only: the profile (L0), taken first by the acceptance (re-entered by its
+   consumption), the disbursement and the repayment reversal (`LoanAcceptances`,
+   `LoanDisbursements`, `RepaymentReversals`, each through `LoanCreditDecisions.lockExposure`); and
+   credit's decision-request row, taken by the application withdrawal after its own application row
+   (L1) through `DecisionRequests.cancel` — a row credit's deciding transaction takes only after the
+   profile, and never while waiting on a lending row, so neither shape closes a cycle
+   (`PHASE_11_PLAN.md` §7.3 (a), (e)). *(Corrected by `P11-DOC-001`, 2026-10-15: this read "consumption
+   is the only place a lending transaction holds a credit lock".)*
 
 9. **Proven continuously.** `ExposureCensus` (`P11-TSK-029`, gauged `finapp.credit.exposure.census`):
    per party, credit's reserved plus lending's committed plus outstanding never exceeds the limit
@@ -293,5 +300,6 @@ ADR-0087 §5, ADR-0088 §4, §6.
   asserted on `credit_profile`; a disbursement committed between the read's statements never torn; each arm; replay of a
   version 1 decision `IDENTICAL` after its own loan exists; the census naming an over-limit party. **The pair is
   complete**: the commitment `-012` hands the reservation over to is what credit's deciding transaction now reads.
-- **Acceptance.** `Proposed` at the Phase 10 → 11 transition (2026-10-10); accepted by the Phase 11
-  review (`P11-DOC-001`) after reading it against the code.
+- **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
+  (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.
