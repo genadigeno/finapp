@@ -14,7 +14,14 @@ to the wallet or, through payments' withdrawal machinery, to an external account
 per date; an explicit, versioned allocation order; delinquency derived beside the lifecycle; every correction a
 reasoned, four-eyes posting; every account proven and replayed.
 
-⟨OUTCOME TABLE⟩
+| | Outcome |
+|---|---|
+| Review areas (8) | **8 `PASS`**, every one only after this review's corrections - see *What the review found* |
+| Universal criteria (12) | **11 `PASS`, criterion 7 `PARTIAL`** - the owner's standing deviation (the fleet-wide database and kafka tiers skipped), recorded, not passed; criterion 10 **met by this review's own act** |
+| Financial supplement (F1–F8) | **8 `Met`** - F1, F2 over the storm's every reading; F4 with write-off deferred to Phase 14; F8 with the safeguarding proof deferred to Phase 14/15 (a debt row this review wrote) |
+| Phase 11-specific criteria | **the five originals and the eighteen per-area blocks `PASS`**, read clause by clause from the gate; eight clauses met in a form their words did not anticipate, recorded under the gate (`PHASE_GATES.md`, the note after Phase 11's criteria); criterion 7's block the standing deviation; the production reality recorded as an accepted limitation |
+| *"Correct with 10 concurrent instances?"* | **`PASS`** - every §7.4 row by its named test; every born-once arbiter refused alone with its locks bypassed; the lock order made true in code where it was not (the interest waiver); the storm's two instances ±5 s green three times on the final code with zero deadlocks |
+| **Verdict** | **Phase 11 `COMPLETE` (2026-10-16)** |
 
 Conducted in the `P2-DOC-001` order: assess → land the corrections → re-run the evidence → **flip the status,
 which is the guarded act** → finalise with counted numbers.
@@ -87,7 +94,15 @@ text, or recorded with an owner, and every correction in code was broken on purp
 
 ## The flip
 
-⟨FLIP⟩
+Recording Phase 11 `COMPLETE` is the guarded act: the register guard begins demanding a §2 row for every `Phase: 11`
+invariant and a §4 row for every `P11-TST` item, and `PlannedMetersExistTest` reads `PHASE_11_PLAN.md` §15 through the
+generic union (`LendingMetersTest` had held the thirty-three series ahead of the flip). Against the real status,
+`MutationDemonstrationTest` passed (nine cases). **And it was proven non-vacuous against the real status**: with
+`INV-LND-12`'s seven rows withheld, the guard failed reporting `(currently 11)` and naming exactly `["INV-LND-12"]`. The
+register was restored byte-identical (sha256 `d6578172…`, verified). As in Phase 10, no `Phase: 11` invariant was found
+unrowed: every task filed its own, and this review's probes add eighteen rows more. *(The audit noted the guard's own blind
+spot: a flip written in a shape it does not parse would leave it at Phase 10 and green; the "currently 11" above is the
+check that this one parsed.)*
 
 ---
 
@@ -187,8 +202,8 @@ skipping a terminal account, the trigger refusing a condition on one for every w
 
 ## Area 5 — Security and audit
 
-Every lending route enumerated with its permission, its assurance and its negatives (the audit's table: twenty-eight
-routes, every operator route in `RoutePermissionRegisterTest`); the five permissions and three roles pinned by
+Every lending route enumerated with its permission, its assurance and its negatives (every operator route in
+`RoutePermissionRegisterTest`); the five permissions and three roles pinned by
 `RoleNameTest`; every four-eyes act refused at the domain and at the `CHECK`, each alone; standing re-read in the
 transaction for application, acceptance and draw; no route lets an operator create a loan, reprice outside an
 amendment, draw or disburse; every column classified (`ColumnClassificationTest`, fresh), the acceptance's client IP
@@ -207,7 +222,7 @@ message** (`LoanAccounts`, the gate's "no … loan id in … exception message")
 Fifteen invariants carry Phase 11 in their catalogue line, read with the guard's own token rule: `INV-LND-01`…`14`
 and `INV-IDEM-02` (already demanded since Phase 8). Every one has performed `MUTATION_TESTING.md` §2 rows (269 rows were
 parsed: every one records a mutation, an observed red and a restore); `P11-TST-001` and `P11-TST-002` have their §4
-rows. This review adds ⟨N⟩ §2 rows for its own probes — three of them honest **survivals** (the arbiter probe twice,
+rows. This review adds eighteen §2 rows for its own probes — three of them honest **survivals** (the arbiter probe twice,
 before its sets were pinned; the re-dispatch probe, an equivalent mutant at the money's level) and one void
 performance. The catalogue's verify texts corrected where the performed probe differed from the one named
 (`INV-LND-04`'s "racing reversal" was a planted drift; `INV-LND-07`'s re-dispatch probe). **`PASS`.**
@@ -360,7 +375,19 @@ Phase 11) skips the fleet-wide `databaseTest` and `kafkaTest`; every Phase 11 it
 recorded in those words, and the owner's instruction for this review repeated it. This review does not pretend
 otherwise - the criterion is graded **`PARTIAL`**, as the Phase 10 → 11 transition re-graded Phase 10's:
 
-⟨COUNTS⟩
+- The **hermetic** tier was run **fleet-wide on the final tree** - `./gradlew cleanTest test --continue`: **3,007 tests across
+  497 suites in 20 modules, 0 failures** (lending 195 across 24, app 875 across 174 - the battery and every document guard
+  among them); the **architecture** tier `cleanArchitectureTest architectureTest`: **216 across 52 suites in 20 modules, 0
+  failures** (app 171 across 32). Both re-run after the last record edits for app's document-reading suites (below).
+- The **database** tier was run over every lending suite, fresh: lending's whole `databaseTest` (date-shifted by design)
+  **289 tests across 25 suites**; app's own-container lending suites, in their own invocation, **84 across 7** (the storm
+  apart); app's shared-tier lending suites **41 across 13**; platform's `ColumnClassificationTest` and
+  `ApplicationRoleGrantsTest` **11 across 2** - **all 0 failures**. The storm, three consecutive green runs, above. Each
+  correction's suite also ran before and after its probe.
+- **Not run**, on the owner's instruction: `gradlew build`, the fleet-wide `databaseTest` and `kafkaTest`. The settlement
+  suites `BatchAcceptanceDatabaseTest`, `FileReceptionDatabaseTest` and `ReadmissionDatabaseTest` are known red since
+  `P9-TSK-026` and were not run (recorded, not fixed). A first lending tier and a first storm were spoiled by running
+  database suites side by side (ephemeral-port exhaustion) and are not counted: every count above is from a run alone.
 
 **No fleet-wide database or kafka count is claimed for Phase 11.** Three settlement suites have been red, unrun, since
 `P9-TSK-026` - the cost the Phase 10 review named: a guard stood red unseen while the tier was skipped. The question
@@ -523,4 +550,8 @@ schedules, the storm and the battery.
 
 ## What happens next
 
-⟨NEXT⟩
+**The Phase 11 → 12 transition is the owner's to open** - this review marks nothing `READY` and initialises nothing of
+Phase 12, on the owner's instruction. Its agenda is the owner-decision list above: criterion 7's standing deviation asked
+again, the three red settlement suites, refinance and capital return, the storm's accepted deviations and the per-task
+judgements. Phase 12 (BNPL) inherits an account model, four versioned engines, the proofs and a capital discipline it can
+reuse, and the debt rows owned by Phases 13 to 16.
