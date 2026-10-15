@@ -51,7 +51,7 @@ archunit = "1.5.0"
 # Declared explicitly rather than taken from ArchUnit's shaded copy or from ByteBuddy's transitive
 # one: a shaded package is an internal detail that moves on upgrade, and a transitive dependency
 # can vanish when the library that brought it changes.
-asm = "9.7.1"
+asm = "9.10.1"
 
 # springdoc generates the OpenAPI document from the running application (P0-TSK-026).
 # 3.1.0 is the Spring Boot 4 / Spring Framework 7 line; the 2.8.x line targets Boot 3.
@@ -75,9 +75,9 @@ asm = "9.7.1"
 # bcprov-jdk18on is the JDK 1.8+ artefact line; 1.85.2 is the current release, confirmed against
 # Maven Central's own <release> marker rather than a search result (the P0-TSK-037 lesson, where
 # <latest> and <release> both pointed at a beta).
-bouncycastle = "1.85.2"
+bouncycastle = "1.86"
 
-springdoc = "3.1.0"
+springdoc = "3.1.1"
 
 # Tomcat, pinned ABOVE what the Spring Boot BOM manages.
 #
@@ -99,7 +99,7 @@ springdoc = "3.1.0"
 # nobody tested.
 tomcat = "11.0.25"
 
-junitJupiter = "6.0.3"
+junitJupiter = "6.1.3"
 assertj = "3.27.7"
 
 # Lombok, COMPILE TIME ONLY - the project-standard boilerplate reducer (.claude/rules/java-lombok.md).
@@ -134,7 +134,7 @@ wiremock = "3.13.2"
 # same reason as JUnit and AssertJ: one version across the build. Flyway in particular must
 # not differ between the tool that applies migrations and any runtime that validates them —
 # the schema history table is a shared format.
-flyway = "12.4.0"
+flyway = "13.7.0"
 postgresqlDriver = "42.7.13"
 
 # CycloneDX produces the SBOM that CI's dependency scan consumes. Gradle has no native

@@ -122,3 +122,13 @@ tasks.named<Test>("databaseTest") {
             + " -Pfinapp.db.zone)" else " - a date other than UTC's") + " (P11-TSK-032)")
     }
 }
+
+// The battery's probe-only size knob (P11-TST-002, AmortisationBatteryTest) is read from the environment, which Gradle
+// does not see: declared as an input of every test task, so a shrunk probe run is never answered UP-TO-DATE from a
+// full-size green run (or the other way round) - the completion gate's finding.
+tasks.withType<Test>().configureEach {
+    inputs.property("finapp.lending.battery.loans",
+        providers.environmentVariable("FINAPP_LENDING_BATTERY_LOANS").orElse("full size"))
+    inputs.property("finapp.lending.battery.lines",
+        providers.environmentVariable("FINAPP_LENDING_BATTERY_LINES").orElse("full size"))
+}
