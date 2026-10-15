@@ -1304,9 +1304,13 @@ final class LendingStormCatalogue {
         Map<Integer, Waiter> seen = new LinkedHashMap<>();
         while (System.nanoTime() < deadline) {
             // Read as the bootstrap owner: another role's statement text reads "<insufficient privilege>" otherwise.
+            // pg_stat_activity is a per-transaction snapshot while pg_blocking_pids reads the live lock table: a row
+            // qualifies only when it itself shows the session waiting on a lock, so its statement and transaction id
+            // are the waiting ones - never a previous statement's text ('' for a fresh connection).
             try (Connection owner = DatabaseRoles.bootstrap();
                     PreparedStatement select = owner.prepareStatement("SELECT pid, backend_xid::text, query FROM"
-                            + " pg_stat_activity WHERE ? = ANY (pg_blocking_pids(pid))")) {
+                            + " pg_stat_activity WHERE ? = ANY (pg_blocking_pids(pid)) AND state = 'active'"
+                            + " AND wait_event_type = 'Lock'")) {
                 select.setInt(1, blocker);
                 try (ResultSet waiting = select.executeQuery()) {
                     while (waiting.next()) {
