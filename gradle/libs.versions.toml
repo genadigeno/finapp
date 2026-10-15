@@ -51,7 +51,7 @@ archunit = "1.5.0"
 # Declared explicitly rather than taken from ArchUnit's shaded copy or from ByteBuddy's transitive
 # one: a shaded package is an internal detail that moves on upgrade, and a transitive dependency
 # can vanish when the library that brought it changes.
-asm = "9.7.1"
+asm = "9.10.1"
 
 # springdoc generates the OpenAPI document from the running application (P0-TSK-026).
 # 3.1.0 is the Spring Boot 4 / Spring Framework 7 line; the 2.8.x line targets Boot 3.
