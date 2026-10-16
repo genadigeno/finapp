@@ -1,5 +1,19 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AccrualTerms;
+import com.finapp.creditmath.Act365Fixed;
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.DueItemId;
+import com.finapp.creditmath.DueState;
+import com.finapp.creditmath.InterestAccrual;
+import com.finapp.creditmath.LendingEngine;
+import com.finapp.creditmath.OverpaymentTreatment;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
@@ -853,7 +867,7 @@ public final class LoanReplayProof {
                 return Optional.empty();
             }
             LoanReplayer.version(LendingEngine.ALLOCATION, engine);
-            return pinned(agreement).map(AllocationRules::of)
+            return pinned(agreement).map(LoanEngines::allocationRules)
                     .filter(rules -> rules.engine().number() == engine);
         }
 

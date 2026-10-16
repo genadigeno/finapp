@@ -1,5 +1,8 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.InterestAccrual;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalLine;
@@ -155,7 +158,7 @@ public final class CreditLineStatements {
         if (agreement.statementEngine().isEmpty() || statementTerms.statementEngine() != agreement.statementEngine().get()) {
             throw new IllegalStateException("the pinned terms and the agreement name one statement engine (INV-LND-09)");
         }
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }

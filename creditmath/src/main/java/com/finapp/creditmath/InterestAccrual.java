@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;

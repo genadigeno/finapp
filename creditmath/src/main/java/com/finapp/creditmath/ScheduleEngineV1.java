@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -51,6 +51,13 @@ import java.util.Set;
  *
  * <p><strong>The terms door's judgement</strong> ({@link #judgeAmortisation}) answers whether ANY loan within the
  * product's bounds could fail to amortise, from the worst calendar each month of the leap cycle admits - see there.
+ *
+ * <p><strong>Its input is {@link ScheduleTerms}</strong> (`P12-TSK-002`; ADR-0101 decision 5). The engine moved from
+ * {@code lending} to {@code creditmath} unchanged - every figure, refusal and detail the same - so that {@code bnpl}'s
+ * pay-in-N is scheduled by it without reaching lending. Until the move it took lending's {@code LoanTerms} and judged
+ * the product's kind, rate type and frequency itself; those are lending's vocabulary, so lending's
+ * {@code LoanEngines} keeps the {@code LoanTerms} entries - judging the kind first, then {@link #conventions}, then the
+ * rate type and frequency, the order and the words this class used - and delegates every figure here.
  */
 public final class ScheduleEngineV1 {
 
@@ -72,6 +79,14 @@ public final class ScheduleEngineV1 {
     /** The longest month - the latest intended day, and the longest period between two monthly due dates. */
     static final int LONGEST_MONTH = 31;
 
+    /**
+     * The detail of a {@link ScheduleRefusal#CONVENTION_NOT_IMPLEMENTED} naming a convention version 1 does not compute -
+     * public so lending's {@code LoanEngines}, judging the rate type and frequency its {@code LoanTerms} name, refuses in
+     * this class's own words (`P12-TSK-002`).
+     */
+    public static final String UNIMPLEMENTED_CONVENTIONS =
+            "the terms name a rate type, frequency, day count or rounding mode version 1 does not compute";
+
     /** The months of the Gregorian leap cycle every later-period calendar of a monthly schedule repeats within. */
     static final int LEAP_CYCLE_MONTHS = 48;
 
@@ -88,23 +103,24 @@ public final class ScheduleEngineV1 {
      * The schedule of a new loan, generated at its accrual start (path W at disbursement, path X at the payout's
      * terminal outcome) or as the offer's illustrative schedule with {@code accrualStart} today (A5).
      *
-     * @param terms the agreement's terms - an instalment product's, pinning this engine version
+     * @param terms the agreement's schedule terms, pinning this engine version
      * @param principal the principal {@code P}, in the terms' currency at its scale
      * @param termMonths the term {@code n}
      * @param repaymentDay the intended day {@code k}, 1 to 31 (the terms' allowed set is the caller's to enforce)
      * @param accrualStart {@code d0}, the day interest starts
      */
     public static ScheduleOutcome project(
-            LoanTerms terms, Money principal, int termMonths, int repaymentDay, LocalDate accrualStart) {
+            ScheduleTerms terms, Money principal, int termMonths, int repaymentDay, LocalDate accrualStart) {
         Objects.requireNonNull(terms, "terms");
         Objects.requireNonNull(principal, "principal");
         Objects.requireNonNull(accrualStart, "accrualStart");
         Optional<ScheduleOutcome.Refused> refused = conventions(terms)
+                .or(() -> termsInRange(terms))
                 .or(() -> request(terms, principal, termMonths, repaymentDay, accrualStart));
         if (refused.isPresent()) {
             return refused.get();
         }
-        LocalDate earliest = accrualStart.plusDays(terms.instalment().orElseThrow().minFirstPeriodDays());
+        LocalDate earliest = accrualStart.plusDays(terms.minFirstPeriodDays());
         YearMonth first = YearMonth.from(earliest);
         if (onDay(first, repaymentDay).isBefore(earliest)) {
             first = first.plusMonths(1);
@@ -121,7 +137,7 @@ public final class ScheduleEngineV1 {
      * @param intendedDay the repayment day the due dates are computed from - {@code nextDueDate} must fall on it
      */
     public static ScheduleOutcome recalculate(
-            LoanTerms terms,
+            ScheduleTerms terms,
             Money principal,
             int remainingMonths,
             int intendedDay,
@@ -132,6 +148,7 @@ public final class ScheduleEngineV1 {
         Objects.requireNonNull(effectiveFrom, "effectiveFrom");
         Objects.requireNonNull(nextDueDate, "nextDueDate");
         Optional<ScheduleOutcome.Refused> refused = conventions(terms)
+                .or(() -> termsInRange(terms))
                 .or(() -> request(terms, principal, remainingMonths, intendedDay, effectiveFrom))
                 .or(() -> inRange(nextDueDate));
         if (refused.isPresent()) {
@@ -165,7 +182,7 @@ public final class ScheduleEngineV1 {
      * @param maximumMonths the most instalments the new schedule may have
      */
     public static ScheduleOutcome recalculateAtInstalment(
-            LoanTerms terms,
+            ScheduleTerms terms,
             Money principal,
             Money instalment,
             int maximumMonths,
@@ -178,6 +195,7 @@ public final class ScheduleEngineV1 {
         Objects.requireNonNull(effectiveFrom, "effectiveFrom");
         Objects.requireNonNull(nextDueDate, "nextDueDate");
         Optional<ScheduleOutcome.Refused> refused = conventions(terms)
+                .or(() -> termsInRange(terms))
                 .or(() -> request(terms, principal, maximumMonths, intendedDay, effectiveFrom))
                 .or(() -> inRange(nextDueDate));
         if (refused.isPresent()) {
@@ -256,25 +274,40 @@ public final class ScheduleEngineV1 {
      * Linear in the principal, each holds at every principal from the smallest up once it holds there - so no loan the
      * product can decide, disbursed or paid out on any day, is refused by the engine, and the offer's own judgement
      * (`P11-TSK-011`) is a second line only.
+     *
+     * <p>The product's bounds arrive as the two figures the judgement reads - lending's {@code LoanProductBounds} is
+     * lending's vocabulary (`P12-TSK-002`), and its {@code LoanEngines} passes them, with the terms' allowed repayment
+     * days, unchanged.
+     *
+     * @param allowedDays the repayment days the terms allow, each 1 to 31
+     * @param minimumPrincipal the smallest principal the product's bounds admit, in the terms' currency
+     * @param maximumTermMonths the longest term the product's bounds admit
      */
-    public static Optional<ScheduleOutcome.Refused> judgeAmortisation(LoanTerms terms, LoanProductBounds.Bounds bounds) {
+    public static Optional<ScheduleOutcome.Refused> judgeAmortisation(
+            ScheduleTerms terms, List<Integer> allowedDays, Money minimumPrincipal, int maximumTermMonths) {
         Objects.requireNonNull(terms, "terms");
-        Objects.requireNonNull(bounds, "bounds");
-        Optional<ScheduleOutcome.Refused> convention = conventions(terms);
+        Objects.requireNonNull(allowedDays, "allowedDays");
+        Objects.requireNonNull(minimumPrincipal, "minimumPrincipal");
+        Optional<ScheduleOutcome.Refused> convention = conventions(terms).or(() -> termsInRange(terms));
         if (convention.isPresent()) {
             return convention;
         }
+        for (Integer day : allowedDays) {
+            if (day == null || day < 1 || day > LONGEST_MONTH) {
+                return Optional.of(invalid("the allowed days are days of a month, 1 to " + LONGEST_MONTH));
+            }
+        }
         CurrencyCode currency = terms.currency();
-        if (!bounds.minimumPrincipal().currency().equals(currency)) {
+        if (!minimumPrincipal.currency().equals(currency)) {
             throw new IllegalStateException("a product's bounds are in its terms' currency");
         }
-        int n = Math.min(bounds.maximumTermMonths(), MAXIMUM_TERM_MONTHS);
+        int n = Math.min(maximumTermMonths, MAXIMUM_TERM_MONTHS);
         if (n < 2) {
             return Optional.empty();
         }
-        int shortest = terms.instalment().orElseThrow().minFirstPeriodDays();
+        int shortest = terms.minFirstPeriodDays();
         BigDecimal rate = terms.nominalAnnualRate();
-        for (long[] calendar : laterCalendars(terms.allowedDays(), shortest, n)) {
+        for (long[] calendar : laterCalendars(allowedDays, shortest, n)) {
             long longestFirst = calendar[0];
             long longestLater = 0;
             for (int index = 1; index < calendar.length; index++) {
@@ -282,7 +315,7 @@ public final class ScheduleEngineV1 {
             }
             long[] shortestFirst = calendar.clone();
             shortestFirst[0] = shortest;
-            BigDecimal principal = BigDecimal.valueOf(bounds.minimumPrincipal().minorUnits());
+            BigDecimal principal = BigDecimal.valueOf(minimumPrincipal.minorUnits());
             BigDecimal[] longest = growthAndDiscount(rate, calendar);
             BigDecimal[] shortestOne = growthAndDiscount(rate, shortestFirst);
             if (!aboveInterestByHalf(principal, rate, longest, longestFirst)) {
@@ -353,7 +386,7 @@ public final class ScheduleEngineV1 {
     // ------------------------------------------------------------------ the computation
 
     private static ScheduleOutcome build(
-            LoanTerms terms, Money principal, int intendedDay, LocalDate start, List<LocalDate> dueDates) {
+            ScheduleTerms terms, Money principal, int intendedDay, LocalDate start, List<LocalDate> dueDates) {
         BigDecimal rate = terms.nominalAnnualRate();
         long[] days = days(start, dueDates);
         Money instalment = leastLevelInstalment(principal, rate, days, annuityUp(principal, rate, days));
@@ -372,7 +405,7 @@ public final class ScheduleEngineV1 {
     }
 
     /** The schedule under the level {@code instalment} - refused if a balance runs out early or a portion is not positive. */
-    private static ScheduleOutcome build(LoanTerms terms, Money principal, int intendedDay, LocalDate start,
+    private static ScheduleOutcome build(ScheduleTerms terms, Money principal, int intendedDay, LocalDate start,
             List<LocalDate> dueDates, long[] days, Money instalment) {
         CurrencyCode currency = terms.currency();
         BigDecimal rate = terms.nominalAnnualRate();
@@ -533,27 +566,47 @@ public final class ScheduleEngineV1 {
 
     // ------------------------------------------------------------------ the refusals
 
-    /** What version 1 computes: an instalment product's terms pinning it, fixed, monthly, ACT/365F, UP and HALF_EVEN. */
-    static Optional<ScheduleOutcome.Refused> conventions(LoanTerms terms) {
-        if (terms.product().kind() != LoanKind.INSTALMENT || terms.instalment().isEmpty()) {
-            return convention("a schedule is computed for an instalment product's terms");
-        }
-        if (terms.instalment().get().scheduleEngine() != VERSION) {
+    /**
+     * What version 1 computes: terms pinning it, ACT/365F, UP and HALF_EVEN. The kind, the fixed rate and the monthly
+     * frequency are the product's, judged by its mapping before it builds {@link ScheduleTerms} (lending's
+     * {@code LoanEngines}, in the order this method once judged them all - `P12-TSK-002`); a {@link ScheduleTerms} is by
+     * construction a fixed-rate monthly schedule's.
+     */
+    public static Optional<ScheduleOutcome.Refused> conventions(ScheduleTerms terms) {
+        Objects.requireNonNull(terms, "terms");
+        if (terms.scheduleEngine() != VERSION) {
             return convention("the terms pin another schedule engine version");
         }
-        if (terms.rateType() != RateType.FIXED
-                || terms.product().frequency() != RepaymentFrequency.MONTHLY
-                || terms.dayCount() != DayCountConvention.ACT_365F
+        if (terms.dayCount() != DayCountConvention.ACT_365F
                 || terms.instalmentRounding() != RoundingMode.UP
                 || terms.interestRounding() != RoundingMode.HALF_EVEN) {
-            return convention("the terms name a rate type, frequency, day count or rounding mode version 1 does not"
-                    + " compute");
+            return convention(UNIMPLEMENTED_CONVENTIONS);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The terms within the arithmetic's range (`P12-TSK-002`): a rate of 0 to {@link Act365Fixed#MAXIMUM_RATE} with at
+     * most {@link Act365Fixed#RATE_PLACES} places - the bound {@link Act365Fixed}'s one-rounding argument rests on - and
+     * a shortest first period of 1 to {@link #MAXIMUM_RECALCULATION_FIRST_PERIOD_DAYS} days. Never met through lending's
+     * {@code LoanTerms}, whose door admits a rate within the same bounds and a period of 1 to 28 days, so no lending
+     * figure or refusal moved; it guards a {@link ScheduleTerms} built elsewhere.
+     */
+    private static Optional<ScheduleOutcome.Refused> termsInRange(ScheduleTerms terms) {
+        BigDecimal rate = terms.nominalAnnualRate();
+        if (rate.signum() < 0 || rate.compareTo(Act365Fixed.MAXIMUM_RATE) > 0
+                || rate.stripTrailingZeros().scale() > Act365Fixed.RATE_PLACES) {
+            return Optional.of(invalid("the terms' rate is 0 to 1 with at most " + Act365Fixed.RATE_PLACES + " places"));
+        }
+        if (terms.minFirstPeriodDays() < 1 || terms.minFirstPeriodDays() > MAXIMUM_RECALCULATION_FIRST_PERIOD_DAYS) {
+            return Optional.of(invalid("the terms' shortest first period is 1 to "
+                    + MAXIMUM_RECALCULATION_FIRST_PERIOD_DAYS + " days"));
         }
         return Optional.empty();
     }
 
     private static Optional<ScheduleOutcome.Refused> request(
-            LoanTerms terms, Money principal, int termMonths, int day, LocalDate start) {
+            ScheduleTerms terms, Money principal, int termMonths, int day, LocalDate start) {
         CurrencyCode currency = terms.currency();
         if (!principal.currency().equals(currency) || principal.scale() != currency.minorUnits()
                 || !principal.isPositive() || principal.minorUnits() > MAXIMUM_PRINCIPAL_MINOR_UNITS) {

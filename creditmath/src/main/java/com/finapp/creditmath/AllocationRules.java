@@ -1,7 +1,7 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import com.finapp.lending.AllocationEngineV1.AllocationRefused;
-import com.finapp.lending.AllocationEngineV1.AllocationRefused.Reason;
+import com.finapp.creditmath.AllocationEngineV1.AllocationRefused;
+import com.finapp.creditmath.AllocationEngineV1.AllocationRefused.Reason;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -10,8 +10,9 @@ import java.util.List;
  * and what happens to the remainder (`P11-TSK-008`; L6, A26, ADR-0095 point 2, ADR-0092).
  *
  * <p><strong>Data, never code.</strong> The rule is a field set of the terms version, copied onto the agreement and read
- * back from it: {@link #of(LoanTerms)} takes it from terms, and the agreement's canonical terms ({@code P11-TSK-011})
- * will rebuild it through this constructor. So the constructor judges it again - an order naming every component
+ * back from it: lending's {@code LoanEngines.allocationRules(LoanTerms)} takes it from terms (the {@code of(LoanTerms)}
+ * this record held until `P12-TSK-002` moved it to {@code creditmath}), the agreement's canonical terms
+ * ({@code P11-TSK-011}) rebuild it through this constructor, and {@code bnpl}'s pinned terms will too. So the constructor judges it again - an order naming every component
  * exactly once, an allocation engine's version - and refuses a malformed one ({@link Reason#MALFORMED_RULES}) rather
  * than letting the engine guess.
  *
@@ -44,11 +45,5 @@ public record AllocationRules(
             throw new AllocationRefused(Reason.MALFORMED_RULES, "the order names every component exactly once");
         }
         order = List.copyOf(order);
-    }
-
-    /** The rule the terms carry: their allocation engine, sequence, order and their kind's overpayment treatment. */
-    public static AllocationRules of(LoanTerms terms) {
-        return new AllocationRules(terms.allocationEngine(), terms.allocationSequence(), terms.allocationOrder(),
-                terms.overpaymentTreatment());
     }
 }

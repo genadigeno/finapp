@@ -1,5 +1,13 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AllocationEngineV1;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.DueState;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleEngineV1;
+import com.finapp.creditmath.ScheduleOutcome;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
@@ -204,7 +212,7 @@ public final class Prepayments {
         LoanReceivables receivables = new LoanReceivables(billingStore, ledgerAccounts, balances);
         Accounts accounts = receivables.accounts(unitOfWork, id, loan.currency());
         DueState dueState = receivables.dueState(unitOfWork, id, accounts, zero);
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }
@@ -222,7 +230,7 @@ public final class Prepayments {
                 .periodOf(valueDate);
         LoanTerms governing = pinned.toBuilder().nominalAnnualRate(agreement.nominalAnnualRate()).build();
         Money remaining = notDue.minus(amount);
-        ScheduleOutcome outcome = ScheduleEngineV1.recalculateAtInstalment(governing, remaining, latest.instalment(),
+        ScheduleOutcome outcome = LoanEngines.recalculateAtInstalment(governing, remaining, latest.instalment(),
                 unbilled, agreement.repaymentDay(), open.start(), open.endExclusive());
         if (!(outcome instanceof ScheduleOutcome.Projected projected)) {
             throw new IllegalStateException("the schedule engine refuses a schedule for less principal than the one it"

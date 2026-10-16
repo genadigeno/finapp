@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 /**
  * What a repayment can pay (`P11-TSK-002`; owner decision L6, ADR-0095, {@code INV-LND-04}).

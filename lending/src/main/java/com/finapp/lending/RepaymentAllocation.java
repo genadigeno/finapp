@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationLine;
 import java.util.Objects;
 import java.util.UUID;
 

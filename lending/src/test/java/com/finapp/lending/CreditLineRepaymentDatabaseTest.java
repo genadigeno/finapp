@@ -45,6 +45,7 @@ import static com.finapp.lending.RepaymentDatabaseTest.topUp;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.creditmath.AllocationLine;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.lending.CreditLineStatementStore.StatedItem;
 import com.finapp.platform.correlation.CorrelationContext;

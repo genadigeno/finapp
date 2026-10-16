@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import java.util.Objects;
 
@@ -20,7 +20,7 @@ public final class AccrualRefused extends RuntimeException {
     public enum Reason {
         /** A day count, an interest rounding mode or an engine version this engine version does not implement. */
         UNIMPLEMENTED_CONVENTION,
-        /** A nominal annual rate outside {@code 0..1} or past {@link LoanTerms#RATE_PLACES} places. */
+        /** A nominal annual rate outside {@code 0..1} or past {@link Act365Fixed#RATE_PLACES} places. */
         RATE_OUT_OF_BOUNDS,
         /** A negative base: principal outstanding is never below zero. */
         NEGATIVE_BASE,

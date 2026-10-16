@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,19 +24,23 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>The child's {@code main} receives the output file as its first argument and writes through {@link #write}, whose
  * first line is the defaults it ran under; {@link #run} checks those differ from this JVM's and returns the rest.
+ *
+ * <p><strong>Published as {@code creditmath}'s test fixtures</strong> (`P12-TSK-002`): it moved from {@code lending}'s
+ * tests with the engines, unchanged but for its visibility, because the engines' own suites here and lending's statement
+ * suites and battery ({@code P11-TST-002}) all run in it - one harness, never a copy.
  */
-final class SecondJvm {
+public final class SecondJvm {
 
     private SecondJvm() {}
 
     /** The child JVM's defaults, deliberately unlike any build machine's. */
-    static final String CHILD_DEFAULTS = "charset=UTF-16 locale=ar-EG zone=America/Adak";
+    public static final String CHILD_DEFAULTS = "charset=UTF-16 locale=ar-EG zone=America/Adak";
 
     /**
      * Runs {@code main} in a second JVM on this JVM's classpath, the output file first and then {@code arguments}, and
      * returns the lines it wrote after its defaults line.
      */
-    static List<String> run(Class<?> main, String... arguments) throws IOException, InterruptedException {
+    public static List<String> run(Class<?> main, String... arguments) throws IOException, InterruptedException {
         return start(main, "256m", arguments).join(Duration.ofMinutes(5));
     }
 
@@ -45,7 +49,7 @@ final class SecondJvm {
      * {@code arguments} - so the caller can do its own share of the work while the child runs (`P11-TST-002`, the battery
      * whose child replays the whole population) - and {@link Started#join joins} it later.
      */
-    static Started start(Class<?> main, String heap, String... arguments) throws IOException {
+    public static Started start(Class<?> main, String heap, String... arguments) throws IOException {
         Path out = Files.createTempFile("second-jvm", ".txt");
         Path log = Files.createTempFile("second-jvm", ".log");
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
@@ -66,7 +70,7 @@ final class SecondJvm {
     }
 
     /** A started second JVM: its process, its output file and its log. */
-    static final class Started {
+    public static final class Started {
 
         private final Process child;
         private final Path out;
@@ -83,19 +87,19 @@ final class SecondJvm {
         }
 
         /** How long the child ran, from its start to its exit - once joined. */
-        long elapsedNanos() {
+        public long elapsedNanos() {
             return exited.join() - started;
         }
 
         /** For a caller that failed before joining: the child destroyed and its files deleted - nothing left behind. */
-        void abandon() throws IOException {
+        public void abandon() throws IOException {
             child.destroyForcibly();
             Files.deleteIfExists(out);
             Files.deleteIfExists(log);
         }
 
         /** Waits at most {@code timeout} for the child and returns the lines it wrote after its defaults line. */
-        List<String> join(Duration timeout) throws IOException, InterruptedException {
+        public List<String> join(Duration timeout) throws IOException, InterruptedException {
             try {
                 boolean finished = child.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
                 if (!finished) {
@@ -116,13 +120,13 @@ final class SecondJvm {
     }
 
     /** The defaults this JVM runs under. */
-    static String defaults() {
+    public static String defaults() {
         return "charset=" + Charset.defaultCharset().name() + " locale=" + Locale.getDefault().toLanguageTag() + " zone="
                 + TimeZone.getDefault().getID();
     }
 
     /** For the child's {@code main}: writes its defaults and then {@code lines} to {@code out}, in UTF-8 whatever its default. */
-    static void write(Path out, List<String> lines) throws IOException {
+    public static void write(Path out, List<String> lines) throws IOException {
         List<String> all = new ArrayList<>();
         all.add(defaults());
         all.addAll(lines);

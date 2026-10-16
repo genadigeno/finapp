@@ -1,9 +1,13 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import static com.finapp.lending.LoanTermsFixtures.EUR;
-import static com.finapp.lending.LoanTermsFixtures.personalLoan;
+import static com.finapp.creditmath.EngineTermsFixtures.EUR;
+import static com.finapp.creditmath.EngineTermsFixtures.PERSONAL_LOAN_BOUNDS;
+import static com.finapp.creditmath.EngineTermsFixtures.judge;
+import static com.finapp.creditmath.EngineTermsFixtures.scheduleTerms;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.creditmath.testing.SecondJvm;
+import com.finapp.creditmath.EngineTermsFixtures.Bounds;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,6 +36,9 @@ import org.junit.jupiter.api.Test;
  * every term. Every figure is re-derived here by the
  * test's own arithmetic (the interest divided straight to the minor unit, the annuity summed as {@code P / sum v_j}),
  * never read back from the engine. The battery at scale is `P11-TST-002`'s.
+ *
+ * <p><strong>Moved with the engine</strong> (`P12-TSK-002`): from {@code lending}, every property and figure unedited, the
+ * terms built through {@link ScheduleTerms} ({@link EngineTermsFixtures}) instead of lending's {@code LoanTerms}.
  */
 @DisplayName("schedule engine v1: properties over every day of two years, two JVMs (P11-TSK-006)")
 class ScheduleEngineV1PropertiesTest {
@@ -68,7 +75,7 @@ class ScheduleEngineV1PropertiesTest {
     void theClampForTheLongDays() {
         for (int day = 29; day <= 31; day++) {
             for (int offset = 0; offset < 366; offset += 3) {
-                Case loan = new Case(personalLoan("0.0899").build(), eur("4000.00"), 13, day,
+                Case loan = new Case(scheduleTerms("0.0899"), eur("4000.00"), 13, day,
                         LocalDate.of(2028, 1, 1).plusDays(offset));
                 Schedule schedule = project(loan);
                 assertConserves(loan, schedule);
@@ -88,8 +95,7 @@ class ScheduleEngineV1PropertiesTest {
             Money previousInstalment = null;
             Money previousInterest = null;
             for (int basisPoints = 0; basisPoints <= 2000; basisPoints += 125) {
-                Schedule schedule = project(new Case(personalLoan(BigDecimal.valueOf(basisPoints, 4).toPlainString())
-                        .build(), principal, term, day, start));
+                Schedule schedule = project(new Case(scheduleTerms(BigDecimal.valueOf(basisPoints, 4).toPlainString()), principal, term, day, start));
                 if (previousInstalment != null) {
                     assertThat(schedule.instalment()).isGreaterThanOrEqualTo(previousInstalment);
                     assertThat(schedule.totalInterest()).isGreaterThanOrEqualTo(previousInterest);
@@ -122,16 +128,16 @@ class ScheduleEngineV1PropertiesTest {
             + " the old door's gap (EUR 500.19), disbursed any day of a leap year, amortises at each rate it admits; at"
             + " 23.10 % - which it now refuses, by its margin - a real loan cannot")
     void theJudgementIsSoundAndTight() {
-        LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
-        List<LoanTerms> admitted = new ArrayList<>();
+        Bounds bounds = PERSONAL_LOAN_BOUNDS;
+        List<ScheduleTerms> admitted = new ArrayList<>();
         for (String rate : List.of("0.10", "0.18", "0.20", "0.22", "0.23", "0.2309")) {
-            admitted.add(personalLoan(rate).build());
+            admitted.add(scheduleTerms(rate));
         }
         admitted.add(ScheduleEngineV1Test.oneDayFirstPeriod("0.5644"));
-        Money gap = Money.ofMinorUnits(500_19, LoanTermsFixtures.EUR);
-        for (LoanTerms terms : admitted) {
+        Money gap = Money.ofMinorUnits(500_19, EUR);
+        for (ScheduleTerms terms : admitted) {
             String rate = terms.nominalAnnualRate().toPlainString();
-            assertThat(ScheduleEngineV1.judgeAmortisation(terms, bounds)).as("admitted: " + rate).isEmpty();
+            assertThat(judge(terms, bounds)).as("admitted: " + rate).isEmpty();
             for (int offset = 0; offset < 366; offset++) {
                 for (int day : List.of(1, 28)) {
                     for (int term : List.of(bounds.minimumTermMonths(), bounds.maximumTermMonths())) {
@@ -145,8 +151,8 @@ class ScheduleEngineV1PropertiesTest {
                 }
             }
         }
-        LoanTerms refused = personalLoan("0.231").build();
-        assertThat(ScheduleEngineV1.judgeAmortisation(refused, bounds)).as("refused: 23.10 %").isPresent();
+        ScheduleTerms refused = scheduleTerms("0.231");
+        assertThat(judge(refused, bounds)).as("refused: 23.10 %").isPresent();
         assertThat(ScheduleEngineV1.project(refused, gap, bounds.maximumTermMonths(), 1, LocalDate.of(2028, 12, 18)))
                 .as("the refusal is not merely conservative: a real EUR 500.19 loan at 23.10 % cannot amortise")
                 .isInstanceOf(ScheduleOutcome.Refused.class);
@@ -212,13 +218,13 @@ class ScheduleEngineV1PropertiesTest {
 
     // ------------------------------------------------------------------ the oracles
 
-    record Case(LoanTerms terms, Money principal, int term, int day, LocalDate start) {}
+    record Case(ScheduleTerms terms, Money principal, int term, int day, LocalDate start) {}
 
     /** Every day of 2027 and 2028 x every repayment day 1-28; term, rate and principal walking their ladders. */
     static List<Case> grid() {
-        List<LoanTerms> terms = new ArrayList<>();
+        List<ScheduleTerms> terms = new ArrayList<>();
         for (String rate : RATES) {
-            terms.add(personalLoan(rate).build());
+            terms.add(scheduleTerms(rate));
         }
         List<Case> cases = new ArrayList<>(731 * 28);
         LocalDate first = LocalDate.of(2027, 1, 1);
@@ -293,7 +299,7 @@ class ScheduleEngineV1PropertiesTest {
 
     /** D1 the first intended day at least the shortest first period on; every Dj the intended day, clamped. */
     private static void assertDueDates(Case loan, Schedule schedule) {
-        int shortest = loan.terms().instalment().orElseThrow().minFirstPeriodDays();
+        int shortest = loan.terms().minFirstPeriodDays();
         LocalDate earliest = loan.start().plusDays(shortest);
         LocalDate first = schedule.periods().get(0).dueDate();
         assertThat(first).isAfterOrEqualTo(earliest);

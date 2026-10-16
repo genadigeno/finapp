@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -19,7 +19,7 @@ import java.util.Objects;
  * per period. Because both read these functions they cannot disagree on what a day, a year or the one division is.
  *
  * <p><strong>Why the scale-20 division is not a second rounding.</strong> With the base at its currency's scale
- * {@code s} and the rate at no more than {@link LoanTerms#RATE_PLACES} places, the exact quotient is
+ * {@code s} and the rate at no more than {@link #RATE_PLACES} places, the exact quotient is
  * {@code N / (365 x 10^(s+8))} for an integer {@code N}: it either terminates within 20 places (and the division is
  * exact) or lies at least {@code 1 / (730 x 10^(s+8))} from every half-minor-unit tie - many orders of magnitude beyond
  * the division's {@code 0.5 x 10^-20}. Rounding the scale-20 figure to the minor unit therefore always equals rounding
@@ -30,10 +30,26 @@ import java.util.Objects;
  * <p>Plain arithmetic: the conventions are judged by each engine against its terms, not here. No state, no clock, no
  * locale, no floating point - the same on every instance.
  */
-final class Act365Fixed {
+public final class Act365Fixed {
 
-    /** The scale of every exact interest figure - fixed by the engine versions that read it. */
-    static final int EXACT_SCALE = 20;
+    /**
+     * The scale of every exact interest figure - fixed by the engine versions that read it. Public since `P12-TSK-002`
+     * moved the engines to {@code creditmath}: lending reads its stored cumulative figures back at this scale.
+     */
+    public static final int EXACT_SCALE = 20;
+
+    /**
+     * The largest nominal annual rate the arithmetic computes - a decimal fraction, 100 % (`P12-TSK-002`). The engines'
+     * RANGE, which a product's terms door stays within: lending's {@code LoanTerms} declares its own bound, equal to this
+     * today - the value {@link AccrualEngineV1} judged against before the move, so no refusal moved.
+     */
+    public static final BigDecimal MAXIMUM_RATE = BigDecimal.ONE;
+
+    /**
+     * The most decimal places a nominal annual rate may carry - the bound the exactness argument above rests on
+     * (`P12-TSK-002`; lending's {@code LoanTerms} declares the same eight for its terms door, as {@link #MAXIMUM_RATE}).
+     */
+    public static final int RATE_PLACES = 8;
 
     /** The rounding of the one division to {@link #EXACT_SCALE}. */
     static final RoundingMode EXACT_ROUNDING = RoundingMode.HALF_EVEN;

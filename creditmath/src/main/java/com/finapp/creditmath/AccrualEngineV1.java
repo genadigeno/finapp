@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -34,7 +34,7 @@ import java.util.Optional;
  * <p><strong>What it refuses</strong> ({@link AccrualRefused}), computing nothing: terms naming a day count, a rounding
  * mode or an engine version this version does not implement - never falling back to another version (a figure is
  * re-derived years later by the version its agreement pins, {@code INV-LND-05}); a rate outside {@code 0..1} or past
- * {@link LoanTerms#RATE_PLACES} places (the bound the arithmetic's exactness rests on, {@link Act365Fixed}); a negative
+ * {@link Act365Fixed#RATE_PLACES} places (the bound the arithmetic's exactness rests on, {@link Act365Fixed}); a negative
  * base, or one in another currency or scale; a date outside its period; and a predecessor that is not an earlier accrual
  * of the same period by this version - so a date already accrued, or one accrued out of order, computes nothing.
  *
@@ -207,10 +207,10 @@ public final class AccrualEngineV1 {
                     "the terms name a day count or interest rounding this engine version does not implement");
         }
         BigDecimal rate = terms.nominalAnnualRate();
-        if (rate.signum() < 0 || rate.compareTo(LoanTerms.MAXIMUM_RATE) > 0
-                || rate.stripTrailingZeros().scale() > LoanTerms.RATE_PLACES) {
+        if (rate.signum() < 0 || rate.compareTo(Act365Fixed.MAXIMUM_RATE) > 0
+                || rate.stripTrailingZeros().scale() > Act365Fixed.RATE_PLACES) {
             throw new AccrualRefused(AccrualRefused.Reason.RATE_OUT_OF_BOUNDS,
-                    "the rate is 0 to 1 with at most " + LoanTerms.RATE_PLACES + " places");
+                    "the rate is 0 to 1 with at most " + Act365Fixed.RATE_PLACES + " places");
         }
     }
 

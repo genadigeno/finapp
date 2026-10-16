@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -120,7 +122,7 @@ public final class LoanOffers {
         LoanTerms pinned = terms.version(unitOfWork, offer.termsVersionId())
                 .orElseThrow(() -> new IllegalStateException("an offer's pinned terms version is never deleted"))
                 .terms();
-        ScheduleOutcome outcome = ScheduleEngineV1.project(pinned, offer.terms().amount(),
+        ScheduleOutcome outcome = LoanEngines.project(pinned, offer.terms().amount(),
                 offer.terms().termMonths().orElseThrow(), offer.terms().repaymentDay(), stored.get().start());
         if (!(outcome instanceof ScheduleOutcome.Projected projected)
                 || !LoanOffer.Illustration.of(projected.schedule()).equals(stored.get())) {

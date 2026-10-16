@@ -6,6 +6,10 @@ import static com.finapp.lending.LoanTermsFixtures.personalLoan;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.DayCountConvention;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.OverpaymentTreatment;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;

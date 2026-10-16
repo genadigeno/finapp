@@ -11,7 +11,7 @@ import com.finapp.lending.LoanOffer;
 import com.finapp.lending.LoanOfferId;
 import com.finapp.lending.LoanOffers;
 import com.finapp.lending.LoanProduct;
-import com.finapp.lending.SchedulePeriod;
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;

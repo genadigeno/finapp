@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.Schedule;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;

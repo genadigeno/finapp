@@ -1,7 +1,7 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import com.finapp.lending.AllocationEngineV1.AllocationRefused;
-import com.finapp.lending.AllocationEngineV1.AllocationRefused.Reason;
+import com.finapp.creditmath.AllocationEngineV1.AllocationRefused;
+import com.finapp.creditmath.AllocationEngineV1.AllocationRefused.Reason;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.time.LocalDate;

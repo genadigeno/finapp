@@ -1,5 +1,12 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualEngineV1;
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AccrualTerms;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.DueState;
+import com.finapp.creditmath.InterestAccrual;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
@@ -362,7 +369,7 @@ public final class Payoffs {
             return new Executed(execution, quote, Optional.empty(), closure, false);
         }
         // Rule 5: one repayment of everything now receivable, allocated to every component by the pinned engine.
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }

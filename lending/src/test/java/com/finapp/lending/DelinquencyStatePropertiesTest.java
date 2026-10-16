@@ -2,6 +2,8 @@ package com.finapp.lending;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.creditmath.DueItemId;
+import com.finapp.creditmath.DueState;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.id.IdGenerator;

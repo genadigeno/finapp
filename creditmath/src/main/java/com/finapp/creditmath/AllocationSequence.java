@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 /**
  * The order in which a repayment reaches a loan's due items (`P11-TSK-005`; owner decision L6, ADR-0095) - the outer

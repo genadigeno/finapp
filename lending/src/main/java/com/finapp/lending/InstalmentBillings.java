@@ -1,5 +1,8 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AllocationEngineV1;
+import com.finapp.creditmath.AllocationRules;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalLine;
@@ -181,7 +184,7 @@ public final class InstalmentBillings {
         CurrencyCode currency = loan.currency();
         Money zero = Money.ofPersisted(0, currency, agreement.amount().scale());
         Accounts accounts = receivables().accounts(unitOfWork, loan.id(), currency);
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }
@@ -361,7 +364,7 @@ public final class InstalmentBillings {
         Objects.requireNonNull(today, "today");
         Money zero = Money.ofPersisted(0, loan.currency(), agreement.amount().scale());
         Accounts accounts = receivables().accounts(unitOfWork, loan.id(), loan.currency());
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }

@@ -28,6 +28,7 @@ import static com.finapp.lending.DisbursementWorld.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.AccrualPeriod;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;

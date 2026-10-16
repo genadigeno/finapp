@@ -1,5 +1,8 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.EngineVersion;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.sharedkernel.money.Money;
 import java.time.Instant;

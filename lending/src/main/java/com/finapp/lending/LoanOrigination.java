@@ -1,5 +1,8 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.ScheduleRefusal;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
@@ -270,7 +273,7 @@ public final class LoanOrigination {
     private static ScheduleOutcome project(
             LoanTerms pinned, LoanCreditDecisions.CreditOutcome.Approved approved, LoanApplication application,
             LocalDate start) {
-        return ScheduleEngineV1.project(pinned, approved.amount(), approved.termMonths().orElseThrow(),
+        return LoanEngines.project(pinned, approved.amount(), approved.termMonths().orElseThrow(),
                 application.repaymentDay(), start);
     }
 

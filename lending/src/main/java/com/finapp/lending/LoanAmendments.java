@@ -1,5 +1,10 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.DueState;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleEngineV1;
+import com.finapp.creditmath.ScheduleOutcome;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalLine;
@@ -563,7 +568,7 @@ public final class LoanAmendments {
                 .orElseThrow(() -> new IllegalStateException("a scheduled loan has its calendar"))
                 .periodOf(today);
         LoanTerms governing = pinned.toBuilder().nominalAnnualRate(rate).build();
-        ScheduleOutcome outcome = ScheduleEngineV1.recalculate(governing, principal, remainingInstalments,
+        ScheduleOutcome outcome = LoanEngines.recalculate(governing, principal, remainingInstalments,
                 agreement.repaymentDay(), open.start(), open.endExclusive());
         if (!(outcome instanceof ScheduleOutcome.Projected projected)) {
             throw new LoanTerms.TermsInvalid("the schedule engine refuses the amended schedule: "

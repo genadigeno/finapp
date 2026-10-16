@@ -1,15 +1,15 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import static com.finapp.lending.AllocationComponent.FEES;
-import static com.finapp.lending.AllocationComponent.INTEREST;
-import static com.finapp.lending.AllocationComponent.PRINCIPAL;
-import static com.finapp.lending.LoanTermsFixtures.EUR;
+import static com.finapp.creditmath.AllocationComponent.FEES;
+import static com.finapp.creditmath.AllocationComponent.INTEREST;
+import static com.finapp.creditmath.AllocationComponent.PRINCIPAL;
+import static com.finapp.creditmath.EngineTermsFixtures.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.finapp.lending.AllocationEngineV1.AllocationRefused;
-import com.finapp.lending.AllocationEngineV1.AllocationRefused.Reason;
-import com.finapp.lending.DueState.DueItem;
+import com.finapp.creditmath.AllocationEngineV1.AllocationRefused;
+import com.finapp.creditmath.AllocationEngineV1.AllocationRefused.Reason;
+import com.finapp.creditmath.DueState.DueItem;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.time.LocalDate;
@@ -28,6 +28,11 @@ import org.junit.jupiter.params.provider.MethodSource;
  * {@code ALLOCATION_ENGINE_V1} case by case (`P11-TSK-008`; ADR-0095, {@code PHASE_11_PLAN.md} section 12.5,
  * {@code INV-LND-04}): every order the vocabulary admits; full, partial, over, zero-due and early payments; both
  * overpayment treatments; the credit-balance application and the prepayment; and every typed refusal.
+ *
+ * <p><strong>Moved with the engine</strong> (`P12-TSK-002`): from {@code lending}, every case and figure unedited; the
+ * loan's and the line's rules built through {@link AllocationRules}' canonical constructor ({@link EngineTermsFixtures})
+ * instead of lending's {@code LoanTerms}, whose mapping - and its terms accepting every order - is lending's
+ * {@code LoanEnginesTest}'s.
  */
 @DisplayName("ALLOCATION_ENGINE_V1 (P11-TSK-008)")
 class AllocationEngineV1Test {
@@ -38,10 +43,10 @@ class AllocationEngineV1Test {
     static final LocalDate FEB_15 = LocalDate.of(2027, 2, 15);
 
     /** The loan's rule as the plan's terms carry it: fees, interest, principal; the remainder held as credit. */
-    static final AllocationRules LOAN = AllocationRules.of(LoanTermsFixtures.personalLoan("0.0899").build());
+    static final AllocationRules LOAN = EngineTermsFixtures.loanRules();
 
     /** The line's: fees, interest, principal; the remainder paying down drawn principal, then held (A26). */
-    static final AllocationRules LINE = AllocationRules.of(LoanTermsFixtures.creditLine("0.1899").build());
+    static final AllocationRules LINE = EngineTermsFixtures.lineRules();
 
     // ------------------------------------------------------------------ every order
 
@@ -61,12 +66,12 @@ class AllocationEngineV1Test {
     }
 
     @Test
-    @DisplayName("the vocabulary admits six orders, and terms accept each")
+    @DisplayName("the vocabulary admits six orders, and the rules accept each (lending's terms accepting each: its"
+            + " LoanEnginesTest, P12-TSK-002)")
     void sixOrders() {
         assertThat(everyOrder()).hasSize(6);
         for (List<AllocationComponent> order : everyOrder()) {
-            LoanTerms terms = LoanTermsFixtures.personalLoan("0.05").allocationOrder(order).build();
-            assertThat(AllocationRules.of(terms).order()).isEqualTo(order);
+            assertThat(withOrder(LOAN, order).order()).isEqualTo(order);
         }
     }
 

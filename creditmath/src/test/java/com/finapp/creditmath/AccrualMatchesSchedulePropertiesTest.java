@@ -1,7 +1,8 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.creditmath.testing.SecondJvm;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -30,6 +31,10 @@ import org.junit.jupiter.api.Test;
  * <p>Seeded, so a failure reproduces. The cross-check driving {@code ScheduleEngineV1}'s own schedules through the
  * engine - {@link #theScheduleEnginesOwnSchedulesAgree} - joined when the two engines met on one branch, at
  * `P11-TSK-006`'s merge-in (built in parallel).
+ *
+ * <p><strong>Moved with the engines</strong> (`P12-TSK-002`): from {@code lending}, unedited but for the schedule's
+ * accrual terms, built from its {@link ScheduleTerms} as lending's {@code LoanEngines} builds both from one
+ * {@code LoanTerms}.
  */
 @DisplayName("the accrual engine agrees with the schedule and rounds once per period (P11-TSK-007)")
 class AccrualMatchesSchedulePropertiesTest {
@@ -85,7 +90,7 @@ class AccrualMatchesSchedulePropertiesTest {
             ScheduleEngineV1PropertiesTest.Case loan = grid.get(index);
             Schedule schedule = ((ScheduleOutcome.Projected) ScheduleEngineV1.project(
                     loan.terms(), loan.principal(), loan.term(), loan.day(), loan.start())).schedule();
-            AccrualTerms terms = AccrualTerms.of(loan.terms());
+            AccrualTerms terms = EngineTermsFixtures.accrualTerms(loan.terms());
             for (SchedulePeriod scheduled : schedule.periods()) {
                 AccrualPeriod period = new AccrualPeriod(scheduled.periodStart(), scheduled.dueDate());
                 Optional<InterestAccrual> previous = Optional.empty();

@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 /**
  * Why the schedule engine produced no schedule (`P11-TSK-006`; ADR-0093 sections 1 and 5): a typed answer, never an

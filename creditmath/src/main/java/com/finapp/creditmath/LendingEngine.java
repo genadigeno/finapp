@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 /**
  * The four computations a loan's figures come from (`P11-TSK-002`; {@code PHASE_11_PLAN.md} section 12.1), each

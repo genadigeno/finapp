@@ -1,10 +1,11 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import static com.finapp.lending.AllocationEngineV1Test.eur;
-import static com.finapp.lending.AllocationEngineV1Test.item;
+import static com.finapp.creditmath.AllocationEngineV1Test.eur;
+import static com.finapp.creditmath.AllocationEngineV1Test.item;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finapp.lending.DueState.DueItem;
+import com.finapp.creditmath.DueState.DueItem;
+import com.finapp.creditmath.testing.SecondJvm;
 import com.finapp.sharedkernel.money.Money;
 import java.nio.file.Path;
 import java.time.LocalDate;

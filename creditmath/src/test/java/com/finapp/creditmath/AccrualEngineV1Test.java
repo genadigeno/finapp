@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -18,11 +18,16 @@ import org.junit.jupiter.api.Test;
  * {@code ACCRUAL_ENGINE_V1} on worked cases (`P11-TSK-007`; ADR-0094 points 2-3, {@code INV-LND-09}, the arithmetic
  * half of {@code INV-LND-02}): every expected figure below was worked by hand from {@code base x r / 365} a day at
  * scale 20 and one {@code HALF_EVEN} rounding of the period's cumulative figure.
+ *
+ * <p><strong>Moved with the engine</strong> (`P12-TSK-002`): from {@code lending}, every figure unedited. The two cases
+ * that read lending's {@code LoanTerms} through {@code AccrualTerms.of} - both products' terms accruing alike, and the
+ * terms read as declared - judge lending's mapping, so they are lending's {@code LoanEnginesTest}'s; here the same
+ * figures are held over the canonical constructor.
  */
 @DisplayName("ACCRUAL_ENGINE_V1 (P11-TSK-007)")
 class AccrualEngineV1Test {
 
-    private static final CurrencyCode EUR = LoanTermsFixtures.EUR;
+    private static final CurrencyCode EUR = EngineTermsFixtures.EUR;
     private static final AccrualPeriod JANUARY = period("2027-01-10", "2027-02-10");
     private static final AccrualPeriod FEBRUARY = period("2027-02-10", "2027-03-10");
     private static final AccrualPeriod MARCH = period("2027-03-01", "2027-03-31");
@@ -148,12 +153,13 @@ class AccrualEngineV1Test {
     }
 
     @Test
-    @DisplayName("both products: a credit line's statement cycle resets exactly as an instalment period does")
+    @DisplayName("a statement cycle resets exactly as an instalment period does - the period is the caller's, the figure"
+            + " the same (both products' terms: lending's LoanEnginesTest, P12-TSK-002)")
     void bothProducts() {
-        AccrualTerms line = AccrualTerms.of(LoanTermsFixtures.creditLine("0.05").build());
-        AccrualTerms loan = AccrualTerms.of(LoanTermsFixtures.personalLoan("0.05").build());
-        assertThat(accrueEvery(line, FEBRUARY, euros(1000_00))).isEqualTo(accrueEvery(loan, FEBRUARY, euros(1000_00)));
-        assertThat(sum(accrueEvery(line, FEBRUARY, euros(1000_00)))).isEqualTo(euros(3_84));
+        AccrualPeriod cycle = period("2027-02-10", "2027-03-10");
+        assertThat(accrueEvery(terms("0.05"), cycle, euros(1000_00))).isEqualTo(accrueEvery(terms("0.05"), FEBRUARY,
+                euros(1000_00)));
+        assertThat(sum(accrueEvery(terms("0.05"), cycle, euros(1000_00)))).isEqualTo(euros(3_84));
     }
 
     @Test
@@ -296,10 +302,9 @@ class AccrualEngineV1Test {
     @Test
     @DisplayName("terms are read as declared; no rate or amount in any toString")
     void termsAndPrinting() {
-        LoanTerms loan = LoanTermsFixtures.personalLoan("0.0899").build();
-        AccrualTerms terms = AccrualTerms.of(loan);
-        assertThat(terms).isEqualTo(new AccrualTerms(EUR, new BigDecimal("0.0899"), DayCountConvention.ACT_365F,
-                RoundingMode.HALF_EVEN, EngineVersion.ACCRUAL_ENGINE_V1));
+        AccrualTerms terms = new AccrualTerms(EUR, new BigDecimal("0.0899"), DayCountConvention.ACT_365F,
+                RoundingMode.HALF_EVEN, EngineVersion.ACCRUAL_ENGINE_V1);
+        assertThat(terms).isEqualTo(terms("0.0899"));
         assertThat(terms.toString()).doesNotContain("0.0899");
         InterestAccrual accrual = AccrualEngineV1.accrue(terms, period("2027-03-01", "2027-03-31"), Optional.empty(),
                 LocalDate.parse("2027-03-01"), euros(123_456_78));

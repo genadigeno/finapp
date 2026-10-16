@@ -26,6 +26,11 @@ import static com.finapp.lending.InterestAccrualDatabaseTest.sweep;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.DueState;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;
@@ -732,7 +737,7 @@ class InstalmentBillingDatabaseTest {
         long principal = count("SELECT amount_minor FROM lending.loan_agreement WHERE loan_id = ? AND version = 1", id);
         int term = Math.toIntExact(count("SELECT term_months FROM lending.loan_agreement WHERE loan_id = ? AND version = 1",
                 id));
-        Schedule schedule = ((ScheduleOutcome.Projected) ScheduleEngineV1.project(pinned, eur(principal), term,
+        Schedule schedule = ((ScheduleOutcome.Projected) LoanEngines.project(pinned, eur(principal), term,
                 intendedDay, start)).schedule();
         String scheduleId = scalar("SELECT id::text FROM lending.repayment_schedule WHERE loan_id = ?", id);
         StringBuilder sql = new StringBuilder("DELETE FROM lending.loan_instalment WHERE loan_id = '" + id + "';");

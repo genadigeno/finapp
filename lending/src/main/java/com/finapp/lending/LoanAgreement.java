@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.EngineVersion;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;
 import java.time.Instant;

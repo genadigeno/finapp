@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleOutcome;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.Hold;
@@ -307,7 +309,7 @@ public final class LoanDisbursements {
 
     /** Schedule version 1 by the agreement's pinned engine from the accrual start (ADR-0093) - both paths'. */
     static Schedule schedule(LoanTerms pinned, LoanAgreement agreement, LocalDate accrualStart) {
-        ScheduleOutcome projected = ScheduleEngineV1.project(pinned, agreement.amount(),
+        ScheduleOutcome projected = LoanEngines.project(pinned, agreement.amount(),
                 agreement.termMonths().orElseThrow(() -> new IllegalStateException("an instalment agreement has a term")),
                 agreement.repaymentDay(), accrualStart);
         if (projected instanceof ScheduleOutcome.Refused refused) {

@@ -158,4 +158,18 @@ include("credit")
 // LendingModuleIsolationTest is the only control - and nothing depends on `lending`.
 include("lending")
 
+// The Phase 12 modules (P12-TSK-002). `creditmath` first: the pure credit arithmetic lending and bnpl share -
+// lending's schedule, accrual and allocation engines, moved there unchanged (ADR-0101 decision 5, OQ-2,
+// MODULE_ARCHITECTURE.md M12) - with NO business-sibling edge at all: creditmath -> sharedkernel only, the
+// sharedkernel posture, so the arithmetic can reach no store. `lending -> creditmath` and `bnpl -> creditmath` are its
+// only dependants; with those edges declared the reverse edges are Gradle cycles the build refuses outright.
+// `bnpl` second, after `ledger` and `creditmath` for the structural reason every money module before it is declared
+// after the ledger: bnpl owns the BNPL agreement, purchase, financing and servicing facts and NONE of the money (every
+// figure a ledger balance, posted through the ledger's APIs - INV-LED-04, INV-BNPL-01), so ledger -> bnpl is a Gradle
+// cycle. `bnpl -> lending`, `-> credit`, `-> checkout`, `-> merchant`, `-> payments` and `-> accounts` are deliberately
+// ABSENT and no cycle backs any of those refusals - BnplModuleIsolationTest is the only control - and nothing depends on
+// `bnpl`.
+include("creditmath")
+include("bnpl")
+
 include("app")

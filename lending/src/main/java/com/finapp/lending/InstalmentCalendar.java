@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;

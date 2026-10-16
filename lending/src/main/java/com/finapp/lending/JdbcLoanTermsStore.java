@@ -1,5 +1,11 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationSequence;
+import com.finapp.creditmath.DayCountConvention;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.LendingEngine;
+import com.finapp.creditmath.OverpaymentTreatment;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;

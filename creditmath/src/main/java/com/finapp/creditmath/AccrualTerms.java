@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.math.BigDecimal;
@@ -11,6 +11,10 @@ import java.util.Objects;
  * version - exactly as the terms (and, from `P11-TSK-012`, the agreement that pins them) name them. Shape only: whether
  * an engine version implements them is that engine's judgement ({@link AccrualRefused}), so a later version can accept
  * what version 1 refuses.
+ *
+ * <p>Built through this canonical constructor - by lending's {@code LoanEngines.accrualTerms(LoanTerms)} (the
+ * {@code of(LoanTerms)} this record held until `P12-TSK-002` moved it to {@code creditmath}) and by {@code bnpl}'s
+ * pay-in-N terms.
  *
  * <p>{@code toString} names the engine version only - never the rate ({@code INV-AUD-02}).
  *
@@ -33,13 +37,6 @@ public record AccrualTerms(
         Objects.requireNonNull(dayCount, "dayCount");
         Objects.requireNonNull(interestRounding, "interestRounding");
         Objects.requireNonNull(accrualEngine, "accrualEngine");
-    }
-
-    /** The accrual conventions of {@code terms}, as declared. */
-    public static AccrualTerms of(LoanTerms terms) {
-        Objects.requireNonNull(terms, "terms");
-        return new AccrualTerms(terms.currency(), terms.nominalAnnualRate(), terms.dayCount(), terms.interestRounding(),
-                terms.accrualEngine());
     }
 
     /** The engine version only - never the rate. */

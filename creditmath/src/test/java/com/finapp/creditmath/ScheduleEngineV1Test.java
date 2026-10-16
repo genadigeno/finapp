@@ -1,13 +1,16 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import static com.finapp.lending.LoanTermsFixtures.EUR;
-import static com.finapp.lending.LoanTermsFixtures.creditLine;
-import static com.finapp.lending.LoanTermsFixtures.personalLoan;
+import static com.finapp.creditmath.EngineTermsFixtures.EUR;
+import static com.finapp.creditmath.EngineTermsFixtures.PERSONAL_LOAN_BOUNDS;
+import static com.finapp.creditmath.EngineTermsFixtures.judge;
+import static com.finapp.creditmath.EngineTermsFixtures.scheduleTerms;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.creditmath.EngineTermsFixtures.Bounds;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,18 +34,23 @@ import org.junit.jupiter.api.Test;
  * is 1,705.24 + 14.02 = 1,719.26, below the level 1,719.29. The principal portions 1,609.70 + 1,654.93 + 1,662.09 +
  * 1,677.59 + 1,690.45 + 1,705.24 = 10,000.00 exactly. The plan's equal-period formula would have given 1,715.62 - and a
  * final instalment of 1,738.08, above it: the reason the level instalment is the actual-day annuity.
+ *
+ * <p><strong>Moved with the engine</strong> (`P12-TSK-002`): from {@code lending}, every figure and assertion unedited;
+ * the inputs are the same terms built through {@link ScheduleTerms} ({@link EngineTermsFixtures}) instead of lending's
+ * {@code LoanTerms}, and the case that refused a credit line's terms - a lending product's kind - is lending's
+ * {@code LoanEnginesTest}'s, here replaced by the conventions a {@link ScheduleTerms} itself can name.
  */
 @DisplayName("schedule engine v1: golden worked cases and typed refusals (P11-TSK-006)")
 class ScheduleEngineV1Test {
 
-    private static final LoanTerms TEN_PERCENT = personalLoan("0.10").build();
+    private static final ScheduleTerms TEN_PERCENT = scheduleTerms("0.10");
 
     // ------------------------------------------------------------------ golden cases
 
     @Test
     @DisplayName("r = 0: the instalment is P / n rounded UP, no interest, the final instalment the remainder")
     void zeroRate() {
-        Schedule schedule = projected(personalLoan("0").build(), "1000.00", 6, 1, "2026-01-15");
+        Schedule schedule = projected(scheduleTerms("0"), "1000.00", 6, 1, "2026-01-15");
         assertThat(schedule.instalment()).isEqualTo(eur("166.67"));
         assertThat(rows(schedule)).containsExactly(
                 "1|2026-01-15|2026-02-01|17|1000.00|0.00|166.67|166.67|833.33",
@@ -75,7 +83,7 @@ class ScheduleEngineV1Test {
     @Test
     @DisplayName("60 months, repayment day 28, through two leap Februaries: 29 February a due date's month, never a day")
     void sixtyMonths() {
-        Schedule schedule = projected(personalLoan("0.0899").build(), "25000.00", 60, 28, "2026-03-03");
+        Schedule schedule = projected(scheduleTerms("0.0899"), "25000.00", 60, 28, "2026-03-03");
         assertThat(schedule.instalment()).isEqualTo(eur("518.35"));
         List<String> rows = rows(schedule);
         assertThat(rows).hasSize(60);
@@ -96,7 +104,7 @@ class ScheduleEngineV1Test {
     @Test
     @DisplayName("disbursed on 31 January: the first due date the 15th of February, exactly the shortest first period")
     void disbursedOnTheThirtyFirstOfJanuary() {
-        Schedule schedule = projected(personalLoan("0.0799").build(), "5000.00", 12, 15, "2026-01-31");
+        Schedule schedule = projected(scheduleTerms("0.0799"), "5000.00", 12, 15, "2026-01-31");
         assertThat(schedule.instalment()).isEqualTo(eur("433.34"));
         assertThat(rows(schedule)).containsExactly(
                 "1|2026-01-31|2026-02-15|15|5000.00|16.42|416.92|433.34|4583.08",
@@ -118,7 +126,7 @@ class ScheduleEngineV1Test {
     @DisplayName("disbursed on 29 February of a leap year, repayment day 28: 28 days to 28 March, the leap day accruing"
             + " as an ordinary day")
     void disbursedOnTheTwentyNinthOfFebruary() {
-        Schedule schedule = projected(personalLoan("0.1249").build(), "12000.00", 24, 28, "2028-02-29");
+        Schedule schedule = projected(scheduleTerms("0.1249"), "12000.00", 24, 28, "2028-02-29");
         assertThat(schedule.instalment()).isEqualTo(eur("567.37"));
         List<String> rows = rows(schedule);
         assertThat(rows.subList(0, 2)).containsExactly(
@@ -134,7 +142,7 @@ class ScheduleEngineV1Test {
     @Test
     @DisplayName("an intended 31st: 31 January, 28 February, 31 March, 30 April - clamped each month, never drifting")
     void theClampFromAnIntendedThirtyFirst() {
-        Schedule schedule = projected(personalLoan("0.12").build(), "3000.00", 6, 31, "2026-01-01");
+        Schedule schedule = projected(scheduleTerms("0.12"), "3000.00", 6, 31, "2026-01-01");
         assertThat(schedule.intendedDay()).isEqualTo(31);
         assertThat(rows(schedule)).containsExactly(
                 "1|2026-01-01|2026-01-31|30|3000.00|29.59|487.70|517.29|2512.30",
@@ -149,7 +157,7 @@ class ScheduleEngineV1Test {
     @DisplayName("the rounding residue raised: UP(A*) = 85.30 would leave a final 85.31, so the level instalment is"
             + " 85.31 - the least amount the final instalment does not exceed")
     void theLevelInstalmentRaisedForTheRoundingResidue() {
-        Schedule schedule = projected(personalLoan("0.0899").build(), "500.00", 6, 10, "2026-01-20");
+        Schedule schedule = projected(scheduleTerms("0.0899"), "500.00", 6, 10, "2026-01-20");
         assertThat(schedule.instalment()).isEqualTo(eur("85.31"));
         assertThat(rows(schedule)).containsExactly(
                 "1|2026-01-20|2026-02-10|21|500.00|2.59|82.72|85.31|417.28",
@@ -166,7 +174,7 @@ class ScheduleEngineV1Test {
     @DisplayName("recalculation (step 7): a new principal, remaining term and next due date - the first period's interest"
             + " from the effective date")
     void recalculation() {
-        ScheduleOutcome outcome = ScheduleEngineV1.recalculate(personalLoan("0.0899").build(), eur("4321.09"), 10, 20,
+        ScheduleOutcome outcome = ScheduleEngineV1.recalculate(scheduleTerms("0.0899"), eur("4321.09"), 10, 20,
                 LocalDate.parse("2026-06-05"), LocalDate.parse("2026-06-20"));
         Schedule schedule = ((ScheduleOutcome.Projected) outcome).schedule();
         assertThat(schedule.start()).isEqualTo(LocalDate.parse("2026-06-05"));
@@ -190,7 +198,7 @@ class ScheduleEngineV1Test {
             + " the least term that amortises the lower principal - EUR 1,000.00 prepaid off the recalculation above"
             + " shortens ten instalments to eight, the last the remainder and its interest, below the level one")
     void recalculationAtTheInstalment() {
-        LoanTerms terms = personalLoan("0.0899").build();
+        ScheduleTerms terms = scheduleTerms("0.0899");
         LocalDate effective = LocalDate.parse("2026-06-05");
         LocalDate next = LocalDate.parse("2026-06-20");
         ScheduleOutcome outcome = ScheduleEngineV1.recalculateAtInstalment(terms, eur("3321.09"), eur("448.47"), 10, 20,
@@ -212,7 +220,7 @@ class ScheduleEngineV1Test {
         // The least term: seven instalments at 448.47 would leave the seventh above it.
         assertThat(schedule.periods().get(6).closingBalance().isPositive()).isTrue();
         // At zero rate: 500.00 at 166.67 is three instalments, the last 166.66.
-        Schedule zero = ((ScheduleOutcome.Projected) ScheduleEngineV1.recalculateAtInstalment(personalLoan("0").build(),
+        Schedule zero = ((ScheduleOutcome.Projected) ScheduleEngineV1.recalculateAtInstalment(scheduleTerms("0"),
                 eur("500.00"), eur("166.67"), 6, 1, LocalDate.parse("2026-01-15"), LocalDate.parse("2026-02-01")))
                 .schedule();
         assertThat(rows(zero)).containsExactly(
@@ -229,7 +237,7 @@ class ScheduleEngineV1Test {
             + " principal within the remaining instalments - or never reduces it - the term is kept and the instalment is"
             + " the engine's own recalculation, above the old one; its refusals are recalculate's")
     void recalculationAtTheInstalmentNeverLengthensTheTerm() {
-        LoanTerms terms = personalLoan("0.0899").build();
+        ScheduleTerms terms = scheduleTerms("0.0899");
         LocalDate effective = LocalDate.parse("2026-06-05");
         LocalDate next = LocalDate.parse("2026-06-20");
         Schedule kept = ((ScheduleOutcome.Projected) ScheduleEngineV1.recalculate(terms, eur("4321.09"), 10, 20, effective,
@@ -304,7 +312,7 @@ class ScheduleEngineV1Test {
             + " typed answer - never a negatively amortising schedule")
     void aNonPositivePrincipalPortionIsRefused() {
         ScheduleOutcome outcome =
-                ScheduleEngineV1.project(personalLoan("0.9").build(), eur("10000.00"), 60, 15, LocalDate.parse("2026-01-01"));
+                ScheduleEngineV1.project(scheduleTerms("0.9"), eur("10000.00"), 60, 15, LocalDate.parse("2026-01-01"));
         assertThat(outcome).isInstanceOfSatisfying(ScheduleOutcome.Refused.class, refused -> {
             assertThat(refused.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
             assertThat(refused.detail()).contains("instalment 1").doesNotContain("0.9").doesNotContain("10000");
@@ -315,22 +323,60 @@ class ScheduleEngineV1Test {
     @DisplayName("a principal too small for its term would be repaid before the last instalment: NOT_AMORTISING")
     void aBalanceExhaustedEarlyIsRefused() {
         ScheduleOutcome outcome =
-                ScheduleEngineV1.project(personalLoan("0").build(), eur("0.05"), 6, 10, LocalDate.parse("2026-01-01"));
+                ScheduleEngineV1.project(scheduleTerms("0"), eur("0.05"), 6, 10, LocalDate.parse("2026-01-01"));
         assertThat(outcome).isInstanceOfSatisfying(ScheduleOutcome.Refused.class,
                 refused -> assertThat(refused.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING));
     }
 
     @Test
-    @DisplayName("terms version 1 does not compute - a credit line's - are refused CONVENTION_NOT_IMPLEMENTED")
+    @DisplayName("terms version 1 does not compute - another engine version, another rounding - are refused"
+            + " CONVENTION_NOT_IMPLEMENTED (a credit line's terms: lending's LoanEnginesTest, P12-TSK-002)")
     void unimplementedConventionsAreRefused() {
-        LoanTerms line = creditLine("0.15").build();
-        assertThat(ScheduleEngineV1.project(line, eur("1000.00"), 12, 10, LocalDate.parse("2026-01-01")))
-                .isInstanceOfSatisfying(ScheduleOutcome.Refused.class, refused ->
-                        assertThat(refused.reason()).isEqualTo(ScheduleRefusal.CONVENTION_NOT_IMPLEMENTED));
-        assertThat(ScheduleEngineV1.judgeAmortisation(line, LoanTermsFixtures.BOUNDS
-                        .amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow()))
-                .hasValueSatisfying(refused ->
-                        assertThat(refused.reason()).isEqualTo(ScheduleRefusal.CONVENTION_NOT_IMPLEMENTED));
+        List<ScheduleTerms> unimplemented = List.of(
+                new ScheduleTerms(EUR, new BigDecimal("0.15"), 15, DayCountConvention.ACT_365F, RoundingMode.UP,
+                        RoundingMode.HALF_EVEN, EngineVersion.ACCRUAL_ENGINE_V1),
+                new ScheduleTerms(EUR, new BigDecimal("0.15"), 15, DayCountConvention.ACT_365F, RoundingMode.HALF_EVEN,
+                        RoundingMode.HALF_EVEN, EngineVersion.SCHEDULE_ENGINE_V1),
+                new ScheduleTerms(EUR, new BigDecimal("0.15"), 15, DayCountConvention.ACT_365F, RoundingMode.UP,
+                        RoundingMode.HALF_UP, EngineVersion.SCHEDULE_ENGINE_V1));
+        for (ScheduleTerms terms : unimplemented) {
+            assertThat(ScheduleEngineV1.project(terms, eur("1000.00"), 12, 10, LocalDate.parse("2026-01-01")))
+                    .isInstanceOfSatisfying(ScheduleOutcome.Refused.class, refused ->
+                            assertThat(refused.reason()).isEqualTo(ScheduleRefusal.CONVENTION_NOT_IMPLEMENTED));
+            assertThat(judge(terms, PERSONAL_LOAN_BOUNDS))
+                    .hasValueSatisfying(refused ->
+                            assertThat(refused.reason()).isEqualTo(ScheduleRefusal.CONVENTION_NOT_IMPLEMENTED));
+        }
+    }
+
+    @Test
+    @DisplayName("schedule terms outside the arithmetic's range - a rate above 1 or past 8 places, a shortest first"
+            + " period of 0 or above a year - are INVALID_REQUEST, never computed (P12-TSK-002: unreachable through"
+            + " lending's LoanTerms, whose door admits less)")
+    void termsOutsideTheRangeAreRefused() {
+        LocalDate start = LocalDate.parse("2026-01-01");
+        List<ScheduleTerms> outside = List.of(
+                scheduleTerms("1.0001"), scheduleTerms("-0.01"), scheduleTerms("0.123456789"),
+                scheduleTerms("0.10", 0), scheduleTerms("0.10", ScheduleEngineV1.MAXIMUM_RECALCULATION_FIRST_PERIOD_DAYS + 1));
+        for (ScheduleTerms terms : outside) {
+            assertThat(List.of(
+                            ScheduleEngineV1.project(terms, eur("1000.00"), 12, 10, start),
+                            ScheduleEngineV1.recalculate(terms, eur("1000.00"), 12, 10, start, LocalDate.parse("2026-02-10")),
+                            ScheduleEngineV1.recalculateAtInstalment(terms, eur("1000.00"), eur("100.00"), 12, 10, start,
+                                    LocalDate.parse("2026-02-10")),
+                            judge(terms, PERSONAL_LOAN_BOUNDS).<ScheduleOutcome>map(refused -> refused).orElseThrow()))
+                    .as(terms.nominalAnnualRate() + " / " + terms.minFirstPeriodDays())
+                    .allSatisfy(outcome -> assertThat(outcome).isInstanceOfSatisfying(ScheduleOutcome.Refused.class,
+                            refused -> assertThat(refused.reason()).isEqualTo(ScheduleRefusal.INVALID_REQUEST)));
+        }
+        assertThat(ScheduleEngineV1.project(scheduleTerms("1"), eur("1000.00"), 3, 10, start))
+                .as("the range's own ends are computed").isInstanceOf(ScheduleOutcome.Projected.class);
+        assertThat(ScheduleEngineV1.project(scheduleTerms("0.12345678", 1), eur("1000.00"), 12, 10, start))
+                .isInstanceOf(ScheduleOutcome.Projected.class);
+        assertThat(judge(scheduleTerms("0.10"), PERSONAL_LOAN_BOUNDS)).isEmpty();
+        assertThat(ScheduleEngineV1.judgeAmortisation(scheduleTerms("0.10"), List.of(1, 32), eur("500.00"), 60))
+                .as("an allowed day past the longest month").hasValueSatisfying(refused ->
+                        assertThat(refused.reason()).isEqualTo(ScheduleRefusal.INVALID_REQUEST));
     }
 
     @Test
@@ -366,19 +412,19 @@ class ScheduleEngineV1Test {
     @DisplayName("the terms door: the plan's 8.99 % amortises across 6-60 months and EUR 500-25,000; 30 % cannot - a"
             + " 60-month loan with a 45-day first period would repay nothing in its first instalment")
     void theJudgementAcrossTheProductsBounds() {
-        LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.0899").build(), bounds)).isEmpty();
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0").build(), bounds)).isEmpty();
-        Optional<ScheduleOutcome.Refused> refused = ScheduleEngineV1.judgeAmortisation(personalLoan("0.30").build(), bounds);
+        Bounds bounds = PERSONAL_LOAN_BOUNDS;
+        assertThat(judge(scheduleTerms("0.0899"), bounds)).isEmpty();
+        assertThat(judge(scheduleTerms("0"), bounds)).isEmpty();
+        Optional<ScheduleOutcome.Refused> refused = judge(scheduleTerms("0.30"), bounds);
         assertThat(refused).hasValueSatisfying(refusal -> {
             assertThat(refusal.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
             assertThat(refusal.detail()).contains("60-month").contains("45 days").doesNotContain("0.3");
         });
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.30").build(),
-                new LoanProductBounds.Bounds(eur("500.00"), eur("25000.00"), 6, 24)))
+        assertThat(judge(scheduleTerms("0.30"),
+                new Bounds(eur("500.00"), eur("25000.00"), 6, 24)))
                 .as("the same rate over at most 24 months amortises").isEmpty();
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.30").build(),
-                new LoanProductBounds.Bounds(eur("500.00"), eur("25000.00"), 1, 1)))
+        assertThat(judge(scheduleTerms("0.30"),
+                new Bounds(eur("500.00"), eur("25000.00"), 1, 1)))
                 .as("a single instalment always amortises").isEmpty();
     }
 
@@ -387,9 +433,9 @@ class ScheduleEngineV1Test {
             + " refused - no later instalment may charge a 31-day month on the whole principal within half a unit of the"
             + " instalment")
     void theLaterPeriodsBound() {
-        LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
-        assertThat(ScheduleEngineV1.judgeAmortisation(oneDayFirstPeriod("0.5644"), bounds)).isEmpty();
-        assertThat(ScheduleEngineV1.judgeAmortisation(oneDayFirstPeriod("0.5645"), bounds)).hasValueSatisfying(refusal -> {
+        Bounds bounds = PERSONAL_LOAN_BOUNDS;
+        assertThat(judge(oneDayFirstPeriod("0.5644"), bounds)).isEmpty();
+        assertThat(judge(oneDayFirstPeriod("0.5645"), bounds)).hasValueSatisfying(refusal -> {
             assertThat(refusal.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
             assertThat(refusal.detail()).contains("after its first");
         });
@@ -401,22 +447,22 @@ class ScheduleEngineV1Test {
             + " principal in its first instalment, so its disbursement or payout conclusion had no outcome; the door now"
             + " refuses the rate, and at its highest admitted rate (23.0908 %) the same loan amortises")
     void theOldDoorsGap() {
-        LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
+        Bounds bounds = PERSONAL_LOAN_BOUNDS;
         Money gap = eur("500.19");
         LocalDate start = LocalDate.parse("2028-12-18");
-        assertThat(ScheduleEngineV1.project(personalLoan("0.231").build(), gap, 60, 1, start))
+        assertThat(ScheduleEngineV1.project(scheduleTerms("0.231"), gap, 60, 1, start))
                 .isInstanceOfSatisfying(ScheduleOutcome.Refused.class, refused -> {
                     assertThat(refused.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
                     assertThat(refused.detail()).contains("instalment 1");
                 });
-        assertThat(ScheduleEngineV1.project(personalLoan("0.231").build(), bounds.minimumPrincipal(), 60, 1, start))
+        assertThat(ScheduleEngineV1.project(scheduleTerms("0.231"), bounds.minimumPrincipal(), 60, 1, start))
                 .as("at the bounds' own principal it amortises - the old door's two probes could not see the gap")
                 .isInstanceOf(ScheduleOutcome.Projected.class);
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.231").build(), bounds)).hasValueSatisfying(
+        assertThat(judge(scheduleTerms("0.231"), bounds)).hasValueSatisfying(
                 refusal -> assertThat(refusal.detail()).contains("first instalment"));
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.230908").build(), bounds)).isEmpty();
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.230909").build(), bounds)).isPresent();
-        assertThat(ScheduleEngineV1.project(personalLoan("0.230908").build(), gap, 60, 1, start))
+        assertThat(judge(scheduleTerms("0.230908"), bounds)).isEmpty();
+        assertThat(judge(scheduleTerms("0.230909"), bounds)).isPresent();
+        assertThat(ScheduleEngineV1.project(scheduleTerms("0.230908"), gap, 60, 1, start))
                 .isInstanceOf(ScheduleOutcome.Projected.class);
     }
 
@@ -424,27 +470,25 @@ class ScheduleEngineV1Test {
     @DisplayName("a minimum principal too small for the longest term is refused at the door - a balance repaid before the"
             + " last instalment is a refusal no disbursement could answer (the Phase 11 gate's R5)")
     void theExhaustionBound() {
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0").build(),
-                new LoanProductBounds.Bounds(eur("0.05"), eur("100.00"), 1, 6))).hasValueSatisfying(refusal -> {
+        assertThat(judge(scheduleTerms("0"),
+                new Bounds(eur("0.05"), eur("100.00"), 1, 6))).hasValueSatisfying(refusal -> {
                     assertThat(refusal.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
                     assertThat(refusal.detail()).contains("whole balance");
                 });
-        assertThat(ScheduleEngineV1.project(personalLoan("0").build(), eur("0.05"), 6, 10, LocalDate.parse("2026-01-01")))
+        assertThat(ScheduleEngineV1.project(scheduleTerms("0"), eur("0.05"), 6, 10, LocalDate.parse("2026-01-01")))
                 .as("the loan it protects against").isInstanceOf(ScheduleOutcome.Refused.class);
-        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0").build(),
-                new LoanProductBounds.Bounds(eur("1.00"), eur("100.00"), 1, 6)))
+        assertThat(judge(scheduleTerms("0"),
+                new Bounds(eur("1.00"), eur("100.00"), 1, 6)))
                 .as("EUR 1.00 over six months: A* = 16.67 cents, above 5/2 x T(5) x g(6) = 12.5").isEmpty();
     }
 
-    static LoanTerms oneDayFirstPeriod(String rate) {
-        return personalLoan(rate)
-                .instalment(Optional.of(new LoanTerms.InstalmentTerms(1, 24, EngineVersion.SCHEDULE_ENGINE_V1)))
-                .build();
+    static ScheduleTerms oneDayFirstPeriod(String rate) {
+        return scheduleTerms(rate, 1);
     }
 
     // ------------------------------------------------------------------ plumbing
 
-    static Schedule projected(LoanTerms terms, String principal, int term, int day, String start) {
+    static Schedule projected(ScheduleTerms terms, String principal, int term, int day, String start) {
         ScheduleOutcome outcome = ScheduleEngineV1.project(terms, eur(principal), term, day, LocalDate.parse(start));
         assertThat(outcome).isInstanceOf(ScheduleOutcome.Projected.class);
         return ((ScheduleOutcome.Projected) outcome).schedule();

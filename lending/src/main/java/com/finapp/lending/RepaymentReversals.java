@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationLine;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalEntryStore;

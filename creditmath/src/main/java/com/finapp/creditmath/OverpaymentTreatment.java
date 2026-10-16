@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 /**
  * What happens to the part of a repayment that exceeds what is due (`P11-TSK-002`; L6, A26, ADR-0095) - a field of the

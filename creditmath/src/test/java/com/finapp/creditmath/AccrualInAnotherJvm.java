@@ -1,5 +1,6 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
+import com.finapp.creditmath.testing.SecondJvm;
 import com.finapp.sharedkernel.money.Money;
 import java.io.IOException;
 import java.nio.file.Path;

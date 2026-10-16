@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.Schedule;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;

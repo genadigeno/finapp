@@ -21,50 +21,10 @@ import org.junit.jupiter.api.Test;
 class LendingVocabulariesTest {
 
     @Test
-    @DisplayName("only implemented conventions are nameable: the day count is ACT_365F alone, implemented by the"
-            + " accrual engine version 1 (INV-LND-09, A22)")
-    void onlyImplementedDayCountsAreNameable() {
-        assertThat(DayCountConvention.values())
-                .as("a convention no accrual engine implements must not be nameable on terms (INV-LND-09)")
-                .containsExactly(DayCountConvention.ACT_365F);
-        for (DayCountConvention convention : DayCountConvention.values()) {
-            assertThat(convention.implementedBy().engine())
-                    .as("%s is implemented by an accrual engine", convention)
-                    .isEqualTo(LendingEngine.ACCRUAL);
-            assertThat(EngineVersion.of(LendingEngine.ACCRUAL, convention.implementedBy().number()))
-                    .as("%s's implementing engine is held by this build", convention)
-                    .contains(convention.implementedBy());
-        }
-    }
-
-    @Test
-    @DisplayName("only implemented frequencies are nameable: MONTHLY alone")
+    @DisplayName("only implemented frequencies are nameable: MONTHLY alone (the day count, the engines and their versions"
+            + " moved to creditmath with the engines, P12-TSK-002 - CreditmathVocabulariesTest)")
     void onlyMonthlyIsNameable() {
         assertThat(RepaymentFrequency.values()).containsExactly(RepaymentFrequency.MONTHLY);
-    }
-
-    @Test
-    @DisplayName("the four engines each stand at version 1, which is the current one; an unheld version is empty,"
-            + " never a fallback")
-    void theFourEnginesStandAtVersionOne() {
-        assertThat(LendingEngine.values())
-                .containsExactly(
-                        LendingEngine.SCHEDULE, LendingEngine.ACCRUAL, LendingEngine.ALLOCATION, LendingEngine.STATEMENT);
-        assertThat(EngineVersion.values())
-                .containsExactly(
-                        EngineVersion.SCHEDULE_ENGINE_V1,
-                        EngineVersion.ACCRUAL_ENGINE_V1,
-                        EngineVersion.ALLOCATION_ENGINE_V1,
-                        EngineVersion.STATEMENT_ENGINE_V1);
-        for (LendingEngine engine : LendingEngine.values()) {
-            EngineVersion current = EngineVersion.current(engine);
-            assertThat(current.engine()).isEqualTo(engine);
-            assertThat(current.number()).as("%s's current version", engine).isEqualTo(1);
-            assertThat(current.name()).isEqualTo(engine.name() + "_ENGINE_V1");
-            assertThat(EngineVersion.of(engine, 1)).contains(current);
-            assertThat(EngineVersion.of(engine, 2)).as("version 2 of %s is not held", engine).isEmpty();
-            assertThat(EngineVersion.of(engine, 0)).isEmpty();
-        }
     }
 
     @Test
@@ -123,15 +83,13 @@ class LendingVocabulariesTest {
     }
 
     @Test
-    @DisplayName("two account kinds; four delinquency buckets in ascending order; L6's allocation components in their"
-            + " default order; two overpayment treatments")
+    @DisplayName("two account kinds; four delinquency buckets in ascending order (the allocation components and overpayment"
+            + " treatments moved to creditmath with the engines, P12-TSK-002 - CreditmathVocabulariesTest)")
     void theRemainingVocabularies() {
         assertThat(names(LoanKind.values())).containsExactly("INSTALMENT", "REVOLVING");
         assertThat(names(DelinquencyBucket.values())).containsExactly("B1_1_29", "B2_30_59", "B3_60_89", "B4_90_PLUS");
         // P11-TSK-024: the condition kinds; the servicing hold (A9) is designed, not built - no member for it.
         assertThat(names(ConditionKind.values())).containsExactly("DELINQUENCY", "DEFAULT");
-        assertThat(names(AllocationComponent.values())).containsExactly("FEES", "INTEREST", "PRINCIPAL");
-        assertThat(names(OverpaymentTreatment.values())).containsExactly("HOLD_AS_CREDIT", "PAY_DOWN_PRINCIPAL");
     }
 
     @Test
@@ -167,7 +125,8 @@ class LendingVocabulariesTest {
 
     @Test
     @DisplayName("the terms version's vocabularies (P11-TSK-005): its machine, and only implemented conventions - FIXED,"
-            + " DEDUCTED, OLDEST_DUE_FIRST - and one registered agreement template per product")
+            + " DEDUCTED (OLDEST_DUE_FIRST moved to creditmath with the engines, P12-TSK-002) - and one registered"
+            + " agreement template per product")
     void theTermsVocabularies() {
         assertThat(names(LoanTermsVersionStatus.values())).containsExactly("PROPOSED", "ACTIVE", "RETIRED", "REJECTED");
         assertThat(LoanTermsVersionStatus.PROPOSED.permittedTransitions())
@@ -177,7 +136,6 @@ class LendingVocabulariesTest {
         assertThat(LoanTermsVersionStatus.REJECTED.isTerminal()).isTrue();
         assertThat(names(RateType.values())).containsExactly("FIXED");
         assertThat(names(OriginationFeeTreatment.values())).containsExactly("DEDUCTED");
-        assertThat(names(AllocationSequence.values())).containsExactly("OLDEST_DUE_FIRST");
         for (LoanProduct product : LoanProduct.values()) {
             assertThat(Arrays.stream(AgreementTemplate.values()).filter(template -> template.product() == product))
                     .as("%s has its one agreement template at version 1", product).hasSize(1);

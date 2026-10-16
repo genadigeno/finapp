@@ -1,4 +1,4 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
 import java.time.LocalDate;
 import java.util.Objects;

@@ -55,6 +55,7 @@ import static com.finapp.lending.RepaymentDatabaseTest.repay;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.creditmath.Schedule;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.JdbcBalanceDerivation;

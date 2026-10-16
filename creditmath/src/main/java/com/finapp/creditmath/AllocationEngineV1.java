@@ -1,6 +1,6 @@
-package com.finapp.lending;
+package com.finapp.creditmath;
 
-import com.finapp.lending.DueState.DueItem;
+import com.finapp.creditmath.DueState.DueItem;
 import com.finapp.sharedkernel.money.Money;
 import java.util.ArrayList;
 import java.util.Comparator;

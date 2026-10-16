@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.Schedule;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.util.List;
 import java.util.Objects;
