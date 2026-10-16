@@ -18,7 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The lending storm's bridge to credit's simulators (`P11-TST-001`; the {@link CreditFixtures} shape - a bridge only, the
+ * The lending storm's bridge to credit's simulators (`P11-TST-001`; reused by `P12-TSK-001`'s BNPL decision suite; the {@link CreditFixtures} shape - a bridge only, the
  * simulators themselves stay package-private where they live): one simulated bureau and one simulated financial-data
  * provider ({@link SimulatedBureauEngine}) shared by both of the storm's application instances, the real
  * {@link SimulatedBureauAdapter} and {@link SimulatedFinancialDataAdapter} over them, and each storm party's identifying
@@ -31,7 +31,9 @@ public final class LendingStormCredit implements AutoCloseable {
         /** A clean, affordable file with a bureau balance of 2,000.00-6,000.00: approved for both products. */
         GOOD,
         /** As GOOD, its bureau balance 10,000.00-12,000.00: one of a loan and a line fits the line's limit, not both. */
-        RACER
+        RACER,
+        /** An affordable file the bureau flags insolvent: hard-declined by every product (`P12-TSK-001`'s BNPL cases). */
+        INSOLVENT
     }
 
     private static final byte[] KEY = "a-lending-storm-provider-key-32b".getBytes(StandardCharsets.UTF_8);
@@ -99,9 +101,11 @@ public final class LendingStormCredit implements AutoCloseable {
                     && figures.obligationsMinor() <= 60_000;
             boolean clean = !figures.insolvency() && figures.defaults() == 0 && figures.accounts() >= 1
                     && figures.accounts() <= 5 && figures.delinquencies() == 0 && figures.score() >= 650;
-            boolean fits = clean && affordable && switch (profile) {
-                case GOOD -> figures.balanceMinor() >= 200_000 && figures.balanceMinor() <= 600_000;
-                case RACER -> figures.balanceMinor() >= 1_000_000 && figures.balanceMinor() <= 1_200_000;
+            boolean fits = switch (profile) {
+                case GOOD -> clean && affordable && figures.balanceMinor() >= 200_000 && figures.balanceMinor() <= 600_000;
+                case RACER -> clean && affordable && figures.balanceMinor() >= 1_000_000
+                        && figures.balanceMinor() <= 1_200_000;
+                case INSOLVENT -> affordable && figures.insolvency();
             };
             if (fits) {
                 facts.put(party.toString(), new CreditDataSubject(name.toString(), born, CountryCode.of("DE")));

@@ -87,6 +87,10 @@ class CreditDecisionMetricsTest {
                         .counter().count()).isZero();
             }
         }
+        assertThat(registry.find("finapp.credit.decision.latency").timers().stream()
+                        .map(timer -> timer.getId().getTag("product")).distinct())
+                .as("P12-TSK-001: the BNPL products' series are eager too")
+                .containsExactlyInAnyOrder("personal_loan", "credit_line", "bnpl_pay_in_4", "bnpl_pay_in_n");
         double[] buckets = java.util.Arrays.stream(registry.get("finapp.credit.decision.latency")
                         .tags("product", "personal_loan", "decision_maker", "system").timer().takeSnapshot()
                         .histogramCounts())

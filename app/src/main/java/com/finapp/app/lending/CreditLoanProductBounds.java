@@ -10,8 +10,8 @@ import java.util.Optional;
  * Lending's {@link LoanProductBounds} over credit's published products (`P11-TSK-006`; A16, the {@code crossborder}
  * precedent): a loan product's amount and term bounds are its credit counterpart's - the {@link CreditProduct} of the
  * same name - so the amortisation judgement at the terms door reads the one truth a decision is requested within.
- * {@code LendingVocabularyTest} holds the two enums to one bijection; a revolving product, which credit gives no term,
- * has no amortisation bounds.
+ * {@code LendingVocabularyTest} holds the loan products to exactly credit's lending products (`P12-TSK-001`, through
+ * {@link LendingCreditProducts}); a revolving product, which credit gives no term, has no amortisation bounds.
  */
 final class CreditLoanProductBounds implements LoanProductBounds {
 

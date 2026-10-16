@@ -1,6 +1,7 @@
 package com.finapp.app.lending;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import com.finapp.credit.CreditProduct;
 import com.finapp.lending.LoanKind;
@@ -11,7 +12,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Each {@link LoanProduct} agrees with the {@link CreditProduct} whose decision it consumes (P11-TSK-002; A16, A20,
- * {@code PHASE_11_PLAN.md} section 12.1).
+ * {@code PHASE_11_PLAN.md} section 12.1) - and, since credit learned the BNPL products (`P12-TSK-001`), lending's products
+ * are exactly credit's lending family: a BNPL product is {@code bnpl}'s, never lending's.
  *
  * <p><strong>Checked here because nowhere else can.</strong> {@code lending} has no build edge to {@code credit}
  * (ADR-0090 point 5): the correspondence is by name, and {@code app} - the composition root, the one module that sees
@@ -28,11 +30,29 @@ import org.junit.jupiter.api.Test;
 class LendingVocabularyTest {
 
     @Test
-    @DisplayName("the two enums are one bijection by name - no loan product without a credit product, and the reverse")
-    void oneBijectionByName() {
+    @DisplayName("lending's products are exactly credit's lending products, by name - an injection into credit's"
+            + " products whose image is the lending family (P12-TSK-001; it was a bijection until the BNPL products)")
+    void lendingProductsAreCreditsNonBnplProducts() {
         assertThat(Arrays.stream(LoanProduct.values()).map(Enum::name))
-                .as("lending prices and services exactly the products credit decides")
-                .containsExactlyElementsOf(Arrays.stream(CreditProduct.values()).map(Enum::name).toList());
+                .as("lending prices and services exactly the lending products credit decides")
+                .containsExactlyElementsOf(CreditProduct.of(CreditProduct.Family.LENDING).stream().map(Enum::name).toList());
+        for (LoanProduct product : LoanProduct.values()) {
+            assertThat(LendingCreditProducts.of(product).family()).as(product.name())
+                    .isEqualTo(CreditProduct.Family.LENDING);
+        }
+    }
+
+    @Test
+    @DisplayName("the BNPL products are never lending products: no LoanProduct names one, lending's mapping can never"
+            + " yield one, and credit's BNPL products have no LoanProduct to map back to")
+    void theBnplProductsAreNeverLendingProducts() {
+        for (CreditProduct bnpl : CreditProduct.of(CreditProduct.Family.BNPL)) {
+            assertThat(Arrays.stream(LoanProduct.values()).map(Enum::name)).as(bnpl.name()).doesNotContain(bnpl.name());
+            assertThatIllegalArgumentException().as("LoanProduct.valueOf(%s)", bnpl)
+                    .isThrownBy(() -> LoanProduct.valueOf(bnpl.name()));
+        }
+        assertThat(Arrays.stream(LoanProduct.values()).map(LendingCreditProducts::of))
+                .doesNotContainAnyElementsOf(CreditProduct.of(CreditProduct.Family.BNPL));
     }
 
     @Test
@@ -69,6 +89,6 @@ class LendingVocabularyTest {
     }
 
     private static CreditProduct credit(LoanProduct product) {
-        return CreditProduct.valueOf(product.name());
+        return LendingCreditProducts.of(product);
     }
 }

@@ -379,6 +379,50 @@ final class CreditWorld {
         });
     }
 
+    /** Pay-in-N's stress rate in the BNPL fixture, in basis points (`P12-TSK-001`). */
+    static final int BNPL_STRESS_RATE_BPS = 1_800;
+
+    /** Pay-in-4's stress factor in the BNPL fixture: three instalments a month, in basis points of one. */
+    static final int BNPL_PLAN_STRESS_FACTOR_BPS = 30_000;
+
+    /**
+     * {@code product}'s BNPL policy fixture (`P12-TSK-001`; test data only - no migration seeds or activates a BNPL
+     * policy): the personal loan's reviewed seed made automatic - every referring rule declining instead, the fallback
+     * {@code DECLINE}, the score cap dropped (a purchase price is fixed) - at an 18% stress rate, a maximum exposure of
+     * EUR 20,000.00, the product's maximum as the auto-approval ceiling and, for pay-in-4, three instalments a month.
+     * credit's own suites state the same fixture ({@code BnplPolicyFixtures}).
+     */
+    static CreditPolicy bnplPolicy(CreditProduct product) {
+        return TRANSACTIONS.inTransaction(uow -> {
+            CreditPolicy loan = POLICIES.policy(uow, LOAN_SEED).orElseThrow().policy();
+            List<CreditPolicy.PolicyRule> rules = new ArrayList<>();
+            for (CreditPolicy.PolicyRule rule : loan.rules()) {
+                if (rule.effect() == com.finapp.credit.PolicyEffect.CAP_AMOUNT) {
+                    continue;
+                }
+                rules.add(rule.effect() != com.finapp.credit.PolicyEffect.REFER ? rule : new CreditPolicy.PolicyRule(
+                        rule.ruleCode(), rule.subject(), rule.operator(), rule.operand(),
+                        com.finapp.credit.PolicyEffect.DECLINE, rule.cap(), rule.reason()));
+            }
+            return new CreditPolicy(product, BNPL_STRESS_RATE_BPS, eur(100_00), 500, eur(20_000_00), loan.maximumDataAge(),
+                    UnavailableFallback.DECLINE, product.maximumAmount(), rules,
+                    product.termShape() == CreditProduct.TermShape.FIXED_PLAN ? Optional.of(BNPL_PLAN_STRESS_FACTOR_BPS)
+                            : Optional.empty());
+        });
+    }
+
+    /** {@code product}'s BNPL fixture brought into force: proposed by one person, activated by another. */
+    static CreditPolicyVersionId bnplInForce(CreditProduct product) {
+        CreditPolicy policy = bnplPolicy(product);
+        return TRANSACTIONS.inTransaction(uow -> {
+            CreditPolicyAdministration.Proposed proposed = POLICY_ADMINISTRATION.propose(uow, policy, "the BNPL fixture",
+                    new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE), CorrelationId.generate(IDS));
+            POLICY_ADMINISTRATION.approve(uow, proposed.id(), new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE),
+                    "the BNPL fixture reviewed", CorrelationId.generate(IDS));
+            return proposed.id();
+        });
+    }
+
     /** A new scorecard version in force - the seed's table again, activated by two persons. */
     static ScorecardModelVersionId scorecardInForce() {
         return TRANSACTIONS.inTransaction(uow -> {

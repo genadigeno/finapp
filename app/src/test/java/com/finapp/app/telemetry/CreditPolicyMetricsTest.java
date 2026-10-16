@@ -34,6 +34,9 @@ class CreditPolicyMetricsTest {
         assertThat(gauge(registry, CreditProduct.PERSONAL_LOAN)).isEqualTo(3.0);
         assertThat(gauge(registry, CreditProduct.CREDIT_LINE)).as("none active - alerted").isEqualTo(0.0);
         assertThat(registry.find(CreditPolicyMetrics.ACTIVE).gauges()).hasSize(CreditProduct.values().length);
+        assertThat(gauge(registry, CreditProduct.BNPL_PAY_IN_4)).as("P12-TSK-001: eager for the BNPL products too")
+                .isEqualTo(0.0);
+        assertThat(gauge(registry, CreditProduct.BNPL_PAY_IN_N)).isEqualTo(0.0);
     }
 
     @Test

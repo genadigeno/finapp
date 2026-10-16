@@ -514,7 +514,7 @@ final class ReproducibilityWorld {
         }
         Scorecard scorecard = epoch == 2 ? scorecardTwo() : scorecardThree();
         TRANSACTIONS.inTransaction(uow -> {
-            for (CreditProduct product : CreditProduct.values()) {
+            for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
                 CreditPolicy policy = epoch == 2 ? coveragePolicy(product) : referringPolicy(product);
                 CreditPolicyAdministration.Proposed proposed = CreditWorld.POLICY_ADMINISTRATION.propose(uow, policy,
                         "the battery's epoch " + epoch, officer(), correlation());

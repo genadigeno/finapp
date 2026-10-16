@@ -11,7 +11,8 @@ import java.util.Objects;
  * <p><strong>Closed, and named for credit's products.</strong> Each member is the priced, serviced counterpart of the
  * {@code CreditProduct} of the same name - {@code PERSONAL_LOAN} and {@code CREDIT_LINE} - whose decision it consumes.
  * Lending has no build edge to {@code credit} (A16), so the correspondence is by name and is checked where both types
- * are visible: {@code app}'s {@code LendingVocabularyTest} holds the two enums to one bijection, the same currency, and
+ * are visible: {@code app}'s {@code LendingVocabularyTest} holds the loan products to exactly credit's lending products
+ * (credit's BNPL products, since `P12-TSK-001`, are {@code bnpl}'s and never lending's), the same currency, and
  * kinds that agree with credit's term bounds (an {@link LoanKind#INSTALMENT} product's credit counterpart has a term, a
  * {@link LoanKind#REVOLVING} one has none).
  *
