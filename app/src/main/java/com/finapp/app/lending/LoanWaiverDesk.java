@@ -43,7 +43,8 @@ import lombok.RequiredArgsConstructor;
  * the claim back with it. The four-eyes rule, the bound, the lock order and the arbiters are the domain's and
  * {@code lending V021}'s; nothing here decides them.
  *
- * <p><strong>Self-dealing</strong> is the one refusal recorded: a {@code lending.SelfDealingRefused} {@code FAILED} record in
+ * <p><strong>Self-dealing</strong> and <strong>self-approval</strong> are the refusals recorded: a
+ * {@code lending.SelfDealingRefused} or (the Phase 11 gate's R4) {@code lending.SelfApprovalRefused} {@code FAILED} record in
  * a transaction of its own after the act rolled back. Every other loser records nothing.
  */
 @RequiredArgsConstructor
@@ -161,7 +162,7 @@ public final class LoanWaiverDesk {
     /**
      * One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing. The act's
      * meter is told after the commit, once (a replay or a converged retry counts nothing); a refusal is counted by reason
-     * and the waiver's kind; a self-dealing attempt is recorded {@code FAILED} in a transaction of its own.
+     * and the waiver's kind; a self-dealing or self-approval attempt is recorded {@code FAILED} in a transaction of its own.
      */
     private WaiverView keyed(
             Actor actor,
@@ -200,6 +201,10 @@ public final class LoanWaiverDesk {
             metrics.record(exceeds.kind(), LoanWaiverMetrics.Outcome.EXCEEDS_DUE);
             throw refused(LendingErrorCode.WAIVER_EXCEEDS_DUE, exceeds);
         } catch (Waivers.SelfApprovalRefused self) {
+            transactions.inTransaction(uow -> {
+                waivers.recordRefusal(uow, self, actor, correlation);
+                return null;
+            });
             metrics.record(self.kind(), LoanWaiverMetrics.Outcome.SELF_APPROVAL_REFUSED);
             throw refused(LendingErrorCode.SELF_APPROVAL_REFUSED, self);
         } catch (Waivers.LoanClosed closed) {

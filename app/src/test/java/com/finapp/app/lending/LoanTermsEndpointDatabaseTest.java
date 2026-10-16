@@ -85,6 +85,12 @@ class LoanTermsEndpointDatabaseTest {
         HttpResponse<String> self = post(TERMS + "/" + v1 + "/approval", decision("my own"), first, someKey());
         assertThat(self.statusCode()).isEqualTo(403);
         assertThat(self.body()).contains("lending.SelfApprovalRefused");
+        assertThat(LoanApplicationClient.count("SELECT count(*) FROM platform.audit_record"
+                + " WHERE operation = 'lending.SelfApprovalRefused'"
+                + " AND outcome = 'FAILED' AND target_type = 'loan_terms_version' AND target_id = ?", v1))
+                .as("the self-approval recorded FAILED, once (the Phase 11 gate R4)").isEqualTo(1);
+        assertThat(LoanApplicationClient.scalar("SELECT status FROM lending.loan_terms_version WHERE id = ?::uuid", v1))
+                .as("the proposal still awaits a different approver").isEqualTo("PROPOSED");
         String approvalKey = someKey();
         HttpResponse<String> approved = post(TERMS + "/" + v1 + "/approval", decision("reviewed"), second, approvalKey);
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);

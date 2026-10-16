@@ -326,6 +326,11 @@ class NoFloatingPointMoneyRulesTest {
                     // ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - a duration, never an amount.
                     "com.finapp.app.lending.LoanPayoutMetrics",
                     "com.finapp.app.lending.LoanPayoutMetrics$Cached",
+                    // The Phase 11 completion gate (A5-03). The SAME case again: the oldest application awaiting a
+                    // decision's wait in SECONDS through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
+                    // unreadable - a duration, never an amount.
+                    "com.finapp.app.lending.LoanAwaitingDecisionMetrics",
+                    "com.finapp.app.lending.LoanAwaitingDecisionMetrics$Cached",
                     // P11-TSK-016. The SAME case again: the accrual lag in SECONDS through the ToDoubleFunction a Gauge
                     // imposes, NaN the sentinel for unreadable, and the accrued-date COUNTS through Counter.increment's
                     // double - a duration and counts, never an amount (the accruals are the rows' and the ledger's,

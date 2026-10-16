@@ -296,6 +296,11 @@ class LoanApplicationsTest {
         boolean oneOpenTaken;
 
         @Override
+        public Optional<java.time.Duration> oldestAwaitingDecisionAge(Connection unitOfWork) {
+            return Optional.empty();
+        }
+
+        @Override
         public boolean insert(Connection unitOfWork, NewApplication application) {
             calls.add("insert");
             if (oneOpenTaken) {

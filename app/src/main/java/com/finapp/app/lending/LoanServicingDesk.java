@@ -52,9 +52,10 @@ import lombok.RequiredArgsConstructor;
  * transaction. The four-eyes rule, the machine, the lock order and the arbiters are the domain's and {@code lending V016}'s;
  * nothing here decides them.
  *
- * <p><strong>Self-dealing</strong> (the Phase 10 to 11 transition's R1) is the one refusal recorded: a
- * {@code lending.SelfDealingRefused} {@code FAILED} record in a transaction of its own after the act rolled back - so the
- * attempt survives, and a retry is recorded as the attempt it is. Every other loser records nothing.
+ * <p><strong>Self-dealing</strong> (the Phase 10 to 11 transition's R1) and <strong>self-approval</strong> (the Phase 11
+ * gate's R4) are the refusals recorded: a {@code lending.SelfDealingRefused} or {@code lending.SelfApprovalRefused}
+ * {@code FAILED} record in a transaction of its own after the act rolled back - so the attempt survives, and a retry is
+ * recorded as the attempt it is. Every other loser records nothing.
  */
 @RequiredArgsConstructor
 public final class LoanServicingDesk {
@@ -194,7 +195,7 @@ public final class LoanServicingDesk {
     /**
      * One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing. The act's
      * meter is told after the commit, once (a replay or a converged retry counts nothing); a refusal is counted by
-     * reason; a self-dealing attempt is recorded {@code FAILED} in a transaction of its own.
+     * reason; a self-dealing or self-approval attempt is recorded {@code FAILED} in a transaction of its own.
      */
     private ReversalView keyed(
             Actor actor,
@@ -225,6 +226,10 @@ public final class LoanServicingDesk {
         } catch (LendingCapitalAdministration.ReasonRequired reason) {
             throw refused(LendingErrorCode.REASON_REQUIRED, reason);
         } catch (RepaymentReversals.SelfApprovalRefused self) {
+            transactions.inTransaction(uow -> {
+                reversals.recordRefusal(uow, self, actor, correlation);
+                return null;
+            });
             metrics.record(RepaymentReversalMetrics.Outcome.SELF_APPROVAL_REFUSED);
             throw refused(LendingErrorCode.SELF_APPROVAL_REFUSED, self);
         } catch (RepaymentReversals.LoanClosed closed) {

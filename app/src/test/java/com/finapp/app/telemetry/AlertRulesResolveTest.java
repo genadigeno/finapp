@@ -276,7 +276,8 @@ class AlertRulesResolveTest {
                 "LendingAccrualLagging", "LendingAllocationAnomaly", "LendingSubledgerProofFailing", "LendingReplayDiverged",
                 "LendingCapitalProofFailing", "LendingCapitalHeadroomLow", "CreditExposureCensusFailing",
                 "LendingTermsNoneActive", "LendingOriginationSweeperOff", "LendingDisbursementSweeperOff",
-                "LendingPayoutSweeperOff", "LendingServicingSweeperOff", "LendingGaugesUnreadable");
+                "LendingPayoutSweeperOff", "LendingServicingSweeperOff", "LendingGaugesUnreadable",
+                "LendingApplicationAwaitingTooLong", "LendingOriginationStepFailing");
         Set<String> queried = lending.stream()
                 .map(rule -> String.valueOf(rule.get("expr")))
                 .flatMap(AlertRulesResolveTest::seriesIn)
@@ -287,7 +288,8 @@ class AlertRulesResolveTest {
                 "finapp_lending_capital_proof", "finapp_lending_capital_headroom_low", "finapp_credit_exposure_census",
                 "finapp_lending_terms_active", "finapp_lending_origination_sweeper_enabled",
                 "finapp_lending_disbursement_sweeper_enabled", "finapp_lending_payout_sweeper_enabled",
-                "finapp_lending_servicing_sweeper_enabled");
+                "finapp_lending_servicing_sweeper_enabled", "finapp_lending_application_awaiting_age_seconds",
+                "finapp_lending_origination_total");
         assertThat(publishedSeriesNames()).containsAll(queried);
 
         // The thresholds are the objectives the code declares; the label values the rules select are on the live scrape.
@@ -296,6 +298,8 @@ class AlertRulesResolveTest {
         assertThat(threshold(expressions.get("LendingPayoutUnconcluded")))
                 .isEqualTo(LendingObjectives.PAYOUT_OUTCOME.toSeconds());
         assertThat(threshold(expressions.get("LendingAccrualLagging"))).isEqualTo(LendingObjectives.ACCRUAL_LAG.toSeconds());
+        assertThat(threshold(expressions.get("LendingApplicationAwaitingTooLong")))
+                .isEqualTo(LendingObjectives.awaitingDecision().toSeconds());
         String scrape = scrape();
         assertThat(scrape).contains("finapp_lending_subledger_proof{verdict=\"FAILS\"}",
                 "finapp_lending_replay{verdict=\"DIVERGED\"}", "finapp_lending_capital_proof{verdict=\"FAILS\"}",

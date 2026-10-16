@@ -689,6 +689,40 @@ class AmendmentDatabaseTest {
         assertThat(decisions(proposal.id())).isZero();
     }
 
+    @Test
+    @DisplayName("an amendment's decision is stamped after the loan's lock it took, never at its transaction's start: a"
+            + " decision whose transaction began before another act on the loan committed is dated after that act, and"
+            + " its offer's expiry runs from that instant (the Phase 11 gate A2-F3)")
+    void anAmendmentDecisionIsStampedAfterItsLock() throws SQLException {
+        LoanId loan = current(6_400_00);
+        LoanAmendment amendment = propose(loan, lowerRate(loan), 14, false, employee());
+        Actor approver = employee();
+        Repayments.Repaid act;
+        try (Connection decision = DatabaseRoles.application()) {
+            decision.setAutoCommit(false);
+            try {
+                // The decision's transaction begins - its start fixed - before the repayment is made and committed.
+                try (java.sql.Statement begin = decision.createStatement()) {
+                    begin.execute("SELECT transaction_timestamp()");
+                }
+                act = repay(loan, key(), 10_00);
+                as(approver, correlation -> AMENDMENTS.approve(decision, loan, amendment.id(), "affordability reviewed",
+                        approver, correlation));
+                decision.commit();
+            } catch (RuntimeException | SQLException failure) {
+                decision.rollback();
+                throw failure;
+            }
+        }
+        assertThat(scalar("SELECT (d.decided_at > r.created_at AND d.expires_at = d.decided_at + make_interval(days =>"
+                + " t.offer_validity_days))::text FROM lending.loan_amendment_decision d"
+                + " JOIN lending.loan_amendment m ON m.id = d.amendment_id"
+                + " JOIN lending.loan_agreement a ON a.id = m.amends_agreement_id"
+                + " JOIN lending.loan_terms t ON t.terms_version_id = a.terms_version_id"
+                + " CROSS JOIN lending.repayment r WHERE d.amendment_id = ? AND r.id = '" + act.repayment().id() + "'",
+                amendment.id())).as("decided after the act it waited behind").isEqualTo("true");
+    }
+
     // ------------------------------------------------------------------ the world
 
     /**

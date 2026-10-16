@@ -299,6 +299,13 @@ class LendingCapitalDatabaseTest {
                 key());
         assertThat(self.statusCode()).as(self.body()).isEqualTo(403);
         assertThat(self.body()).contains("lending.SelfApprovalRefused");
+        assertThat(LoanApplicationClient.count("SELECT count(*) FROM platform.audit_record"
+                + " WHERE operation = 'lending.SelfApprovalRefused'"
+                + " AND outcome = 'FAILED' AND target_type = 'capital_contribution' AND target_id = ?", contribution))
+                .as("the self-approval recorded FAILED, once (the Phase 11 gate R4)").isEqualTo(1);
+        assertThat(LoanApplicationClient.count("SELECT count(*) FROM lending.capital_contribution_event"
+                + " WHERE contribution_id = ?::uuid AND to_status <> 'PROPOSED'", contribution))
+                .as("the proposal still awaits a different approver - no decision").isZero();
 
         String proposedBy = (String) one("SELECT proposed_by FROM lending.capital_contribution WHERE id = ?::uuid",
                 contribution);

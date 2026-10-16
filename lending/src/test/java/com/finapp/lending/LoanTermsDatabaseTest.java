@@ -352,6 +352,45 @@ class LoanTermsDatabaseTest {
         assertThat(status(predecessor)).as("the plant rolled back with it").isEqualTo("ACTIVE");
     }
 
+    @Test
+    @DisplayName("an offer made under a version while its successor's activation was already under way stands inside the"
+            + " version's effective period: the predecessor's end is stamped after the activation's lock, never at its"
+            + " transaction's start - so the version in force at the offering instant is the one the offer pins (the"
+            + " Phase 11 gate A2-F3)")
+    void anOfferMadeDuringAnActivationStandsInsideItsVersion() throws SQLException {
+        DisbursementWorld.ensureActive();
+        DisbursementWorld.Approved approved = DisbursementWorld.approved(LOAN, 4_100_00, Optional.of(12),
+                PayoutPreference.WALLET, 10);
+        LoanTermsAdministration.Proposed successor = propose(LOAN, "0.0712", employee());
+        try (Connection activation = DatabaseRoles.application()) {
+            activation.setAutoCommit(false);
+            try {
+                // The activation's transaction begins - its start fixed - before the offer is made and committed.
+                try (Statement begin = activation.createStatement()) {
+                    begin.execute("SELECT transaction_timestamp()");
+                }
+                assertThat(DisbursementWorld.inOneTransaction(uow -> DisbursementWorld.ORIGINATION.originate(uow,
+                        approved.application(), DisbursementWorld.SYSTEM)).kind())
+                        .isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+                ADMINISTRATION.approve(activation, successor.id(), employee(), "a case's activation", correlation());
+                activation.commit();
+            } catch (RuntimeException | SQLException failure) {
+                activation.rollback();
+                throw failure;
+            }
+        }
+        assertThat(DisbursementWorld.scalar("SELECT (o.offered_at >= v.effective_from AND o.offered_at < v.effective_to)::text"
+                + " FROM lending.loan_offer o JOIN lending.loan_terms_version v ON v.id = o.terms_version_id"
+                + " WHERE o.application_id = ?", approved.application().value()))
+                .as("the offer inside its pinned version's period").isEqualTo("true");
+        assertThat(activeAt(LOAN, Instant.parse(DisbursementWorld.scalar("SELECT to_char(o.offered_at AT TIME ZONE 'UTC',"
+                + " 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') FROM lending.loan_offer o WHERE o.application_id = ?",
+                approved.application().value()))).map(LoanTermsVersionId::value).map(UUID::toString))
+                .as("the version in force at the offering instant is the pinned one")
+                .contains(DisbursementWorld.scalar("SELECT terms_version_id::text FROM lending.loan_offer"
+                        + " WHERE application_id = ?", approved.application().value()));
+    }
+
     // ------------------------------------------------------------------ the conventions
 
     @Test

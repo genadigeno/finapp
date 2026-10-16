@@ -232,7 +232,7 @@ public final class Waivers {
             throw new ProposalNotPending(proposal.kind(), proposal.status());
         }
         if (proposal.proposedBy().equals(actor.id())) {
-            throw new SelfApprovalRefused(proposal.kind());
+            throw new SelfApprovalRefused(proposal.kind(), loan, waiver);
         }
         Loan account = locked.loan();
         if (!inServicing(account.status())) {
@@ -335,6 +335,17 @@ public final class Waivers {
                 LendingAuditAction.SELF_DEALING_REFUSED, "loan", refused.loan().value().toString(), Optional.empty(),
                 AuditOutcome.FAILED, correlation, Optional.of("loan=" + refused.loan().value() + ", act=waiver:"
                         + refused.act() + " refused - the loan is the acting operator's own party's")));
+    }
+
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LendingAuditAction#SELF_APPROVAL_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept (the Phase 11
+     * gate's R4).
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        SelfApprovalRefusals.record(audit, ids, clock, unitOfWork, actor, TARGET_TYPE, refused.target(), refused.summary(),
+                correlation);
     }
 
     // ------------------------------------------------------------------ the judgements
@@ -548,8 +559,23 @@ public final class Waivers {
     public static final class SelfApprovalRefused extends KindedRefusal {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        SelfApprovalRefused(WaiverKind kind) {
+        private final String target;
+        private final String summary;
+
+        SelfApprovalRefused(WaiverKind kind, LoanId loan, UUID waiver) {
             super(kind, "a waiver is approved by someone other than its proposer; the proposer may reject it");
+            this.target = waiver.toString();
+            this.summary = "loan=" + loan.value() + ", waiver=" + waiver + ", kind=" + kind.name() + ", act=waiver:approve";
+        }
+
+        /** The proposal the approver proposed - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the proposal and the act - never an amount. */
+        public String summary() {
+            return summary;
         }
     }
 }

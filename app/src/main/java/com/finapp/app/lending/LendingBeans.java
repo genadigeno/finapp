@@ -345,6 +345,13 @@ public class LendingBeans {
         return new LoanOfferMetrics(meterRegistry);
     }
 
+    /** {@code finapp.lending.application.awaiting.age} - the origination sweep's queue (the Phase 11 gate's A5-03). */
+    @Bean
+    LoanAwaitingDecisionMetrics loanAwaitingDecisionMetrics(
+            LoanApplicationStore loanApplicationStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new LoanAwaitingDecisionMetrics(loanApplicationStore, dataSource::getConnection, clock, meterRegistry);
+    }
+
     @Bean
     LoanOfferDesk loanOfferDesk(
             LoanOffers loanOffers,

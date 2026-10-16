@@ -24,6 +24,11 @@ import java.util.Arrays;
  *   <li><strong>The accrual lag</strong>: no account in servicing leaves an elapsed business date unaccrued for more than a
  *       day past its end - the servicing sweep services every account once each business date, so a day's lag means a
  *       whole business date was missed.
+ *   <li><strong>The decision wait</strong> (the Phase 11 completion gate's A5-03): no application waits
+ *       {@code AWAITING_DECISION} longer than the longest credit request validity
+ *       ({@link CreditObjectives#requestValidity()}, seven days today) and an hour - credit closes a request at its
+ *       validity at the latest and the origination step then closes the application undecided, so the hour covers both
+ *       sweeps' polls; an application older than that means the origination sweep is not acting on it.
  * </ul>
  */
 public final class LendingObjectives {
@@ -35,6 +40,11 @@ public final class LendingObjectives {
     public static final Duration ACCRUAL_LAG = Duration.ofDays(1);
 
     private LendingObjectives() {}
+
+    /** The longest an application may wait {@code AWAITING_DECISION} before the origination sweep is judged stalled. */
+    public static Duration awaitingDecision() {
+        return CreditObjectives.requestValidity().plus(Duration.ofHours(1));
+    }
 
     /** The longest disbursement deadline any product's terms version may name. */
     public static Duration disbursementDeadline() {

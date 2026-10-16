@@ -45,7 +45,8 @@ import lombok.RequiredArgsConstructor;
  * and a refusal, which writes nothing, rolls the claim back with it. The four-eyes rule, the bounds, the lock order and the
  * arbiters are the domain's and {@code lending V023}'s; nothing here decides them.
  *
- * <p><strong>Self-dealing</strong> is the one refusal recorded: a {@code lending.SelfDealingRefused} {@code FAILED} record in
+ * <p><strong>Self-dealing</strong> and <strong>self-approval</strong> are the refusals recorded: a
+ * {@code lending.SelfDealingRefused} or (the Phase 11 gate's R4) {@code lending.SelfApprovalRefused} {@code FAILED} record in
  * a transaction of its own after the act rolled back. Every other loser records nothing.
  */
 @RequiredArgsConstructor
@@ -239,7 +240,7 @@ public final class LoanAmendmentDesk {
     /**
      * One keyed operator act in one transaction - a lost response replays the stored receipt; a refusal stores nothing. The
      * act's meter is told after the commit, once (a replay or a converged retry counts nothing); a refusal is counted by
-     * reason; a self-dealing attempt is recorded {@code FAILED} in a transaction of its own.
+     * reason; a self-dealing or self-approval attempt is recorded {@code FAILED} in a transaction of its own.
      */
     private AmendmentView keyed(
             Actor actor,
@@ -280,6 +281,10 @@ public final class LoanAmendmentDesk {
             metrics.record(LoanAmendmentMetrics.Outcome.LOAN_CLOSED);
             throw refused(LendingErrorCode.LOAN_CLOSED, closed);
         } catch (LoanAmendments.SelfApprovalRefused self) {
+            transactions.inTransaction(uow -> {
+                amendments.recordRefusal(uow, self, actor, correlation);
+                return null;
+            });
             metrics.record(LoanAmendmentMetrics.Outcome.SELF_APPROVAL_REFUSED);
             throw refused(LendingErrorCode.SELF_APPROVAL_REFUSED, self);
         } catch (LoanAmendments.ProposalPending pending) {

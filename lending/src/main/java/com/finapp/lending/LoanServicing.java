@@ -194,6 +194,17 @@ public final class LoanServicing {
                 .terms();
         ZoneId zone = ZoneId.of(pinned.servicingZone());
         LocalDate today = LocalDate.ofInstant(now, zone);
+        // The Phase 11 gate's R1 (ADR-0063 decision 2): a clock stepped back across a midnight behind the account's record -
+        // today already accrued, or for a line stated - writes nothing. Every act the step dates today (a collection, a
+        // credit-balance application, a condition, a fee) would be dated a day the record has closed; the step is due
+        // again at the record's first open date, which the clock showed before it stepped - a delay of at most the step.
+        LocalDate open = loans.principalValueDate(unitOfWork, id, today);
+        if (open.isAfter(today)) {
+            if (!store.restamp(unitOfWork, id, open.atStartOfDay(zone).toInstant())) {
+                throw new IllegalStateException("the locked account left servicing under its own row lock");
+            }
+            return new Outcome(Outcome.Kind.SERVICED, 0, 0, false, 0, 0, 0, 0, false, Map.of(), 0, 0, 0);
+        }
 
         Correlation flow = Correlation.startingWith(loan.correlation()).causing(CausationId.of(loan.correlation().value()));
         Accrued accrued;

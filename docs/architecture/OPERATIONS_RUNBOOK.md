@@ -467,6 +467,30 @@ ledger - and the account's explanation (`GET /v1/operator/loans/{id}/explanation
 incident with the class name. A line accrues only dates that ended with principal drawn, and a path X loan accrues nothing
 until its payout concludes (A30) - neither is a lag.
 
+**Finding the stuck account** *(added by the Phase 11 completion gate, A5-03 - the lag names no loan, by design)*. A
+servicing step that completes stamps its account's permit (`lending.loan.next_servicing_at`) at the next midnight in its
+pinned zone; the claim stamps it the retry cadence ahead (`finapp.lending.servicing.retry`, 15 minutes) and a step that
+fails leaves that claim's permit standing, so an account the step keeps failing on is re-claimed every cadence and its
+permit never reaches a midnight. In a read-only session (`START TRANSACTION READ ONLY`):
+
+```sql
+SELECT l.id, l.product, l.status, l.next_servicing_at,
+       (SELECT max(a.accrual_date) FROM lending.interest_accrual a WHERE a.loan_id = l.id) AS accrued_through
+  FROM lending.loan l
+ WHERE l.status IN ('ACTIVE', 'CLOSING')
+   AND l.next_servicing_at <= statement_timestamp() + interval '15 minutes'
+ ORDER BY l.next_servicing_at
+ LIMIT 50;
+```
+
+Run it twice, one cadence apart: an id in both answers, its `accrued_through` not moving, is a step failing on every
+tick (`finapp_lending_accrual_total{outcome="failed"}` counts each failure, an `AllocationAnomaly` in the step's collection
+included - it is refused with the step, never counted as `LendingAllocationAnomaly`, which is a customer repayment's).
+Explain that loan through `GET /v1/operator/loans/{id}/explanation` and open an incident with the warn line's class name.
+The query reads ids and dates only; never update a permit or a row to move an account along. An account whose permit is
+the next midnight is caught up; one stepped back across a midnight behind its own record (the Phase 11 gate's R1) is due
+at the record's next date and is not stuck.
+
 ### 7.6 A stuck disbursement or payout - `LendingDisbursementPastDeadline`, `LendingPayoutUnconcluded`
 
 *Added by `P11-TSK-030`.* **Signals.** `max(finapp_lending_disbursement_pending_age_seconds) > 86400` for 15 min (page): a
@@ -554,7 +578,7 @@ platform has not had is answered empty (`known: false`), recorded. The portfolio
 | Failure scenario (`PHASE_11_PLAN.md` §14) | Alert | Procedure |
 |---|---|---|
 | Timeout and retry; a commit whose response is lost | none - the key replays the stored answer | - |
-| A service crashes mid-step | the step's queue or lag alert if it stalls | §7.5, §7.6 |
+| A service crashes mid-step | the step's queue or lag alert if it stalls: `LendingApplicationAwaitingTooLong` and `LendingOriginationStepFailing` for origination and offer expiry (added by the Phase 11 completion gate - before it, a failing origination step had no alert, only a warn line), `LendingDisbursementPastDeadline` and `LendingPayoutUnconcluded`, `LendingAccrualLagging` for servicing | §7.12, §7.6, §7.5 |
 | An event duplicated, late or missing | none - events are hints, rows decide | - |
 | A provider unavailable or answering unknown | `LendingPayoutUnconcluded` | §7.6 |
 | A webhook duplicated | none - payments' and the inbox's dedupe | - |
@@ -566,3 +590,19 @@ platform has not had is answered empty (`known: false`), recorded. The portfolio
 | Clock skew across the accrual boundary | `LendingReplayDiverged` were a date misjudged | §7.7 |
 | A payoff races a repayment or the delinquency worker | `LendingAllocationAnomaly`, `LendingSubledgerProofFailing` | §7.7, §7.8 |
 | A sweeper off, a gauge unreadable, an offered product without terms | the four `…SweeperOff`, `LendingGaugesUnreadable`, `LendingTermsNoneActive` | §7.10 |
+
+### 7.12 A stalled origination sweep - `LendingApplicationAwaitingTooLong`, `LendingOriginationStepFailing`
+
+*Added by the Phase 11 completion gate (A5-03).* **Signals.** `max(finapp_lending_application_awaiting_age_seconds) >
+608400` for 30 min (ticket): an application has waited `AWAITING_DECISION` longer than the longest credit request validity
+and an hour (`LendingObjectives.awaitingDecision()`, seven days and an hour) - credit closes a request at its validity at
+the latest and the origination step then closes the application undecided, so it is waiting on a sweep that is not acting.
+`sum(increase(finapp_lending_origination_total{outcome="failed"}[15m])) > 0` for 15 min (ticket): origination steps
+(`kind="application"`) or offer expiries (`kind="offer"`) failing and rolling back for a quarter hour running - each lets
+its permit lapse and a later tick retries, so one failing on every tick was, before this alert, only a warn line naming
+the exception's class. **What a person does.** Check `finapp_lending_origination_sweeper_enabled` on every instance
+(§7.10) and the warn lines (`Loan origination step failed`, `Loan offer expiry failed`) for the class; a transient refusal
+(a database clock stepped back - ADR-0063) clears by itself within a tick. Nothing to the rows: every edge is a
+conditional the triggers re-judge, so a step that runs again does each act once. Credit's side (§6 - a request still
+open, a review case unworked) says whether credit or the sweep is the one waiting; open an incident with the class name if
+the failures persist.

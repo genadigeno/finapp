@@ -101,8 +101,23 @@ public final class LoanTermsAdministration {
     public static final class SelfApprovalRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        SelfApprovalRefused() {
+        private final String target;
+        private final String summary;
+
+        SelfApprovalRefused(LoanTermsVersionId id, LoanProduct product, int version) {
             super("a loan terms version is activated by someone other than its proposer; the proposer may reject it");
+            this.target = id.value().toString();
+            this.summary = "product=" + product.name() + ", version=v" + version + ", act=terms:activate";
+        }
+
+        /** The proposal the approver proposed - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the proposal and the act - never an amount. */
+        public String summary() {
+            return summary;
         }
     }
 
@@ -193,7 +208,7 @@ public final class LoanTermsAdministration {
             throw new TermsStale(row.status());
         }
         if (row.proposedBy().equals(actor.id())) {
-            throw new SelfApprovalRefused();
+            throw new SelfApprovalRefused(row.id(), row.product(), row.version());
         }
         Optional<LoanTermsStore.VersionRow> predecessor = store.lockActive(unitOfWork, row.product());
         if (predecessor.isPresent() && !store.retire(unitOfWork, predecessor.get().id())) {
@@ -321,6 +336,17 @@ public final class LoanTermsAdministration {
             }
             throw new LoanTerms.TermsInvalid(refused.get().detail());
         }
+    }
+
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LendingAuditAction#SELF_APPROVAL_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept (the Phase 11
+     * gate's R4).
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        SelfApprovalRefusals.record(audit, ids, clock, unitOfWork, actor, TARGET_TYPE, refused.target(), refused.summary(),
+                correlation);
     }
 
     // ------------------------------------------------------------------ plumbing

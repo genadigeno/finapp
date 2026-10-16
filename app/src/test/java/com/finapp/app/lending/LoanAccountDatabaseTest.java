@@ -1077,6 +1077,13 @@ class LoanAccountDatabaseTest {
         HttpResponse<String> own = client.post(reversalPath + "/approval", decision, proposer, key());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
         assertThat(own.body()).contains("lending.SelfApprovalRefused");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfApprovalRefused'"
+                + " AND outcome = 'FAILED' AND target_type = 'repayment_reversal' AND target_id = ?",
+                field(proposed.body(), "reversalId")))
+                .as("the self-approval recorded FAILED, once (the Phase 11 gate R4)").isEqualTo(1);
+        assertThat(scalar("SELECT status FROM lending.repayment_reversal WHERE id = ?::uuid",
+                field(proposed.body(), "reversalId")))
+                .as("the proposal still awaits a different approver").isEqualTo("PROPOSED");
         HttpResponse<String> approved = client.post(reversalPath + "/approval", decision, approver, key());
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
         assertThat(approved.body()).contains("\"status\":\"APPROVED\"", "\"journalEntryId\":\"");
@@ -1251,6 +1258,11 @@ class LoanAccountDatabaseTest {
         HttpResponse<String> own = client.post(waivers + "/" + waiver + "/approval", decision, proposer, key());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
         assertThat(own.body()).contains("lending.SelfApprovalRefused");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfApprovalRefused'"
+                + " AND outcome = 'FAILED' AND target_type = 'waiver' AND target_id = ?", waiver))
+                .as("the self-approval recorded FAILED, once (the Phase 11 gate R4)").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.waiver_decision WHERE waiver_id = ?::uuid", waiver))
+                .as("the proposal still awaits a different approver - no decision").isZero();
         HttpResponse<String> approved = client.post(waivers + "/" + waiver + "/approval", decision, approver, key());
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
         assertThat(approved.body()).contains("\"status\":\"APPROVED\"", "\"journalEntryId\":\"");
@@ -1309,6 +1321,12 @@ class LoanAccountDatabaseTest {
         HttpResponse<String> own = client.post(amendments + "/" + amendment + "/approval", decision, proposer, key());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
         assertThat(own.body()).contains("lending.SelfApprovalRefused");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfApprovalRefused'"
+                + " AND outcome = 'FAILED' AND target_type = 'loan_amendment' AND target_id = ?", amendment))
+                .as("the self-approval recorded FAILED, once (the Phase 11 gate R4)").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM lending.loan_amendment_decision WHERE amendment_id = ?::uuid",
+                amendment))
+                .as("the proposal still awaits a different approver - no decision").isZero();
         HttpResponse<String> approved = client.post(amendments + "/" + amendment + "/approval", decision, approver, key());
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
         assertThat(approved.body()).contains("\"status\":\"APPROVED\"", "\"expiresAt\":\"");

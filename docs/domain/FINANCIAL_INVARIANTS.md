@@ -1821,7 +1821,11 @@ projection; concurrent repayments serialise on L3 and each allocates against wha
 `RepaymentDatabaseTest#twoRepaymentsOnOneInstalmentSerialiseAndConserve` (`P11-TSK-018`): Σ
 allocations = Σ amounts, no due account negative, never over-allocated; the allocation engine's
 properties — conservation, order, never above due, both overpayment treatments (`P11-TSK-006`…`009`);
-the task's probe — reading the projection for allocation turns scenario 3 red under a planted projection drift
+the task's probe — reading the projection for allocation, under a planted projection drift, caught by
+`RepaymentDatabaseTest#theDueStateIsDerivedFromRowsNotTheProjection` (`AllocationAnomaly`, not the scenario 3 case
+above) and, as the storm's P5, by `LendingStormDatabaseTest#theStormLeavesEveryLoanProvable` at scenario 3's census
+(C15) *(read "turns scenario 3 red" - naming the scenario 3 case above as the catcher, which no performance had - until
+the Phase 11 completion gate's repair, 2026-10-16, finding A6-05)*
 *(read "under a racing reversal" until `P11-DOC-001`, 2026-10-15: the projection is maintained in each posting's own
 transaction, so no racing reversal can open the gap - every performance planted the drift, `P11-TSK-018`'s and the
 storm's P5)* (`MUTATION_TESTING.md` §2); the subledger proof's non-negativity arm (`P11-TSK-029`); the storm's Σ
@@ -2150,6 +2154,22 @@ business dates: still the database's time and never an instance's, still never e
 database clock showed the transaction is refused), and one date on a clock that did not step. The offering instant
 (`INV-LND-05`'s pinned offer) is the insert's own stamp. Verified by `BackwardClockDatabaseTest` (`ClockStep` steps the
 database clock on demand); `MUTATION_TESTING.md` §2's `P11-TSK-036` rows.)*
+
+*(A principal value date never falls on a date the record has closed, the Phase 11 completion gate's R1, 2026-10-16 -
+found three times over, A1-F1 = A2-F4 = A3-I1: the range above admitted any date the clock showed the transaction, and
+after a step back across a midnight the clock can show a date the record already passed. Date d accrued just after
+d + 1's midnight, the clock stepped back, and a repayment dated d left d's base holding the principal it paid - a day's
+interest over-charged, for ever (`INV-LND-02`: interest accrues once, on the principal valued through the date) - or a
+draw dated d left it missing - a day under-charged. The order of facts wins (ADR-0063 decision 2): every principal-moving
+fact - a repayment of any kind (customer, collection, payoff, prepayment), a draw, a reversal re-instating principal - is
+value-dated `max(today, lending.principal_value_floor(loan))`, read under L3: the day after the latest accrual, and for
+a line its latest statement's cycle end (no line valued before it may join a stated cycle; the payoff's own early
+statement excluded). `lending V030`'s repayment and draw ranks refuse a value date before the floor and admit the floor
+though the clock shows the day before it. A servicing step on a clock behind its record writes nothing and is due again
+at the floor's midnight. The replay proof now also compares every accrual's base with the final ledger's principal lines
+valued through its date, so a principal line value-dated into an accrued date is `DIVERGED` (`ACCRUAL`). Verified by
+`BackwardClockDatabaseTest`'s six R1 cases and `LendingProofDatabaseTest#aPrincipalLineValuedIntoAnAccruedDateDiverges`;
+`MUTATION_TESTING.md` §2's Phase 11 gate rows.)*
 
 *(The acceptance window at the loan's birth, `P11-TSK-034`, 2026-10-15: the acceptance judges the offer's expiry on the
 database clock after L2 and the loan's birth trigger re-judges it on its own statement's clock - two ranks, one clock. An

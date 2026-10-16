@@ -1117,9 +1117,12 @@ bare `-nnn` meaning `P11-TSK-nnn`):
   that entry exists; a failed disbursement posts nothing and past `disbursement_deadline` ends
   `CANCELLED (DISBURSEMENT_FAILED)`; on the external path the hold placed at disbursement is adopted,
   not duplicated, by payments' withdrawal, the payout dispatched once under
-  `payments.withdrawal:lending:<loanId>` and never re-dispatched by lending, a `FAILED`, `RETURNED`
-  or `NOT_DISPATCHED` payout leaving the receivable and the disbursement entry unchanged and the
-  funds in the borrower's wallet, and interest starting at the payout's terminal outcome. Scenario 1
+  `payments.withdrawal:lending:<loanId>` and never re-dispatched by lending, a `FAILED` or
+  `NOT_DISPATCHED` payout leaving the receivable and the disbursement entry unchanged and the
+  funds in the borrower's wallet, and interest starting at the payout's terminal outcome. *(Read "a
+  `FAILED`, `RETURNED` or `NOT_DISPATCHED` payout" until the Phase 11 completion gate's repair,
+  2026-10-16, finding A6-05: `PayoutStatus` and `lending V009`'s `CHECK` have no `RETURNED` - payments'
+  withdrawal keeps no return record, so it would have no producer (`P11-TSK-015`).)* Scenario 1
   (`LoanDisbursementDatabaseTest#theSameDisbursementOnTwoInstancesPostsOnce`,
   `LoanPayoutDatabaseTest#tenDispatchersOneWithdrawal`) and scenario 5
   (`LoanPayoutDatabaseTest#aLostResponseIsHeldThenConcludedByInquiryAndNeverResent`) green; one
@@ -1265,7 +1268,14 @@ bare `-nnn` meaning `P11-TSK-nnn`):
   generated lines, every figure replayed `IDENTICAL` in two JVMs, a perturbed accrual, billing,
   statement, allocation or agreement byte flipping the verdict; each task's probe recorded in
   `MUTATION_TESTING.md` §2 and caught, and `P11-TST-*` given their §4 rows. **Owners**: every task;
-  `P11-TST-001`, `P11-TST-002`.
+  `P11-TST-001`, `P11-TST-002`. *(Not every probe was caught: `PHASE_11_PLAN.md` §13.4's re-dispatch
+  probe, performed as worded by `P11-DOC-001` - `LoanPayoutSteps.observe` dispatching the payout again on
+  every undecided observation - **SURVIVED**, an equivalent mutant at the money's level: payments' key is
+  the instruction itself, so the re-dispatch replays and sends nothing. "Never re-dispatched by lending" is
+  held by the payout machine and payments' key, not by a lending-side count; the form that can fail - a
+  payout concluded on payments' `UNKNOWN` - was caught by `-015` and by the storm (`MUTATION_TESTING.md` §2,
+  the `INV-RAIL-02` and `INV-LND-07` rows). Annotated by the Phase 11 completion gate's repair, 2026-10-16,
+  finding A6-05.)*
 - **Documentation and invariants.** Every `Phase: 11` invariant in `FINANCIAL_INVARIANTS.md` —
   `INV-LND-01`…`14`, **read from the catalogue, not from the phase plan** — has a
   `MUTATION_TESTING.md` §2 demonstration; ADR-0090…0100 are read against the code and `Accepted` (or
@@ -1311,7 +1321,7 @@ lifecycle**'s "refused ... by the status `CHECK`" is a vocabulary rank - a `CHEC
 between two of them, and the repayment, waiver, amendment and capital contribution derive their status - the edges are the
 every-writer triggers', proven for both roles; **Disbursement**'s "past `disbursement_deadline` ends `CANCELLED`" is an
 attempt failing at or after the deadline (a wallet postable after it is still disbursed - `LENDING_LIFECYCLES.md`), and its
-"`RETURNED`" payout has no producer (`P11-TSK-015`, owner judgement); **Schedule**'s "`422 lending.TermsNotAmortising` at
+"`RETURNED`" payout has no producer (`P11-TSK-015`, owner judgement; since dropped from the clause - A6-05); **Schedule**'s "`422 lending.TermsNotAmortising` at
 the offer" is raised at the terms proposal, and an offer that cannot amortise closes its application `CLOSED_UNDECIDED`;
 **Revolving credit line**'s "no line's drawn principal above its limit at rest" holds but by a four-eyes reversal of a
 paydown after a re-draw (`P11-TSK-023`; the storm's C10 bounds it by exactly the approved reversals); **Capital and

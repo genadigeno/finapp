@@ -272,7 +272,7 @@ public final class LoanAmendments {
             throw new ProposalNotPending(proposal.status());
         }
         if (proposal.proposedBy().equals(actor.id())) {
-            throw new SelfApprovalRefused();
+            throw new SelfApprovalRefused(loan, amendment);
         }
         if (!store.decide(unitOfWork, new LoanAmendmentStore.Decision(ids.next(), amendment, proposal.proposedBy(),
                 LoanAmendmentStatus.APPROVED, actor, reasoned, correlation))) {
@@ -332,6 +332,17 @@ public final class LoanAmendments {
                 LendingAuditAction.SELF_DEALING_REFUSED, "loan", refused.loan().value().toString(), Optional.empty(),
                 AuditOutcome.FAILED, correlation, Optional.of("loan=" + refused.loan().value() + ", act=amendment:"
                         + refused.act() + " refused - the loan is the acting operator's own party's")));
+    }
+
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LendingAuditAction#SELF_APPROVAL_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept (the Phase 11
+     * gate's R4).
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        SelfApprovalRefusals.record(audit, ids, clock, unitOfWork, actor, TARGET_TYPE, refused.target(), refused.summary(),
+                correlation);
     }
 
     // ------------------------------------------------------------------ the customer's read
@@ -702,8 +713,23 @@ public final class LoanAmendments {
     public static final class SelfApprovalRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        SelfApprovalRefused() {
+        private final String target;
+        private final String summary;
+
+        SelfApprovalRefused(LoanId loan, UUID amendment) {
             super("an amendment is approved by someone other than its proposer; the proposer may reject it");
+            this.target = amendment.toString();
+            this.summary = "loan=" + loan.value() + ", amendment=" + amendment + ", act=amendment:approve";
+        }
+
+        /** The proposal the approver proposed - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the proposal and the act - never an amount. */
+        public String summary() {
+            return summary;
         }
     }
 

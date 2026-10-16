@@ -319,18 +319,21 @@ public final class LoanTermsDesk {
 
     // ------------------------------------------------------------------ plumbing
 
-    /** One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing. */
+    /**
+     * One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing, a
+     * self-approval is recorded {@code FAILED} in a transaction of its own.
+     */
     private LoanTermsReceipt keyed(
             Actor actor, String idempotencyKey, String fingerprinted, Function<Connection, LoanTermsReceipt> act) {
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
-        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transactions.inTransaction(
-                unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
+        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
+                () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
                     LoanTermsReceipt receipt = act.apply(uow);
                     String stored = receipt.id() + "|" + receipt.product() + "|" + receipt.version() + "|"
                             + receipt.status() + "|" + (receipt.retiredId() == null ? "" : receipt.retiredId());
                     return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
-                })));
+                }))));
         String[] stored = new String(
                         outcome.body().orElseThrow(() -> new IllegalStateException("a terms act stores its receipt")),
                         StandardCharsets.UTF_8)
@@ -342,6 +345,23 @@ public final class LoanTermsDesk {
     private static LoanTermsReceipt receipt(LoanTermsAdministration.Decided decided) {
         return new LoanTermsReceipt(decided.id().value().toString(), decided.product().name(), decided.version(),
                 decided.status().name(), decided.retired().map(id -> id.value().toString()).orElse(null));
+    }
+
+    /**
+     * {@code work}, a refused self-approval recorded {@code FAILED} in a transaction of its own after the act rolled back
+     * (the Phase 11 gate's R4), then refused as before.
+     */
+    private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {
+        try {
+            return work.get();
+        } catch (LoanTermsAdministration.SelfApprovalRefused self) {
+            CorrelationId correlation = correlation();
+            transactions.inTransaction(uow -> {
+                administration.recordRefusal(uow, self, actor, correlation);
+                return null;
+            });
+            throw self;
+        }
     }
 
     /** The domain's refusals, in the API's words. */
