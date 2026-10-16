@@ -1,5 +1,9 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.ScheduleEngineV1;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
@@ -217,7 +221,7 @@ final class AmortisationWorld {
         while (refused - admitted > 1) {
             long middle = admitted + (refused - admitted) / 2;
             LoanTerms terms = base.toBuilder().nominalAnnualRate(BigDecimal.valueOf(middle, 8)).build();
-            if (ScheduleEngineV1.judgeAmortisation(terms, bounds).isEmpty()) {
+            if (LoanEngines.judgeAmortisation(terms, bounds).isEmpty()) {
                 admitted = middle;
             } else {
                 refused = middle;

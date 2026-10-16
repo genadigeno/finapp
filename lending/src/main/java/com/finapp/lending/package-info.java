@@ -18,8 +18,15 @@
  * {@code credit}'s - taken up only through credit's consumption port, reached through a port this module declares and
  * {@code app} composes, never a build edge (A16); the wallet is {@code accounts}', the external payout and its
  * ambiguity {@code payments}', the capital contribution's recognition {@code reconciliation}'s. The edges are exactly
- * {@code ledger}, {@code platform} and {@code sharedkernel} ({@code LendingModuleIsolationTest}), and no module depends
- * on this one.
+ * {@code ledger}, {@code creditmath}, {@code platform} and {@code sharedkernel} ({@code LendingModuleIsolationTest}), and
+ * no module depends on this one - {@code bnpl} included.
+ *
+ * <p><strong>The engines are {@code creditmath}'s since `P12-TSK-002`</strong> (ADR-0101 decision 5). The schedule,
+ * accrual and allocation engines, their records and the engine version identities moved there unchanged - every figure,
+ * refusal and persisted name the same - so that {@code bnpl} computes with them without an edge to this module.
+ * {@link com.finapp.lending.LoanEngines} is lending's side of that edge: the {@code LoanTerms} entries, mapping a loan's
+ * terms onto the engines' records and delegating. The statement engine stays here - a line's engine, no other product's -
+ * and its version identity stays in {@code creditmath}'s one registry beside the others.
  *
  * <p><strong>The Phase 12 boundary.</strong> Buy-now-pay-later is {@code bnpl}'s (Phase 12), not a third member of
  * {@link com.finapp.lending.LoanProduct}: merchant-financed instalment credit is one economic event producing two
@@ -32,7 +39,7 @@
  * vocabularies ({@code P11-TSK-002}): the products and their kind, frequency and day count (only implemented members -
  * {@code INV-LND-09}), the application, offer and loan lifecycles with the loan's closure and cancellation reasons, the
  * delinquency buckets, the allocation components and overpayment treatments, the four engines at version 1
- * ({@link com.finapp.lending.EngineVersion}) and the aggregates' typed identifiers. The loan chart of accounts
+ * ({@link com.finapp.creditmath.EngineVersion}) and the aggregates' typed identifiers. The loan chart of accounts
  * ({@code P11-TSK-003}, ledger {@code V026}): {@link com.finapp.lending.LoanAccounts} opens a loan's six ledger accounts
  * in its one currency, typed as ADR-0096's account plan, in the caller's transaction - the acceptance's
  * ({@code -012}). Lending capital ({@code P11-TSK-004}): {@code V002}'s two INSERT-only tables, the four-eyes
@@ -45,16 +52,16 @@
  * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes
  * {@link com.finapp.lending.LoanTermsAdministration} (A0 to A2; {@code pinActive} the {@code FOR SHARE} read the
  * application and offer will pin) and lending's first event, {@code lending.LoanTermsVersionActivated}. The
- * allocation engine ({@code P11-TSK-008}): {@link com.finapp.lending.AllocationEngineV1}, pure and versioned - a
- * payment over a {@link com.finapp.lending.DueState} by the agreement's pinned
- * {@link com.finapp.lending.AllocationRules} into {@link com.finapp.lending.AllocationLine}s, billed items oldest first,
+ * allocation engine ({@code P11-TSK-008}): {@link com.finapp.creditmath.AllocationEngineV1}, pure and versioned - a
+ * payment over a {@link com.finapp.creditmath.DueState} by the agreement's pinned
+ * {@link com.finapp.creditmath.AllocationRules} into {@link com.finapp.creditmath.AllocationLine}s, billed items oldest first,
  * the pinned component order within each, the remainder by the overpayment treatment; conserving and never above due
  * ({@code INV-LND-04}), unwired until billing and repayment ({@code -017}, {@code -018}). The accrual engine
- * ({@code P11-TSK-007}): {@link com.finapp.lending.AccrualEngineV1}, pure - daily {@code ACT_365F} interest on the base
+ * ({@code P11-TSK-007}): {@link com.finapp.creditmath.AccrualEngineV1}, pure - daily {@code ACT_365F} interest on the base
  * the caller supplies, rounded once per period ({@code INV-LND-09}) - over the {@code ACT_365F} arithmetic it shares
  * with the schedule engine; nothing accrues yet (the sweep is {@code P11-TSK-016}).
- * The schedule engine ({@code P11-TSK-006}): {@link com.finapp.lending.ScheduleEngineV1}, pure, projecting a
- * conserving {@link com.finapp.lending.Schedule} or a typed {@link com.finapp.lending.ScheduleOutcome.Refused}, and
+ * The schedule engine ({@code P11-TSK-006}): {@link com.finapp.creditmath.ScheduleEngineV1}, pure, projecting a
+ * conserving {@link com.finapp.creditmath.Schedule} or a typed {@link com.finapp.creditmath.ScheduleOutcome.Refused}, and
  * judging at the terms door, through the port {@link com.finapp.lending.LoanProductBounds} {@code app} implements over
  * credit, whether terms amortise across the product's bounds.
  * The statement engine ({@code P11-TSK-009}): {@link com.finapp.lending.StatementEngineV1}, pure - a credit line's

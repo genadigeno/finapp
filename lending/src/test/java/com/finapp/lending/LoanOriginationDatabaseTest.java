@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;

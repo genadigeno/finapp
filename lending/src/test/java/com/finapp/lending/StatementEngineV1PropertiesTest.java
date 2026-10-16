@@ -4,6 +4,10 @@ import static com.finapp.lending.LoanTermsFixtures.EUR;
 import static com.finapp.lending.LoanTermsFixtures.creditLine;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.InterestAccrual;
+import com.finapp.creditmath.testing.SecondJvm;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;
 import java.math.RoundingMode;

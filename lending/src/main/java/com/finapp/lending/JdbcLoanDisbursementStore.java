@@ -1,5 +1,9 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.LendingEngine;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;

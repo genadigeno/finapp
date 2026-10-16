@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.DueItemId;
+import com.finapp.creditmath.DueState;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;

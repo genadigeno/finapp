@@ -22,6 +22,13 @@ import org.junit.jupiter.api.Test;
  * ({@code INV-LED-04}, {@code INV-LND-01}). This test pins the positive half (the reverse edge is
  * a Gradle cycle); {@code LedgerModuleIsolationTest} forbids the negative half from its own side.
  *
+ * <p><strong>And {@code creditmath}, since `P12-TSK-002`</strong> (ADR-0101 decision 5): the schedule, accrual and
+ * allocation engines lending computes with moved there unchanged, so {@code bnpl} shares the arithmetic without an edge
+ * to lending. Admitted and required here - the edge is the extraction's whole point - and nothing else is admitted
+ * with it: {@code bnpl}, the module that shares the engines, is refused like every other sibling, and
+ * {@code CreditmathModuleIsolationTest} refuses {@code lending} from the other side (the reverse edge is a Gradle cycle
+ * in any case).
+ *
  * <p><strong>{@code credit} is a refusal with no cycle behind it</strong> (A16, the
  * {@code crossborder} precedent): lending consumes a credit decision, but through a port it
  * declares and {@code app} composes over credit's published ones - so the module that services
@@ -59,6 +66,7 @@ class LendingModuleIsolationTest {
             "fx",
             "crossborder",
             "credit",
+            "bnpl",
             "app");
 
     @Test
@@ -73,13 +81,14 @@ class LendingModuleIsolationTest {
     }
 
     @Test
-    @DisplayName("lending does depend on ledger, platform and sharedkernel - the documented direction")
+    @DisplayName("lending does depend on ledger, creditmath, platform and sharedkernel - the documented direction"
+            + " (creditmath since P12-TSK-002)")
     void dependsOnLedgerPlatformAndSharedkernel() {
         // The non-vacuity half of the guard above - without it, the forbidden-list assertion
         // passes over a classpath containing nothing at all - and the positive half of the
         // ledger asymmetry: lending -> ledger -> platform -> sharedkernel is pinned as the
         // documented direction.
-        for (String required : List.of("ledger", "platform", "sharedkernel")) {
+        for (String required : List.of("ledger", "creditmath", "platform", "sharedkernel")) {
             assertThat(classpathEntries())
                     .as("lending must depend on %s", required)
                     .anyMatch(entry -> isBuildOutputOf(entry, required));
@@ -105,7 +114,7 @@ class LendingModuleIsolationTest {
         assertThat(isBuildOutputOf(root + "credit" + sep + "src" + sep + "main", "credit"))
                 .as("a source directory is not build output").isFalse();
         // And the guard is wired to the list it claims: each of the three is actually forbidden.
-        assertThat(FORBIDDEN).contains("credit", "payments", "accounts").doesNotContain("ledger");
+        assertThat(FORBIDDEN).contains("credit", "payments", "accounts", "bnpl").doesNotContain("ledger", "creditmath");
     }
 
     /**

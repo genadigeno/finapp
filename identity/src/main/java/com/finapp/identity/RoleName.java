@@ -255,7 +255,35 @@ public enum RoleName {
      * act, and no employee services their own party's loan - is held between two holders at the domain and by
      * {@code CHECK}, enforced by each act's task. Holds neither the terms nor the capital, and cannot originate.
      */
-    LOAN_SERVICING_AGENT(EnumSet.of(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE));
+    LOAN_SERVICING_AGENT(EnumSet.of(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE)),
+
+    /**
+     * Sets the BNPL products' terms and answers for what they produced (`P12-TSK-002`, ADR-0101, ADR-0102): holds
+     * {@link PermissionName#BNPL_ADMINISTER} - terms versions under four eyes - and {@link PermissionName#BNPL_INVESTIGATE}
+     * - explanation, replay, reports.
+     *
+     * <p><strong>A thirteenth role, because this IS a distinct trust decision</strong>: the plans, rate, late fee and
+     * servicing rules of a merchant-financed purchase are the BNPL desk's product policy - not credit's decision policy
+     * ({@link #CREDIT_POLICY_OFFICER}), not lending's pricing ({@link #LENDING_OFFICER}), not the merchant's fee schedule
+     * ({@link #MERCHANT_ADMINISTRATOR}). Holds none of the other populations' permissions and they hold none of these
+     * ({@code INV-AUD-03}). No operator creates a purchase or finances a merchant in Phase 12, so no role here can.
+     */
+    BNPL_OFFICER(EnumSet.of(PermissionName.BNPL_ADMINISTER, PermissionName.BNPL_INVESTIGATE)),
+
+    /**
+     * Services customers' BNPL obligations and resolves their disputes (`P12-TSK-002`, ADR-0101, ADR-0106): holds
+     * {@link PermissionName#BNPL_SERVICE} - the audited read and the proposals of waivers and reversals -
+     * {@link PermissionName#BNPL_SERVICE_APPROVE} - approving another holder's proposal - and
+     * {@link PermissionName#BNPL_DISPUTE_RESOLVE} - resolving a dispute the merchant answered.
+     *
+     * <p><strong>A fourteenth role, with four-eyes inside it</strong> (the {@link #LOAN_SERVICING_AGENT} shape): proposing
+     * and approving a correction are one population's work, and the separation that matters - no person approves their
+     * own act, and no employee services or resolves a dispute on their own party's obligation - is held between two
+     * holders at the domain and by {@code CHECK}, enforced by each act's task. Holds neither the terms nor anything of
+     * lending's servicing: a loan's agent is not a BNPL agent, each context's accounts its own.
+     */
+    BNPL_SERVICING_AGENT(EnumSet.of(PermissionName.BNPL_SERVICE, PermissionName.BNPL_SERVICE_APPROVE,
+            PermissionName.BNPL_DISPUTE_RESOLVE));
 
     private final Set<PermissionName> permissions;
 

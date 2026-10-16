@@ -1,5 +1,8 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.ScheduleEngineV1;
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.ScheduleRefusal;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
@@ -329,7 +332,7 @@ public final class LoanTermsAdministration {
         }
         LoanProductBounds.Bounds within = bounds.amortisationBounds(terms.product())
                 .orElseThrow(() -> new IllegalStateException("an instalment product declares its amount and term bounds"));
-        Optional<ScheduleOutcome.Refused> refused = ScheduleEngineV1.judgeAmortisation(terms, within);
+        Optional<ScheduleOutcome.Refused> refused = LoanEngines.judgeAmortisation(terms, within);
         if (refused.isPresent()) {
             if (refused.get().reason() == ScheduleRefusal.NOT_AMORTISING) {
                 throw new TermsNotAmortising(refused.get().detail());

@@ -21,6 +21,8 @@ import static com.finapp.lending.DisbursementWorld.walletOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleOutcome;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
@@ -147,7 +149,7 @@ class LoanDisbursementDatabaseTest {
         LoanTerms pinned = inOneTransaction(uow -> DisbursementWorld.TERMS_STORE.version(uow, LoanTermsVersionId.of(
                 UUID.fromString(scalar("SELECT terms_version_id::text FROM lending.loan_agreement WHERE loan_id = ?",
                         id)))).orElseThrow().terms());
-        Schedule projected = ((ScheduleOutcome.Projected) ScheduleEngineV1.project(pinned, loan.principal(), 18, 10,
+        Schedule projected = ((ScheduleOutcome.Projected) LoanEngines.project(pinned, loan.principal(), 18, 10,
                 valueDate)).schedule();
         assertThat(read.schedule()).as("the stored schedule is the pinned engine's projection, row for row")
                 .isEqualTo(projected);

@@ -260,6 +260,33 @@ class IdentityAdministrationDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the two BNPL roles are assignable, and each is refused by both administrative endpoints (P12-TSK-002)")
+    void theBnplRolesAreAssignableAndRefusedAdministration() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        for (String role : java.util.List.of("BNPL_OFFICER", "BNPL_SERVICING_AGENT")) {
+            IdentityId holder = givenAnIdentity();
+
+            // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits the value at the
+            // boundary, identity V022's regenerated constraint admits the row, and the grant is audited like any other.
+            assertThat(post(rolesOf(holder), givenASessionFor(admin),
+                                    "{\"role\":\"" + role + "\",\"reason\":\"OPS-5203 bnpl desk\"}")
+                            .statusCode())
+                    .as(role).isEqualTo(204);
+            assertThat(auditOf("identity.RoleAssigned", holder, admin)).as(role).contains("OPS-5203");
+
+            String holderSession = givenASessionFor(holder);
+            IdentityId subject = givenAnIdentity();
+            assertThat(post(suspensionOf(subject), holderSession, REASON).statusCode())
+                    .as("%s: BNPL is not managing identities", role)
+                    .isEqualTo(403);
+            assertThat(post(rolesOf(subject), holderSession, adminRole()).statusCode())
+                    .as("%s: and certainly not granting roles", role)
+                    .isEqualTo(403);
+            assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+        }
+    }
+
     // -----------------------------------------------------------------
     // The inverted ownership rule
 

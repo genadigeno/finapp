@@ -54,6 +54,8 @@ class CreditModuleIsolationTest {
             "fx",
             "crossborder",
             "lending",
+            "creditmath",
+            "bnpl",
             "app");
 
     @Test

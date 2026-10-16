@@ -47,6 +47,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.AccrualEngineV1;
+import com.finapp.creditmath.AccrualTerms;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.DayCountConvention;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.InterestAccrual;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.JdbcBalanceDerivation;

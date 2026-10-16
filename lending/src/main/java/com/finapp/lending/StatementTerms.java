@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualTerms;
+import com.finapp.creditmath.EngineVersion;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.math.RoundingMode;

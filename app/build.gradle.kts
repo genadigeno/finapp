@@ -99,6 +99,15 @@ dependencies {
     // be composed here.
     implementation(project(":lending"))
 
+    // The Phase 12 modules (P12-TSK-002), on the classpath for the same reason: a module not on app's classpath is a
+    // module ProductionModules sweeps no rule over - the floating-point guard covers creditmath and bnpl from their first
+    // classes (INV-MON-01). `creditmath` directly, not only through lending: app composes lending's engine records
+    // (Schedule, AllocationLine, ...) in its doors and reports, and names them. And `app` is the only place bnpl and
+    // credit are both visible, so the vocabularies' agreement - each BnplProduct with its CreditProduct - is checked here
+    // (BnplVocabularyTest), and every port between them will be composed here.
+    implementation(project(":creditmath"))
+    implementation(project(":bnpl"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

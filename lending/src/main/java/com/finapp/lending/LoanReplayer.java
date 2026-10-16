@@ -1,5 +1,16 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualEngineV1;
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AccrualTerms;
+import com.finapp.creditmath.AllocationEngineV1;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.DueState;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.InterestAccrual;
+import com.finapp.creditmath.LendingEngine;
+import com.finapp.creditmath.ScheduleOutcome;
 import com.finapp.sharedkernel.money.Money;
 import java.time.LocalDate;
 import java.util.List;
@@ -47,7 +58,7 @@ public final class LoanReplayer {
     static ScheduleOutcome project(int number, LoanTerms terms, Money principal, int termMonths, int repaymentDay,
             LocalDate accrualStart) {
         return switch (version(LendingEngine.SCHEDULE, number)) {
-            case SCHEDULE_ENGINE_V1 -> ScheduleEngineV1.project(terms, principal, termMonths, repaymentDay, accrualStart);
+            case SCHEDULE_ENGINE_V1 -> LoanEngines.project(terms, principal, termMonths, repaymentDay, accrualStart);
             case ACCRUAL_ENGINE_V1, ALLOCATION_ENGINE_V1, STATEMENT_ENGINE_V1 -> throw notThis(LendingEngine.SCHEDULE);
         };
     }
@@ -55,7 +66,7 @@ public final class LoanReplayer {
     static ScheduleOutcome recalculate(int number, LoanTerms terms, Money principal, int remainingMonths, int intendedDay,
             LocalDate effectiveFrom, LocalDate nextDueDate) {
         return switch (version(LendingEngine.SCHEDULE, number)) {
-            case SCHEDULE_ENGINE_V1 -> ScheduleEngineV1.recalculate(terms, principal, remainingMonths, intendedDay,
+            case SCHEDULE_ENGINE_V1 -> LoanEngines.recalculate(terms, principal, remainingMonths, intendedDay,
                     effectiveFrom, nextDueDate);
             case ACCRUAL_ENGINE_V1, ALLOCATION_ENGINE_V1, STATEMENT_ENGINE_V1 -> throw notThis(LendingEngine.SCHEDULE);
         };
@@ -64,7 +75,7 @@ public final class LoanReplayer {
     static ScheduleOutcome recalculateAtInstalment(int number, LoanTerms terms, Money principal, Money instalment,
             int maximumMonths, int intendedDay, LocalDate effectiveFrom, LocalDate nextDueDate) {
         return switch (version(LendingEngine.SCHEDULE, number)) {
-            case SCHEDULE_ENGINE_V1 -> ScheduleEngineV1.recalculateAtInstalment(terms, principal, instalment, maximumMonths,
+            case SCHEDULE_ENGINE_V1 -> LoanEngines.recalculateAtInstalment(terms, principal, instalment, maximumMonths,
                     intendedDay, effectiveFrom, nextDueDate);
             case ACCRUAL_ENGINE_V1, ALLOCATION_ENGINE_V1, STATEMENT_ENGINE_V1 -> throw notThis(LendingEngine.SCHEDULE);
         };

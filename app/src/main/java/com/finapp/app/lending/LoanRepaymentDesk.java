@@ -8,7 +8,7 @@ import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.lending.AllocationAnomaly;
-import com.finapp.lending.AllocationLine;
+import com.finapp.creditmath.AllocationLine;
 import com.finapp.lending.LendingErrorCode;
 import com.finapp.lending.LoanClosure;
 import com.finapp.lending.LoanId;

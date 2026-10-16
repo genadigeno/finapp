@@ -1,5 +1,10 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationEngineV1;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.DueItemId;
+import com.finapp.creditmath.DueState;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
@@ -129,7 +134,7 @@ public final class LoanCollections {
         if (due.stream().noneMatch(item -> candidate(item, attempted, today))) {
             return Collected.NOTHING;
         }
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }

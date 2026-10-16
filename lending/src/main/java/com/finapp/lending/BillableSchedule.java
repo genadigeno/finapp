@@ -1,5 +1,7 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.EngineVersion;
 import com.finapp.sharedkernel.money.Money;
 import java.util.List;
 import java.util.Objects;

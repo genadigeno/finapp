@@ -1,5 +1,10 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationEngineV1;
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.AllocationRules;
+import com.finapp.creditmath.DueState;
 import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
@@ -204,7 +209,7 @@ public final class Repayments {
         LoanReceivables receivables = new LoanReceivables(billings, ledgerAccounts, balances);
         Accounts accounts = receivables.accounts(unitOfWork, id, loan.currency());
         DueState dueState = receivables.dueState(unitOfWork, id, accounts, zero);
-        AllocationRules rules = AllocationRules.of(pinned);
+        AllocationRules rules = LoanEngines.allocationRules(pinned);
         if (rules.engine() != agreement.allocationEngine()) {
             throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
         }

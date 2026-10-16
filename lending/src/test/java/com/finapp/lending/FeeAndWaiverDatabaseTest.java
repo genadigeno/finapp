@@ -58,6 +58,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.AllocationComponent;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.outbox.JdbcOutboxWriter;

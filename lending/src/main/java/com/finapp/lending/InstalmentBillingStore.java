@@ -1,5 +1,8 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.DueItemId;
+import com.finapp.creditmath.DueState;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;

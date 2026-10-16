@@ -3,6 +3,9 @@ package com.finapp.lending;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleOutcome;
 import com.finapp.sharedkernel.money.Money;
 import java.time.LocalDate;
 import java.util.HexFormat;
@@ -218,7 +221,7 @@ class CanonicalOfferTermsTest {
 
     private static CanonicalOfferTerms.Content loan(LoanTerms terms, long minor, int months) {
         Money principal = Money.ofMinorUnits(minor, LoanTermsFixtures.EUR);
-        Schedule schedule = ((ScheduleOutcome.Projected) ScheduleEngineV1.project(terms, principal, months, 10,
+        Schedule schedule = ((ScheduleOutcome.Projected) LoanEngines.project(terms, principal, months, 10,
                 LocalDate.of(2026, 10, 11))).schedule();
         return new CanonicalOfferTerms.Content(OFFER, APPLICATION, DECISION, VERSION, 3, terms, principal,
                 Optional.of(months), 10, Optional.of(LoanOffer.Illustration.of(schedule)));

@@ -157,8 +157,9 @@ only):
   principal is funded from the same `LENDING_CAPITAL` and judged under the same L6 row and headroom,
   which Lending's `LendingCapitalHeadroom` and `LendingCapitalProof` widen by summing the BNPL
   principal *ledger purposes* (no bnpl type enters lending), BNPL reading it through `app`'s port. Its
-  **arithmetic** — the pure schedule, accrual and allocation engines move unchanged into `creditmath`,
-  on which both depend (`MODULE_ARCHITECTURE.md` M12). BNPL never creates a `loan`, reads or writes a
+  **arithmetic** — the pure schedule, accrual and allocation engines moved unchanged into `creditmath`,
+  on which both depend (`MODULE_ARCHITECTURE.md` M12; *built by `P12-TSK-002`, 2026-10-16, every Phase 11
+  figure replaying identically — this read "move" until then*). BNPL never creates a `loan`, reads or writes a
   lending store or posts a `LOAN_*` purpose, and Lending never knows a merchant.
 - **Downstream, deferred:** collections (Case Management, 23 — Phase 13) consumes
   `LoanDelinquencyChanged` and `LoanDefaulted`; write-off, provisioning and the GL (Accounting, 25 —
@@ -168,8 +169,9 @@ only):
   proves origination against the simulators.
 
 **BNPL (19)** was bounded by the Phase 11 → 12 transition (ADR-0101, `Proposed`, 2026-10-16;
-`PHASE_12_PLAN.md` §3 and §12.13) — *planned: nothing of it is built, and the task that builds each
-part corrects this paragraph to the code.* One context in one module, `bnpl`, serving two products —
+`PHASE_12_PLAN.md` §3 and §12.13) — *the boundary, schema floor and vocabularies built by `P12-TSK-002`
+(2026-10-16; this read "planned: nothing of it is built" until then); the rest planned, and the task that
+builds each part corrects this paragraph to the code.* One context in one module, `bnpl`, serving two products —
 pay-in-4 (four equal instalments, the first at purchase, then every 14 days, no interest) and pay-in-N
 (3, 6 or 12 monthly instalments with interest). **One economic event, two financial flows never
 collapsed**: the merchant is financed upfront, net of the merchant discount, and paid out on its normal

@@ -7,11 +7,12 @@ import com.finapp.app.credit.LendingStormCredit;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
+import com.finapp.lending.LoanEngines;
 import com.finapp.lending.LoanTerms;
-import com.finapp.lending.Schedule;
-import com.finapp.lending.ScheduleEngineV1;
-import com.finapp.lending.ScheduleOutcome;
-import com.finapp.lending.SchedulePeriod;
+import com.finapp.creditmath.Schedule;
+import com.finapp.creditmath.ScheduleEngineV1;
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.SchedulePeriod;
 import com.finapp.payments.SimulatedInstantSchemeAdapter;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -651,7 +652,7 @@ final class LendingStormWorld {
             if (candidate.isAfter(start)) {
                 continue; // an accrual start is never after the day the loan was disbursed - never in the future
             }
-            ScheduleOutcome outcome = ScheduleEngineV1.project(terms, principal, term, day, candidate);
+            ScheduleOutcome outcome = LoanEngines.project(terms, principal, term, day, candidate);
             if (outcome instanceof ScheduleOutcome.Projected projected
                     && projected.schedule().periods().get(0).dueDate().equals(firstDue)) {
                 schedule = projected.schedule();

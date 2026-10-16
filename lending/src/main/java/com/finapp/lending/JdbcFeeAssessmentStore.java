@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.DueItemId;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;

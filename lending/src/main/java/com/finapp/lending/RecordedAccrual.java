@@ -1,5 +1,6 @@
 package com.finapp.lending;
 
+import com.finapp.creditmath.InterestAccrual;
 import com.finapp.ledger.JournalEntryId;
 import java.util.Objects;
 import java.util.Optional;

@@ -22,6 +22,8 @@ import static com.finapp.lending.InterestAccrualDatabaseTest.disbursed;
 import static com.finapp.lending.InterestAccrualDatabaseTest.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.creditmath.AllocationLine;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;

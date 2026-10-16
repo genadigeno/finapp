@@ -65,9 +65,10 @@ flyway {
 }
 
 dependencies {
-    // The documented direction: lending -> ledger -> platform -> sharedkernel (ADR-0090 point 5).
+    // The documented direction: lending -> ledger -> platform -> sharedkernel (ADR-0090 point 5), and since P12-TSK-002
+    // lending -> creditmath -> sharedkernel (below).
     //
-    // `ledger` is this module's one permitted business-sibling edge: disbursements, accruals,
+    // `ledger` is this module's one permitted business-sibling edge (creditmath is arithmetic, no bounded context): disbursements, accruals,
     // billings, repayments, draws and corrections are COMMANDED through PostingService /
     // ReversalService and the loan's balances derived through the ledger's API - never written
     // (INV-LED-04, INV-LND-01). The edge is declared with the module, before anything uses it,
@@ -85,6 +86,13 @@ dependencies {
     implementation(project(":ledger"))
     implementation(project(":platform"))
 
+    // `creditmath` (P12-TSK-002; ADR-0101 decision 5, MODULE_ARCHITECTURE.md M12): the schedule, accrual and allocation
+    // engines this module computed with since Phase 11, moved there unchanged so bnpl shares the arithmetic without an
+    // edge to lending. The module's second sibling edge, and like the ledger's one-way: with lending -> creditmath in
+    // the build graph, creditmath -> lending is a Gradle cycle. Lending keeps the LoanTerms side of the edge
+    // (LoanEngines) - creditmath sees no lending type.
+    implementation(project(":creditmath"))
+
     implementation(platform(libs.spring.boot.bom))
     testImplementation(platform(libs.spring.boot.bom))
 
@@ -97,6 +105,11 @@ dependencies {
     // guard run against the catalogue as it actually stands (LendingSchemaHasNoMutableMoneyTest).
     // The module that owns the schema owns the proof of its floor.
     testImplementation(testFixtures(project(":platform")))
+
+    // The engines' second JVM (SecondJvm), published by creditmath with the engines' own suites (P12-TSK-002): the
+    // statement engine's two-JVM comparison and the battery (P11-TST-002) run lending's code in it - one harness, never
+    // a copy.
+    testImplementation(testFixtures(project(":creditmath")))
 }
 
 // The `database` tier's module-specific configuration - the container image, from the version

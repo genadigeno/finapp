@@ -6,6 +6,10 @@ import static com.finapp.lending.LoanTermsFixtures.personalLoan;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.creditmath.AccrualEngineV1;
+import com.finapp.creditmath.AccrualPeriod;
+import com.finapp.creditmath.EngineVersion;
+import com.finapp.creditmath.InterestAccrual;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;
@@ -352,7 +356,7 @@ class StatementEngineV1Test {
         LocalDate date = cycle.start();
         for (Optional<Money> base : bases) {
             if (base.isPresent()) {
-                InterestAccrual accrual = AccrualEngineV1.accrue(AccrualTerms.of(terms), cycle, previous, date, base.get());
+                InterestAccrual accrual = AccrualEngineV1.accrue(LoanEngines.accrualTerms(terms), cycle, previous, date, base.get());
                 accruals.add(accrual);
                 previous = Optional.of(accrual);
             }

@@ -230,6 +230,42 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("BNPL_OFFICER grants exactly BNPL_ADMINISTER and BNPL_INVESTIGATE - neither servicing nor lending's or"
+            + " credit's policy")
+    void bnplOfficerGrantsExactlyTwo() {
+        // The thirteenth population (P12-TSK-002, ADR-0101, ADR-0102): whoever sets the BNPL products' terms answers for
+        // what they produced, and neither services an obligation nor resolves a dispute.
+        assertThat(RoleName.BNPL_OFFICER.permissions())
+                .as("setting and investigating BNPL terms is not servicing, nor another context's policy")
+                .containsExactlyInAnyOrder(PermissionName.BNPL_ADMINISTER, PermissionName.BNPL_INVESTIGATE)
+                .doesNotContain(
+                        PermissionName.BNPL_SERVICE,
+                        PermissionName.BNPL_SERVICE_APPROVE,
+                        PermissionName.BNPL_DISPUTE_RESOLVE,
+                        PermissionName.LENDING_ADMINISTER,
+                        PermissionName.CREDIT_POLICY_ADMINISTER);
+    }
+
+    @Test
+    @DisplayName("BNPL_SERVICING_AGENT grants exactly BNPL_SERVICE, BNPL_SERVICE_APPROVE and BNPL_DISPUTE_RESOLVE -"
+            + " four-eyes inside the role")
+    void bnplServicingAgentGrantsExactlyThree() {
+        // The fourteenth population (P12-TSK-002, ADR-0106): proposing, approving another's correction and resolving a
+        // dispute are one population's work; that no person approves or resolves their own act - nor on their own
+        // party's obligation - is held between two holders at the domain and by CHECK, by each act's task (the
+        // LOAN_SERVICING_AGENT shape). The agent holds neither the terms nor lending's servicing.
+        assertThat(RoleName.BNPL_SERVICING_AGENT.permissions())
+                .as("servicing an obligation is not pricing the product")
+                .containsExactlyInAnyOrder(
+                        PermissionName.BNPL_SERVICE, PermissionName.BNPL_SERVICE_APPROVE, PermissionName.BNPL_DISPUTE_RESOLVE)
+                .doesNotContain(
+                        PermissionName.BNPL_ADMINISTER,
+                        PermissionName.BNPL_INVESTIGATE,
+                        PermissionName.LOAN_SERVICE,
+                        PermissionName.LOAN_SERVICE_APPROVE);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -290,6 +326,7 @@ class RoleNameTest {
                                 + " 'MERCHANT_ADMINISTRATOR', 'RECONCILIATION_OPERATOR',"
                                 + " 'RECONCILIATION_CONTROLLER', 'FX_CONTROLLER',"
                                 + " 'CREDIT_POLICY_OFFICER', 'UNDERWRITER',"
-                                + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT'");
+                                + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT',"
+                                + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT'");
     }
 }

@@ -2,6 +2,11 @@ package com.finapp.lending;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.creditmath.AllocationLine;
+import com.finapp.creditmath.LendingEngine;
+import com.finapp.creditmath.ScheduleEngineV1;
+import com.finapp.creditmath.ScheduleOutcome;
+import com.finapp.creditmath.testing.SecondJvm;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
@@ -953,7 +958,7 @@ class AmortisationBatteryTest {
             longCount = 0;
             for (AmortisationWorld.ScheduleInput input : inputs) {
                 long begun = System.nanoTime();
-                ScheduleOutcome outcome = ScheduleEngineV1.project(input.terms(), input.principal(), input.termMonths(),
+                ScheduleOutcome outcome = LoanEngines.project(input.terms(), input.principal(), input.termMonths(),
                         input.day(), input.start());
                 long spent = System.nanoTime() - begun;
                 if (!(outcome instanceof ScheduleOutcome.Projected)) {
