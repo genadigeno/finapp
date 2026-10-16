@@ -1005,6 +1005,11 @@ class OwnershipIsScopedTest {
                                         + " path of an operator door behind LOAN_SERVICE / LOAN_SERVICE_APPROVE, which names any"
                                         + " loan by design; the operator's own party's loan is refused (SelfDealingRefused).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.principalValueDate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "Phase 11 gate R1. The first date the record leaves open to a principal fact of an account this transaction holds FOR UPDATE (L3) - locked by lock (the sweeps' claimed page, the operator doors behind LOAN_SERVICE, self-dealing refused) or by lockOwnedBy under party_id = ? (the customer's repayment, prepayment, draw, payoff); read after the lock, the id never reaches it from a request unscoped.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanStore.lockedRead",
                             new Entry(
                                     Scope.ADMINISTERED,
