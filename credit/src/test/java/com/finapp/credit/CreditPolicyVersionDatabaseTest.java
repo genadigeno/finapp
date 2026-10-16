@@ -53,7 +53,7 @@ class CreditPolicyVersionDatabaseTest {
     @Order(1)
     @DisplayName("each product's seed is its v1, proposed by the migration, its policy exactly the expected one - never active by migration")
     void theSeedsAreProposals() throws SQLException {
-        for (CreditProduct product : CreditProduct.values()) {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
             Optional<CreditPolicyStore.PolicyVersion> seed = inOneTransaction(uow -> STORE.policy(uow, CreditPolicyV1.id(product)));
             assertThat(seed).as(product.name()).isPresent();
             assertThat(seed.get().row().version()).isEqualTo(1);
@@ -69,7 +69,7 @@ class CreditPolicyVersionDatabaseTest {
     @Order(2)
     @DisplayName("each product's v1 is activated by a person - not its proposer, the migration - and decides from then")
     void eachProductsV1IsActivatedByAPerson() throws SQLException {
-        for (CreditProduct product : CreditProduct.values()) {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
             Actor officer = employee();
             // Another suite needing v1 in force may have activated it first (CreditPolicyFixtures.activateV1).
             Optional<CreditPolicyAdministration.Decided> activated = CreditPolicyFixtures.activateV1(product, officer);
@@ -202,6 +202,63 @@ class CreditPolicyVersionDatabaseTest {
             refused(owner, insert.formatted("PROPOSED", "APPROVE"), "23514");
             refused(owner, insert.formatted("ACTIVE", "REFER"), "P0001");
         }
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("(P12-TSK-001) no BNPL policy exists by migration; each BNPL fixture is proposed by one person and"
+            + " activated by another, reads back whole - pay-in-4's stress factor with it")
+    void aBnplPolicyIsProposedAndActivatedByTwoPersons() throws SQLException {
+        assertThat(count("SELECT count(*) FROM credit.credit_policy_version WHERE product IN ('BNPL_PAY_IN_4',"
+                + " 'BNPL_PAY_IN_N') AND proposed_by LIKE 'migration:%'")).as("never seeded").isZero();
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.BNPL)) {
+            clearPending(product);
+            CreditPolicy fixture = BnplPolicyFixtures.policy(product);
+            CreditPolicyAdministration.Proposed proposed = inOneTransaction(uow -> ADMINISTRATION.propose(uow, fixture,
+                    "the BNPL fixture", employee(), correlation()));
+            CreditPolicyAdministration.Decided decided = inOneTransaction(uow -> ADMINISTRATION.approve(uow,
+                    proposed.id(), employee(), "the BNPL fixture reviewed", correlation()));
+            assertThat(decided.status()).as(product.name()).isEqualTo(CreditPolicyStatus.ACTIVE);
+            CreditPolicyStore.PolicyVersion stored = inOneTransaction(uow -> STORE.policy(uow, proposed.id())).orElseThrow();
+            assertThat(stored.policy()).as("%s reads back as proposed", product).isEqualTo(fixture);
+            assertThat(inOneTransaction(uow -> ADMINISTRATION.activeAt(uow, product, Optional.empty())).row().id())
+                    .isEqualTo(proposed.id());
+        }
+    }
+
+    @Test
+    @DisplayName("(P12-TSK-001) the stress factor is pay-in-4's alone, bounded, frozen for every writer; a BNPL version"
+            + " never falls back to a referral - each held by the database")
+    void theBnplPolicyShapeIsHeldByTheDatabase() throws SQLException {
+        String insert = "INSERT INTO credit.credit_policy_version (id, product, version, status, currency, scale,"
+                + " assessment_rate_bps, minimum_disposable_minor, minimum_payment_ratio_bps, maximum_exposure_minor,"
+                + " unavailable_fallback, auto_approval_ceiling_minor, proposed_by, proposed_at, proposal_reason,"
+                + " plan_stress_factor_bps) VALUES (gen_random_uuid(), '%s', 9999, 'PROPOSED', 'EUR', 2, 900, 0, 300, 100,"
+                + " '%s', 100, 'a', now(), 'r', %s)";
+        try (Connection owner = DatabaseRoles.migrator()) {
+            refused(owner, insert.formatted("BNPL_PAY_IN_4", "DECLINE", "NULL"), "23514");
+            refused(owner, insert.formatted("BNPL_PAY_IN_4", "DECLINE", "9999"), "23514");
+            refused(owner, insert.formatted("BNPL_PAY_IN_4", "DECLINE", "40001"), "23514");
+            refused(owner, insert.formatted("BNPL_PAY_IN_N", "DECLINE", "30000"), "23514");
+            refused(owner, insert.formatted("PERSONAL_LOAN", "REFER", "30000"), "23514");
+            refused(owner, insert.formatted("BNPL_PAY_IN_4", "REFER", "30000"), "23514");
+            refused(owner, insert.formatted("BNPL_PAY_IN_N", "REFER", "NULL"), "23514");
+            refused(owner, insert.formatted("BNPL_LATER", "DECLINE", "NULL"), "23514");
+        }
+        clearPending(CreditProduct.BNPL_PAY_IN_4);
+        CreditPolicyAdministration.Proposed proposed = inOneTransaction(uow -> ADMINISTRATION.propose(uow,
+                BnplPolicyFixtures.policy(CreditProduct.BNPL_PAY_IN_4), "a frozen factor", employee(), correlation()));
+        String change = "UPDATE credit.credit_policy_version SET plan_stress_factor_bps = 20000 WHERE id = '"
+                + proposed.id().value() + "'";
+        try (Connection owner = DatabaseRoles.migrator()) {
+            refused(owner, change, "P0001");
+        }
+        try (Connection application = DatabaseRoles.application()) {
+            refused(application, change, "42501");
+        }
+        assertThat(count("SELECT plan_stress_factor_bps FROM credit.credit_policy_version WHERE id = '"
+                + proposed.id().value() + "'")).isEqualTo(BnplPolicyFixtures.PLAN_STRESS_FACTOR_BPS);
+        clearPending(CreditProduct.BNPL_PAY_IN_4);
     }
 
     @Test

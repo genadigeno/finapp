@@ -29,7 +29,7 @@ class CreditPolicyValidationTest {
     @Test
     @DisplayName("each product's seeded v1 is complete - it would be accepted at proposal")
     void theSeedsAreComplete() {
-        for (CreditProduct product : CreditProduct.values()) {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
             assertThatCode(() -> CreditPolicyV1.policy(product)).as(product.name()).doesNotThrowAnyException();
             assertThat(CreditPolicyV1.policy(product).sourceKinds()).containsExactlyInAnyOrder(CreditSourceKind.values());
         }
@@ -40,7 +40,7 @@ class CreditPolicyValidationTest {
             + " approval capped there is no offer the product can make (the Phase 10 to 11 transition); at the minimum is"
             + " accepted")
     void aCeilingBelowTheProductMinimumIsRefused() {
-        for (CreditProduct product : CreditProduct.values()) {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
             Money minimum = product.minimumAmount();
             Money belowMinimum = minimum.minus(Money.ofMinorUnits(1, minimum.currency()));
             List<CreditPolicy.PolicyRule> capped = CreditPolicyV1.rules(product);
@@ -70,8 +70,11 @@ class CreditPolicyValidationTest {
     @Test
     @DisplayName("INV-CRD-09 (P10-DOC-001): only a rule guaranteed to stop an approval past the limit bounds the exposure")
     void onlyAGuaranteedRuleBoundsTheExposure() {
-        for (CreditProduct product : CreditProduct.values()) {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
             assertThat(CreditPolicyV1.policy(product).boundsExposure()).as(product + "'s seeded v1").isTrue();
+        }
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.BNPL)) {
+            assertThat(BnplPolicyFixtures.policy(product).boundsExposure()).as(product + "'s fixture").isTrue();
         }
         List<CreditPolicy.PolicyRule> rules = CreditPolicyV1.rules(LOAN);
         rules.removeIf(rule -> rule.ruleCode().equals("EXPOSURE_LIMIT"));
@@ -241,6 +244,77 @@ class CreditPolicyValidationTest {
         List<CreditPolicy.PolicyRule> twice = CreditPolicyV1.rules(LOAN);
         twice.add(twice.get(1));
         assertIncomplete(() -> CreditPolicyV1.policy(LOAN, twice));
+    }
+
+    @Test
+    @DisplayName("each BNPL fixture is complete, reads both source kinds and never refers (P12-TSK-001)")
+    void theBnplFixturesAreComplete() {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.BNPL)) {
+            assertThatCode(() -> BnplPolicyFixtures.policy(product)).as(product.name()).doesNotThrowAnyException();
+            CreditPolicy policy = BnplPolicyFixtures.policy(product);
+            assertThat(policy.sourceKinds()).containsExactlyInAnyOrder(CreditSourceKind.values());
+            assertThat(policy.unavailableFallback()).isEqualTo(UnavailableFallback.DECLINE);
+            assertThat(policy.rules()).noneMatch(rule -> rule.effect() == PolicyEffect.REFER);
+        }
+        assertThat(BnplPolicyFixtures.policy(CreditProduct.BNPL_PAY_IN_4).planStressFactorBps()).contains(30_000);
+        assertThat(BnplPolicyFixtures.policy(CreditProduct.BNPL_PAY_IN_N).planStressFactorBps()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a fixed plan's policy states its stress factor - one instalment to the whole plan - and no other"
+            + " product's policy states one (P12-TSK-001)")
+    void aFixedPlanStatesItsStressFactor() {
+        CreditPolicy p4 = BnplPolicyFixtures.policy(CreditProduct.BNPL_PAY_IN_4);
+        assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as("pay-in-4 without its factor")
+                .isThrownBy(() -> new CreditPolicy(p4.product(), p4.assessmentRateBps(), p4.minimumDisposable(),
+                        p4.minimumPaymentRatioBps(), p4.maximumExposure(), p4.maximumDataAge(), p4.unavailableFallback(),
+                        p4.autoApprovalCeiling(), p4.rules()))
+                .withMessageContaining("stress factor");
+        for (int bps : List.of(9_999, 40_001, 0, -10_000)) {
+            assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as("%d basis points", bps)
+                    .isThrownBy(() -> withFactor(p4, Optional.of(bps)));
+        }
+        for (int bps : List.of(10_000, 25_000, 40_000)) {
+            assertThatCode(() -> withFactor(p4, Optional.of(bps))).as("%d basis points", bps).doesNotThrowAnyException();
+        }
+        CreditPolicy pn = BnplPolicyFixtures.policy(CreditProduct.BNPL_PAY_IN_N);
+        assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as("pay-in-N with a factor")
+                .isThrownBy(() -> withFactor(pn, Optional.of(30_000)));
+        CreditPolicy loan = CreditPolicyV1.policy(LOAN);
+        assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as("a loan's policy with a factor")
+                .isThrownBy(() -> withFactor(loan, Optional.of(30_000)));
+    }
+
+    @Test
+    @DisplayName("a BNPL policy never refers - neither its fallback nor any rule - while a lending policy may"
+            + " (P12-TSK-001: a BNPL request is decided automatically only)")
+    void aBnplPolicyNeverRefers() {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.BNPL)) {
+            CreditPolicy fixture = BnplPolicyFixtures.policy(product);
+            List<CreditPolicy.PolicyRule> referring = BnplPolicyFixtures.rules();
+            referring.set(0, rule("SOURCE_UNAVAILABLE_FALLBACK", attribute(CreditAttributeCode.SOURCE_UNAVAILABLE),
+                    PolicyOperator.IS_PRESENT, new CreditPolicy.Operand.None(), PolicyEffect.REFER,
+                    ReasonCode.SOURCE_UNAVAILABLE));
+            assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as("%s with a referring fallback", product)
+                    .isThrownBy(() -> new CreditPolicy(product, fixture.assessmentRateBps(), fixture.minimumDisposable(),
+                            fixture.minimumPaymentRatioBps(), fixture.maximumExposure(), fixture.maximumDataAge(),
+                            UnavailableFallback.REFER, fixture.autoApprovalCeiling(), referring,
+                            fixture.planStressFactorBps()))
+                    .withMessageContaining("automatically only");
+            List<CreditPolicy.PolicyRule> oneReferral = BnplPolicyFixtures.rules();
+            oneReferral.add(rule("SCORE_REFERRAL_AGAIN", figure(PolicyFigure.SCORE), PolicyOperator.LT,
+                    new CreditPolicy.Operand.IntegerOperand(500), PolicyEffect.REFER, ReasonCode.RISK_REFERRAL));
+            assertThatExceptionOfType(CreditPolicy.PolicyIncomplete.class).as("%s with one referring rule", product)
+                    .isThrownBy(() -> BnplPolicyFixtures.policy(product, oneReferral))
+                    .withMessageContaining("SCORE_REFERRAL_AGAIN");
+        }
+        assertThat(CreditPolicyV1.policy(LOAN).rules()).anyMatch(rule -> rule.effect() == PolicyEffect.REFER);
+    }
+
+    private static CreditPolicy withFactor(CreditPolicy policy, Optional<Integer> factor) {
+        return new CreditPolicy(policy.product(), policy.assessmentRateBps(), policy.minimumDisposable(),
+                policy.minimumPaymentRatioBps(), policy.maximumExposure(), policy.maximumDataAge(),
+                policy.unavailableFallback(), policy.autoApprovalCeiling(), policy.rules(), factor);
     }
 
     private static void assertIncomplete(org.assertj.core.api.ThrowableAssert.ThrowingCallable construction) {

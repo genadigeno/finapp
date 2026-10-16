@@ -315,21 +315,33 @@ class CreditDecisionConsumptionDatabaseTest {
             + " the consumer first, the decider waits and reads it consumed - never a torn state")
     void consumptionAndADecisionForThePartySerialise() throws Exception {
         for (Path path : Path.values()) {
-            deciderFirstWhileTheApprovalLapses(path);
-            deciderFirstWhileTheApprovalIsValid(path);
-            consumerFirst(path);
+            deciderFirstWhileTheApprovalLapses(path, CreditProduct.PERSONAL_LOAN);
+            deciderFirstWhileTheApprovalIsValid(path, CreditProduct.PERSONAL_LOAN);
+            consumerFirst(path, CreditProduct.PERSONAL_LOAN);
         }
     }
 
-    private void deciderFirstWhileTheApprovalLapses(Path path) throws Exception {
+    @Test
+    @DisplayName("(P12-TSK-001) a BNPL consumption and a decision for the party serialise on the profile (L0) exactly as a"
+            + " loan's: both orders, through the port and the function, the lapse and the validity cases - never a torn"
+            + " state")
+    void aBnplConsumptionAndADecisionForThePartySerialise() throws Exception {
+        for (Path path : Path.values()) {
+            deciderFirstWhileTheApprovalLapses(path, CreditProduct.BNPL_PAY_IN_4);
+            deciderFirstWhileTheApprovalIsValid(path, CreditProduct.BNPL_PAY_IN_4);
+            consumerFirst(path, CreditProduct.BNPL_PAY_IN_4);
+        }
+    }
+
+    private void deciderFirstWhileTheApprovalLapses(Path path, CreditProduct product) throws Exception {
         UUID party = IDS.next();
-        CreditDecisionId decision = approved(party, Duration.ofSeconds(4));
+        CreditDecisionId decision = decided(party, product, DecisionOutcome.APPROVED, Duration.ofSeconds(4));
         ExecutorService consumerInstance = Executors.newSingleThreadExecutor();
         try (Connection decider = DatabaseRoles.application()) {
             decider.setAutoCommit(false);
             profiles.lockForDecision(decider, party).orElseThrow();
             int deciderPid = backendPid(decider);
-            Future<String> consuming = consumerInstance.submit(() -> consumeOver(path, decision, agreement()));
+            Future<String> consuming = consumerInstance.submit(() -> consumeOver(path, decision, consumerFor(product)));
             List<String> waiting = waitingOn(deciderPid, consuming);
             assertThat(scalar("SELECT (valid_until > statement_timestamp())::text FROM credit.credit_decision"
                     + " WHERE id = ?", decision.value())).as("%s: the consumer queued while the approval was valid", path)
@@ -348,17 +360,18 @@ class CreditDecisionConsumptionDatabaseTest {
         assertThat(consumerOf(decision)).isEmpty();
     }
 
-    private void deciderFirstWhileTheApprovalIsValid(Path path) throws Exception {
+    private void deciderFirstWhileTheApprovalIsValid(Path path, CreditProduct product) throws Exception {
         UUID party = IDS.next();
-        CreditDecisionId decision = approved(party, Duration.ofDays(30));
+        CreditDecisionId decision = decided(party, product, DecisionOutcome.APPROVED, product.decisionValidity());
+        Money approved = approvedAmount(decision);
         ExecutorService consumerInstance = Executors.newSingleThreadExecutor();
         try (Connection decider = DatabaseRoles.application()) {
             decider.setAutoCommit(false);
             profiles.lockForDecision(decider, party).orElseThrow();
-            Future<String> consuming = consumerInstance.submit(() -> consumeOver(path, decision, agreement()));
+            Future<String> consuming = consumerInstance.submit(() -> consumeOver(path, decision, consumerFor(product)));
             assertThat(waitingOn(backendPid(decider), consuming)).hasSize(1);
             assertThat(reserved.reservedFor(decider, party, EUR)).as("%s: the decider sees the reservation", path)
-                    .isEqualTo(APPROVED);
+                    .isEqualTo(approved);
             decider.commit();
             assertThat(consuming.get(1, TimeUnit.MINUTES)).isEqualTo("CONSUMED");
         } finally {
@@ -367,15 +380,15 @@ class CreditDecisionConsumptionDatabaseTest {
         assertThat(reservedFor(party)).as("%s: consumed, it reserves nothing", path).isEqualTo(Money.zero(EUR));
     }
 
-    private void consumerFirst(Path path) throws Exception {
+    private void consumerFirst(Path path, CreditProduct product) throws Exception {
         UUID party = IDS.next();
-        CreditDecisionId decision = approved(party, Duration.ofDays(30));
+        CreditDecisionId decision = decided(party, product, DecisionOutcome.APPROVED, product.decisionValidity());
         ExecutorService deciderInstance = Executors.newSingleThreadExecutor();
         try (Connection consumer = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enter(customer());
                 CorrelationContext.Scope flow = CorrelationContext.enter(flow())) {
             consumer.setAutoCommit(false);
-            assertThat(consumeOn(consumer, path, decision, agreement())).isEqualTo("CONSUMED");
+            assertThat(consumeOn(consumer, path, decision, consumerFor(product))).isEqualTo("CONSUMED");
             Future<Money> deciding = deciderInstance.submit(() -> {
                 try (Connection decider = DatabaseRoles.application()) {
                     decider.setAutoCommit(false);
@@ -531,14 +544,186 @@ class CreditDecisionConsumptionDatabaseTest {
     }
 
     @Test
-    @DisplayName("the kind is a closed set: the function refuses a kind credit does not know (the CHECK)")
+    @DisplayName("the kind is a closed set (P12-TSK-001): BNPL_AGREEMENT is admitted - through the port and the function -"
+            + " and every other string is refused by the kind's CHECK, 'BNPL' and 'bnpl_agreement' among them, on a loan's"
+            + " decision and on a BNPL one")
     void anUnknownKindIsRefused() throws Exception {
-        CreditDecisionId decision = approved(IDS.next(), Duration.ofDays(30));
-        try (Connection app = DatabaseRoles.application()) {
-            refused(app, "SELECT * FROM credit.consume_decision('" + decision.value() + "', gen_random_uuid(), 'BNPL',"
-                    + " gen_random_uuid())", "23514");
+        CreditDecisionId viaPort = approvedBnpl(IDS.next(), CreditProduct.BNPL_PAY_IN_4.decisionValidity());
+        assertThat(consumeAndCommit(port, viaPort, bnplAgreement())).isInstanceOf(Consumption.Consumed.class);
+        assertThat(consumerOf(viaPort)).hasValueSatisfying(
+                consumer -> assertThat(consumer.kind()).isEqualTo(ConsumerKind.BNPL_AGREEMENT));
+        CreditDecisionId viaFunction = approvedBnpl(IDS.next(), CreditProduct.BNPL_PAY_IN_4.decisionValidity());
+        assertThat(callFunction(viaFunction, bnplAgreement())).isEqualTo("CONSUMED");
+        for (CreditDecisionId decision : List.of(approved(IDS.next(), Duration.ofDays(30)),
+                approvedBnpl(IDS.next(), Duration.ofDays(1)))) {
+            for (String unknown : List.of("BNPL", "bnpl_agreement", "Bnpl_Agreement", "LOAN", "loan_agreement",
+                    "BNPL_AGREEMENT ", "AGREEMENT", "")) {
+                try (Connection app = DatabaseRoles.application()) {
+                    assertThatExceptionOfType(SQLException.class).as("'%s'", unknown)
+                            .isThrownBy(() -> execute(app, "SELECT * FROM credit.consume_decision('" + decision.value()
+                                    + "', gen_random_uuid(), '" + unknown + "', gen_random_uuid())"))
+                            .matches(e -> "23514".equals(e.getSQLState())
+                                    && e.getMessage().contains("credit_decision_consumption_kind_is_known"),
+                                    "the kind's CHECK");
+                }
+            }
+            assertThat(consumerOf(decision)).isEmpty();
         }
-        assertThat(consumerOf(decision)).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ BNPL (P12-TSK-001)
+
+    @Test
+    @DisplayName("ten BNPL agreements of one BNPL decision, each its own ref, provably in flight together: one Consumed,"
+            + " nine AlreadyConsumed naming the winner - one row of kind BNPL_AGREEMENT, one audit record")
+    void tenBnplConsumersOneConsumption() throws Exception {
+        UUID party = IDS.next();
+        CreditDecisionId decision = approvedBnpl(party, CreditProduct.BNPL_PAY_IN_4.decisionValidity());
+        List<ConsumerRef> consumers = new ArrayList<>();
+        for (int i = 0; i < INSTANCES; i++) {
+            consumers.add(bnplAgreement());
+        }
+        List<Consumption> answers = whileProfileHeld(party, consumers.stream()
+                .<Callable<Consumption>>map(consumer -> () -> consumeAndCommit(port, decision, consumer)).toList());
+        assertThat(answers.stream().filter(Consumption.Consumed.class::isInstance)).as("one BNPL agreement takes it up")
+                .hasSize(1);
+        ConsumerRef winner = consumerOf(decision).orElseThrow();
+        assertThat(winner.kind()).isEqualTo(ConsumerKind.BNPL_AGREEMENT);
+        assertThat(consumers).contains(winner);
+        assertThat(answers).filteredOn(Consumption.AlreadyConsumed.class::isInstance).hasSize(INSTANCES - 1)
+                .allSatisfy(answer -> assertThat(((Consumption.AlreadyConsumed) answer).by()).isEqualTo(winner));
+        assertThat(count("SELECT count(*) FROM credit.credit_decision_consumption WHERE decision_id = ?", decision.value()))
+                .isEqualTo(1);
+        assertThat(audits(decision)).isEqualTo(1);
+        assertThat(scalar("SELECT change_summary FROM platform.audit_record WHERE operation = 'credit.DecisionConsumed'"
+                + " AND target_id = ?", decision.value().toString()))
+                .as("the decision and the consumer, never an amount")
+                .contains("BNPL_AGREEMENT").contains(winner.ref().toString()).doesNotContain("1000");
+        assertThat(reservedFor(party)).as("consumed, it reserves nothing").isEqualTo(Money.zero(EUR));
+    }
+
+    @Test
+    @DisplayName("a loan agreement and a BNPL agreement cannot share a decision: of either family's decision, the other"
+            + " family's consumers are refused before any lock - through the port and by the function itself - while the"
+            + " right family's racing consumers leave one consumption")
+    void aLoanAndABnplConsumerCannotShareADecision() throws Exception {
+        for (CreditProduct product : List.of(CreditProduct.BNPL_PAY_IN_4, CreditProduct.BNPL_PAY_IN_N,
+                CreditProduct.PERSONAL_LOAN, CreditProduct.CREDIT_LINE)) {
+            UUID party = IDS.next();
+            CreditDecisionId decision = decided(party, product, DecisionOutcome.APPROVED, product.decisionValidity());
+            boolean bnpl = product.family() == CreditProduct.Family.BNPL;
+            // The wrong family, while another transaction holds the party's profile: refused without waiting on it.
+            ExecutorService instances = Executors.newFixedThreadPool(2);
+            try (Connection holder = DatabaseRoles.application()) {
+                holder.setAutoCommit(false);
+                profiles.lockForDecision(holder, party).orElseThrow();
+                Future<Consumption> viaPort = instances.submit(
+                        () -> consumeAndCommit(port, decision, bnpl ? agreement() : bnplAgreement()));
+                Future<String> viaFunction = instances.submit(
+                        () -> callFunction(decision, bnpl ? agreement() : bnplAgreement()));
+                assertThatThrownBy(() -> viaPort.get(20, TimeUnit.SECONDS)).as("%s: the port", product)
+                        .hasCauseInstanceOf(CreditDecisionConsumptions.ConsumerOfAnotherFamily.class)
+                        .hasMessageContaining(product.name());
+                assertThatThrownBy(() -> viaFunction.get(20, TimeUnit.SECONDS)).as("%s: the function", product)
+                        .hasCauseInstanceOf(SQLException.class)
+                        .satisfies(failure -> assertThat(((SQLException) failure.getCause()).getSQLState())
+                                .isEqualTo("23514"))
+                        .hasMessageContaining("does not take up a " + product.name());
+                holder.rollback();
+            } finally {
+                instances.shutdownNow();
+            }
+            // The right family's racers, provably in flight together: one consumption, of the right kind.
+            List<Callable<Consumption>> right = new ArrayList<>();
+            for (int i = 0; i < INSTANCES / 2; i++) {
+                ConsumerRef consumer = consumerFor(product);
+                right.add(() -> consumeAndCommit(port, decision, consumer));
+            }
+            List<Consumption> answers = whileProfileHeld(party, right);
+            assertThat(answers.stream().filter(Consumption.Consumed.class::isInstance)).as(product.name()).hasSize(1);
+            assertThat(answers).filteredOn(Consumption.AlreadyConsumed.class::isInstance).hasSize(INSTANCES / 2 - 1);
+            assertThatThrownBy(() -> consumeAndCommit(port, decision, bnpl ? agreement() : bnplAgreement()))
+                    .as("%s: consumed or not, the other family is a defect - never AlreadyConsumed", product)
+                    .isInstanceOf(CreditDecisionConsumptions.ConsumerOfAnotherFamily.class);
+            assertThat(consumerOf(decision)).hasValueSatisfying(consumer -> assertThat(consumer.kind().takesUp(product))
+                    .isTrue());
+            assertThat(count("SELECT count(*) FROM credit.credit_decision_consumption WHERE decision_id = ?",
+                    decision.value())).as("%s: one decision, one agreement of any kind", product).isEqualTo(1);
+            assertThat(audits(decision)).isEqualTo(1);
+        }
+        assertThat(scalar("SELECT pg_get_functiondef('credit.consume_decision(uuid,uuid,text,uuid)'::regprocedure)"))
+                .as("the function judges the family before it takes the lock")
+                .containsSubsequence("does not take up a", "FOR UPDATE");
+    }
+
+    @Test
+    @DisplayName("a BNPL approval lapses at the microsecond of its one-day validity: valid_until is the decision instant"
+            + " plus one day on the database clock; at valid_until - 1us consumable, at it and after lapsed - the"
+            + " reservation's own inequality; in real time an unreserved one is Lapsed; instance clocks five seconds either"
+            + " way change nothing")
+    void aBnplDecisionLapsesAtTheMicrosecond() throws Exception {
+        // (1) The one-day validity, stamped by the database, and the predicate around that row's own valid_until.
+        CreditDecisionId day = approvedBnpl(IDS.next(), CreditProduct.BNPL_PAY_IN_4.decisionValidity());
+        assertThat(scalar("SELECT (decision_validity = interval '1 day' AND valid_until = decided_at + interval '1 day')"
+                + "::text FROM credit.credit_decision WHERE id = ?", day.value())).isEqualTo("true");
+        try (Connection app = DatabaseRoles.application(); PreparedStatement select = app.prepareStatement(
+                "SELECT credit.decision_reserves(valid_until, valid_until - interval '1 microsecond'),"
+                        + " credit.decision_reserves(valid_until, valid_until),"
+                        + " credit.decision_reserves(valid_until, valid_until + interval '1 microsecond'),"
+                        + " valid_until > valid_until - interval '1 microsecond', valid_until > valid_until,"
+                        + " valid_until > valid_until + interval '1 microsecond'"
+                        + " FROM credit.credit_decision WHERE id = ?")) {
+            select.setObject(1, day.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                assertThat(List.of(row.getBoolean(1), row.getBoolean(2), row.getBoolean(3)))
+                        .containsExactly(true, false, false);
+                assertThat(List.of(row.getBoolean(4), row.getBoolean(5), row.getBoolean(6)))
+                        .as("exactly one of reserved and consumable at every instant")
+                        .containsExactly(row.getBoolean(1), row.getBoolean(2), row.getBoolean(3));
+            }
+        }
+
+        // (2) Real time around the boundary: BNPL approvals of 0 to 156 ms under BNPL agreements.
+        UUID party = IDS.next();
+        int consumed = 0;
+        int lapsed = 0;
+        for (int i = 0; i < 40; i++) {
+            try (Connection connection = DatabaseRoles.application();
+                    SecurityContext.Scope actor = SecurityContext.enter(customer());
+                    CorrelationContext.Scope flow = CorrelationContext.enter(flow())) {
+                connection.setAutoCommit(false);
+                CreditDecisionId decision = approvedBnpl(party, Duration.ofMillis(4L * i));
+                profiles.lockForDecision(connection, party).orElseThrow();
+                boolean wasReserved = reservesNow(connection, decision);
+                Consumption answer = port.consume(connection, decision, bnplAgreement());
+                if (answer instanceof Consumption.Consumed) {
+                    assertThat(wasReserved).isTrue();
+                    consumed++;
+                } else {
+                    assertThat(answer).isInstanceOf(Consumption.Lapsed.class);
+                    lapsed++;
+                }
+                if (!wasReserved) {
+                    assertThat(answer).isInstanceOf(Consumption.Lapsed.class);
+                }
+                connection.commit();
+            }
+        }
+        assertThat(consumed).isPositive();
+        assertThat(lapsed).isPositive();
+
+        // (3) Instance clocks five seconds either way, around the one-day validity.
+        UUID skewed = IDS.next();
+        CreditDecisionId lapsedOnTheDatabase = approvedBnpl(skewed, Duration.ofMillis(-1));
+        CreditDecisionId validOnTheDatabase = approvedBnpl(skewed, CreditProduct.BNPL_PAY_IN_4.decisionValidity());
+        CreditDecisionConsumptions<Connection> behind = port(Clock.offset(Clock.systemUTC(), Duration.ofSeconds(-5)));
+        CreditDecisionConsumptions<Connection> ahead = port(Clock.offset(Clock.systemUTC(), Duration.ofSeconds(5)));
+        assertThat(reservedFor(skewed)).as("only the valid one reserves").isEqualTo(Money.ofMinorUnits(1_000_00, EUR));
+        assertThat(consumeAndCommit(behind, lapsedOnTheDatabase, bnplAgreement())).isInstanceOf(Consumption.Lapsed.class);
+        assertThat(consumeAndCommit(ahead, lapsedOnTheDatabase, bnplAgreement())).isInstanceOf(Consumption.Lapsed.class);
+        assertThat(consumeAndCommit(behind, validOnTheDatabase, bnplAgreement())).isInstanceOf(Consumption.Consumed.class);
+        assertThat(reservedFor(skewed)).as("consumed and lapsed: nothing reserved").isEqualTo(Money.zero(EUR));
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -550,6 +735,16 @@ class CreditDecisionConsumptionDatabaseTest {
 
     private static ConsumerRef agreement() {
         return new ConsumerRef(ConsumerKind.LOAN_AGREEMENT, IDS.next());
+    }
+
+    /** A BNPL agreement's reference (`P12-TSK-001`). */
+    private static ConsumerRef bnplAgreement() {
+        return new ConsumerRef(ConsumerKind.BNPL_AGREEMENT, IDS.next());
+    }
+
+    /** A consumer of {@code product}'s own family. */
+    private static ConsumerRef consumerFor(CreditProduct product) {
+        return product.family() == CreditProduct.Family.BNPL ? bnplAgreement() : agreement();
     }
 
     private static Actor customer() {
@@ -704,17 +899,31 @@ class CreditDecisionConsumptionDatabaseTest {
 
     /** An approval of 5,000.00 for {@code party}, valid for {@code validity} from its insert on the database clock. */
     private static CreditDecisionId approved(UUID party, Duration validity) {
-        return decided(party, DecisionOutcome.APPROVED, validity);
+        return decided(party, CreditProduct.PERSONAL_LOAN, DecisionOutcome.APPROVED, validity);
     }
 
-    /** A decision as the deciding transaction's store records it, on a request of its own, then that request closed. */
+    /**
+     * A BNPL approval (`P12-TSK-001`) of the product's maximum - pay-in-4's EUR 1,000.00 - for {@code party}, valid for
+     * {@code validity}.
+     */
+    private static CreditDecisionId approvedBnpl(UUID party, Duration validity) {
+        return decided(party, CreditProduct.BNPL_PAY_IN_4, DecisionOutcome.APPROVED, validity);
+    }
+
     private static CreditDecisionId decided(UUID party, DecisionOutcome outcome, Duration validity) {
+        return decided(party, CreditProduct.PERSONAL_LOAN, outcome, validity);
+    }
+
+    /**
+     * A decision for {@code product} as the deciding transaction's store records it, on a request of its own - opened from
+     * the product's origin - then that request closed. An approval approves the lesser of 5,000.00 and the request.
+     */
+    private static CreditDecisionId decided(UUID party, CreditProduct product, DecisionOutcome outcome, Duration validity) {
         return inOneTransaction(uow -> {
-            DecisionRequestId requestId = DecisionRequestId.of(DecisionRequestRows.submitted(uow, party,
-                    CreditProduct.PERSONAL_LOAN));
+            DecisionRequestId requestId = DecisionRequestId.of(DecisionRequestRows.submitted(uow, party, product));
             DecisionRequest request = REQUESTS.ownedBy(uow, requestId, party).orElseThrow();
-            SnapshotContent content = new SnapshotContent(requestId.value(), party, CreditProduct.PERSONAL_LOAN,
-                    request.application().requested(), Optional.of(36),
+            SnapshotContent content = new SnapshotContent(requestId.value(), party, product,
+                    request.application().requested(), request.application().termMonths(),
                     new PinnedVersions(CreditPolicyV1.PERSONAL_LOAN_ID.value(), MODEL, 1), CanonicalSnapshotTest.attributes());
             String canonical = CanonicalSnapshot.render(content);
             JdbcDecisionSnapshotStore snapshots = new JdbcDecisionSnapshotStore();
@@ -725,14 +934,21 @@ class CreditDecisionConsumptionDatabaseTest {
                     stored.sha256(), stored.frozenAt(), CanonicalSnapshot.parse(stored.canonical()));
             CreditDecisionId decision = CreditDecisionId.next(IDS);
             boolean approval = outcome == DecisionOutcome.APPROVED;
+            Money amount = request.application().requested().compareTo(APPROVED) < 0 ? request.application().requested()
+                    : APPROVED;
             new JdbcCreditDecisions().insert(uow, new JdbcCreditDecisions.NewDecision(decision, request, snapshot, outcome,
-                    approval ? Optional.of(APPROVED) : Optional.empty(),
+                    approval ? Optional.of(amount) : Optional.empty(),
                     List.of(approval ? ReasonCode.AUTO_APPROVAL_CEILING : ReasonCode.SCORE_INSUFFICIENT), validity,
                     "system", "SYSTEM"));
             REQUESTS.transition(uow, requestId, DecisionRequestStatus.CANCELLABLE, DecisionRequestStatus.CANCELLED,
                     Optional.empty(), new Actor(party.toString(), ActorType.CUSTOMER), Optional.empty());
             return decision;
         });
+    }
+
+    private static Money approvedAmount(CreditDecisionId decision) throws SQLException {
+        return Money.ofMinorUnits(count("SELECT approved_minor FROM credit.credit_decision WHERE id = ?", decision.value()),
+                EUR);
     }
 
     private Money reservedFor(UUID party) throws SQLException {

@@ -97,6 +97,51 @@ class AffordabilityTest {
     }
 
     @Test
+    @DisplayName("pay-in-4 (P12-TSK-001): its largest instalment - the first, P - 3 x floor(P / 4), exact in minor units -"
+            + " times the plan's stress factor, rounded once half up; no term, no rate, no ratio read")
+    void aPayIn4RepaysItsLargestInstalmentTimesTheStressFactor() {
+        assertThat(AffordabilityAssessment.largestInstalment(euros(100_00), 4)).isEqualTo(euros(25_00));
+        assertThat(AffordabilityAssessment.largestInstalment(euros(100_03), 4))
+                .as("floor(10003 / 4) = 2500 for instalments 2 to 4; the first 10003 - 7500").isEqualTo(euros(25_03));
+        assertThat(AffordabilityAssessment.largestInstalment(euros(50_00), 4)).isEqualTo(euros(12_50));
+        assertThat(AffordabilityAssessment.largestInstalment(euros(999_99), 4)).isEqualTo(euros(250_02));
+        SnapshotContent p4 = content(CreditProduct.BNPL_PAY_IN_4, 999_99, Optional.empty(), Map.of());
+        Parameters three = new Parameters(new BigDecimal("0.50"), new BigDecimal("0.99"), euros(500_00),
+                Optional.of(new BigDecimal("3.0000")));
+        assertThat(AffordabilityAssessment.repayment(p4, three)).as("250.02 x 3").isEqualTo(euros(750_06));
+        Parameters twoAndAHalf = new Parameters(BigDecimal.ZERO, new BigDecimal("0.03"), euros(500_00),
+                Optional.of(new BigDecimal("2.5000")));
+        SnapshotContent odd = content(CreditProduct.BNPL_PAY_IN_4, 100_03, Optional.empty(), Map.of());
+        assertThat(AffordabilityAssessment.repayment(odd, twoAndAHalf)).as("25.03 x 2.5 = 62.575, half up")
+                .isEqualTo(euros(62_58));
+        Assessment.Assessed assessed = assessed(p4, three);
+        assertThat(assessed.disposable()).isEqualTo(euros(320_000 - 140_000 - 35_000 - 750_06));
+        assertThat(assessed.affordable()).isTrue();
+        assertThatIllegalArgumentException().as("a fixed plan is never assessed without its stress factor")
+                .isThrownBy(() -> AffordabilityAssessment.repayment(p4, PARAMETERS));
+        assertThatIllegalArgumentException().as("a factor below one instalment")
+                .isThrownBy(() -> new Parameters(BigDecimal.ZERO, new BigDecimal("0.03"), euros(1),
+                        Optional.of(new BigDecimal("0.9999"))));
+    }
+
+    @Test
+    @DisplayName("pay-in-N (P12-TSK-001): the term in months through the same annuity at the policy's stress rate; the"
+            + " stress factor, a fixed plan's, is not read")
+    void aPayInNRepaysTheAnnuityAtTheStressRate() {
+        SnapshotContent pn = content(CreditProduct.BNPL_PAY_IN_N, 1_200_00, Optional.of(6), Map.of());
+        Parameters stress = new Parameters(new BigDecimal("0.18"), new BigDecimal("0.03"), euros(500_00));
+        assertThat(AffordabilityAssessment.repayment(pn, stress))
+                .isEqualTo(Money.of(AffordabilityAssessment.annuity(new BigDecimal("1200.00"), 6, new BigDecimal("0.18")),
+                        EUR, com.finapp.sharedkernel.money.RoundingPolicy.HALF_UP))
+                .as("1,200.00 over 6 months at 18%: r = 0.015, 210.63").isEqualTo(euros(210_63));
+        assertThat(AffordabilityAssessment.repayment(pn, new Parameters(new BigDecimal("0.18"), new BigDecimal("0.03"),
+                euros(500_00), Optional.of(new BigDecimal("3"))))).isEqualTo(euros(210_63));
+        assertThat(AffordabilityAssessment.repayment(
+                content(CreditProduct.BNPL_PAY_IN_N, 1_200_00, Optional.of(12), Map.of()), stress))
+                .as("12 months: 110.02").isEqualTo(euros(110_02));
+    }
+
+    @Test
     @DisplayName("an absent obligation or income is unassessable and named - never a silent zero")
     void absenceIsNamedNeverZero() {
         Assessment noObligations = AffordabilityAssessment.assess(
