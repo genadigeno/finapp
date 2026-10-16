@@ -87,7 +87,8 @@ public class CreditPolicyController {
     /**
      * A whole policy: the product and its parameters - every amount integer minor units of {@code currency}, which must
      * be the product's, every rate basis points - the source kinds it reads with their maximum data age, and its rules
-     * in order, with the proposer's reason.
+     * in order, with the proposer's reason; a fixed plan's ({@code BNPL_PAY_IN_4}'s) stress factor in basis points of one,
+     * which no other product's policy states (`P12-TSK-001`).
      */
     @ClosedBody
     public record PolicyProposalRequest(
@@ -101,7 +102,8 @@ public class CreditPolicyController {
             @NotBlank @Size(min = 1, max = 16) String unavailableFallback,
             @NotNull Long autoApprovalCeilingMinor,
             @NotEmpty @Size(max = 100) List<@Valid @NotNull CreditPolicyRuleRequest> rules,
-            @Size(max = 1000) String reason) {}
+            @Size(max = 1000) String reason,
+            Integer planStressFactorBps) {}
 
     /** A source kind the policy reads, and the oldest data it accepts from it. */
     @ClosedBody

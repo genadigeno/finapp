@@ -20,7 +20,7 @@ final class CreditLoanProductBounds implements LoanProductBounds {
         if (product.kind() != LoanKind.INSTALMENT) {
             return Optional.empty();
         }
-        CreditProduct credit = CreditProduct.valueOf(product.name());
+        CreditProduct credit = LendingCreditProducts.of(product);
         CreditProduct.TermBounds terms = credit.termBounds().orElseThrow(() -> new IllegalStateException(
                 "an instalment product's credit counterpart declares its term bounds"));
         return Optional.of(new Bounds(

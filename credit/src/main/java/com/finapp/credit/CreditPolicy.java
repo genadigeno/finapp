@@ -30,6 +30,11 @@ import java.util.regex.Pattern;
  *       {@link #unavailableFallback} effect and {@code CRD-SOURCE-UNAVAILABLE} must be GUARANTEED to trigger whenever
  *       that kind is unavailable ({@link PolicyRule#triggersWhenUnavailable}) - so every approving path requires the
  *       source's attributes present, and an approval can never arise from missing data.</li>
+ *   <li><strong>a fixed plan's stress factor exactly for a fixed-plan product</strong> (`P12-TSK-001`): pay-in-4's
+ *       affordability is its largest instalment times {@link #planStressFactorBps} (basis points of one - 30,000 is three
+ *       instalments a month), at least one instalment and at most the whole plan; no other product carries one;</li>
+ *   <li><strong>no referral for a product decided automatically only</strong> ({@link CreditProduct#referable}): a BNPL
+ *       policy's fallback is {@code DECLINE} and none of its rules refers, so its request is never put to a person.</li>
  * </ul>
  */
 public record CreditPolicy(
@@ -41,7 +46,26 @@ public record CreditPolicy(
         Map<CreditSourceKind, Duration> maximumDataAge,
         UnavailableFallback unavailableFallback,
         Money autoApprovalCeiling,
-        List<PolicyRule> rules) {
+        List<PolicyRule> rules,
+        Optional<Integer> planStressFactorBps) {
+
+    /**
+     * A policy with no plan stress factor - every product's but a fixed plan's (the Phase 10 and 11 shape, kept so a
+     * lending policy is stated exactly as before).
+     */
+    public CreditPolicy(
+            CreditProduct product,
+            int assessmentRateBps,
+            Money minimumDisposable,
+            int minimumPaymentRatioBps,
+            Money maximumExposure,
+            Map<CreditSourceKind, Duration> maximumDataAge,
+            UnavailableFallback unavailableFallback,
+            Money autoApprovalCeiling,
+            List<PolicyRule> rules) {
+        this(product, assessmentRateBps, minimumDisposable, minimumPaymentRatioBps, maximumExposure, maximumDataAge,
+                unavailableFallback, autoApprovalCeiling, rules, Optional.empty());
+    }
 
     /** At most this many rules per version. */
     public static final int MAXIMUM_RULES = 100;
@@ -60,6 +84,19 @@ public record CreditPolicy(
         Objects.requireNonNull(unavailableFallback, "unavailableFallback");
         Objects.requireNonNull(autoApprovalCeiling, "autoApprovalCeiling");
         Objects.requireNonNull(rules, "rules");
+        Objects.requireNonNull(planStressFactorBps, "planStressFactorBps");
+        if (planStressFactorBps.isPresent() != (product.termShape() == CreditProduct.TermShape.FIXED_PLAN)) {
+            throw new PolicyIncomplete("a fixed plan's policy states its stress factor, and no other policy states one");
+        }
+        if (planStressFactorBps.isPresent() && (planStressFactorBps.get() < BASIS_POINTS
+                || planStressFactorBps.get() > BASIS_POINTS * product.planInstalments().orElseThrow())) {
+            throw new PolicyIncomplete("the plan's stress factor is " + BASIS_POINTS + " to "
+                    + BASIS_POINTS * product.planInstalments().orElseThrow() + " basis points - one instalment to the"
+                    + " whole plan");
+        }
+        if (!product.referable() && unavailableFallback == UnavailableFallback.REFER) {
+            throw new PolicyIncomplete(product.name() + " is decided automatically only: its fallback declines");
+        }
         if (assessmentRateBps < 0 || assessmentRateBps > BASIS_POINTS) {
             throw new PolicyIncomplete("the assessment rate is 0 to " + BASIS_POINTS + " basis points");
         }
@@ -100,6 +137,10 @@ public record CreditPolicy(
             Objects.requireNonNull(rule, "rule");
             if (!codes.add(rule.ruleCode())) {
                 throw new PolicyIncomplete("rule " + rule.ruleCode() + " is named twice");
+            }
+            if (!product.referable() && rule.effect() == PolicyEffect.REFER) {
+                throw new PolicyIncomplete("rule " + rule.ruleCode() + " refers, but " + product.name()
+                        + " is decided automatically only");
             }
             if (rule.operand() instanceof Operand.MoneyOperand money) {
                 inProductCurrency(product, "rule " + rule.ruleCode() + "'s operand", money.value());

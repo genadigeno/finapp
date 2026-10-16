@@ -19,8 +19,11 @@ import java.util.Set;
  * income      = min(verified, declared)        -- verified = financial data, where present
  * expenditure = max(verified committed, declared)
  * obligations = the bureau's monthly obligations
- * repayment   = annuity(requested amount, term, assessment rate)    -- PERSONAL_LOAN, a stress rate, not a price
- *             = limit x minimum payment ratio                       -- CREDIT_LINE
+ * repayment   = annuity(requested amount, term, assessment rate)    -- a term in MONTHS (PERSONAL_LOAN, BNPL_PAY_IN_N):
+ *                                                                      a stress rate, not a price
+ *             = limit x minimum payment ratio                       -- NONE (CREDIT_LINE)
+ *             = largest instalment x plan stress factor             -- FIXED_PLAN (BNPL_PAY_IN_4, P12-TSK-001)
+ * largest instalment = amount - (n - 1) x floor(amount / n)          -- n the plan's instalments, in minor units
  * disposable  = income - expenditure - obligations - repayment
  * affordable  &lt;=&gt; disposable &gt;= minimum disposable
  * </pre>
@@ -29,7 +32,15 @@ import java.util.Set;
  * {@value #SCALE} with {@code HALF_EVEN} through every step, and rounded to minor units {@code HALF_UP} exactly once, at
  * the end; a zero rate is the amount divided by the term. Everything else is exact {@link Money} arithmetic. The
  * formula, the scale and the rounding are the engine's - a change is a new engine version, the old kept for replay;
- * the rate, the ratio and the minimum are the pinned policy's.
+ * the rate, the ratio, the plan's stress factor and the minimum are the pinned policy's.
+ *
+ * <p><strong>The fixed plan's arm</strong> (`P12-TSK-001`, ADR-0102 point 6). A fixed plan splits the amount into its
+ * {@code n} instalments with the remainder on the first (A4: {@code A = floor(P / n)} for instalments 2 to n, the first
+ * {@code P - (n - 1)A}), so its largest instalment is the first - computed here, exactly, in minor units, by credit's own
+ * arithmetic over the requested amount (credit never calls a BNPL engine). Pay-in-4's instalments fall every 14 days, so
+ * up to three fall in one month; the policy's stress factor says how many largest instalments a month must carry. The
+ * arm was added to engine version 1 for a product no decision under it ever named, so every recorded decision replays as
+ * before ({@code INV-CRD-01}); the arm and each existing one answer only for their own term shape.
  *
  * <p><strong>Absence is never a zero.</strong> An income or an expenditure with neither figure present, or the
  * bureau's obligations absent, makes the figure {@link Assessment.Unassessable} naming what was absent - the policy
@@ -55,16 +66,27 @@ public final class AffordabilityAssessment {
      * @param annualAssessmentRate the stress rate, a fraction per year ({@code 0.0899} is 8.99%) - never negative
      * @param minimumPaymentRatio a revolving line's minimum monthly payment as a fraction of its limit
      * @param minimumDisposable the disposable income an affordable request leaves at least
+     * @param planStressFactor a fixed plan's: how many of its largest instalments a month carries - at least one
      */
-    public record Parameters(BigDecimal annualAssessmentRate, BigDecimal minimumPaymentRatio, Money minimumDisposable) {
+    public record Parameters(BigDecimal annualAssessmentRate, BigDecimal minimumPaymentRatio, Money minimumDisposable,
+            Optional<BigDecimal> planStressFactor) {
         public Parameters {
             Objects.requireNonNull(annualAssessmentRate, "annualAssessmentRate");
             Objects.requireNonNull(minimumPaymentRatio, "minimumPaymentRatio");
             Objects.requireNonNull(minimumDisposable, "minimumDisposable");
+            Objects.requireNonNull(planStressFactor, "planStressFactor");
             if (annualAssessmentRate.signum() < 0 || minimumPaymentRatio.signum() <= 0
                     || minimumPaymentRatio.compareTo(BigDecimal.ONE) > 0) {
                 throw new IllegalArgumentException("a non-negative rate and a payment ratio in (0, 1]");
             }
+            if (planStressFactor.isPresent() && planStressFactor.get().compareTo(BigDecimal.ONE) < 0) {
+                throw new IllegalArgumentException("a plan's stress factor carries at least one instalment");
+            }
+        }
+
+        /** Parameters with no plan stress factor - every product's but a fixed plan's. */
+        public Parameters(BigDecimal annualAssessmentRate, BigDecimal minimumPaymentRatio, Money minimumDisposable) {
+            this(annualAssessmentRate, minimumPaymentRatio, minimumDisposable, Optional.empty());
         }
     }
 
@@ -129,15 +151,32 @@ public final class AffordabilityAssessment {
     static Money repayment(SnapshotContent snapshot, Parameters parameters) {
         CurrencyCode currency = snapshot.product().currency();
         BigDecimal amount = snapshot.requestedAmount().toBigDecimal();
-        BigDecimal exact;
-        if (snapshot.product().revolving()) {
-            exact = amount.multiply(parameters.minimumPaymentRatio()).setScale(SCALE, RoundingMode.HALF_EVEN);
-        } else {
-            int term = snapshot.termMonths()
-                    .orElseThrow(() -> new IllegalArgumentException("an instalment product's request names its term"));
-            exact = annuity(amount, term, parameters.annualAssessmentRate());
-        }
+        CreditProduct product = snapshot.product();
+        BigDecimal exact = switch (product.termShape()) {
+            case NONE -> amount.multiply(parameters.minimumPaymentRatio()).setScale(SCALE, RoundingMode.HALF_EVEN);
+            case MONTHS -> annuity(amount, snapshot.termMonths()
+                    .orElseThrow(() -> new IllegalArgumentException("an instalment product's request names its term")),
+                    parameters.annualAssessmentRate());
+            case FIXED_PLAN -> largestInstalment(snapshot.requestedAmount(), product.planInstalments().orElseThrow())
+                    .toBigDecimal()
+                    .multiply(parameters.planStressFactor().orElseThrow(() -> new IllegalArgumentException(
+                            "a fixed plan's policy states its stress factor")))
+                    .setScale(SCALE, RoundingMode.HALF_EVEN);
+        };
         return Money.of(exact, currency, RoundingPolicy.HALF_UP);
+    }
+
+    /**
+     * A fixed plan's largest instalment: its first, {@code amount - (instalments - 1) x floor(amount / instalments)} in
+     * minor units - exact, the A4 split, so the instalments sum to the amount.
+     */
+    static Money largestInstalment(Money amount, int instalments) {
+        if (instalments < 1 || !amount.isPositive()) {
+            throw new IllegalArgumentException("a plan splits a positive amount into at least one instalment");
+        }
+        long minor = amount.minorUnits();
+        long later = Math.floorDiv(minor, instalments);
+        return Money.ofMinorUnits(minor - (instalments - 1) * later, amount.currency());
     }
 
     /**

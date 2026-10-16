@@ -19,7 +19,10 @@ import java.util.Objects;
  *
  * <p>Every refusal about the <em>decision</em> is a typed answer, never an exception to parse. A consumer already bound
  * to a <em>different</em> decision is the caller's defect: refused by {@code UNIQUE (consumer_kind, consumer_ref)}, it
- * surfaces as {@link CreditStorageException} and the caller's transaction must roll back. {@link Consumption.Consumed}
+ * surfaces as {@link CreditStorageException} and the caller's transaction must roll back. So is a consumer of another
+ * product family (`P12-TSK-001`: a loan agreement taking up a BNPL approval, or the reverse) - refused
+ * {@link ConsumerOfAnotherFamily} before any lock, and by {@code credit.consume_decision} itself for any other caller.
+ * {@link Consumption.Consumed}
  * carries the decision, so the consumer can hold it to its own party, product and amount - credit never reads the
  * consumer.
  *
@@ -39,6 +42,20 @@ public interface CreditDecisionConsumptions<T> {
      * correlation in scope - the winner's audit record carries both.
      */
     Consumption consume(T unitOfWork, CreditDecisionId decision, ConsumerRef consumer);
+
+    /**
+     * The consumer's kind does not take up a decision of this product's family ({@link ConsumerKind#takesUp}) - the
+     * caller's defect, never a decision's outcome: nothing is locked, written or audited. Names the kind and the product,
+     * never an amount.
+     */
+    final class ConsumerOfAnotherFamily extends IllegalArgumentException {
+
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public ConsumerOfAnotherFamily(ConsumerKind kind, CreditProduct product) {
+            super("a " + kind + " does not take up a " + product + " decision");
+        }
+    }
 
     /** What came of a consumption - five answers, closed. */
     sealed interface Consumption {

@@ -43,6 +43,7 @@ import com.finapp.credit.JdbcUnderwritingCaseStore;
 import com.finapp.credit.PlatformCreditExposure;
 import com.finapp.credit.PolicyEvaluations;
 import com.finapp.credit.PolicyFigure;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.credit.ScorecardAdministration;
 import com.finapp.credit.ScorecardModelVersionId;
 import com.finapp.credit.ScorecardStatus;
@@ -315,8 +316,8 @@ final class CreditWorld {
             var profile = new JdbcCreditProfiles(IDS).ensure(uow, party);
             DecisionRequestId id = DecisionRequestId.next(IDS);
             REQUESTS.insert(uow, id, party, profile.id(), new DecisionRequest.Application(product, amount,
-                    product.revolving() ? Optional.empty() : Optional.of(36), Optional.empty(), Optional.empty()), validity,
-                    "decision-case", new Actor(party.toString(), ActorType.CUSTOMER));
+                    product.termBounds().map(bounds -> bounds.admits(36) ? 36 : bounds.maximumMonths()), Optional.empty(),
+                    Optional.empty()), RequestOrigin.of(product), validity, "decision-case", new Actor(party.toString(), ActorType.CUSTOMER));
             return id.value();
         });
     }

@@ -47,6 +47,7 @@ import com.finapp.credit.PolicyEvaluations;
 import com.finapp.credit.PolicyFigure;
 import com.finapp.credit.PolicyOperator;
 import com.finapp.credit.ReasonCode;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.credit.Scorecard;
 import com.finapp.credit.ScorecardAdministration;
 import com.finapp.credit.ScorecardFamily;
@@ -394,7 +395,7 @@ final class ReproducibilityWorld {
                 DecisionRequestId id = DecisionRequestId.next(CreditWorld.IDS);
                 CreditWorld.REQUESTS.insert(uow, id, applicant.party(), profile.id(), new DecisionRequest.Application(
                         product, amount, term, applicant.declaredIncome(), applicant.declaredExpenditure()),
-                        Duration.ofDays(7), "battery-" + applicant.index(),
+                        RequestOrigin.CUSTOMER_DOOR, Duration.ofDays(7), "battery-" + applicant.index(),
                         new Actor(applicant.party().toString(), ActorType.CUSTOMER));
                 return id.value();
             });

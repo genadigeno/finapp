@@ -26,6 +26,7 @@ import com.finapp.credit.JdbcDecisionSnapshotStore;
 import com.finapp.credit.JdbcPolicyEvaluationStore;
 import com.finapp.credit.JdbcUnderwritingCaseStore;
 import com.finapp.credit.PolicyEvaluations;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
@@ -146,7 +147,8 @@ class Phase10SpansDatabaseTest {
             var profile = new JdbcCreditProfiles(IDS).ensure(uow, party);
             DecisionRequestId id = DecisionRequestId.next(IDS);
             REQUESTS.insert(uow, id, party, profile.id(), new DecisionRequest.Application(CreditProduct.CREDIT_LINE,
-                    eur(200_000), Optional.empty(), Optional.empty(), Optional.empty()), Duration.ofDays(7), correlation,
+                    eur(200_000), Optional.empty(), Optional.empty(), Optional.empty()), RequestOrigin.CUSTOMER_DOOR, Duration.ofDays(7),
+                    correlation,
                     new Actor(party.toString(), ActorType.CUSTOMER));
             return id.value();
         });

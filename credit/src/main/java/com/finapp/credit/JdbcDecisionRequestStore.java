@@ -21,7 +21,7 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
 
     private static final String COLUMNS = "id, party_id, profile_id, product, currency, requested_minor, term_months,"
             + " declared_income_minor, declared_expenditure_minor, status, closure_reason, submitted_at, expires_at,"
-            + " pinned_policy_version_id, pinned_model_version_id, pinned_engine_version, correlation_id";
+            + " pinned_policy_version_id, pinned_model_version_id, pinned_engine_version, correlation_id, origin";
 
     private static final String OPEN = "('SUBMITTED', 'COLLECTING', 'READY', 'EVALUATED', 'IN_REVIEW')";
 
@@ -32,6 +32,7 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
             UUID party,
             CreditProfileId profile,
             DecisionRequest.Application application,
+            RequestOrigin origin,
             Duration validity,
             String correlation,
             Actor actor) {
@@ -39,9 +40,9 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
             try (PreparedStatement insert = unitOfWork.prepareStatement(
                     "INSERT INTO credit.decision_request (id, party_id, profile_id, product, currency, requested_minor,"
                             + " term_months, declared_income_minor, declared_expenditure_minor, status, request_validity,"
-                            + " submitted_at, expires_at, next_step_at, correlation_id)"
+                            + " submitted_at, expires_at, next_step_at, correlation_id, origin)"
                             + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED', ? * interval '1 millisecond', statement_timestamp(),"
-                            + " statement_timestamp(), statement_timestamp(), ?)"
+                            + " statement_timestamp(), statement_timestamp(), ?, ?)"
                             + " ON CONFLICT (party_id, product) WHERE status IN " + OPEN + " DO NOTHING")) {
                 insert.setObject(1, id.value());
                 insert.setObject(2, party);
@@ -58,6 +59,7 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
                 minor(insert, 9, application.declaredMonthlyExpenditure());
                 insert.setLong(10, validity.toMillis());
                 insert.setString(11, correlation);
+                insert.setString(12, origin.name());
                 if (insert.executeUpdate() != 1) {
                     return false;
                 }
@@ -300,6 +302,7 @@ public final class JdbcDecisionRequestStore implements DecisionRequestStore {
                 row.getObject("party_id", UUID.class),
                 CreditProfileId.of(row.getObject("profile_id", UUID.class)),
                 application,
+                RequestOrigin.valueOf(row.getString("origin")),
                 DecisionRequestStatus.valueOf(row.getString("status")),
                 Optional.ofNullable(closure).map(ClosureReason::valueOf),
                 pinned,

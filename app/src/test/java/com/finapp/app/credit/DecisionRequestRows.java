@@ -33,8 +33,10 @@ final class DecisionRequestRows {
         com.finapp.credit.DecisionRequestId id = com.finapp.credit.DecisionRequestId.next(IDS);
         com.finapp.credit.DecisionRequest.Application application = new com.finapp.credit.DecisionRequest.Application(product,
                 Money.ofMinorUnits(product == com.finapp.credit.CreditProduct.PERSONAL_LOAN ? 1_000_000 : 200_000, product.currency()),
-                product.revolving() ? Optional.empty() : Optional.of(36), Optional.empty(), Optional.empty());
-        if (!STORE.insert(unitOfWork, id, party, profile.id(), application, product.requestValidity(), "suite-fixture",
+                product.termBounds().map(bounds -> bounds.admits(36) ? 36 : bounds.maximumMonths()), Optional.empty(),
+                Optional.empty());
+        if (!STORE.insert(unitOfWork, id, party, profile.id(), application,
+                com.finapp.credit.RequestOrigin.of(product), product.requestValidity(), "suite-fixture",
                 new Actor(party.toString(), ActorType.CUSTOMER))) {
             throw new IllegalStateException("a fixture request lost its slot to a concurrent one");
         }
