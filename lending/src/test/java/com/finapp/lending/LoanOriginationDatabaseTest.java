@@ -60,6 +60,13 @@ import org.junit.jupiter.api.Test;
 @DisplayName("the offer (P11-TSK-011)")
 class LoanOriginationDatabaseTest {
 
+    /** No case leaves a terms proposal awaiting a decision (the Phase 11 gate's R6): later suites' fixtures propose. */
+    @org.junit.jupiter.api.AfterEach
+    void noTermsProposalLeftPending() {
+        DisbursementWorld.clearPendingTerms(LoanProduct.PERSONAL_LOAN);
+        DisbursementWorld.clearPendingTerms(LoanProduct.CREDIT_LINE);
+    }
+
     private static final Clock CLOCK = Clock.systemUTC();
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final JdbcLoanTermsStore TERMS_STORE = new JdbcLoanTermsStore();
@@ -257,9 +264,9 @@ class LoanOriginationDatabaseTest {
             + " (credit's product widened after the terms were proposed) - closes the application CLOSED_UNDECIDED"
             + " (TERMS_NOT_AMORTISING), no offer")
     void aNonAmortisingOfferClosesTheApplicationUndecided() throws Exception {
-        // 23.10 % amortises across credit's 6-60 months (the door's judgement) - and not over 600, where the first
+        // 23.09 % amortises across credit's 6-60 months (the door's judgement) - and not over 600, where the first
         // period's interest outgrows the level instalment.
-        activate(LOAN, "0.231");
+        activate(LOAN, "0.2309");
         Application application = application(LOAN, 28);
         approve(application, 20_000_00, Optional.of(600), Duration.ofDays(30));
         assertThat(sweepUntilClaimed(application, HOUR)).isEqualTo(LoanOrigination.Outcome.Kind.CLOSED_UNDECIDED);
@@ -871,21 +878,7 @@ class LoanOriginationDatabaseTest {
     }
 
     private static LoanTermsAdministration.Proposed propose(LoanProduct product, LoanTerms terms) {
-        inOneTransaction(uow -> {
-            try (PreparedStatement select = uow.prepareStatement(
-                    "SELECT id FROM lending.loan_terms_version WHERE product = ? AND status = 'PROPOSED'")) {
-                select.setString(1, product.name());
-                try (ResultSet row = select.executeQuery()) {
-                    if (row.next()) {
-                        ADMINISTRATION.reject(uow, LoanTermsVersionId.of(row.getObject(1, UUID.class)), employee(),
-                                "cleared for the next case", correlation());
-                    }
-                }
-                return null;
-            } catch (SQLException failure) {
-                throw new IllegalStateException(failure);
-            }
-        });
+        DisbursementWorld.clearPendingTerms(product);
         return inOneTransaction(uow -> ADMINISTRATION.propose(uow, terms, "a case's proposal", employee(), correlation()));
     }
 

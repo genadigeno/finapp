@@ -36,11 +36,23 @@ import java.util.UUID;
  * no billed item takes stays held. A line's {@code PAY_DOWN_PRINCIPAL} is a repayment's treatment (`P11-TSK-023`) - a credit
  * balance on a line is by construction what exceeded every receivable when it was received (A26), and rule 6's entry
  * credits due accounts only, as {@code credit_balance_allocation} records billed components only.
+ *
+ * <p><strong>And it settles what is ALREADY due</strong> (the Phase 11 gate's R2, {@code lending V029}): credit can arrive
+ * while an item is past due - a fee refunded (rule 8a), a repayment reversed beside other credit (rule 10), a post-maturity
+ * loan whose principal is paid and whose interest is due - and no billed item is born to apply it at. {@link #catchUp} is
+ * the same application over the same due state, born at no item: the loan's next <em>catch-up</em> application, numbered
+ * under L3 ({@code catch_up_sequence}, {@code UNIQUE (loan_id, catch_up_sequence)}) and keyed
+ * {@code lending.credit-application:<loan>:catch-up:<n>}. The servicing step runs it after billing and before the
+ * collection, the condition and the late fee - so no arrears the borrower's own held money covers is collected, aged or
+ * charged - and the payoff before its recomputation, so the wallet is debited only what the credit does not cover.
  */
 final class CreditBalanceApplications {
 
     /** Rule 6's key prefix: {@code lending.credit-application:<billed item>}. */
     static final String KEY_PREFIX = "lending.credit-application:";
+
+    /** A catch-up application's key infix: {@code lending.credit-application:<loan>:catch-up:<n>}. */
+    static final String CATCH_UP_INFIX = ":catch-up:";
 
     private final InstalmentBillingStore store;
     private final LoanReceivables receivables;
@@ -63,6 +75,21 @@ final class CreditBalanceApplications {
      */
     Optional<CreditBalanceApplication> apply(Connection unitOfWork, Loan loan, LoanAgreement agreement,
             AllocationRules rules, UUID item, LocalDate today, Accounts accounts, Money zero) {
+        return apply(unitOfWork, loan, agreement, rules, Optional.of(item), today, accounts, zero);
+    }
+
+    /**
+     * Applies {@code loan}'s credit balance over what its billed items already have due, at no item's birth - the loan's
+     * next catch-up application - if both a credit balance and something due exist; on the caller's unit of work, under its
+     * L3 (the servicing step after billing, before the collection; the payoff before its recomputation).
+     */
+    Optional<CreditBalanceApplication> catchUp(Connection unitOfWork, Loan loan, LoanAgreement agreement,
+            AllocationRules rules, LocalDate today, Accounts accounts, Money zero) {
+        return apply(unitOfWork, loan, agreement, rules, Optional.empty(), today, accounts, zero);
+    }
+
+    private Optional<CreditBalanceApplication> apply(Connection unitOfWork, Loan loan, LoanAgreement agreement,
+            AllocationRules rules, Optional<UUID> item, LocalDate today, Accounts accounts, Money zero) {
         Money credit = receivables.creditHeld(unitOfWork, accounts, zero);
         if (!credit.isPositive()) {
             return Optional.empty();
@@ -95,17 +122,24 @@ final class CreditBalanceApplications {
             return Optional.empty();
         }
         UUID applicationId = ids.next();
+        // At an item, keyed by it; a catch-up, by its number - the loan's latest read under L3, plus one.
+        Optional<Integer> catchUp = item.isPresent()
+                ? Optional.empty()
+                : Optional.of(store.latestCatchUpSequence(unitOfWork, loan.id()) + 1);
+        String key = item.map(billed -> KEY_PREFIX + billed)
+                .orElseGet(() -> KEY_PREFIX + loan.id().value() + CATCH_UP_INFIX + catchUp.orElseThrow());
         List<JournalLine> entryLines = new ArrayList<>();
         entryLines.add(new JournalLine(accounts.creditBalance(), Direction.DEBIT, amount));
         for (Map.Entry<AllocationComponent, Money> component : perComponent.entrySet()) {
             entryLines.add(new JournalLine(accounts.due(component.getKey()), Direction.CREDIT, component.getValue()));
         }
-        PostingResult result = postings.post(unitOfWork, new PostingCommand(KEY_PREFIX + item, today, today,
+        PostingResult result = postings.post(unitOfWork, new PostingCommand(key, today, today,
                 applicationId.toString(), entryLines));
         if (result.replayed()) {
-            throw new IllegalStateException("an application entry exists for a billed item with no application (INV-LND-04)");
+            throw new IllegalStateException("an application entry exists for a billed item or a catch-up number with no"
+                    + " application (INV-LND-04)");
         }
-        CreditBalanceApplication application = new CreditBalanceApplication(applicationId, item, loan.id(), amount,
+        CreditBalanceApplication application = new CreditBalanceApplication(applicationId, item, catchUp, loan.id(), amount,
                 agreement.id(), agreement.version(), agreement.allocationEngine(), lines, result.entryId());
         store.insertApplication(unitOfWork, application, loan.correlation());
         return Optional.of(application);

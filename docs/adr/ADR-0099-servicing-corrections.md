@@ -53,6 +53,9 @@ reasons screened, `CreditReasons`). Rests on `PHASE_11_PLAN.md` §2.4 (A10, A12,
      (`INV-REV-02`) — only the unpaid remainder; `> remainder` is `422 lending.WaiverExceedsDue`.
    - **Fee, already paid** (rule 8a, kind `FEE_REFUND`): `DR LOAN_FEE_INCOME / CR
      LOAN_CREDIT_BALANCE` — the fee is owed back, applied at the next billing or refunded at closure.
+     *(Corrected by the Phase 11 gate, R2, 2026-10-16: applied at the next servicing step whenever something is
+     already due - ADR-0095 point 5's catch-up application - else at the next billing; refunded at closure. And a fee
+     refunded is never forgiven again - R3, below.)*
    - **Interest** (rule 9): an explicit posting `DR LOAN_INTEREST_INCOME / CR LOAN_INTEREST_DUE` (or
      `…ACCRUED` for interest not yet billed), bounded by the component's balance under L3. *(As built
      (`P11-DOC-001`, 2026-10-15): the `…ACCRUED` arm was never built - an interest waiver releases a billed
@@ -289,6 +292,15 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   (`PostingService.lockBalancesInOrder`) before L7; the fee kinds keep L7 first (T-dis path X holds the wallet while it
   posts `LOAN_FEE_INCOME`). Proven by `FeeAndWaiverDatabaseTest#anInterestWaiverTakesTheIncomeRowBeforeTheWallet` and
   probed (`MUTATION_TESTING.md` §2); `DISTRIBUTED_EXECUTION.md` §3 records it.
+- **The Phase 11 gate's R3 (2026-10-16) - a refunded fee is never forgiven twice.** A fee paid by a repayment, refunded
+  (rule 8a), then the repayment reversed (rule 10) was due again on its item, and the fee waiver's bound (billed less paid)
+  admitted waiving it: `LOAN_FEE_INCOME` negative for the loan while the borrower still held the refund as credit. The
+  bound of a `FEE` waiver is now `least(billed - paid, assessed - fee waived - refunded)` - at the domain (`Waivers.room`)
+  and re-judged by the decision trigger for every writer (`lending V029`'s `waiver_decision_is_born_once`). The reversal
+  stays admitted (a bounced payment must stay correctable): the fee due again is settled by the refund held - ADR-0095
+  point 5's catch-up application, at the next servicing step - so the books end where a waiver alone would have left
+  them. The subledger proof gained an income arm: each fee assessment's income (assessed less approved fee waivers and
+  refunds) is never negative, `FEE_INCOME_NEGATIVE` (`FeeAndWaiverDatabaseTest#aRefundedFeeIsNeverForgivenTwice`).
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

@@ -143,6 +143,35 @@ class LendingMigrationTest {
     }
 
     @Test
+    @DisplayName("every lending table refuses TRUNCATE - a row trigger never fires on it, so each table carries a statement"
+            + " trigger (the Phase 11 gate's A1-F4: the capital contribution and its history had none, V029); the owner's"
+            + " own TRUNCATE of either is refused, in a transaction rolled back")
+    void everyTableRefusesTruncate() throws SQLException {
+        assertThat(column("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+                + " WHERE n.nspname = '" + SCHEMA + "' AND c.relkind = 'r' AND c.relname <> 'flyway_schema_history'"
+                + " AND NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND NOT t.tgisinternal"
+                + " AND t.tgenabled <> 'D' AND (t.tgtype & 32) <> 0 AND (t.tgtype & 2) <> 0) ORDER BY 1"))
+                .as("a lending table with no BEFORE TRUNCATE trigger").isEmpty();
+        boolean autoCommit = migrator.getAutoCommit();
+        migrator.setAutoCommit(false);
+        try {
+            for (String table : List.of("capital_contribution", "capital_contribution_event")) {
+                assertThatExceptionOfType(SQLException.class).as(table)
+                        .isThrownBy(() -> {
+                            try (Statement statement = migrator.createStatement()) {
+                                statement.execute("TRUNCATE " + SCHEMA + "." + table + " CASCADE");
+                            }
+                        })
+                        .withMessageContaining("never truncated");
+                migrator.rollback();
+            }
+        } finally {
+            migrator.rollback();
+            migrator.setAutoCommit(autoCommit);
+        }
+    }
+
+    @Test
     @DisplayName("the schema's one view is the exposure read's (V007): migrator-owned, a definer view, its columns exactly"
             + " the read's, SELECT to the application role and to no one else - and nothing writable through it")
     void theExposureViewIsTheReadsAlone() throws SQLException {

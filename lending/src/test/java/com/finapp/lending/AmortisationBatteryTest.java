@@ -67,8 +67,13 @@ class AmortisationBatteryTest {
     /** Every tenth account is also re-written by a swapped arithmetic (Q5's default). */
     static final int SLICE = 10;
 
-    /** The population's fingerprint at {@link AmortisationWorld#SEED} and full size - moved only by a reviewed change. */
-    static final String FINGERPRINT = "6830b62c4c265129b843e9f69ef48f104d3982ba4c4da6c198376da6f81a7926";
+    /**
+     * The population's fingerprint at {@link AmortisationWorld#SEED} and full size - moved only by a reviewed change. Moved
+     * by the Phase 11 gate's R5 (2026-10-16): the population's rates are drawn up to the terms door's highest admitted rate,
+     * which the door's margin moved from 0.23106446 to 0.23090888 - with the old rate pinned the generator reproduced the
+     * old fingerprint {@code 6830b62c...7926} and every case of this suite green, so nothing else moved it.
+     */
+    static final String FINGERPRINT = "b833918a0e1afcdace5c43af2363bac8a142dd42792f0b5b2a06a5433954a433";
 
     private static final LoanReplayProof REPLAY = new LoanReplayProof();
     private static final LoanSubledgerProof SUBLEDGER = new LoanSubledgerProof();

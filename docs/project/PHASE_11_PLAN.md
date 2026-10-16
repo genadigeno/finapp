@@ -1875,6 +1875,19 @@ rest are recorded here, each the truth that holds.
   catch-up accruals and early billing under rules 2 and 3's, rule 5 under `lending.repayment:<repayment>`, the refund
   under `lending.closure-refund:<loan>`; `lending.payoff:` is only the payoff command's API idempotency scope
   (`LoanPayoffDesk`). Rule 9's `…ACCRUED` arm - waiving accrued, unbilled interest - was never built.
+- **The Phase 11 gate's repairs (2026-10-16, repair-1; lending `V029`).** (1) **Rule 6 (§12.8) settles what is already
+  due**, not only what becomes due: T-svc (§7.1) applies a held credit balance over the due state after its billing and
+  before the collection, the condition and the late fee - and T-pay before its recomputation - as a *catch-up
+  application* (`billing_id` NULL, `catch_up_sequence`, key `lending.credit-application:<loan>:catch-up:<n>`); §12.8's
+  rule 6 row's key reads `lending.credit-application:<billed item>` or that one (ADR-0095's Follow-up). (2) **A `FEE`
+  waiver (rule 8) is bounded by `least(billed - paid, assessed - fee waived - refunded)`** - a refunded fee is never
+  forgiven again after a reversal re-opens it; the subledger proof's `FEE_INCOME_NEGATIVE` arm (ADR-0099's Follow-up).
+  (3) **The terms door (§12.2, ADR-0093 section 5) judges with a margin**, exactly, at the smallest principal - the first
+  and later periods' interest at least half a minor unit below `A*`, and no balance exhausted early - so no principal
+  between the bounds and no start date is refused by the schedule engine at a disbursement or a payout's conclusion,
+  which have no business outcome for one (A3-M3, R5; the highest rate admitted for the personal loan's bounds is
+  23.0908 %, where 23.10 % was). (4) `capital_contribution` and its history refuse `TRUNCATE`; a terms version's
+  engine versions are `= 1` (§8).
 - **The payout's `RETURNED`** (§5.4, §12.4) has no producer and is not a state - not in `PayoutStatus`, not in lending
   `V009`'s `CHECK`: payments keeps no return record for an instant withdrawal (`P11-TSK-015`'s refinement,
   `LENDING_LIFECYCLES.md` §4.7) - already annotated where it stands in §5.4, §10 and §12.4.

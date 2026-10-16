@@ -923,9 +923,7 @@ class LoanAcceptanceDatabaseTest {
 
     /** A fresh version of {@code terms}, proposed by one person and activated by another. */
     private static void activate(LoanTerms terms) {
-        LoanTermsAdministration.Proposed proposed = inOneTransaction(uow -> ADMINISTRATION.propose(uow, terms,
-                "a case's terms", employee(), correlation()));
-        inOneTransaction(uow -> ADMINISTRATION.approve(uow, proposed.id(), employee(), "reviewed", correlation()));
+        DisbursementWorld.activate(terms);
     }
 
     /**
@@ -964,10 +962,7 @@ class LoanAcceptanceDatabaseTest {
     private static void ensureActive(LoanProduct product) {
         Boolean active = inOneTransaction(uow -> TERMS_STORE.active(uow, product).isPresent());
         if (!active) {
-            LoanTermsAdministration.Proposed proposed = inOneTransaction(uow -> ADMINISTRATION.propose(uow,
-                    LoanTermsFixtures.of(product, product == LOAN ? "0.0899" : "0.1599").build(), "the suite's terms",
-                    employee(), correlation()));
-            inOneTransaction(uow -> ADMINISTRATION.approve(uow, proposed.id(), employee(), "reviewed", correlation()));
+            DisbursementWorld.activate(LoanTermsFixtures.of(product, product == LOAN ? "0.0899" : "0.1599").build());
         }
     }
 

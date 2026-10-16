@@ -14,7 +14,6 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -52,6 +51,13 @@ import org.junit.jupiter.api.Test;
 @Tag("database")
 @DisplayName("loan product terms as versioned data (P11-TSK-005)")
 class LoanTermsDatabaseTest {
+
+    /** No case leaves a terms proposal awaiting a decision (the Phase 11 gate's R6): later suites' fixtures propose. */
+    @org.junit.jupiter.api.AfterEach
+    void noTermsProposalLeftPending() {
+        DisbursementWorld.clearPendingTerms(LoanProduct.PERSONAL_LOAN);
+        DisbursementWorld.clearPendingTerms(LoanProduct.CREDIT_LINE);
+    }
 
     private static final Clock CLOCK = Clock.systemUTC();
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
@@ -419,6 +425,20 @@ class LoanTermsDatabaseTest {
                 + " AND status = 'PROPOSED'")).as("every raw proposal rolled back").isZero();
     }
 
+    @Test
+    @DisplayName("a terms version names only the engine versions this build holds (the Phase 11 gate's A3-M1, V029): a raw"
+            + " term set pinning version 2 of the schedule, accrual or allocation engine - which no code computes - is"
+            + " refused by the CHECK, while version 1 commits")
+    void anEngineVersionNoCodeHoldsIsRefused() throws SQLException {
+        clearPending(LOAN);
+        rawProposalAccepted();
+        for (String engine : List.of("schedule_engine_version", "accrual_engine_version", "allocation_engine_version")) {
+            rawProposalRefused(engine, "2", "23514");
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_terms_version WHERE product = 'PERSONAL_LOAN'"
+                + " AND status = 'PROPOSED'")).as("every raw proposal rolled back").isZero();
+    }
+
     /** The raw-SQL proposal with no defect commits - so each refusal below is its defect's alone. */
     private static void rawProposalAccepted() throws SQLException {
         try (Connection owner = DatabaseRoles.migrator()) {
@@ -526,8 +546,8 @@ class LoanTermsDatabaseTest {
                 .as("no term set written").isZero();
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.TermsVersionProposed'"))
                 .as("nothing audited").isEqualTo(audits);
-        LoanTermsAdministration.Proposed amortising = propose(LOAN, "0.2310", proposer);
-        assertThat(status(amortising.id())).as("23.10 % amortises across 6-60 months").isEqualTo("PROPOSED");
+        LoanTermsAdministration.Proposed amortising = propose(LOAN, "0.2309", proposer);
+        assertThat(status(amortising.id())).as("23.09 % amortises across 6-60 months").isEqualTo("PROPOSED");
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -542,21 +562,7 @@ class LoanTermsDatabaseTest {
 
     /** Rejects the product's pending proposal, if there is one, so a case can propose. */
     private static void clearPending(LoanProduct product) {
-        inOneTransaction(uow -> {
-            try (PreparedStatement select = uow.prepareStatement(
-                    "SELECT id FROM lending.loan_terms_version WHERE product = ? AND status = 'PROPOSED'")) {
-                select.setString(1, product.name());
-                try (ResultSet row = select.executeQuery()) {
-                    if (row.next()) {
-                        ADMINISTRATION.reject(uow, LoanTermsVersionId.of(row.getObject(1, UUID.class)), employee(),
-                                "cleared for the next case", correlation());
-                    }
-                }
-                return null;
-            } catch (SQLException failure) {
-                throw new IllegalStateException(failure);
-            }
-        });
+        DisbursementWorld.clearPendingTerms(product);
     }
 
     /** A fresh proposal of the product's plan terms at {@code rate}, by {@code proposer}. */

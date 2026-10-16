@@ -39,7 +39,12 @@ import java.util.UUID;
  * </ul>
  * And: every journal entry on the loan's accounts is named by one of its rows (a raw posting no row explains fails the
  * account even where amounts happen to net); the six accounts are exactly the loan's, one each in its currency; no balance
- * is on the wrong side ("no due account negative"); a {@code CLOSED} or {@code CANCELLED} account's six balances are zero.
+ * is on the wrong side ("no due account negative"); a {@code CLOSED} or {@code CANCELLED} account's six balances are zero;
+ * and no fee earns the platform less than nothing (the Phase 11 gate's R3): each assessment's income - assessed less its
+ * approved fee waivers and refunds, the {@code LOAN_FEE_INCOME} lines its rows name - is never negative. The income account
+ * is the currency's, shared, so its lines are judged through the rows that name them; a fee forgiven twice (refunded, the
+ * repayment that paid it reversed, then waived) fails {@code FEE_INCOME_NEGATIVE} even where every one of the six balances
+ * is explained.
  *
  * <p>Pure: a function of one {@link LoanRecord}, read in one {@code REPEATABLE READ} snapshot by the caller - the same verdict
  * on every instance for the same snapshot, whatever commits concurrently. Amounts fold through {@link Money}
@@ -80,7 +85,8 @@ public final class LoanSubledgerProof {
             boolean accountsComplete,
             int unexplainedEntries,
             boolean noneNegative,
-            boolean terminalZero) {
+            boolean terminalZero,
+            boolean feeIncomeNonNegative) {
 
         public Verdict {
             Objects.requireNonNull(loan, "loan");
@@ -89,7 +95,7 @@ public final class LoanSubledgerProof {
 
         /** Every identity and every rule holds. */
         public boolean holds() {
-            return accountsComplete && unexplainedEntries == 0 && noneNegative && terminalZero
+            return accountsComplete && unexplainedEntries == 0 && noneNegative && terminalZero && feeIncomeNonNegative
                     && figures.stream().allMatch(Figure::holds);
         }
 
@@ -113,6 +119,9 @@ public final class LoanSubledgerProof {
             }
             if (!terminalZero) {
                 failures.add("TERMINAL_NOT_ZERO");
+            }
+            if (!feeIncomeNonNegative) {
+                failures.add("FEE_INCOME_NEGATIVE");
             }
             return List.copyOf(failures);
         }
@@ -157,7 +166,24 @@ public final class LoanSubledgerProof {
         }
         boolean terminal = record.loan().status() == LoanStatus.CLOSED || record.loan().status() == LoanStatus.CANCELLED;
         return new Verdict(record.id(), record.loan().kind(), record.loan().status(), figures, complete,
-                unexplained(record), noneNegative, !terminal || allZero);
+                unexplained(record), noneNegative, !terminal || allZero, feeIncomeNonNegative(record));
+    }
+
+    /**
+     * Whether every fee assessment's income is zero or more: assessed (rule 4's credit to {@code LOAN_FEE_INCOME}) less its
+     * approved fee waivers (rule 8) and refunds (rule 8a), each a debit of it.
+     */
+    static boolean feeIncomeNonNegative(LoanRecord record) {
+        Map<UUID, Money> income = new HashMap<>();
+        for (LoanRecord.Fee fee : record.fees()) {
+            income.merge(fee.id(), fee.amount(), Money::plus);
+        }
+        for (LoanRecord.WaiverRow waiver : record.waivers()) {
+            if (waiver.approved() && waiver.kind() != WaiverKind.INTEREST) {
+                waiver.feeAssessmentId().ifPresent(fee -> income.merge(fee, waiver.amount().negated(), Money::plus));
+            }
+        }
+        return income.values().stream().noneMatch(Money::isNegative);
     }
 
     // ------------------------------------------------------------------ the rows' side

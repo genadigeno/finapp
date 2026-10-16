@@ -882,6 +882,41 @@ class RepaymentDatabaseTest {
         return -netDebit(loanAccount(loan, AccountPurpose.LOAN_CREDIT_BALANCE)).minorUnits();
     }
 
+    /**
+     * The replay proof re-derives every credit-balance application of the loan - a catch-up one included - by the pinned
+     * allocation engine over the due state the rows and the ledger held just before it, and misses none at a billed item
+     * (`P11-TSK-029`'s APPLICATION and APPLICATION_MISSING checks). Only those checks: a fixture that moves a loan's dates
+     * ({@code backdate}, {@code advance}) leaves a schedule its engine would not project from the moved start, which the
+     * replay names {@code SCHEDULE} - the fixture's, never the application's.
+     */
+    static void assertApplicationsReplay(LoanId loan) {
+        LendingProofs.Proven proven = LendingProofsWorld.proven(loan);
+        assertThat(proven.replay().findings()).as("the replay of %s's applications", loan.value())
+                .filteredOn(finding -> finding.check() == LoanReplayProof.Check.APPLICATION
+                        || finding.check() == LoanReplayProof.Check.APPLICATION_MISSING
+                        || finding.check() == LoanReplayProof.Check.ENGINE_ABSENT)
+                .isEmpty();
+        assertThat(proven.replay().replayed()).isPositive();
+    }
+
+    /**
+     * The loan's catch-up applications (the Phase 11 gate's R2, {@code lending V029}) - each born at no billed item, numbered
+     * 1..n with no gap, its entry under {@code lending.credit-application:<loan>:catch-up:<n>} - counted.
+     */
+    static long catchUps(LoanId loan) {
+        UUID id = loan.value();
+        long applications = count("SELECT count(*) FROM lending.credit_balance_application WHERE loan_id = ?"
+                + " AND billing_id IS NULL", id);
+        assertThat(count("SELECT coalesce(max(catch_up_sequence), 0) FROM lending.credit_balance_application"
+                + " WHERE loan_id = ?", id)).as("numbered with no gap").isEqualTo(applications);
+        assertThat(count("SELECT count(*) FROM lending.credit_balance_application c JOIN ledger.journal_entry e"
+                + " ON e.id = c.journal_entry_id WHERE c.loan_id = ? AND c.billing_id IS NULL"
+                + " AND e.idempotency_scope = 'ledger.post:" + CreditBalanceApplications.KEY_PREFIX + "' || c.loan_id"
+                + " || '" + CreditBalanceApplications.CATCH_UP_INFIX + "' || c.catch_up_sequence", id))
+                .as("each under its own key").isEqualTo(applications);
+        return applications;
+    }
+
     static String loanStatus(LoanId loan) {
         return scalar("SELECT status FROM lending.loan WHERE id = ?", loan.value());
     }

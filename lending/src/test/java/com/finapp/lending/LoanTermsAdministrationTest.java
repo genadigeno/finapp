@@ -133,7 +133,7 @@ class LoanTermsAdministrationTest {
         assertThat(store.log).as("judged before A0").isEmpty();
         assertThat(store.rows).isEmpty();
         assertThat(audited).isEmpty();
-        assertThat(propose(personalLoan("0.2310").build(), ALICE).version()).as("23.10 % amortises").isEqualTo(1);
+        assertThat(propose(personalLoan("0.2309").build(), ALICE).version()).as("23.09 % amortises").isEqualTo(1);
         assertThat(propose(creditLine("0.30").build(), BOB).version()).as("a line is not scheduled").isEqualTo(1);
     }
 

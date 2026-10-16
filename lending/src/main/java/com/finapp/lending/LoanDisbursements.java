@@ -311,8 +311,10 @@ public final class LoanDisbursements {
                 agreement.termMonths().orElseThrow(() -> new IllegalStateException("an instalment agreement has a term")),
                 agreement.repaymentDay(), accrualStart);
         if (projected instanceof ScheduleOutcome.Refused refused) {
-            // The terms door judged these terms over every calendar of the leap cycle (P11-TSK-006): a defect, never a
-            // business refusal.
+            // The terms door judged these terms over every calendar of the leap cycle (P11-TSK-006) and - by its margin,
+            // since the Phase 11 gate's R5 - for every principal between the product's bounds, so no start date and no
+            // decided principal is refused here: a defect, never a business refusal. (Path W's caller and path X's payout
+            // conclusion have no business outcome for one; the door is where it is made impossible.)
             throw new IllegalStateException("the pinned schedule engine refused an accepted agreement: " + refused.reason());
         }
         return ((ScheduleOutcome.Projected) projected).schedule();

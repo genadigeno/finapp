@@ -217,7 +217,19 @@ conventions), `INV-MON-01`…`02`, ADR-0003, ADR-0088 §3.
     60-month loan first fails - sound and tight to 5 bp, in 5 ms. With a 1- or 2-day shortest first period the later-period bound binds instead
     (first refusal at 56.50 % and 56.90 %), conservatively - no real loan was found failing there; a tighter later bound
     is not worth its arithmetic at rates no product would name. Within a minor unit of the boundary an offer is still
-    judged by its own schedule (`P11-TSK-011`'s closure).
+    judged by its own schedule (`P11-TSK-011`'s closure). *(Corrected by the Phase 11 gate, R5 / A3-M3, 2026-10-16:
+    "sound and tight" held at the bounds' two principals only. Rounding varies between them, and at 23.10 % - admitted -
+    a real EUR 500.19 loan over 60 months on day 1 from 2028-12-18 repays no principal in its first instalment; the
+    offer's own judgement is made on the offer's date, while a disbursement (path W) and a payout's conclusion (path X)
+    project from their own day, and neither has a business outcome for a refusal - path W would stay
+    `PENDING_DISBURSEMENT` holding capital and exposure, path X re-observe a paid-out payout for ever, never accruing.
+    The door now judges three bounds in exact arithmetic at the smallest principal, where each is tightest: the first
+    period's interest and the later periods' (on the whole principal over the longest month) at least half a minor unit
+    below `A*`, and no balance exhausted before the last instalment (`A* > 5/2 x T(n-1) x g(n)` - the instalment is
+    `UP(A*)` or one unit more, so each balance is less than `5/2 x T(j)` below its exact value). Linear in the principal,
+    they hold for every principal from the smallest and every start date, so no loan the product can decide is refused at
+    its disbursement or its payout's conclusion. The personal loan's first refused rate is now 23.0909 % (highest admitted
+    23.0908 %) and the 1-day first period's 56.4431 %; `ScheduleEngineV1Test#theOldDoorsGap`, `#theExhaustionBound`.)*
   - *Probes* (`MUTATION_TESTING.md` §2): the follow-up's "round the instalment `HALF_EVEN`" is caught by the golden
     cases and by the property "A is never below the exact annuity" - the "final ≤ regular" property alone no longer
     catches it, the least-amount raise repairing the final instalment.

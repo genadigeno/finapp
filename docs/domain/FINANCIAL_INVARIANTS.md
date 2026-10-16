@@ -1805,6 +1805,12 @@ agreement's. On an on-time path the bills equal the projection to the minor unit
 (`InstalmentBillingDatabaseTest#onTimeBillingEqualsTheProjection`); after an irregular one the final instalment clears principal
 (`#theFinalInstalmentClearsPrincipal`).)*
 
+*(The Phase 11 gate's R5, 2026-10-16 - a schedule the engine would refuse is never asked for: the terms door judges with an
+exact margin at the smallest principal (`ScheduleEngineV1.judgeAmortisation`, ADR-0093's Follow-up), so no principal between
+the product's bounds and no start date - a disbursement's or a payout conclusion's - is refused NOT_AMORTISING; the old
+door's rounded two-principal judgement admitted 23.10 %, at which a real EUR 500.19 loan could not be scheduled.
+`ScheduleEngineV1Test#theOldDoorsGap`, `#theExhaustionBound`, `ScheduleEngineV1PropertiesTest#theJudgementIsSoundAndTight`.)*
+
 ### INV-LND-04 — Allocation conserves and never over-pays a component
 **Statement:** A repayment's allocation lines sum to its amount exactly; no line exceeds what its
 component (fee, interest or principal of one due item) had due when the repayment was allocated; no
@@ -1837,6 +1843,15 @@ pinned order, overflow only past every billed item and by the treatment), `#inde
 `#aSecondJvmAllocatesIdentically`; the case-by-case `AllocationEngineV1Test`; the probes are `MUTATION_TESTING.md` §2's
 `P11-TSK-008` rows. The deferred trigger, the lock and scenario 3 remain `-018`'s.)*
 **Phase:** 11
+
+*(The Phase 11 gate's R2, 2026-10-16 - the credit balance settles what is already due: a credit-balance application is
+also born at no billed item, as the loan's next catch-up application (`lending V029`: `billing_id` NULL,
+`catch_up_sequence` numbered under L3 for every writer by the born-once trigger, `UNIQUE (loan_id, catch_up_sequence)`, key
+`lending.credit-application:<loan>:catch-up:<n>`), by the servicing step before its collection and by the payoff before its
+recomputation - and `V012`'s deferred conservation holds it exactly as an application at a billed item: its rows sum to it,
+no billed component paid beyond what it billed. `FeeAndWaiverDatabaseTest#aRefundHeldBesidePastDueArrearsIsApplied`,
+`#aMaturedLoansArrearsAreSettledByCreditHeld`, `RepaymentReversalDatabaseTest#aReversalReopeningAnItemBesideHeldCreditIsSettledByIt`,
+`PayoffDatabaseTest#aPayoffBesideCreditHeldDebitsOnlyTheNet`; probes in `MUTATION_TESTING.md` §2.)*
 
 *(Replayed by `P11-TSK-029`, 2026-10-14 - every repayment's and credit-balance application's lines re-derived by the pinned allocation engine over the due state the rows and the ledger held just before it (the history walked in the lock's order, lending `V025` stamping the money decisions after L3); the subledger proof's no-wrong-side arm; `LendingProofDatabaseTest#aByteFlippedInAnyFactDiverges` - an allocation line moved by a minor unit is `DIVERGED`.)*
 
@@ -2213,6 +2228,11 @@ scenario 6 — `RepaymentReversalDatabaseTest#aReversalAfterAllocationReopensWha
 a waiver above what is due refused `422 lending.WaiverExceedsDue` (`P11-TSK-025`); scenario 8
 (`P11-TSK-027`); the adjustment guard refusing every loan purpose (`P11-TSK-003`).
 **Phase:** 11
+
+*(The Phase 11 gate's R3, 2026-10-16 - a fee waiver is bounded by what of the fee was never forgiven too:
+`least(billed - paid, assessed - fee waived - refunded)`, at the domain and by `lending V029`'s decision trigger for every
+writer - so a fee refunded and re-opened by a reversal is never forgiven again, and its income never goes below zero; the
+subledger proof's `FEE_INCOME_NEGATIVE` arm watches every assessment's income. `FeeAndWaiverDatabaseTest#aRefundedFeeIsNeverForgivenTwice`.)*
 
 *(As built by `P11-TSK-020`, 2026-10-13 - the repayment reversal: `lending V016`'s `repayment_reversal` (money-free machine row,
 column-scoped `UPDATE` of its decision columns, four-eyes `CHECK`, one live proposal per repayment by the partial `UNIQUE

@@ -262,8 +262,11 @@ public record LoanRecord(
         }
     }
 
-    /** A credit-balance application and its lines. */
-    public record Application(UUID id, UUID billingId, Money amount, UUID agreementId, int agreementVersion,
+    /**
+     * A credit-balance application and its lines - at a billed item's birth ({@code billingId}), or a catch-up application
+     * over what was already due ({@code billingId} empty, lending {@code V029}).
+     */
+    public record Application(UUID id, Optional<UUID> billingId, Money amount, UUID agreementId, int agreementVersion,
             int allocationEngine, JournalEntryId entry, Instant createdAt, List<ApplicationLine> lines, long order) {
 
         public Application {

@@ -202,6 +202,38 @@ class RepaymentReversalDatabaseTest {
         assertSubledgerProves(loan);
     }
 
+    @Test
+    @DisplayName("a reversal re-opening an item beside other credit held (the Phase 11 gate's R2, case b): the first bill"
+            + " part-paid, then finished by an overpayment holding 100.00; the first repayment reversed - the bill due again"
+            + " while 100.00 is held, and no billing is coming to apply it; the next servicing step applies it (the loan's"
+            + " catch-up application 1), the bill owing 100.00 less; the overpayment is then not reversible - what it held"
+            + " was applied")
+    void aReversalReopeningAnItemBesideHeldCreditIsSettledByIt() throws Exception {
+        LoanId loan = billedLoan(5_200_00);
+        long firstBill = billings(loan).get(0).billing().billed().minorUnits();
+        Repayment first = repay(loan, key(), firstBill * 6 / 10).repayment();
+        Repayment over = repay(loan, key(), firstBill - firstBill * 6 / 10 + 100_00).repayment();
+        assertThat(billings(loan).get(0).outstanding().isZero()).isTrue();
+        assertThat(held(loan)).isEqualTo(100_00);
+
+        proposeAndApprove(loan, first);
+        assertThat(billings(loan).get(0).outstanding().minorUnits()).as("the bill due again")
+                .isEqualTo(first.amount().minorUnits());
+        assertThat(held(loan)).as("beside the credit held").isEqualTo(100_00);
+
+        LoanServicing.Outcome step = service(loan);
+        assertThat(step.applied()).isEqualTo(1);
+        assertThat(step.billed()).isZero();
+        assertThat(held(loan)).isZero();
+        assertThat(billings(loan).get(0).outstanding().minorUnits()).isEqualTo(first.amount().minorUnits() - 100_00);
+        assertThat(RepaymentDatabaseTest.catchUps(loan)).isEqualTo(1);
+        assertSubledgerProves(loan);
+        RepaymentDatabaseTest.assertApplicationsReplay(loan);
+        assertThatExceptionOfType(RepaymentReversals.RepaymentNotReversible.class)
+                .isThrownBy(() -> proposeAndApprove(loan, over));
+        assertSubledgerProves(loan);
+    }
+
     // ------------------------------------------------------------------ four eyes and the races
 
     @Test

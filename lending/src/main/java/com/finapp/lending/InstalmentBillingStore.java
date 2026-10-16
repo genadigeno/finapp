@@ -50,6 +50,12 @@ public interface InstalmentBillingStore {
     /** Births one application and its allocation rows (ordinals 1..n in the lines' order); the database stamps it. */
     void insertApplication(Connection unitOfWork, CreditBalanceApplication application, CorrelationId correlation);
 
+    /**
+     * The number of {@code loan}'s latest catch-up application ({@code lending V029}), {@code 0} when it has none - read
+     * under the caller's L3, so the next one's number is this plus one.
+     */
+    int latestCatchUpSequence(Connection unitOfWork, LoanId loan);
+
     /** A period's accruals: how many rows and what they posted. */
     record PeriodAccruals(long rows, Money posted) {
 
