@@ -10642,6 +10642,10 @@
             "format": "int32",
             "type": "integer"
           },
+          "planStressFactorBps": {
+            "format": "int32",
+            "type": "integer"
+          },
           "product": {
             "type": "string"
           },
@@ -15600,6 +15604,10 @@
             "type": "integer"
           },
           "minimumPaymentRatioBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "planStressFactorBps": {
             "format": "int32",
             "type": "integer"
           },

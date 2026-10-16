@@ -14,7 +14,8 @@ public interface DecisionRequestStore {
     /**
      * Inserts a request born {@code SUBMITTED} with its birth history row, unless the party already holds an open one for
      * the product ({@code ON CONFLICT} on the partial unique, {@code DO NOTHING}); true when this call wrote it. The
-     * database stamps {@code submitted_at}, {@code expires_at = submitted_at + validity} and the first permit.
+     * database stamps {@code submitted_at}, {@code expires_at = submitted_at + validity} and the first permit; it refuses
+     * an {@code origin} that does not admit the product (`P12-TSK-001`, the origin CHECK).
      */
     boolean insert(
             Connection unitOfWork,
@@ -22,6 +23,7 @@ public interface DecisionRequestStore {
             UUID party,
             CreditProfileId profile,
             DecisionRequest.Application application,
+            RequestOrigin origin,
             Duration validity,
             String correlation,
             Actor actor);

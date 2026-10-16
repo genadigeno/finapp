@@ -26,7 +26,9 @@ import lombok.RequiredArgsConstructor;
  * (`P11-TSK-001`, credit {@code V021}; ADR-0091). Stateless; on the caller's unit of work.
  *
  * <ol>
- *   <li>the decision's party, read plain - absent, {@link Consumption.NotFound}, nothing locked;
+ *   <li>the decision's party and product, read plain - absent, {@link Consumption.NotFound}, nothing locked; a consumer
+ *       of another family ({@link ConsumerKind#takesUp}), {@link CreditDecisionConsumptions.ConsumerOfAnotherFamily} -
+ *       the caller's defect, nothing locked (`P12-TSK-001`);
  *   <li><strong>the party's profile {@code FOR UPDATE}</strong> through {@link CreditProfiles#lockForDecision} - lock-order
  *       element (1), first, exactly as a deciding transaction takes it;
  *   <li>the decision re-read under the lock: not an approval, {@link Consumption.NotApproved} - the domain's own
@@ -70,11 +72,14 @@ public final class JdbcCreditDecisionConsumptions implements CreditDecisionConsu
 
     private Consumption consumeWithin(
             Connection uow, CreditDecisionId decision, ConsumerRef consumer, Actor actor, CorrelationId correlation) {
-        Optional<UUID> party = partyOf(uow, decision);
-        if (party.isEmpty()) {
+        Optional<Subject> subject = subjectOf(uow, decision);
+        if (subject.isEmpty()) {
             return new Consumption.NotFound(decision);
         }
-        if (profiles.lockForDecision(uow, party.get()).isEmpty()) {
+        if (!consumer.kind().takesUp(subject.get().product())) {
+            throw new ConsumerOfAnotherFamily(consumer.kind(), subject.get().product());
+        }
+        if (profiles.lockForDecision(uow, subject.get().party()).isEmpty()) {
             throw new IllegalStateException("a decision's party has a credit profile (credit_decision_profile_fk)");
         }
         CreditDecision recorded = decisions.byId(uow, decision)
@@ -116,11 +121,17 @@ public final class JdbcCreditDecisionConsumptions implements CreditDecisionConsu
         }
     }
 
-    private static Optional<UUID> partyOf(Connection uow, CreditDecisionId decision) {
-        try (PreparedStatement select = uow.prepareStatement("SELECT party_id FROM credit.credit_decision WHERE id = ?")) {
+    /** A decision's party - what the lock is on - and its product, which never change ({@code INV-CRD-02}). */
+    private record Subject(UUID party, CreditProduct product) {}
+
+    private static Optional<Subject> subjectOf(Connection uow, CreditDecisionId decision) {
+        try (PreparedStatement select = uow.prepareStatement(
+                "SELECT party_id, product FROM credit.credit_decision WHERE id = ?")) {
             select.setObject(1, decision.value());
             try (ResultSet row = select.executeQuery()) {
-                return row.next() ? Optional.of(row.getObject(1, UUID.class)) : Optional.empty();
+                return row.next()
+                        ? Optional.of(new Subject(row.getObject(1, UUID.class), CreditProduct.valueOf(row.getString(2))))
+                        : Optional.empty();
             }
         } catch (SQLException failure) {
             throw new CreditStorageException(DatabaseFailure.describe("reading a credit decision's party", failure));

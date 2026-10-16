@@ -234,10 +234,11 @@ class CreditMigrationTest {
                         + " WHERE conrelid = 'credit.credit_decision_consumption'::regclass AND contype IN ('u', 'c')"))
                 .containsExactlyInAnyOrder("credit_decision_consumption_once:UNIQUE (decision_id)",
                         "credit_decision_consumption_once_per_consumer:UNIQUE (consumer_kind, consumer_ref)",
-                        "credit_decision_consumption_kind_is_known:CHECK ((consumer_kind = 'LOAN_AGREEMENT'::text))");
+                        "credit_decision_consumption_kind_is_known:CHECK ((consumer_kind = ANY (ARRAY['LOAN_AGREEMENT'::text,"
+                                + " 'BNPL_AGREEMENT'::text])))");
         assertThat(java.util.Arrays.stream(ConsumerKind.values()).map(Enum::name))
-                .as("the enum and the CHECK are one closed set - a new kind changes both in one migration")
-                .containsExactly("LOAN_AGREEMENT");
+                .as("the enum and the CHECK are one closed set - a new kind changes both in one migration (V022)")
+                .containsExactly("LOAN_AGREEMENT", "BNPL_AGREEMENT");
         assertThat(column("SELECT tgname FROM pg_trigger WHERE tgrelid = 'credit.credit_decision_consumption'::regclass"
                         + " AND NOT tgisinternal"))
                 .containsExactlyInAnyOrder("credit_decision_consumption_is_append_only",
@@ -249,7 +250,113 @@ class CreditMigrationTest {
                 .contains("REVOKE INSERT ON credit.credit_decision_consumption FROM finapp_app;");
     }
 
+    @Test
+    @DisplayName("(since V022, P12-TSK-001) every product CHECK is restated from CreditProduct - the four BNPL-widened"
+            + " ones hold every product, the underwriting case's only the referable ones")
+    void theProductChecksAreTheEnum() throws SQLException {
+        Set<String> every = names(CreditProduct.values());
+        Set<String> referable = new LinkedHashSet<>();
+        for (CreditProduct product : CreditProduct.values()) {
+            if (product.referable()) {
+                referable.add(product.name());
+            }
+        }
+        assertThat(referable).containsExactly("PERSONAL_LOAN", "CREDIT_LINE");
+        for (String[] check : new String[][] {{"data_request", "data_request_product_is_known"},
+                {"credit_policy_version", "credit_policy_product_is_offered"},
+                {"decision_request", "decision_request_product_is_known"},
+                {"credit_decision", "credit_decision_product_is_known"}}) {
+            assertThat(literals(definition(check[0], check[1]))).as(check[1]).isEqualTo(every);
+        }
+        assertThat(literals(definition("underwriting_case", "underwriting_case_product_is_known")))
+                .as("a BNPL request is never put to a person").isEqualTo(referable);
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'credit'::regnamespace AND contype = 'c'"
+                        + " AND conname LIKE '%product_is_%'"))
+                .as("no product CHECK left unrestated").containsExactlyInAnyOrder("data_request_product_is_known",
+                        "credit_policy_product_is_offered", "decision_request_product_is_known",
+                        "credit_decision_product_is_known", "underwriting_case_product_is_known");
+    }
+
+    @Test
+    @DisplayName("(since V022) the term CHECKs are restated per term shape: no term for NONE and FIXED_PLAN, a term for"
+            + " MONTHS - on the request and on an approval")
+    void theTermChecksFollowTheTermShape() throws SQLException {
+        Set<String> withoutTerm = new LinkedHashSet<>();
+        Set<String> withTerm = new LinkedHashSet<>();
+        for (CreditProduct product : CreditProduct.values()) {
+            (product.termShape() == CreditProduct.TermShape.MONTHS ? withTerm : withoutTerm).add(product.name());
+        }
+        String request = definition("decision_request", "decision_request_term_per_product");
+        String[] arms = request.split(" OR ");
+        assertThat(arms).as(request).hasSize(2);
+        assertThat(literals(arms[0])).isEqualTo(withoutTerm);
+        assertThat(arms[0]).contains("term_months IS NULL");
+        assertThat(literals(arms[1])).isEqualTo(withTerm);
+        assertThat(arms[1]).contains("term_months IS NOT NULL").contains("term_months >= 1");
+        String approval = definition("credit_decision", "credit_decision_approval_coherent");
+        assertThat(literals(approval.substring(0, approval.indexOf("term_months IS NOT NULL"))))
+                .as("an approval carries a term exactly for a MONTHS product: %s", approval).containsAll(withTerm)
+                .doesNotContainAnyElementsOf(withoutTerm);
+    }
+
+    @Test
+    @DisplayName("(since V022) the request's origin: NOT NULL with no default - every writer names it - its closed set"
+            + " the enum's, bound to the product by CHECK, every row born before V022 the customer door's; the origin and"
+            + " the stress factor frozen by the machine triggers")
+    void theOriginIsClosedAndBound() throws SQLException {
+        assertThat(column("SELECT is_nullable || ':' || coalesce(column_default, '-') FROM information_schema.columns"
+                + " WHERE table_schema = 'credit' AND table_name = 'decision_request' AND column_name = 'origin'"))
+                .containsExactly("NO:-");
+        assertThat(literals(definition("decision_request", "decision_request_origin_is_known")))
+                .isEqualTo(names(RequestOrigin.values()));
+        Set<String> expected = new LinkedHashSet<>();
+        for (CreditProduct product : CreditProduct.values()) {
+            if (RequestOrigin.BNPL_APPLICATION.admits(product)) {
+                expected.add(product.name());
+            }
+        }
+        expected.add(RequestOrigin.BNPL_APPLICATION.name());
+        assertThat(literals(definition("decision_request", "decision_request_origin_per_product"))).isEqualTo(expected);
+        assertThat(column("SELECT count(*) FROM credit.decision_request WHERE (product IN ('BNPL_PAY_IN_4',"
+                + " 'BNPL_PAY_IN_N')) <> (origin = 'BNPL_APPLICATION')")).containsExactly("0");
+        assertThat(statementsOf(migration("V022__credit_learns_bnpl.sql")))
+                .as("the rows before V022 took the default, set by no UPDATE a frozen request's trigger would refuse")
+                .containsSubsequence("ADD COLUMN origin text NOT NULL DEFAULT 'CUSTOMER_DOOR';",
+                        "ALTER COLUMN origin DROP DEFAULT;")
+                .doesNotContain("UPDATE credit.decision_request");
+        assertThat(column("SELECT pg_get_functiondef('credit.decision_request_permits_only_machine_edges()'::regprocedure)"))
+                .singleElement().asString().contains("NEW.origin IS DISTINCT FROM OLD.origin");
+        assertThat(column("SELECT pg_get_functiondef('credit.credit_policy_permits_only_machine_edges()'::regprocedure)"))
+                .singleElement().asString()
+                .contains("NEW.plan_stress_factor_bps IS DISTINCT FROM OLD.plan_stress_factor_bps");
+    }
+
     // -----------------------------------------------------------------
+
+    private static String definition(String table, String constraint) throws SQLException {
+        List<String> found = column("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'credit." + table
+                + "'::regclass AND conname = '" + constraint + "'");
+        assertThat(found).as(constraint).hasSize(1);
+        return found.get(0);
+    }
+
+    /** The upper-case string literals a constraint's definition names, in order of first appearance. */
+    private static Set<String> literals(String definition) {
+        Set<String> found = new LinkedHashSet<>();
+        java.util.regex.Matcher literal = java.util.regex.Pattern.compile("'([A-Z][A-Z0-9_]*)'").matcher(definition);
+        while (literal.find()) {
+            found.add(literal.group(1));
+        }
+        return found;
+    }
+
+    private static Set<String> names(Enum<?>[] values) {
+        Set<String> names = new LinkedHashSet<>();
+        for (Enum<?> value : values) {
+            names.add(value.name());
+        }
+        return names;
+    }
 
     private static void assertRefusedByPrivilege(String sql) throws SQLException {
         assertThatExceptionOfType(SQLException.class)

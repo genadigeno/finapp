@@ -2402,6 +2402,7 @@ a log, a span or a customer's explanation (which names reason codes alone, `INV-
 | `credit_policy_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person, as `proposal_reason` |
 | `credit_policy_version` | `effective_from` | `INTERNAL` | The activation's database instant |
 | `credit_policy_version` | `effective_to` | `INTERNAL` | The retirement's database instant, never at or before the version's start (`X-TSK-017`) - the successor's start |
+| `credit_policy_version` | `plan_stress_factor_bps` | `CONFIDENTIAL` | A threshold: a fixed plan's affordability stress - how many of its largest instalments a month carries, `BNPL_PAY_IN_4` only (`P12-TSK-001`) |
 | `credit_policy_rule` | `policy_version_id` | `INTERNAL` | The version it was born with |
 | `credit_policy_rule` | `ordinal` | `INTERNAL` | Its place in the rule list, from 1 |
 | `credit_policy_rule` | `rule_code` | `INTERNAL` | The rule's name |
@@ -2478,6 +2479,7 @@ in an event or a view; where the request stands is `CONFIDENTIAL`.
 | `decision_request` | `pinned_policy_version_id` | `INTERNAL` | The pinned policy version |
 | `decision_request` | `pinned_model_version_id` | `INTERNAL` | The pinned scorecard version |
 | `decision_request` | `pinned_engine_version` | `INTERNAL` | The pinned engine version |
+| `decision_request` | `origin` | `CONFIDENTIAL` | Where the request was opened - the customer door or the BNPL application, which says the party sought BNPL credit at a checkout (`P12-TSK-001`); as `status` |
 | `decision_request` | `correlation_id` | `INTERNAL` | The submission's correlation |
 | `decision_request_event` | `id` | `INTERNAL` | Generated |
 | `decision_request_event` | `decision_request_id` | `INTERNAL` | The request moved |
@@ -2523,7 +2525,7 @@ fact, created empty with Phase 11 its only writer, holds identifiers and a stamp
 | `credit_decision_consumption` | `id` | `INTERNAL` | Generated |
 | `credit_decision_consumption` | `decision_id` | `INTERNAL` | The approval consumed - once |
 | `credit_decision_consumption` | `consumed_at` | `INTERNAL` | System time, stamped by the trigger |
-| `credit_decision_consumption` | `consumer_kind` | `INTERNAL` | A closed code - `LOAN_AGREEMENT` (credit `V021`, `P11-TSK-001`; *classified by `P11-TSK-002`'s gate, which found the two consumer columns unregistered*) |
+| `credit_decision_consumption` | `consumer_kind` | `INTERNAL` | A closed code - `LOAN_AGREEMENT`, `BNPL_AGREEMENT` since credit `V022` (`P12-TSK-001`) (credit `V021`, `P11-TSK-001`; *classified by `P11-TSK-002`'s gate, which found the two consumer columns unregistered*) |
 | `credit_decision_consumption` | `consumer_ref` | `CONFIDENTIAL` | The consuming loan agreement's id - a loan reference (`PHASE_11_PLAN.md` §11) |
 
 ### `credit` - the underwriting case - *added by `P10-TSK-018`*

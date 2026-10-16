@@ -76,7 +76,9 @@ groups:
       - alert: CreditPolicyMissing
         # A product with no ACTIVE policy: none of its requests is accepted (credit.ProductNotOffered) or decided until a
         # person other than its proposer activates a version - the seeded v1, proposed by its migration, by one officer.
-        expr: min by (product) (finapp_credit_policy_active) == 0
+        # The lending products only (P12-TSK-001): a BNPL product has no seed and production activates none
+        # (PHASE_12_PLAN.md section 1.1), so its 0 is the expected state, not a gap - P12-TSK-026 owns BNPL's alerts.
+        expr: min by (product) (finapp_credit_policy_active{product!~"bnpl_.*"}) == 0
         for: 15m
         labels:
           severity: ticket

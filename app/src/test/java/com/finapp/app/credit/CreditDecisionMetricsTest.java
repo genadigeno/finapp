@@ -50,12 +50,13 @@ class CreditDecisionMetricsTest {
                 "policy_version", "3", "decision_maker", "system").counter().count()).isEqualTo(1.0);
         assertThat(registry.get("finapp.credit.reason").tags("product", "credit_line", "reason_code", "CRD-EXPOSURE-LIMIT")
                 .counter().count()).isEqualTo(1.0);
-        assertThat(registry.get("finapp.credit.reason").tags("reason_code", "CRD-RISK-REFERRAL").counter().count())
+        assertThat(registry.get("finapp.credit.reason").tags("product", "credit_line", "reason_code", "CRD-RISK-REFERRAL").counter().count())
                 .isEqualTo(1.0);
         assertThat(registry.get("finapp.credit.decision.latency").tags("product", "credit_line", "decision_maker", "system")
                 .timer().count()).isEqualTo(1);
         new CreditDecisionMetrics(registry).recorded(declined("EMPLOYEE"), 3, Duration.ofMinutes(5));
-        assertThat(registry.get("finapp.credit.decision").tags("decision_maker", "person", "policy_version", "3")
+        assertThat(registry.get("finapp.credit.decision").tags("product", "credit_line", "decision_maker", "person",
+                "policy_version", "3", "outcome", "declined")
                 .counter().count()).as("a person's decision, by kind").isEqualTo(1.0);
         assertThat(registry.get("finapp.credit.decision.latency").tags("product", "credit_line", "decision_maker", "person")
                 .timer().count()).as("a person's latency apart from the platform's").isEqualTo(1);
@@ -87,6 +88,10 @@ class CreditDecisionMetricsTest {
                         .counter().count()).isZero();
             }
         }
+        assertThat(registry.find("finapp.credit.decision.latency").timers().stream()
+                        .map(timer -> timer.getId().getTag("product")).distinct())
+                .as("P12-TSK-001: the BNPL products' series are eager too")
+                .containsExactlyInAnyOrder("personal_loan", "credit_line", "bnpl_pay_in_4", "bnpl_pay_in_n");
         double[] buckets = java.util.Arrays.stream(registry.get("finapp.credit.decision.latency")
                         .tags("product", "personal_loan", "decision_maker", "system").timer().takeSnapshot()
                         .histogramCounts())

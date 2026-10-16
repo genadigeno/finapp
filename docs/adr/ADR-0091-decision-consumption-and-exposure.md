@@ -50,7 +50,7 @@ through `app`). Rests on `PHASE_11_PLAN.md` §2.2, §7, §12.10 and `INV-LND-06`
            record NotFound(CreditDecisionId decision) implements Consumption {}
        }
    }
-   record ConsumerRef(ConsumerKind kind, UUID ref) {}   // ConsumerKind { LOAN_AGREEMENT }; BNPL reserved for Phase 12
+   record ConsumerRef(ConsumerKind kind, UUID ref) {}   // ConsumerKind { LOAN_AGREEMENT, BNPL_AGREEMENT } (P12-TSK-001)
    ```
 
 2. **In order, in the caller's transaction.** (a) Read the decision's party (plain). (b) Take the
@@ -214,7 +214,9 @@ Refused (A3).
 Positive:
 - One decision funds at most one account, and no instant under-counts a party's exposure.
 - Credit keeps sole ownership of its tables; the definer function makes the rule a database fact.
-- Phase 12's BNPL consumes decisions through the same port with a new `ConsumerKind`.
+- Phase 12's BNPL consumes decisions through the same port with a new `ConsumerKind` - built by `P12-TSK-001`
+  (credit `V022`): `BNPL_AGREEMENT`, the kind `CHECK` widened, the definer path otherwise unchanged; a kind takes up
+  only its own product family's decisions (refused before the lock, by the port and by the function).
 
 Negative:
 - Every acceptance, disbursement and repayment reversal for a party serialises with that party's

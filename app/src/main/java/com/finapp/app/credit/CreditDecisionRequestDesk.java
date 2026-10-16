@@ -6,12 +6,13 @@ import com.finapp.credit.ClosureReason;
 import com.finapp.credit.CreditDecision;
 import com.finapp.credit.CreditDecisions;
 import com.finapp.credit.CreditErrorCode;
-import com.finapp.credit.JdbcCreditReads;
-import com.finapp.credit.ReasonCode;
 import com.finapp.credit.CreditProduct;
 import com.finapp.credit.DecisionRequest;
 import com.finapp.credit.DecisionRequestId;
 import com.finapp.credit.DecisionRequests;
+import com.finapp.credit.JdbcCreditReads;
+import com.finapp.credit.ReasonCode;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.credit.TransactionRunner;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityErrorCode;
@@ -51,7 +52,12 @@ import lombok.RequiredArgsConstructor;
  * decision of 2026-10-10 at the Phase 10 to 11 transition): applying for credit is a {@code MULTI_FACTOR} act, enrolled or
  * not - a customer with no active second factor is refused {@code identity.AssuranceRequired} until they enrol one and
  * step up, and an enrolled customer on a password-only session is refused until they step up; both before any write.
- * <strong>Cancelling keeps the conditional step-up</strong> (the `P4-TSK-007` conditional, the cross-border precedent):
+ * <p><strong>Only the lending products open here</strong> (`P12-TSK-001`): every submission is {@link
+ * RequestOrigin#CUSTOMER_DOOR}'s, so a BNPL product is refused {@code 422 credit.ProductNotOffered} by credit before
+ * anything is read or written - a BNPL reservation opens only inside a checkout, through the BNPL application - and a
+ * BNPL request is not found by the cancellation door ({@code 404 credit.NotFound}), whose party it is or not.
+ *
+ * <p><strong>Cancelling keeps the conditional step-up</strong> (the `P4-TSK-007` conditional, the cross-border precedent):
  * an identity with an active TOTP factor cancels from a {@code MULTI_FACTOR} session - withdrawing an application moves
  * no money and opens no exposure, so it is not held behind an enrolment.
  */
@@ -116,7 +122,7 @@ public final class CreditDecisionRequestDesk {
                                 minor(terms.declaredMonthlyIncome()), minor(terms.declaredMonthlyExpenditure()))
                         .getBytes(StandardCharsets.UTF_8));
                 return executor.execute(unitOfWork, key, fingerprint, claimed -> CommandResult.succeeded(
-                        stored(view(requests.submit(claimed, party, terms, actor, correlation)))));
+                        stored(view(requests.submit(claimed, party, terms, RequestOrigin.CUSTOMER_DOOR, actor, correlation)))));
             });
         } catch (DecisionRequests.ApplicantNotEligible notEligible) {
             throw new ApiException(CreditErrorCode.APPLICANT_NOT_ELIGIBLE, "The applicant is not eligible");
@@ -176,7 +182,8 @@ public final class CreditDecisionRequestDesk {
                 UUID party = partyOf(unitOfWork, current);
                 requireConditionalAssurance(unitOfWork, current);
                 return executor.execute(unitOfWork, key, fingerprint, claimed -> CommandResult.succeeded(
-                        stored(view(requests.cancel(claimed, id, party, actor, correlation)))));
+                        stored(view(requests.cancel(claimed, id, party, RequestOrigin.CUSTOMER_DOOR, actor,
+                                correlation)))));
             });
         } catch (DecisionRequests.DecisionRequestNotFound absent) {
             throw notFound();

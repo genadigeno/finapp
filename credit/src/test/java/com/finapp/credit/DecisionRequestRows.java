@@ -14,7 +14,8 @@ import java.util.UUID;
  * A real decision request row for a suite that needs one to hang a data request or a snapshot on (`P10-TSK-014`):
  * since `credit V010` both reference the request, so a bare minted id no longer stands in for one. Born through the
  * store - the trigger stamps its windows - for a fresh or the given party; the party's open request for the product when
- * one exists (one open per party and product).
+ * one exists (one open per party and product). A BNPL product's is opened from the BNPL application, at its maximum
+ * amount (`P12-TSK-001`).
  */
 final class DecisionRequestRows {
 
@@ -32,9 +33,12 @@ final class DecisionRequestRows {
         CreditProfile profile = new JdbcCreditProfiles(IDS).ensure(unitOfWork, party);
         DecisionRequestId id = DecisionRequestId.next(IDS);
         DecisionRequest.Application application = new DecisionRequest.Application(product,
-                Money.ofMinorUnits(product == CreditProduct.PERSONAL_LOAN ? 1_000_000 : 200_000, product.currency()),
-                product.revolving() ? Optional.empty() : Optional.of(36), Optional.empty(), Optional.empty());
-        if (!STORE.insert(unitOfWork, id, party, profile.id(), application, product.requestValidity(), "suite-fixture",
+                product.family() == CreditProduct.Family.BNPL ? product.maximumAmount()
+                        : Money.ofMinorUnits(product == CreditProduct.PERSONAL_LOAN ? 1_000_000 : 200_000, product.currency()),
+                product.termBounds().map(bounds -> bounds.admits(36) ? 36 : bounds.maximumMonths()), Optional.empty(),
+                Optional.empty());
+        if (!STORE.insert(unitOfWork, id, party, profile.id(), application, RequestOrigin.of(product),
+                product.requestValidity(), "suite-fixture",
                 new Actor(party.toString(), ActorType.CUSTOMER))) {
             throw new IllegalStateException("a fixture request lost its slot to a concurrent one");
         }

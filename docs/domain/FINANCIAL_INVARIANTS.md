@@ -1961,6 +1961,7 @@ consumer's retry after `valid_until` replays its own consumption rather than rea
 **Phase:** 11
 
 *(Extended at the Phase 11 → 12 transition (2026-10-16), ADR-0101 and ADR-0104 (`Proposed`), in force when `P12-TSK-001` and `-013` land: the consumer kind `BNPL_AGREEMENT` joins `LOAN_AGREEMENT` — one decision funds at most one loan, line or BNPL agreement, consumed under the party's profile lock with no exposure gap (`INV-BNPL-03`, `-10`).)*
+*(The credit half built by `P12-TSK-001`, 2026-10-16 - credit `V022`: `ConsumerKind.BNPL_AGREEMENT` and the widened kind `CHECK`, through the unchanged `SECURITY DEFINER` path; `UNIQUE (decision_id)` stays the one arbiter across kinds, and a kind takes up only its own family's decisions (`ConsumerKind.takesUp`, refused before any lock by the port and by `credit.consume_decision`); verified by `CreditDecisionConsumptionDatabaseTest#tenBnplConsumersOneConsumption`, `#aLoanAndABnplConsumerCannotShareADecision`, `#aBnplDecisionLapsesAtTheMicrosecond`, `#aBnplConsumptionAndADecisionForThePartySerialise`.)*
 
 ### INV-LND-07 — A loan is disbursed at most once, its receivable born exactly with the wallet credit, and no payout outcome creates, duplicates or undoes it
 **Statement:** A loan has at most one disbursement and at most one disbursement journal entry; its

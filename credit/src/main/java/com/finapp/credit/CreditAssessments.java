@@ -56,8 +56,9 @@ public final class CreditAssessments {
         }
 
         /**
-         * The terms {@code policy} states (`P10-TSK-013`): its stress rate and payment ratio from basis points, its
-         * minimum disposable income and maximum exposure as written - the pinned policy's, handed to the assessment.
+         * The terms {@code policy} states (`P10-TSK-013`): its stress rate, payment ratio and a fixed plan's stress factor
+         * from basis points, its minimum disposable income and maximum exposure as written - the pinned policy's, handed to
+         * the assessment.
          */
         public static Terms of(CreditPolicy policy) {
             Objects.requireNonNull(policy, "policy");
@@ -65,7 +66,8 @@ public final class CreditAssessments {
                     new AffordabilityAssessment.Parameters(
                             BigDecimal.valueOf(policy.assessmentRateBps(), 4),
                             BigDecimal.valueOf(policy.minimumPaymentRatioBps(), 4),
-                            policy.minimumDisposable()),
+                            policy.minimumDisposable(),
+                            policy.planStressFactorBps().map(bps -> BigDecimal.valueOf(bps, 4))),
                     policy.maximumExposure());
         }
     }

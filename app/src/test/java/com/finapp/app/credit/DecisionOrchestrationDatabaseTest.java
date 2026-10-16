@@ -37,6 +37,7 @@ import com.finapp.credit.JdbcPolicyEvaluationStore;
 import com.finapp.credit.JdbcScorecardStore;
 import com.finapp.credit.PolicyEffect;
 import com.finapp.credit.PolicyEvaluations;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.credit.ScorecardAdministration;
 import com.finapp.credit.ScorecardModelVersionId;
 import com.finapp.credit.ScorecardStatus;
@@ -661,8 +662,8 @@ class DecisionOrchestrationDatabaseTest {
             var profile = new JdbcCreditProfiles(IDS).ensure(uow, party);
             DecisionRequestId id = DecisionRequestId.next(IDS);
             REQUESTS.insert(uow, id, party, profile.id(), new DecisionRequest.Application(CreditProduct.PERSONAL_LOAN,
-                    Money.ofMinorUnits(1_000_000, EUR), Optional.of(36), Optional.empty(), Optional.empty()), validity,
-                    "orchestration-case", new Actor(party.toString(), ActorType.CUSTOMER));
+                    Money.ofMinorUnits(1_000_000, EUR), Optional.of(36), Optional.empty(), Optional.empty()),
+                    RequestOrigin.CUSTOMER_DOOR, validity, "orchestration-case", new Actor(party.toString(), ActorType.CUSTOMER));
             return id.value();
         });
     }

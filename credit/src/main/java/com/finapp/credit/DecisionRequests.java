@@ -26,7 +26,9 @@ import lombok.RequiredArgsConstructor;
  * {@code INV-CRD-03}, {@code INV-CRD-06}, {@code INV-CRD-12}): the submission, the cancellation and the owner's read,
  * each on the caller's unit of work - the door's idempotency claim wraps them.
  *
- * <p><strong>The submission, in one transaction and in this order</strong>: the party's standing (a verified customer,
+ * <p><strong>The submission, in one transaction and in this order</strong>: the request's {@link RequestOrigin} admits
+ * its product (`P12-TSK-001`: a BNPL product only from the BNPL application, a lending product only from the customer
+ * door - else {@link ProductNotOffered}, nothing read); the party's standing (a verified customer,
  * read authoritatively); the product offered (an {@code ACTIVE} policy); the amount and term within the product's
  * bounds; a current consent basis for every source kind that active policy reads - refused before any provider is
  * asked, nothing written; the profile ensured; the request born {@code SUBMITTED} under the partial unique, with its
@@ -35,7 +37,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>No row lock is taken by the submission: the standing and the consent gate are plain authoritative reads under
  * {@code READ COMMITTED} in the acting transaction, and the partial unique is the one arbiter. The cancellation takes
- * the request {@code FOR UPDATE} (lock order element (2)) and moves it conditionally.
+ * the request {@code FOR UPDATE} (lock order element (2)) and moves it conditionally - only from the origin that opened
+ * it: asked from another, the request is not found (a customer cannot cancel the BNPL application's request at the
+ * customer door; `P12-TSK-001`).
  */
 @RequiredArgsConstructor
 public final class DecisionRequests {
@@ -77,13 +81,19 @@ public final class DecisionRequests {
         }
     }
 
-    /** Submits {@code terms} for {@code party}; the born request, read back. */
-    public DecisionRequest submit(Connection unitOfWork, UUID party, Terms terms, Actor actor, CorrelationId correlation) {
+    /** Submits {@code terms} for {@code party}, opened from {@code origin}; the born request, read back. */
+    public DecisionRequest submit(
+            Connection unitOfWork, UUID party, Terms terms, RequestOrigin origin, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(party, "party");
         Objects.requireNonNull(terms, "terms");
+        Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
+        if (!origin.admits(terms.product())) {
+            // The customer door never opens a BNPL reservation, nor the BNPL application a loan's (P12-TSK-001).
+            throw new ProductNotOffered(terms.product(), origin);
+        }
         if (!standing.inGoodStanding(unitOfWork, party)) {
             throw new ApplicantNotEligible();
         }
@@ -101,7 +111,7 @@ public final class DecisionRequests {
         }
         CreditProfile profile = profiles.ensure(unitOfWork, party);
         DecisionRequestId id = DecisionRequestId.next(ids);
-        if (!requests.insert(unitOfWork, id, party, profile.id(), application, terms.product().requestValidity(),
+        if (!requests.insert(unitOfWork, id, party, profile.id(), application, origin, terms.product().requestValidity(),
                 correlation.value(), actor)) {
             throw new DecisionRequestOpen(requests.openFor(unitOfWork, party, terms.product())
                     .orElseThrow(() -> new IllegalStateException(
@@ -124,15 +134,22 @@ public final class DecisionRequests {
         return born;
     }
 
-    /** Cancels {@code party}'s request {@code id}, before it is evaluated; the request as it now stands. */
-    public DecisionRequest cancel(
-            Connection unitOfWork, DecisionRequestId id, UUID party, Actor actor, CorrelationId correlation) {
+    /**
+     * Cancels {@code party}'s request {@code id}, opened from {@code origin}, before it is evaluated; the request as it now
+     * stands. A request of the party's opened from another origin is {@link DecisionRequestNotFound} - the same answer as
+     * an absent one, and nothing is moved.
+     */
+    public DecisionRequest cancel(Connection unitOfWork, DecisionRequestId id, UUID party, RequestOrigin origin, Actor actor,
+            CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(party, "party");
+        Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        DecisionRequest request = requests.lockOwnedBy(unitOfWork, id, party).orElseThrow(DecisionRequestNotFound::new);
+        DecisionRequest request = requests.lockOwnedBy(unitOfWork, id, party)
+                .filter(owned -> owned.origin() == origin)
+                .orElseThrow(DecisionRequestNotFound::new);
         if (!DecisionRequestStatus.CANCELLABLE.contains(request.status())
                 || !requests.transition(unitOfWork, id, DecisionRequestStatus.CANCELLABLE, DecisionRequestStatus.CANCELLED,
                         Optional.empty(), actor, Optional.empty())) {
@@ -191,12 +208,19 @@ public final class DecisionRequests {
         }
     }
 
-    /** No {@code ACTIVE} policy offers the product ({@code credit.ProductNotOffered}). */
+    /**
+     * The product is not offered ({@code credit.ProductNotOffered}): no {@code ACTIVE} policy offers it, or it is not
+     * offered from the request's origin (`P12-TSK-001`).
+     */
     public static final class ProductNotOffered extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         ProductNotOffered(CreditProduct product) {
             super(product + " is not offered: no policy version is active");
+        }
+
+        ProductNotOffered(CreditProduct product, RequestOrigin origin) {
+            super(product + " is not offered from " + origin);
         }
     }
 

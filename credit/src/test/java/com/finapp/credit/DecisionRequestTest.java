@@ -99,7 +99,7 @@ class DecisionRequestTest {
                 DecisionRequestId.of(java.util.UUID.fromString("0190a1b2-5c0e-7000-8000-0000000f0001")),
                 java.util.UUID.randomUUID(),
                 CreditProfileId.of(java.util.UUID.fromString("0190a1b2-5c0e-7000-8000-0000000f0002")), beyond,
-                DecisionRequestStatus.ABANDONED, Optional.empty(), Optional.empty(), java.time.Instant.EPOCH,
+                RequestOrigin.CUSTOMER_DOOR, DecisionRequestStatus.ABANDONED, Optional.empty(), Optional.empty(), java.time.Instant.EPOCH,
                 java.time.Instant.EPOCH, "c"));
     }
 

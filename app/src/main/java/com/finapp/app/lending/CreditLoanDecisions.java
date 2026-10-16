@@ -7,12 +7,12 @@ import com.finapp.credit.CreditDecisionConsumptions;
 import com.finapp.credit.CreditDecisionId;
 import com.finapp.credit.CreditDecisions;
 import com.finapp.credit.CreditProfiles;
-import com.finapp.credit.CreditProduct;
-import com.finapp.credit.DecisionRequest;
 import com.finapp.credit.DecisionOutcome;
+import com.finapp.credit.DecisionRequest;
 import com.finapp.credit.DecisionRequestId;
 import com.finapp.credit.DecisionRequests;
 import com.finapp.credit.ReasonCode;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.lending.LoanAgreementId;
 import com.finapp.lending.LoanCreditDecisions;
 import com.finapp.lending.LoanProduct;
@@ -32,8 +32,9 @@ import lombok.RequiredArgsConstructor;
  * precedent). Every call runs on the caller's connection, so credit's request, its history, its event and its audit
  * commit or roll back with lending's application.
  *
- * <p>The product crosses by name - {@code LendingVocabularyTest} holds {@code LoanProduct} and {@code CreditProduct} to
- * one bijection. The refusals lending gives meaning to are translated into the port's own; every other refusal of
+ * <p>The product crosses by name through {@link LendingCreditProducts} - {@code LendingVocabularyTest} holds
+ * {@code LoanProduct} to exactly credit's lending products, so lending never opens a BNPL request; and every request
+ * lending opens is {@code RequestOrigin.CUSTOMER_DOOR}'s, the customer's own door's (`P12-TSK-001`). The refusals lending gives meaning to are translated into the port's own; every other refusal of
  * credit's ({@code ApplicantNotEligible}, {@code ConsentAbsent}, {@code ProductNotOffered}) passes through untouched,
  * so the door answers it exactly as credit's own door would.
  *
@@ -61,10 +62,10 @@ public final class CreditLoanDecisions implements LoanCreditDecisions {
     @Override
     public UUID open(Connection unitOfWork, UUID party, CreditTerms terms, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(terms, "terms");
-        DecisionRequests.Terms asked = new DecisionRequests.Terms(CreditProduct.valueOf(terms.product().name()),
+        DecisionRequests.Terms asked = new DecisionRequests.Terms(LendingCreditProducts.of(terms.product()),
                 terms.requested(), terms.termMonths(), terms.declaredMonthlyIncome(), terms.declaredMonthlyExpenditure());
         try {
-            return requests.submit(unitOfWork, party, asked, actor, correlation).id().value();
+            return requests.submit(unitOfWork, party, asked, RequestOrigin.CUSTOMER_DOOR, actor, correlation).id().value();
         } catch (DecisionRequests.DecisionRequestOpen open) {
             throw new RequestOpen();
         } catch (DecisionRequest.AmountOutOfRange outOfRange) {
@@ -75,7 +76,8 @@ public final class CreditLoanDecisions implements LoanCreditDecisions {
     @Override
     public void cancel(Connection unitOfWork, UUID decisionRequest, UUID party, Actor actor, CorrelationId correlation) {
         try {
-            requests.cancel(unitOfWork, DecisionRequestId.of(decisionRequest), party, actor, correlation);
+            requests.cancel(unitOfWork, DecisionRequestId.of(decisionRequest), party, RequestOrigin.CUSTOMER_DOOR, actor,
+                    correlation);
         } catch (DecisionRequests.RequestNotCancellable pastCancellation) {
             throw new NotCancellable();
         } catch (DecisionRequests.DecisionRequestNotFound absent) {

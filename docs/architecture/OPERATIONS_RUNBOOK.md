@@ -256,8 +256,10 @@ write; ADR-0086 §4, ADR-0089, decision D26. Every name and number below is read
 Nothing is decided without an `ACTIVE` policy for the product **and** an `ACTIVE` `RETAIL_SCORECARD`:
 - with no `ACTIVE` policy, a submission (`POST /v1/me/credit/decision-requests`) is refused
   `422 credit.ProductNotOffered`, and `finapp.credit.policy.active{product}` reads 0 - the
-  `CreditPolicyMissing` alert (`min by (product) (finapp_credit_policy_active) == 0` for 15 min,
-  ticket);
+  `CreditPolicyMissing` alert (`min by (product) (finapp_credit_policy_active{product!~"bnpl_.*"}) == 0`
+  for 15 min, ticket) - the lending products only: the BNPL products (`P12-TSK-001`) have no seed and
+  production activates none (`PHASE_12_PLAN.md` §1.1), so their gauge reads 0 by design; `P12-TSK-026`
+  owns BNPL's alerts;
 - with a policy but no `ACTIVE` scorecard, a submission is admitted but its progress step waits at
   `SUBMITTED` (nothing to pin), and the request expires `EXPIRED` at its 7-day validity. **No gauge
   or alert reports a missing scorecard** - check it by its approval receipt (below).

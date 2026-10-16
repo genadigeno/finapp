@@ -12,6 +12,7 @@ import java.util.UUID;
  * versions (`P10-TSK-015`). Every window is the database's: {@code submittedAt} and {@code expiresAt} are stamped by
  * its trigger.
  *
+ * @param origin where it was opened (`P12-TSK-001`) - always one that admits its product, frozen from submission
  * @param closureReason why the platform abandoned it - an {@code ABANDONED} request's alone
  * @param pinned the policy, model and engine versions, once collection began
  */
@@ -20,6 +21,7 @@ public record DecisionRequest(
         UUID party,
         CreditProfileId profile,
         Application application,
+        RequestOrigin origin,
         DecisionRequestStatus status,
         Optional<ClosureReason> closureReason,
         Optional<PinnedVersions> pinned,
@@ -32,6 +34,7 @@ public record DecisionRequest(
         Objects.requireNonNull(party, "party");
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(application, "application");
+        Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(status, "status");
         Objects.requireNonNull(closureReason, "closureReason");
         Objects.requireNonNull(pinned, "pinned");
@@ -40,6 +43,9 @@ public record DecisionRequest(
         Objects.requireNonNull(correlation, "correlation");
         if ((status == DecisionRequestStatus.ABANDONED) != closureReason.isPresent()) {
             throw new IllegalArgumentException("an abandoned request says why, and no other does");
+        }
+        if (!origin.admits(application.product())) {
+            throw new IllegalArgumentException("a " + application.product() + " request is never opened from " + origin);
         }
     }
 
@@ -50,8 +56,9 @@ public record DecisionRequest(
     }
 
     /**
-     * The terms applied for: the amount in the product's one currency at its scale, a term exactly when the product is an
-     * instalment product, the declared monthly figures - when given - in that currency and not negative. The product's
+     * The terms applied for: the amount in the product's one currency at its scale, a term exactly when the product's
+     * {@link CreditProduct.TermShape term shape} is {@code MONTHS} (never for a line, never for a fixed plan - `P12-TSK-001`),
+     * the declared monthly figures - when given - in that currency and not negative. The product's
      * published bounds are judged at submission ({@link #submitted}), not here, so a request recorded under older bounds
      * still reads back as recorded.
      */
@@ -71,9 +78,14 @@ public record DecisionRequest(
             if (!inProductCurrency(product, requested) || !requested.isPositive()) {
                 throw new AmountOutOfRange("the amount is a positive amount in " + product.currency() + ", at its scale");
             }
-            if (product.revolving() == termMonths.isPresent()) {
-                throw new AmountOutOfRange(product.revolving() ? "a " + product + " is revolving and has no term"
-                        : "a " + product + " names its term in months");
+            boolean named = product.termShape() == CreditProduct.TermShape.MONTHS;
+            if (named != termMonths.isPresent()) {
+                throw new AmountOutOfRange(switch (product.termShape()) {
+                    case NONE -> "a " + product + " is revolving and has no term";
+                    case MONTHS -> "a " + product + " names its term in months";
+                    case FIXED_PLAN -> "a " + product + " is a fixed plan of " + product.planInstalments().orElseThrow()
+                            + " instalments and takes no term";
+                });
             }
             for (Optional<Money> declared : java.util.List.of(declaredMonthlyIncome, declaredMonthlyExpenditure)) {
                 if (declared.isPresent() && (!inProductCurrency(product, declared.get()) || declared.get().isNegative())) {
@@ -100,10 +112,8 @@ public record DecisionRequest(
                         + " to " + product.maximumAmount().toBigDecimal().toPlainString() + " " + product.currency());
             }
             product.termBounds().ifPresent(bounds -> {
-                int term = termMonths.orElseThrow();
-                if (term < bounds.minimumMonths() || term > bounds.maximumMonths()) {
-                    throw new AmountOutOfRange("the term is " + bounds.minimumMonths() + " to " + bounds.maximumMonths()
-                            + " months");
+                if (!bounds.admits(termMonths.orElseThrow())) {
+                    throw new AmountOutOfRange("the term is " + bounds.describe());
                 }
             });
             return application;

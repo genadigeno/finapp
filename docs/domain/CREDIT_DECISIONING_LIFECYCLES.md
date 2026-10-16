@@ -125,6 +125,15 @@ ever waits for L1 while holding L2.
   any open state ──the platform: standing lost, or consent withdrawn──> ABANDONED
 ```
 
+**Origin and BNPL (`P12-TSK-001`, credit `V022`).** Every request records its `origin` - `CUSTOMER_DOOR` (credit's
+customer door, and lending's application submitting on the customer's behalf) or `BNPL_APPLICATION` - frozen from
+submission and bound to the product by `CHECK`: a BNPL product (`BNPL_PAY_IN_4`, `BNPL_PAY_IN_N`) is opened only by
+the BNPL application, a lending product only at the customer door (`credit.ProductNotOffered` otherwise, before
+anything is written). "The applicant" cancels from the origin that opened the request: the customer door finds no BNPL
+request (`404 credit.NotFound`); the BNPL application cancels its own. A BNPL request is decided automatically only -
+its `EVALUATED → IN_REVIEW` edge is unreachable (its policy never refers, and `underwriting_case` admits only the
+lending products) - and its windows are an hour (request) and a day (decision), on the database clock.
+
 The request's validity is a declaration of its `CreditProduct` — 7 days for both `PERSONAL_LOAN` and
 `CREDIT_LINE` — stamped as `expires_at` from `statement_timestamp()` at submission. The policy and
 scorecard versions are **pinned on the request at `SUBMITTED → COLLECTING`** (the claim-time

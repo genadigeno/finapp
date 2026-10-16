@@ -78,8 +78,9 @@ public final class JdbcCreditPolicyStore implements CreditPolicyStore {
                     "INSERT INTO credit.credit_policy_version (id, product, version, status, currency, scale,"
                             + " assessment_rate_bps, minimum_disposable_minor, minimum_payment_ratio_bps,"
                             + " maximum_exposure_minor, max_data_age_bureau_seconds, max_data_age_financial_data_seconds,"
-                            + " unavailable_fallback, auto_approval_ceiling_minor, proposed_by, proposed_at, proposal_reason)"
-                            + " VALUES (?, ?, ?, 'PROPOSED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, transaction_timestamp(), ?)")) {
+                            + " unavailable_fallback, auto_approval_ceiling_minor, proposed_by, proposed_at, proposal_reason,"
+                            + " plan_stress_factor_bps)"
+                            + " VALUES (?, ?, ?, 'PROPOSED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, transaction_timestamp(), ?, ?)")) {
                 insert.setObject(1, id.value());
                 insert.setString(2, policy.product().name());
                 insert.setInt(3, version);
@@ -95,6 +96,11 @@ public final class JdbcCreditPolicyStore implements CreditPolicyStore {
                 insert.setLong(13, policy.autoApprovalCeiling().minorUnits());
                 insert.setString(14, proposedBy);
                 insert.setString(15, reason);
+                if (policy.planStressFactorBps().isPresent()) {
+                    insert.setInt(16, policy.planStressFactorBps().get());
+                } else {
+                    insert.setNull(16, java.sql.Types.INTEGER);
+                }
                 insert.executeUpdate();
             }
             try (PreparedStatement insert = unitOfWork.prepareStatement(
@@ -227,13 +233,14 @@ public final class JdbcCreditPolicyStore implements CreditPolicyStore {
             Map<CreditSourceKind, Duration> ages = new EnumMap<>(CreditSourceKind.class);
             UnavailableFallback fallback;
             long ceiling;
+            Integer planStressFactor;
             Instant from;
             Instant to;
             try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + ROW_COLUMNS
                     + ", currency, scale, assessment_rate_bps, minimum_disposable_minor, minimum_payment_ratio_bps,"
                     + " maximum_exposure_minor, max_data_age_bureau_seconds, max_data_age_financial_data_seconds,"
-                    + " unavailable_fallback, auto_approval_ceiling_minor, effective_from, effective_to"
-                    + " FROM credit.credit_policy_version WHERE id = ?")) {
+                    + " unavailable_fallback, auto_approval_ceiling_minor, plan_stress_factor_bps, effective_from,"
+                    + " effective_to FROM credit.credit_policy_version WHERE id = ?")) {
                 select.setObject(1, id.value());
                 try (ResultSet result = select.executeQuery()) {
                     if (!result.next()) {
@@ -256,6 +263,7 @@ public final class JdbcCreditPolicyStore implements CreditPolicyStore {
                     }
                     fallback = UnavailableFallback.valueOf(result.getString("unavailable_fallback"));
                     ceiling = result.getLong("auto_approval_ceiling_minor");
+                    planStressFactor = (Integer) result.getObject("plan_stress_factor_bps");
                     from = instant(result.getTimestamp("effective_from"));
                     to = instant(result.getTimestamp("effective_to"));
                 }
@@ -275,7 +283,7 @@ public final class JdbcCreditPolicyStore implements CreditPolicyStore {
             CreditPolicy policy = new CreditPolicy(row.product(), assessmentRate,
                     Money.ofPersisted(minimumDisposable, currency, scale), minimumPaymentRatio,
                     Money.ofPersisted(maximumExposure, currency, scale), ages, fallback,
-                    Money.ofPersisted(ceiling, currency, scale), rules);
+                    Money.ofPersisted(ceiling, currency, scale), rules, Optional.ofNullable(planStressFactor));
             return Optional.of(new PolicyVersion(row, policy, Optional.ofNullable(from), Optional.ofNullable(to)));
         } catch (SQLException failure) {
             throw new CreditStorageException(DatabaseFailure.describe("reading a credit policy version", failure));

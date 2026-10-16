@@ -14,6 +14,11 @@ import com.finapp.credit.CreditPolicyStatus;
 import com.finapp.credit.CreditPolicyStore;
 import com.finapp.credit.CreditPolicyVersionId;
 import com.finapp.credit.CreditProduct;
+import com.finapp.credit.DecisionRequest;
+import com.finapp.credit.DecisionRequestId;
+import com.finapp.credit.DecisionRequestStatus;
+import com.finapp.credit.DecisionRequests;
+import com.finapp.credit.RequestOrigin;
 import com.finapp.credit.TransactionRunner;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
@@ -62,13 +67,14 @@ class DecisionRequestDatabaseTest {
     @Autowired private CreditPolicyAdministration administration;
     @Autowired private CreditPolicyStore policies;
     @Autowired private TransactionRunner creditTransactionRunner;
+    @Autowired private DecisionRequests decisionRequests;
 
     private CreditTestClient client;
 
     @BeforeEach
     void policiesInForce() {
         client = new CreditTestClient(port);
-        for (CreditProduct product : CreditProduct.values()) {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.LENDING)) {
             CreditPolicyVersionId seed = CreditPolicyVersionId.of(UUID.fromString(
                     product == CreditProduct.PERSONAL_LOAN ? "0190a1b2-5c0e-7000-8000-00000000d001"
                             : "0190a1b2-5c0e-7000-8000-00000000d002"));
@@ -201,6 +207,76 @@ class DecisionRequestDatabaseTest {
         }
         assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ? AND status <> 'CANCELLED'",
                 customer.party())).isZero();
+    }
+
+    // ------------------------------------------------------------------ the BNPL products at the customer door (P12-TSK-001)
+
+    @Test
+    @DisplayName("the customer door refuses the BNPL products 422 credit.ProductNotOffered - with a BNPL policy in force,"
+            + " and whatever the term - nothing written; the origin CHECK refuses such a row for any writer (the second"
+            + " rank)")
+    void theCustomerDoorRefusesBnplProducts() throws Exception {
+        bnplPoliciesInForce();
+        CreditTestClient.Customer customer = client.consentingCustomer();
+        for (String refused : List.of(
+                "{\"product\":\"BNPL_PAY_IN_4\",\"amount\":\"200.00\",\"currency\":\"EUR\"}",
+                "{\"product\":\"BNPL_PAY_IN_4\",\"amount\":\"200.00\",\"currency\":\"EUR\",\"termMonths\":4}",
+                "{\"product\":\"BNPL_PAY_IN_N\",\"amount\":\"600.00\",\"currency\":\"EUR\",\"termMonths\":6}",
+                "{\"product\":\"BNPL_PAY_IN_N\",\"amount\":\"600.00\",\"currency\":\"EUR\"}")) {
+            HttpResponse<String> answer = client.submit(customer, refused, key());
+            assertThat(answer.statusCode()).as(refused + " " + answer.body()).isEqualTo(422);
+            assertThat(answer.body()).as(refused).contains("credit.ProductNotOffered");
+        }
+        assertNothingWritten(customer);
+        String lending = field(client.submit(customer, loan("10000.00", 36), key()).body(), "requestId");
+        try (Connection owner = DatabaseRoles.migrator()) {
+            assertRefused(owner, "INSERT INTO credit.decision_request (id, party_id, profile_id, product, currency,"
+                    + " requested_minor, term_months, status, request_validity, submitted_at, expires_at, next_step_at,"
+                    + " correlation_id, origin) SELECT gen_random_uuid(), party_id, profile_id, 'BNPL_PAY_IN_4', currency,"
+                    + " 20000, NULL, 'SUBMITTED', request_validity, now(), now(), now(), 'raw', 'CUSTOMER_DOOR'"
+                    + " FROM credit.decision_request WHERE id = '" + lending + "'", "23514");
+        }
+        assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ? AND product LIKE 'BNPL%'",
+                customer.party())).isZero();
+    }
+
+    @Test
+    @DisplayName("the customer door cannot cancel a BNPL request: its own party's, opened by the BNPL application, is 404"
+            + " credit.NotFound and stays SUBMITTED; the BNPL application cancels it")
+    void theCustomerDoorCannotCancelABnplRequest() throws Exception {
+        bnplPoliciesInForce();
+        CreditTestClient.Customer customer = client.consentingCustomer();
+        String id = creditTransactionRunner.inTransaction(uow -> DecisionRequestRows.submitted(uow, customer.party(),
+                CreditProduct.BNPL_PAY_IN_4)).toString();
+        assertThat(scalar("SELECT origin FROM credit.decision_request WHERE id = '" + id + "'"))
+                .isEqualTo("BNPL_APPLICATION");
+        HttpResponse<String> cancel = client.cancel(customer, id, key());
+        assertThat(cancel.statusCode()).as(cancel.body()).isEqualTo(404);
+        assertThat(cancel.body()).contains("credit.NotFound");
+        assertThat(scalar("SELECT status FROM credit.decision_request WHERE id = '" + id + "'")).isEqualTo("SUBMITTED");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.DecisionRequestCancelled'"
+                + " AND target_id = ?", id)).isZero();
+        DecisionRequest cancelled = creditTransactionRunner.inTransaction(uow -> decisionRequests.cancel(uow,
+                DecisionRequestId.of(UUID.fromString(id)), customer.party(), RequestOrigin.BNPL_APPLICATION,
+                new Actor("bnpl-application", ActorType.SYSTEM), CorrelationId.generate(CreditTestClient.IDS)));
+        assertThat(cancelled.status()).isEqualTo(DecisionRequestStatus.CANCELLED);
+    }
+
+    /** Each BNPL product's fixture in force, once per database - proposed by one person, activated by another. */
+    private void bnplPoliciesInForce() {
+        for (CreditProduct product : CreditProduct.of(CreditProduct.Family.BNPL)) {
+            boolean active = creditTransactionRunner.inTransaction(uow -> policies.active(uow, product).isPresent());
+            if (!active) {
+                CreditWorld.bnplInForce(product);
+            }
+        }
+    }
+
+    private static String scalar(String sql) throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator(); Statement statement = owner.createStatement();
+                java.sql.ResultSet row = statement.executeQuery(sql)) {
+            return row.next() ? row.getString(1) : null;
+        }
     }
 
     // ------------------------------------------------------------------ the cancellation and the read

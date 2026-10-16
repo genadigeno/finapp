@@ -76,7 +76,8 @@ public final class CreditPolicyDesk {
             List<CreditPolicySourceView> sources,
             String unavailableFallback,
             long autoApprovalCeilingMinor,
-            List<CreditPolicyRuleView> rules) {}
+            List<CreditPolicyRuleView> rules,
+            Integer planStressFactorBps) {}
 
     /** A source kind the policy reads and its maximum data age. */
     public record CreditPolicySourceView(String kind, long maximumDataAgeSeconds) {}
@@ -158,7 +159,8 @@ public final class CreditPolicyDesk {
                 ages,
                 named(UnavailableFallback.class, request.unavailableFallback(), "an unavailable-source fallback - REFER or DECLINE"),
                 Money.ofMinorUnits(request.autoApprovalCeilingMinor(), currency),
-                rules);
+                rules,
+                Optional.ofNullable(request.planStressFactorBps()));
     }
 
     private static CreditPolicy.PolicyRule rule(CreditPolicyController.CreditPolicyRuleRequest rule, CurrencyCode currency) {
@@ -252,7 +254,8 @@ public final class CreditPolicyDesk {
                 sources,
                 policy.unavailableFallback().name(),
                 policy.autoApprovalCeiling().minorUnits(),
-                rules);
+                rules,
+                policy.planStressFactorBps().orElse(null));
     }
 
     // ------------------------------------------------------------------ plumbing
