@@ -63,6 +63,26 @@ class ScheduleEngineV1Test {
     }
 
     @Test
+    @DisplayName("the level instalment is the annuity rounded UP, never to nearest: EUR 1,000.01 at 10 % over 3 months from"
+            + " 1 January, day 1 - A* = 338.8313... gives 338.84, although 338.83 would amortise too (P12-TSK-002's"
+            + " gate: no golden case before it showed the rounding's direction)")
+    void theInstalmentRoundsUp() {
+        // Found and worked by an independent oracle in exact rationals (the annuity summed as P / sum v_j, each
+        // period's interest divided straight to the cent): A* = 338.83131833... cents-exact; UP gives 338.84, whose
+        // final instalment 338.81 is within it. HALF_EVEN would give 338.83 - and 338.83 is itself a feasible level
+        // instalment (its final instalment would be exactly 338.83), so the least-instalment search would not raise it
+        // back: only the rounding's direction tells the two engines apart. The 2026-01-01 start with the 15-day
+        // shortest first period puts D1 on 1 February: 31, 28 and 31 days.
+        Schedule schedule = projected(TEN_PERCENT, "1000.01", 3, 1, "2026-01-01");
+        assertThat(schedule.instalment()).isEqualTo(eur("338.84"));
+        assertThat(rows(schedule)).containsExactly(
+                "1|2026-01-01|2026-02-01|31|1000.01|8.49|330.35|338.84|669.66",
+                "2|2026-02-01|2026-03-01|28|669.66|5.14|333.70|338.84|335.96",
+                "3|2026-03-01|2026-04-01|31|335.96|2.85|335.96|338.81|0.00");
+        assertThat(schedule.totalInterest()).isEqualTo(eur("16.48"));
+    }
+
+    @Test
     @DisplayName("6 months at 10 %, a 40-day first period - checked by hand: the final instalment below the level one")
     void sixMonths() {
         Schedule schedule = projected(TEN_PERCENT, "10000.00", 6, 10, "2026-01-01");
