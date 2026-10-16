@@ -132,6 +132,12 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0098](ADR-0098-delinquency-default-and-the-collections-boundary.md) | Delinquency, default and the collections boundary: days past due derived from dates, conditions apart from the lifecycle, recorded append-only on change, and nothing legally sensitive built | Accepted | 11 | Lending · Risk · Ledger · Events |
 | [0099](ADR-0099-servicing-corrections.md) | Servicing corrections: waivers, reversals and restructuring as reasoned, four-eyes acts that post, never edits | Accepted | 11 | Lending · Ledger · Identity · Audit · Credit |
 | [0100](ADR-0100-the-revolving-credit-line.md) | The revolving credit line: draws against an available limit derived under the line's lock, monthly statements with a minimum payment, closure through `CLOSING`, and exposure that counts the committed limit | Accepted | 11 | Lending · Credit · Ledger · Accounts |
+| [0101](ADR-0101-the-bnpl-bounded-context.md) | The BNPL bounded context: `bnpl` owns the agreement, purchase, financing and servicing facts and none of the money; lending's pure engines shared through `creditmath`, lending's `loan` not composed | Proposed | 12 | BNPL · Lending · Credit · Merchant · Checkout · Payments · Ledger · Platform |
+| [0102](ADR-0102-bnpl-products-terms-and-the-versioned-agreement.md) | BNPL products, terms and the versioned agreement: pay-in-4 on a BNPL schedule engine, pay-in-N on lending's engines, one decision per purchase | Proposed | 12 | BNPL · Credit · Checkout · Identity · Platform · Audit |
+| [0103](ADR-0103-bnpl-accounting.md) | BNPL accounting: per-obligation accounts, the financing entry, the merchant discount and the posting rules | Proposed | 12 | BNPL · Ledger · Merchant · Lending · Reconciliation |
+| [0104](ADR-0104-bnpl-funding-from-lending-capital.md) | BNPL funding from lending capital: the shared headroom and credit exposure version 3 | Proposed | 12 | BNPL · Lending · Credit · Ledger · Merchant |
+| [0105](ADR-0105-the-bnpl-refund-policy.md) | The BNPL refund policy: latest instalments first, the excess to the customer, the merchant fee pro-rated back, the PN interest rule, and the merchant payable's third bounded negative source | Proposed | 12 | BNPL · Merchant · Ledger · Accounts (wallet) · Identity |
+| [0106](ADR-0106-bnpl-disputes-and-the-single-refund-bound.md) | BNPL disputes and the single refund bound: a customer's contest holds servicing on the disputed amount and resolves only as a refund under the purchase's one bound, so nothing is credited twice | Proposed | 12 | BNPL · Merchant · Payments (Disputes) · Identity · Audit |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -154,7 +160,6 @@ Recorded so the decisions are not made implicitly. Each is written at its phase'
 | 5 | Payment intent vs attempt modelling |
 | 5 | Unknown-state handling and reconciliation-by-query sweeper |
 | 5 | Webhook ingestion, signature verification and deduplication |
-| 12 | BNPL refund and instalment adjustment policy |
 | 13 | Synchronous risk evaluation and fail-safe policy |
 | 13 | Risk rules versioning; case management model |
 | 14 | Operational-ledger-to-GL mapping |
@@ -183,3 +188,8 @@ account and date, rounded once per period, on the database clock in a declared z
 repayment allocation order as ADR-0095 (oldest due first, fees before interest before principal,
 the order versioned terms data pinned by the agreement) — and loan accounting, which
 `DELIVERY_PLAN.md` §14 also anticipated, as ADR-0096.)*
+
+*(The Phase 12 row left it at the Phase 11 → 12 transition (2026-10-16): BNPL refund and instalment
+adjustment policy was written as ADR-0105 (latest instalments first, the excess to the customer, the merchant fee
+pro-rated back, the merchant payable's third bounded negative source) - and merchant financing accounting, which
+`DELIVERY_PLAN.md` §14 also anticipated, as ADR-0103.)*

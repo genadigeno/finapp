@@ -248,3 +248,95 @@ forward**: §6's debt rows and owner items, and the exit review's (`CURRENT_STAT
 | 20 | No schedule-versus-actual drift report | Open — Phase 14 |
 | 21 | The servicing sweep's volume, the DPD cost | Open — joined by A2-F1; Phase 12's storm measures the shared rows (`PHASE_12_PLAN.md` §21) |
 | — | **Added by this gate**: RG-M1 (the payoff's unfloored billing applications — recommended remediation before `P12-TSK-022`); A5-10 (customer non-posting acts unaudited) | Open |
+
+## 10. Phase 12 initialisation
+
+**Objective.** Combine merchant commerce with credit so that every figure is explainable years later: checkout →
+eligibility (credit's decision) → offer and acceptance (= the purchase authorisation) → merchant financing (the
+payable credited net of the merchant fee) → the customer obligation (a receivable funded from lending capital) →
+instalment collection and allocation → refunds, disputes, delinquency → ledger → merchant payout → settlement →
+reconciliation — for **pay-in-4** (four equal instalments, the first at purchase, then every fourteen days, no
+interest) and **pay-in-N** (3, 6 or 12 monthly instalments with interest). `bnpl` owns the agreement, purchase,
+financing record, obligation and servicing facts and none of the money: every principal, interest, fee and
+credit-balance figure is a balance of a per-obligation ledger account. Planned in [`PHASE_12_PLAN.md`](../PHASE_12_PLAN.md);
+decided in ADR-0101…0106 (`Proposed`); the machines in [`BNPL_LIFECYCLES.md`](../../domain/BNPL_LIFECYCLES.md); the
+invariants `INV-BNPL-01`…`10` (**152 invariants** platform-wide) and `INV-MER-07`'s amendment (proposed, effective
+when `P12-TSK-021` lands); the exit criteria in `PHASE_GATES.md` §5 Phase 12, extended by this transition;
+twenty-nine backlog items across nine milestones (M12.1–M12.9). The design was drafted by a research pass during the
+gate, corrected against the owner's decisions and the code below, written as the plan, and then spread to the ADRs,
+the invariants and gate, the lifecycles, glossary and module documents, and the backlog by six writers in parallel; a
+consistency pass reconciled what they reported.
+
+**Owner decisions (2026-10-16), binding** — B1–B8 (`PHASE_12_PLAN.md` §2.2):
+
+| # | Decision | Where it landed |
+|---|---|---|
+| B1 | Both products: P4 interest-free (4 equal, first at purchase, then every 2 weeks; merchant fee; late fees per pinned terms) and PN monthly with interest (3/6/12) | §12.1–§12.3, ADR-0102 |
+| B2 | Merchant paid upfront net of fee on its normal (on-demand payout) cycle; the platform carries the credit risk, funded from `LENDING_CAPITAL` under L6 | §12.4, §12.9, ADR-0104, `INV-BNPL-02`, `-04`, `-10` |
+| B3 | Refunds cancel the latest instalments first; the excess to the customer; the merchant fee pro-rated back | §12.6, ADR-0105, `INV-BNPL-06`, `-07` |
+| B4 | Fleet database and kafka tiers stay skipped through Phase 12 (criterion 7, the standing deviation) | §13.1, the gate's Phase 12 block |
+| B5 | One credit decision per purchase; no spending limit; no ADR-0107 | §12.1, ADR-0102 |
+| B6 | Instalments collected from the wallet only | §12.4, `P12-TSK-018`, `-019` |
+| B7 | A refund after payout may push the merchant payable negative, bounded by the purchase's own net, recovered from later settlements before any payout; `INV-MER-07` amended explicitly | §5.6, §12.6, ADR-0105 |
+| B8 | Every other open question takes the draft's default, recorded as "owner accepted default, 2026-10-16, review later" | §24 |
+
+**The draft's one open confirmation, settled by reading the code (§7.3 (b)).** The draft ordered the merchant's
+payable (M1) before the customer's wallet (L7) and asked whether a wallet-paid checkout capture can lock the payable
+before a wallet row. It can: payments' book rail locks exactly that pair `FOR UPDATE` in `UUID.compareTo` order of the
+two account ids (`PaymentOutcomes.lockPairInFixedOrder`, from `dispatchBook` inside `PaymentConfirmation`'s
+transaction and from `PaymentRefund`'s book arm), so for half of all customer–merchant pairs the payable is taken
+first and for the other half the wallet. A fixed payable-then-wallet order in BNPL would deadlock with a wallet-paid
+capture by the same customer at the same merchant. **Resolved: BNPL takes the payable and the wallet as one lock
+element, (P), in the same `UUID.compareTo` order** — a total order shared with payments over exactly the rows both
+touch. Reading the same code found a second coupling the draft had not named: checkout's capture completion
+(`CheckoutSessions.completed`, called after the capture's postings) takes the session row *after* the payable — the
+reverse of BNPL's session-then-payable — and is shown acyclic because a capture completes only a `PAYMENT_PENDING`
+session while BNPL's acceptance refuses any session not `OPEN` before taking (P) (§7.3 (c)). And the Phase 11 gate's
+A2-F1 (the currency-wide income row held across a wallet wait) is designed out rather than inherited: PN accrual is its
+own transaction (T-acc) and no shared income row is taken before (P) (§7.2).
+
+**Entry gate** (`PHASE_GATES.md` §2):
+
+| # | Criterion | Holds |
+|---|---|---|
+| 1 | Hard dependency phases `COMPLETE` | Yes — Phases 6 (merchant, checkout), 10 (eligibility) and 11 (lending mechanics, capital; confirmed after repair, §9), and 3–5 and 8 (ledger, payments, settlement) |
+| 2 | `DELIVERY_PLAN.md` §Phase 12 current and specific | Yes — the Phase 12 addendum reconciles the original section with the plan (two products, latest-first refunds superseding "proportional", the merchant paid through its existing payout, lending capital, the atomic purchase, disputes under one bound) |
+| 3 | Bounded contexts and aggregates identified | Yes — `PHASE_12_PLAN.md` §3–§4: two new modules, `bnpl` and the pure `creditmath`; credit, ledger, identity, merchant, checkout and lending (capital headroom only) changed by named tasks |
+| 4 | Invariants identified by ID | Yes — `INV-BNPL-01`…`10`, read from the catalogue; `INV-MER-07` amended; restated ones named in §6 |
+| 5 | Lifecycles drafted | Yes — terms version, application, offer, the checkout session as BNPL changes it, purchase, agreement, obligation, refund, dispute, the proposals, payoff and the conditions |
+| 6 | Transaction and consistency boundaries stated | Yes — §7.1's transactions, §7.2's lock order with §7.3's no-cycle argument, §7.4's contention table; each task |
+| 7 | Idempotency stated for every money-moving command | Yes — application, acceptance, repayment, auto-collection, payoff, merchant refund, dispute resolution, reversal, waiver: keys, born-once arbiters and ledger keys (§7.4, §9, each task) |
+| 8 | External dependencies and failure modes listed | Yes — BNPL calls no provider; the inherited ambiguities (merchant payout, wallet top-up) in §14 and scenario 5 |
+| 9 | Security, audit and reconciliation implications stated | Yes — §11; §12.12's three-way proof; the merchant payout through Phase 8's expectation; capital through bank recognition |
+| 10 | Backlog at task granularity with acceptance criteria | Yes — `P12-TSK-001`…`026`, `P12-TST-001`…`002`, `P12-DOC-001`, every field |
+| 11 | Required decisions have ADRs at least `Proposed` | Yes — ADR-0101…0106 |
+| 12 | `CURRENT_STATE.md` names the phase active | Yes — Phase 12 `READY`, `P12-TSK-001` the current task |
+
+**Exit criteria:** `PHASE_GATES.md` §5 Phase 12 — the five original criteria kept and made measurable, per-area
+blocks added (functional correctness by area, financial integrity, multi-instance execution, security, auditability,
+observability, testing, documentation), each naming its owning tasks and evidence.
+
+**First task: `P12-TSK-001`** — credit learns BNPL: the two products, the term shape and the `BNPL_AGREEMENT` consumer
+kind (credit `V022`) — `READY`, not started. No Phase 12 code exists.
+
+**Consistency pass.** The six writers reported the plan's own gaps (the draft's leftover lock labels and three-line
+financing entry in §12.4, the acceptance's refusal code, where `UNIQUE (decision_id)` sits, the refund's releases beside
+"nothing else moves", closure when the wallet cannot take the excess, which task births the tables P4's instalment 1
+needs, the floor's owner, the payable drill-down's owner, the payoff and agreement versions, refunds while a dispute is
+open, the deadline sweep's lock order, the `creditmath` boundary with lending's types); each was settled once in
+`PHASE_12_PLAN.md` and carried to every document, and what is genuinely a building task's to decide is listed in
+`BNPL_LIFECYCLES.md` §8 and the ADRs' Follow-up sections.
+
+**Verified** (this initialisation wrote documents only): `./gradlew.bat :app:architectureTest :app:test --tests
+<the document-reading hermetic suites> --continue --rerun` on the final documents, fresh: the app architecture tier
+**171 tests across 32 suites** (the document guards among them — `AdrRegistersAreReconciledTest`,
+`MutationDemonstrationTest`, `TestTaxonomyTest`, `ErrorCodeRegistryTest`, `AuditableActionRegistryTest`,
+`ArchitectureRulesAreDocumentedTest`, `ProviderFailureCoverageTest`) and the selected hermetic suites **85 tests
+across 18** (`DomainGlossaryTest`, `PlannedMetersExistTest`, `ApiConventionsAreAccurateTest`, `OpenApiContractTest`,
+the span and meter document readers), **0 failures**; the guards that parse the files edited after that run started
+were re-run after this line was written (below). The other modules' tiers were not run — no code changed — and the
+fleet-wide database and kafka tiers stay skipped on the owner's instruction (B4).
+The re-run after the last edits (`:app:architectureTest --tests` the ADR, mutation-register, taxonomy, error and
+audit registers, `:app:test --tests DomainGlossaryTest`, `--rerun`): **66 tests across 13 architecture suites and 32
+across 9 hermetic suites** (the filter selects the named guards; the ArchUnit rule suites run beside them), **0
+failures**.

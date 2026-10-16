@@ -93,7 +93,7 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
   and **a person may not approve on an absent bureau balance** — so, with production composing only
   the fail-safe sources, **production approves no credit until a real bureau is connected**
   (unresolved #13, #14)
-- BNPL *(Phase 12)*
+- BNPL *(Phase 12 — see the BNPL section below)*
 
 *(The Credit section's Phase 10 capabilities were marked "planned" by the Phase 9 → 10 transition,
 2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, then `Proposed`), marked delivered by the Phase
@@ -134,7 +134,7 @@ Phase 13: credit consumes a risk signal through a seam and computes none.)*
   connected (unresolved #13, #14) and `OPERATIONS_RUNBOOK.md` §7.4's activation gate is passed;
   Phase 11 proves origination end to end against the simulators
 - Collections operations *(later phases — Phase 13's case management consumes lending's facts)*;
-  refinance *(the Phase 11 → 12 transition decides)*; write-off and provisioning *(Phase 14)*
+  refinance *(not Phase 12 — decided by the Phase 11 → 12 transition; unowned)*; write-off and provisioning *(Phase 14)*
 
 *(Marked "planned" by the Phase 10 → 11 transition, 2026-10-10 (`PHASE_11_PLAN.md`; ADR-0090…0100,
 then `Proposed`), and marked delivered by the Phase 11 exit review, `P11-DOC-001`, 2026-10-15
@@ -144,6 +144,27 @@ delivered by the Phase 11 exit review" until then. **Confirmed after repair by t
 completion gate, 2026-10-16** (`reviews/PHASE_11_TO_12_TRANSITION.md`): interest on the right base after a clock
 step, held credit settling past-due items, a refunded fee never forgiven twice, self-approval refusals on the
 record, no admitted terms version that cannot be scheduled - lending `V029`, `V030`.)*
+
+## BNPL *(Phase 12, planned at the Phase 11 → 12 transition, 2026-10-16 — `PHASE_12_PLAN.md`)*
+- BNPL at checkout — planned: the customer chooses pay-in-4 or pay-in-N inside a checkout session; one credit decision
+  per purchase (no spending limit); the merchant sees only eligible, not eligible or pending
+- Pay-in-4 — planned: four equal instalments, the first collected at purchase, then every fourteen days, no customer
+  interest; late fees per the pinned terms
+- Pay-in-N — planned: 3, 6 or 12 monthly instalments with interest (ACT/365F, lending's engines)
+- Merchant financing — planned: the purchase, the merchant's payable credited net of the merchant discount, the
+  customer's obligation, the decision's consumption and the capital commitment in one transaction; the merchant paid
+  through its existing payout
+- Customer repayment — planned: wallet-only auto-collection and repayment, allocation oldest-due first, early payoff,
+  delinquency and default derived, four-eyes waivers and reversals
+- Refunds and disputes — planned: merchant-initiated refunds cancelling the latest instalments first, the excess to the
+  customer, the fee pro-rated back; a refund after payout bounded by the purchase's net; disputes resolved under the one
+  refund bound
+- BNPL accounting and reconciliation — planned: per-obligation ledger accounts funded from lending capital, credit
+  exposure version 3, the three-way proof (merchant leg, customer leg, ledger)
+- **Production constraint** — inherited: production originates nothing until a real bureau is connected
+
+*(Marked "planned" by the Phase 11 → 12 transition, 2026-10-16 (ADR-0101…0106 `Proposed`); to be marked delivered by
+the Phase 12 exit review, `P12-DOC-001`.)*
 
 ## Risk
 - Fraud

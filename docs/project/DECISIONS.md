@@ -1061,6 +1061,48 @@ fee, no APR display (L8); credit's migrations continue at `V021`, `lending` owni
 origination only against the simulators until a real bureau is connected (L11); the ten mandatory
 test scenarios, each a named test in a task and in the storm (L12).
 
+### Buy now, pay later (Phase 12, `Proposed` at the Phase 11 → 12 transition)
+Planned by the Phase 11 → 12 transition (2026-10-16) in `PHASE_12_PLAN.md`, with the owner's decisions B1–B8; nothing
+of it is built. The phase's tasks are `P12-TSK-001`…`P12-TSK-026`, `P12-TST-001`, `P12-TST-002` and `P12-DOC-001`,
+whose review reads each ADR against the code. The invariants are `INV-BNPL-01`…`10` (ten new; the catalogue 142 → 152)
+and `INV-MER-07`'s amendment (proposed, effective when `P12-TSK-021` lands). The phase's ADRs are ADR-0101…ADR-0106; no
+ADR-0107 (B5). Phase 12 moves money; production originates nothing until a real bureau is connected (inherited).
+
+**BNPL is its own bounded context that owns the agreement, the purchase, the merchant financing and the customer's
+obligation, and none of the money — not a lending loan, not a payment rail.** `bnpl` holds every BNPL fact as a
+born-once row with no mutable money column; every figure is a per-obligation ledger balance. It is not composed on
+lending's `loan` (born with a wallet credit and changed only by the borrower's acts — a BNPL receivable is born with a
+merchant payable credit and reduced by a merchant's refund), and it is not a "BNPL rail" (financing is not an external
+payment with a clearing position). Lending's pure engines are extracted unchanged into `creditmath`, which both
+modules depend on. → [ADR-0101](../adr/ADR-0101-the-bnpl-bounded-context.md)
+
+**Two products on versioned terms, one decision per purchase.** Pay-in-4 on a new pure `BNPL_SCHEDULE_ENGINE_V1`
+(four equal instalments, the remainder on the first, collected at purchase, then every fourteen days, no interest);
+pay-in-N on lending's schedule, accrual and allocation engines (3, 6 or 12 monthly instalments, ACT/365F); terms
+four-eyes versioned data; the agreement immutable and versioned; one credit decision per purchase, no spending limit;
+instalments from the wallet only. → [ADR-0102](../adr/ADR-0102-bnpl-products-terms-and-the-versioned-agreement.md)
+
+**The financing entry has the capture's shape with the receivable in the clearing account's place.** `DR
+BNPL_PRINCIPAL G; DR MERCHANT_PAYABLE f / CR MERCHANT_PAYABLE G; CR BNPL_MERCHANT_FEE_INCOME f` in the purchase's own
+transaction; per-obligation accounts under `OwnerKind.BNPL_OBLIGATION`, closed to free adjustments; the merchant
+discount income at purchase, its effective-interest treatment and every write-off and provision Phase 14's.
+→ [ADR-0103](../adr/ADR-0103-bnpl-accounting.md)
+
+**Funded from lending capital, counted in credit exposure, with no gap.** The receivable consumes the shared
+`LENDING_CAPITAL` headroom under its row lock (L6) at every purchase; credit's `PlatformCreditExposure` version 3 counts
+BNPL principal in one statement under the party's profile lock (L0), taken first by every exposure-raising BNPL act.
+→ [ADR-0104](../adr/ADR-0104-bnpl-funding-from-lending-capital.md)
+
+**A refund cancels the latest instalments first, returns the excess to the customer and the fee pro rata — and may
+leave the payable negative only by the purchase's own net.** Value preserved exactly (refund = principal cancelled +
+excess), the fee returned by the cumulative method so a full refund returns exactly the fee charged, and the merchant
+payable's third bounded negative source recorded in `INV-MER-07`, recovered before any payout.
+→ [ADR-0105](../adr/ADR-0105-the-bnpl-refund-policy.md)
+
+**A dispute resolves as a refund under the same bound — never a second credit.** A customer's contest pauses
+servicing on the disputed amount; the merchant answers within fourteen days or the silence is a refund; a refund
+outcome executes the one refund path under the purchase lock. → [ADR-0106](../adr/ADR-0106-bnpl-disputes-and-the-single-refund-bound.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
