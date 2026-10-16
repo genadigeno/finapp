@@ -140,7 +140,10 @@ Phase 13: credit consumes a risk signal through a seam and computes none.)*
 then `Proposed`), and marked delivered by the Phase 11 exit review, `P11-DOC-001`, 2026-10-15
 (ADR-0090…0100 `Accepted`) - each capability built by `P11-TSK-001`…`-036` and proven by
 `P11-TST-001` (the lending storm) and `P11-TST-002` (the battery). This note read "to be marked
-delivered by the Phase 11 exit review" until then.)*
+delivered by the Phase 11 exit review" until then. **Confirmed after repair by the Phase 11 → 12 transition's
+completion gate, 2026-10-16** (`reviews/PHASE_11_TO_12_TRANSITION.md`): interest on the right base after a clock
+step, held credit settling past-due items, a refunded fee never forgiven twice, self-approval refusals on the
+record, no admitted terms version that cannot be scheduled - lending `V029`, `V030`.)*
 
 ## Risk
 - Fraud

@@ -15859,7 +15859,7 @@ assignment and an expiry serialise (`-018`).
 
 # Phase 11 — Lending Infrastructure
 
-Status: `COMPLETE` (2026-10-16, ruled by the exit review [`reviews/PHASE_11_REVIEW.md`](reviews/PHASE_11_REVIEW.md), `P11-DOC-001`; 33 of 33 items complete, M11.1–M11.9 closed, and the six remediation items `P11-TSK-031`…`-036`) — started 2026-10-10 with `P11-TSK-001` *(this read "`IN_PROGRESS` — … (2 of 33 items complete; M11.1 at 2 of 5)" from `P11-TSK-002` to `P11-DOC-001` - the stale-second-copy class, in the phase's own header; found by the exit review)*; entry gate passed 2026-10-10 by the Phase 10 → 11 transition
+Status: `COMPLETE` (2026-10-16, ruled by the exit review [`reviews/PHASE_11_REVIEW.md`](reviews/PHASE_11_REVIEW.md), `P11-DOC-001`; 33 of 33 items complete, M11.1–M11.9 closed, and the six remediation items `P11-TSK-031`…`-036`); **confirmed after repair by the Phase 11 → 12 transition's completion gate** (2026-10-16, [`reviews/PHASE_11_TO_12_TRANSITION.md`](reviews/PHASE_11_TO_12_TRANSITION.md): six independent audits, no CRITICAL, six IMPORTANT (R1–R6) repaired in lending `V029` and `V030`, tested, probed and closed by an independent re-gate verifier - recorded in the transition block at the end of this section, not as new items) — started 2026-10-10 with `P11-TSK-001` *(this read "`IN_PROGRESS` — … (2 of 33 items complete; M11.1 at 2 of 5)" from `P11-TSK-002` to `P11-DOC-001` - the stale-second-copy class, in the phase's own header; found by the exit review)*; entry gate passed 2026-10-10 by the Phase 10 → 11 transition
 ([`reviews/PHASE_10_TO_11_TRANSITION.md`](reviews/PHASE_10_TO_11_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty-three items (`P11-TSK-001`…`-030`, `P11-TST-001`,
 `P11-TST-002`, `P11-DOC-001`) across nine milestones, with `P11-TSK-001` marked `READY`. The
@@ -18667,6 +18667,36 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
   red naming exactly it, restored byte-identical.
 - **Acceptance criteria**: the gate holds, counted.
 - **Definition of done**: `DOD-DOC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+
+**The Phase 11 → 12 transition** — Part A `COMPLETE` (2026-10-16; [`reviews/PHASE_11_TO_12_TRANSITION.md`](reviews/PHASE_11_TO_12_TRANSITION.md) - Phase 11 `COMPLETE` confirmed after repair; opened by the owner after `P11-DOC-001`, which marked nothing `READY`)
+- **As built** (2026-10-16, Part A - the Phase 11 completion gate): six independent adversarial read-only
+  audits over `c8b20071` (A1 financial correctness; A2 distributed systems; A3 origination to accrual; A4
+  servicing to restructuring; A5 security, audit, privacy and observability; A6 tests, architecture and
+  documentation) and a fresh baseline (hermetic 3,007, architecture 216, `:lending:databaseTest` 289 across 25
+  with **20 failures**). No CRITICAL; six IMPORTANT, every one repaired, tested and probed: **R1** every
+  principal-moving fact floored at the day after the latest accrual (`lending.principal_value_floor`,
+  `LoanStore#principalValueDate` under L3, the repayment and draw ranks, the servicing step's "behind its
+  record" gate, the replay's `DIVERGED(ACCRUAL)` arm - lending `V030`); **R2** held credit applied to what is
+  already due by a catch-up application at every servicing step and in the payoff (lending `V029`); **R3** a
+  `FEE` waiver bounded by assessed less waived and refunded, the proof's `FEE_INCOME_NEGATIVE` arm (`V029`);
+  **R4** `lending.SelfApprovalRefused` audited `FAILED` at the five four-eyes doors; **R5** the terms door's
+  half-unit margin so no admitted version yields an unschedulable loan; **R6** suite-order-safe terms fixtures
+  (test-only). MINOR fixed beside them: capital tables refuse `TRUNCATE`, engine versions `= 1`, decision
+  stamps after the lock, the payoff applying held credit first, origination failures metered and alerted, the
+  documentation corrections. Repair-1 `732e46c4` (merged `2ecf971d`), repair-2 `36f1b201`; nineteen probes,
+  every one caught, each restored byte-identical with its `MUTATION_TESTING.md` §2 row. An independent re-gate
+  verifier: R1–R6 `CLOSED`, no new CRITICAL or IMPORTANT, ten-instance `PASS`; MINOR residuals RG-M1…M6 to
+  debt rows and owner items (`CURRENT_STATE.md`). Fresh on `36f1b201`: hermetic 3,009 across 497 suites,
+  architecture 216 across 52, `:lending:databaseTest` 305 across 25 (date-shifted), `app` lending
+  own-container 60 across 6 (the storm green, 1,677 s) - 0 failures; fleet database and kafka tiers skipped
+  (criterion 7 `PARTIAL`; owner decision B4 - keep skipping through Phase 12).
+- **Objective**: confirm Phase 11 against the code rather than its tasks' or exit review's word, repair every
+  CRITICAL and IMPORTANT Phase 11 defect before the transition, and initialise Phase 12 (BNPL) as documents only.
+- **Scope**: Part A - the completion gate (the fifteen capability areas, the nine financial-correctness
+  checks, the distributed-system audit and the ten-instance answer, findings and repair, Phase 11 completion);
+  Part B - the Phase 12 plan, ADRs, invariants, lifecycles, gate and backlog, with the owner decisions B1–B8.
+- **Out of scope**: Phase 12 code - no `bnpl` module, table, port, route or posting.
+- **Definition of done**: `DOD-DOC`, `DOD-TEST`.
 
 ---
 
