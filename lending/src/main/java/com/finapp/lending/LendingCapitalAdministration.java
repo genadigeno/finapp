@@ -108,8 +108,23 @@ public final class LendingCapitalAdministration {
     public static final class SelfApprovalRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        SelfApprovalRefused() {
+        private final String target;
+        private final String summary;
+
+        SelfApprovalRefused(CapitalContributionId id) {
             super("a capital contribution is approved by someone other than its proposer; the proposer may reject it");
+            this.target = id.value().toString();
+            this.summary = "contribution=" + id.value() + ", act=capital:approve";
+        }
+
+        /** The proposal the approver proposed - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the proposal and the act - never an amount. */
+        public String summary() {
+            return summary;
         }
     }
 
@@ -198,7 +213,7 @@ public final class LendingCapitalAdministration {
             throw new ProposalNotPending(row.status());
         }
         if (row.proposedBy().equals(actor.id())) {
-            throw new SelfApprovalRefused();
+            throw new SelfApprovalRefused(row.id());
         }
         Instant now = store.transactionTime(unitOfWork);
         LedgerAccount capital = headroom.capitalAccount(unitOfWork, row.currency());
@@ -253,6 +268,17 @@ public final class LendingCapitalAdministration {
         audit(unitOfWork, actor, LendingAuditAction.CAPITAL_CONTRIBUTION_REJECTED, row.id(), reasoned,
                 "currency=" + row.currency().code() + ", byProposer=" + row.proposedBy().equals(actor.id()), correlation);
         return new Decided(row.id(), CapitalContributionStatus.REJECTED, Optional.empty(), false);
+    }
+
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LendingAuditAction#SELF_APPROVAL_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept (the Phase 11
+     * gate's R4).
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        SelfApprovalRefusals.record(audit, ids, clock, unitOfWork, actor, TARGET_TYPE, refused.target(), refused.summary(),
+                correlation);
     }
 
     // ------------------------------------------------------------------ plumbing

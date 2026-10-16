@@ -200,3 +200,14 @@ Financial impact:
   permit stamped at birth is due a step later (a liveness delay). No instance clock, no domain change. The test suites
   that waited on a database-stamped permit or ordered by its stamps were moved to aged permits and the record's order;
   `ClockStep` (lending's tests) steps the database clock on demand (`TESTING.md` §5).
+- *2026-10-16, the Phase 11 completion gate (R1 - A1-F1 = A2-F4 = A3-I1; A2-F3)*: the range above admits every date the
+  clock showed the transaction - and after a step back across a midnight it can show a date the record has already
+  closed: an accrual of d made just after d + 1's midnight, then a repayment or a draw dated d, its principal outside d's
+  base for ever. Decision 2 again, as V019 applied it to the payout: a principal-moving fact is value-dated
+  `max(today, lending.principal_value_floor(loan))` - the day after the latest accrual, a line's latest statement - and
+  `lending V030`'s repayment and draw ranks floor at it and admit it above the clock's latest date (the clock showed it
+  before it stepped); a servicing step behind its record writes nothing until the clock reaches the floor. The replay
+  proof compares each accrual's base with the final ledger's. In the same migration the terms version's decision and
+  retirement and an amendment's decision are stamped `clock_timestamp()` after the lock they waited on, never the
+  transaction's start (V025's precedent for the waiver's and the reversal's decisions), so an offer made under a version
+  while its successor's activation waited stands inside the version's effective period. No instance clock.

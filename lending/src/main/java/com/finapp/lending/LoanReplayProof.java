@@ -76,7 +76,10 @@ public final class LoanReplayProof {
         TERMS,
         /** A schedule version does not re-derive. */
         SCHEDULE,
-        /** An accrual does not re-derive. */
+        /**
+         * An accrual does not re-derive - or its base is no longer the final ledger's principal valued through its date: a
+         * principal fact value-dated into the date after it accrued (the Phase 11 gate's R1).
+         */
         ACCRUAL,
         /** An elapsed date with principal outstanding has no accrual. */
         ACCRUAL_MISSING,
@@ -501,10 +504,14 @@ public final class LoanReplayProof {
                         new BigDecimal(agreement.get().nominalAnnualRate()), pinned.get().dayCount(),
                         pinned.get().interestRounding(), LoanReplayer.version(LendingEngine.ACCRUAL, accrual.engine()));
                 Optional<InterestAccrual> previous = previousInPeriod(accrual);
-                Money base = base(accrual.date(), stamp(accrual));
+                Money base = base(accrual.date(), Optional.of(stamp(accrual)));
                 InterestAccrual derived = LoanReplayer.accrue(terms, period, previous, accrual.date(), base);
                 if (!derived.base().equals(accrual.base()) || !derived.posted().equals(accrual.posted())
                         || derived.cumulativeExact().compareTo(accrual.cumulativeExact()) != 0) {
+                    diverged(Check.ACCRUAL, accrual.id());
+                } else if (!base(accrual.date(), Optional.empty()).equals(accrual.base())) {
+                    // The base the step read is still the ledger's: no principal line valued on or before the date was
+                    // written after it (the Phase 11 gate's R1 - a step back across a midnight could date one there).
                     diverged(Check.ACCRUAL, accrual.id());
                 }
             } catch (LoanReplayer.EngineAbsent absent) {
@@ -541,13 +548,15 @@ public final class LoanReplayProof {
 
         /**
          * Principal outstanding at the end of {@code date} as the accrual step read it: {@code LOAN_PRINCIPAL +
-         * LOAN_PRINCIPAL_DUE} over the lines dated on or before it, of the entries written before {@code before}.
+         * LOAN_PRINCIPAL_DUE} over the lines dated on or before it, of the entries written before {@code before} - or, with
+         * none, of every entry: the final ledger's.
          */
-        private Money base(LocalDate date, LoanSubledgerProof.Stamp before) {
+        private Money base(LocalDate date, Optional<LoanSubledgerProof.Stamp> before) {
             Money base = zero;
             for (AccountPurpose purpose : List.of(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE)) {
                 for (PurposeBalances.DatedLine line : linesOf(purpose)) {
-                    if (!line.valueDate().isAfter(date) && writtenBefore(line.entry(), before)) {
+                    if (!line.valueDate().isAfter(date)
+                            && before.map(stamp -> writtenBefore(line.entry(), stamp)).orElse(true)) {
                         base = line.direction() == Direction.DEBIT ? base.plus(line.amount()) : base.minus(line.amount());
                     }
                 }
@@ -569,7 +578,7 @@ public final class LoanReplayProof {
             LocalDate expected = start.get();
             for (LoanRecord.Accrual accrual : record.accruals()) {
                 for (LocalDate date = expected; date.isBefore(accrual.date()); date = date.plusDays(1)) {
-                    if (base(date, stamp(accrual)).isPositive()) {
+                    if (base(date, Optional.of(stamp(accrual))).isPositive()) {
                         diverged(Check.ACCRUAL_MISSING, accrual.id());
                         break;
                     }
@@ -737,7 +746,7 @@ public final class LoanReplayProof {
 
         /** After an item is billed, the step applies a credit balance held to what is due - its absence is a finding. */
         private void applicationExpected(UUID item, LoanSubledgerProof.Stamp billedAt) {
-            boolean applied = record.applications().stream().anyMatch(application -> application.billingId().equals(item));
+            boolean applied = record.applications().stream().anyMatch(application -> application.billingId().filter(item::equals).isPresent());
             if (applied) {
                 return;
             }

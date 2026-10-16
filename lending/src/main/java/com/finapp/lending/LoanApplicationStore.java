@@ -52,6 +52,12 @@ public interface LoanApplicationStore {
      */
     boolean hint(Connection unitOfWork, UUID decisionRequest);
 
+    /**
+     * How long the oldest application {@code AWAITING_DECISION} has waited since its submission, on the database clock -
+     * the {@code finapp.lending.application.awaiting.age} gauge's read (the Phase 11 gate's A5-03); empty when none waits.
+     */
+    Optional<Duration> oldestAwaitingDecisionAge(Connection unitOfWork);
+
     // ------------------------------------------------------------------ rows
 
     /** An application at birth - the choices, never a figure. */

@@ -37,7 +37,8 @@ A26), §7.1 (T-rep), §7.4, §12.5, §12.8 (rules 5, 6, 10) and `INV-LND-04`.
 2. **The order (L6), as terms data.** (1) Billed items — instalments or statement minimums —
    **oldest due date first**; within each, **`FEES → INTEREST → PRINCIPAL`**. (2) The remainder by
    the overpayment treatment: loan → **`HOLD_AS_CREDIT`** (`CR LOAN_CREDIT_BALANCE`, applied
-   automatically at the next billing, refunded at closure); line → **`PAY_DOWN_PRINCIPAL`**
+   automatically at the next billing - or, held while something is already due, at the next servicing
+   step, the Phase 11 gate's catch-up application - refunded at closure); line → **`PAY_DOWN_PRINCIPAL`**
    (`CR LOAN_PRINCIPAL`, restoring the available limit), then any excess over every receivable
    held as credit (A26). A different order is a new terms version naming an order the engine
    implements, or a new engine version.
@@ -133,7 +134,8 @@ Cons:
 - A customer paying ahead sees the money bounce back; the next instalment then needs a second
   collection.
 
-Refused: held as credit and applied at the next billing (loan).
+Refused: held as credit and applied at the next billing (loan) - or at the next servicing step, when something is
+already due (the Phase 11 gate's catch-up application).
 
 ### Excess applied as prepayment, shortening the term
 Pros:
@@ -279,12 +281,28 @@ Financial impact: rule 5 and rule 6 postings; delinquency and income follow the 
   posting half, keyed by its quote, after the execution accrued every elapsed date and billed everything unbilled (each
   billing followed by rule 6, point 5): the amount is everything then receivable, allocated by the pinned engine to every
   billed component (and a line's principal not yet due by `PAY_DOWN_PRINCIPAL`), nothing left over; the closure then refunds
-  whatever credit balance remains. That is the quote's amount whenever no credit balance survives the billing - always for an
-  instalment loan unless the credit balance paid everything (then no repayment, the excess refunded); a line whose credit
+  whatever credit balance remains. That is the quote's amount whenever no credit balance survives the billing - *(corrected
+  by the Phase 11 gate, A4-M1, 2026-10-16: this read "always for an instalment loan unless the credit balance paid
+  everything", which was false - a loan with nothing left to bill, credit held beside a due item, met no billing to apply
+  the credit at, and its wallet was debited the gross receivable while the credit was refunded beside it. The execution
+  now applies rule 6 over what is already due before its recomputation - the catch-up application below - so it holds:)*
+  always for an instalment loan unless the credit balance paid everything (then no repayment, the excess refunded); a line whose credit
   balance exceeded its statements (rule 6 never pays principal not yet due) pays the whole receivable and is refunded the
   balance in the same transaction, its wallet judged on the net amount. The quote's figure is never paid approximately: a
   recomputed outstanding that differs is `409 lending.PayoffQuoteStale`, nothing posted (scenario 7). Point 4's wallet rule
   holds: absent or not `ACTIVE` is `InsufficientFunds`. No prepayment fee (L8, owner-accepted) and no rebate.
+- **The Phase 11 gate's R2 (2026-10-16) - point 5 settles what is ALREADY due.** Rule 6 was applied at a billed item's
+  birth only (`credit_balance_application UNIQUE (billing_id)`), so credit that arrived while an item was already due -
+  a fee refunded (rule 8a), a repayment reversed beside other credit (rule 10), a post-maturity loan with its principal
+  paid and its interest due - stayed held while DPD, late fees and default accrued on arrears it covered, and a matured
+  loan with nothing left to bill could never close without new money. The servicing step now applies rule 6 over the due
+  state whenever credit is held and something is due - after the billing and before the collection, the condition and
+  the late fee - and the payoff before its recomputation (A4-M1, above): the same `CreditBalanceApplications` and
+  `AllocationEngineV1`, born at no billed item - a **catch-up application** (`lending V029`: `billing_id` NULL,
+  `catch_up_sequence` the loan's next under L3, `UNIQUE (loan_id, catch_up_sequence)`, key
+  `lending.credit-application:<loan>:catch-up:<n>`), held at commit by `V012`'s conservation unchanged. The per-billing
+  application is unchanged. A consequence for point 4's reversal: an overpayment's held credit is applied sooner, so its
+  reversal is `RepaymentNotReversible` once the next step has applied it (`RepaymentReversalDatabaseTest#aReversalReopeningAnItemBesideHeldCreditIsSettledByIt`).
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code and accepted it with no correction in place - the
   drift it found (the status column) is the Follow-up's own record above.

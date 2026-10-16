@@ -264,6 +264,9 @@ public final class Repayments {
             Money amount, List<AllocationLine> lines, Accounts accounts, LedgerAccountId wallet, LocalDate today,
             Instant now, CorrelationId correlation, Function<UUID, Optional<LoanClosure>> closer) {
         LoanId id = loan.id();
+        // The value date: today, or - on a clock stepped back behind the record - the first date it leaves open (the
+        // Phase 11 gate's R1): never a date already accrued, whose base read the principal without this repayment.
+        LocalDate valueDate = loans.principalValueDate(unitOfWork, id, today);
         UUID repaymentId = ids.next();
         List<RepaymentAllocation> allocations = new ArrayList<>();
         for (AllocationLine line : lines) {
@@ -276,12 +279,13 @@ public final class Repayments {
         entry.forEach(line -> touched.add(line.account()));
         touched.add(accounts.creditBalance());
         postings.lockBalancesInOrder(unitOfWork, touched);
-        JournalEntryId journalEntry = post(unitOfWork, repaymentId, loan, entry, today);
+        JournalEntryId journalEntry = post(unitOfWork, repaymentId, loan, entry, valueDate);
         Repayment unstamped = new Repayment(repaymentId, id, kind, requestKey, amount,
-                agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, today, now);
+                agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, valueDate,
+                now);
         Instant receivedAt = repayments.insert(unitOfWork, unstamped, correlation);
         Repayment repayment = new Repayment(repaymentId, id, kind, requestKey, amount,
-                agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, today,
+                agreement.id(), agreement.version(), agreement.allocationEngine(), allocations, journalEntry, valueDate,
                 receivedAt);
         Optional<LoanClosure> closure = closer.apply(repaymentId);
         publish(unitOfWork, loan, repayment, closure.isPresent(), correlation);
@@ -351,13 +355,13 @@ public final class Repayments {
     }
 
     /**
-     * Posting rule 5, dated today, its reference the loan - a fresh repayment id per attempt, so a replay under its key is
+     * Posting rule 5, dated the repayment's value date, its reference the loan - a fresh repayment id per attempt, so a replay under its key is
      * a defect, never a second posting.
      */
     private JournalEntryId post(Connection unitOfWork, UUID repaymentId, Loan loan, List<JournalLine> lines,
-            LocalDate today) {
-        PostingResult result = postings.post(unitOfWork, new PostingCommand(POSTING_KEY_PREFIX + repaymentId, today, today,
-                loan.id().value().toString(), lines));
+            LocalDate valueDate) {
+        PostingResult result = postings.post(unitOfWork, new PostingCommand(POSTING_KEY_PREFIX + repaymentId, valueDate,
+                valueDate, loan.id().value().toString(), lines));
         if (result.replayed()) {
             throw new IllegalStateException("a repayment's entry exists for a repayment id minted in this transaction"
                     + " (INV-IDEM-01)");

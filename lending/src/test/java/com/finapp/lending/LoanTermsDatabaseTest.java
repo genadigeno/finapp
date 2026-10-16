@@ -14,7 +14,6 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -52,6 +51,13 @@ import org.junit.jupiter.api.Test;
 @Tag("database")
 @DisplayName("loan product terms as versioned data (P11-TSK-005)")
 class LoanTermsDatabaseTest {
+
+    /** No case leaves a terms proposal awaiting a decision (the Phase 11 gate's R6): later suites' fixtures propose. */
+    @org.junit.jupiter.api.AfterEach
+    void noTermsProposalLeftPending() {
+        DisbursementWorld.clearPendingTerms(LoanProduct.PERSONAL_LOAN);
+        DisbursementWorld.clearPendingTerms(LoanProduct.CREDIT_LINE);
+    }
 
     private static final Clock CLOCK = Clock.systemUTC();
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
@@ -352,6 +358,45 @@ class LoanTermsDatabaseTest {
         assertThat(status(predecessor)).as("the plant rolled back with it").isEqualTo("ACTIVE");
     }
 
+    @Test
+    @DisplayName("an offer made under a version while its successor's activation was already under way stands inside the"
+            + " version's effective period: the predecessor's end is stamped after the activation's lock, never at its"
+            + " transaction's start - so the version in force at the offering instant is the one the offer pins (the"
+            + " Phase 11 gate A2-F3)")
+    void anOfferMadeDuringAnActivationStandsInsideItsVersion() throws SQLException {
+        DisbursementWorld.ensureActive();
+        DisbursementWorld.Approved approved = DisbursementWorld.approved(LOAN, 4_100_00, Optional.of(12),
+                PayoutPreference.WALLET, 10);
+        LoanTermsAdministration.Proposed successor = propose(LOAN, "0.0712", employee());
+        try (Connection activation = DatabaseRoles.application()) {
+            activation.setAutoCommit(false);
+            try {
+                // The activation's transaction begins - its start fixed - before the offer is made and committed.
+                try (Statement begin = activation.createStatement()) {
+                    begin.execute("SELECT transaction_timestamp()");
+                }
+                assertThat(DisbursementWorld.inOneTransaction(uow -> DisbursementWorld.ORIGINATION.originate(uow,
+                        approved.application(), DisbursementWorld.SYSTEM)).kind())
+                        .isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+                ADMINISTRATION.approve(activation, successor.id(), employee(), "a case's activation", correlation());
+                activation.commit();
+            } catch (RuntimeException | SQLException failure) {
+                activation.rollback();
+                throw failure;
+            }
+        }
+        assertThat(DisbursementWorld.scalar("SELECT (o.offered_at >= v.effective_from AND o.offered_at < v.effective_to)::text"
+                + " FROM lending.loan_offer o JOIN lending.loan_terms_version v ON v.id = o.terms_version_id"
+                + " WHERE o.application_id = ?", approved.application().value()))
+                .as("the offer inside its pinned version's period").isEqualTo("true");
+        assertThat(activeAt(LOAN, Instant.parse(DisbursementWorld.scalar("SELECT to_char(o.offered_at AT TIME ZONE 'UTC',"
+                + " 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') FROM lending.loan_offer o WHERE o.application_id = ?",
+                approved.application().value()))).map(LoanTermsVersionId::value).map(UUID::toString))
+                .as("the version in force at the offering instant is the pinned one")
+                .contains(DisbursementWorld.scalar("SELECT terms_version_id::text FROM lending.loan_offer"
+                        + " WHERE application_id = ?", approved.application().value()));
+    }
+
     // ------------------------------------------------------------------ the conventions
 
     @Test
@@ -375,6 +420,20 @@ class LoanTermsDatabaseTest {
                         "overpayment_treatment", "'PAY_DOWN_PRINCIPAL'")
                 .entrySet()) {
             rawProposalRefused(defect.getKey(), defect.getValue(), "23514");
+        }
+        assertThat(count("SELECT count(*) FROM lending.loan_terms_version WHERE product = 'PERSONAL_LOAN'"
+                + " AND status = 'PROPOSED'")).as("every raw proposal rolled back").isZero();
+    }
+
+    @Test
+    @DisplayName("a terms version names only the engine versions this build holds (the Phase 11 gate's A3-M1, V029): a raw"
+            + " term set pinning version 2 of the schedule, accrual or allocation engine - which no code computes - is"
+            + " refused by the CHECK, while version 1 commits")
+    void anEngineVersionNoCodeHoldsIsRefused() throws SQLException {
+        clearPending(LOAN);
+        rawProposalAccepted();
+        for (String engine : List.of("schedule_engine_version", "accrual_engine_version", "allocation_engine_version")) {
+            rawProposalRefused(engine, "2", "23514");
         }
         assertThat(count("SELECT count(*) FROM lending.loan_terms_version WHERE product = 'PERSONAL_LOAN'"
                 + " AND status = 'PROPOSED'")).as("every raw proposal rolled back").isZero();
@@ -487,8 +546,8 @@ class LoanTermsDatabaseTest {
                 .as("no term set written").isZero();
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.TermsVersionProposed'"))
                 .as("nothing audited").isEqualTo(audits);
-        LoanTermsAdministration.Proposed amortising = propose(LOAN, "0.2310", proposer);
-        assertThat(status(amortising.id())).as("23.10 % amortises across 6-60 months").isEqualTo("PROPOSED");
+        LoanTermsAdministration.Proposed amortising = propose(LOAN, "0.2309", proposer);
+        assertThat(status(amortising.id())).as("23.09 % amortises across 6-60 months").isEqualTo("PROPOSED");
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -503,21 +562,7 @@ class LoanTermsDatabaseTest {
 
     /** Rejects the product's pending proposal, if there is one, so a case can propose. */
     private static void clearPending(LoanProduct product) {
-        inOneTransaction(uow -> {
-            try (PreparedStatement select = uow.prepareStatement(
-                    "SELECT id FROM lending.loan_terms_version WHERE product = ? AND status = 'PROPOSED'")) {
-                select.setString(1, product.name());
-                try (ResultSet row = select.executeQuery()) {
-                    if (row.next()) {
-                        ADMINISTRATION.reject(uow, LoanTermsVersionId.of(row.getObject(1, UUID.class)), employee(),
-                                "cleared for the next case", correlation());
-                    }
-                }
-                return null;
-            } catch (SQLException failure) {
-                throw new IllegalStateException(failure);
-            }
-        });
+        DisbursementWorld.clearPendingTerms(product);
     }
 
     /** A fresh proposal of the product's plan terms at {@code rate}, by {@code proposer}. */

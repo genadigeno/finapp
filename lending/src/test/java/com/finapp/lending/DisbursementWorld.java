@@ -301,11 +301,41 @@ final class DisbursementWorld {
         }
     }
 
-    /** Proposes and activates {@code terms} for the personal loan, retiring the version in force. */
+    /**
+     * Proposes and activates {@code terms} for their product, retiring the version in force - first rejecting a proposal
+     * of the product left awaiting a decision ({@link #clearPendingTerms}), so the fixture is the same whatever suite ran
+     * before it (the Phase 11 gate's R6).
+     */
     static void activate(LoanTerms terms) {
+        clearPendingTerms(terms.product());
         LoanTermsAdministration.Proposed proposed = inOneTransaction(uow -> ADMINISTRATION.propose(uow, terms,
                 "the suite's terms", employee(), correlation()));
         inOneTransaction(uow -> ADMINISTRATION.approve(uow, proposed.id(), employee(), "reviewed", correlation()));
+    }
+
+    /**
+     * Rejects {@code product}'s terms proposal awaiting a decision, if there is one - through the domain, reasoned and
+     * audited like any rejection (the Phase 11 gate's R6). One product holds at most one pending proposal
+     * ({@code loan_terms_one_proposed}), so a case that proposes and leaves its proposal undecided made every later
+     * fixture's proposal {@code ProposalPending} - an order-dependent red across the tier. Every suite that proposes clears
+     * its own after each case, and every fixture that brings terms into force clears before it proposes.
+     */
+    static void clearPendingTerms(LoanProduct product) {
+        inOneTransaction(uow -> {
+            try (PreparedStatement select = uow.prepareStatement(
+                    "SELECT id FROM lending.loan_terms_version WHERE product = ? AND status = 'PROPOSED'")) {
+                select.setString(1, product.name());
+                try (ResultSet row = select.executeQuery()) {
+                    if (row.next()) {
+                        ADMINISTRATION.reject(uow, LoanTermsVersionId.of(row.getObject(1, UUID.class)), employee(),
+                                "cleared for the next case", correlation());
+                    }
+                }
+                return null;
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        });
     }
 
     /** One disbursement step for {@code loan}, in its own transaction, as the sweep takes it. */

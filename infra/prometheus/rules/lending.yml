@@ -59,6 +59,29 @@ groups:
           summary: "Loan interest accrual is more than a day behind"
           description: "The oldest unaccrued elapsed date ended {{ $value | humanizeDuration }} ago. Check finapp_lending_servicing_sweeper_enabled and finapp_lending_accrual_total by outcome; the sweep catches up born-once (OPERATIONS_RUNBOOK.md section 7.5)."
 
+      - alert: LendingApplicationAwaitingTooLong
+        # An application AWAITING_DECISION longer than the longest credit request validity and an hour (7 d 1 h): credit
+        # closes a request at its validity at the latest and the origination step then closes the application undecided,
+        # so one still waiting means the origination sweep is not acting on it (the Phase 11 gate's A5-03).
+        expr: max(finapp_lending_application_awaiting_age_seconds) > 608400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A loan application has waited past every credit request's validity"
+          description: "The oldest application AWAITING_DECISION was submitted {{ $value | humanizeDuration }} ago. Check finapp_lending_origination_sweeper_enabled on every instance and finapp_lending_origination_total{outcome=\"failed\"} (OPERATIONS_RUNBOOK.md section 7.12)."
+
+      - alert: LendingOriginationStepFailing
+        # Origination steps or offer expiries failing and rolling back for a quarter hour running: the sweep logs only the
+        # exception's class and lets the permit lapse, so a step failing on every tick is otherwise silent (A5-03).
+        expr: sum(increase(finapp_lending_origination_total{outcome="failed"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Loan origination steps keep failing"
+          description: "Origination steps or offer expiries failed in each of the last fifteen minutes; the permits lapse and later ticks retry. Read the instances' warn lines for the exception's class (OPERATIONS_RUNBOOK.md section 7.12)."
+
       - alert: LendingAllocationAnomaly
         # A repayment's allocation refused for not conserving the amount - a defect in an engine or its inputs; the
         # repayment was refused, nothing posted.
@@ -174,10 +197,10 @@ groups:
       - alert: LendingGaugesUnreadable
         # NaN: a lending gauge whose database read failed - an unreadable proof, queue or lag must stay visible, never read
         # as 0 or as its last value.
-        expr: max(finapp_lending_subledger_proof != finapp_lending_subledger_proof) or max(finapp_lending_replay != finapp_lending_replay) or max(finapp_lending_capital_proof != finapp_lending_capital_proof) or max(finapp_lending_capital_headroom_low != finapp_lending_capital_headroom_low) or max(finapp_credit_exposure_census != finapp_credit_exposure_census) or max(finapp_lending_disbursement_pending_age_seconds != finapp_lending_disbursement_pending_age_seconds) or max(finapp_lending_payout_dispatched_age_seconds != finapp_lending_payout_dispatched_age_seconds) or max(finapp_lending_accrual_lag_seconds != finapp_lending_accrual_lag_seconds) or max(finapp_lending_terms_active != finapp_lending_terms_active)
+        expr: max(finapp_lending_subledger_proof != finapp_lending_subledger_proof) or max(finapp_lending_replay != finapp_lending_replay) or max(finapp_lending_capital_proof != finapp_lending_capital_proof) or max(finapp_lending_capital_headroom_low != finapp_lending_capital_headroom_low) or max(finapp_credit_exposure_census != finapp_credit_exposure_census) or max(finapp_lending_disbursement_pending_age_seconds != finapp_lending_disbursement_pending_age_seconds) or max(finapp_lending_payout_dispatched_age_seconds != finapp_lending_payout_dispatched_age_seconds) or max(finapp_lending_accrual_lag_seconds != finapp_lending_accrual_lag_seconds) or max(finapp_lending_application_awaiting_age_seconds != finapp_lending_application_awaiting_age_seconds) or max(finapp_lending_terms_active != finapp_lending_terms_active)
         for: 15m
         labels:
           severity: ticket
         annotations:
           summary: "A lending gauge cannot be read"
-          description: "A lending gauge reads NaN - its database read failed. The proofs, the census, the disbursement and payout queues, the accrual lag or the active terms are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 7.10)."
+          description: "A lending gauge reads NaN - its database read failed. The proofs, the census, the application, disbursement and payout queues, the accrual lag or the active terms are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 7.10)."

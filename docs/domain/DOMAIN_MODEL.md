@@ -116,6 +116,21 @@ Write-off
 Collections
 Lending Capital
 
+BNPL Terms Version
+BNPL Application
+BNPL Offer
+Pay-in-4
+Pay-in-N
+BNPL Purchase
+Merchant Financing
+Merchant Discount
+Customer Repayment Obligation
+BNPL Schedule
+BNPL Instalment
+BNPL Refund
+Refund Adjustment
+BNPL Dispute
+
 Money
 Currency
 Minor unit
@@ -231,6 +246,22 @@ entry was read against the code; every term above is built except the three defe
 Collections), so the transition's "Nothing of Phase 11 is built: each is the planned design" no longer holds and the
 glossary's §7a states each as built. No term was added: Loan Amendment, Payoff Quote and Payoff Execution and
 Line Closure Request were built as the glossary names them, under Restructuring, Payoff and Credit Line.)*
+*(The Phase 11 → 12 transition, 2026-10-16 — ADR-0101…0106 (`Proposed`), `PHASE_12_PLAN.md` §3 and §12 — added
+the fourteen Phase 12 terms in the BNPL block after Lending Capital: the product as versioned data and its two
+products (BNPL Terms Version, Pay-in-4, Pay-in-N), origination at checkout (BNPL Application, BNPL Offer), the one
+economic event and its two flows (BNPL Purchase; Merchant Financing and its Merchant Discount on the merchant's side,
+the Customer Repayment Obligation on the customer's), the projection (BNPL Schedule, BNPL Instalment), and value
+returned (BNPL Refund, Refund Adjustment, BNPL Dispute) — each keeping a distinction Phase 12 could collapse: a
+purchase is not a payment or an order, financing is not a payout, the obligation is not a loan, a BNPL refund is not
+a card refund, and a BNPL dispute is not a chargeback. BNPL Agreement keeps its place in the credit block,
+sharpened. **Instalment** now names the loan's alone — the module register's Loan Instalment — and **BNPL
+Instalment** is its own term: the register's resolution of "Instalment claimed by two modules", confirmed by the
+same transition (the BNPL obligation is not a lending loan, ADR-0101), and the register's "Instalment Plan" is
+renamed **BNPL Schedule** so that "plan" means only what the customer chooses. BNPL's servicing facts re-apply the
+lending terms (billing, accrual, repayment, allocation, Days Past Due, Delinquency, Default, Payoff, Waiver,
+Repayment Reversal) to the obligation and add none. Nothing of Phase 12 is built: each is the planned design,
+defined in the glossary's §7b with the same guard, and the machines are in
+[`BNPL_LIFECYCLES.md`](BNPL_LIFECYCLES.md).)*
 
 ---
 

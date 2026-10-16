@@ -35,7 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  *
  * <p>The context boots with nothing configured and no reachable database: exactly the "freshly started instance" the
  * observability criterion names - armed ahead of the phase flip, after which {@code PlannedMetersExistTest} reads the same
- * table. The section's rows are counted EXACTLY (33), so a row added without a meter, or a meter renamed, fails here.
+ * table. The section's rows are counted EXACTLY (35 - the Phase 11 completion gate added two, A5-03), so a row added without a meter, or a meter renamed, fails here.
  *
  * <p>The needle: every tag of every {@code finapp.lending.}, {@code finapp.credit.exposure.census} and
  * {@code finapp.credit.consumption} series has a key from lending's closed set and a value from the closed set that key
@@ -56,10 +56,10 @@ class LendingMetersTest {
     @Autowired private MeterRegistry registry;
 
     @Test
-    @DisplayName("section 15's 33 rows are each a registered series on a fresh instance, with the tag keys the plan gives it")
+    @DisplayName("section 15's 35 rows are each a registered series on a fresh instance, with the tag keys the plan gives it")
     void everySectionFifteenSeriesIsRegisteredWithItsTags() throws IOException {
         List<String> planned = plannedSeries();
-        assertThat(planned).as("PHASE_11_PLAN.md section 15 has exactly 33 series rows").hasSize(33)
+        assertThat(planned).as("PHASE_11_PLAN.md section 15 has exactly 35 series rows").hasSize(35)
                 .doesNotHaveDuplicates();
         Map<String, Set<String>> registered = new TreeMap<>();
         registry.getMeters().forEach(meter -> registered.computeIfAbsent(meter.getId().getName(), name -> new TreeSet<>())
@@ -69,6 +69,7 @@ class LendingMetersTest {
         Map<String, Set<String>> keys = new TreeMap<>();
         keys.put("finapp.lending.application", Set.of("product", "outcome"));
         keys.put("finapp.lending.offer", Set.of("product", "outcome"));
+        keys.put("finapp.lending.origination", Set.of("kind", "outcome"));
         keys.put("finapp.lending.acceptance", Set.of("product", "outcome"));
         keys.put("finapp.lending.disbursement", Set.of("payout", "outcome"));
         keys.put("finapp.lending.billing", Set.of("kind", "outcome"));

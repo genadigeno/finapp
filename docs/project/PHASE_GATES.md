@@ -1117,9 +1117,12 @@ bare `-nnn` meaning `P11-TSK-nnn`):
   that entry exists; a failed disbursement posts nothing and past `disbursement_deadline` ends
   `CANCELLED (DISBURSEMENT_FAILED)`; on the external path the hold placed at disbursement is adopted,
   not duplicated, by payments' withdrawal, the payout dispatched once under
-  `payments.withdrawal:lending:<loanId>` and never re-dispatched by lending, a `FAILED`, `RETURNED`
-  or `NOT_DISPATCHED` payout leaving the receivable and the disbursement entry unchanged and the
-  funds in the borrower's wallet, and interest starting at the payout's terminal outcome. Scenario 1
+  `payments.withdrawal:lending:<loanId>` and never re-dispatched by lending, a `FAILED` or
+  `NOT_DISPATCHED` payout leaving the receivable and the disbursement entry unchanged and the
+  funds in the borrower's wallet, and interest starting at the payout's terminal outcome. *(Read "a
+  `FAILED`, `RETURNED` or `NOT_DISPATCHED` payout" until the Phase 11 completion gate's repair,
+  2026-10-16, finding A6-05: `PayoutStatus` and `lending V009`'s `CHECK` have no `RETURNED` - payments'
+  withdrawal keeps no return record, so it would have no producer (`P11-TSK-015`).)* Scenario 1
   (`LoanDisbursementDatabaseTest#theSameDisbursementOnTwoInstancesPostsOnce`,
   `LoanPayoutDatabaseTest#tenDispatchersOneWithdrawal`) and scenario 5
   (`LoanPayoutDatabaseTest#aLostResponseIsHeldThenConcludedByInquiryAndNeverResent`) green; one
@@ -1265,7 +1268,14 @@ bare `-nnn` meaning `P11-TSK-nnn`):
   generated lines, every figure replayed `IDENTICAL` in two JVMs, a perturbed accrual, billing,
   statement, allocation or agreement byte flipping the verdict; each task's probe recorded in
   `MUTATION_TESTING.md` §2 and caught, and `P11-TST-*` given their §4 rows. **Owners**: every task;
-  `P11-TST-001`, `P11-TST-002`.
+  `P11-TST-001`, `P11-TST-002`. *(Not every probe was caught: `PHASE_11_PLAN.md` §13.4's re-dispatch
+  probe, performed as worded by `P11-DOC-001` - `LoanPayoutSteps.observe` dispatching the payout again on
+  every undecided observation - **SURVIVED**, an equivalent mutant at the money's level: payments' key is
+  the instruction itself, so the re-dispatch replays and sends nothing. "Never re-dispatched by lending" is
+  held by the payout machine and payments' key, not by a lending-side count; the form that can fail - a
+  payout concluded on payments' `UNKNOWN` - was caught by `-015` and by the storm (`MUTATION_TESTING.md` §2,
+  the `INV-RAIL-02` and `INV-LND-07` rows). Annotated by the Phase 11 completion gate's repair, 2026-10-16,
+  finding A6-05.)*
 - **Documentation and invariants.** Every `Phase: 11` invariant in `FINANCIAL_INVARIANTS.md` —
   `INV-LND-01`…`14`, **read from the catalogue, not from the phase plan** — has a
   `MUTATION_TESTING.md` §2 demonstration; ADR-0090…0100 are read against the code and `Accepted` (or
@@ -1311,7 +1321,7 @@ lifecycle**'s "refused ... by the status `CHECK`" is a vocabulary rank - a `CHEC
 between two of them, and the repayment, waiver, amendment and capital contribution derive their status - the edges are the
 every-writer triggers', proven for both roles; **Disbursement**'s "past `disbursement_deadline` ends `CANCELLED`" is an
 attempt failing at or after the deadline (a wallet postable after it is still disbursed - `LENDING_LIFECYCLES.md`), and its
-"`RETURNED`" payout has no producer (`P11-TSK-015`, owner judgement); **Schedule**'s "`422 lending.TermsNotAmortising` at
+"`RETURNED`" payout has no producer (`P11-TSK-015`, owner judgement; since dropped from the clause - A6-05); **Schedule**'s "`422 lending.TermsNotAmortising` at
 the offer" is raised at the terms proposal, and an offer that cannot amortise closes its application `CLOSED_UNDECIDED`;
 **Revolving credit line**'s "no line's drawn principal above its limit at rest" holds but by a four-eyes reversal of a
 paydown after a re-draw (`P11-TSK-023`; the storm's C10 bounds it by exactly the approved reversals); **Capital and
@@ -1331,6 +1341,324 @@ connection, DPD over generated histories, the ledger census - are each recorded 
 - Merchant financing and customer obligation are created atomically or with a tested
   compensating path.
 - Three-way reconciliation (merchant settlement, customer obligation, ledger) balances.
+
+**The five, made measurable** (each kept as written above; task IDs are `PHASE_12_PLAN.md`'s, a
+bare `-nnn` meaning `P12-TSK-nnn`):
+
+1. *Refund at every point produces correct, value-preserving adjustments.* For 100% of the
+   battery's refunds, in every generated refund order, R = Σ principal cancelled latest-first + the
+   excess credited to the customer, no paid amount cancelled, and the fee returned telescoping to
+   exactly f at a full refund (the allocator's properties); `BnplRefundDatabaseTest#refundBeforeDuringAfter`
+   — a refund before instalment 2, between instalments and after the last — and `#excessGoesToTheCustomer`
+   green; the three-way proof zero at rest in every storm round (`INV-BNPL-06`). **Owners**: `-009`,
+   `-021`, `-025`, `P12-TST-001`, `P12-TST-002`.
+2. *Full refund closes the agreement, no residual obligation or stranded value.*
+   `BnplRefundDatabaseTest#aFullRefundClosesWithNothingStranded`: the obligation `CLOSED (REFUNDED)` or
+   `(REFUNDED_PARTIALLY_REPAID)` in the refund's transaction, every one of its six accounts zero, Σ fee
+   returned = f, any credit balance refunded, pay-in-N accrued and billed-unpaid interest released;
+   `#aRepaymentAfterAFullRefundIsRefused` (`409 bnpl.ObligationClosed`, nothing written); the subledger
+   proof's `CLOSED` arm all zero (`INV-BNPL-09`). **Owners**: `-021`, `-025`.
+3. *Chargeback plus refund cannot double-credit.* Scenario 10,
+   `BnplDisputeDatabaseTest#disputeRefundAndMerchantRefundShareOneBound`, green in both orders; Σ
+   refunds ≤ gross for every purchase across merchant refunds and dispute outcomes at every storm
+   round; the probe skipping the purchase lock in a refund caught by scenario 10 (`INV-BNPL-07`,
+   `INV-BNPL-08`). **Owners**: `-021`, `-023`, `P12-TST-001`.
+4. *Financing and obligation atomic.* One transaction, so the compensating path is not built:
+   `#aFailureAtEveryStepLeavesNothing` forces a failure at each T-pur step and finds no financing, no
+   consumption, no capital commitment, no obligation and no order; the deferred trigger (a
+   `merchant_financing` row iff its purchase, obligation and entry) refuses a raw-SQL writer alone
+   (`INV-BNPL-02`). **Owners**: `-013`.
+5. *Three-way reconciliation balances.* `BnplThreeWayProof` — merchant leg, customer leg, economic
+   identity and trial balance, in one `REPEATABLE READ` snapshot per currency — zero at rest in every
+   storm round and over the battery, gauged `finapp.bnpl.threeway.proof{verdict}` and alerting on any
+   failure, a planted foreign line on either leg failing it (`INV-BNPL-04`, `INV-BNPL-06`). **Owners**:
+   `-025`, `P12-TST-001`, `P12-TST-002`.
+
+**Per area:**
+
+- **Purchase and origination lifecycle.** Every invalid transition of the application, offer,
+  purchase, obligation, refund, dispute, waiver, reversal and terms-version machines
+  (`BNPL_LIFECYCLES.md`) is refused at the domain and by the every-writer edge trigger, for both roles,
+  with the status `CHECK` holding the vocabulary; nothing leaves `FULLY_REFUNDED` or `CLOSED`, and
+  `FINANCED → AUTHORISED` is refused; an application and its credit decision request are opened in one
+  transaction (`UNIQUE (decision_request_id)`), one open application per checkout session (`409
+  bnpl.ApplicationOpen`); a BNPL request opens only through a checkout session; an approval below the
+  session's gross closes the application `CLOSED_UNDECIDED (APPROVED_BELOW_PURCHASE)`; a session that
+  expires while awaiting a decision closes the application and the approval lapses unconsumed
+  (`BnplOriginationDatabaseTest#aSessionThatExpiresClosesTheApplication`); ten origination sweepers leave
+  one offer, and a `CreditDecisionRecorded` delivered twice, late or never converges within one sweep
+  interval (`#hintsTwiceLateOrNeverConverge`); checkout `V004`'s `OPEN → COMPLETED` edge by financing
+  with `financed_by_ref` set once and exclusive with `payment_intent_ref`, the order born with the
+  financing entry as `captured_entry_ref`, no `COMPLETED_LATE` for BNPL; a BNPL completion, a card
+  confirmation and the expiry sweeper on one session leaving exactly one outcome; a merchant not
+  BNPL-enabled, a non-EUR session or an amount outside credit's product bounds refused `422
+  bnpl.MerchantNotEnabled`, `SessionNotEligible`, `AmountOutOfRange` (`INV-BNPL-02`, `INV-BNPL-03`).
+  **Owners**: `-007`, `-010`, `-011`, `-013`.
+- **Offer and agreement.** The offer is exactly the approved amount — the session's gross — and plan;
+  `expires_at = LEAST(decision valid_until, session expires_at, offered_at + 30 min)` on the database
+  clock, and acceptance against offer expiry and session expiry at the boundary leaves exactly one of
+  `ACCEPTED`, `EXPIRED`; acceptance requires a `MULTI_FACTOR` session (a lesser one refused, nothing
+  written) and echoes `terms_sha256` (`409 bnpl.TermsChanged` on a mismatch); agreement versions are
+  `INSERT`-only for every role, raw-SQL `UPDATE` and `DELETE` refused, canonical terms self-contained and
+  the hash re-verified by `BnplReplayProof`; a version n+1 for every refund that cancels or shortens an
+  unbilled instalment, every dispute outcome that changes the schedule and every payoff recalculation;
+  every acceptance stores Phase 11's evidence fields (`CONFIDENTIAL`) and creates no consent purpose
+  (`INV-IDN-04`); terms versions per product are four-eyes under advisory namespace `12`, never
+  migration-activated, ten approvers leaving one `ACTIVE`, the pay-in-4 terms `CHECK`ing a zero rate;
+  the illustrative schedule labelled as such, with total interest and total payable (`INV-BNPL-03`).
+  **Owners**: `-004`, `-011`, `-013`, `-025`.
+- **Merchant financing and settlement.** F1 credits the merchant's `MERCHANT_PAYABLE` G and debits
+  it f in the obligation's own entry, the fee from the merchant's BNPL fee schedule version (refund
+  policy `RETURNED`) pinned by `bnpl_fee_pin`; BNPL enablement and its per-merchant schedule are a
+  four-eyes operator act; `MerchantPayable`'s position satisfies `INV-MER-02`'s equation with the BNPL
+  terms (+ financed − BNPL fees − BNPL refunds + BNPL fees returned) against independent SQL, its
+  drill-down naming `BNPL_FINANCING` and `BNPL_REFUND` and `BNPL_PRINCIPAL` among its counterparties;
+  payouts of BNPL-financed money are the existing on-demand payout, unchanged, bounded by the payable
+  (`INV-MER-05`) — a payout racing a BNPL financing credit and a BNPL refund on one payable serialised and
+  counted; B7's bound: after a payout, a purchase's refunds leave the payable down by at most its net
+  G − f, a payable below zero refusing every payout until later captures and financings recover it,
+  counted by `finapp.ledger.negative.positions` and named in the drill-down (`INV-MER-07` as amended,
+  in force from `-021`); a merchant suspended with open purchases keeps them serviced and refundable while
+  new BNPL is refused `422 bnpl.MerchantNotEnabled`; the merchant-key reads show the purchase, financed
+  net, fee and refunds only (`INV-BNPL-04`, `INV-BNPL-07`). **Owners**: `-003`, `-006`, `-013`, `-014`,
+  `-016`, `-021`.
+- **Customer obligation and schedules.** Pay-in-4: four instalments, instalments 2–4 `floor(P / 4)` and
+  instalment 1 the remainder, due on the purchase's business date and 14, 28 and 42 days later,
+  instalment 1 billed and collected in the purchase's transaction; golden cases checked by hand for an
+  amount divisible by four, one that is not, a leap day and a year end. Pay-in-N: 3, 6 or 12 monthly
+  level instalments from `SCHEDULE_ENGINE_V1`'s `ScheduleTerms` overload, the first one month after the
+  purchase on its day-of-month (clamped), every Phase 11 engine identity and golden hash unchanged and
+  `P11-TST-002`'s battery and `LoanReplayProof` re-run `IDENTICAL` after the `creditmath` extraction;
+  one schedule per (obligation, version), version 1 born with the obligation, a recalculation a new
+  version with billed instalments kept and nothing updated, the deferred conservation trigger refusing a
+  raw-SQL row; billing once per instalment (`UNIQUE (instalment_id)`); every principal fact value-dated
+  no earlier than the obligation's floor — the day after its latest accrual or billing, read under B4 —
+  and held credit applied to past-due items by the catch-up application in every servicing step and the
+  payoff (the Phase 11 gate's R1 and R2, applied from the first table); the obligation `ACTIVE → CLOSED`
+  only, with no `PENDING_DISBURSEMENT` and no `CANCELLED` (`INV-BNPL-01`, `INV-BNPL-05`). **Owners**:
+  `-002`, `-008`, `-013`, `-015`, `-018`, `P12-TST-002`.
+- **Interest and fees.** Pay-in-N accrual once per (obligation, date) — `bnpl_interest_accrual UNIQUE
+  (obligation_id, accrual_date)` and the key `bnpl.accrual:<obligation>:<date>`, each surviving a
+  lock-bypass probe; scenario 18, `BnplAccrualDatabaseTest#accruesOncePerDate` (run twice, ten sweepers,
+  a restart, ±5 s skew), one row and one entry per date; ACT/365F, the accrual base principal only,
+  cumulative rounding once per period, billing billing the actual accrued interest; pay-in-4 writes no
+  accrual row; accrued, due, paid and outstanding kept apart and proven by the subledger proof; a late
+  fee at most once per instalment (`UNIQUE (instalment_id, kind)`), on the pinned day and within the
+  agreement's cap; no penalty interest, no prepayment fee, no customer fee on pay-in-4; a fee waiver
+  four-eyes through `ReversalService`, bounded by the unpaid remainder; the merchant fee recognised at
+  purchase as `BNPL_MERCHANT_FEE_INCOME` and never counted as capital (`INV-BNPL-01`). **Owners**:
+  `-004`, `-017`, `-020`, `-024`.
+- **Allocation and collection (wallet only).** Every instalment is collected from the customer's
+  `CUSTOMER_WALLET` only — no card-funded instalment route and no system-initiated card charge exists
+  (owner decision B6); scenario 4 (`BnplCollectionDatabaseTest#tenSweepersCollectOnce`, ten sweepers and
+  a sweep against a customer repayment), scenario 6 (`BnplRepaymentDatabaseTest#twoRepaymentsSerialiseAndConserve`)
+  and scenario 12 (`BnplRepaymentReversalDatabaseTest#aReversalReopensWhatItPaid`) green; Σ allocation =
+  amount for every repayment (the deferred trigger, proven alone by a raw-SQL writer); `ALLOCATION_ENGINE_V1`
+  oldest due first, `FEES → INTEREST → PRINCIPAL`, the excess held as credit; no due account negative at
+  rest; one collection per (instalment, date) (`UNIQUE (instalment_id, attempt_date)`), a short wallet
+  recording `INSUFFICIENT_FUNDS` with any partial amount collected and retried daily while due, a
+  non-postable wallet `WALLET_NOT_POSTABLE`; pay-in-4 instalment 1 short at purchase refused `422
+  bnpl.InsufficientFunds` with nothing committed; a reversal negating allocations by rows, re-opening the
+  instalments and recomputing DPD. **Owners**: `-013`, `-015`, `-018`, `-019`, `-024`.
+- **Refunds.** Latest instalments first, the excess to the wallet, the fee pro-rated back by the
+  cumulative method (owner decision B3): `#refundCancelsLatestFirst` green and the earliest-first probe
+  caught; the plan's worked check (G = 100.00, f = 4.00, four instalments of 25.00, a full refund after
+  instalment 1) reproduced to the minor unit — every BNPL account zero, fee income zero, the payable back
+  by 96.00, 25.00 to the wallet; a partial refund reducing the latest instalments with schedule and
+  agreement version n+1, the obligation staying `ACTIVE`; a late fee on a cancelled instalment released
+  in the refund's entry (`BnplLateFeeDatabaseTest`); pay-in-N accrued to date before the split, accrued
+  interest kept owed except at a full cancellation, paid interest never refunded; a refund on an
+  obligation `CLOSED` by repayment admitted, posting only the merchant's debit and the customer's
+  credit; scenario 7 (`#aRefundRacingACollectionConservesInBothOrders`, both orders occurring), scenario
+  8 (`#theSameRefundTwiceRefundsOnce`), scenario 9 (`#refundBeforeDuringAfter`, `#excessGoesToTheCustomer`,
+  `#aFullRefundClosesWithNothingStranded`) and scenario 16 green; the first merchant-key refund door,
+  scoped, bounded by `G − refunded` (`422 bnpl.RefundExceedsPurchase`, `409 bnpl.PurchaseFullyRefunded`,
+  nothing written), with an operator door beside it (`INV-BNPL-06`, `INV-BNPL-07`, `INV-BNPL-09`).
+  **Owners**: `-009`, `-021`, `P12-TST-002`.
+- **Disputes.** The dispute machine (`OPEN → MERCHANT_RESPONDED → RESOLVED_REFUND | RESOLVED_UPHELD`,
+  `WITHDRAWN`) under its triggers; one open dispute per purchase (partial `UNIQUE (purchase_id)`, `409
+  bnpl.DisputeOpen`); while open, no late fee, no DPD and no auto-collection on the held amount; the
+  merchant's silence past 14 days resolved `RESOLVED_REFUND` once by `BnplDisputeSchedule`, ten sweepers
+  writing one outcome; `RESOLVED_REFUND` executing a `BnplRefund` under the same purchase lock and bound,
+  `RESOLVED_UPHELD` lifting the hold and re-billing nothing; operator resolution four-eyes above the
+  threshold; scenario 10 green (`INV-BNPL-08`). **Owners**: `-023`. A criterion resting on the first cut
+  candidate (`-023`'s operator resolution) is met by the task or by its deferral recorded with an owner.
+- **Payoff.** A quote is immutable with its inputs; execution names the quote, requires a `MULTI_FACTOR`
+  session and is born once (`UNIQUE (quote_id)`, `UNIQUE (obligation_id)`); the quote recomputed under B4
+  after the accrual to date, a different amount `409 bnpl.PayoffQuoteStale` with nothing posted; no
+  payoff fee; after a payoff all six per-obligation balances zero, any credit balance refunded, the
+  obligation `CLOSED (PAID_OFF_EARLY)`; every application of the payoff value-dated at or after the floor
+  from its first line (the residual RG-M1 not repeated); scenario 11
+  (`BnplPayoffDatabaseTest#payoffBesideARefundIsStaleOrClosedNeverWrong`, both orders occurring) green.
+  **Owners**: `-022`. A criterion resting on the second cut candidate (`-022`'s pay-in-N payoff) is met
+  by the task or by its deferral recorded with an owner; pay-in-4 payoff is never cut.
+- **Delinquency.** DPD equals the date difference between the oldest unpaid instalment's due date and
+  the business date (database clock, the pinned `UTC` zone) for 100% of obligations in every storm round
+  and over a generated history, held instalments excluded; buckets follow the terms; DPD 89 is not
+  defaulted and DPD 90 is (`BnplDefaulted` once), cure clears it (`BnplDefaultCleared` once); each change
+  recorded once (`UNIQUE (obligation_id, business_date, kind)`), a re-run day writing nothing, a missed
+  day caught up, a `CLOSED` obligation skipped — scenario 13,
+  `BnplConditionDatabaseTest#noConditionAfterClosure`; the condition table refuses `UPDATE` and `DELETE`
+  for every role; default posts nothing and accelerates nothing; no collections case is opened, the
+  condition events emitted for Phase 13. **Owners**: `-020`, `-023`, `P12-TST-001`.
+- **Ledger.** `OwnerKind.BNPL_OBLIGATION` and the ten new purposes in the `AccountPurpose` `CHECK`
+  guard, all closed to free adjustments; only bnpl's operations post to the BNPL purposes
+  (`BnplBooksHaveOnePosterTest`, a planted poster refused), bnpl added as a poster of `MERCHANT_PAYABLE`
+  and of nothing else outside its purposes; `BNPL_WRITE_OFF_EXPENSE` carries zero journal lines; every
+  posting rule F1–F10 of `PHASE_12_PLAN.md` §12.11 exercised (F11 deferred to Phase 14), each entry
+  balanced per currency under its named key with `posting_date = value_date =` the database business
+  date; `BnplReplayProof` `IDENTICAL`, `BnplSubledgerProof` zero for every obligation, the three-way
+  proof zero and the trial balance zero per currency over every BNPL posting, at rest in every storm
+  round. The financial supplement as it applies: **F1** the trial balance above; **F2** the replay and
+  subledger proofs; **F3** the Idempotency criterion; **F4** refund, dispute refund, repayment reversal and
+  fee waiver implemented and tested as postings, no `AdjustmentService` on a BNPL account, write-off
+  deferred to Phase 14; **F5** bnpl consumes no event for correctness — a duplicated
+  `CreditDecisionRecorded` or checkout event writes no second offer or purchase, provider callbacks
+  remain payments' and the inbox's; **F6** the Multi-instance criterion; **F7**
+  `NoFloatingPointMoneyRulesTest` over `bnpl` and `creditmath`, a planted `double` refused; **F8** BNPL adds
+  no external evidence — the merchant payout reconciled by payments' and Phase 8's machinery, capital
+  by bank recognition, internal flows by the three-way and subledger proofs, and the safeguarding
+  adjustment `lending_funded` widened by BNPL principal outstanding, recorded with Phase 14/15 as owner
+  (`INV-BNPL-01`, `INV-BNPL-04`). **Owners**: `-003`, `-005`, `-013`, `-025`, `P12-TST-001`.
+- **Capital and exposure.** Capital headroom ≥ 0 at every commit that deploys capital, with BNPL
+  principal outstanding subtracted beside lending's terms — BNPL purchases, loan acceptances and draws
+  racing for the last capital leaving one admitted and `422 bnpl.CapitalUnavailable`; a planted BNPL
+  principal line lowering headroom; lending's acceptance, draw and reversal races re-run unchanged;
+  `LendingCapitalProof` with the BNPL term green at rest in every storm round; a principal-re-instating
+  reversal judged under L6; consumption one-to-one under L0 — ten consumers of one decision consume once
+  for `BNPL_AGREEMENT`, and scenario 3 (`BnplPurchaseDatabaseTest#acceptanceAndADecisionSerialiseOnTheProfile`)
+  green; `PlatformCreditExposure` version 3 one statement over journal lines and the two definer views,
+  decisions made under versions 1 and 2 replaying identically; the `ExposureCensus` zero violations in
+  every storm round; merchant fee income never in headroom (`INV-BNPL-10`, `INV-LND-13`). **Owners**:
+  `-001`, `-005`, `-012`, `-013`, `-024`, `P12-TST-001`.
+- **Multi-instance execution.** Every one of the twenty-one contention rows of `PHASE_12_PLAN.md` §7.4
+  raised ten ways (two instances where the row is a pair) and counted, each arbiter surviving a
+  lock-bypass probe, the fault rows (scenario 5, the hints twice, late or never, the partial failures) by
+  their scenario tests; the Phase 12 lock order (L0, B1, B2, B3, B5, B4, B6, L6, (P), L8) written in
+  `DISTRIBUTED_EXECUTION.md` §3 by its first multi-lock writer, and no `40P01` in any storm run;
+  lock-wait tests asserting the waiting statement for L0, B3, B5, B4, L6 and (P) — (P) in both
+  `UUID.compareTo` orders of the wallet and payable ids, against a wallet-paid capture and refund by the
+  same customer at the same merchant; the T-acc design proven: the accrual commits alone and takes no
+  (P), no bnpl transaction holds a currency-wide income row while waiting on a wallet or a payable, and
+  a servicing step, repayment, refund or payoff finding an unaccrued date writes nothing until T-acc has
+  run; the storm measuring lock waits on the currency's `LENDING_CAPITAL` row and its
+  `BNPL_MERCHANT_FEE_INCOME` row; advisory namespace `12` registered by its first writer; the three
+  leaderless schedules (`BnplOriginationSchedule`, `BnplServicingSchedule`, `BnplDisputeSchedule`)
+  registered in `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` (twenty-six →
+  twenty-nine) with their `…sweeper.enabled` gauges; no bnpl transaction open across a provider call;
+  every storm census taken at every round, not only at the final rest; every task's ten-instance answer
+  `PASS` on its named tests, never by construction. **Owners**: `-001`, `-004`, `-005`, `-007`,
+  `-010`…`-024`, `P12-TST-001`.
+- **Idempotency.** Every keyed door of `PHASE_12_PLAN.md` §9 — application, withdrawal, acceptance,
+  decline, repayment, payoff quote and payoff, dispute, merchant refund, merchant dispute response,
+  operator dispute resolution, waiver, reversal and terms — under ten requests with one key makes one
+  effect and replays one response, `409` while in progress; every system step (offer, expiry, billing,
+  accrual, collection, condition, late fee, dispute deadline) converges on a retry, duplicate or second
+  instance by its born-once unique, its conditional edge and its ledger key, nothing doubled; a merchant
+  refund under a lapsed claim stopped by `UNIQUE (merchant_id, refund_key)`; a merchant payout retry
+  replaying `merchant.payout:<merchantId>`. **Owners**: each task that builds a door or a step.
+- **Failure recovery.** A crash after each step — acceptance, billing, accrual, a repayment, a
+  collection, a refund, a payoff, a dispute resolution — is re-driven by another instance with nothing
+  doubled; scenario 14 (`BnplOutboxAtomicityDatabaseTest`, `#aFailureAtEveryStepLeavesNothing`) green — a
+  rollback leaves neither entry nor event, a commit with the relay killed publishes once after restart;
+  scenario 5 — **a payment provider succeeds but the response is lost, followed by a retry** —
+  `BnplMerchantPayoutDatabaseTest#aLostPayoutResponseIsHeldAndTheRetryReplays` green: the simulated payout
+  provider executes and the answer is lost, the payout `UNKNOWN` with its hold standing, the merchant's
+  retry under the same key replaying with no second dispatch, the inquiry concluding `COMPLETED` and
+  posting once, one payout counted at the provider, the payable bounded throughout and the agreement
+  unchanged — and its wallet card top-up variant in the storm; scenario 15 green; the storm's crash
+  points, two killed backends included; each of the twenty failure scenarios of `PHASE_12_PLAN.md` §14 a
+  test or a documented, accepted rationale. **Owners**: `-011`, `-013`, `-016`, `-018`, `-021`, `-022`,
+  `P12-TST-001`.
+- **Security.** The five permissions (`BNPL_ADMINISTER`, `BNPL_INVESTIGATE`, `BNPL_SERVICE`,
+  `BNPL_SERVICE_APPROVE`, `BNPL_DISPUTE_RESOLVE`) and two roles carry `RoleNameTest`'s exact grants; every
+  route is in `RoutePermissionRegisterTest` with its negatives, another party's or merchant's id
+  answering `404 bnpl.NotFound`; a `MULTI_FACTOR` session required for the application, the acceptance
+  and the payoff, a lesser one refused with nothing written, repayment and quote under the conditional
+  step-up; standing checked in-transaction at application and acceptance; merchant doors on the
+  merchant's key with the BNPL refund scope, each merchant endpoint negatively tested for tenant
+  isolation (merchant A addressing merchant B's purchase: one refusal, zero rows, `INV-MER-01`); no
+  credit data to merchants — negative tests asserting that the merchant's purchase read, the eligibility
+  answer and every event a merchant consumer reads carry no reason, score, approved amount, schedule,
+  repayment or delinquency, only `ELIGIBLE`, `NOT_ELIGIBLE` or `PENDING`; no route lets an operator
+  create a purchase, finance a merchant, cancel an instalment outside a refund or dispute resolution, or
+  edit a figure; every four-eyes act (terms, waiver, reversal, dispute resolution above the threshold)
+  self-approval-refused at the domain and the `CHECK`, each alone, and every self-approval refusal
+  audited `FAILED` at each four-eyes door (`403 bnpl.SelfApprovalRefused` — the Phase 11 gate's R4
+  applied from the first door); an employee refused `bnpl.SelfDealingRefused` (audited `FAILED`) on their
+  own party's agreement; every new column classified under `ColumnClassificationTest` (amounts
+  `RESTRICTED-FINANCIAL`, references and acceptance session `CONFIDENTIAL`, person-written reasons
+  `RESTRICTED-PII`); the needle walk extended to bnpl's doors, no amount, party, merchant, agreement or
+  DPD in a log line, metric tag, span attribute or exception message. **Owners**: `-001`, `-002`,
+  `-004`, `-006`, `-010`…`-024`, `-026`; the full walk `P12-TST-001`.
+- **Audit.** Every audit act of `PHASE_12_PLAN.md` §11 — the offer acceptance (the purchase), the
+  merchant financing, the refund (merchant actor and reason), the dispute's opening, response and
+  resolution, waivers, reversals, terms versions, and every agreement, explanation, replay and report
+  read — catalogued in `AUDITABLE_ACTIONS.md` with actor, time, operation, target, reason where
+  applicable, correlation and outcome, and recorded in its act's transaction, losers recording nothing;
+  credit's `credit.DecisionConsumed` recorded with the `BNPL_AGREEMENT` kind. **Owners**: `-001`,
+  `-004`, `-010`…`-026`.
+- **Observability.** `PHASE_12_PLAN.md` §15's series registered eagerly at startup with their closed
+  tags and published by a freshly started instance (`PlannedMetersExistTest`, armed by the phase's flip
+  to `COMPLETE`), no amount, party, merchant or agreement id in any tag; every alert fires in a test
+  that breaks its condition, and only then — `allocation.anomaly`, `threeway.proof`, `subledger.proof`,
+  `replay`, `capital.headroom.low`, `terms.active`, the three `…sweeper.enabled` gauges,
+  `finapp.ledger.negative.positions` for a BNPL refund after payout and `finapp.credit.exposure.census`;
+  the rules in `infra/prometheus/rules/bnpl.yml` resolve against a live scrape; merchant financing,
+  outstanding and refund amounts are audited reports, never series; spans per step (`BnplFlowScope`) with
+  no attributes. **Owners**: `-026`, and each task for the series it ships.
+- **Testing.** The eighteen mandatory scenarios of `PHASE_12_PLAN.md` §13.2 are each a named test,
+  green, and each exercised in the storm; the BNPL storm (`P12-TST-001`: two instances, clocks ±5 s,
+  ≥ 3 business-date boundaries, shared parties holding loans, lines and BNPL, shared merchants, crash
+  points) green in three consecutive fresh runs with its probes caught, every census and proof taken at
+  every round; the battery (`P12-TST-002`) of ≥ 10,000 generated purchases across both products and every
+  plan, amounts not divisible by four, purchase dates across leap years and month ends, every figure
+  replayed `IDENTICAL` in two JVMs, a perturbed allocation, refund adjustment or agreement byte flipping
+  the verdict; each of §13.4's probes recorded in `MUTATION_TESTING.md` §2 and caught, each born-once
+  arbiter probed alone with the lock or conditional above it bypassed, and the payout re-dispatch probe
+  caught by a count of dispatches at the provider (the Phase 11 review's finding 16 applied forward);
+  `P12-TST-*` given their §4 rows; the three settlement suites red since `P9-TSK-026` fixed by their
+  `X-TSK` before `P12-TST-001` runs. **Owners**: every task; `P12-TST-001`, `P12-TST-002`.
+- **Documentation and invariants.** Every `Phase: 12` invariant in `FINANCIAL_INVARIANTS.md` —
+  `INV-BNPL-01`…`10`, **read from the catalogue, not from the phase plan** — and `INV-MER-07`'s amendment
+  (in force from `-021`) has a `MUTATION_TESTING.md` §2 demonstration; ADR-0101…0106 are read against the
+  code and `Accepted` (or amended) at `P12-DOC-001`; `BNPL_LIFECYCLES.md`, the glossary, `DOMAIN_MODEL.md`,
+  `MODULE_ARCHITECTURE.md` (`bnpl` and `creditmath`, no module depending on `bnpl`), `BOUNDED_CONTEXTS.md`,
+  `DISTRIBUTED_EXECUTION.md` §3 (the Phase 12 lock order, the three schedule rows, namespace `12`),
+  `DATA_CLASSIFICATION.md`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `OPERATIONS_RUNBOOK.md` (the BNPL
+  activation preconditions) and `CURRENT_STATE.md` are current; the debt rows are written with their
+  owners — BNPL cannot originate in production (attached to "Lending cannot originate in production
+  (#13, #14)"), write-off, provisioning and the merchant discount's effective-interest treatment (Phase
+  14), collections (Phase 13), the evidence purge (Phase 15), the hot capital and fee-income rows as the
+  storm measures them (Phase 16), and `-023`'s operator resolution or `-022`'s pay-in-N payoff with its
+  owner if cut. **Owners**: `P12-DOC-001`, with each task writing its own documents as it lands.
+- **Universal criterion 7.** The owner decided (B4, 2026-10-16) to keep skipping the fleet-wide
+  `databaseTest` and `kafkaTest` tiers through Phase 12: each task runs its touched modules and its own and
+  adjacent database suites, recording the skip as a criterion-7 deviation; the fleet hermetic and
+  architecture tiers run once per merged wave; the exit runs them, the storm and the battery. A standing,
+  recorded deviation, not a pass — asked again at the Phase 12 → 13 transition.
+- **The production reality.** Production originates no BNPL purchase until unresolved #13 and #14 are
+  answered: it composes only fail-safe credit sources, no production decision can be `APPROVED`, and no
+  BNPL terms version is `ACTIVE` in production (`422 bnpl.ProductNotOffered`). Every functional criterion
+  above is proven by the test tiers, the storm and the battery against the simulators; the runbook's
+  activation preconditions add legal review of the merchant agreement and the consumer terms and an
+  approved merchant-fee schedule to the lending ones; the gate review records the constraint as an
+  accepted limitation, not a deviation from any criterion (`PHASE_12_PLAN.md` §1.1).
+
+*Extended by the Phase 11 → 12 transition (2026-10-16): the five criteria above predate ADR-0101…0106
+and said nothing measurable about origination at checkout, the agreement, the merchant payable and its
+payouts, the two products' schedules, interest and fees, wallet collection, disputes, payoff,
+delinquency, capital and exposure under concurrency, security, audit, observability or the ten-instance
+question — the things Phase 12's review will be judged on. Each of the five is kept as written and made
+measurable above; the fourth's compensating path is not taken, because financing and obligation are one
+transaction. The per-area criteria are the additions, written from `PHASE_12_PLAN.md` (whose §18
+summarises them) with the owner's decisions B1–B8 applied, and the invariants `INV-BNPL-01`…`10` and
+`INV-MER-07`'s amendment. The Phase 11 review's lessons are written in rather than repeated: every
+named lock-wait counted (M3), every census at every round (I2), dispatches counted where a mutant would
+otherwise be equivalent (finding 16), born-once arbiters probed alone. Every count is taken from a fresh
+run, and each criterion names the tasks that build its proof (**Owners**). A criterion that rests on a
+cut candidate (`-023`'s operator resolution, then `-022`'s pay-in-N payoff) is met by the task or by its
+deferral recorded with an owner. Nothing of Phase 12 is built at the transition.*
 
 ### Phase 13 — Risk, Fraud and AML
 - Fail-safe behaviour on risk-service unavailability is explicit per operation and value

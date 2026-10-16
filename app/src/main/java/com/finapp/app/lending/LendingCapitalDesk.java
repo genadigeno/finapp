@@ -193,7 +193,10 @@ public final class LendingCapitalDesk {
 
     // ------------------------------------------------------------------ plumbing
 
-    /** One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing. */
+    /**
+     * One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing, a
+     * self-approval is recorded {@code FAILED} in a transaction of its own.
+     */
     private CapitalContributionReceipt keyed(
             Actor actor,
             String idempotencyKey,
@@ -201,13 +204,13 @@ public final class LendingCapitalDesk {
             Function<Connection, CapitalContributionReceipt> act) {
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
-        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transactions.inTransaction(
-                unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
+        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
+                () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
                     CapitalContributionReceipt receipt = act.apply(uow);
                     String stored = receipt.id() + "|" + receipt.status() + "|"
                             + (receipt.expectationRef() == null ? "" : receipt.expectationRef());
                     return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
-                })));
+                }))));
         String[] stored = new String(
                         outcome.body().orElseThrow(() -> new IllegalStateException("a capital act stores its receipt")),
                         StandardCharsets.UTF_8)
@@ -218,6 +221,23 @@ public final class LendingCapitalDesk {
     private static CapitalContributionReceipt receipt(LendingCapitalAdministration.Decided decided) {
         return new CapitalContributionReceipt(
                 decided.id().value().toString(), decided.status().name(), decided.expectationRef().orElse(null));
+    }
+
+    /**
+     * {@code work}, a refused self-approval recorded {@code FAILED} in a transaction of its own after the act rolled back
+     * (the Phase 11 gate's R4), then refused as before.
+     */
+    private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {
+        try {
+            return work.get();
+        } catch (LendingCapitalAdministration.SelfApprovalRefused self) {
+            CorrelationId correlation = correlation();
+            transactions.inTransaction(uow -> {
+                administration.recordRefusal(uow, self, actor, correlation);
+                return null;
+            });
+            throw self;
+        }
     }
 
     /** The domain's refusals, in the API's words. */

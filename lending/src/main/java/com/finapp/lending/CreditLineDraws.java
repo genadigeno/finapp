@@ -192,8 +192,11 @@ public final class CreditLineDraws {
         LoanTerms pinned = terms.version(unitOfWork, agreement.termsVersionId())
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
-        LocalDate valueDate = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
-        if (suspension.suspended(unitOfWork, id, pinned, valueDate)) {
+        LocalDate today = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
+        // The value date: today, or - on a clock stepped back behind the line's record - the first date it leaves open (the
+        // Phase 11 gate's R1): never a date already accrued or stated, whose base read the principal without this draw.
+        LocalDate valueDate = loans.principalValueDate(unitOfWork, id, today);
+        if (suspension.suspended(unitOfWork, id, pinned, today)) {
             throw new DrawsSuspended();
         }
         if (!standing.inGoodStanding(unitOfWork, party)) {

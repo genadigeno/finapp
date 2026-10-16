@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -305,6 +306,23 @@ public final class JdbcLoanStore implements LoanStore {
             throw failed("locking a loan", failure);
         }
         return lockedRead(unitOfWork, id);
+    }
+
+    @Override
+    public LocalDate principalValueDate(Connection unitOfWork, LoanId loan, LocalDate today) {
+        Objects.requireNonNull(loan, "loan");
+        Objects.requireNonNull(today, "today");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT GREATEST(?::date, lending.principal_value_floor(?))")) {
+            select.setObject(1, today);
+            select.setObject(2, loan.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getObject(1, LocalDate.class);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a loan's principal value date", failure);
+        }
     }
 
     /**

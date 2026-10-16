@@ -1005,6 +1005,11 @@ class OwnershipIsScopedTest {
                                         + " path of an operator door behind LOAN_SERVICE / LOAN_SERVICE_APPROVE, which names any"
                                         + " loan by design; the operator's own party's loan is refused (SelfDealingRefused).")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.principalValueDate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "Phase 11 gate R1. The first date the record leaves open to a principal fact of an account this transaction holds FOR UPDATE (L3) - locked by lock (the sweeps' claimed page, the operator doors behind LOAN_SERVICE, self-dealing refused) or by lockOwnedBy under party_id = ? (the customer's repayment, prepayment, draw, payoff); read after the lock, the id never reaches it from a request unscoped.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanStore.lockedRead",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1150,6 +1155,11 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.ADMINISTERED,
                                     "P11-TSK-022. Every billed item (billings, statements) of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the application, the collection), or locked by lockOwnedBy under party_id = ? for the customer's own repayment (P11-TSK-018's due state) or draw (P11-TSK-024's suspension), or found by the owner's or the audited operator's read through Loans.read (ownedBy under party_id = ?, P11-TSK-024's condition); the id never reaches it from a request unscoped.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcInstalmentBillingStore.latestCatchUpSequence",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "Phase 11 gate R2. The latest catch-up application's number of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the step's catch-up application), or locked by lockOwnedBy under party_id = ? for the customer's own payoff - read after the lock so the next number is this plus one; the id never reaches it from a request unscoped.")),
                     Map.entry(
                             "com.finapp.lending.JdbcCreditLineStatementStore.latestStatementDate",
                             new Entry(

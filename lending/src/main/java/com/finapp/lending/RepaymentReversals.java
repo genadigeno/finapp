@@ -213,7 +213,7 @@ public final class RepaymentReversals {
             throw new ProposalNotPending(proposal.status());
         }
         if (proposal.proposedBy().equals(actor.id())) {
-            throw new SelfApprovalRefused();
+            throw new SelfApprovalRefused(loan, reversal);
         }
         Loan account = locked.loan();
         if (account.status() != LoanStatus.ACTIVE) {
@@ -231,6 +231,9 @@ public final class RepaymentReversals {
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
         LocalDate today = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
+        // The value date: today, or - on a clock stepped back behind the record - the first date it leaves open (the Phase
+        // 11 gate's R1): principal re-instated never joins a date already accrued, whose base read the principal without it.
+        LocalDate valueDate = loans.principalValueDate(unitOfWork, loan, today);
 
         // (L6) The capital row, when principal is re-instated: headroom judged under it (INV-LND-13).
         Money reinstated = reversed.paid(AllocationComponent.PRINCIPAL)
@@ -245,7 +248,7 @@ public final class RepaymentReversals {
         }
 
         // Rule 10: the exact swap of rule 5's entry, bounded by it (INV-REV-01, INV-REV-02).
-        JournalEntryId entry = reverse(unitOfWork, reversal, reversed, swapped, loan, today);
+        JournalEntryId entry = reverse(unitOfWork, reversal, reversed, swapped, loan, valueDate);
         if (!reversals.decide(unitOfWork, new RepaymentReversalStore.Decision(reversal, RepaymentReversalStatus.APPROVED,
                 actor, reasoned, Optional.of(entry)))) {
             throw new IllegalStateException("a PROPOSED reversal locked under its loan did not move: the lock protocol was"
@@ -254,7 +257,7 @@ public final class RepaymentReversals {
         reversals.insertNegations(unitOfWork, reversal, reversed.allocations(), ids::next);
         RepaymentReversal approved = reversals.find(unitOfWork, reversal)
                 .orElseThrow(() -> new IllegalStateException("a reversal decided in this transaction is readable in it"));
-        publish(unitOfWork, account, approved, reversed, entry, today, correlation);
+        publish(unitOfWork, account, approved, reversed, entry, valueDate, correlation);
         audit(unitOfWork, actor, LendingAuditAction.REPAYMENT_REVERSAL_APPROVED, reversal, Optional.of(reasoned),
                 AuditOutcome.SUCCEEDED, "loan=" + loan.value() + ", repayment=" + repayment + ", entry=" + entry.value()
                         + ", reverses=" + reversed.journalEntry().value(), correlation);
@@ -314,6 +317,17 @@ public final class RepaymentReversals {
                 LendingAuditAction.SELF_DEALING_REFUSED, "loan", refused.loan().value().toString(), Optional.empty(),
                 AuditOutcome.FAILED, correlation, Optional.of("loan=" + refused.loan().value() + ", act=repayment-reversal:"
                         + refused.act() + " refused - the loan is the acting operator's own party's")));
+    }
+
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LendingAuditAction#SELF_APPROVAL_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept (the Phase 11
+     * gate's R4).
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        SelfApprovalRefusals.record(audit, ids, clock, unitOfWork, actor, TARGET_TYPE, refused.target(), refused.summary(),
+                correlation);
     }
 
     // ------------------------------------------------------------------ the judgements
@@ -383,11 +397,11 @@ public final class RepaymentReversals {
     }
 
     private JournalEntryId reverse(Connection unitOfWork, UUID reversal, Repayment reversed, List<JournalLine> lines,
-            LoanId loan, LocalDate today) {
+            LoanId loan, LocalDate valueDate) {
         PostingResult result;
         try {
             result = reversalService.reverse(unitOfWork, new ReversalCommand(REVERSAL_KEY_PREFIX + reversal,
-                    reversed.journalEntry(), today, today, loan.value().toString(), lines));
+                    reversed.journalEntry(), valueDate, valueDate, loan.value().toString(), lines));
         } catch (LedgerAccountNotPostableException notPostable) {
             // The wallet stopped accepting postings between its lock and the append - the ledger's trigger, beneath.
             throw new WalletUnavailable();
@@ -405,7 +419,7 @@ public final class RepaymentReversals {
      * component and the credit it took back, the value date and the agreement version; never the wallet or a reason.
      */
     private void publish(Connection unitOfWork, Loan loan, RepaymentReversal reversal, Repayment reversed,
-            JournalEntryId entry, LocalDate today, CorrelationId correlation) {
+            JournalEntryId entry, LocalDate valueDate, CorrelationId correlation) {
         Money amount = reversed.amount();
         EventPayload payload = EventPayload.of()
                 .with("loanId", loan.id().value().toString())
@@ -414,7 +428,7 @@ public final class RepaymentReversals {
                 .with("repaymentKind", reversed.kind().name())
                 .with("journalEntryId", entry.value().toString())
                 .with("reversedJournalEntryId", reversed.journalEntry().value().toString())
-                .with("valueDate", today.toString())
+                .with("valueDate", valueDate.toString())
                 .with("amountMinor", Long.toString(amount.minorUnits()))
                 .with("feesReopenedMinor", Long.toString(reversed.paid(AllocationComponent.FEES).minorUnits()))
                 .with("interestReopenedMinor", Long.toString(reversed.paid(AllocationComponent.INTEREST).minorUnits()))
@@ -514,8 +528,23 @@ public final class RepaymentReversals {
     public static final class SelfApprovalRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        SelfApprovalRefused() {
+        private final String target;
+        private final String summary;
+
+        SelfApprovalRefused(LoanId loan, UUID reversal) {
             super("a reversal is approved by someone other than its proposer; the proposer may reject it");
+            this.target = reversal.toString();
+            this.summary = "loan=" + loan.value() + ", reversal=" + reversal + ", act=repayment-reversal:approve";
+        }
+
+        /** The proposal the approver proposed - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the proposal and the act - never an amount. */
+        public String summary() {
+            return summary;
         }
     }
 

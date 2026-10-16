@@ -9,11 +9,15 @@ import static com.finapp.app.lending.LoanApplicationClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.lending.LoanApplicationStore;
+import com.finapp.lending.LoanCreditDecisions;
+import com.finapp.lending.LoanOfferStore;
 import com.finapp.lending.LoanOrigination;
 import com.finapp.lending.LoanProduct;
 import com.finapp.lending.LoanTermsAdministration;
 import com.finapp.lending.LoanTermsStore;
 import com.finapp.platform.inbox.ReceivedEvent;
+import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.sharedkernel.correlation.CausationId;
@@ -22,7 +26,11 @@ import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpResponse;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -63,6 +71,11 @@ class LoanOfferDatabaseTest {
     @Autowired private LoanOfferMetrics offerMetrics;
     @Autowired private MeterRegistry meterRegistry;
     @Autowired private IdGenerator ids;
+    @Autowired private LoanApplicationStore applicationStore;
+    @Autowired private LoanOfferStore offerStore;
+    @Autowired private LoanCreditDecisions creditDecisions;
+    @Autowired private OutboxWriter<Connection> outbox;
+    @Autowired private Clock clock;
 
     private LoanApplicationClient client;
     private CreditFixtures customers;
@@ -271,6 +284,46 @@ class LoanOfferDatabaseTest {
                 CorrelationId.generate(ids), CausationId.generate(ids), "application/json",
                 // A forged figure the handler must never read.
                 "{\"approvedMinor\":\"999999999\",\"outcome\":\"APPROVED\"}".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("an origination step that fails is counted finapp.lending.origination{kind=application, outcome=failed}"
+            + " and the application keeps waiting - its permit lapses for a later tick - and the oldest application"
+            + " awaiting a decision is a gauge the stalled-sweep alert reads (the Phase 11 gate A5-03)")
+    void aFailingOriginationStepIsCountedAndTheApplicationWaits() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        HttpResponse<String> submitted = client.submit(customer.token(), loan("4000.00", 12, 10), key());
+        assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(202);
+        String application = field(submitted.body(), "applicationId");
+        // The production step over a store whose claimed read fails - a step failing on every tick.
+        LoanApplicationStore failing = (LoanApplicationStore) Proxy.newProxyInstance(
+                LoanApplicationStore.class.getClassLoader(), new Class<?>[] {LoanApplicationStore.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("lockClaimed")) {
+                        throw new IllegalStateException("a step failing on every tick");
+                    }
+                    try {
+                        return method.invoke(applicationStore, arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+        LoanOriginationSchedule failingSweep = new LoanOriginationSchedule(new LoanOrigination(failing, offerStore,
+                termsAdministration, creditDecisions, outbox, ids, clock), lendingTransactions, offerMetrics,
+                Duration.ofSeconds(5), 50, Duration.ofHours(1));
+        double failedBefore = failures("application");
+        assertThat(failingSweep.sweepOnce()).as("the application claimed").isPositive();
+        assertThat(failures("application")).as("each failed step counted").isGreaterThan(failedBefore);
+        assertThat(failures("offer")).as("the other kind registered, eagerly").isNotNegative();
+        assertThat(field(client.read(customer.token(), application).body(), "status"))
+                .as("nothing written - the application keeps waiting").isEqualTo("AWAITING_DECISION");
+        assertThat(meterRegistry.get(LoanAwaitingDecisionMetrics.AWAITING_AGE).gauge().value())
+                .as("the oldest application awaiting a decision, read from the database").isPositive();
+    }
+
+    private double failures(String kind) {
+        return meterRegistry.get(LoanOfferMetrics.ORIGINATION).tag("kind", kind).tag("outcome", "failed").counter()
+                .count();
     }
 
     private double offered(LoanProduct product) {

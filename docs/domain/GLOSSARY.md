@@ -198,6 +198,14 @@ or by an operator holding `MERCHANT_PAYOUT` — and bounded by the payable (ADR-
 entry that credits the payable gross and takes the fee from it (ADR-0050 §3). *(Corrected at the
 Phase 6 review, `P6-DOC-001`: this said "on a payout cycle".)*
 
+**A BNPL purchase has the second flow without the first** *(added by the Phase 11 → 12 transition,
+2026-10-16 — `PHASE_12_PLAN.md` §1, ADR-0101, planned)*: no customer payment happens at purchase. The
+platform credits the merchant's payable the gross less the Merchant Discount out of its own lending
+capital — the Merchant Financing — and the merchant is paid out by the same on-demand payout; the
+customer instead owes the platform a receivable, repaid in instalments from the wallet — the Customer
+Repayment Obligation. Still two flows of one economic event, never collapsed: the merchant's amount,
+timing and account are the financing's, the customer's the obligation's (§7b).
+
 ---
 
 ## 3. Party and identity
@@ -662,6 +670,10 @@ Those corrections were planned then; Phase 11 built them, read against the code 
 review, `P11-DOC-001`, 2026-10-15 (this read "Those corrections are planned, not built" until then).
 The twenty-three new lending terms are in §7a.)*
 
+*(The Phase 11 → 12 transition, 2026-10-16, sharpened BNPL Agreement to `PHASE_12_PLAN.md` and
+narrowed Instalment to the loan's — the register's Loan Instalment — each with a dated note; both
+planned, not built. The fourteen new BNPL terms are in §7b.)*
+
 ### Credit Profile
 **Is:** a Party's credit identity in this platform — one row per party, born once, holding no
 figures of its own — and the row every deciding transaction for that party locks first, so two
@@ -761,15 +773,20 @@ being serviced — schedule, accruals, repayments, state" until the Phase 10 →
 **Owned by:** `lending`
 
 ### Instalment
-**Is:** one scheduled repayment within a loan or BNPL schedule — an amount and a due date. In
-Phase 11 a row of one Repayment Schedule version, projected by the pinned schedule engine; what
-became due at its date is its Instalment Billing, not the projection.
-**Not:** a Repayment, which is money actually received, and not a Repayment Allocation, which is
-how received money settled it. An instalment can be upcoming, due, past due or paid; a repayment is
-an event. Nor the Minimum Payment of a Credit Line, which has no schedule. Both spellings appear in
-the wild; this platform uses **Instalment** throughout (`P0-DOC-011` corrected the one American
-spelling in the canonical list). *(The Phase 10 → 11 transition, 2026-10-10, added the schedule
-version, the billing and the allocation to this entry.)*
+**Is:** one scheduled repayment within a loan's Repayment Schedule — an amount and a due date; the
+module register's **Loan Instalment** (`MODULE_ARCHITECTURE.md` §5). In Phase 11 a row of one
+Repayment Schedule version, projected by the pinned schedule engine; what became due at its date is
+its Instalment Billing, not the projection.
+**Not:** a BNPL Instalment (§7b), which shares the word and not the lifecycle — a merchant's refund
+can cancel it, and nothing but an amendment or a prepayment changes a loan's; the register named the
+two Loan Instalment and BNPL Instalment, and the Phase 11 → 12 transition, 2026-10-16, confirmed the
+split (the BNPL obligation is not a lending loan, ADR-0101). Nor a Repayment, which is money actually
+received, and not a Repayment Allocation, which is how received money settled it. An instalment can
+be upcoming, due, past due or paid; a repayment is an event. Nor the Minimum Payment of a Credit Line,
+which has no schedule. Both spellings appear in the wild; this platform uses **Instalment**
+throughout (`P0-DOC-011` corrected the one American spelling in the canonical list). *(The Phase 10 →
+11 transition, 2026-10-10, added the schedule version, the billing and the allocation to this entry;
+it read "within a loan or BNPL schedule" until the Phase 11 → 12 transition, 2026-10-16.)*
 **Owned by:** `lending`
 
 ### Exposure
@@ -814,9 +831,20 @@ postings", until the Phase 10 → 11 transition, 2026-10-10.)*
 **Owned by:** `lending`
 
 ### BNPL Agreement
-**Is:** a short-term instalment credit agreement created at the point of checkout.
-**Not:** a Loan. Its origination is embedded in a purchase, the merchant is financed separately,
-and a returned item adjusts the agreement — none of which a loan does.
+**Is:** the immutable, versioned contract binding one customer, one merchant's BNPL Purchase and one
+plan (Pay-in-4, or Pay-in-N over 3, 6 or 12 months) — version 1 born at the BNPL Offer's acceptance,
+the offer's canonical terms copied byte for byte beside the acceptance evidence; version n+1 when a
+refund cancels or shortens an unbilled instalment — one `INSERT`-only row per version, its status
+the Customer Repayment Obligation's. Born in the one transaction that also finances the merchant and
+creates the receivable the customer owes (`INV-BNPL-02`); its id is the consumer reference under
+which credit records the decision's consumption (`ConsumerKind.BNPL_AGREEMENT`). Planned
+(`P12-TSK-013`; ADR-0101, ADR-0102).
+**Not:** a Loan or a Loan Agreement. Its origination is embedded in a purchase, the merchant is
+financed separately in the same commit, and a returned item adjusts the agreement — none of which a
+loan does; nor is it a lending `loan` of a new product (ADR-0101 refused composing lending as its
+back-end). Nor the BNPL Offer, which may expire, and acceptance is not Consent (`INV-IDN-04`).
+*(This entry read "a short-term instalment credit agreement created at the point of checkout" until
+the Phase 11 → 12 transition, 2026-10-16.)*
 **Owned by:** `bnpl`
 
 ### Affordability Assessment
@@ -1213,7 +1241,8 @@ reversal negates allocations by rows, and later allocations are not re-cut.
 
 ### Loan Credit Balance
 **Is:** money received beyond every receivable of one loan and owed back to the borrower — the
-per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing,
+per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing (or,
+held while something is already due, at the next servicing step - a catch-up application, lending `V029`),
 refunded to the wallet at closure, and the destination of a paid fee's refund. The account by
 `P11-TSK-003`; its application at each billing built by `P11-TSK-017` (`credit_balance_application`);
 its refund at closure built by `P11-TSK-018` (`loan_closure`, `lending.closure-refund:<loan>`); a payoff's through the same
@@ -1405,6 +1434,189 @@ itself, posted only by bank recognition (`INV-SET-06`): capital is the source of
 use, and a disbursement does not debit it. Interest and fee income is not capital in Phase 11, and no
 person adjusts it.
 **Owned by:** `lending`
+
+---
+
+## 7b. BNPL
+
+*(Added by the Phase 11 → 12 transition, 2026-10-16 — ADR-0101…0106 (`Proposed`),
+`PHASE_12_PLAN.md` §3 and §12. Fourteen Phase 12 terms, in the order `DOMAIN_MODEL.md` lists them.
+Nothing of Phase 12 is built: every entry is the planned design, and the task that builds a concept
+corrects its entry to the code. The machines they name are in
+[`BNPL_LIFECYCLES.md`](BNPL_LIFECYCLES.md). BNPL Agreement stays in §7, sharpened, and Instalment is
+narrowed there to the loan's. BNPL's servicing facts — billing, interest accrual, repayment and its
+allocation, collection attempt, late fee, Days Past Due, Delinquency, Default, Payoff, Waiver and
+Repayment Reversal — re-apply §7a's definitions to the Customer Repayment Obligation in `bnpl`'s own
+rows (the shape, never lending's rows), and take no entry of their own: the word is lending's, and
+the module register prefixes BNPL's (`MODULE_ARCHITECTURE.md` §4 `bnpl`).)*
+
+### BNPL Terms Version
+**Is:** one immutable version of a BNPL product's terms as data — the plans offered (Pay-in-4's four
+biweekly instalments; Pay-in-N's 3, 6 or 12 monthly), the rate (Pay-in-N fixed, ACT/365F; Pay-in-4
+zero by `CHECK`), the late fee with its day, grace and cap, the delinquency bounds and default
+threshold, the allocation order, the engines, the offer validity cap, the dispute response window and
+the servicing zone — `PROPOSED → ACTIVE → RETIRED` or `PROPOSED → REJECTED`, activated by a second
+person, at most one `ACTIVE` per product, never by a migration. Planned (`P12-TSK-004`, `bnpl V002`);
+production activates none, so BNPL ships closed (`422 bnpl.ProductNotOffered`).
+**Not:** the Loan Product Terms Version — the same shape, another module's table for other products.
+Nor credit's Policy Version, which decides *whether* to finance, and not the merchant's Fee Schedule,
+which prices the Merchant Discount and is `merchant`'s. An agreement keeps the version it was offered
+under for life (`INV-HIST-04`).
+**Owned by:** `bnpl`
+
+### BNPL Application
+**Is:** one customer's choice of a BNPL product and plan inside one open Checkout Session —
+`SUBMITTED → AWAITING_DECISION → OFFERED | DECLINED | CLOSED_UNDECIDED | WITHDRAWN` — opening exactly
+one credit Decision Request for the session's gross in its own transaction and storing only its id;
+at most one open per session, and per party and product. One decision per purchase and no
+pre-approved spending limit (owner decision B5). Planned (`P12-TSK-010`, offered `-011`).
+**Not:** a Loan Application — it exists only inside a checkout, its amount is the purchase's fixed
+price (an approval below it is not offerable), and a session that closes closes it. Nor the Decision
+Request, credit's envelope: bnpl never reads a score, and the merchant learns only `ELIGIBLE`,
+`NOT_ELIGIBLE` or `PENDING` for its session — never a reason (OQ-12).
+**Owned by:** `bnpl`
+
+### BNPL Offer
+**Is:** the financing the platform will grant for one purchase on one approved Credit Decision and
+the pinned BNPL Terms Version — exactly the session's gross, the plan, an illustrative schedule and
+the total payable, as canonical terms with their SHA-256 — expiring at the earliest of the decision's
+validity, the checkout session's expiry and 30 minutes, judged on the database clock:
+`OFFERED → ACCEPTED | DECLINED | EXPIRED`. Its acceptance *is* the purchase authorisation. Planned
+(`P12-TSK-011`, accepted `-013`).
+**Not:** the BNPL Agreement (nothing is contracted before acceptance) and not a Loan Offer: it cannot
+outlive the checkout session, and accepting it finances the merchant and completes the session in
+the same commit. An expired or declined offer releases nothing — the unconsumed decision lapses at
+its own validity.
+**Owned by:** `bnpl`
+
+### Pay-in-4
+**Is:** the BNPL product `BNPL_PAY_IN_4` (owner decision B1): four instalments of the purchase price,
+the first collected from the customer's wallet in the purchase's own transaction and the next three
+every 14 days — `A = floor(P / 4)` for instalments 2–4, the remainder `P − 3A` on instalment 1, so
+principal is conserved exactly (OQ-3) — with no customer interest and no customer fee but a late fee;
+the merchant pays a Merchant Discount. Scheduled by a new pure engine, `BNPL_SCHEDULE_ENGINE_V1`.
+Planned (`P12-TSK-001` names the credit product, `-008` builds the engine).
+**Not:** Pay-in-N — no accrual, no interest income, and a biweekly frequency lending's
+`RepaymentFrequency` does not have. Nor a payment split into four card charges: one financing, one
+obligation, instalments collected from the wallet only (owner decision B6).
+**Owned by:** `bnpl`
+
+### Pay-in-N
+**Is:** the BNPL product `BNPL_PAY_IN_N` (B1): 3, 6 or 12 monthly instalments with customer interest
+at a fixed rate, accrued daily ACT/365F (the Phase 11 conventions), the first one month after the
+purchase with no down payment (OQ-4) — scheduled by lending's `SCHEDULE_ENGINE_V1` and accrued by
+`ACCRUAL_ENGINE_V1`, both reused through `creditmath` with every golden hash unchanged; it may carry a
+Merchant Discount (OQ-17). Planned (`P12-TSK-001`, `-017`).
+**Not:** a Loan of product `PERSONAL_LOAN`: the same engines and conventions, a different contract —
+born at checkout with a merchant leg, reduced by merchant refunds, serviced by `bnpl`'s own rows. Nor
+Pay-in-4.
+**Owned by:** `bnpl`
+
+### BNPL Purchase
+**Is:** BNPL's financed commercial fact (`bnpl.purchase`, the plan's "Purchase") — the checkout
+session and its order, the merchant, the gross and its currency, the pinned BNPL fee schedule version
+and the instant it was financed — born at the offer's acceptance and moved `AUTHORISED → FINANCED` in
+the same transaction as its Merchant Financing, then `FULLY_REFUNDED` once its refunds total the gross
+(partially refunded is derived). At most one per checkout session (`INV-BNPL-03`); its row is the lock
+under which every refund and dispute is bounded (`INV-BNPL-07`). Planned (`P12-TSK-013`).
+**Not:** the Order — checkout's commercial fact, which BNPL's commit brings into being — and not a
+Payment: no intent, attempt or rail exists, because the merchant is paid from the platform's capital
+against a customer receivable, not by money crossing a network. Nor a Customer Payment.
+**Owned by:** `bnpl`
+
+### Merchant Financing
+**Is:** the born-once record that the platform paid for a BNPL Purchase on the merchant's behalf —
+gross, Merchant Discount and net, `gross = fee + net` by `CHECK` — and its journal entry, which in one
+posting debits the customer's receivable `BNPL_PRINCIPAL` the gross and credits the merchant's
+`MERCHANT_PAYABLE` the net and `BNPL_MERCHANT_FEE_INCOME` the fee (`bnpl.financing:<purchase>`,
+`INV-BNPL-02`, `INV-BNPL-04`); funded from lending capital under the shared headroom (`INV-BNPL-10`,
+owner decision B2). Planned (`P12-TSK-013`).
+**Not:** a Merchant Payout or a Merchant Settlement: financing creates the platform's liability to
+the merchant, and `merchant`'s unchanged on-demand payout later discharges it. Nor a Disbursement: no
+money moves at purchase, and nothing reaches a customer's wallet.
+**Owned by:** `bnpl`
+
+### Merchant Discount
+**Is:** the fee a merchant pays the platform on a BNPL Purchase — basis points of the gross plus an
+optional fixed part, from the merchant's BNPL fee schedule version pinned on the purchase
+(`INV-MER-03`), rounded once `HALF_EVEN`, always below the gross — taken out of the payable in the
+financing entry and recognised at purchase as `BNPL_MERCHANT_FEE_INCOME` (A9, OQ-16). On a refund it is
+returned pro rata by the cumulative method, `cum(after) − cum(before)` with `cum(x) = round(f · x / G)`,
+so any sequence of refunds totalling the gross returns exactly the fee charged (owner decision B3).
+**Not:** a card capture's fee (`FEE_REVENUE`, `MerchantSettlement`'s split), and not a late fee or
+interest, which the customer pays. Nor capital: fee income does not raise lending headroom. Whether it
+should be amortised as a yield is Phase 14's question.
+**Owned by:** `bnpl`
+
+### Customer Repayment Obligation
+**Is:** the customer's account for one BNPL Purchase (`bnpl.bnpl_obligation`) — identity, product,
+plan, status and permits only, **no money column** (`INV-BNPL-01`) — born `ACTIVE` at the acceptance
+and `CLOSED` (reason `REPAID`, `PAID_OFF_EARLY`, `REFUNDED` or `REFUNDED_PARTIALLY_REPAID`) by the
+transaction that zeroes its last receivable; every figure a balance of its six per-obligation ledger
+accounts (`OwnerKind.BNPL_OBLIGATION`), and its row the serialisation point of every servicing act on
+it. Delinquency, default and a dispute hold are conditions beside it. Planned (`P12-TSK-013`).
+**Not:** a Loan — not born by a disbursement, reducible by a merchant's refund, never `CANCELLED`, and
+never a lending row (ADR-0101). Nor the Merchant Financing, the other flow of the same event, and not
+the customer's Exposure, credit's per-party figure, which counts its outstanding principal from version 3.
+**Owned by:** `bnpl`
+
+### BNPL Schedule
+**Is:** one version of a Customer Repayment Obligation's projected BNPL Instalments
+(`bnpl.bnpl_schedule`) — version 1 at the acceptance from the pinned engine (`BNPL_SCHEDULE_ENGINE_V1`
+for Pay-in-4, `SCHEDULE_ENGINE_V1` for Pay-in-N), version n+1 when a refund cancels or shortens an
+unbilled instalment (Pay-in-N's by `recalculateAtInstalment`: the same instalment over the least term,
+which is "latest first") — billed instalments kept, unbilled superseded, nothing updated, principal
+conserved exactly (`INV-BNPL-05`). The module register's "Instalment Plan", renamed by the Phase 11 →
+12 transition so that "plan" keeps one meaning: the plan the customer chooses.
+**Not:** a lending Repayment Schedule, changed only by a four-eyes amendment or a prepayment, and not
+the bill: Pay-in-N's billing bills the interest actually accrued. Nor the BNPL Offer's illustrative
+schedule.
+**Owned by:** `bnpl`
+
+### BNPL Instalment
+**Is:** one scheduled repayment of a BNPL Schedule version — principal (and Pay-in-N's projected
+interest) and a due date — which a refund may cancel in whole or in part, latest first; what became
+due at its date is its billing, what paid it its allocations, and each automatic try to collect it a
+collection attempt, born once per instalment and date.
+**Not:** a Loan Instalment (§7's Instalment): the same word, a different lifecycle — a BNPL instalment
+can be cancelled by a third party's refund, a loan instalment cannot (`MODULE_ARCHITECTURE.md` §5).
+Nor a Repayment, which is money received.
+**Owned by:** `bnpl`
+
+### BNPL Refund
+**Is:** a return of value on a BNPL Purchase — requested by the merchant over its key (the platform's
+first merchant-key refund door, OQ-9), by an operator, or executed as a BNPL Dispute's outcome — born
+`APPLIED` in one transaction that, under the purchase's lock, bounds it by the gross less earlier
+refunds (`INV-BNPL-07`), cancels unpaid instalments from the last backwards, credits any excess to the
+customer's wallet, debits the merchant's payable net of the Merchant Discount returned, and posts the
+whole as one entry (`INV-BNPL-06`); a full refund closes the obligation with nothing stranded
+(`INV-BNPL-09`). Planned (`P12-TSK-021`).
+**Not:** payments' Refund of a card capture — no provider, no `PENDING` state, no rail — and not a
+Repayment Reversal, which undoes money the customer paid. After a payout it may drive the payable below
+zero only within its purchase's own net (owner decision B7; `INV-MER-07` amended).
+**Owned by:** `bnpl`
+
+### Refund Adjustment
+**Is:** the born-once allocation of one BNPL Refund — one row per instalment it cancels (principal not
+yet billed, or billed and still unpaid) plus the excess owed to the customer, summing exactly to the
+refund by a deferred trigger — with the late fees on a cancelled instalment released and, at a full
+cancellation, Pay-in-N's unpaid interest waived (A11, OQ-14).
+**Not:** the BNPL Refund itself (the act and its entry), and not a Waiver: nothing is forgiven at the
+platform's expense — the merchant funds every unit of it. Never edited, and never re-cut by a later
+refund.
+**Owned by:** `bnpl`
+
+### BNPL Dispute
+**Is:** the customer's contest of a BNPL Purchase with the platform — `OPEN → MERCHANT_RESPONDED →
+RESOLVED_REFUND | RESOLVED_UPHELD`, `OPEN → RESOLVED_REFUND` when the merchant accepts or stays silent
+past its 14-day window (OQ-10), `→ WITHDRAWN` by the customer — at most one open per purchase, holding
+the disputed amount from late fees, Days Past Due and auto-collection while open. A refund outcome
+executes a BNPL Refund under the same lock and the same bound, so refund and dispute never
+double-credit (`INV-BNPL-08`). Planned (`P12-TSK-023`).
+**Not:** payments' Dispute or a Chargeback: no card network stands behind a BNPL purchase, so the
+financed amount has no chargeback; one can arise only on a card-funded wallet top-up, which is
+payments' and unrelated to the agreement (`INV-DSP-01`). Nor Delinquency.
+**Owned by:** `bnpl`
 
 ---
 
@@ -1967,6 +2179,16 @@ identically after it (`INV-CRD-01`). `MODULE_ARCHITECTURE.md` §4 and §5 moved 
 including the module register that assigns its ownership. Corrected in `DOMAIN_MODEL.md` to the
 majority spelling.
 
+**`Instalment` was claimed by two modules, and the canonical list kept one word for both** —
+settled by the Phase 11 → 12 transition, 2026-10-16 (ADR-0101, planned). The register had already
+renamed the two states Loan Instalment (`lending`) and BNPL Instalment (`bnpl`) —
+`MODULE_ARCHITECTURE.md` §5 — while the canonical list and this glossary still defined one
+`Instalment` "within a loan or BNPL schedule", owned by `lending`. The plain `Instalment` stays (it is
+the canonical term `DomainGlossaryTest` names) and now defines the loan's alone; `BNPL Instalment` is
+its own canonical term in §7b, beside `BNPL Schedule` — the register's "Instalment Plan", renamed so
+that "plan" means only what the customer chooses (Pay-in-4, or Pay-in-N over 3, 6 or 12 months).
+Register, list and glossary changed together, so the three never disagreed.
+
 ---
 
 ## 11. What is enforced
@@ -1986,8 +2208,11 @@ majority spelling.
    Added during review, which found `Risk Score` attributed to `risk` while the register said
    `credit` — settled by the Phase 9 → 10 transition (2026-10-07, §10), which moved it to `risk`
    in the register itself, both documents changed together.
-7. **Every `INV-*` the glossary cites exists.** Eighty-four distinct invariants, cited one
-   hundred and eighty-three times (recounted by the Phase 10 → 11 transition, 2026-10-10, after
+7. **Every `INV-*` the glossary cites exists.** Ninety-six distinct invariants, cited two hundred
+   times (recounted by the Phase 11 → 12 transition, 2026-10-16, after §7b's fourteen new entries,
+   the sharpened BNPL Agreement and Instalment and §2's BNPL paragraph, which cite the ten `INV-BNPL`
+   invariants the same transition catalogued; the Phase 10 → 11 transition, 2026-10-10, had counted
+   eighty-four and one hundred and eighty-three after
    §7a's twenty-three new entries and seven corrected ones in §7, which cite the fourteen
    `INV-LND` invariants the same transition catalogued; the Phase 10 exit review, `P10-DOC-001`,
    2026-10-09, had counted sixty-nine and one hundred and fifty-nine after its six new entries,

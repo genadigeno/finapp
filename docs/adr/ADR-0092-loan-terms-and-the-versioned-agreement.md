@@ -283,6 +283,18 @@ only by an accepted amendment.
   replay found the database clock stepped back between two transactions, a prepayment's version 2 stamped before the
   catch-up that preceded it. (e) The
   door: `POST /v1/operator/loans/{id}/replay` (`LENDING_INVESTIGATE`, a reason, audited `lending.LoanReplayed`).
+- **The Phase 11 completion gate (the Phase 11 → 12 transition, 2026-10-16) - three corrections to the terms
+  version.** (a) **R5**: the terms door admitted a version whose schedule the engine could refuse at disbursement or at the
+  payout's conclusion (EUR 500.19 over 60 months at 23.10 % was admitted and unschedulable), leaving a loan with no
+  terminal path; the door now judges three bounds at the product's minimum principal with a half-unit margin
+  (`ScheduleEngineV1Test#theOldDoorsGap`, `#theLaterPeriodsBound`, `#theExhaustionBound`; the 60-month maximum rate
+  23.1064 % → 23.0908 %). The guarantee holds for credit's bounds as built; an `ACTIVE` version is not re-judged when they
+  widen (RG-M4, a debt row). (b) **A2-F3**: a version's `decided_at` and its predecessor's `effective_to` were stamped
+  `transaction_timestamp()` before the activation's locks, so a predecessor could end before an offer made under it -
+  now `clock_timestamp()` after the lock (lending `V030`, `LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion`).
+  (c) **A3-M1**: the engine-version `CHECK` admitted any version ≥ 1 though only 1 exists in code - now `= 1` (lending
+  `V029`, `LoanTermsDatabaseTest#anEngineVersionNoCodeHoldsIsRefused`). Recorded in
+  `reviews/PHASE_11_TO_12_TRANSITION.md`.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

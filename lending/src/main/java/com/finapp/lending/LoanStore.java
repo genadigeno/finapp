@@ -6,6 +6,7 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -74,6 +75,16 @@ public interface LoanStore {
 
     /** The loan {@code FOR UPDATE} (L3) with its current agreement version (`P11-TSK-014`). */
     Optional<Owned> lock(Connection unitOfWork, LoanId id);
+
+    /**
+     * The value date a principal-moving fact of {@code loan} takes on {@code today} - a repayment of any kind, a draw, a
+     * reversal re-instating principal (the Phase 11 completion gate's R1; ADR-0063 decision 2): {@code today}, or - on a
+     * database clock stepped back across a midnight behind the account's record - the first date the record leaves open,
+     * {@code lending.principal_value_floor} (the day after the latest accrual; a line's latest statement date). A date the
+     * record has closed is never a principal fact's: its accrual (or statement) read the principal without it, for ever.
+     * Read under L3, which every writer of the floor holds; the database refuses a value date before it.
+     */
+    LocalDate principalValueDate(Connection unitOfWork, LoanId loan, LocalDate today);
 
     /** {@code PENDING_DISBURSEMENT -> ACTIVE}, conditional (`P11-TSK-014`); whether this call moved it. */
     boolean activate(Connection unitOfWork, LoanId id);

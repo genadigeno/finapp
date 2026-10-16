@@ -50,7 +50,9 @@ import lombok.RequiredArgsConstructor;
  * <h2>What each kind forgives, and its bound - derived under L3</h2>
  *
  * <ul>
- *   <li>{@link WaiverKind#FEE} - at most what the fee still owes (its item's {@code FEES}, billed less paid): rule 8,
+ *   <li>{@link WaiverKind#FEE} - at most what the fee still owes (its item's {@code FEES}, billed less paid) and at most what
+ *       of it was never forgiven (assessed less waived less refunded - the Phase 11 gate's R3: a fee refunded and then
+ *       re-opened by a reversal is not forgiven twice): rule 8,
  *       {@link ReversalService} of the assessment's rule 4 entry for the amount - {@code DR LOAN_FEE_INCOME / CR
  *       LOAN_FEES_DUE} - bounded by that entry as well ({@code INV-REV-02}, the ledger's namespace 2);
  *   <li>{@link WaiverKind#FEE_REFUND} - at most what was paid of the fee less what was refunded: rule 8a, {@code DR
@@ -232,7 +234,7 @@ public final class Waivers {
             throw new ProposalNotPending(proposal.kind(), proposal.status());
         }
         if (proposal.proposedBy().equals(actor.id())) {
-            throw new SelfApprovalRefused(proposal.kind());
+            throw new SelfApprovalRefused(proposal.kind(), loan, waiver);
         }
         Loan account = locked.loan();
         if (!inServicing(account.status())) {
@@ -337,6 +339,17 @@ public final class Waivers {
                         + refused.act() + " refused - the loan is the acting operator's own party's")));
     }
 
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LendingAuditAction#SELF_APPROVAL_REFUSED}) on
+     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept (the Phase 11
+     * gate's R4).
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        SelfApprovalRefusals.record(audit, ids, clock, unitOfWork, actor, TARGET_TYPE, refused.target(), refused.summary(),
+                correlation);
+    }
+
     // ------------------------------------------------------------------ the judgements
 
     private static boolean inServicing(LoanStatus status) {
@@ -370,28 +383,32 @@ public final class Waivers {
         DueState due = receivables.dueState(unitOfWork, account.id(),
                 receivables.accounts(unitOfWork, account.id(), account.currency()), zero);
         Optional<DueState.DueItem> item = due.items().stream().filter(i -> i.id().equals(target.item())).findFirst();
-        return switch (kind) {
-            case FEE -> item.map(DueState.DueItem::fees).orElse(zero);
-            case INTEREST -> item.map(DueState.DueItem::interest).orElse(zero);
-            case FEE_REFUND -> {
-                FeeAssessment assessment = target.assessment().orElseThrow();
-                Money waived = zero;
-                Money refunded = zero;
-                for (Waiver earlier : waivers.ofAssessment(unitOfWork, assessment.id())) {
-                    if (earlier.status() == WaiverStatus.APPROVED) {
-                        if (earlier.kind() == WaiverKind.FEE) {
-                            waived = waived.plus(earlier.amount());
-                        } else if (earlier.kind() == WaiverKind.FEE_REFUND) {
-                            refunded = refunded.plus(earlier.amount());
-                        }
-                    }
+        if (kind == WaiverKind.INTEREST) {
+            return item.map(DueState.DueItem::interest).orElse(zero);
+        }
+        FeeAssessment assessment = target.assessment().orElseThrow();
+        Money waived = zero;
+        Money refunded = zero;
+        for (Waiver earlier : waivers.ofAssessment(unitOfWork, assessment.id())) {
+            if (earlier.status() == WaiverStatus.APPROVED) {
+                if (earlier.kind() == WaiverKind.FEE) {
+                    waived = waived.plus(earlier.amount());
+                } else if (earlier.kind() == WaiverKind.FEE_REFUND) {
+                    refunded = refunded.plus(earlier.amount());
                 }
-                // One fee per item and kind: the item's FEES are this assessment's - billed (assessed less waived) less
-                // what is still due is what was paid of it.
-                Money paid = assessment.amount().minus(waived).minus(item.map(DueState.DueItem::fees).orElse(zero));
-                yield paid.minus(refunded);
             }
-        };
+        }
+        Money unpaid = item.map(DueState.DueItem::fees).orElse(zero);
+        if (kind == WaiverKind.FEE) {
+            // The unpaid remainder - and never more than was never forgiven (the Phase 11 gate's R3): a refund forgave its
+            // part already, so a reversal that re-opens the fee on its item does not make it forgivable twice.
+            Money neverForgiven = assessment.amount().minus(waived).minus(refunded);
+            return unpaid.compareTo(neverForgiven) <= 0 ? unpaid : neverForgiven;
+        }
+        // One fee per item and kind: the item's FEES are this assessment's - billed (assessed less waived) less what is
+        // still due is what was paid of it.
+        Money paid = assessment.amount().minus(waived).minus(unpaid);
+        return paid.minus(refunded);
     }
 
     // ------------------------------------------------------------------ the postings
@@ -548,8 +565,23 @@ public final class Waivers {
     public static final class SelfApprovalRefused extends KindedRefusal {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        SelfApprovalRefused(WaiverKind kind) {
+        private final String target;
+        private final String summary;
+
+        SelfApprovalRefused(WaiverKind kind, LoanId loan, UUID waiver) {
             super(kind, "a waiver is approved by someone other than its proposer; the proposer may reject it");
+            this.target = waiver.toString();
+            this.summary = "loan=" + loan.value() + ", waiver=" + waiver + ", kind=" + kind.name() + ", act=waiver:approve";
+        }
+
+        /** The proposal the approver proposed - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the proposal and the act - never an amount. */
+        public String summary() {
+            return summary;
         }
     }
 }

@@ -241,6 +241,27 @@ class LendingProofDatabaseTest {
     }
 
     @Test
+    @DisplayName("a principal line value-dated into a date already accrued - as a clock stepped back across a midnight"
+            + " dated a repayment before the Phase 11 gate's R1 - makes the replay DIVERGED naming the accrual whose base"
+            + " the final ledger no longer explains; restored, IDENTICAL")
+    void aPrincipalLineValuedIntoAnAccruedDateDiverges() {
+        LoanId loan = aged(3_100_00, 70);
+        topUp(partyOf(loan), 10_000_00);
+        serviceUntilCaughtUp(loan);
+        Repayments.Repaid repaid = repay(loan, key(), due(loan) + 500_00);
+        assertThat(repaid.repayment().to(AllocationLine.Target.NOT_DUE_PRINCIPAL).isPositive()
+                || repaid.repayment().paid(AllocationComponent.PRINCIPAL).isPositive()).as("it moved principal").isTrue();
+        assertProven(loan);
+        LocalDate accrued = LocalDate.parse(scalar("SELECT max(accrual_date)::text FROM lending.interest_accrual"
+                + " WHERE loan_id = ?", loan.value()));
+        String entry = repaid.repayment().journalEntry().value().toString();
+        String valued = scalar("SELECT value_date::text FROM ledger.journal_entry WHERE id = ?::uuid", entry);
+        flipped(loan, "UPDATE ledger.journal_entry SET value_date = DATE '" + accrued + "' WHERE id = '" + entry + "'",
+                "UPDATE ledger.journal_entry SET value_date = DATE '" + valued + "' WHERE id = '" + entry + "'",
+                LoanReplayProof.Check.ACCRUAL);
+    }
+
+    @Test
     @DisplayName("a credit line's statement with a byte flipped in its interest (its minimum kept whole, so the CHECK admits"
             + " it) makes the replay DIVERGED naming the statement; restored, IDENTICAL")
     void aFlippedStatementDiverges() {

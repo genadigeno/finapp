@@ -13,11 +13,29 @@ import java.util.Objects;
  * offer born, the application declined by credit or closed undecided, the offer declined, expired, or the decline
  * refused. A step that found nothing to do, and a replayed key, count nothing. Registered eagerly for every product and
  * outcome, so a fresh instance publishes every series at zero. Never an amount, a party or an offer id (ADR-0072).
+ *
+ * <p>{@code finapp.lending.origination{kind, outcome}} (the Phase 11 gate's A5-03): every origination step
+ * ({@code kind=application}) and offer expiry ({@code kind=offer}) that failed and rolled back - the sweep logs only the
+ * exception's class and lets the permit lapse, so without this a step failing on every tick was visible to nobody.
+ * {@code outcome=failed} alone; registered eagerly.
  */
 public final class LoanOfferMetrics {
 
     /** Spelled with dots - exported as {@code finapp_lending_offer}, the plan's name. */
     public static final String OFFER = "finapp.lending.offer";
+
+    /** Exported as {@code finapp_lending_origination_total}. */
+    public static final String ORIGINATION = "finapp.lending.origination";
+
+    /** What a failed sweep step was acting on. */
+    public enum Step {
+        APPLICATION,
+        OFFER;
+
+        String tag() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
 
     /** The closed set of outcomes. */
     public enum Outcome {
@@ -42,6 +60,23 @@ public final class LoanOfferMetrics {
                 counter(product, outcome);
             }
         }
+        for (Step step : Step.values()) {
+            failures(step);
+        }
+    }
+
+    /** One origination step or offer expiry that failed and rolled back - its permit lapses, a later tick retries. */
+    public void failed(Step step) {
+        failures(Objects.requireNonNull(step, "step")).increment();
+    }
+
+    private Counter failures(Step step) {
+        return Counter.builder(ORIGINATION)
+                .description("Loan origination sweep steps that failed and rolled back - an application's origination"
+                        + " step or an offer's expiry - by kind; each retried by a later tick. Alert on any sustained"
+                        + " increase")
+                .tags("kind", step.tag(), "outcome", "failed")
+                .register(registry);
     }
 
     /** One act on an offer of {@code product}, with its outcome. */

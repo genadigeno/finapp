@@ -288,7 +288,7 @@ public final class LoanInvestigationDesk {
                         line.billingId().map(UUID::toString).orElse(null),
                         line.component().map(Enum::name).orElse(null), decimal(line.amount()))).toList())).toList();
         List<ExplainedApplicationView> applications = record.applications().stream().map(application -> new ExplainedApplicationView(
-                application.id().toString(), application.billingId().toString(), decimal(application.amount()),
+                application.id().toString(), application.billingId().map(UUID::toString).orElse(null), decimal(application.amount()),
                 application.agreementVersion(), application.entry().value().toString(), application.lines().stream()
                         .map(line -> new ExplainedAllocationView(line.ordinal(), "DUE_ITEM", line.billingId().toString(),
                                 line.component().name(), decimal(line.amount()))).toList())).toList();

@@ -192,6 +192,10 @@ public final class Prepayments {
         LocalDate accruedThrough = servicing.catchUp(unitOfWork, loan, agreement, pinned, zone, today)
                 .orElseThrow(() -> new Repayments.LoanNotRepayable(loan.product()));
         billings.bill(unitOfWork, loan, agreement, pinned, today, accruedThrough);
+        // The prepayment's value - and effective - date: today, or on a clock stepped back behind the record the first date
+        // it leaves open (the Phase 11 gate's R1); the re-schedule's open period, the agreement's terms and the event are
+        // the repayment's date, so the replay re-derives them from it.
+        LocalDate valueDate = loans.principalValueDate(unitOfWork, id, today);
         BillableSchedule latest = billingStore.latestSchedule(unitOfWork, id)
                 .orElseThrow(() -> new Repayments.LoanNotRepayable(loan.product()));
 
@@ -215,7 +219,7 @@ public final class Prepayments {
         int unbilled = unbilled(latest, billingStore.billedItems(unitOfWork, id));
         AccrualPeriod open = servicingStore.calendarOf(unitOfWork, id)
                 .orElseThrow(() -> new IllegalStateException("a scheduled loan has its calendar"))
-                .periodOf(today);
+                .periodOf(valueDate);
         LoanTerms governing = pinned.toBuilder().nominalAnnualRate(agreement.nominalAnnualRate()).build();
         Money remaining = notDue.minus(amount);
         ScheduleOutcome outcome = ScheduleEngineV1.recalculateAtInstalment(governing, remaining, latest.instalment(),
@@ -238,7 +242,7 @@ public final class Prepayments {
 
         // (L8) and rule 5 - DR CUSTOMER_WALLET / CR LOAN_PRINCIPAL - through the one posting half; a prepayment never closes.
         Repayments.Repaid repaid = repayments.receive(unitOfWork, loan, agreement, RepaymentKind.PREPAYMENT,
-                request.requestKey(), amount, lines, accounts, wallet, today, now, correlation,
+                request.requestKey(), amount, lines, accounts, wallet, valueDate, now, correlation,
                 repaymentId -> Optional.empty());
         UUID prepayment = repaid.repayment().id();
 
@@ -253,7 +257,7 @@ public final class Prepayments {
                         agreement.termsVersionId(), version.row().version(), governing, agreement.amount(),
                         Optional.of(termMonths), agreement.repaymentDay(), Optional.empty()),
                 new CanonicalOfferTerms.Prepayment(prepayment, agreement.version(), agreement.termsSha256Hex(), nextVersion,
-                        today, amount, schedule.start(), schedule.periods().get(0).dueDate(), schedule.termMonths(),
+                        valueDate, amount, schedule.start(), schedule.periods().get(0).dueDate(), schedule.termMonths(),
                         schedule.principal(), schedule.instalment()));
         LoanAgreement unstamped = agreement.prepaid(LoanAgreementId.next(ids), prepayment, termMonths, canonical, now);
         Instant effective = loans.insertAgreement(unitOfWork, unstamped);
@@ -267,7 +271,7 @@ public final class Prepayments {
         RepaymentStore.Rescheduled rescheduled = new RepaymentStore.Rescheduled(prepaidVersion.version(), next.version(),
                 schedule.termMonths(), schedule.instalment(), schedule.finalInstalment(),
                 schedule.periods().get(0).dueDate());
-        publish(unitOfWork, loan, agreement, prepaidVersion, prepayment, rescheduled, today, correlation);
+        publish(unitOfWork, loan, agreement, prepaidVersion, prepayment, rescheduled, valueDate, correlation);
         return new Prepaid(repaid.repayment(), rescheduled, false);
     }
 

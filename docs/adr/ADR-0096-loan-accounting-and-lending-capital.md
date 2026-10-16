@@ -332,6 +332,15 @@ Financial impact: the operational ledger gains the loan book and the platform's 
   `CANCELLED` account's six balances are zero like a `CLOSED` one's. (c) It is a pure function of one `LoanRecord`
   read in one read-only `REPEATABLE READ` snapshot (`LendingProofs`), gauged `finapp.lending.subledger.proof{verdict}`
   and shown, figure by figure, by the investigator's explanation. Nothing self-corrects.
+- **The Phase 11 completion gate (the Phase 11 → 12 transition, 2026-10-16).** (a) **A1-F4**: `capital_contribution`
+  and `capital_contribution_event` lacked the `BEFORE TRUNCATE` refusal every other lending table has - added (lending
+  `V029`, `LendingMigrationTest#everyTableRefusesTruncate`). (b) **A2-F1 - a capacity limit, recorded, not a defect**:
+  `LOAN_INTEREST_INCOME` and `LOAN_FEE_INCOME` are one operational account per currency, and every posting to one locks
+  its `account_balance` row to commit; the servicing step takes the interest row at its first accrual and holds it
+  through its collection's wait on the borrower's wallet, so a currency's servicing runs one accruing step at a time
+  whatever the instance count. Correct, but a throughput ceiling (the debt row in `CURRENT_STATE.md`); Phase 12's BNPL
+  income rows are designed so the accrual's posting never waits on a wallet (`PHASE_12_PLAN.md` §7.2), and the pay-down
+  for lending is an accrual committed in its own L3 transaction or a per-loan or daily income recognition.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

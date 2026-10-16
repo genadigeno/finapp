@@ -228,6 +228,18 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   zero drawn) contribute nothing, exactly as `accrue` chains a period's next accrual onto its latest; no figure of the
   original signature changed (`AccrualEngineV1Test#projectsFromADate`). A projection spanning a billing at which a held
   credit balance is applied goes stale on `G` (rule 6 lowers the base) - stale, never wrong.
+- **The Phase 11 completion gate's R1 (the Phase 11 → 12 transition, 2026-10-16) - the accrual base is closed once
+  accrued.** Decision point "the base for *d* is the principal lines valued on or before *d*" held only while no
+  principal fact could be valued into a date already accrued; after a backward database-clock step across midnight a
+  repayment, prepayment, draw, collection, payoff or principal-re-instating reversal could be, over- or under-charging
+  that day's interest, and the replay compared the base with the lines written before the accrual and so accepted it.
+  Now every principal-moving fact is value-dated no earlier than `lending.principal_value_floor(loan)` - the day after
+  the latest `interest_accrual` (for a line also after the latest statement's cycle end) - in Java under L3
+  (`LoanStore#principalValueDate`) and in the repayment and draw ranks (lending `V030`); the servicing step writes
+  nothing while the clock is behind its record; and the replay compares each accrual's base with the final ledger lines
+  valued on or before its date (`DIVERGED(ACCRUAL)`). `BackwardClockDatabaseTest` reproduces every mover;
+  `LendingProofDatabaseTest#aPrincipalLineValuedIntoAnAccruedDateDiverges`. Residual RG-M1 (the payoff's own billing
+  applications dated by the clock) is an owner item.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

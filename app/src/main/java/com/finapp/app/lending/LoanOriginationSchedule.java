@@ -92,6 +92,7 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick steps again; the class name only - never a party.
+                    metrics.failed(LoanOfferMetrics.Step.APPLICATION);
                     log.warn("Loan origination step failed: {}", failure.getClass().getSimpleName());
                 }
             }
@@ -102,6 +103,7 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
                             () -> transactions.inTransaction(uow -> origination.expire(uow, id, SecurityContext.require())));
                     expired.ifPresent(product -> metrics.record(product, LoanOfferMetrics.Outcome.EXPIRED));
                 } catch (RuntimeException failure) {
+                    metrics.failed(LoanOfferMetrics.Step.OFFER);
                     log.warn("Loan offer expiry failed: {}", failure.getClass().getSimpleName());
                 }
             }

@@ -102,19 +102,7 @@ class PayoffDatabaseTest {
      */
     @BeforeEach
     void noLineTermsProposalPending() {
-        inOneTransaction(uow -> {
-            try (java.sql.PreparedStatement select = uow.prepareStatement("SELECT id FROM lending.loan_terms_version"
-                    + " WHERE product = 'CREDIT_LINE' AND status = 'PROPOSED'");
-                    java.sql.ResultSet row = select.executeQuery()) {
-                if (row.next()) {
-                    DisbursementWorld.ADMINISTRATION.reject(uow, LoanTermsVersionId.of(row.getObject(1, UUID.class)),
-                            DisbursementWorld.employee(), "cleared for the payoff suite", correlation());
-                }
-                return null;
-            } catch (java.sql.SQLException failure) {
-                throw new IllegalStateException(failure);
-            }
-        });
+        DisbursementWorld.clearPendingTerms(LoanProduct.CREDIT_LINE);
     }
 
     static Payoffs payoffs(LoanServicing servicing) {
@@ -287,6 +275,31 @@ class PayoffDatabaseTest {
         assertPaidOff(loan, ClosureReason.PAID_OFF_EARLY);
         assertThat(netDebit(walletOf(party)).negated()).isEqualTo(walletBefore.plus(quote.refund()));
         assertSubledgerProves(loan);
+    }
+
+    @Test
+    @DisplayName("a payoff beside credit held and a due item debits the wallet only the net (the Phase 11 gate's A4-M1): a"
+            + " matured loan - nothing left to bill - owing its final interest I beside a refund of 15.00 held; the"
+            + " execution applies the credit first (a catch-up application), so its PAYOFF repayment is I - 15.00 and its"
+            + " closure refunds nothing - never I debited with 15.00 refunded beside it")
+    void aPayoffBesideCreditHeldDebitsOnlyTheNet() {
+        LoanId loan = FeeAndWaiverDatabaseTest.maturedWithInterestDueAndRefundHeld(10_000_00);
+        long interest = billings(loan).get(1).dueItem().interest().minorUnits();
+        assertThat(interest).as("more than the refund held").isGreaterThan(15_00);
+        UUID party = partyOf(loan);
+        Money walletBefore = netDebit(walletOf(party)).negated();
+        PayoffQuote quote = quote(loan, key(), Optional.empty()).quote();
+        assertThat(quote.outstanding()).isEqualTo(eur(interest - 15_00));
+
+        Payoffs.Executed executed = execute(loan, quote, key());
+        assertThat(executed.repayment()).hasValueSatisfying(repayment -> assertThat(repayment.amount())
+                .as("the net, never the gross receivable").isEqualTo(eur(interest - 15_00)));
+        assertThat(executed.closure().refund().isZero()).as("nothing left to refund").isTrue();
+        assertThat(RepaymentDatabaseTest.catchUps(loan)).isEqualTo(1);
+        assertPaidOff(loan, ClosureReason.PAID_OFF_EARLY);
+        assertThat(netDebit(walletOf(party)).negated()).isEqualTo(walletBefore.minus(eur(interest - 15_00)));
+        assertSubledgerProves(loan);
+        RepaymentDatabaseTest.assertApplicationsReplay(loan);
     }
 
     // ------------------------------------------------------------------ the races

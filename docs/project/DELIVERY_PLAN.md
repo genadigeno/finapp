@@ -1783,6 +1783,44 @@ See `PHASE_GATES.md` §Phase 12.
 ### 18. What must NOT be implemented yet
 Merchant credit risk, BNPL funding/securitisation, collections agencies.
 
+*(**Elaborated by [`PHASE_12_PLAN.md`](PHASE_12_PLAN.md)** and ADR-0101…0106 (`Proposed`) at the Phase 11 → 12
+transition, 2026-10-16: twenty-nine items across nine milestones in `BACKLOG.md` (`P12-TSK-001`…`-026`,
+`P12-TST-001`…`-002`, `P12-DOC-001`), the machines in `BNPL_LIFECYCLES.md` and the invariants `INV-BNPL-01`…`10` in
+`FINANCIAL_INVARIANTS.md`. The eighteen sections above are kept as written and made current here where they had
+fallen behind the decisions; where they disagree with this addendum or the plan, the addendum and the plan are right.
+Until Phase 12's first task lands, nothing in this addendum is implemented.)*
+
+- *§1 and §2 — **two products, owner decisions B1–B8** (`PHASE_12_PLAN.md` §2.2): pay-in-4 (`BNPL_PAY_IN_4`, four equal
+  instalments, the first at purchase, then every fourteen days, no customer interest) and pay-in-N (`BNPL_PAY_IN_N`, 3, 6
+  or 12 monthly instalments with interest, Phase 11's ACT/365F conventions); one credit decision per purchase, no
+  spending limit (B5); instalments collected from the wallet only (B6).*
+- *§3 and §4 — **one new module, `bnpl`, and a pure `creditmath`** (ADR-0101). BNPL is **not** composed on lending's
+  `loan`: the obligation is born with a merchant payable credit, not a wallet credit, and changed by a merchant's refund,
+  neither of which lending's machines admit. Lending is involved only through its capital row (the shared headroom, L6)
+  and its pure engines, extracted unchanged into `creditmath`; risk is not involved (Phase 13).*
+- *§5 — **"a partial refund must proportionally reduce remaining instalments" is superseded** by owner decision B3: a
+  refund cancels **the latest instalments first** (the last backwards), any excess beyond what is unpaid goes back to
+  the customer's wallet, and the merchant fee is pro-rated back by the cumulative method (ADR-0105). The merchant is paid
+  **upfront, net of the fee, through its existing on-demand payout** (B2 — "settled at purchase" means the payable is
+  credited at purchase); the receivable is funded from `LENDING_CAPITAL` (ADR-0104). A refund after payout may drive the
+  payable below zero, bounded by the purchase's own net and recovered before any payout (B7, `INV-MER-07` amended). The
+  merchant discount is income at purchase; its effective-interest treatment is Phase 14's (ADR-0103).*
+- *§6 — the data model as decided: BNPL Terms Version, BNPL Application, BNPL Offer, BNPL Agreement (versioned) and its
+  Acceptance Evidence, Purchase, Merchant Financing record, Customer Repayment Obligation (no money column — every figure
+  a per-obligation ledger balance), BNPL Schedule and BNPL Instalment, Instalment Billing, Interest Accrual (PN),
+  Repayment and Allocation, Collection Attempt, BNPL Refund and its Refund Adjustment rows, BNPL Dispute, conditions,
+  Late Fee, Payoff Quote and Execution (`PHASE_12_PLAN.md` §8).*
+- *§12 — **"merchant settled but agreement creation fails" cannot occur**: the purchase, the merchant financing, the
+  obligation, the decision's consumption and the capital commitment commit in one transaction or none does
+  (`INV-BNPL-02`), so the compensating path the gate allows is not needed; a forced failure at every step proves it.
+  **"Chargeback on a BNPL-funded order"**: there is no card network on the financed amount, so a customer's contest is a
+  BNPL dispute resolved under the one refund bound (`INV-BNPL-08`, ADR-0106).*
+- *§13 — the three-way proof (`BnplThreeWayProof`: merchant leg, customer leg, ledger identity) in one snapshot; BNPL
+  adds no external evidence.*
+- *§14 — the ADRs are ADR-0101…0106; no ADR-0107 (B5).*
+- *§18 — extended by `PHASE_12_PLAN.md` §20: also not risk/fraud/AML decisioning, write-off or provisioning,
+  card-funded instalments, a spending limit, multi-currency BNPL, consumer-credit-law features, refinance.*
+
 ---
 
 # Phase 13 — Risk, Fraud and AML

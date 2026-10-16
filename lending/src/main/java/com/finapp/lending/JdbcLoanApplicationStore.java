@@ -194,6 +194,20 @@ public final class JdbcLoanApplicationStore implements LoanApplicationStore {
                 CorrelationId.of(row.getString("correlation_id")));
     }
 
+    @Override
+    public Optional<Duration> oldestAwaitingDecisionAge(Connection unitOfWork) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT floor(extract(epoch FROM statement_timestamp() - min(submitted_at)) * 1000)::bigint"
+                        + " FROM lending.loan_application WHERE status = 'AWAITING_DECISION'");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            long millis = row.getLong(1);
+            return row.wasNull() ? Optional.empty() : Optional.of(Duration.ofMillis(Math.max(0, millis)));
+        } catch (SQLException failure) {
+            throw failed("reading the oldest application awaiting a decision", failure);
+        }
+    }
+
     private static LendingStorageException failed(String operation, SQLException failure) {
         Objects.requireNonNull(failure, "failure");
         return new LendingStorageException("lending storage failed " + operation + ": SQLSTATE " + failure.getSQLState());

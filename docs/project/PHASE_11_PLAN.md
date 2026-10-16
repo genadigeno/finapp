@@ -433,8 +433,8 @@ held across a provider call (ADR-0046).
 | **T-rep** repayment | claim `lending.repayment:CUSTOMER:<id>`; (L3) loan `ACTIVE`/`CLOSING`; (L7) wallet, available ≥ amount; allocate; `lockBalancesInOrder` if more than one entry; post; maybe close |
 | **T-drw** draw (line) | claim `lending.draw:CUSTOMER:<id>`; (L3) line `FOR UPDATE` `ACTIVE`, draws not suspended; (L5) draw born; (L6) capital headroom ≥ amount; available limit ≥ amount (derived under L3); post; events |
 | **T-pay** payoff | claim; (L3) loan; (L5) quote; catch-up accrual and billing; recompute; repayment, refund; `CLOSED` |
-| **T-rev / T-wvr / T-amd** corrections | claim `lending.servicing:EMPLOYEE:<id>`; (L0) profile for a repayment reversal (outstanding rises); (L3) loan; (L5) the proposal `FOR UPDATE` conditional; for a reversal that re-instates principal, (L6) the capital row and headroom ≥ the principal re-instated, else `422 lending.CapitalUnavailable` and the proposal stays `PROPOSED`; post; audit |
-| **T-cap** capital contribution | claim `lending.capital:EMPLOYEE:<id>`; advisory namespace `11` (`hashtext(currency)`) - FIRST in every proposal, approval and rejection; (L5) the proposal read (its tables are INSERT-only, so the decision is a born-once history row under the lock, not a row lock - `P11-TSK-004`); the expectation opened (reconciliation's opener, in the same transaction); recognition later, in the bank statement's own acceptance transaction (settlement's `BatchAcceptance`, rule 0) |
+| **T-rev / T-wvr / T-amd** corrections | claim `lending.servicing:CUSTOMER:<id>` *(the key's type is the authenticated session's actor's: an operator session's actor is `CUSTOMER`-typed - `SessionAuthenticationInterceptor` enters `ActorType.CUSTOMER` for every session, and the platform does not yet issue an `EMPLOYEE` actor to an operator session, a known platform debt (`CURRENT_STATE.md` §Known Architectural Debt, "Every session actor is audited as `CUSTOMER`, including operators", Phase 15); read `EMPLOYEE` until the Phase 11 completion gate's repair, 2026-10-16, A5-04)*; (L0) profile for a repayment reversal (outstanding rises); (L3) loan; (L5) the proposal `FOR UPDATE` conditional; for a reversal that re-instates principal, (L6) the capital row and headroom ≥ the principal re-instated, else `422 lending.CapitalUnavailable` and the proposal stays `PROPOSED`; post; audit |
+| **T-cap** capital contribution | claim `lending.capital:CUSTOMER:<id>` *(`CUSTOMER`-typed for an operator session - §7.1's T-rev row; read `EMPLOYEE` until A5-04)*; advisory namespace `11` (`hashtext(currency)`) - FIRST in every proposal, approval and rejection; (L5) the proposal read (its tables are INSERT-only, so the decision is a born-once history row under the lock, not a row lock - `P11-TSK-004`); the expectation opened (reconciliation's opener, in the same transaction); recognition later, in the bank statement's own acceptance transaction (settlement's `BatchAcceptance`, rule 0) |
 
 *(As built by `P11-TSK-012` - T-acc: the claim; **(L0)** `LoanCreditDecisions.lockExposure`; **(L2)** the offer owner-scoped
 `FOR UPDATE`, `OFFERED` and unexpired on the database clock; the echoed hash (`TermsChanged`), the payout destination
@@ -633,7 +633,18 @@ statement rows by due date (only where a step must lock them; reads under L3 nor
 capital proposal); **(L6)** the `LENDING_CAPITAL` ledger account row of the currency `FOR UPDATE`
 (acceptance of a loan, a draw, a repayment reversal that re-instates principal); **(L7)** the borrower's `CUSTOMER_WALLET` `ledger_account` row
 `FOR UPDATE` (funds checks and the payout hold); **(L8)** ledger projection rows via
-`lockBalancesInOrder` — postings last. Then only inserts (rows, events, audit, outbox).
+`lockBalancesInOrder` — postings last, **but for the currency's two shared income rows, whose places
+around L7 are part of the order: `LOAN_INTEREST_INCOME` → L7 → `LOAN_FEE_INCOME`**. The currency-wide
+`LOAN_INTEREST_INCOME` projection row is taken before the wallet (the servicing step's accrual, the
+payoff's and the prepayment's catch-up accrual, the interest waiver); the currency-wide
+`LOAN_FEE_INCOME` projection row after it (path X's origination fee, the fee waiver, the servicing
+step's late fee after its collection). Then only inserts (rows, events, audit, outbox).
+*(The shared-row clause added by the Phase 11 completion gate's repair, 2026-10-16 (findings A2-F2,
+A6-02): this section read "postings last" for every projection row, which the accrual inside a
+wallet-taking transaction never was, and the two rows' order was a convention the writers kept and no
+document named in full - `DISTRIBUTED_EXECUTION.md` §3 named only the interest row. Still held by
+review and the counted races, not by a guard; the rows' cost to throughput is
+`CURRENT_STATE.md` §Known Architectural Debt's.)*
 
 ### 7.3 Why there is no cycle
 
@@ -796,14 +807,14 @@ negatives.
 | `POST /v1/me/loans/{id}/draws` | customer, `MULTI_FACTOR` | draw to the wallet (line) | `lending.draw:CUSTOMER:<id>` | sync |
 | `POST /v1/me/loans/{id}/closure` | customer, `MULTI_FACTOR` | request the line's closure | `lending.closure:CUSTOMER:<id>` | sync |
 | `POST /v1/me/loans/{id}/payoff-quotes` · `/payoff` | customer (payoff `MULTI_FACTOR`) | quote; execute | `lending.payoff-quote:…`, `lending.payoff:CUSTOMER:<id>` | sync |
-| `POST /v1/me/loans/{id}/prepayments` | customer, step-up | partial prepayment (`-028`, built; *"cut candidate" until `P11-DOC-001`*) | `lending.prepayment:CUSTOMER:<id>` | sync |
+| `POST /v1/me/loans/{id}/prepayments` | customer, `MULTI_FACTOR` (always, enrolled or not - `LoanPrepaymentDesk`; *read "step-up" - the repayment's conditional rule - until the Phase 11 completion gate's repair, 2026-10-16, A5-09*) | partial prepayment (`-028`, built; *"cut candidate" until `P11-DOC-001`*) | `lending.prepayment:CUSTOMER:<id>` | sync |
 | `GET /v1/me/loans/{id}/amendments/{aid}` · `POST …/acceptance` | customer, `MULTI_FACTOR` | read; accept | `lending.amendment-acceptance:CUSTOMER:<id>` | sync |
 | `GET /v1/operator/loans/{id}` (+ `/explanation`) | `LOAN_SERVICE` / `LENDING_INVESTIGATE` | read; explanation from rows (audited) | read | — |
-| `POST /v1/operator/loans/{id}/waivers` (+ `/{wid}/approval`, `/rejection`) | `LOAN_SERVICE` / `LOAN_SERVICE_APPROVE` | waive | `lending.servicing:EMPLOYEE:<id>` | sync |
+| `POST /v1/operator/loans/{id}/waivers` (+ `/{wid}/approval`, `/rejection`) | `LOAN_SERVICE` / `LOAN_SERVICE_APPROVE` | waive | `lending.servicing:CUSTOMER:<id>` *(`CUSTOMER`-typed for an operator session - §7.1's T-rev row; read `EMPLOYEE` until A5-04)* | sync |
 | `POST /v1/operator/loans/{id}/repayments/{rid}/reversal` (+ approval, rejection) | same | reverse | same | sync |
 | `POST /v1/operator/loans/{id}/amendments` (+ approval, rejection) | same | restructure | same | sync |
-| `POST /v1/operator/lending/terms` (+ `/{v}/approval`, `/rejection`), `GET …?product=&at=` | `LENDING_ADMINISTER` / `LENDING_INVESTIGATE` | terms versions | `lending.terms:EMPLOYEE:<id>` | sync |
-| `POST /v1/operator/lending/capital-contributions` (+ approval, rejection), `GET /v1/operator/lending/capital` | `LENDING_CAPITAL_ADMINISTER` / `LENDING_INVESTIGATE` | contribute capital; read headroom (a report) | `lending.capital:EMPLOYEE:<id>` | sync |
+| `POST /v1/operator/lending/terms` (+ `/{v}/approval`, `/rejection`), `GET …?product=&at=` | `LENDING_ADMINISTER` / `LENDING_INVESTIGATE` | terms versions | `lending.terms:CUSTOMER:<id>` *(`CUSTOMER`-typed for an operator session - §7.1's T-rev row; read `EMPLOYEE` until A5-04)* | sync |
+| `POST /v1/operator/lending/capital-contributions` (+ approval, rejection), `GET /v1/operator/lending/capital` | `LENDING_CAPITAL_ADMINISTER` / `LENDING_INVESTIGATE` | contribute capital; read headroom (a report) | `lending.capital:CUSTOMER:<id>` *(`CUSTOMER`-typed for an operator session - §7.1's T-rev row; read `EMPLOYEE` until A5-04)* | sync |
 | `POST /v1/operator/loans/{id}/replay` | `LENDING_INVESTIGATE` | replay: `IDENTICAL` / `DIVERGED` | none (audited) | sync |
 | `GET /v1/operator/reports/lending/{portfolio,delinquency,accrual,capital}` | `LENDING_INVESTIGATE` | amounts — reports, never metrics (ADR-0072) | read (audited) | — |
 
@@ -811,7 +822,9 @@ negatives.
 disbursement (system, no door), payout (system, payments' key), draw, repayment, payoff, prepayment:
 each keyed per principal from birth; each authorised by ownership plus the assurance level of A19;
 each with a database arbiter behind the key (§7.4). The operator's waiver, reversal, amendment, terms
-and capital acts are keyed per employee and four-eyes at the domain and by `CHECK`. **No operator can
+and capital acts are keyed per principal - the session's actor, `CUSTOMER`-typed for an operator too until the
+platform issues `EMPLOYEE` actors (§7.1's T-rev row; *"keyed per employee" until A5-04*) - and four-eyes at the
+domain and by `CHECK`, which compares identity ids, never the type. **No operator can
 create a loan, change a rate outside an amendment, draw, or disburse.**
 
 **Errors** (each catalogued in `ERROR_CONTRACT.md` by the task that builds it): `409
@@ -1400,8 +1413,8 @@ currency by construction):
 | 0 | Capital contributed (bank evidence) | `CapitalRecognition` (reconciliation's bank recognition) | `CASH_AT_BANK` | `LENDING_CAPITAL` | the platform's own cash enters the pool as lending capital; cash recognised only from a statement (`INV-SET-06`) | reconciliation's recognition key |
 | 1 | Loan disbursed / line drawn | `Disbursement` / `Draw` | `LOAN_PRINCIPAL` P | `CUSTOMER_WALLET` P − f; `LOAN_FEE_INCOME` f | the platform acquires a claim on the borrower and owes the borrower the funds now in their wallet — wallet money backed by recognised capital, never created unbacked (`INV-LND-13`) | `lending.disbursement:<loan>` / `lending.draw:<draw>` |
 | 2 | A day's interest earned | `InterestAccrual` | `LOAN_INTEREST_ACCRUED` | `LOAN_INTEREST_INCOME` | income recognised as earned; a receivable not yet payable | `lending.accrual:<loan>:<date>` |
-| 3 | An instalment falls due / a statement is issued | `InstalmentBilling` / `Statement` | `LOAN_INTEREST_DUE` I; `LOAN_PRINCIPAL_DUE` Pj | `LOAN_INTEREST_ACCRUED` I; `LOAN_PRINCIPAL` Pj | re-classification: the same claim becomes payable (DPD readable from the ledger) | `lending.billing:<instalment>` (post-maturity: `<loan>:<period end>`) / `lending.statement:<line>:<statement date>` *(corrected by `P11-DOC-001`: read `lending.statement:<statement>`)* |
-| 4 | A late fee assessed | `FeeAssessment` | `LOAN_FEES_DUE` | `LOAN_FEE_INCOME` | contractual fee earned and payable | `lending.fee:<billed item>:LATE` *(corrected by `P11-DOC-001`: read `<assessment>`)* |
+| 3 | An instalment falls due / a statement is issued | `InstalmentBilling` / `Statement` | `LOAN_INTEREST_DUE` I; `LOAN_PRINCIPAL_DUE` Pj | `LOAN_INTEREST_ACCRUED` I; `LOAN_PRINCIPAL` Pj | re-classification: the same claim becomes payable (DPD readable from the ledger) | `lending.billing:<instalment>` (post-maturity: `<loan>:<period end>`) / `lending.statement:<line>:<statement date>` *(the code's key - `CreditLineStatements.POSTING_KEY_PREFIX` + line + `:` + statement date; this cell read `lending.statement:<statement>` until `P11-DOC-001`, and the note was reworded by the Phase 11 completion gate's repair, 2026-10-16 (A1-F3), so that it cannot be read as the key)* |
+| 4 | A late fee assessed | `FeeAssessment` | `LOAN_FEES_DUE` | `LOAN_FEE_INCOME` | contractual fee earned and payable | `lending.fee:<billed item>:LATE` *(the code's key - `LateFees.POSTING_KEY_PREFIX` + the billed item + `:LATE`; this cell read `lending.fee:<assessment>` until `P11-DOC-001`, the note reworded as rule 3's)* |
 | 5 | Repayment from the wallet | `Repayment` | `CUSTOMER_WALLET` A | due accounts per allocation; `LOAN_PRINCIPAL` (line paydown); `LOAN_CREDIT_BALANCE` rest | the borrower's funds settle the claim; any excess is owed back | `lending.repayment:<repayment>` |
 | 6 | Credit balance applied | `CreditBalanceApplication` | `LOAN_CREDIT_BALANCE` | due accounts per allocation | the excess held now settles what became due | `lending.credit-application:<billed item>` |
 | 7 | Payoff | `Payoff` | rules 2, 3, 5, then `LOAN_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | every receivable to zero, nothing owed back | each rule's own key - rule 5 `lending.repayment:<repayment>`, the refund `lending.closure-refund:<loan>` *(corrected by `P11-DOC-001`, 2026-10-15: read "`lending.payoff:<quote>` (+ the rule keys)"; `lending.payoff:` is only the API idempotency scope)* |
@@ -1663,6 +1676,8 @@ scenario 5 red). *(The last - the re-dispatch probe against scenario 5's named t
 |---|---|---|---|
 | `finapp.lending.application` | counter | product, outcome | — |
 | `finapp.lending.offer` | counter | product, outcome | — |
+| `finapp.lending.origination` *(added by the Phase 11 completion gate, A5-03)* | counter | kind (application/offer), outcome (failed) | any sustained increase |
+| `finapp.lending.application.awaiting.age` *(added by the Phase 11 completion gate, A5-03)* | gauge (seconds, oldest `AWAITING_DECISION` since submission) | — | above the longest credit request validity and an hour |
 | `finapp.lending.acceptance` | counter | product, outcome | — |
 | `finapp.lending.disbursement` | counter | path, outcome *(as built by `P11-TSK-014`: the key is `payout` - `path` is a forbidden tag fragment in `MetricNames`; values `wallet`, `external_account`; outcomes `posted`, `retrying`, `standing_lost`, `disbursement_failed`)* | — |
 | `finapp.lending.disbursement.pending.age` | gauge (seconds, oldest) | — | above the disbursement deadline |
@@ -1860,6 +1875,19 @@ rest are recorded here, each the truth that holds.
   catch-up accruals and early billing under rules 2 and 3's, rule 5 under `lending.repayment:<repayment>`, the refund
   under `lending.closure-refund:<loan>`; `lending.payoff:` is only the payoff command's API idempotency scope
   (`LoanPayoffDesk`). Rule 9's `…ACCRUED` arm - waiving accrued, unbilled interest - was never built.
+- **The Phase 11 gate's repairs (2026-10-16, repair-1; lending `V029`).** (1) **Rule 6 (§12.8) settles what is already
+  due**, not only what becomes due: T-svc (§7.1) applies a held credit balance over the due state after its billing and
+  before the collection, the condition and the late fee - and T-pay before its recomputation - as a *catch-up
+  application* (`billing_id` NULL, `catch_up_sequence`, key `lending.credit-application:<loan>:catch-up:<n>`); §12.8's
+  rule 6 row's key reads `lending.credit-application:<billed item>` or that one (ADR-0095's Follow-up). (2) **A `FEE`
+  waiver (rule 8) is bounded by `least(billed - paid, assessed - fee waived - refunded)`** - a refunded fee is never
+  forgiven again after a reversal re-opens it; the subledger proof's `FEE_INCOME_NEGATIVE` arm (ADR-0099's Follow-up).
+  (3) **The terms door (§12.2, ADR-0093 section 5) judges with a margin**, exactly, at the smallest principal - the first
+  and later periods' interest at least half a minor unit below `A*`, and no balance exhausted early - so no principal
+  between the bounds and no start date is refused by the schedule engine at a disbursement or a payout's conclusion,
+  which have no business outcome for one (A3-M3, R5; the highest rate admitted for the personal loan's bounds is
+  23.0908 %, where 23.10 % was). (4) `capital_contribution` and its history refuse `TRUNCATE`; a terms version's
+  engine versions are `= 1` (§8).
 - **The payout's `RETURNED`** (§5.4, §12.4) has no producer and is not a state - not in `PayoutStatus`, not in lending
   `V009`'s `CHECK`: payments keeps no return record for an instant withdrawal (`P11-TSK-015`'s refinement,
   `LENDING_LIFECYCLES.md` §4.7) - already annotated where it stands in §5.4, §10 and §12.4.

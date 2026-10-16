@@ -233,9 +233,29 @@ public final class ScheduleEngineV1 {
      *   <li>every later period - interest on at most the whole principal over the calendar's longest month below
      *       {@code UP(A*)} of the same calendar with the SHORTEST first period.</li>
      * </ol>
-     * Each at the bounds' smallest and largest principal - the ratios are the principal's own, so only rounding varies
-     * between them. Within one minor unit of the boundary an offer between the two is still judged by its own schedule
-     * (`P11-TSK-011` closes it {@code CLOSED_UNDECIDED (TERMS_NOT_AMORTISING)}).
+     *
+     * <p><strong>With a margin, for every principal between the bounds and every start date</strong> (the Phase 11 gate's
+     * R5, A3-M3). The judgement once compared the ROUNDED figures at the bounds' two principals only - and rounding varies
+     * between them: at 23.10 % the door admitted, a real EUR 500.19 loan over 60 months on day 1 from 2028-12-18 repays no
+     * principal in its first instalment ({@code ScheduleEngineV1Test#theOldDoorsGap}). A refusal at a disbursement or at a
+     * payout's conclusion has no business outcome - the start date is that day's, the principal the decision's - so the
+     * door now admits only terms under which NO such loan can refuse. Each bound is judged in exact arithmetic at the
+     * smallest principal, where it is tightest, since every exact quantity is the principal's own multiple:
+     * <ol>
+     *   <li>the first period: {@code A* - P x r x d1 / 365 > 1/2} minor unit - so {@code UP(A*) >= A*} exceeds the
+     *       period's {@code HALF_EVEN} interest, at most half a unit above its exact value;</li>
+     *   <li>every later period: the same margin on the whole principal over the longest later month, against {@code A*}
+     *       of the shortest first period;</li>
+     *   <li>no balance exhausted before the last instalment: {@code A* > 5/2 x T(n-1) x g(n)}, where {@code g(j) = 1 + r x
+     *       d(j) / 365} and {@code T(j) = g(j) x T(j-1) + 1} ({@code T(1) = 1}) - the instalment is {@code UP(A*)} or one
+     *       unit more (the least level instalment never needs more: at {@code UP(A*) + 1} the final instalment is at most
+     *       {@code A*}), so each balance is less than {@code 5/2 x T(j)} below its exact value, which is at least
+     *       {@code A* / g(n)}. {@code A*} grows with the first period's factor and the right side does not, so the
+     *       shortest first period is the tightest; the longest term the worst.</li>
+     * </ol>
+     * Linear in the principal, each holds at every principal from the smallest up once it holds there - so no loan the
+     * product can decide, disbursed or paid out on any day, is refused by the engine, and the offer's own judgement
+     * (`P11-TSK-011`) is a second line only.
      */
     public static Optional<ScheduleOutcome.Refused> judgeAmortisation(LoanTerms terms, LoanProductBounds.Bounds bounds) {
         Objects.requireNonNull(terms, "terms");
@@ -262,21 +282,72 @@ public final class ScheduleEngineV1 {
             }
             long[] shortestFirst = calendar.clone();
             shortestFirst[0] = shortest;
-            for (Money principal : List.of(bounds.minimumPrincipal(), bounds.maximumPrincipal())) {
-                Money first = interest(principal, rate, longestFirst);
-                if (annuityUp(principal, rate, calendar).compareTo(first) <= 0) {
-                    return Optional.of(new ScheduleOutcome.Refused(ScheduleRefusal.NOT_AMORTISING, "a " + n
-                            + "-month loan whose first period runs " + longestFirst
-                            + " days would repay no principal in its first instalment"));
-                }
-                Money later = interest(principal, rate, longestLater);
-                if (annuityUp(principal, rate, shortestFirst).compareTo(later) <= 0) {
-                    return Optional.of(new ScheduleOutcome.Refused(ScheduleRefusal.NOT_AMORTISING, "a " + n
-                            + "-month loan could repay no principal in an instalment after its first"));
-                }
+            BigDecimal principal = BigDecimal.valueOf(bounds.minimumPrincipal().minorUnits());
+            BigDecimal[] longest = growthAndDiscount(rate, calendar);
+            BigDecimal[] shortestOne = growthAndDiscount(rate, shortestFirst);
+            if (!aboveInterestByHalf(principal, rate, longest, longestFirst)) {
+                return Optional.of(new ScheduleOutcome.Refused(ScheduleRefusal.NOT_AMORTISING, "a " + n
+                        + "-month loan whose first period runs " + longestFirst
+                        + " days could repay no principal in its first instalment"));
+            }
+            if (!aboveInterestByHalf(principal, rate, shortestOne, longestLater)) {
+                return Optional.of(new ScheduleOutcome.Refused(ScheduleRefusal.NOT_AMORTISING, "a " + n
+                        + "-month loan could repay no principal in an instalment after its first"));
+            }
+            if (!neverExhausted(principal, rate, shortestOne, shortestFirst)) {
+                return Optional.of(new ScheduleOutcome.Refused(ScheduleRefusal.NOT_AMORTISING, "a " + n
+                        + "-month loan at the smallest principal could repay its whole balance before its last"
+                        + " instalment"));
             }
         }
         return Optional.empty();
+    }
+
+    /** {@code F(n)} and {@code S(n)} of {@link #annuityUp}, exact - {@code A* = P x F / S} - for the door's bounds. */
+    private static BigDecimal[] growthAndDiscount(BigDecimal rate, long[] days) {
+        BigDecimal growth = BigDecimal.ONE;
+        BigDecimal discounted = BigDecimal.ZERO;
+        BigDecimal yearPower = BigDecimal.ONE;
+        for (long periodDays : days) {
+            BigDecimal factor = factor(rate, periodDays);
+            yearPower = yearPower.multiply(DAYS_PER_YEAR);
+            growth = growth.multiply(factor);
+            discounted = discounted.multiply(factor).add(yearPower);
+        }
+        return new BigDecimal[] {growth, discounted};
+    }
+
+    /**
+     * {@code P x F / S - P x r x days / 365 > 1/2}, {@code P} in minor units - cross-multiplied by {@code 2 x 365 x S},
+     * exact: no division, no rounding.
+     */
+    private static boolean aboveInterestByHalf(BigDecimal principal, BigDecimal rate, BigDecimal[] fs, long days) {
+        BigDecimal two = BigDecimal.valueOf(2);
+        BigDecimal left = two.multiply(DAYS_PER_YEAR).multiply(principal).multiply(fs[0])
+                .subtract(two.multiply(principal).multiply(rate).multiply(BigDecimal.valueOf(days)).multiply(fs[1]));
+        return left.compareTo(DAYS_PER_YEAR.multiply(fs[1])) > 0;
+    }
+
+    /**
+     * {@code P x F / S > 5/2 x T(n-1) x g(n)}, exact: with {@code f(j) = 365 + r x d(j)}, {@code g(j) = f(j) / 365} and
+     * {@code T(j) = W(j) / 365^(j-1)} - {@code W(1) = 1}, {@code W(j) = f(j) x W(j-1) + 365^(j-1)} - it is
+     * {@code 2 x P x F x 365^(n-1) > 5 x W(n-1) x f(n) x S}.
+     */
+    private static boolean neverExhausted(BigDecimal principal, BigDecimal rate, BigDecimal[] fs, long[] days) {
+        int n = days.length;
+        BigDecimal w = BigDecimal.ONE;
+        BigDecimal yearPower = BigDecimal.ONE;
+        for (int j = 2; j <= n - 1; j++) {
+            yearPower = yearPower.multiply(DAYS_PER_YEAR);
+            w = factor(rate, days[j - 1]).multiply(w).add(yearPower);
+        }
+        BigDecimal left = BigDecimal.valueOf(2).multiply(principal).multiply(fs[0]).multiply(DAYS_PER_YEAR.pow(n - 1));
+        BigDecimal right = BigDecimal.valueOf(5).multiply(w).multiply(factor(rate, days[n - 1])).multiply(fs[1]);
+        return left.compareTo(right) > 0;
+    }
+
+    private static BigDecimal factor(BigDecimal rate, long days) {
+        return DAYS_PER_YEAR.add(rate.multiply(BigDecimal.valueOf(days)));
     }
 
     // ------------------------------------------------------------------ the computation

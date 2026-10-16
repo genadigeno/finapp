@@ -48,6 +48,7 @@ class LendingBornOnceArbitersDatabaseTest {
             "capital_contribution_reference_once", "collection_attempt_item_date_unique",
             "collection_attempt_repayment_unique", "credit_balance_allocation_component_unique",
             "credit_balance_allocation_ordinal_unique", "credit_balance_application_billing_unique",
+            "credit_balance_application_catch_up_unique",
             "credit_balance_application_entry_unique", "credit_line_draw_entry_unique",
             "credit_line_draw_key_unique", "credit_line_statement_cycle_unique",
             "credit_line_statement_due_date_unique", "credit_line_statement_entry_unique",
@@ -131,6 +132,7 @@ class LendingBornOnceArbitersDatabaseTest {
         new AutoCollectionDatabaseTest().twoSweepersCollectOnce();
         new FeeAndWaiverDatabaseTest().aFeeWaiverReversesOnlyTheUnpaidRemainder();
         new FeeAndWaiverDatabaseTest().aWaiverOfAPaidFeeRefundsToTheCreditBalance();
+        new FeeAndWaiverDatabaseTest().aRefundHeldBesidePastDueArrearsIsApplied();
         new CreditLineStatementDatabaseTest().aCreditBalancePaysTheStatement();
         new CreditLineRepaymentDatabaseTest().theLastPaymentClosesAClosingLine();
         PayoffDatabaseTest payoffs = new PayoffDatabaseTest();

@@ -383,15 +383,57 @@ class ScheduleEngineV1Test {
     }
 
     @Test
-    @DisplayName("a 1-day shortest first period moves the binding bound to the later periods: 56.45 % admitted, 56.50 %"
-            + " refused - no later instalment may charge a 31-day month on the whole principal at or above the instalment")
+    @DisplayName("a 1-day shortest first period moves the binding bound to the later periods: 56.44 % admitted, 56.45 %"
+            + " refused - no later instalment may charge a 31-day month on the whole principal within half a unit of the"
+            + " instalment")
     void theLaterPeriodsBound() {
         LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
-        assertThat(ScheduleEngineV1.judgeAmortisation(oneDayFirstPeriod("0.5645"), bounds)).isEmpty();
-        assertThat(ScheduleEngineV1.judgeAmortisation(oneDayFirstPeriod("0.565"), bounds)).hasValueSatisfying(refusal -> {
+        assertThat(ScheduleEngineV1.judgeAmortisation(oneDayFirstPeriod("0.5644"), bounds)).isEmpty();
+        assertThat(ScheduleEngineV1.judgeAmortisation(oneDayFirstPeriod("0.5645"), bounds)).hasValueSatisfying(refusal -> {
             assertThat(refusal.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
             assertThat(refusal.detail()).contains("after its first");
         });
+    }
+
+    @Test
+    @DisplayName("the old door's gap (the Phase 11 gate's R5): at 23.10 % - admitted while the door compared rounded figures"
+            + " at the bounds' two principals only - a real EUR 500.19 loan over 60 months on day 1 from 2028-12-18 repays no"
+            + " principal in its first instalment, so its disbursement or payout conclusion had no outcome; the door now"
+            + " refuses the rate, and at its highest admitted rate (23.0908 %) the same loan amortises")
+    void theOldDoorsGap() {
+        LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
+        Money gap = eur("500.19");
+        LocalDate start = LocalDate.parse("2028-12-18");
+        assertThat(ScheduleEngineV1.project(personalLoan("0.231").build(), gap, 60, 1, start))
+                .isInstanceOfSatisfying(ScheduleOutcome.Refused.class, refused -> {
+                    assertThat(refused.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
+                    assertThat(refused.detail()).contains("instalment 1");
+                });
+        assertThat(ScheduleEngineV1.project(personalLoan("0.231").build(), bounds.minimumPrincipal(), 60, 1, start))
+                .as("at the bounds' own principal it amortises - the old door's two probes could not see the gap")
+                .isInstanceOf(ScheduleOutcome.Projected.class);
+        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.231").build(), bounds)).hasValueSatisfying(
+                refusal -> assertThat(refusal.detail()).contains("first instalment"));
+        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.230908").build(), bounds)).isEmpty();
+        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0.230909").build(), bounds)).isPresent();
+        assertThat(ScheduleEngineV1.project(personalLoan("0.230908").build(), gap, 60, 1, start))
+                .isInstanceOf(ScheduleOutcome.Projected.class);
+    }
+
+    @Test
+    @DisplayName("a minimum principal too small for the longest term is refused at the door - a balance repaid before the"
+            + " last instalment is a refusal no disbursement could answer (the Phase 11 gate's R5)")
+    void theExhaustionBound() {
+        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0").build(),
+                new LoanProductBounds.Bounds(eur("0.05"), eur("100.00"), 1, 6))).hasValueSatisfying(refusal -> {
+                    assertThat(refusal.reason()).isEqualTo(ScheduleRefusal.NOT_AMORTISING);
+                    assertThat(refusal.detail()).contains("whole balance");
+                });
+        assertThat(ScheduleEngineV1.project(personalLoan("0").build(), eur("0.05"), 6, 10, LocalDate.parse("2026-01-01")))
+                .as("the loan it protects against").isInstanceOf(ScheduleOutcome.Refused.class);
+        assertThat(ScheduleEngineV1.judgeAmortisation(personalLoan("0").build(),
+                new LoanProductBounds.Bounds(eur("1.00"), eur("100.00"), 1, 6)))
+                .as("EUR 1.00 over six months: A* = 16.67 cents, above 5/2 x T(5) x g(6) = 12.5").isEmpty();
     }
 
     static LoanTerms oneDayFirstPeriod(String rate) {

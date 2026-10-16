@@ -142,6 +142,16 @@ public enum LendingAuditAction implements AuditableAction {
                     + " loan and the act.",
             false),
 
+    /** A proposer tried to approve their own four-eyes proposal - refused, recorded. */
+    SELF_APPROVAL_REFUSED(
+            "lending.SelfApprovalRefused",
+            "A proposer tried to approve their own proposal - a repayment reversal, a waiver, an amendment, a loan terms"
+                    + " version's activation or a lending-capital contribution - and was refused before anything was written"
+                    + " (INV-AUD-04, INV-LND-11; also held by each table's four-eyes CHECK). Recorded FAILED in a"
+                    + " transaction of its own after the act rolled back, so the attempt survives (the Phase 11 completion"
+                    + " gate's R4). Its target the proposal; the summary names it and the act - never an amount.",
+            false),
+
     /** A loan servicing agent proposed a fee or interest waiver. */
     WAIVER_PROPOSED(
             "lending.WaiverProposed",

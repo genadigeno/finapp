@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.app.credit.ExposureCensusMetrics;
 import com.finapp.app.lending.LendingCapitalMetrics;
 import com.finapp.app.lending.LendingProofMetrics;
+import com.finapp.app.lending.LoanAwaitingDecisionMetrics;
 import com.finapp.app.lending.LoanDisbursementMetrics;
+import com.finapp.app.lending.LoanOfferMetrics;
 import com.finapp.app.lending.LoanPayoutMetrics;
 import com.finapp.app.lending.LoanServicingMetrics;
 import com.finapp.app.lending.LoanTermsMetrics;
@@ -60,6 +62,8 @@ class LendingAlertRulesTest {
     private static final String PENDING_AGE = "finapp_lending_disbursement_pending_age_seconds";
     private static final String PAYOUT_AGE = "finapp_lending_payout_dispatched_age_seconds";
     private static final String ACCRUAL_LAG = "finapp_lending_accrual_lag_seconds";
+    private static final String AWAITING_AGE = "finapp_lending_application_awaiting_age_seconds";
+    private static final String ORIGINATION = "finapp_lending_origination_total";
     private static final String ANOMALY = "finapp_lending_allocation_anomaly_total";
     private static final String SUBLEDGER = "finapp_lending_subledger_proof";
     private static final String REPLAY = "finapp_lending_replay";
@@ -77,6 +81,8 @@ class LendingAlertRulesTest {
         assertThat(prometheusName(LoanDisbursementMetrics.PENDING_AGE) + "_seconds").isEqualTo(PENDING_AGE);
         assertThat(prometheusName(LoanPayoutMetrics.DISPATCHED_AGE) + "_seconds").isEqualTo(PAYOUT_AGE);
         assertThat(prometheusName(LoanServicingMetrics.LAG) + "_seconds").isEqualTo(ACCRUAL_LAG);
+        assertThat(prometheusName(LoanAwaitingDecisionMetrics.AWAITING_AGE) + "_seconds").isEqualTo(AWAITING_AGE);
+        assertThat(prometheusName(LoanOfferMetrics.ORIGINATION) + "_total").isEqualTo(ORIGINATION);
         assertThat(prometheusName(RepaymentMetrics.ANOMALY) + "_total").isEqualTo(ANOMALY);
         assertThat(prometheusName(LendingProofMetrics.SUBLEDGER)).isEqualTo(SUBLEDGER);
         assertThat(prometheusName(LendingProofMetrics.REPLAY)).isEqualTo(REPLAY);
@@ -108,6 +114,8 @@ class LendingAlertRulesTest {
         threshold(covered, "LendingPayoutUnconcluded", healthy, named(PAYOUT_AGE),
                 LendingObjectives.PAYOUT_OUTCOME.toSeconds());
         threshold(covered, "LendingAccrualLagging", healthy, named(ACCRUAL_LAG), LendingObjectives.ACCRUAL_LAG.toSeconds());
+        threshold(covered, "LendingApplicationAwaitingTooLong", healthy, named(AWAITING_AGE),
+                LendingObjectives.awaitingDecision().toSeconds());
         threshold(covered, "LendingSubledgerProofFailing", healthy, verdict(SUBLEDGER, "FAILS"), 0);
         threshold(covered, "LendingReplayDiverged", healthy, verdict(REPLAY, "DIVERGED"), 0);
         threshold(covered, "LendingCapitalProofFailing", healthy, verdict(CAPITAL, "FAILS"), 0);
@@ -119,6 +127,15 @@ class LendingAlertRulesTest {
         assertThat(firing(healthy, healthy)).doesNotContain("LendingAllocationAnomaly");
         assertThat(firing(healthy, anomalous)).containsExactly("LendingAllocationAnomaly");
         covered.put("LendingAllocationAnomaly", true);
+
+        // A counter by kind: one failed origination step or offer expiry between two scrapes fires; none does not.
+        for (String kind : List.of("application", "offer")) {
+            List<RuleEvaluator.Sample> failing = set(healthy, named(ORIGINATION).and(sample ->
+                    kind.equals(sample.labels().get("kind"))), value -> value + 1);
+            assertThat(firing(healthy, failing)).as(kind).containsExactly("LendingOriginationStepFailing");
+        }
+        assertThat(firing(healthy, healthy)).doesNotContain("LendingOriginationStepFailing");
+        covered.put("LendingOriginationStepFailing", true);
 
         // The terms: a product with none ACTIVE fires where the target offers lending - and never where it does not.
         for (LoanProduct product : LoanProduct.values()) {
@@ -140,7 +157,8 @@ class LendingAlertRulesTest {
         }
 
         // Every gauge read from the database, unreadable: the unreadable rule alone - no threshold rule reads NaN.
-        for (String gauge : List.of(SUBLEDGER, REPLAY, CAPITAL, HEADROOM_LOW, CENSUS, PENDING_AGE, PAYOUT_AGE, ACCRUAL_LAG)) {
+        for (String gauge : List.of(SUBLEDGER, REPLAY, CAPITAL, HEADROOM_LOW, CENSUS, PENDING_AGE, PAYOUT_AGE, ACCRUAL_LAG,
+                AWAITING_AGE)) {
             List<RuleEvaluator.Sample> unreadable = set(healthy, named(gauge), value -> Double.NaN);
             assertThat(firing(unreadable, unreadable)).as(gauge).containsExactly("LendingGaugesUnreadable");
         }
