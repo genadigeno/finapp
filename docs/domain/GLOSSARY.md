@@ -977,7 +977,7 @@ writer** (built by `P11-TSK-001`, credit `V021`, 2026-10-10): the credit-owned p
 not `APPROVED`, lapsed or consumed by another, replays for the same consumer, and inserts through a
 `SECURITY DEFINER` function that is the table's only path (the application role's `INSERT`
 revoked). Lending's offer acceptance calls the port, in its own transaction. It names its consumer
-(`ConsumerRef`: `LOAN_AGREEMENT` and the agreement's id - one consumer takes up one decision) and is
+(`ConsumerRef`: `LOAN_AGREEMENT` - or, since `P12-TSK-001`, `BNPL_AGREEMENT`, each only of its own product family - and the agreement's id; one consumer takes up one decision) and is
 stamped with the database instant judged under the lock, always before the approval's `valid_until`.
 **Not:** a change to the decision, which is never updated (`INV-CRD-02`), and not a loan — it
 records only that one took the approval up. Nor a lending table: lending never writes credit's

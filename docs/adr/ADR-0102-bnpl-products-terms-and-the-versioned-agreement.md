@@ -259,5 +259,13 @@ ADR-0087 §2, ADR-0092.
 - `P12-TSK-008`'s design places `BNPL_SCHEDULE_ENGINE_V1`'s identity (a `bnpl` vocabulary or an
   additive `creditmath` member) without changing any existing member.
 - `P12-TSK-001`'s design states whether a BNPL request may be referred to manual underwriting
-  within its one-hour validity, or is decided automatically only.
+  within its one-hour validity, or is decided automatically only. **Stated by `P12-TSK-001`
+  (2026-10-16): automatically only** - `CreditProduct.referable()` is false for both BNPL products; a
+  BNPL policy's fallback is `DECLINE` and none of its rules refers (`credit.PolicyIncomplete`, and
+  `credit_policy_bnpl_never_refers` for the fallback), and `underwriting_case`'s product `CHECK` holds
+  the lending products only, so a BNPL underwriting case is unrepresentable. Also as built: pay-in-4's
+  affordability is its largest instalment (A4's first, computed by credit) times the policy's
+  `plan_stress_factor_bps` (pay-in-4's versions only, 10,000-40,000); a request's `RequestOrigin`
+  (`CUSTOMER_DOOR` | `BNPL_APPLICATION`) binds BNPL requests to the BNPL application; four-eyes
+  thresholds EUR 500.00 (P4) and EUR 2,500.00 (PN), moot while no BNPL request is referred.
 - Accepted by the Phase 12 exit review (`P12-DOC-001`), read against the code first.
