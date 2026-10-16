@@ -3010,7 +3010,8 @@ and entry references `CONFIDENTIAL`, dates, periods, kinds, versions and stamps 
 | `instalment_billing` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `instalment_billing` | `correlation_id` | `INTERNAL` | The account's correlation |
 | `credit_balance_application` | `id` | `INTERNAL` | Generated |
-| `credit_balance_application` | `billing_id` | `INTERNAL` | The billing it was applied at - once |
+| `credit_balance_application` | `billing_id` | `INTERNAL` | The billed item it was applied at - once; NULL for a catch-up application (`V029`) |
+| `credit_balance_application` | `catch_up_sequence` | `INTERNAL` | A catch-up application's place among its loan's - credit held applied over items already due at a servicing step or a payoff, not at a billed item's birth (Phase 11 gate R2, `V029`); NULL at a billed item |
 | `credit_balance_application` | `loan_id` | `CONFIDENTIAL` | The account |
 | `credit_balance_application` | `currency` | `INTERNAL` | The account's currency |
 | `credit_balance_application` | `scale` | `INTERNAL` | The amount's persisted scale |

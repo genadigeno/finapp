@@ -345,6 +345,30 @@ public final class InstalmentBillings {
                 .apply(unitOfWork, loan, agreement, rules, billing.id(), today, accounts, zero);
     }
 
+    /**
+     * Rule 6 over what is ALREADY due (the Phase 11 gate's R2, {@code lending V029}): {@code loan}'s credit balance applied
+     * over its billed items' amounts due, oldest first - the loan's next catch-up application - when both exist; either
+     * product (a line's statements are billed items of the same store). The one implementation
+     * ({@link CreditBalanceApplications#catchUp}); on the caller's unit of work, under its L3 - the servicing step after
+     * billing and before the collection, the condition and the late fee; the payoff before its recomputation.
+     */
+    Optional<CreditBalanceApplication> applyHeldCredit(Connection unitOfWork, Loan loan, LoanAgreement agreement,
+            LoanTerms pinned, LocalDate today) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(loan, "loan");
+        Objects.requireNonNull(agreement, "agreement");
+        Objects.requireNonNull(pinned, "pinned");
+        Objects.requireNonNull(today, "today");
+        Money zero = Money.ofPersisted(0, loan.currency(), agreement.amount().scale());
+        Accounts accounts = receivables().accounts(unitOfWork, loan.id(), loan.currency());
+        AllocationRules rules = AllocationRules.of(pinned);
+        if (rules.engine() != agreement.allocationEngine()) {
+            throw new IllegalStateException("the pinned terms and the agreement name one allocation engine (INV-LND-09)");
+        }
+        return new CreditBalanceApplications(store, ledgerAccounts, balances, postings, ids)
+                .catchUp(unitOfWork, loan, agreement, rules, today, accounts, zero);
+    }
+
     // ------------------------------------------------------------------ the event
 
     /**

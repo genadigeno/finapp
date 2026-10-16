@@ -173,7 +173,7 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
         }
         List<LoanRecord.Application> applications = query(c, "SELECT * FROM lending.credit_balance_application"
                 + " WHERE loan_id = ? ORDER BY created_at, id", id, row -> new LoanRecord.Application(
-                        row.getObject("id", UUID.class), row.getObject("billing_id", UUID.class),
+                        row.getObject("id", UUID.class), uuid(row, "billing_id"),
                         money(row, "amount_minor"), row.getObject("agreement_id", UUID.class),
                         row.getInt("agreement_version"), row.getInt("allocation_engine_version"),
                         JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)), instant(row, "created_at"),

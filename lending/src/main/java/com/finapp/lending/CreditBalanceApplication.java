@@ -4,6 +4,7 @@ import com.finapp.ledger.JournalEntryId;
 import com.finapp.sharedkernel.money.Money;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -12,16 +13,20 @@ import java.util.UUID;
  * {@code INV-LND-04}): what {@link AllocationEngineV1#allocate} applied of the loan's credit balance over its billed
  * items, oldest first - only its lines on billed items ({@link AllocationLine.Target#DUE_ITEM}); its
  * {@link AllocationLine.Target#CREDIT_BALANCE} line is what stays held and is no line here. The lines sum to the amount
- * (asserted here, and held by the database at commit). Born at most once per billing; never changed.
+ * (asserted here, and held by the database at commit). Born at most once per billed item - or, credit held while
+ * something is already due, as the loan's next <em>catch-up</em> application (the Phase 11 gate's R2, {@code lending V029}:
+ * at a servicing step or a payoff, at no billed item's birth); never changed.
  *
- * @param billing the billing at which it was applied
+ * @param billing the billed item at whose birth it was applied - empty for a catch-up application
+ * @param catchUpSequence a catch-up application's place among its loan's (1, 2, ...) - empty at a billed item
  * @param lines the billed items' components it paid, in the engine's order - each a {@link AllocationLine.Target#DUE_ITEM}
  *     with its row identity
  * @param entry posting rule 6's journal entry
  */
 public record CreditBalanceApplication(
         UUID id,
-        UUID billing,
+        Optional<UUID> billing,
+        Optional<Integer> catchUpSequence,
         LoanId loan,
         Money amount,
         LoanAgreementId agreement,
@@ -33,6 +38,11 @@ public record CreditBalanceApplication(
     public CreditBalanceApplication {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(billing, "billing must not be null");
+        Objects.requireNonNull(catchUpSequence, "catchUpSequence must not be null");
+        if (billing.isPresent() == catchUpSequence.isPresent()
+                || catchUpSequence.filter(sequence -> sequence < 1).isPresent()) {
+            throw new IllegalArgumentException("an application is born at a billed item or as a numbered catch-up, not both");
+        }
         Objects.requireNonNull(loan, "loan must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
         Objects.requireNonNull(agreement, "agreement must not be null");
@@ -69,6 +79,8 @@ public record CreditBalanceApplication(
     /** Identifiers only. */
     @Override
     public String toString() {
-        return "CreditBalanceApplication[" + loan.value() + ", billing " + billing + ", " + lines.size() + " lines]";
+        return "CreditBalanceApplication[" + loan.value() + ", "
+                + billing.map(item -> "billing " + item).orElseGet(() -> "catch-up " + catchUpSequence.orElseThrow())
+                + ", " + lines.size() + " lines]";
     }
 }

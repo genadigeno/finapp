@@ -117,7 +117,7 @@ class LendingProofMetricsTest {
                         holds || purpose != AccountPurpose.LOAN_PRINCIPAL ? ZERO : Money.ofMinorUnits(1, ZERO.currency())))
                 .toList();
         return new LendingProofs.Proven(
-                new LoanSubledgerProof.Verdict(loan, LoanKind.INSTALMENT, LoanStatus.ACTIVE, figures, true, 0, true, true),
+                new LoanSubledgerProof.Verdict(loan, LoanKind.INSTALMENT, LoanStatus.ACTIVE, figures, true, 0, true, true, true),
                 new LoanReplayProof.Replay(loan, verdict, verdict == LoanReplayProof.Verdict.IDENTICAL ? List.of()
                         : List.of(new LoanReplayProof.Finding(LoanReplayProof.Check.ACCRUAL, UUID.randomUUID())), 7));
     }

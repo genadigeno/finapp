@@ -724,7 +724,7 @@ final class AmortisationWorld {
             leg(entry, AccountPurpose.LOAN_CREDIT_BALANCE, Direction.DEBIT, amount, today);
             perComponent.forEach((component, paid) -> leg(entry, dueAccount(component), Direction.CREDIT, paid, today));
             long recorded = nextOrder();
-            applications.add(new LoanRecord.Application(id(), billed, money(amount), agreementId, 1, 1, entry,
+            applications.add(new LoanRecord.Application(id(), Optional.of(billed), money(amount), agreementId, 1, 1, entry,
                     at(today), lines, recorded));
             tag(Tag.APPLICATIONS);
         }

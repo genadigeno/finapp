@@ -118,22 +118,24 @@ class ScheduleEngineV1PropertiesTest {
     // ------------------------------------------------------------------ the door's judgement, against real loans
 
     @Test
-    @DisplayName("the terms door is sound and tight: every real 6- and 60-month loan at the bounds' principals, disbursed"
-            + " any day of a leap year, amortises at each rate it admits; at the first rate it refuses, a real loan cannot")
+    @DisplayName("the terms door is sound and near-tight: every real 6- and 60-month loan at the bounds' principals and at"
+            + " the old door's gap (EUR 500.19), disbursed any day of a leap year, amortises at each rate it admits; at"
+            + " 23.10 % - which it now refuses, by its margin - a real loan cannot")
     void theJudgementIsSoundAndTight() {
         LoanProductBounds.Bounds bounds = LoanTermsFixtures.BOUNDS.amortisationBounds(LoanProduct.PERSONAL_LOAN).orElseThrow();
         List<LoanTerms> admitted = new ArrayList<>();
-        for (String rate : List.of("0.10", "0.18", "0.20", "0.22", "0.23", "0.231")) {
+        for (String rate : List.of("0.10", "0.18", "0.20", "0.22", "0.23", "0.2309")) {
             admitted.add(personalLoan(rate).build());
         }
-        admitted.add(ScheduleEngineV1Test.oneDayFirstPeriod("0.5645"));
+        admitted.add(ScheduleEngineV1Test.oneDayFirstPeriod("0.5644"));
+        Money gap = Money.ofMinorUnits(500_19, LoanTermsFixtures.EUR);
         for (LoanTerms terms : admitted) {
             String rate = terms.nominalAnnualRate().toPlainString();
             assertThat(ScheduleEngineV1.judgeAmortisation(terms, bounds)).as("admitted: " + rate).isEmpty();
             for (int offset = 0; offset < 366; offset++) {
                 for (int day : List.of(1, 28)) {
                     for (int term : List.of(bounds.minimumTermMonths(), bounds.maximumTermMonths())) {
-                        for (Money principal : List.of(bounds.minimumPrincipal(), bounds.maximumPrincipal())) {
+                        for (Money principal : List.of(bounds.minimumPrincipal(), gap, bounds.maximumPrincipal())) {
                             assertThat(ScheduleEngineV1.project(terms, principal, term, day,
                                     LocalDate.of(2028, 1, 1).plusDays(offset)))
                                     .as("an admitted rate amortises every loan: " + rate)
@@ -143,15 +145,11 @@ class ScheduleEngineV1PropertiesTest {
                 }
             }
         }
-        LoanTerms refused = personalLoan("0.2315").build();
-        assertThat(ScheduleEngineV1.judgeAmortisation(refused, bounds)).as("refused: 23.15 %").isPresent();
-        boolean aRealLoanFails = false;
-        for (int offset = 0; offset < 4 * 366 && !aRealLoanFails; offset++) {
-            aRealLoanFails = ScheduleEngineV1.project(refused, bounds.maximumPrincipal(), bounds.maximumTermMonths(), 28,
-                    LocalDate.of(2024, 1, 1).plusDays(offset)) instanceof ScheduleOutcome.Refused;
-        }
-        assertThat(aRealLoanFails).as("the refusal is not merely conservative: some real loan at 23.15 % cannot amortise")
-                .isTrue();
+        LoanTerms refused = personalLoan("0.231").build();
+        assertThat(ScheduleEngineV1.judgeAmortisation(refused, bounds)).as("refused: 23.10 %").isPresent();
+        assertThat(ScheduleEngineV1.project(refused, gap, bounds.maximumTermMonths(), 1, LocalDate.of(2028, 12, 18)))
+                .as("the refusal is not merely conservative: a real EUR 500.19 loan at 23.10 % cannot amortise")
+                .isInstanceOf(ScheduleOutcome.Refused.class);
     }
 
     // ------------------------------------------------------------------ two JVMs

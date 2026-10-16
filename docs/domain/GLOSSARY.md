@@ -1213,7 +1213,8 @@ reversal negates allocations by rows, and later allocations are not re-cut.
 
 ### Loan Credit Balance
 **Is:** money received beyond every receivable of one loan and owed back to the borrower — the
-per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing,
+per-loan liability account `LOAN_CREDIT_BALANCE` — applied automatically at the next billing (or,
+held while something is already due, at the next servicing step - a catch-up application, lending `V029`),
 refunded to the wallet at closure, and the destination of a paid fee's refund. The account by
 `P11-TSK-003`; its application at each billing built by `P11-TSK-017` (`credit_balance_application`);
 its refund at closure built by `P11-TSK-018` (`loan_closure`, `lending.closure-refund:<loan>`); a payoff's through the same

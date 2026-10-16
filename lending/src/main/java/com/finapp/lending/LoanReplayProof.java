@@ -737,7 +737,7 @@ public final class LoanReplayProof {
 
         /** After an item is billed, the step applies a credit balance held to what is due - its absence is a finding. */
         private void applicationExpected(UUID item, LoanSubledgerProof.Stamp billedAt) {
-            boolean applied = record.applications().stream().anyMatch(application -> application.billingId().equals(item));
+            boolean applied = record.applications().stream().anyMatch(application -> application.billingId().filter(item::equals).isPresent());
             if (applied) {
                 return;
             }
