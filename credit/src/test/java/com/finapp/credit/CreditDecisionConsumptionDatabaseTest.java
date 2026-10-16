@@ -600,6 +600,9 @@ class CreditDecisionConsumptionDatabaseTest {
                 .as("the decision and the consumer, never an amount")
                 .contains("BNPL_AGREEMENT").contains(winner.ref().toString()).doesNotContain("1000");
         assertThat(reservedFor(party)).as("consumed, it reserves nothing").isEqualTo(Money.zero(EUR));
+        assertThat(consumeAndCommit(port, decision, winner)).as("the winning BNPL agreement's retry replays its own")
+                .isInstanceOfSatisfying(Consumption.Consumed.class, replay -> assertThat(replay.replayed()).isTrue());
+        assertThat(audits(decision)).as("a replay writes no second record").isEqualTo(1);
     }
 
     @Test

@@ -25,6 +25,7 @@ import java.sql.ResultSet;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -185,6 +186,47 @@ class CreditPolicyEndpointDatabaseTest {
         assertThat(get(POLICIES + "?product=PERSONAL_LOAN", customer).statusCode()).as("a customer reads").isEqualTo(403);
         assertThat(get(POLICIES + "?product=PERSONAL_LOAN", null).statusCode()).as("no session reads").isEqualTo(401);
         assertThat(versions()).as("no refused caller wrote a version").isEqualTo(versions);
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("(P12-TSK-001) the policy door admits the BNPL products: pay-in-4 with its plan stress factor, proposed by"
+            + " one officer and activated by another, read back with it; refused without it, pay-in-N refused with one,"
+            + " and either refused a referring fallback")
+    void theBnplProductsAreOfferedAtThePolicyDoor() throws Exception {
+        String first = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
+        String second = sessionWith(RoleName.CREDIT_POLICY_OFFICER);
+        long before = versions();
+        for (String refused : List.of(
+                bnpl("BNPL_PAY_IN_4", "DECLINE", null),
+                bnpl("BNPL_PAY_IN_4", "DECLINE", 9_999),
+                bnpl("BNPL_PAY_IN_4", "REFER", 30_000),
+                bnpl("BNPL_PAY_IN_N", "DECLINE", 30_000),
+                bnpl("BNPL_PAY_IN_N", "REFER", null))) {
+            HttpResponse<String> answer = post(POLICIES, refused, first, someKey());
+            assertThat(answer.statusCode()).as(refused + " " + answer.body()).isEqualTo(422);
+            assertThat(answer.body()).contains("credit.PolicyIncomplete");
+        }
+        assertThat(versions()).as("no refused proposal wrote a version").isEqualTo(before);
+        HttpResponse<String> proposed = post(POLICIES, bnpl("BNPL_PAY_IN_4", "DECLINE", 30_000), first, someKey());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String id = field(proposed.body(), "id");
+        HttpResponse<String> approved = post(POLICIES + "/" + id + "/approval", decision("BNPL reviewed"), second, someKey());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        HttpResponse<String> read = get(POLICIES + "?product=BNPL_PAY_IN_4", second);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(field(read.body(), "id")).isEqualTo(id);
+        assertThat(read.body()).contains("\"planStressFactorBps\":30000").contains("\"unavailableFallback\":\"DECLINE\"");
+        HttpResponse<String> payInN = post(POLICIES, bnpl("BNPL_PAY_IN_N", "DECLINE", null), first, someKey());
+        assertThat(payInN.statusCode()).as(payInN.body()).isEqualTo(201);
+        assertThat(get(POLICIES + "?product=PERSONAL_LOAN", second).body()).as("a lending policy states no factor")
+                .doesNotContain("\"planStressFactorBps\":3");
+    }
+
+    /** A BNPL policy over the wire: v1's shape with {@code fallback}, and {@code factor} when not null. */
+    private static String bnpl(String product, String fallback, Integer factor) {
+        String body = policy(product, 1_800, true, fallback, "a BNPL policy");
+        return factor == null ? body : body.replace("\"reason\":", "\"planStressFactorBps\":" + factor + ",\"reason\":");
     }
 
     // -----------------------------------------------------------------
