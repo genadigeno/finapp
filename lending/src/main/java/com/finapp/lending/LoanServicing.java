@@ -51,6 +51,11 @@ import lombok.RequiredArgsConstructor;
  *       application, rule 6; in the same slot, <strong>state</strong> (`P11-TSK-022`, {@link CreditLineStatements}): a
  *       line's cycles whose statement dates have come and whose dates the accrual has reached, oldest first - rule 3 for
  *       the cycle's interest and the minimum payment's principal part - each followed by rule 6;
+ *   <li><strong>apply what is held</strong> (the Phase 11 gate's R2, {@link InstalmentBillings#applyHeldCredit}): once
+ *       caught up, a credit balance still held while something is already due - a fee refunded, a repayment reversed
+ *       beside other credit, a matured loan's interest - is applied by rule 6 over the due state, the loan's next catch-up
+ *       application; BEFORE the collection, the condition and the late fee, so no arrears the borrower's own money covers
+ *       is collected from the wallet, aged or charged a fee, and a loan it settles closes below;
  *   <li><strong>collect</strong> (`P11-TSK-019`, {@link LoanCollections}): once caught up, when the pinned terms say so,
  *       each billed item (an instalment's billing, a line's statement) due by today and not yet attempted today, oldest first - (L7) the wallet's row after L3 - through
  *       the repayment's one posting half (rule 5, kind {@code AUTO_COLLECTION}); a collection that settles the loan closes
@@ -128,7 +133,8 @@ public final class LoanServicing {
     /**
      * What one servicing step did - for the meter; never a figure or a date: {@code posted} and {@code zero} accrued
      * dates, {@code billed} items made due and credit-balance applications {@code applied} at them (`P11-TSK-017`), a line's
-     * statements {@code stated} and the applications {@code statedApplied} at them (`P11-TSK-022`), and whether
+     * statements {@code stated} and the applications {@code statedApplied} at them (`P11-TSK-022`) - each count including
+     * the step's catch-up application over what was already due (the Phase 11 gate's R2) - and whether
      * the step {@code closed} the loan - its last receivable settled by an application (`P11-TSK-018`) or a collection - and
      * its collection attempts counted by outcome (`P11-TSK-019`), and the condition changes it recorded - {@code conditions},
      * a bucket's and the default flag's (`P11-TSK-024`), and the late {@code fees} it assessed - {@code feesCapped} of them
@@ -214,6 +220,16 @@ public final class LoanServicing {
                     billed = billings.bill(unitOfWork, loan, agreement, pinned, today, accrued.accruedThrough().get());
                 } else {
                     stated = statements.state(unitOfWork, loan, agreement, pinned, today, accrued.accruedThrough().get());
+                }
+            }
+            // Then what is held settles what is already due (the Phase 11 gate's R2): rule 6 over the due state, once caught
+            // up - before the collection, the condition and the late fee, which would otherwise collect, age and charge
+            // arrears the borrower's own held money covers. Counted with the step's applications.
+            if (accrued.caughtUp() && billings.applyHeldCredit(unitOfWork, loan, agreement, pinned, today).isPresent()) {
+                if (loan.kind() == LoanKind.INSTALMENT) {
+                    billed = new InstalmentBillings.Billed(billed.billed(), billed.applied() + 1);
+                } else {
+                    stated = new CreditLineStatements.Stated(stated.stated(), stated.applied() + 1);
                 }
             }
             // Then auto-collection (P11-TSK-019), once every elapsed date is accrued and everything due is billed: what

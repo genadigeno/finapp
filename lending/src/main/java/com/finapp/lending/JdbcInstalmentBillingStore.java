@@ -254,12 +254,13 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
         Objects.requireNonNull(correlation, "correlation");
         Money amount = application.amount();
         try (PreparedStatement insert = unitOfWork.prepareStatement(
-                "INSERT INTO lending.credit_balance_application (id, billing_id, loan_id, currency, scale, amount_minor,"
-                        + " agreement_id, agreement_version, allocation_engine_version, journal_entry_id, created_at,"
-                        + " correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, statement_timestamp(), ?)")) {
+                "INSERT INTO lending.credit_balance_application (id, billing_id, catch_up_sequence, loan_id, currency,"
+                        + " scale, amount_minor, agreement_id, agreement_version, allocation_engine_version, journal_entry_id,"
+                        + " created_at, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, statement_timestamp(), ?)")) {
             int i = 0;
             insert.setObject(++i, application.id());
-            insert.setObject(++i, application.billing());
+            insert.setObject(++i, application.billing().orElse(null));
+            insert.setObject(++i, application.catchUpSequence().orElse(null), java.sql.Types.INTEGER);
             insert.setObject(++i, application.loan().value());
             insert.setString(++i, amount.currency().code());
             insert.setInt(++i, amount.scale());
@@ -293,6 +294,21 @@ public final class JdbcInstalmentBillingStore implements InstalmentBillingStore 
             insert.executeBatch();
         } catch (SQLException failure) {
             throw failed("inserting a credit-balance allocation", failure);
+        }
+    }
+
+    @Override
+    public int latestCatchUpSequence(Connection unitOfWork, LoanId loan) {
+        Objects.requireNonNull(loan, "loan");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT coalesce(max(catch_up_sequence), 0) FROM lending.credit_balance_application WHERE loan_id = ?")) {
+            select.setObject(1, loan.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getInt(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a loan's latest catch-up application", failure);
         }
     }
 

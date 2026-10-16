@@ -41,6 +41,7 @@ import static com.finapp.lending.InterestAccrualDatabaseTest.disbursed;
 import static com.finapp.lending.InterestAccrualDatabaseTest.eur;
 import static com.finapp.lending.InterestAccrualDatabaseTest.service;
 import static com.finapp.lending.RepaymentDatabaseTest.assertSubledgerProves;
+import static com.finapp.lending.RepaymentDatabaseTest.catchUps;
 import static com.finapp.lending.RepaymentDatabaseTest.due;
 import static com.finapp.lending.RepaymentDatabaseTest.events;
 import static com.finapp.lending.RepaymentDatabaseTest.held;
@@ -374,6 +375,127 @@ class FeeAndWaiverDatabaseTest {
     }
 
     @Test
+    @DisplayName("a refund held beside past-due arrears is applied (the Phase 11 gate's R2, case a): the fee paid, its item's"
+            + " interest and principal five days past due, the fee refunded - 15.00 held while the item is due; the next"
+            + " servicing step applies it by rule 6 over the due state - ten racing steps, one catch-up application (1), at"
+            + " no billed item, under lending.credit-application:<loan>:catch-up:1 - nothing held, the item owing 15.00"
+            + " less; the day after applies nothing; a raw catch-up out of its number, or naming an item too, is refused")
+    void aRefundHeldBesidePastDueArrearsIsApplied() throws Exception {
+        LoanId loan = feeAssessed(5_600_00);
+        FeeAssessment fee = fees(loan).get(0);
+        repay(loan, key(), 15_00);
+        long owed = billings(loan).get(0).outstanding().minorUnits();
+        assertThat(owed).as("the item's interest and principal still due").isPositive();
+        approve(loan, propose(loan, WaiverKind.FEE_REFUND, fee.id(), 15_00, employee()).id(), employee());
+        assertThat(held(loan)).as("the refund held while the item is past due").isEqualTo(15_00);
+
+        advance(loan, 1);
+        List<LoanServicing.Outcome> steps = race(10, index -> service(loan));
+        assertThat(steps.stream().mapToInt(LoanServicing.Outcome::applied).sum())
+                .as("ten racing steps, one catch-up application, no billing").isEqualTo(1);
+        assertThat(steps.stream().mapToInt(LoanServicing.Outcome::billed).sum()).isZero();
+        assertThat(held(loan)).isZero();
+        assertThat(billings(loan).get(0).outstanding().minorUnits()).isEqualTo(owed - 15_00);
+        assertThat(catchUps(loan)).isEqualTo(1);
+        assertSubledgerProves(loan);
+        RepaymentDatabaseTest.assertApplicationsReplay(loan);
+        assertThat(day(loan, 1).applied()).as("nothing held, nothing applied").isZero();
+        assertThat(catchUps(loan)).isEqualTo(1);
+
+        UUID item = billings(loan).get(0).billing().id();
+        refusedAlone(rawCatchUp(loan, "NULL", "3"), "P0001", "its loan's next");
+        refusedAlone(rawCatchUp(loan, "'" + item + "'", "2"), "23514", "credit_balance_application_occasion");
+        assertThat(catchUps(loan)).isEqualTo(1);
+        assertSubledgerProves(loan);
+    }
+
+    @Test
+    @DisplayName("a refunded fee is never forgiven twice (the Phase 11 gate's R3): the fee paid by a repayment, refunded"
+            + " (rule 8a), then the repayment reversed - the fee due again on its item beside the refund held; a FEE"
+            + " waiver of any of it is 422 WaiverExceedsDue at the domain and refused by the decision trigger for a raw"
+            + " writer - least(billed - paid, assessed - waived - refunded); the next servicing step applies the refund held"
+            + " to the fee (a catch-up application), the fee's income nets to zero, never below; a planted second"
+            + " forgiveness fails the subledger proof's FEE_INCOME_NEGATIVE arm")
+    void aRefundedFeeIsNeverForgivenTwice() throws SQLException {
+        LoanId loan = feeAssessed(5_700_00);
+        FeeAssessment fee = fees(loan).get(0);
+        Repayment paid = repay(loan, key(), 15_00).repayment();
+        assertThat(billings(loan).get(0).feesPaid()).isEqualTo(eur(15_00));
+        Waiver refund = approve(loan, propose(loan, WaiverKind.FEE_REFUND, fee.id(), 15_00, employee()).id(),
+                employee()).waiver();
+        RepaymentReversalDatabaseTest.proposeAndApprove(loan, paid);
+        assertThat(billings(loan).get(0).dueItem().fees()).as("the fee due again").isEqualTo(eur(15_00));
+        assertThat(held(loan)).as("beside the refund held").isEqualTo(15_00);
+
+        assertThatExceptionOfType(Waivers.WaiverExceedsDue.class)
+                .isThrownBy(() -> propose(loan, WaiverKind.FEE, fee.id(), 15_00, employee()));
+        assertThatExceptionOfType(Waivers.WaiverExceedsDue.class)
+                .isThrownBy(() -> propose(loan, WaiverKind.FEE, fee.id(), 1, employee()));
+        UUID raw = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app, "INSERT INTO lending.waiver (id, loan_id, kind, fee_assessment_id, due_item_id, currency, scale,"
+                    + " amount_minor, agreement_version, proposed_by, proposed_by_type, proposed_at, proposal_reason,"
+                    + " correlation_id) SELECT '" + raw + "', f.loan_id, 'FEE', f.id, f.due_item_id, 'EUR', 2, 1500, 1,"
+                    + " 'raw-proposer', 'EMPLOYEE', now(), 'a raw second forgiveness', 'p11-gate-raw'"
+                    + " FROM lending.fee_assessment f WHERE f.id = '" + fee.id() + "'");
+        }
+        refusedAlone(rawDecision(raw, "w.proposed_by", "'another-decider'"), "P0001", "bounded by what is due now");
+        reject(loan, raw, employee());
+        assertThat(feeIncomeOf(fee, refund)).as("the fee's income: assessed less refunded").isZero();
+
+        assertThat(service(loan).applied()).as("the refund held settles the fee due again").isEqualTo(1);
+        assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_FEES_DUE)).isZero()).isTrue();
+        assertThat(held(loan)).isZero();
+        assertThat(catchUps(loan)).isEqualTo(1);
+        assertThat(feeIncomeOf(fee, refund)).as("never below zero").isZero();
+        assertSubledgerProves(loan);
+        RepaymentDatabaseTest.assertApplicationsReplay(loan);
+
+        // A second forgiveness planted beneath every door - triggers off - is the proof's to see.
+        UUID planted = IDS.next();
+        asOwner("INSERT INTO lending.waiver (id, loan_id, kind, fee_assessment_id, due_item_id, currency, scale,"
+                + " amount_minor, agreement_version, proposed_by, proposed_by_type, proposed_at, proposal_reason,"
+                + " correlation_id) SELECT '" + planted + "', f.loan_id, 'FEE', f.id, f.due_item_id, 'EUR', 2, 1500, 1,"
+                + " 'planted', 'EMPLOYEE', now(), 'planted', 'p11-gate-planted' FROM lending.fee_assessment f"
+                + " WHERE f.id = '" + fee.id() + "';"
+                + " INSERT INTO lending.waiver_decision (id, waiver_id, proposed_by, outcome, decided_by, decided_by_type,"
+                + " decided_at, decision_reason, journal_entry_id, correlation_id, recorded_order) VALUES"
+                + " ('" + IDS.next() + "', '" + planted + "', 'planted', 'APPROVED', 'another', 'EMPLOYEE', now(),"
+                + " 'planted', '" + IDS.next() + "', 'p11-gate-planted', nextval('lending.record_order'))");
+        try {
+            LoanSubledgerProof.Verdict verdict = LendingProofsWorld.SUBLEDGER.prove(LendingProofsWorld.record(loan));
+            assertThat(verdict.feeIncomeNonNegative()).as("the FEE_INCOME_NEGATIVE arm").isFalse();
+            assertThat(verdict.failures()).contains("FEE_INCOME_NEGATIVE");
+        } finally {
+            asOwner("DELETE FROM lending.waiver_decision WHERE waiver_id = '" + planted + "';"
+                    + " DELETE FROM lending.waiver WHERE id = '" + planted + "'");
+        }
+        assertSubledgerProves(loan);
+    }
+
+    @Test
+    @DisplayName("a matured loan's arrears settled by credit held (the Phase 11 gate's R2, case c): principal paid, the"
+            + " final instalment's interest due, a refund of 15.00 held - once every date has passed nothing new is ever"
+            + " billed, so the credit was held for ever while DPD and fees grew; the next servicing step applies it to the"
+            + " interest and the loan closes REPAID, the rest refunded to the wallet")
+    void aMaturedLoansArrearsAreSettledByCreditHeld() {
+        LoanId loan = maturedWithInterestDueAndRefundHeld(2_000_00);
+        long interest = billings(loan).get(1).dueItem().interest().minorUnits();
+        assertThat(interest).as("less than the refund held").isPositive().isLessThan(15_00);
+
+        LoanServicing.Outcome step = service(loan);
+        assertThat(step.applied()).isEqualTo(1);
+        assertThat(step.closed()).as("the catch-up settled the last receivable").isTrue();
+        assertThat(loanStatus(loan)).isEqualTo("CLOSED");
+        assertThat(scalar("SELECT closure_reason FROM lending.loan WHERE id = ?", loan.value())).isEqualTo("REPAID");
+        assertThat(count("SELECT refund_minor FROM lending.loan_closure WHERE loan_id = ?", loan.value()))
+                .as("what the interest did not take, refunded").isEqualTo(15_00 - interest);
+        assertThat(catchUps(loan)).isEqualTo(1);
+        assertSubledgerProves(loan);
+        RepaymentDatabaseTest.assertApplicationsReplay(loan);
+    }
+
+    @Test
     @DisplayName("an interest waiver posts explicitly: the billed item's interest I - a waiver of I + 0.01 exceeds; of I,"
             + " approved - rule 9, DR LOAN_INTEREST_INCOME / CR LOAN_INTEREST_DUE, the item's interest waived and owing"
             + " nothing of it, lending.LoanInterestWaived; accrued interest untouched; an item of another loan, or no item,"
@@ -697,6 +819,57 @@ class FeeAndWaiverDatabaseTest {
         assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL)).isZero()).isTrue();
         assertThat(loanStatus(loan)).isEqualTo("ACTIVE");
         return loan;
+    }
+
+    /**
+     * A fresh two-instalment loan under terms paying principal first and fees last, past its final due date: the first
+     * instalment charged its late fee and paid with it; the final instalment's principal paid, its interest left due -
+     * nothing more ever billed (no principal outstanding, nothing accrues) - and the first instalment's fee refunded:
+     * 15.00 held beside the interest due.
+     */
+    static LoanId maturedWithInterestDueAndRefundHeld(long minor) {
+        LoanId loan;
+        activate(LoanTermsFixtures.of(LoanProduct.PERSONAL_LOAN, "0.0899").allocationOrder(List.of(
+                AllocationComponent.PRINCIPAL, AllocationComponent.INTEREST, AllocationComponent.FEES)).build());
+        try {
+            loan = disbursed(minor, 2);
+        } finally {
+            activate(LoanTermsFixtures.of(LoanProduct.PERSONAL_LOAN, "0.0899").build());
+        }
+        backdate(loan, daysTo(loan, 1));
+        RepaymentDatabaseTest.topUp(partyOf(loan), minor);
+        service(loan);
+        advance(loan, 5);
+        assertThat(service(loan).fees()).as("the first instalment's late fee").isEqualTo(1);
+        repay(loan, key(), due(loan));
+        FeeAssessment fee = fees(loan).get(0);
+        List<LocalDate> dues = dues(loan);
+        advance(loan, Math.toIntExact(ChronoUnit.DAYS.between(dues.get(0), dues.get(1))) - 5);
+        assertThat(service(loan).billed()).as("the final instalment").isEqualTo(1);
+        repay(loan, key(), billings(loan).get(1).billing().principalDue().minorUnits());
+        assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL)).isZero()).isTrue();
+        assertThat(netDebit(loanAccount(loan, AccountPurpose.LOAN_PRINCIPAL_DUE)).isZero()).isTrue();
+        assertThat(billings(loan).get(1).dueItem().interest().isPositive()).isTrue();
+        approve(loan, propose(loan, WaiverKind.FEE_REFUND, fee.id(), 15_00, employee()).id(), employee());
+        assertThat(held(loan)).isEqualTo(15_00);
+        assertThat(loanStatus(loan)).isEqualTo("ACTIVE");
+        return loan;
+    }
+
+    /** {@code fee}'s LOAN_FEE_INCOME lines - its assessment's entry and its refund's - net, credit positive. */
+    private static long feeIncomeOf(FeeAssessment fee, Waiver refund) {
+        return count("SELECT coalesce(sum(CASE l.direction WHEN 'CREDIT' THEN l.amount_minor ELSE -l.amount_minor END), 0)"
+                + " FROM ledger.journal_line l WHERE l.ledger_account_id = ? AND l.entry_id IN (?, ?)", feeIncome().value(),
+                fee.entry().value(), refund.journalEntry().orElseThrow().value());
+    }
+
+    /** An application-role catch-up application of 1.00 on {@code loan}: {@code billing} and {@code sequence} as SQL. */
+    private static String rawCatchUp(LoanId loan, String billing, String sequence) {
+        return "INSERT INTO lending.credit_balance_application (id, billing_id, catch_up_sequence, loan_id, currency, scale,"
+                + " amount_minor, agreement_id, agreement_version, allocation_engine_version, journal_entry_id, created_at,"
+                + " correlation_id) SELECT gen_random_uuid(), " + billing + ", " + sequence + ", a.loan_id, 'EUR', 2, 100,"
+                + " a.id, a.version, a.allocation_engine_version, gen_random_uuid(), statement_timestamp(), 'p11-gate-raw'"
+                + " FROM lending.loan_agreement a WHERE a.loan_id = '" + loan.value() + "' AND a.version = 1";
     }
 
     static List<FeeAssessment> fees(LoanId loan) {

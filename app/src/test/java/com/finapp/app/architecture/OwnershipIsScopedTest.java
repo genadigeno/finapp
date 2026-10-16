@@ -1151,6 +1151,11 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P11-TSK-022. Every billed item (billings, statements) of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the application, the collection), or locked by lockOwnedBy under party_id = ? for the customer's own repayment (P11-TSK-018's due state) or draw (P11-TSK-024's suspension), or found by the owner's or the audited operator's read through Loans.read (ownedBy under party_id = ?, P11-TSK-024's condition); the id never reaches it from a request unscoped.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcInstalmentBillingStore.latestCatchUpSequence",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "Phase 11 gate R2. The latest catch-up application's number of an account this transaction holds FOR UPDATE (L3) - claimed by the servicing sweep (the step's catch-up application), or locked by lockOwnedBy under party_id = ? for the customer's own payoff - read after the lock so the next number is this plus one; the id never reaches it from a request unscoped.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcCreditLineStatementStore.latestStatementDate",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -863,5 +863,10 @@ class InstalmentBillingDatabaseTest {
                 CorrelationId correlation) {
             delegate.insertApplication(unitOfWork, application, correlation);
         }
+
+        @Override
+        public int latestCatchUpSequence(Connection unitOfWork, LoanId loan) {
+            return delegate.latestCatchUpSequence(unitOfWork, loan);
+        }
     }
 }
