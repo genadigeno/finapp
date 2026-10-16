@@ -25,7 +25,9 @@ package com.finapp.identity;
  * each route. <strong>Phase 11's five follow the same exception</strong> (`P11-TSK-002`): the lending
  * actions are catalogued by {@code PHASE_11_PLAN.md} §11 and decided by ADR-0090...0100, and the
  * three roles that separate pricing, capital and servicing are settled before the module's first
- * door.
+ * door. <strong>Phase 12's five follow it too</strong> (`P12-TSK-002`): the BNPL actions are catalogued by
+ * {@code PHASE_12_PLAN.md} §11 and decided by ADR-0101...0106, and the two roles that separate the products' terms from
+ * servicing an obligation are settled before bnpl's first door.
  *
  * <h2>There is deliberately no `sqlValueList()`</h2>
  *
@@ -509,5 +511,67 @@ public enum PermissionName {
      * qualified to check them, and the separation that matters - no person approves their own act - is between two
      * holders, not two roles (the {@code UNDERWRITER} shape).
      */
-    LOAN_SERVICE_APPROVE
+    LOAN_SERVICE_APPROVE,
+
+    /**
+     * Administer the BNPL products' terms (`P12-TSK-002`; ADR-0102 decision 4, {@code PHASE_12_PLAN.md} §11): propose,
+     * approve or reject a BNPL terms version - plans, rate (pay-in-N), late fee, allocation, delinquency bounds, the
+     * dispute window, the engines - four-eyes, the same permission and different persons, held at the domain and by
+     * {@code CHECK}, never one's own proposal. It names {@code bnpl.TermsVersionProposed}, {@code ...Activated} and
+     * {@code ...Rejected}; the routes are `P12-TSK-004`'s.
+     *
+     * <p><strong>Held by {@code BNPL_OFFICER}</strong>: the BNPL desk's product policy - neither credit's decision policy
+     * ({@code CREDIT_POLICY_OFFICER}), nor lending's terms ({@code LENDING_OFFICER}), nor the merchant's fee schedule
+     * ({@code MERCHANT_ADMINISTRATOR}), nor servicing one customer's obligation ({@code BNPL_SERVICING_AGENT}).
+     */
+    BNPL_ADMINISTER,
+
+    /**
+     * Investigate BNPL (`P12-TSK-002`; {@code PHASE_12_PLAN.md} §§9, 11): an agreement's full explanation (agreement
+     * version and hash, schedule, billings, accruals, allocations, refunds, journal entries), its replay, and the
+     * portfolio, merchant-financing, refund and delinquency reports - every read audited, nothing moved. It names
+     * {@code bnpl.AgreementRead}, {@code bnpl.ExplanationRead}, {@code bnpl.Replayed} and {@code bnpl.ReportRead}; the
+     * routes are their tasks'.
+     *
+     * <p><strong>Held by {@code BNPL_OFFICER}</strong>, beside {@link #BNPL_ADMINISTER}: whoever answers for the terms
+     * needs to see what they produced and why. Never by {@code BNPL_SERVICING_AGENT}, whose view is the obligation in
+     * hand ({@link #BNPL_SERVICE}).
+     */
+    BNPL_INVESTIGATE,
+
+    /**
+     * Service BNPL obligations (`P12-TSK-002`; {@code PHASE_12_PLAN.md} §11): read any obligation, audited, and propose a
+     * fee or interest waiver or a repayment reversal - each reasoned. Never creates a purchase, finances a merchant,
+     * cancels an instalment outside a refund or a dispute's resolution, or edits a figure; never on an obligation of
+     * one's own party ({@code bnpl.SelfDealingRefused}, audited {@code FAILED}). It names {@code bnpl.WaiverProposed}
+     * and {@code bnpl.RepaymentReversalProposed}; the routes are `P12-TSK-024`'s.
+     *
+     * <p><strong>Held by {@code BNPL_SERVICING_AGENT}</strong>, beside {@link #BNPL_SERVICE_APPROVE} and
+     * {@link #BNPL_DISPUTE_RESOLVE}: four-eyes is inside the role - two distinct holders - never between roles.
+     */
+    BNPL_SERVICE,
+
+    /**
+     * Approve BNPL servicing proposals (`P12-TSK-002`; {@code PHASE_12_PLAN.md} §11): approve or reject a waiver or a
+     * repayment reversal another person proposed - <strong>never one's own</strong>, refused at the domain and by each
+     * proposal table's four-eyes {@code CHECK} ({@code bnpl.SelfApprovalRefused}, audited {@code FAILED}), enforced by
+     * the task that builds each act. It names the {@code ...Approved} and {@code ...Rejected} actions of
+     * {@code bnpl.Waiver*} and {@code bnpl.RepaymentReversal*}.
+     *
+     * <p><strong>Held by {@code BNPL_SERVICING_AGENT}</strong>: the population that proposes corrections is the one
+     * qualified to check them; the separation that matters is between two holders, not two roles (the
+     * {@code LOAN_SERVICE_APPROVE} shape).
+     */
+    BNPL_SERVICE_APPROVE,
+
+    /**
+     * Resolve BNPL disputes (`P12-TSK-002`; ADR-0106, {@code PHASE_12_PLAN.md} §§5.8, 11): an operator's resolution of a
+     * dispute the merchant answered - {@code RESOLVED_REFUND} (executed as a BNPL refund, under the purchase's one bound,
+     * {@code INV-BNPL-08}) or {@code RESOLVED_UPHELD} - reasoned, four-eyes above the plan's threshold, never on one's own
+     * party's purchase and never one's own act. It names {@code bnpl.DisputeResolved}; the routes are `P12-TSK-023`'s.
+     *
+     * <p><strong>Held by {@code BNPL_SERVICING_AGENT}</strong>: deciding between a customer and a merchant is servicing
+     * work, not the products' policy ({@code BNPL_OFFICER}) and never the merchant's own act.
+     */
+    BNPL_DISPUTE_RESOLVE
 }

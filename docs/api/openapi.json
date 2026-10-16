@@ -17214,7 +17214,9 @@
               "UNDERWRITER",
               "LENDING_OFFICER",
               "LENDING_TREASURY_OFFICER",
-              "LOAN_SERVICING_AGENT"
+              "LOAN_SERVICING_AGENT",
+              "BNPL_OFFICER",
+              "BNPL_SERVICING_AGENT"
             ],
             "type": "string"
           }

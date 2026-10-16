@@ -18,8 +18,15 @@
  * {@code credit}'s - taken up only through credit's consumption port, reached through a port this module declares and
  * {@code app} composes, never a build edge (A16); the wallet is {@code accounts}', the external payout and its
  * ambiguity {@code payments}', the capital contribution's recognition {@code reconciliation}'s. The edges are exactly
- * {@code ledger}, {@code platform} and {@code sharedkernel} ({@code LendingModuleIsolationTest}), and no module depends
- * on this one.
+ * {@code ledger}, {@code creditmath}, {@code platform} and {@code sharedkernel} ({@code LendingModuleIsolationTest}), and
+ * no module depends on this one - {@code bnpl} included.
+ *
+ * <p><strong>The engines are {@code creditmath}'s since `P12-TSK-002`</strong> (ADR-0101 decision 5). The schedule,
+ * accrual and allocation engines, their records and the engine version identities moved there unchanged - every figure,
+ * refusal and persisted name the same - so that {@code bnpl} computes with them without an edge to this module.
+ * {@link com.finapp.lending.LoanEngines} is lending's side of that edge: the {@code LoanTerms} entries, mapping a loan's
+ * terms onto the engines' records and delegating. The statement engine stays here - a line's engine, no other product's -
+ * and its version identity stays in {@code creditmath}'s one registry beside the others.
  *
  * <p><strong>The Phase 12 boundary.</strong> Buy-now-pay-later is {@code bnpl}'s (Phase 12), not a third member of
  * {@link com.finapp.lending.LoanProduct}: merchant-financed instalment credit is one economic event producing two
