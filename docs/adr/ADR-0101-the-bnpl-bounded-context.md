@@ -285,9 +285,36 @@ balance of its own and every money effect is one journal entry in its own transa
   first use them (`-005` `BnplCapital`, `-006` `BnplMerchants`, `-007` `BnplCheckoutSessions`, `-010`
   `BnplCreditDecisions` and `BnplPartyStanding`, `-018` `BnplWallets`). `BOUNDED_CONTEXTS.md` and
   `MODULE_ARCHITECTURE.md` carry the planned entries; each building task corrects them as built.
+  - *Built by `P12-TSK-002` (2026-10-16):* `creditmath` (decision 5) and `bnpl`'s boundary — the
+    module, `bnpl V001` (the migrator-owned floor, `USAGE` alone to the application role, no default
+    privileges, no tables), the edges of decision 6 pinned by `BnplModuleIsolationTest` and
+    `CreditmathModuleIsolationTest` with planted probes and every other module's isolation test
+    refusing both, `BnplSchemaHasNoMutableMoneyTest` (decision 2's mechanical hold) through the one
+    catalogue judgement lending's guard now shares (`platform`'s test fixture `MoneyColumnFloor`), the
+    closed vocabularies and identity `V022`.
 - `P12-TSK-002`'s design names where `EngineVersion` and `LendingEngine` land and how lending's
   `LoanTerms` entries (and `judgeAmortisation` over `LoanProductBounds`) delegate; nothing it names
   may change a member's name, number or a golden hash.
+  - *Named and built (`P12-TSK-002`, 2026-10-16):* `EngineVersion` and `LendingEngine` moved **whole**
+    to `creditmath` — all four members, names and numbers unchanged, `STATEMENT_ENGINE_V1` included
+    although `StatementEngineV1` stays in lending (one registry of the versions an agreement pins; a
+    split would make lending map between two enums for one persisted name); bnpl's own engines are
+    `bnpl`'s `BnplEngine`, never members of it. The `LoanTerms` entries are lending's `LoanEngines`:
+    `accrualTerms` and `allocationRules` (the records' former `of(LoanTerms)`), and `project`,
+    `recalculate`, `recalculateAtInstalment` and `judgeAmortisation(LoanTerms, LoanProductBounds.Bounds)`,
+    each judging the product's kind, then `ScheduleEngineV1.conventions(ScheduleTerms)`, then the rate
+    type and frequency — the engine's former order and words — and delegating to the `ScheduleTerms`
+    entries; `judgeAmortisation` now reads the allowed days, the smallest principal and the longest
+    term as arguments. Proven behaviour-preserving: `P11-TST-002`'s battery re-run with its population
+    fingerprint (`b833918a…a433`) and two-JVM totals byte-identical before and after, 12,000 accounts
+    `IDENTICAL`; the moved engine suites green with every golden figure unedited; `LoanEnginesTest`
+    holding every entry to the engine's answer. Refinements made in the building: `AllocationAnomaly`
+    stays in lending (a defect of lending's rows against its ledger, not an engine's); the backlog's
+    `PurchaseStatus` is `BnplPurchaseStatus` (and the id `BnplPurchaseId`) — the plan's canonical name
+    "BNPL Purchase", §3.1; the application's closure reasons are `BNPL_LIFECYCLES.md` §4.2's seven, the
+    backlog's `REQUEST_CLOSED` read as its three `CREDIT_REQUEST_*` reasons; `ScheduleTerms` is a terms
+    record (the `AccrualTerms` shape) and the principal, term and dates stay arguments, so each
+    `LoanTerms` entry delegates argument for argument.
 - `P12-TSK-013` and `-021` count the (P) race against a wallet-paid capture and refund in both id
   orders; `P12-TST-001` asserts lock waits on L0, B3, B5, B4, L6 and (P) and measures the shared
   capital and fee-income rows (plan §21).
