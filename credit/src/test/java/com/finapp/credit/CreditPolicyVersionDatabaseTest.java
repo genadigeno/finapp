@@ -250,8 +250,18 @@ class CreditPolicyVersionDatabaseTest {
                 BnplPolicyFixtures.policy(CreditProduct.BNPL_PAY_IN_4), "a frozen factor", employee(), correlation()));
         String change = "UPDATE credit.credit_policy_version SET plan_stress_factor_bps = 20000 WHERE id = '"
                 + proposed.id().value() + "'";
+        // Alone the edge check would refuse it too (PROPOSED -> PROPOSED is no edge); beside a legal edge only the
+        // freeze does - so the case is the factor changed WITH a rejection, refused for the frozen parameter.
+        String withALegalEdge = "UPDATE credit.credit_policy_version SET status = 'REJECTED', decided_by = 'someone',"
+                + " decision_reason = 'raw', plan_stress_factor_bps = 20000 WHERE id = '" + proposed.id().value() + "'";
         try (Connection owner = DatabaseRoles.migrator()) {
             refused(owner, change, "P0001");
+            assertThatExceptionOfType(SQLException.class).isThrownBy(() -> {
+                try (Statement statement = owner.createStatement()) {
+                    statement.executeUpdate(withALegalEdge);
+                }
+            }).matches(e -> "P0001".equals(e.getSQLState()) && e.getMessage().contains("parameters are frozen"),
+                    "the freeze's refusal");
         }
         try (Connection application = DatabaseRoles.application()) {
             refused(application, change, "42501");
