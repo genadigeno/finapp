@@ -18708,7 +18708,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 
 # Phase 12 — Buy Now, Pay Later (BNPL)
 
-Status: `IN_PROGRESS` (2026-10-17; `P12-TSK-001`…`-005` and `-007` `COMPLETE`, 6 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2) *(read "`P12-TSK-001`…`-004` `COMPLETE`, 4 of 29; M12.1 at 4 of 5" until `P12-TSK-007`'s gate - `P12-TSK-005`'s left it unadvanced)* *(read "`P12-TSK-001`…`-003` `COMPLETE`, 3 of 29; M12.1 at 3 of 5" until `P12-TSK-004`'s gate)* *(read "`P12-TSK-001` and `-002` `COMPLETE`, 2 of 29; M12.1 at 2 of 5" until `P12-TSK-003`'s gate)* *(read "`P12-TSK-001` `COMPLETE`, 1 of 29; M12.1 at 1 of 5" until `P12-TSK-002`'s gate)* *(read `READY` from the transition until `P12-TSK-001`'s gate)* — entry gate passed by the Phase 11 → 12 transition
+Status: `IN_PROGRESS` (2026-10-17; `P12-TSK-001`…`-005`, `-007` and `-008` `COMPLETE`, 7 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 at 1 of 2) *(read "`P12-TSK-001`…`-005` and `-007` `COMPLETE`, 6 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2" until `P12-TSK-008`'s merge-in)* *(read "`P12-TSK-001`…`-004` `COMPLETE`, 4 of 29; M12.1 at 4 of 5" until `P12-TSK-007`'s gate - `P12-TSK-005`'s left it unadvanced)* *(read "`P12-TSK-001`…`-003` `COMPLETE`, 3 of 29; M12.1 at 3 of 5" until `P12-TSK-004`'s gate)* *(read "`P12-TSK-001` and `-002` `COMPLETE`, 2 of 29; M12.1 at 2 of 5" until `P12-TSK-003`'s gate)* *(read "`P12-TSK-001` `COMPLETE`, 1 of 29; M12.1 at 1 of 5" until `P12-TSK-002`'s gate)* *(read `READY` from the transition until `P12-TSK-001`'s gate)* — entry gate passed by the Phase 11 → 12 transition
 ([`reviews/PHASE_11_TO_12_TRANSITION.md`](reviews/PHASE_11_TO_12_TRANSITION.md): Phase 11 confirmed after repair,
 R1–R6 closed in lending `V029` and `V030`), elaborated to task granularity by the same transition: twenty-nine items
 (`P12-TSK-001`…`-026`, `P12-TST-001`, `P12-TST-002`, `P12-DOC-001`) across nine milestones, with `P12-TSK-001` marked
@@ -19434,7 +19434,39 @@ after everything.
   order references whatever completed it.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`. **Risk**: High. **Cx**: M.
 
-**P12-TSK-008 — The P4 schedule engine** — `PLANNED`
+**P12-TSK-008 — The P4 schedule engine** — `COMPLETE` (2026-10-17; started by the owner beside `P12-TSK-006` and `-007` in Phase 12 wave A - its only dependency `-002` is `COMPLETE`)
+- **As built** (2026-10-17): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when
+  superseded). The code is bnpl's `BnplScheduleEngineV1`, `BnplSchedule` (with `BnplSchedule.Instalment`),
+  `BnplScheduleOutcome`, `BnplScheduleRefusal`; `BnplTerms`' pay-in-4 interval and rounding now read the engine's
+  constants; `BnplTermsAdministration.schedulable`'s pay-in-4 arm is the engine's `judgeSchedulable`; bnpl's build gains
+  `testFixtures(project(":creditmath"))` for `SecondJvm`. No migration, port, door, event or meter; `creditmath`
+  untouched. **Design, in brief:** *where it lives* - `bnpl`, not `creditmath`: the identity is bnpl's `BnplEngine`
+  (declared by `-002`) and the input bnpl's `BnplTerms`, and `creditmath`'s hard rule keeps every bnpl vocabulary out
+  (`MODULE_ARCHITECTURE.md`); no other context computes pay-in-4. *The function* - `project(BnplTerms, P, D1)`: the
+  terms' shape judged first (pay-in-4's own part, pinning `BNPL_SCHEDULE_ENGINE_V1`, 4 instalments 14 days apart,
+  `BIWEEKLY`, rate 0, rounding `DOWN`), then the principal (the terms' currency at its scale; positive; at least 4
+  minor units), then the calendar (every due date within years 1-9999); `A = P ÷ 4` to 0 places `DOWN` in minor units
+  (one division, `INSTALMENT_ROUNDING`), instalments 2-4 `A`, instalment 1 `P − 3A`; `Dk = D1.plusDays(14 (k − 1))`. Not
+  `Money.allocateEvenly`, which spreads the remainder one unit at a time over the earliest parts. *The value* -
+  `BnplSchedule(engine, currency, principal, purchaseDate, instalments)` asserts at construction: a BNPL schedule engine
+  version, numbered 1..n, instalment 1 on the purchase date and each later one strictly after, every principal positive
+  and in the currency, Σ = principal (`INV-BNPL-05`) - what every version must satisfy; the split and the interval are
+  version 1's, held by its tests. `toString` names the engine, count, sequence and date only. *Multi-instance* - pure,
+  static, no state, clock, I/O, locale or float: the same inputs give the same bytes in every JVM, proven by a two-JVM
+  digest of 40,000 seeded purchases.
+- **Refinements to the wording (and why):** the input is `(BnplTerms, P, D1)`, not `(P, D1)` - ADR-0102 decision 2's
+  "refuses any other shape (an `n` other than 4, a non-zero rate, another frequency)" needs the pinned terms to judge,
+  and the terms are what the agreement pins (`-013`); the refusals are four - `SHAPE_NOT_IMPLEMENTED`,
+  `INVALID_REQUEST` (another currency or scale, the calendar's range), `PRINCIPAL_NOT_POSITIVE`, `INSTALMENT_OF_NOTHING`
+  (`A = 0`, one to three minor units); through a `BnplTerms` judged whole only another product's terms reach the shape
+  refusal (the other arms stand for a later build widening a terms bound while version 1 keeps its meaning); the terms
+  door's pay-in-4 check (`-004`, "credit's smallest purchase at least one minor unit per instalment") was a second
+  statement of the `A = 0` rule and is now the engine's `judgeSchedulable(terms, smallest)` - sound and tight because
+  `floor(P / 4)` never falls as `P` rises - its words and `422 bnpl.TermsNotAmortising` unchanged; `BnplTerms`'
+  `PAY_IN_4_INTERVAL_DAYS` and pay-in-4 rounding read the engine's constants, so the shape is stated once (the count
+  four is `BnplPlan.PAY_IN_4`'s too, held equal by `#theShapeIsStatedOnce`); `BnplSchedule` is the engine's projection -
+  `-013` records it as BNPL Schedule version 1, `-011` shows it as the offer's illustration (never a stored version).
+- **Gate** (2026-10-17): COMPLETE on its first pass, after three MINOR repairs made at the gate - the terms door's pay-in-4 refusal read the engine's detail with a dangling clause (now "at the product's smallest amount, a pay-in-4 purchase of fewer than 4 minor units would have an instalment of nothing" - still `422 bnpl.TermsNotAmortising`, still the words `BnplTermsAdministrationTest` holds); `MUTATION_TESTING.md` §2's `P12-TSK-004` row for that check named a site this task replaced (noted, and the probe re-performed on the engine, its own row); a golden case's display name called EUR 50.03 credit's smallest purchase (it is the largest remainder). MINOR, recorded: the wording refinements above; the shape judgement's arms beyond "not pay-in-4's" are unreachable through a `BnplTerms` judged whole, so no test or probe reaches them (they hold version 1's meaning against a later widening of a terms bound). Acceptance: conserves to the minor unit (the record at construction; every generated purchase), the remainder collected at purchase (golden, properties), every 14 days (golden leap day and year end; every day of a leap cycle by epoch day). **"Would this remain correct if 10 instances executed it concurrently?" — `PASS`**: a pure static function of (terms, principal, date) - no state, clock, I/O, locale, hash order or floating point; ten instances, or one replaying years later, compute the same bytes - proven by the two-JVM digest of 40,000 seeded purchases under another charset, locale, zone and identity hashes. **Probes** (`MUTATION_TESTING.md` §2, six rows, each caught on its first run from a fresh results file, restored byte-identical by sha256): the remainder on instalment 4; the dates 15 days apart; the division rounded `UP`; the record's conservation check disabled; the `A = 0` refusal removed (the door's case red too); the shape judgement's first arm disabled. **Verified** - `:bnpl:test` 77 tests across 9 suites (`BnplScheduleEngineV1Test` 21, `BnplScheduleEngineV1PropertiesTest` 5 - its two-JVM digest among them), `:bnpl:architectureTest` 3, `:app:architectureTest` 171 across 32 suites (the guard suites `NoFloatingPointMoneyRulesTest`, `TestTaxonomyTest` and `MutationDemonstrationTest` - after the last row - among them), all 0 failures, each from a fresh run; `creditmath` and `app` code untouched, so neither module's `test` task run; `build`, every `databaseTest` tier and `kafkaTest` not run (owner's instruction) - the task has no database case. **Owner judgements:** the engine takes the pinned `BnplTerms` (a refinement of the backlog's `(P, D1)`); the terms door's pay-in-4 check is now the engine's; `BnplSchedule` is the engine's projection, and `-013` decides how it is stored.
 - **Objective**: a pure, versioned engine projects a pay-in-4 schedule that conserves principal exactly (A4, A5,
   `INV-BNPL-05`; ADR-0102).
 - **Bounded context**: BNPL (pure); placed in `bnpl` — the design may place it in `creditmath` and says so.
@@ -19471,7 +19503,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (a pure engine: F7 binding, F2 in the replay sense; F1, F3, F4, F5, F6, F8 vacuous
   — no state). **Risk**: Low. **Cx**: S.
 
-**P12-TSK-009 — The refund allocator and fee pro-rating (pure)** — `PLANNED`
+**P12-TSK-009 — The refund allocator and fee pro-rating (pure)** — `READY` (2026-10-17; marked by `P12-TSK-008`'s completion gate - its only dependency)
 - **Objective**: a pure, versioned engine splits any merchant refund latest-instalments-first into cancelled principal
   and customer excess, with the merchant fee pro-rated back so that value is preserved and a full refund returns
   exactly the fee (B3, ADR-0105, `INV-BNPL-06`, `-07`, `-09`).

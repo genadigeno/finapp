@@ -126,8 +126,8 @@ public record BnplTerms(
     /** The longest payoff horizon (lending's). */
     public static final int MAXIMUM_PAYOFF_HORIZON_DAYS = 90;
 
-    /** Pay-in-4's days between instalments (A5). */
-    public static final int PAY_IN_4_INTERVAL_DAYS = 14;
+    /** Pay-in-4's days between instalments (A5) - its engine's, so the shape is stated once (`P12-TSK-008`). */
+    public static final int PAY_IN_4_INTERVAL_DAYS = BnplScheduleEngineV1.INTERVAL_DAYS;
 
     /** Pay-in-N's first-period floor's range (A6): above 28 a purchase on the 29th-31st would skip a month. */
     public static final int MAXIMUM_PAY_IN_N_FIRST_PERIOD_DAYS = 28;
@@ -137,8 +137,8 @@ public record BnplTerms(
 
     // ------------------------------------------------------------------ what this build's engines implement
 
-    /** Pay-in-4: {@code floor(P / 4)} for instalments 2-4, the remainder on instalment 1 (`P12-TSK-008`). */
-    static final RoundingMode PAY_IN_4_INSTALMENT_ROUNDING = RoundingMode.DOWN;
+    /** Pay-in-4: {@code floor(P / 4)} for instalments 2-4, the remainder on instalment 1 - its engine's (`P12-TSK-008`). */
+    static final RoundingMode PAY_IN_4_INSTALMENT_ROUNDING = BnplScheduleEngineV1.INSTALMENT_ROUNDING;
 
     /** Pay-in-N: {@code SCHEDULE_ENGINE_V1}'s level instalment. */
     static final RoundingMode PAY_IN_N_INSTALMENT_ROUNDING = RoundingMode.UP;
