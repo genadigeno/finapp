@@ -2,6 +2,7 @@ package com.finapp.app.lending;
 
 import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.lending.LendingAuditAction;
+import com.finapp.lending.LendingCapitalHeadroom;
 import com.finapp.lending.LendingProofs;
 import com.finapp.lending.LoanSubledgerProof;
 import com.finapp.platform.api.ApiException;
@@ -342,8 +343,9 @@ public final class LendingReports {
 
     /**
      * One supported currency's lending capital on the date (ADR-0096 section 5): the capital recognised from bank
-     * evidence, the principal committed to loans awaiting disbursement, the principal outstanding, the headroom left, and
-     * the safeguarding term - wallet money lending created and still funds.
+     * evidence, the principal committed to loans awaiting disbursement, the principal outstanding - loan, line and, since
+     * `P12-TSK-005`, BNPL principal, the purposes {@link LendingCapitalHeadroom#principalPurposes()} names (ADR-0104
+     * decision 7) - the headroom left, and the safeguarding term - the liabilities capital created and still funds.
      */
     public record LendingCapitalRow(
             String currency, int scale, long recognisedMinor, long committedMinor, long outstandingMinor,
@@ -363,8 +365,12 @@ public final class LendingReports {
                     + " sum(CASE WHEN ln.direction = 'DEBIT' THEN ln.amount_minor ELSE -ln.amount_minor END)"
                     + " FROM ledger.ledger_account a JOIN ledger.journal_line ln ON ln.ledger_account_id = a.id"
                     + " JOIN ledger.journal_entry e ON e.id = ln.entry_id WHERE e.value_date <= ?"
-                    + " AND a.purpose IN ('LENDING_CAPITAL', 'LOAN_PRINCIPAL', 'LOAN_PRINCIPAL_DUE') GROUP BY 1, 2, 3")) {
+                    + " AND a.purpose = ANY (?) GROUP BY 1, 2, 3")) {
                 select.setObject(1, day);
+                // The capital and the headroom's own principal set - one set, never a copy (P12-TSK-005's gate).
+                List<String> purposes = new ArrayList<>(List.of("LENDING_CAPITAL"));
+                LendingCapitalHeadroom.principalPurposes().forEach(purpose -> purposes.add(purpose.name()));
+                select.setArray(2, uow.createArrayOf("text", purposes.toArray()));
                 try (ResultSet found = select.executeQuery()) {
                     while (found.next()) {
                         ledger.computeIfAbsent(found.getString(1).strip(), ignored -> new Balances())
@@ -392,7 +398,10 @@ public final class LendingReports {
                 int scale = terms.scale(currency.code());
                 long recognised = terms.credit("LENDING_CAPITAL");
                 long commitment = terms.debit("COMMITTED");
-                long outstanding = Math.addExact(terms.debit("LOAN_PRINCIPAL"), terms.debit("LOAN_PRINCIPAL_DUE"));
+                long outstanding = 0;
+                for (com.finapp.ledger.AccountPurpose principal : LendingCapitalHeadroom.principalPurposes()) {
+                    outstanding = Math.addExact(outstanding, terms.debit(principal.name()));
+                }
                 rows.add(new LendingCapitalRow(currency.code(), scale, recognised, commitment, outstanding,
                         Math.subtractExact(Math.subtractExact(recognised, commitment), outstanding),
                         Math.addExact(outstanding, commitment)));

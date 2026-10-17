@@ -29,9 +29,9 @@ import org.junit.jupiter.api.Test;
  * Live from this task: bnpl's {@code BnplAccounts} names the six; every posting rule arrives with its own task
  * (ADR-0103 Follow-up) inside bnpl.
  *
- * <p>{@link #READERS} is the permit list for a file outside bnpl that must NAME a BNPL balance to read it -
- * empty today; lending's capital headroom (`P12-TSK-005`, the BNPL principal purposes by ledger purpose) and the
- * merchant payable's drill-down (`P12-TSK-016`) are its expected first entries. A reader is held never to reach a
+ * <p>{@link #READERS} is the permit list for a file outside bnpl that must NAME a BNPL balance to read it - lending's
+ * capital headroom (`P12-TSK-005`, the BNPL principal purposes by ledger purpose) its first entry, the merchant
+ * payable's drill-down (`P12-TSK-016`) the next expected. A reader is held never to reach a
  * poster - no {@code PostingService}, {@code ReversalService} or {@code JournalLine} - so the permit cannot become
  * a second way value moves.
  *
@@ -54,9 +54,15 @@ class BnplBooksHaveOnePosterTest {
 
     /**
      * Every file outside {@code bnpl} permitted to name the BNPL book, READ-only, with its role. *(Empty until
-     * `P12-TSK-005`.)*
+     * `P12-TSK-005`.)* Lending's capital headroom is the first (ADR-0104 decision 2): it names the two BNPL principal
+     * purposes to sum them by ledger purpose, and is held below never to reach a poster.
      */
-    static final Map<String, String> READERS = Map.of();
+    static final Map<String, String> READERS =
+            Map.of(
+                    "LendingCapitalHeadroom.java",
+                    "READER (P12-TSK-005): sums BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE by ledger purpose beside the loan"
+                            + " principal, in one statement under the capital lock (L6) - one pool, one proof; it posts"
+                            + " nothing and learns no bnpl type");
 
     /** Every BNPL_* purpose, derived from the declaration. */
     static final List<String> BNPL_BOOK =
@@ -98,6 +104,20 @@ class BnplBooksHaveOnePosterTest {
                         .anyMatch(source -> mentionsBnplBook(source.getValue())))
                 .as("no reader permit is stale: %s really names the BNPL book", permitted)
                 .isTrue());
+        // Lending's headroom reads principal only - never the obligation's interest, fees or credit balance, nor any BNPL
+        // income: income is not capital (lending A29, ADR-0104 decision 6).
+        sources.forEach((path, text) -> {
+            if (fileName(path).equals("LendingCapitalHeadroom.java")) {
+                java.util.Set<String> named = new java.util.TreeSet<>();
+                java.util.regex.Matcher token = BNPL_TOKEN.matcher(scan(text, false));
+                while (token.find()) {
+                    named.add(token.group(1));
+                }
+                assertThat(named)
+                        .as("lending's headroom names exactly the two BNPL principal purposes")
+                        .containsExactly("BNPL_PRINCIPAL", "BNPL_PRINCIPAL_DUE");
+            }
+        });
         sources.forEach((path, text) -> {
             if (READERS.containsKey(fileName(path))) {
                 assertThat(scan(text, false))

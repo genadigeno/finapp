@@ -63,16 +63,25 @@ Rests on `PHASE_12_PLAN.md` §1, §2.2 (B2), §3.2, §3.3, §6 (`INV-BNPL-02`, `
    `BNPL_PRINCIPAL_DUE` — ledger `AccountPurpose` members, read through the same one-statement `PurposeBalances` read,
    so a BNPL billing moving principal from not-due to due (F2) is wholly in or wholly out. The committed term is read
    first, as today (`P11-TSK-012`'s ordering rule, unchanged). `underLock`, `atRest`, `Headroom.lendingFunded()` and
-   `LendingCapitalProof` all read the widened set. Lending gains no migration (the headroom is Java; lending's next free
+   `LendingCapitalProof` all read the widened set. *(As built by `P12-TSK-005`: the set is
+   `LendingCapitalHeadroom.PRINCIPAL`; the `Headroom` record keeps its shape - one `outstanding` term for loan, line and
+   BNPL principal alike, so `lendingFunded()` and the proof's headroom arm widen with it and the proof keeps no second
+   copy of the formula; the operator capital report's `outstandingMinor` is that one figure. `BnplBooksHaveOnePosterTest`
+   gains its first reader permit, the headroom, held to name exactly `BNPL_PRINCIPAL` and `BNPL_PRINCIPAL_DUE`.)* Lending gains no migration (the headroom is Java; lending's next free
    stays `V031`), no edge, and no knowledge of a purchase, a merchant or an obligation: `lending/package-info.java`'s
    rule ("bnpl will reference lending's concepts by identifier and own neither; lending never knows a merchant") holds.
 
 3. **bnpl judges headroom through an `app` port** (`BnplCapital.underLock(uow, currency)`, declared by `bnpl`,
    implemented in `app` over `LendingCapitalHeadroom.underLock` — the crossborder/lending port precedent). `bnpl`'s
    build edges stay `creditmath, ledger, platform, sharedkernel` (ADR-0101); `LendingModuleIsolationTest`'s "no module
-   depends on lending" holds. The port runs on bnpl's own connection, inside bnpl's transaction, and returns the
-   `Headroom` record; bnpl asks `admits(G)` and refuses a shortfall `422 bnpl.CapitalUnavailable` with nothing written
-   — the offer stays `OFFERED` until it expires, the decision unconsumed (the consumption rolls back with the rest).
+   depends on lending" holds. The port runs on bnpl's own connection, inside bnpl's transaction, and returns
+   bnpl's own `BnplHeadroom` record; bnpl asks `admits(G)` and refuses a shortfall `422 bnpl.CapitalUnavailable` with
+   nothing written — the offer stays `OFFERED` until it expires, the decision unconsumed (the consumption rolls back
+   with the rest). *(As built by `P12-TSK-005` (2026-10-17): this read "returns the `Headroom` record" - lending's type,
+   which bnpl cannot see without the edge this decision refuses. `BnplHeadroom(currency, headroom)` carries the one
+   figure a judgement needs - not the capital, committed or outstanding terms - with `admits(G)` (a positive gross in the
+   headroom's own currency) and no amount in its string form; `app`'s `LendingBnplCapital` builds it from
+   `LendingCapitalHeadroom.underLock` and never from `atRest`. The refusal code is `-013`'s.)*
 
 4. **Where L6 is judged, and why nowhere else.** Every act that **raises** BNPL principal holds L6 to its commit:
    - **T-pur** (the acceptance = the purchase): L0 → B2 offer → B3 session (judged at once) → consume → **L6** →
@@ -227,5 +236,12 @@ rule extended to `BNPL_AGREEMENT`), `INV-CRD-01`, `INV-CRD-09`, `INV-SET-06`, `I
   the lock-wait measurement of Decision 9, recorded in `CURRENT_STATE.md` §Known Architectural Debt.
 - `FINANCIAL_INVARIANTS.md` — `INV-LND-13`'s statement and Verify extended to BNPL as above (the transition); the
   `DISTRIBUTED_EXECUTION.md` §3 register's L6 row gains bnpl's two holders.
+- **A write-off would raise headroom without returning capital** (found by `P12-TSK-005`'s design, 2026-10-17; for
+  loans and BNPL alike). The headroom subtracts principal outstanding; a write-off (F11 here, lending's rule 14) credits
+  the principal against an expense, so it would lower the outstanding term and raise headroom by the amount lost - the
+  capital that funded the receivable is gone, yet the headroom would offer it again. Nothing posts a write-off in Phase 11
+  or 12 (`LOAN_WRITE_OFF_EXPENSE` and `BNPL_WRITE_OFF_EXPENSE` seeded, carrying no line), so no figure is wrong today;
+  Phase 14's accounting design must charge the loss against capital (or subtract the write-off expense in the headroom)
+  in the same commit. Recorded beside the write-off debt row in `CURRENT_STATE.md` §Known Architectural Debt.
 - **Acceptance.** `Proposed` at the Phase 11 → 12 transition (2026-10-16); read against the code and accepted by the
   Phase 12 exit review (`P12-DOC-001`).

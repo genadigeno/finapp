@@ -27,6 +27,10 @@ import lombok.extern.slf4j.Slf4j;
  *       ({@code finapp.lending.capital.headroom-floor.<CCY>}, minor units, 0 when unset); alerting above 0.
  * </ul>
  *
+ * <p>Both read {@link LendingCapitalProof}, whose headroom counts BNPL principal beside loan principal since
+ * `P12-TSK-005` (ADR-0104 decision 7): one pool, so the shared gauges fall with every BNPL purchase and rise with every
+ * BNPL repayment and refund - no BNPL gauge of their own.
+ *
  * <p>Read from ONE {@code REPEATABLE READ} read-only snapshot behind a refresh floor - the cache is this instance's
  * only, never truth; NaN when unreadable, never "clean". Counts and verdicts only - the headroom amounts are an audited
  * report ({@code GET /v1/operator/lending/capital}), never a metric (ADR-0072).

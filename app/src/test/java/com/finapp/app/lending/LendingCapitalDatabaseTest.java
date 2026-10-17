@@ -3,6 +3,9 @@ package com.finapp.app.lending;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.bnpl.BnplAccounts;
+import com.finapp.bnpl.BnplLedgerAccounts;
+import com.finapp.bnpl.BnplObligationId;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -95,6 +98,13 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * {@code CASH_AT_BANK} - posts rule 0, {@code DR CASH_AT_BANK / CR LENDING_CAPITAL}, matching the contribution in the
  * same transaction; the headroom reads the ledger under the capital row lock; and the capital proof holds at rest and
  * fails on a foreign posting.
+ *
+ * <p><strong>BNPL principal in the one pool</strong> (`P12-TSK-005`, orders 15 to 20; ADR-0104, {@code INV-BNPL-10}): a
+ * BNPL obligation's accounts opened by bnpl's real {@code BnplAccounts}, its principal a journal fixture through the
+ * ledger's {@code PostingService} (the `P11-TSK-013` precedent - no purchase exists until `P12-TSK-013`, which re-asserts
+ * the figures through the real financing): the headroom lowered by it, a billing to due moving nothing, a repayment and
+ * a refund restoring it, the proof, the report and {@code lending_funded} counting it, and the last capital beside it
+ * admitting to the minor unit.
  *
  * <p>Chain discipline: the suite runs in a database of its own ({@code own-container}, `X-TSK-016`), because the
  * bank's EUR statement chain must start at sequence 1 and every step here extends it in order - the methods are
@@ -725,6 +735,158 @@ class LendingCapitalDatabaseTest {
                         : com.finapp.platform.testing.database.BornOnceArbiters.Verdict.REFUSED_ALONE));
     }
 
+    // ----------------------------------------------------------------- BNPL principal in the one pool (P12-TSK-005)
+
+    /** The obligation the BNPL cases plant their principal on (orders 15 to 17). */
+    private static BnplLedgerAccounts obligation;
+
+    @Test
+    @Order(15)
+    @DisplayName("a BNPL principal line lowers the headroom (P12-TSK-005): newly recognised capital, then a BNPL"
+            + " obligation's principal - the headroom falls by every unit of it, the capital unmoved, read by ledger"
+            + " purpose")
+    void aBnplPrincipalLineLowersTheHeadroom() throws Exception {
+        recognise(1_000_00);
+        LendingCapitalHeadroom.Headroom before = headroomNow();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            obligation = new BnplAccounts(ledgerAccountStore, IDS, CLOCK).openFor(app, BnplObligationId.next(IDS), EUR);
+            app.commit();
+        }
+        postBnpl(new JournalLine(obligation.principal().id(), Direction.DEBIT, eur(400_00)),
+                new JournalLine(obligation.creditBalance().id(), Direction.CREDIT, eur(400_00)));
+        LendingCapitalHeadroom.Headroom after = headroomNow();
+        assertThat(after.capital()).isEqualTo(before.capital());
+        assertThat(after.outstanding()).isEqualTo(before.outstanding().plus(eur(400_00)));
+        assertThat(after.headroom()).as("lowered by every unit of BNPL principal")
+                .isEqualTo(before.headroom().minus(eur(400_00)));
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            assertThat(headroom.underLock(app, EUR).headroom()).as("under L6, the same figure").isEqualTo(after.headroom());
+            app.rollback();
+        }
+    }
+
+    @Test
+    @Order(16)
+    @DisplayName("BNPL principal billed due still counts (P12-TSK-005): a billing moving 150.00 from BNPL_PRINCIPAL to"
+            + " BNPL_PRINCIPAL_DUE leaves the headroom and the outstanding term where they were")
+    void bnplPrincipalDueStillCounts() throws Exception {
+        LendingCapitalHeadroom.Headroom before = headroomNow();
+        postBnpl(new JournalLine(obligation.principalDue().id(), Direction.DEBIT, eur(150_00)),
+                new JournalLine(obligation.principal().id(), Direction.CREDIT, eur(150_00)));
+        LendingCapitalHeadroom.Headroom after = headroomNow();
+        assertThat(after.outstanding()).isEqualTo(before.outstanding());
+        assertThat(after.headroom()).isEqualTo(before.headroom());
+        assertThat(principalOf(AccountPurpose.BNPL_PRINCIPAL_DUE)).as("not vacuous: the due account holds it")
+                .isEqualTo(150_00);
+    }
+
+    @Test
+    @Order(17)
+    @DisplayName("a repaid BNPL principal restores the headroom (P12-TSK-005): the instalment due repaid and part of the"
+            + " not-due principal cancelled - the headroom rises by each at its commit")
+    void aRepaidBnplPrincipalRestoresTheHeadroom() throws Exception {
+        LendingCapitalHeadroom.Headroom before = headroomNow();
+        postBnpl(new JournalLine(obligation.creditBalance().id(), Direction.DEBIT, eur(150_00)),
+                new JournalLine(obligation.principalDue().id(), Direction.CREDIT, eur(150_00)));
+        assertThat(headroomNow().headroom()).isEqualTo(before.headroom().plus(eur(150_00)));
+        postBnpl(new JournalLine(obligation.creditBalance().id(), Direction.DEBIT, eur(50_00)),
+                new JournalLine(obligation.principal().id(), Direction.CREDIT, eur(50_00)));
+        assertThat(headroomNow().headroom()).isEqualTo(before.headroom().plus(eur(200_00)));
+        assertThat(principalOf(AccountPurpose.BNPL_PRINCIPAL, AccountPurpose.BNPL_PRINCIPAL_DUE)).isEqualTo(200_00);
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("the capital proof counts BNPL principal (P12-TSK-005): recognised capital = headroom + committed +"
+            + " loan and BNPL principal outstanding, the audited report shows the wider outstanding, and BNPL principal"
+            + " beyond the capital fails the headroom arm")
+    void theCapitalProofCountsBnplPrincipal() throws Exception {
+        LendingCapitalProof.CurrencyVerdict verdict = proofNow().currencies().stream()
+                .filter(currency -> currency.currency().equals(EUR)).findFirst().orElseThrow();
+        assertThat(verdict.holds()).isTrue();
+        long loanAndBnpl = principalOf(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE,
+                AccountPurpose.BNPL_PRINCIPAL, AccountPurpose.BNPL_PRINCIPAL_DUE);
+        assertThat(principalOf(AccountPurpose.BNPL_PRINCIPAL, AccountPurpose.BNPL_PRINCIPAL_DUE))
+                .as("not vacuous: BNPL principal is outstanding").isPositive();
+        assertThat(verdict.terms().outstanding().minorUnits()).isEqualTo(loanAndBnpl);
+        assertThat(verdict.terms().headroom().plus(verdict.terms().committed()).plus(verdict.terms().outstanding()))
+                .isEqualTo(verdict.terms().capital());
+        assertThat(get(CAPITAL, sessionWith(RoleName.LENDING_OFFICER)).body())
+                .as("the operator's capital read shows the wider outstanding")
+                .contains("\"outstandingMinor\":" + loanAndBnpl);
+        assertThat(metrics.readNow().failing()).as("finapp.lending.capital.proof{FAILS}").isZero();
+
+        try (CorrelationContext.Scope scope = CorrelationContext.enter(flow());
+                SecurityContext.Scope system = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                BnplLedgerAccounts over = new BnplAccounts(ledgerAccountStore, IDS, CLOCK)
+                        .openFor(app, BnplObligationId.next(IDS), EUR);
+                Money beyond = verdict.terms().headroom().plus(eur(1));
+                postingService.post(app, new PostingCommand("p12t5-over:" + UUID.randomUUID(),
+                        LocalDate.now(ZoneOffset.UTC), LocalDate.now(ZoneOffset.UTC), "a BNPL book beyond the capital",
+                        List.of(new JournalLine(over.principal().id(), Direction.DEBIT, beyond),
+                                new JournalLine(over.creditBalance().id(), Direction.CREDIT, beyond))));
+                LendingCapitalProof.CurrencyVerdict overDeployed = proof.prove(app, EUR);
+                assertThat(overDeployed.complete()).as("every capital line still a recognition's").isTrue();
+                assertThat(overDeployed.headroomHolds()).as("BNPL principal beyond the capital").isFalse();
+            } finally {
+                app.rollback();
+            }
+        }
+        assertThat(proofNow().holds()).as("the rolled-back BNPL book leaves the proof holding").isTrue();
+    }
+
+    @Test
+    @Order(19)
+    @DisplayName("lending_funded includes BNPL principal (P12-TSK-005): the safeguarding term is committed + loan and"
+            + " line principal + BNPL principal outstanding")
+    void lendingFundedIncludesBnplPrincipal() throws Exception {
+        LendingCapitalProof.CurrencyVerdict verdict = proofNow().currencies().stream()
+                .filter(currency -> currency.currency().equals(EUR)).findFirst().orElseThrow();
+        long loans = principalOf(AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE);
+        long bnpl = principalOf(AccountPurpose.BNPL_PRINCIPAL, AccountPurpose.BNPL_PRINCIPAL_DUE);
+        assertThat(bnpl).as("not vacuous").isPositive();
+        assertThat(verdict.lendingFunded().minorUnits())
+                .isEqualTo(verdict.terms().committed().minorUnits() + loans + bnpl);
+    }
+
+    @Test
+    @Order(20)
+    @DisplayName("the last capital refuses an acceptance beside a planted BNPL principal (P12-TSK-005): with all but"
+            + " 1.00 of the headroom taken by a BNPL obligation, a consumer judging under L6 as the acceptance does is"
+            + " refused 1.01 and admitted 1.00 - headroom exactly zero, never below")
+    void theLastCapitalRefusesAnAcceptanceBesideAPlantedBnplPrincipal() throws Exception {
+        Money last = headroomNow().headroom();
+        if (last.minorUnits() < 2_00) {
+            recognise(500_00);
+            last = headroomNow().headroom();
+        }
+        BnplLedgerAccounts planted;
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            planted = new BnplAccounts(ledgerAccountStore, IDS, CLOCK).openFor(app, BnplObligationId.next(IDS), EUR);
+            app.commit();
+        }
+        Money bnpl = last.minus(eur(1_00));
+        postBnpl(new JournalLine(planted.principal().id(), Direction.DEBIT, bnpl),
+                new JournalLine(planted.creditBalance().id(), Direction.CREDIT, bnpl));
+        LoanLedgerAccounts loan;
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            loan = new LoanAccounts(ledgerAccountStore, IDS, CLOCK).openFor(app, LoanId.next(IDS), EUR);
+            app.commit();
+        }
+        assertThat(reserve(loan, eur(1_01), new CountDownLatch(0), new CountDownLatch(1)))
+                .as("one minor unit past what the BNPL book left").isFalse();
+        assertThat(reserve(loan, eur(1_00), new CountDownLatch(0), new CountDownLatch(1))).isTrue();
+        assertThat(headroomNow().headroom().minorUnits()).as("INV-LND-13: never over-deployed").isZero();
+        assertThat(proofNow().holds()).isTrue();
+    }
+
     // ----------------------------------------------------------------- fixtures
 
     private Boolean reserve(LoanLedgerAccounts loan, Money amount, CountDownLatch start, CountDownLatch bothRead)
@@ -749,6 +911,52 @@ class LendingCapitalDatabaseTest {
                             new JournalLine(loan.creditBalance().id(), Direction.CREDIT, amount))));
             app.commit();
             return true;
+        }
+    }
+
+    /** A contribution of {@code minor} proposed, approved and recognised from the next EUR statement - real capital. */
+    private void recognise(long minor) throws Exception {
+        String proposer = sessionWith(RoleName.LENDING_TREASURY_OFFICER);
+        String approver = sessionWith(RoleName.LENDING_TREASURY_OFFICER);
+        String reference = reference();
+        String contribution = field(post(CONTRIBUTIONS, proposal("EUR", minor, reference, "BNPL capital"), proposer,
+                key()).body(), "id");
+        assertThat(post(CONTRIBUTIONS + "/" + contribution + "/approval", decision("ok"), approver, key()).statusCode())
+                .isEqualTo(200);
+        Money capital = headroomNow().capital();
+        acceptedStatement(capitalLine(minor, reference));
+        assertThat(headroomNow().capital()).isEqualTo(capital.plus(eur(minor)));
+    }
+
+    /**
+     * A BNPL principal journal fixture (`P12-TSK-005`, the `P11-TSK-013` precedent): the lines posted through the ledger's
+     * own {@link PostingService} on a BNPL obligation's accounts, balanced within the obligation - no purchase exists
+     * until `P12-TSK-013`, which re-asserts these figures through the real financing.
+     */
+    private void postBnpl(JournalLine... lines) throws SQLException {
+        try (CorrelationContext.Scope scope = CorrelationContext.enter(flow());
+                SecurityContext.Scope system = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            postingService.post(app, new PostingCommand("p12t5-bnpl:" + UUID.randomUUID(), LocalDate.now(ZoneOffset.UTC),
+                    LocalDate.now(ZoneOffset.UTC), "the BNPL capital fixture", List.of(lines)));
+            app.commit();
+        }
+    }
+
+    /** DR-CR over every EUR account of {@code purposes}, summed in SQL - an independent reading of the journal lines. */
+    private static long principalOf(AccountPurpose... purposes) throws SQLException {
+        String[] names = java.util.Arrays.stream(purposes).map(Enum::name).toArray(String[]::new);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement(
+                        "SELECT coalesce(sum(CASE l.direction WHEN 'DEBIT' THEN l.amount_minor ELSE -l.amount_minor END),"
+                                + " 0) FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                                + " WHERE a.currency = 'EUR' AND a.purpose = ANY (?)")) {
+            select.setArray(1, app.createArrayOf("text", names));
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
         }
     }
 

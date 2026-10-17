@@ -46,7 +46,9 @@
  * {@link com.finapp.lending.LendingCapitalAdministration} (advisory namespace {@code 11}), the ports
  * {@link com.finapp.lending.CapitalExpectations} and {@link com.finapp.lending.CapitalRecognitions} that {@code app}
  * implements over reconciliation, {@link com.finapp.lending.LendingCapitalHeadroom} (L6) and
- * {@link com.finapp.lending.LendingCapitalProof}. Lending still posts nothing: capital is credited only by bank
+ * {@link com.finapp.lending.LendingCapitalProof} - both counting, since {@code P12-TSK-005}, the BNPL principal purposes
+ * by ledger purpose beside the loan principal (one pool, one proof; ADR-0104), lending learning no bnpl type and
+ * posting none of them; bnpl reaches the headroom only through its own port, which {@code app} implements. Lending still posts nothing: capital is credited only by bank
  * recognition of a statement line (rule 0, reconciliation's), and recognition is read here, never stored. Loan product
  * terms as versioned data ({@code P11-TSK-005}): {@code V003}'s money-free machine row and INSERT-only term set,
  * {@link com.finapp.lending.LoanTerms} judged whole (only implemented conventions), the four-eyes

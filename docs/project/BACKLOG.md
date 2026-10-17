@@ -19185,7 +19185,61 @@ after everything.
   and the partial uniques; F1, F2, F4, F5 vacuous — no posting; F3: the keyed door; F8 N/A — no money), `DOD-API`,
   `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P12-TSK-005 — Capital headroom counts BNPL principal** — `READY` (marked by `P12-TSK-004`'s completion gate, 2026-10-17; its dependency `-003` `COMPLETE`)
+**P12-TSK-005 — Capital headroom counts BNPL principal** — `COMPLETE` (2026-10-17; marked `READY` by `P12-TSK-004`'s completion gate)
+- **As built** (2026-10-17): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when
+  superseded). The code is lending's `LendingCapitalHeadroom` (`PRINCIPAL` the four purposes, `principalPurposes()`),
+  bnpl's `BnplCapital` and `BnplHeadroom`, `app`'s `LendingBnplCapital` (wired in `BnplBeans`) and the capital report's
+  fold in `LendingReports.capital`; no migration. **Design, in brief:** `headroom(c) = CR−DR(LENDING_CAPITAL) − committed
+  loans PENDING_DISBURSEMENT − DR−CR(LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE + BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE)`, the
+  outstanding term ONE statement, read after the committed one, all under L6 for a judgement. *No double count:* the four
+  purposes are disjoint ledger purposes, each account has one, lending alone posts the loan two and bnpl alone the BNPL
+  two (the poster tests), and BNPL has no committed state, so no BNPL unit is ever both committed and outstanding. *No
+  gap:* BNPL principal exists only from F1's commit, which (`-013`) holds L6 from its judgement; every act raising
+  principal - a loan acceptance (as commitment), a draw, a principal-re-instating reversal, a BNPL purchase or reversal -
+  holds L6, and every act lowering or reclassifying it (repayment, refund, billing, payoff) can only read the headroom
+  low. *Walk:* a financing of G lowers headroom by G (a pay-in-4's first instalment, repaid in the same commit, by G − a1;
+  judged on G); a billing moves nothing; a repayment or refund restores unit for unit at commit; income, interest and
+  fees never move it; a write-off (Phase 14) would RAISE it without capital returning - recorded below. *The race for the
+  last capital:* a BNPL judgement and a loan acceptance both take the currency's capital `ledger_account` row `FOR
+  UPDATE`; the second waits, then re-reads every term in fresh `READ COMMITTED` statements and sees the first's commit -
+  one admitted; lending's L6 → L7 and bnpl's L6 → (P), no transaction holding another module's row before L6, so no cycle.
+- **Refinements to the wording (and why):** the operator capital read is `LendingCapitalDesk.capital()`, not
+  `LendingCapitalAdministration` (which reads no headroom figure) - its `outstandingMinor` is the one wider figure, the
+  `Headroom` record keeping its shape (no loan/BNPL split - an owner judgement, below); the port returns bnpl's own
+  `BnplHeadroom(currency, headroom)`, not lending's `Headroom` (ADR-0104 decision 3's "the `Headroom` record" is
+  unreachable from bnpl without the refused edge); "`LendingCapitalProof` sums …" - the proof keeps no copy of the
+  formula and reads the one headroom, so its BNPL term is the headroom's and the backlog's second probe became "the
+  proof's headroom arm judged without the outstanding term"; `BnplCapitalDatabaseTest` lives in `app`'s
+  `com.finapp.app.lending` package (it reuses that package's origination fixtures, `LoanApplicationDatabaseTest.terms`)
+  and is registered `own-container` (it plants capital as `LendingCreditExposureDatabaseTest` does); "a loan acceptance
+  holding L6" is the real `LoanAcceptances.accept` on the suite's connection, uncommitted, and "a BNPL judgement holding
+  L6" the port on the suite's connection with the BNPL principal it funds planted before the commit (what `-013`'s
+  capital step will do); `LendingCapitalDatabaseTest#theLastCapitalRefusesAnAcceptanceBesideAPlantedBnplPrincipal`
+  judges through that suite's own headroom consumer - the very `underLock(…).admits(…)` every lending consumer calls -
+  the real acceptance beside BNPL being `BnplCapitalDatabaseTest`'s; the capital report's as-of-date fold
+  (`LendingReports`, `P11-TSK-030`) is in scope - the gate's IMPORTANT; `PHASE_12_PLAN.md` §2.1's "BNPL committed and
+  outstanding" corrected to outstanding only.
+- **Gate** (2026-10-17): NOT COMPLETE on its first pass - IMPORTANT, `LendingReports.capital` (the audited as-of-date
+  capital report, `GET /v1/operator/reports/lending/capital`) folded `LENDING_CAPITAL`, `LOAN_PRINCIPAL` and
+  `LOAN_PRINCIPAL_DUE` by literal - a second copy of the formula that would have over-stated headroom and under-stated
+  `lending_funded` as soon as a BNPL line exists; fixed by folding `LendingCapitalHeadroom.principalPurposes()`, and
+  `LendingReportsDatabaseTest`'s capital section now plants BNPL principal before holding the report equal to
+  `atRest` (written, not run). MINOR, recorded: the wording refinements above. Then COMPLETE. **"Would this remain
+  correct if 10 instances executed it concurrently?" — `PASS`**: the judgement is a read under one database row lock in
+  the caller's transaction (no JVM state, no cache, no instance clock); ten consumers of one currency's capital on ten
+  instances - lending's or bnpl's - serialise on that row and each re-reads every term after the holder commits; the
+  outstanding term is one statement, so a concurrent billing, repayment or refund is wholly in or out and can only read
+  low; a failed read fails the caller. The counted proofs (`BnplCapitalDatabaseTest`, `LendingCapitalDatabaseTest`
+  orders 15 to 20) are written and owed their first run - the verdict rests on the same row lock lending's counted races
+  proved in Phase 11 and on the hermetic lock-and-order cases. **Probes** (`MUTATION_TESTING.md` §2, ten rows, each
+  caught on its first run and restored byte-identical by sha256): `BNPL_PRINCIPAL_DUE` dropped; `BNPL_PRINCIPAL`
+  dropped; the proof's headroom arm without the outstanding term; the port on `atRest`; the committed term read after
+  the outstanding; the outstanding term as two statements; `BNPL_MERCHANT_FEE_INCOME` in the set (two guards); `admits`
+  one unit past; the port answering zero on a failed read. **Not run** (owner's instruction): the database cases named
+  in §Tests and `LendingReportsDatabaseTest`'s planted BNPL principal, and the backlog's three live probes. **Owner
+  judgements:** a loan/BNPL split of the outstanding term in the operator reports (one figure today); the write-off
+  finding for Phase 14 (ADR-0104 §Follow-up); the headroom's one statement now folds every BNPL principal line under
+  L6 - its cost grows with history (the contention debt row widened).
 - **Objective**: one capital pool, one proof — BNPL principal is counted in lending's capital headroom from the instant
   it exists, and bnpl can judge headroom under L6 in its own transaction (B2, ADR-0104, `INV-LND-13` extended,
   `INV-BNPL-10`).
@@ -19243,7 +19297,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (capital; F2, F6, F7 binding; F1, F3, F4, F5 vacuous — a read; F8: the capital
   proof's BNPL term). **Risk**: High. **Cx**: S.
 
-**P12-TSK-006 — Merchant BNPL enablement and fee schedule** — `PLANNED`
+**P12-TSK-006 — Merchant BNPL enablement and fee schedule** — `READY` (marked by `P12-TSK-005`'s completion gate, 2026-10-17; its dependency `-002` `COMPLETE`)
 - **Objective**: a merchant can offer BNPL only after a four-eyes enablement, priced by its own BNPL fee schedule, with
   the fee version pinned per purchase and one fee arithmetic for the split and the return (OQ-8, B8; ADR-0058, ADR-0102).
 - **Bounded context**: Merchant; BNPL (the port); `app` (the operator doors, the adapter).
