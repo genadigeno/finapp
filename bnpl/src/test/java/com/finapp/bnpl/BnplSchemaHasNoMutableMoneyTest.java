@@ -32,8 +32,10 @@ import org.junit.jupiter.api.Test;
  * by hand never edits a file a text check would read. From the first bnpl table on (`P12-TSK-004`), each one is held to
  * the rule the moment its migration lands.
  *
- * <p><strong>The guard is proven able to fail, in-suite.</strong> {@code V001} creates no table, so over the live schema
- * the rule is vacuously true today; every planted case below creates its relation in the {@code bnpl} schema itself
+ * <p><strong>The guard is proven able to fail, in-suite.</strong> {@code V001} created no table; since {@code V002}
+ * (`P12-TSK-004`) the live schema holds the terms tables - {@code bnpl_terms} carrying the late fee, its cap and the
+ * dispute threshold INSERT-only, the money-free {@code bnpl_terms_version} its column-scoped decision UPDATE; every
+ * planted case below creates its relation in the {@code bnpl} schema itself
  * inside a transaction that is rolled back, runs the very query the live check runs over that uncommitted catalogue, and
  * asserts it is refused - an {@code UPDATE} on the table, on the money column alone, on a status column of a money table,
  * a {@code DELETE}, a {@code TRUNCATE} to {@code PUBLIC}, a non-{@code bigint} money column, a floating-point column, a
