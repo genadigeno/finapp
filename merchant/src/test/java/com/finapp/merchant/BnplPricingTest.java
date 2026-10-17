@@ -148,6 +148,31 @@ class BnplPricingTest {
     }
 
     @Test
+    @DisplayName("the fee coverage read judges as the pin does - the standing first, then the net positive - and writes"
+            + " nothing (P12-TSK-010)")
+    void theFeeCoverageReadJudgesAsThePinAndWritesNothing() {
+        assertThat(covers(10_000)).as("not enabled covers nothing").isFalse();
+        enable();
+        FeeSchedule fixedHeavy = schedule("fixed heavy", RefundFeePolicy.RETURNED, "0", 100);
+        assertThat(covers(10_000)).as("not priced covers nothing").isFalse();
+        pricing.assign(UOW, merchant.id(), MerchantBnplProduct.BNPL_PAY_IN_4, fixedHeavy.id(), "c", ANNA, CORRELATION);
+        int audited = audit.records.size();
+        assertThat(covers(100)).as("a fee meeting the gross").isFalse();
+        assertThat(covers(101)).as("one cent of net").isTrue();
+        assertThat(pricing.coversFee(UOW, merchant.id(), MerchantBnplProduct.BNPL_PAY_IN_4,
+                Money.ofMinorUnits(10_000, CurrencyCode.of("USD")))).as("another currency").isFalse();
+        assertThat(pricingStore.pins).as("a reading pins nothing").isEmpty();
+        assertThat(audit.records).as("a reading audits nothing").hasSize(audited);
+        merchants.insert(UOW, merchant.suspend(CLOCK));
+        assertThat(covers(10_000)).as("a suspended merchant covers nothing").isFalse();
+    }
+
+    private boolean covers(long grossMinor) {
+        return pricing.coversFee(UOW, merchant.id(), MerchantBnplProduct.BNPL_PAY_IN_4,
+                Money.ofMinorUnits(grossMinor, EUR));
+    }
+
+    @Test
     @DisplayName("the returned fee telescopes under the pin: two halves return exactly f")
     void theReturnedFeeTelescopes() {
         priced();

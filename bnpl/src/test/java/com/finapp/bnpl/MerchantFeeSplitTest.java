@@ -58,6 +58,11 @@ class MerchantFeeSplitTest {
             }
 
             @Override
+            public boolean coversFee(java.sql.Connection unitOfWork, UUID merchantRef, BnplProduct product, Money gross) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
             public java.util.Optional<com.finapp.ledger.LedgerAccountId> payableAccount(
                     java.sql.Connection unitOfWork, UUID merchantRef, CurrencyCode currency) {
                 throw new UnsupportedOperationException();

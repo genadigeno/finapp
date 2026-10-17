@@ -466,6 +466,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // and account shapes at the domain (BnplReasons) and by bnpl V002's CHECKs.
                         "BnplTermsProposalRequest",
                         "BnplTermsDecisionRequest",
+                        // P12-TSK-006 (registered by P12-TSK-010's gate, which found this guard red over them): a
+                        // merchant's BNPL enablement act carries ONE field, a REASON bound for the audit record; the
+                        // BNPL fee schedule assignment a schedule IDENTIFIER and a REASON. No secret in either.
+                        "BnplEnablementActRequest",
+                        "BnplFeeScheduleAssignmentRequest",
                         // P11-TSK-020: the repayment reversal doors. No secret in either. A proposal carries a REASON;
                         // a decision names the proposal (an identifier) and carries a REASON. Every reason is screened
                         // for card-number and account shapes at the domain and by lending V016's CHECKs.
@@ -481,6 +486,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // as decimal strings passed to credit (never stored, evented or answered by lending). No secret;
                         // closed: never a rate, an offer, a score or a party.
                         "LoanApplicationBody",
+                        // P12-TSK-010: the customer's BNPL application - the checkout session's TOKEN, a real bearer
+                        // credential wrapped in Sensitive from the moment it is deserialised (ConfirmSessionRequest's
+                        // shape: the sending half - it is never answered, stored, evented or fingerprinted; the
+                        // fingerprint names the session it resolves to), and a product and plan CODE. Closed: never an
+                        // amount, a merchant, a rate, a score or a party.
+                        "BnplApplicationBody",
                         // P11-TSK-012: the customer's acceptance - the offer's terms hash (a public SHA-256 of terms the
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.

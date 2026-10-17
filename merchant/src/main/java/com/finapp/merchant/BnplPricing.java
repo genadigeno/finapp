@@ -237,6 +237,27 @@ public final class BnplPricing {
                 refunded);
     }
 
+    /**
+     * Whether a sale of {@code gross} covers the merchant's fee for {@code product} now (`P12-TSK-010`, the BNPL
+     * application's eligibility read): judged exactly as {@link #pin} judges it - the standing under the same share locks,
+     * the version in force read once after them, {@code fee = round(G x rate) + fixed} through
+     * {@link FeeCalculation#assess} and the net required positive (ADR-0058) - with <strong>nothing written</strong>: no
+     * pin, no audit record. {@code false} when the merchant may not offer the product now, or when the gross is not in
+     * the schedule's currency. A reading, never a reservation: the purchase's own {@link #pin} re-judges under its locks.
+     */
+    public boolean coversFee(Connection unitOfWork, MerchantId merchantId, MerchantBnplProduct product, Money gross) {
+        Objects.requireNonNull(gross, "gross must not be null");
+        Judged judged = judged(unitOfWork, merchantId, product);
+        if (judged.standing() != Standing.ENABLED) {
+            return false;
+        }
+        try {
+            return FeeCalculation.assess(gross, judged.version().orElseThrow()).net().isPositive();
+        } catch (FeeCurrencyMismatchException mismatch) {
+            return false;
+        }
+    }
+
     /** The purchase's pin, or empty - the provenance read for the three-way proof's fee arm (`P12-TSK-025`). */
     public Optional<BnplFeePin> pinFor(Connection unitOfWork, UUID purchaseRef) {
         return pricing.findPin(unitOfWork, purchaseRef);
