@@ -18808,6 +18808,9 @@
           "checkoutId": {
             "type": "string"
           },
+          "completedAs": {
+            "type": "string"
+          },
           "currency": {
             "type": "string"
           },

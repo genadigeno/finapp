@@ -2455,7 +2455,10 @@ UNIQUE (purchase_id)`; the ledger key `bnpl.financing:<purchase>`) + `DOMAIN` (t
 further lock, and a card or wallet confirmation that loses refused by checkout's `NOT_CONFIRMABLE`).
 **Verify:** Scenario 1 — `BnplPurchaseDatabaseTest#theSameAcceptanceTwiceFinancesOnce` — and scenario
 2 — `BnplPurchaseDatabaseTest#bnplAndCardOnOneSessionCompleteOnce` (`P12-TSK-013`); BNPL completion
-against card confirmation against expiry on one session, exactly one (`P12-TSK-007`); ten consumers
+against card confirmation against expiry on one session, exactly one (`P12-TSK-007` — built: checkout
+`V004`'s financing edge, `financed_by_ref` set once and exclusive with the intent, one session per
+purchase; `CheckoutFinancingDatabaseTest` written and not run under the owner's instruction, its
+hermetic half `CheckoutBnplSessionsTest` and `CheckoutSessionMigrationTest`); ten consumers
 of one decision for `BNPL_AGREEMENT`, one consumption (`P12-TSK-001`); the probe dropping `UNIQUE
 (checkout_session_id)` on purchase (`MUTATION_TESTING.md` §2); one financing per purchase and one
 purchase per session at every storm round (`P12-TST-001`).
@@ -3165,7 +3168,9 @@ dropped, never silently absorbed, never auto-reversed by a clock.
 platform's clock, not the money's. Money whose commercial fact is decided by a race between
 a webhook and a sweeper is money the books cannot explain.
 **Enforce:** `DOMAIN` — the `EXPIRED → COMPLETED_LATE` edge (ADR-0053 §5), conditional like
-every transition.
+every transition. *(Since `P12-TSK-007` the late edge stays a capture's: a session completed by a BNPL
+financing is `COMPLETED` only — checkout `V004`'s `CHECK` — because a financing exists only in the
+commit that completes the session, so no financed money can land late.)*
 **Verify:** The expiry-vs-capture race driven both ways; the late completion counted in a
 meter and visible to an operator view.
 **Phase:** 6

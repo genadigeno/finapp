@@ -53,8 +53,9 @@ public enum CheckoutAuditAction implements AuditableAction {
      */
     ORDER_CREATED(
             "checkout.OrderCreated",
-            "A capture completed a checkout session and produced its order; the record names"
-                    + " the order, the session and the journal entry that paid for it.",
+            "A capture or a BNPL financing completed a checkout session and produced its order;"
+                    + " the record names the order, the session and the journal entry that paid"
+                    + " for it - and, for a financing, the purchase.",
             false),
 
     /**

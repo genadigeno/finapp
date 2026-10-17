@@ -78,6 +78,18 @@ public final class CheckoutSessionToken {
     }
 
     /**
+     * A token a customer presented, received <strong>still wrapped</strong> (`P12-TSK-007`) — the
+     * BNPL application door's path through {@code app}'s {@code CheckoutBnplSessions}: the value
+     * stays in its {@link Sensitive} from the request body to this class's digest, so no new
+     * component unwraps a checkout token ({@code SecretsAreUnwrappedInOnePlaceTest}). The same
+     * no-shape-check rule as {@link #of(String)}.
+     */
+    public static CheckoutSessionToken presented(Sensitive<String> presented) {
+        Objects.requireNonNull(presented, "presented must not be null");
+        return new CheckoutSessionToken(presented);
+    }
+
+    /**
      * What the database stores.
      *
      * <p>Wrapped for {@code SessionToken.hash()}'s reason: {@code INV-AUD-02} is about what

@@ -34,15 +34,29 @@ OPEN ──────────────► PAYMENT_PENDING ────�
  │                        │      │
  │                        │      └────────────► EXPIRED ──► COMPLETED_LATE
  │                        └───────────────────► EXPIRED
+ ├──────────── (by financing, P12-TSK-007) ───► COMPLETED
  ├───────────────────────────────────────────► EXPIRED
  └───────────────────────────────────────────► ABANDONED
 ```
+
+**Completed by financing** (`P12-TSK-007`, checkout `V004`, ADR-0101; `BNPL_LIFECYCLES.md` §4.4): a BNPL
+purchase completes an `OPEN` session `OPEN → COMPLETED` in the purchase's own transaction — **intent-less**,
+its `financed_by_ref` (the purchase, by value) set once, the order born with the financing entry as its
+`captured_entry_ref`. One edge and no state: the merchant sees one order whatever paid for it, and the
+session read, the order's announcement and its audit record say `completedAs = FINANCED`. Judged under the
+session's row lock on the database clock (B3), from `OPEN` only and before `expires_at`; a confirmation that
+won first left it `PAYMENT_PENDING` and the financing is refused, one that loses is answered
+`checkout.NotConfirmable`. `V004` binds every writer: the edge only with its financing reference and no
+intent, before the deadline, beside its order at commit (deferred), one session per purchase, and a financed
+session is `COMPLETED` and nothing else — so there is **no `COMPLETED_LATE` by financing** (no money lands
+late). The confirmation door's `"BNPL"` instrument stays an unknown instrument: a BNPL choice is the
+application door's (`P12-TSK-010`), never a payment.
 
 | State | Meaning | Earned by |
 |---|---|---|
 | `OPEN` | The merchant created the session; the customer has not committed | Session creation (merchant API, keyed) |
 | `PAYMENT_PENDING` | The customer confirmed; a payment intent is dispatched and the provider is deciding | The confirmation (customer, by session token) — the transition that creates the intent, in one transaction with it, before the payment is confirmed — composed by `app` *(this read "creates/confirms the intent through the port" until the Phase 6 review, `P6-DOC-001`; there is no port — ADR-0053)* |
-| `COMPLETED` | The payment captured; the order exists; the merchant is credited | The payment outcome (webhook / sync / sweeper resolution reaching the session's conditional edge) |
+| `COMPLETED` | The payment captured — or a BNPL purchase financed the sale (`P12-TSK-007`); the order exists; the merchant is credited | The payment outcome (webhook / sync / sweeper resolution reaching the session's conditional edge); or, from `OPEN`, the BNPL purchase's completion by financing |
 | `COMPLETED_LATE` | The capture landed **after** expiry; the order exists anyway | The payment outcome arriving at an `EXPIRED` row — the modelled race loser's win (`INV-MER-06`) |
 | `EXPIRED` | The clock ran out before money landed | The expiry sweeper (leaderless, conditional) |
 | `ABANDONED` | The merchant withdrew an `OPEN` session nobody had paid for | The merchant's abandonment (merchant API, reasoned) — there is no customer route to it *(this read "the merchant or customer" until the Phase 6 review, `P6-DOC-001`)* |
