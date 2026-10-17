@@ -1253,6 +1253,39 @@ class OwnershipIsScopedTest {
                                     "P11-TSK-011. The offer id is the one lockClaimed holds FOR UPDATE in this"
                                         + " transaction; only its permit moves, and only while OFFERED.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplTermsStore.insertTerms",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-004. The version id is minted by the administration in this transaction,"
+                                        + " its machine row inserted just before; a BNPL terms version is platform-wide"
+                                        + " product configuration with no owner to scope by, every writing door behind"
+                                        + " @RequiresPermission(BNPL_ADMINISTER), asserted per route by"
+                                        + " BnplTermsEndpointDatabaseTest with nothing written, and bnpl V002's trigger"
+                                        + " admits a term set only for a PROPOSED version.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplTermsStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-004. The id comes only from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id), under the product's advisory lock, namespace 12), the move"
+                                        + " conditional on PROPOSED; product configuration behind BNPL_ADMINISTER, four-eyes"
+                                        + " by CHECK.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplTermsStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-004. The id comes only from the product's ACTIVE row this transaction"
+                                        + " locked FOR UPDATE (lockActive), the move conditional on ACTIVE, and a deferred"
+                                        + " trigger refuses a retirement that commits without its successor.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplTermsStore.version",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-004. A read of platform-wide product configuration: the version id is one"
+                                        + " the effective periods, the ACTIVE status or the FOR SHARE pin answered, or the"
+                                        + " operator's own request on a door behind @RequiresPermission(BNPL_ADMINISTER);"
+                                        + " terms have no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

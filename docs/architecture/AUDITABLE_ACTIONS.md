@@ -647,6 +647,18 @@ the waiver's three acts at `P11-TSK-025`; the amendment's four acts at `P11-TSK-
 `act=amendment:<act>` since); the investigator's explanation and replay at `P11-TSK-029` (and `lending.SelfDealingRefused`
 names `act=investigation:explanation` or `act=investigation:replay` since).
 
+### `bnpl` — `BnplAuditAction`
+
+| Action code | Reason required | Description |
+|---|---|---|
+| `bnpl.TermsVersionProposed` | **Yes** | A holder of `BNPL_ADMINISTER` proposed a whole new version of a BNPL product's terms through `POST /v1/operator/bnpl/terms` (`P12-TSK-004`, ADR-0102 decision 4) - plans, rate (pay-in-N; pay-in-4's held to zero), late fee and cap, allocation, delinquency bounds, collection cadence, the offer validity cap, the dispute window and threshold, the payoff horizon, engines and template - judged complete and within bounds (`422 bnpl.TermsInvalid`) and schedulable across credit's amount and plan bounds (`422 bnpl.TermsNotAmortising`) before anything is written, and immutable from this moment (`INV-HIST-04`), awaiting a DIFFERENT holder's activation (`INV-AUD-04`). The summary names the product and the version number only - never a rate or a fee (`INV-AUD-02`). |
+| `bnpl.TermsVersionActivated` | **Yes** | A holder of `BNPL_ADMINISTER` other than its proposer activated a BNPL terms version (`INV-AUD-04`, also held by `bnpl V002`'s four-eyes `CHECK`), retiring the product's predecessor in the same transaction so one version is in force at every instant; the event `bnpl.BnplTermsVersionActivated` carries the version. The summary names the product, the activated and the retired version numbers. Losers of a race record nothing. |
+| `bnpl.TermsVersionRejected` | **Yes** | A proposed BNPL terms version was rejected - or withdrawn by its proposer (`byProposer=true` in the summary); it was never in force and the product is free for a new proposal. |
+| `bnpl.SelfApprovalRefused` | No | A proposer tried to approve their own BNPL proposal - a terms version's activation (`act=terms:activate`) - and was refused `403 bnpl.SelfApprovalRefused` before anything was written (`INV-AUD-04`; `bnpl V002`'s four-eyes `CHECK` beneath). Recorded `FAILED` in a transaction of its own after the act rolled back, so the attempt survives (the Phase 11 completion gate's R4, applied from bnpl's first door). Its target the proposal (`bnpl_terms_version`); the summary names it, its product and the act - never an amount (`INV-AUD-02`). The proposal stays `PROPOSED`. |
+
+The four bnpl actions joined at `P12-TSK-004` - the module's first audited acts; later tasks add theirs here
+(`PHASE_12_PLAN.md` §11).
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

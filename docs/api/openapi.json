@@ -612,6 +612,286 @@
           }
         }
       },
+      "bnpl.NotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.NotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.NotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No BNPL record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.ProductNotOffered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.ProductNotOffered"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.ProductNotOffered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The BNPL product is not offered.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.ProposalPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.ProposalPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.ProposalPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A proposal already awaits a decision; decide or reject it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.ReasonRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.ReasonRequired"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.ReasonRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A reason is required.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] A proposal is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.TermsInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.TermsInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.TermsInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The terms are not complete or not within bounds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.TermsNotAmortising": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.TermsNotAmortising"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.TermsNotAmortising"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The terms cannot schedule every purchase within the product's bounds; nothing was proposed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.TermsStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.TermsStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.TermsStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The terms version is no longer awaiting a decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "checkout.NotAbandonable": {
         "content": {
           "application/problem+json": {
@@ -9024,6 +9304,399 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplTermsDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplTermsProposalRequest": {
+        "properties": {
+          "accrualEngine": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "agreementTemplateId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationEngine": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "allocationOrder": {
+            "items": {
+              "maxLength": 16,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          },
+          "allocationSequence": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "allowedTerms": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          },
+          "autoCollection": {
+            "type": "boolean"
+          },
+          "collectionRetryDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "dayCount": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "defaultThresholdDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "delinquencyBounds": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          },
+          "disputeFourEyesThresholdMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disputeResponseDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "frequency": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "graceDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "instalmentCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "instalmentRounding": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "interestRounding": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "intervalDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lateFeeCapMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lateFeeDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lateFeeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minFirstPeriodDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "nominalAnnualRate": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "offerValidityMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "overpaymentTreatment": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "partialCollection": {
+            "type": "boolean"
+          },
+          "payoffHorizonDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "refundAllocationEngine": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scheduleEngine": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "servicingZone": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "agreementTemplateId",
+          "agreementTemplateVersion",
+          "allocationEngine",
+          "allocationOrder",
+          "allocationSequence",
+          "autoCollection",
+          "collectionRetryDays",
+          "currency",
+          "defaultThresholdDays",
+          "delinquencyBounds",
+          "disputeFourEyesThresholdMinor",
+          "disputeResponseDays",
+          "frequency",
+          "graceDays",
+          "instalmentRounding",
+          "lateFeeCapMinor",
+          "lateFeeDay",
+          "lateFeeMinor",
+          "nominalAnnualRate",
+          "offerValidityMinutes",
+          "overpaymentTreatment",
+          "partialCollection",
+          "payoffHorizonDays",
+          "product",
+          "refundAllocationEngine",
+          "scheduleEngine",
+          "servicingZone"
+        ],
+        "type": "object"
+      },
+      "BnplTermsReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "retiredId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplTermsView": {
+        "properties": {
+          "accrualEngine": {
+            "type": "string"
+          },
+          "agreementTemplateId": {
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationEngine": {
+            "type": "string"
+          },
+          "allocationOrder": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allocationSequence": {
+            "type": "string"
+          },
+          "allowedTerms": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "autoCollection": {
+            "type": "boolean"
+          },
+          "collectionRetryDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "dayCount": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "defaultThresholdDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "delinquencyBounds": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "disputeFourEyesThresholdMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disputeResponseDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "frequency": {
+            "type": "string"
+          },
+          "graceDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "instalmentCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "instalmentRounding": {
+            "type": "string"
+          },
+          "interestRounding": {
+            "type": "string"
+          },
+          "intervalDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lateFeeCapMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lateFeeDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lateFeeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "minFirstPeriodDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "offerValidityMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "overpaymentTreatment": {
+            "type": "string"
+          },
+          "partialCollection": {
+            "type": "boolean"
+          },
+          "payoffHorizonDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "refundAllocationEngine": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scheduleEngine": {
+            "type": "string"
+          },
+          "servicingZone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -22034,6 +22707,193 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl/terms": {
+      "get": {
+        "operationId": "readBnplTermsInForce",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplTermsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeBnplTerms",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplTermsProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplTermsReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl/terms/{versionId}": {
+      "get": {
+        "operationId": "readBnplTermsVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplTermsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl/terms/{versionId}/approval": {
+      "post": {
+        "operationId": "approveBnplTerms",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplTermsDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplTermsReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl/terms/{versionId}/rejection": {
+      "post": {
+        "operationId": "rejectBnplTerms",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplTermsDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplTermsReceipt"
                 }
               }
             },

@@ -328,6 +328,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}/rejection",
+                        // P12-TSK-004: the BNPL officer's terms doors - terms versions under four eyes and their reads
+                        // (BNPL_ADMINISTER, the acts keyed).
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}/rejection",
                         // P11-TSK-020: the loan servicing agent's doors - any loan read (LOAN_SERVICE, audited) and the
                         // repayment reversal under four eyes (LOAN_SERVICE proposes and rejects, LOAN_SERVICE_APPROVE approves).
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}",

@@ -289,7 +289,14 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/credit/review-cases/{id}/assignment", PermissionName.CREDIT_UNDERWRITE),
                     entry("POST /v1/operator/credit/review-cases/{id}/release", PermissionName.CREDIT_UNDERWRITE),
                     entry("POST /v1/operator/credit/review-cases/{id}/decision", PermissionName.CREDIT_UNDERWRITE),
-                    entry("POST /v1/operator/credit/review-cases/{id}/second-approval", PermissionName.CREDIT_UNDERWRITE)));
+                    entry("POST /v1/operator/credit/review-cases/{id}/second-approval", PermissionName.CREDIT_UNDERWRITE),
+                    // P12-TSK-004: the BNPL officer's terms doors - four-eyes terms versions and their reads, every route
+                    // BNPL_ADMINISTER (held by BNPL_OFFICER); the negatives are BnplTermsEndpointDatabaseTest's.
+                    entry("POST /v1/operator/bnpl/terms", PermissionName.BNPL_ADMINISTER),
+                    entry("POST /v1/operator/bnpl/terms/{versionId}/approval", PermissionName.BNPL_ADMINISTER),
+                    entry("POST /v1/operator/bnpl/terms/{versionId}/rejection", PermissionName.BNPL_ADMINISTER),
+                    entry("GET /v1/operator/bnpl/terms", PermissionName.BNPL_ADMINISTER),
+                    entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
