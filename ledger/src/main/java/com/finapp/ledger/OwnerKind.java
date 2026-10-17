@@ -69,11 +69,28 @@ public enum OwnerKind {
      * the borrower's debt as the borrower's money. One kind for both products (an instalment loan
      * and a revolving line): the product is the contract's, not the account's.
      */
-    LOAN;
+    LOAN,
+
+    /**
+     * Owned by one BNPL customer repayment obligation - the platform's claims on the customer for a
+     * financed purchase and what it owes the customer back under that obligation (`P12-TSK-003`,
+     * ADR-0103 decision 1; {@code INV-BNPL-01}). {@code owner_ref} names the obligation, by value and
+     * opaque, exactly as {@link #LOAN} names the loan: the ledger does not know what an obligation
+     * is, and no foreign key reaches bnpl's schema (ADR-0029). Deliberately not {@link #LOAN}: a
+     * BNPL obligation is another contract with another poster (bnpl, never lending - OQ-11), and one
+     * kind for both would let a loan-book reader count a BNPL receivable without anyone writing that
+     * sentence. Deliberately not {@link #CUSTOMER}, for the loan's reason: the receivables are the
+     * platform's assets on a contract, not money held for the customer.
+     */
+    BNPL_OBLIGATION;
 
     /** True when an account of this kind names the owner it belongs to. */
     public boolean requiresOwnerRef() {
-        return this == CUSTOMER || this == MERCHANT || this == COUNTERPARTY || this == LOAN;
+        return this == CUSTOMER
+                || this == MERCHANT
+                || this == COUNTERPARTY
+                || this == LOAN
+                || this == BNPL_OBLIGATION;
     }
 
     /** The kinds as a SQL literal list, for the {@code CHECK} constraint. */
