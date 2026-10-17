@@ -265,15 +265,27 @@ class BnplTermsDatabaseTest {
     @DisplayName("without an active version the product is not offered: the pin answers ProductNotOffered; with one, an"
             + " activation waits on the pin's FOR SHARE in A2's statement and retires the pinned version only after it")
     void withoutAnActiveVersionTheProductIsNotOffered() throws Exception {
-        // The shared rows may hold an active version from an earlier case; the closed state is read where none was ever
-        // in force - before any activation instant - and the pin is asserted on a fresh product state below.
+        // The shared rows may hold an active version from an earlier case, so the closed state is planted: inside one
+        // owner transaction, rolled back, the edge trigger disabled and every ACTIVE pay-in-4 version moved to RETIRED
+        // (its successor check deferred to a commit that never comes) - the pin, on that connection, must find none.
         Optional<BnplTermsVersionId> beforeAny =
                 inOneTransaction(uow -> STORE.activeAt(uow, P4, Instant.parse("2000-01-01T00:00:00Z")));
-        assertThat(beforeAny).isEmpty();
-        if (count("SELECT count(*) FROM bnpl.bnpl_terms_version WHERE product = 'BNPL_PAY_IN_4' AND status = 'ACTIVE'")
-                == 0) {
-            assertThatExceptionOfType(BnplTermsAdministration.ProductNotOffered.class)
-                    .isThrownBy(() -> inOneTransaction(uow -> ADMINISTRATION.pinActive(uow, P4)));
+        assertThat(beforeAny).as("nothing was in force before any activation").isEmpty();
+        activate(P4);
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement plant = owner.createStatement()) {
+                plant.execute("ALTER TABLE bnpl.bnpl_terms_version DISABLE TRIGGER"
+                        + " bnpl_terms_version_permits_only_machine_edges");
+                plant.execute("UPDATE bnpl.bnpl_terms_version SET status = 'RETIRED',"
+                        + " effective_to = effective_from + interval '1 microsecond'"
+                        + " WHERE product = 'BNPL_PAY_IN_4' AND status = 'ACTIVE'");
+                assertThatExceptionOfType(BnplTermsAdministration.ProductNotOffered.class)
+                        .as("no ACTIVE version: the product is not offered")
+                        .isThrownBy(() -> ADMINISTRATION.pinActive(owner, P4));
+            } finally {
+                owner.rollback();
+            }
         }
         BnplTermsVersionId pinned = activate(P4);
         BnplTermsAdministration.Proposed successor = propose(P4, employee());
