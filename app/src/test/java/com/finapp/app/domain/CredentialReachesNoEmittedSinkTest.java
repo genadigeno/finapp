@@ -460,6 +460,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // card-number and account shapes at the domain and by lending V003's CHECKs.
                         "LoanTermsProposalRequest",
                         "LoanTermsDecisionRequest",
+                        // P12-TSK-004: the BNPL terms doors. No secret in either. A proposal is a BNPL product's terms -
+                        // codes, integer minor units, day counts, a decimal rate string, plans, engine names and the
+                        // template - and a REASON; a decision carries a REASON. Every reason is screened for card-number
+                        // and account shapes at the domain (BnplReasons) and by bnpl V002's CHECKs.
+                        "BnplTermsProposalRequest",
+                        "BnplTermsDecisionRequest",
                         // P11-TSK-020: the repayment reversal doors. No secret in either. A proposal carries a REASON;
                         // a decision names the proposal (an identifier) and carries a REASON. Every reason is screened
                         // for card-number and account shapes at the domain and by lending V016's CHECKs.

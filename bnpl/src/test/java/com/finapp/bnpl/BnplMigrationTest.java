@@ -101,16 +101,22 @@ class BnplMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds Flyway's history - which the application cannot read - and no table, no view, no"
-            + " function: V001 is the floor alone")
+    @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
         // P12-TSK-004's (the terms version); each later task rewrites this list with its own.
-        assertThat(tablesIn(SCHEMA)).containsExactly("flyway_schema_history");
+        assertThat(tablesIn(SCHEMA)).containsExactly("bnpl_terms", "bnpl_terms_version", "bnpl_terms_version_event",
+                "flyway_schema_history");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
-                + " WHERE n.nspname = '" + SCHEMA + "'")).isEmpty();
+                + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
+                "bnpl_terms_is_born_once", "bnpl_terms_is_never_truncated", "bnpl_terms_retires_only_beside_its_successor",
+                "bnpl_terms_version_event_is_append_only", "bnpl_terms_version_has_its_terms",
+                "bnpl_terms_version_permits_only_machine_edges", "holds_account_identifier_shape",
+                "holds_card_number_shape", "holds_instrument_shape", "is_strictly_ascending", "luhn_valid",
+                "mod97_check_holds");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

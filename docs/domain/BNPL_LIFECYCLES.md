@@ -164,6 +164,26 @@ activation and a submission serialise. **Invalid:** anything out of `RETIRED` or
 `PROPOSED → RETIRED`; `ACTIVE → PROPOSED | REJECTED`; an `ACTIVE` retired without its successor activated in
 the same transaction; activation by the proposer (`CHECK`).
 
+*As built (`P12-TSK-004`, 2026-10-17; this section's machine, corrected to the code):* `bnpl V002` -
+`bnpl_terms_version` (money-free; the decision columns its only column-scoped `UPDATE`), `bnpl_terms` (`INSERT`-only for
+every role) and `bnpl_terms_version_event`; `BnplTerms` (judged whole), `BnplTermsVersion`, `BnplTermsAdministration`,
+`BnplTermsStore` / `JdbcBnplTermsStore` (namespace `12`), `BnplProductBounds` (`app`'s `CreditBnplProductBounds`). The
+door's key reads `bnpl.terms:CUSTOMER:<id>` - the session actor's type (§8's operator-keys point, settled the lending way:
+`LENDING_LIFECYCLES.md` §4.1's A5-04 note). The birth's refusals are `422 bnpl.TermsInvalid`, `422
+bnpl.TermsNotAmortising` (pay-in-N judged by `SCHEDULE_ENGINE_V1`'s margined door over every purchase day 1-31, credit's
+smallest amount and the longest plan offered; pay-in-4 by its own check - credit's smallest purchase at least one minor
+unit per instalment), `409 bnpl.ProposalPending` and `422 bnpl.ReasonRequired`; a decision's loser is `409 bnpl.TermsStale`
+(lending's precedent; the same person's retry converges); every route `BNPL_ADMINISTER`, the reads `GET
+/v1/operator/bnpl/terms?product=&at=` (the version in force) and `GET …/{versionId}` (any version - what the second person
+reviews). Every stamp is `clock_timestamp()`, written after the locks (lending `V030`'s repair, from the first row). The
+term set holds, beside the fields above, the collection retry cadence (A7), the dispute four-eyes threshold (ADR-0106
+decision 5 - "a field of the pinned terms version") and the payoff horizon (`P12-TSK-022`'s reused quote shape): an
+immutable term set cannot gain a field later without inventing its value for the versions before it. The jurisdiction is
+the agreement template's (`BnplAgreementTemplate`, lending's reading); there is no rate-type column (fixed is the only
+kind, OQ-4); the servicing zone is `UTC` only (A22); pay-in-N's plans are an ascending choice among {3, 6, 12} and its
+first-period floor 1-28 days (A6). The reader the application and the offer pin is `BnplTermsAdministration#pinActive`
+(the `ACTIVE` row `FOR SHARE`; none → `422 bnpl.ProductNotOffered`).
+
 ### 4.2 BNPL application (`bnpl.bnpl_application`) — `P12-TSK-010`, offered `-011`
 
 ```
@@ -544,7 +564,8 @@ until its task's design settles it; none is a decision the transition took.
 - **Repayment events** (`-018`): §10 has no repayment event — a repayment that settles no instalment
   publishes nothing (its row and entry are the record).
 - **Operator keys** (`-004`, `-023`, `-024`): the plan's `bnpl.…:EMPLOYEE:<id>` keys meet the platform's
-  `CUSTOMER`-typed operator sessions (`LENDING_LIFECYCLES.md` §4.1, A5-04).
+  `CUSTOMER`-typed operator sessions (`LENDING_LIFECYCLES.md` §4.1, A5-04). *Settled for `-004` (2026-10-17): the key is the session actor's type,
+  `bnpl.terms:CUSTOMER:<id>` today, as lending's; `-023` and `-024` inherit it.*
 
 *Reconciled by the transition's consistency pass (2026-10-16), after this section was written — the plan now says, and
 these points above stand settled rather than open: the acceptance's refusal is `409 bnpl.SessionNotPayable` everywhere

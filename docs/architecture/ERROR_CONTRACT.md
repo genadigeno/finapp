@@ -1216,6 +1216,35 @@ outcome. `InsufficientFunds` (reused) refuses an execution whose wallet cannot f
 (absent or not `ACTIVE` - ADR-0095 point 4); nothing is posted. A good-through date before today or past the pinned payoff
 horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 
+### `bnpl` — `BnplErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `bnpl.NotFound` | 404 | No BNPL record matches the requested identifier. |
+| `bnpl.SelfApprovalRefused` | 403 | A proposal is approved by someone other than its proposer; the proposer may reject it. |
+| `bnpl.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
+| `bnpl.TermsStale` | 409 | The terms version is no longer awaiting a decision. |
+| `bnpl.ReasonRequired` | 422 | A reason is required. |
+| `bnpl.TermsInvalid` | 422 | The terms are not complete or not within bounds. |
+| `bnpl.TermsNotAmortising` | 422 | The terms cannot schedule every purchase within the product's bounds; nothing was proposed. |
+| `bnpl.ProductNotOffered` | 422 | The BNPL product is not offered. |
+
+The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
+`/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route
+`BNPL_ADMINISTER`; the acts keyed `bnpl.terms:<type>:<id>` - `CUSTOMER`-typed for an operator session today,
+`LENDING_LIFECYCLES.md` §4.1's A5-04 note): `TermsInvalid` refuses a proposal whole - an unknown product, convention,
+frequency or engine, an unregistered template, a non-zero pay-in-4 rate, another product's plan part, a plan the product
+does not list or credit cannot decide, an incomplete allocation order, a value outside the bounds bnpl declares;
+`TermsNotAmortising` refuses a set under which some purchase within credit's bounds could not be scheduled (pay-in-N:
+`SCHEDULE_ENGINE_V1`'s margined door over every purchase day, credit's smallest amount and the longest plan offered;
+pay-in-4: an instalment of nothing) - the detail names a term and a period, never a rate; `ProposalPending` the second
+proposal for a product (ten proposers, one proposal); `TermsStale` the loser of a decision race (an approval and a
+rejection, or ten approvers - the same person's retry converges); `SelfApprovalRefused` the proposer's own activation,
+recorded `FAILED`; `ReasonRequired` a missing, unbounded or instrument-bearing reason; `NotFound` an unknown or malformed
+version id, an unknown product, or no version in force at the instant asked. `ProductNotOffered` is the closed product's
+answer, declared here and met from the application door (`P12-TSK-010`) through `BnplTermsAdministration#pinActive`
+while no version is `ACTIVE` - production's state until two persons activate one (ADR-0101 decision 14).
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

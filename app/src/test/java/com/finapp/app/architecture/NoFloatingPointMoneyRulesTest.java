@@ -317,6 +317,11 @@ class NoFloatingPointMoneyRulesTest {
                     // never a rate or a fee.
                     "com.finapp.app.lending.LoanTermsMetrics",
                     "com.finapp.app.lending.LoanTermsMetrics$Cached",
+                    // P12-TSK-004. The SAME case as LoanTermsMetrics, for bnpl: each BNPL product's ACTIVE terms version
+                    // NUMBER through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable. A version
+                    // number, never a rate or a fee.
+                    "com.finapp.app.bnpl.BnplTermsMetrics",
+                    "com.finapp.app.bnpl.BnplTermsMetrics$Cached",
                     // P11-TSK-014. The SAME case as the review case's wait: the oldest PENDING disbursement's wait in
                     // SECONDS through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - a duration,
                     // never an amount (the principal is the agreement's and the ledger's, ADR-0072).

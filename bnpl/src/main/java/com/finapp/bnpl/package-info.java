@@ -39,6 +39,10 @@
  * typed identifiers. And the obligation's chart ({@code P12-TSK-003}, ledger {@code V027}):
  * {@link com.finapp.bnpl.BnplAccounts} opens an obligation's six ledger accounts - typed, in its one currency,
  * converged under concurrency, a mis-shaped account refused - into a {@link com.finapp.bnpl.BnplLedgerAccounts};
- * unwired until the purchase ({@code P12-TSK-013}), and it posts nothing. No port, bean, route, event or schedule.
+ * unwired until the purchase ({@code P12-TSK-013}), and it posts nothing. And the terms ({@code P12-TSK-004},
+ * {@code V002}): {@link com.finapp.bnpl.BnplTerms}, each product's term set judged whole, versioned under four eyes by
+ * {@link com.finapp.bnpl.BnplTermsAdministration} (advisory namespace {@code 12}, A0 to A2) and pinned
+ * {@code FOR SHARE} by its reader; the module's first port ({@link com.finapp.bnpl.BnplProductBounds}, credit's bounds
+ * through {@code app}), first door, first event and first gauge - all in {@code app}'s wiring. No schedule.
  */
 package com.finapp.bnpl;

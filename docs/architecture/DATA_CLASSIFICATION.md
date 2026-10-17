@@ -3355,6 +3355,77 @@ versions, hashes and stamps `INTERNAL`.
 | `loan_amendment_rescheduling` | `recorded_order` | `INTERNAL` | The fact's place in its loan's history - `lending.record_order` drawn under the loan's row lock (`P11-TSK-029`, `V025`); the replay proof's order, never a clock |
 | `loan_amendment_rescheduling` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
 
+### `bnpl` - the BNPL terms version - *added by `P12-TSK-004`*
+
+A BNPL product's plans and servicing conventions: amounts and rates are `RESTRICTED-FINANCIAL` (`PHASE_12_PLAN.md` §11);
+person-written reasons `RESTRICTED-PII` (`PHASE_12_PLAN.md` §11 - the Phase 11 review's finding 19 resolved forward, where
+lending's terms reasons read `CONFIDENTIAL`); the people `CONFIDENTIAL`; product codes, statuses, conventions, engine and
+template versions `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `bnpl_terms_version` | `id` | `INTERNAL` | Generated |
+| `bnpl_terms_version` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_terms_version` | `version` | `INTERNAL` | The product's version number |
+| `bnpl_terms_version` | `status` | `INTERNAL` | The machine's state |
+| `bnpl_terms_version` | `proposed_by` | `CONFIDENTIAL` | The BNPL officer who proposed it |
+| `bnpl_terms_version` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `bnpl_terms_version` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger after the lock |
+| `bnpl_terms_version` | `proposal_reason` | `RESTRICTED-PII` | Free prose by a person - screened for instrument shapes (the Phase 11 review's finding 19, resolved forward) |
+| `bnpl_terms_version` | `decided_by` | `CONFIDENTIAL` | The officer who activated or rejected it - never its proposer for an activation |
+| `bnpl_terms_version` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `bnpl_terms_version` | `decided_at` | `INTERNAL` | The database's stamp after the locks (`clock_timestamp()`) |
+| `bnpl_terms_version` | `decision_reason` | `RESTRICTED-PII` | Free prose by a person - screened for instrument shapes |
+| `bnpl_terms_version` | `effective_from` | `INTERNAL` | The database's stamp, clamped on a backward clock |
+| `bnpl_terms_version` | `effective_to` | `INTERNAL` | The database's stamp - its successor's start |
+| `bnpl_terms_version` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_terms` | `terms_version_id` | `INTERNAL` | The version whose term set it is |
+| `bnpl_terms` | `product` | `INTERNAL` | A closed product code, pinned to the version's |
+| `bnpl_terms` | `currency` | `INTERNAL` | The product's currency |
+| `bnpl_terms` | `scale` | `INTERNAL` | The currency's scale |
+| `bnpl_terms` | `nominal_annual_rate` | `RESTRICTED-FINANCIAL` | Pay-in-N's fixed price; pay-in-4's held to zero |
+| `bnpl_terms` | `frequency` | `INTERNAL` | The product's instalment frequency |
+| `bnpl_terms` | `late_fee_minor` | `RESTRICTED-FINANCIAL` | A customer charge |
+| `bnpl_terms` | `late_fee_day` | `INTERNAL` | A convention |
+| `bnpl_terms` | `late_fee_cap_minor` | `RESTRICTED-FINANCIAL` | A customer charge's ceiling per agreement |
+| `bnpl_terms` | `grace_days` | `INTERNAL` | A convention |
+| `bnpl_terms` | `delinquency_bounds` | `INTERNAL` | A convention |
+| `bnpl_terms` | `default_threshold_days` | `INTERNAL` | A convention |
+| `bnpl_terms` | `allocation_sequence` | `INTERNAL` | A convention |
+| `bnpl_terms` | `allocation_order` | `INTERNAL` | A convention |
+| `bnpl_terms` | `overpayment_treatment` | `INTERNAL` | A convention |
+| `bnpl_terms` | `auto_collection` | `INTERNAL` | A convention |
+| `bnpl_terms` | `partial_collection` | `INTERNAL` | A convention |
+| `bnpl_terms` | `collection_retry_days` | `INTERNAL` | A convention (A7) |
+| `bnpl_terms` | `instalment_rounding` | `INTERNAL` | A convention |
+| `bnpl_terms` | `interest_rounding` | `INTERNAL` | A convention (pay-in-N) |
+| `bnpl_terms` | `day_count` | `INTERNAL` | A convention (pay-in-N) |
+| `bnpl_terms` | `servicing_zone` | `INTERNAL` | A convention |
+| `bnpl_terms` | `instalment_count` | `INTERNAL` | Pay-in-4's plan |
+| `bnpl_terms` | `interval_days` | `INTERNAL` | Pay-in-4's plan |
+| `bnpl_terms` | `allowed_terms` | `INTERNAL` | Pay-in-N's plans |
+| `bnpl_terms` | `min_first_period_days` | `INTERNAL` | Pay-in-N's first-period floor (A6) |
+| `bnpl_terms` | `offer_validity_minutes` | `INTERNAL` | A window (A17) |
+| `bnpl_terms` | `dispute_response_days` | `INTERNAL` | A window (OQ-10) |
+| `bnpl_terms` | `dispute_four_eyes_threshold_minor` | `RESTRICTED-FINANCIAL` | The disputed amount above which a resolution needs a second person (ADR-0106) |
+| `bnpl_terms` | `payoff_horizon_days` | `INTERNAL` | A window |
+| `bnpl_terms` | `schedule_engine` | `INTERNAL` | An engine version name |
+| `bnpl_terms` | `accrual_engine` | `INTERNAL` | An engine version name (pay-in-N) |
+| `bnpl_terms` | `allocation_engine` | `INTERNAL` | An engine version name |
+| `bnpl_terms` | `refund_allocation_engine` | `INTERNAL` | An engine version name |
+| `bnpl_terms` | `agreement_template_id` | `INTERNAL` | A registered template |
+| `bnpl_terms` | `agreement_template_version` | `INTERNAL` | A registered template's version |
+| `bnpl_terms_version_event` | `id` | `INTERNAL` | Generated |
+| `bnpl_terms_version_event` | `terms_version_id` | `INTERNAL` | The version |
+| `bnpl_terms_version_event` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_terms_version_event` | `from_status` | `INTERNAL` | The machine's state |
+| `bnpl_terms_version_event` | `to_status` | `INTERNAL` | The machine's state |
+| `bnpl_terms_version_event` | `actor` | `CONFIDENTIAL` | The officer who acted |
+| `bnpl_terms_version_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `bnpl_terms_version_event` | `reason` | `RESTRICTED-PII` | Free prose by a person - screened for instrument shapes |
+| `bnpl_terms_version_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_terms_version_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
