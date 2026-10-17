@@ -47,6 +47,39 @@ class MerchantFeeSplitTest {
                 .contains(VERSION.toString());
     }
 
+    @Test
+    @DisplayName("the port's returned fee binds as the refund allocator's MerchantFeeReturn, the purchase fixed (P12-TSK-009)")
+    void thePortBindsAsTheAllocatorsFeeReturn() {
+        BnplPurchaseId purchase = BnplPurchaseId.of(java.util.UUID.fromString("01900000-0000-7000-8000-000000000006"));
+        BnplMerchants port = new BnplMerchants() {
+            @Override
+            public Standing standing(java.sql.Connection unitOfWork, UUID merchantRef, BnplProduct product) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public java.util.Optional<com.finapp.ledger.LedgerAccountId> payableAccount(
+                    java.sql.Connection unitOfWork, UUID merchantRef, CurrencyCode currency) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public MerchantFeeSplit pinFee(java.sql.Connection unitOfWork, UUID merchantRef, BnplProduct product,
+                    BnplPurchaseId purchaseId, Money gross) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public Money returnedFee(java.sql.Connection unitOfWork, BnplPurchaseId purchaseId, Money refundedBefore,
+                    Money refunded) {
+                assertThat(purchaseId).isEqualTo(purchase);
+                return refundedBefore.plus(refunded).minus(refundedBefore);
+            }
+        };
+        MerchantFeeReturn bound = (before, refunded) -> port.returnedFee(null, purchase, before, refunded);
+        assertThat(bound.returnedFee(eur(100), eur(50))).isEqualTo(eur(50));
+    }
+
     private static MerchantFeeSplit split(long gross, long fee, long net) {
         return new MerchantFeeSplit(eur(gross), eur(fee), eur(net), VERSION);
     }
