@@ -93,6 +93,10 @@ dependencies {
     // and the no-mutable-money guard run against the catalogue as it actually stands (BnplSchemaHasNoMutableMoneyTest).
     // The module that owns the schema owns the proof of its floor.
     testImplementation(testFixtures(project(":platform")))
+
+    // The engines' second JVM (SecondJvm, creditmath's published test fixtures - one harness, never a copy): pay-in-4's
+    // schedule engine is proven deterministic across JVMs in it (P12-TSK-008), as lending's engines are.
+    testImplementation(testFixtures(project(":creditmath")))
 }
 
 // The `database` tier's module-specific configuration - the container image, from the version catalog, exactly as
