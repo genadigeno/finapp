@@ -1,6 +1,8 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.checkout.CheckoutSessions;
 import com.finapp.bnpl.BnplCapital;
+import com.finapp.bnpl.BnplCheckoutSessions;
 import com.finapp.bnpl.BnplProductBounds;
 import com.finapp.bnpl.BnplTermsAdministration;
 import com.finapp.bnpl.BnplTermsStore;
@@ -24,7 +26,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code app} implements over credit's products (the amount and plan bounds the terms door judges against), the
  * four-eyes administration publishing through the outbox, the BNPL officer's doors and the active-version gauge; and
  * (`P12-TSK-005`) the capital port over lending's headroom, judged under L6 in bnpl's transaction - its first consumer
- * the purchase (`P12-TSK-013`).
+ * the purchase (`P12-TSK-013`); and (`P12-TSK-007`) the checkout session port over checkout's {@code CheckoutSessions} -
+ * read by token, B3's lock and judgement, the completion by financing - its first consumers the application door
+ * (`P12-TSK-010`) and the purchase (`P12-TSK-013`).
  */
 @Configuration(proxyBeanMethods = false)
 public class BnplBeans {
@@ -83,5 +87,14 @@ public class BnplBeans {
     BnplTermsMetrics bnplTermsMetrics(
             BnplTermsStore bnplTermsStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
         return new BnplTermsMetrics(bnplTermsStore, dataSource::getConnection, clock, meterRegistry);
+    }
+
+    /**
+     * The checkout session as bnpl reads, locks and completes it (`P12-TSK-007`): checkout's own aggregate, store and
+     * order judging, on bnpl's connection, in bnpl's transaction.
+     */
+    @Bean
+    BnplCheckoutSessions bnplCheckoutSessions(CheckoutSessions checkoutSessions) {
+        return new CheckoutBnplSessions(checkoutSessions);
     }
 }

@@ -242,6 +242,14 @@ obligation, agreement v1 and evidence beside it (deferred), or at `expires_at <=
 
 ### 4.4 The checkout session, as BNPL changes it (`checkout.checkout_session`) — `P12-TSK-007`, `-013`
 
+*(Checkout's half built by `P12-TSK-007`, 2026-10-17: checkout `V004`, `CheckoutSession.completeByFinancing`,
+`app`'s `CheckoutSessions.lockForFinancing` / `completedByFinancing` behind bnpl's port `BnplCheckoutSessions`
+(`read` by token, `lockForPurchase` → `Payable` | `NotPayable(NOT_OPEN | EXPIRED)`, `completeByFinancing` →
+`Completed(order)` | `NotPayable`). The completion re-judges the deadline in its own write, so a purchase whose
+work crossed it is refused and rolls back whole; `V004` adds the order's presence at commit (deferred) and one
+session per purchase to the invalid list below. The confirmation door's refusal of `"BNPL"` is its existing
+`422 platform.ValidationFailed`.)*
+
 Checkout's machine (checkout `V002`'s edge trigger) is `OPEN → PAYMENT_PENDING | EXPIRED | ABANDONED`,
 `PAYMENT_PENDING → COMPLETED | EXPIRED`, `EXPIRED → COMPLETED_LATE`. BNPL adds **one edge and no state**
 (checkout `V004`):

@@ -53,14 +53,16 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
                     + " " + AMOUNT.amountMinor() + ", " + AMOUNT.currency() + ", "
                     + AMOUNT.scale()
                     + ", line_summary, fee_schedule_version_ref, token_hash, algorithm,"
-                    + " payment_intent_ref, status, expires_at, created_at, status_changed_at";
+                    + " payment_intent_ref, status, expires_at, created_at, status_changed_at,"
+                    // P12-TSK-007 (`V004`): the BNPL purchase that financed the session, by value.
+                    + " financed_by_ref";
 
     @Override
     public void insert(Connection unitOfWork, CheckoutSession session) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO checkout.checkout_session (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, session.id().value());
             insert.setObject(2, session.merchantRef());
             insert.setLong(3, MoneyColumns.amountMinorOf(session.amount()));
@@ -77,6 +79,7 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
             insert.setTimestamp(12, Timestamp.from(session.expiresAt()));
             insert.setTimestamp(13, Timestamp.from(session.createdAt()));
             insert.setTimestamp(14, Timestamp.from(session.statusChangedAt()));
+            setNullableUuid(insert, 15, session.financedByRef());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new CheckoutStorageException(
@@ -272,6 +275,68 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
         return true;
     }
 
+    @Override
+    public Instant databaseNow(Connection unitOfWork) {
+        // ITS OWN STATEMENT, after the caller's lock (P12-TSK-007): statement_timestamp() is
+        // the start of THIS statement, which runs only once the row lock is held - the clock
+        // a waiting SELECT ... FOR UPDATE would have read is the moment its wait began.
+        try (PreparedStatement select =
+                        unitOfWork.prepareStatement("SELECT statement_timestamp()");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            return row.getTimestamp(1).toInstant();
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe("reading the database clock", failure));
+        }
+    }
+
+    @Override
+    public boolean completeByFinancing(
+            Connection unitOfWork, CheckoutSession before, CheckoutSession financed) {
+        UUID financedBy =
+                financed.financedByRef()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "a financing completion carries its financing"
+                                                        + " reference"));
+        if (!CheckoutSessionStatus.isFinancingEdge(before.status(), financed.status())) {
+            throw new IllegalArgumentException(
+                    "not the financing edge: " + before.status() + " -> " + financed.status());
+        }
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE checkout.checkout_session"
+                                + " SET status = 'COMPLETED', status_changed_at = ?,"
+                                + " financed_by_ref = ?"
+                                + " WHERE id = ? AND status = 'OPEN'"
+                                + "   AND payment_intent_ref IS NULL"
+                                + "   AND financed_by_ref IS NULL"
+                                // THE DEADLINE RE-JUDGED IN THE WRITE (P12-TSK-007): the same
+                                // instant V004's trigger judges, so a row admitted here is
+                                // admitted there - never a refusal that surfaces as an error.
+                                + "   AND expires_at > statement_timestamp()")) {
+            update.setTimestamp(1, Timestamp.from(financed.statusChangedAt()));
+            update.setObject(2, financedBy);
+            update.setObject(3, financed.id().value());
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe(
+                            "completing a checkout session by financing", failure));
+        }
+        appendHistory(
+                unitOfWork,
+                financed.id(),
+                before.status(),
+                financed.status(),
+                financed.statusChangedAt());
+        return true;
+    }
+
     private void appendHistory(
             Connection unitOfWork,
             CheckoutSessionId session,
@@ -331,6 +396,7 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
                 Sensitive.of(rows.getString(8)),
                 rows.getString(9),
                 Optional.ofNullable(rows.getObject(10, UUID.class)),
+                Optional.ofNullable(rows.getObject(15, UUID.class)),
                 CheckoutSessionStatus.valueOf(rows.getString(11)),
                 rows.getTimestamp(12).toInstant(),
                 rows.getTimestamp(13).toInstant(),
