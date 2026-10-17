@@ -1548,6 +1548,23 @@ interest, which the customer pays. Nor capital: fee income does not raise lendin
 should be amortised as a yield is Phase 14's question.
 **Owned by:** `bnpl`
 
+### BNPL Enablement
+**Is:** a merchant's permission to offer BNPL (`merchant.merchant_bnpl_enablement`, `P12-TSK-006`, OQ-8):
+proposed by one operator, approved by a different one (`INV-AUD-04`), withdrawn by any one; one live per
+merchant. A merchant may offer a BNPL product only while it is `ACTIVE` (trading), its enablement is
+`ACTIVE`, and the product has a BNPL fee schedule with a returning version in force - the standing.
+**Not:** the merchant's own status (a suspension stops BNPL without touching the enablement), and not a
+per-product switch: the product's pricing is the BNPL fee schedule assignment.
+**Owned by:** `merchant`
+
+### BNPL Fee Pin
+**Is:** the record of which fee schedule version prices one BNPL Purchase (`merchant.bnpl_fee_pin`,
+`P12-TSK-006`) - born once, in the purchase's transaction, keyed by the purchase, never changed; the
+Merchant Discount and its returns are that version applied to the pinned gross.
+**Not:** the Payment Fee Pin, which is keyed by a payment intent and cannot hold a purchase; and not a
+stored fee - the fee is recomputed, never copied.
+**Owned by:** `merchant`
+
 ### Customer Repayment Obligation
 **Is:** the customer's account for one BNPL Purchase (`bnpl.bnpl_obligation`) — identity, product,
 plan, status and permits only, **no money column** (`INV-BNPL-01`) — born `ACTIVE` at the acceptance

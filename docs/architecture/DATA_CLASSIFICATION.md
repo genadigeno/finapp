@@ -934,6 +934,41 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payout_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle: anyone holding a candidate answer can confirm this is what the provider said — `provider_evidence.checksum_sha256`'s reasoning |
 | `payout_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline's body differs from an acceptance's, so the length leaks the outcome's shape |
 | `payout_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a counterparty's payout traffic |
+| `merchant_bnpl_enablement` | `id` | `INTERNAL` | An identifier of a thing (`P12-TSK-006`) |
+| `merchant_bnpl_enablement` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_bnpl_enablement` | `status` | `CONFIDENTIAL` | Whether a counterparty may offer credit to its customers - a commercial standing decision, `payout_destination.status`'s reasoning |
+| `merchant_bnpl_enablement` | `proposed_by` | `RESTRICTED-PII` | The acting operator's identity - `audit_record.actor_id`'s model |
+| `merchant_bnpl_enablement` | `proposed_at` | `CONFIDENTIAL` | Dates a standing decision |
+| `merchant_bnpl_enablement` | `proposal_reason` | `RESTRICTED-PII` | **Free text written by a person** - `audit_record.reason`'s ceiling; never returned by the API |
+| `merchant_bnpl_enablement` | `decided_by` | `RESTRICTED-PII` | The second operator's identity (or a rejecter's) |
+| `merchant_bnpl_enablement` | `decided_at` | `CONFIDENTIAL` | Dates the decision - the database's instant, after the lock |
+| `merchant_bnpl_enablement` | `decision_reason` | `RESTRICTED-PII` | As `proposal_reason` |
+| `merchant_bnpl_enablement` | `withdrawn_by` | `RESTRICTED-PII` | The withdrawing operator's identity |
+| `merchant_bnpl_enablement` | `withdrawn_at` | `CONFIDENTIAL` | Dates the withdrawal |
+| `merchant_bnpl_enablement` | `withdrawal_reason` | `RESTRICTED-PII` | As `proposal_reason` - a withdrawal often names a risk finding about the counterparty |
+| `merchant_bnpl_fee_schedule` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_bnpl_fee_schedule` | `product` | `INTERNAL` | An enumeration of BNPL products |
+| `merchant_bnpl_fee_schedule` | `fee_schedule_id` | `RESTRICTED-FINANCIAL` | `merchant_fee_schedule.fee_schedule_id`'s reasoning: joined to its versions it says what this counterparty pays for BNPL |
+| `merchant_bnpl_fee_schedule` | `assigned_at` | `CONFIDENTIAL` | When commercial terms last changed for this counterparty's product |
+| `merchant_bnpl_fee_schedule` | `assigned_by` | `RESTRICTED-PII` | The acting operator's identity |
+| `merchant_bnpl_fee_schedule_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_bnpl_fee_schedule_event` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_bnpl_fee_schedule_event` | `product` | `INTERNAL` | An enumeration of BNPL products |
+| `merchant_bnpl_fee_schedule_event` | `from_fee_schedule_id` | `RESTRICTED-FINANCIAL` | `merchant_fee_schedule_event.from_fee_schedule_id`'s reasoning |
+| `merchant_bnpl_fee_schedule_event` | `to_fee_schedule_id` | `RESTRICTED-FINANCIAL` | As `from_fee_schedule_id` |
+| `merchant_bnpl_fee_schedule_event` | `reason` | `RESTRICTED-PII` | **Free text written by a person** - `merchant_fee_schedule_event.reason`'s reasoning verbatim |
+| `merchant_bnpl_fee_schedule_event` | `actor_id` | `RESTRICTED-PII` | The acting identity - `audit_record.actor_id`'s model |
+| `merchant_bnpl_fee_schedule_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_bnpl_fee_schedule_event` | `occurred_at` | `CONFIDENTIAL` | Dates a commercial judgement |
+| `bnpl_fee_pin` | `purchase_id` | `RESTRICTED-FINANCIAL` | The BNPL purchase this prices, by value (ADR-0029) - `payment_fee_pin.payment_intent_ref`'s reasoning: an identifier of a financed sale |
+| `bnpl_fee_pin` | `merchant_id` | `RESTRICTED-FINANCIAL` | `payment_fee_pin.merchant_id`'s reasoning: the join that says this merchant made a financed sale |
+| `bnpl_fee_pin` | `product` | `INTERNAL` | An enumeration of BNPL products |
+| `bnpl_fee_pin` | `fee_schedule_version_id` | `RESTRICTED-FINANCIAL` | `payment_fee_pin.fee_schedule_version_id`'s reasoning: joined to its version it says exactly what this merchant paid on this purchase |
+| `bnpl_fee_pin` | `gross_amount_minor` | `RESTRICTED-FINANCIAL` | An amount - what was financed, never what is owed (`INV-MER-02`) |
+| `bnpl_fee_pin` | `gross_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `bnpl_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
+| `bnpl_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was fixed - with `pinned_by`, the provenance of a money decision |
+| `bnpl_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity (the customer whose acceptance made the purchase) - `audit_record.actor_id`'s model |
 
 ### `checkout` — *added by `P6-TSK-006`*
 

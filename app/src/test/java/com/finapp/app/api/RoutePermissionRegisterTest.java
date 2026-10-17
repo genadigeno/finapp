@@ -295,6 +295,16 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/bnpl/terms", PermissionName.BNPL_ADMINISTER),
                     entry("POST /v1/operator/bnpl/terms/{versionId}/approval", PermissionName.BNPL_ADMINISTER),
                     entry("POST /v1/operator/bnpl/terms/{versionId}/rejection", PermissionName.BNPL_ADMINISTER),
+                    // P12-TSK-006: a merchant's BNPL enablement under four eyes, and its BNPL fee schedule per product.
+                    entry("POST /v1/operator/merchants/{merchantId}/bnpl-enablement", PermissionName.MERCHANT_ADMINISTER),
+                    entry("POST /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/approval",
+                            PermissionName.MERCHANT_ADMINISTER),
+                    entry("POST /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/rejection",
+                            PermissionName.MERCHANT_ADMINISTER),
+                    entry("POST /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/withdrawal",
+                            PermissionName.MERCHANT_ADMINISTER),
+                    entry("PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}",
+                            PermissionName.FEE_ADMINISTER),
                     entry("GET /v1/operator/bnpl/terms", PermissionName.BNPL_ADMINISTER),
                     entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER)));
 

@@ -388,7 +388,14 @@ class MerchantOnboardingDatabaseTest {
                     // merchant-payout-return:<payoutId> posting moves the payable; the row sums
                     // nothing into a figure. Named by X-TSK-016: V008 arrived while the database
                     // tier went unrun, so the sweep's flag waited three phases to be read.
-                    "payout_return.amount_minor");
+                    "payout_return.amount_minor",
+                    // P12-TSK-006: what ONE BNPL purchase financed - the gross a fee is
+                    // judged against, payment_fee_pin's twin for a purchase. The fee and the
+                    // net are never stored; the payable exists only in the ledger. Named with
+                    // V010 rather than waiting for the sweep (whose tier this task did not run).
+                    "bnpl_fee_pin.gross_amount_minor",
+                    "bnpl_fee_pin.gross_currency",
+                    "bnpl_fee_pin.gross_scale");
 
     @Test
     @DisplayName("no balance column exists in the live merchant schema (INV-MER-02's sweep)")

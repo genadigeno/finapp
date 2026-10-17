@@ -2260,6 +2260,89 @@ class OwnershipIsScopedTest {
                                         + " moves. The effectuation sweep takes the same lock on a"
                                         + " candidate it read itself. Negative:"
                                         + " PayoutDestinationEndpointDatabaseTest#oneNotFound.")),
+                    // ------------------------------------------------------ P12-TSK-006
+                    // A merchant's BNPL enablement, its BNPL fee schedule and the fee pin. Every
+                    // identifier is an operator's URL naming a COUNTERPARTY, or a merchant a bnpl
+                    // transaction already holds; none is the caller, so nothing here is owner-scoped
+                    // but the decisions' (merchant, enablement) pairing.
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.insertProposal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-006. The proposal for a merchant an operator's URL names -"
+                                        + " MERCHANT_ADMINISTER at the boundary, keyed per principal, reasoned;"
+                                        + " the merchant read first, the one-live index the arbiter.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.find",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P12-TSK-006. An enablement under the merchant the operator's path"
+                                        + " pairs it with: id = ? AND merchant_id = ? in the statement, so an"
+                                        + " enablement named under another merchant's path is the unknown one's 404."
+                                        + " Negative: BnplMerchantEndpointDatabaseTest#theDoorsAreClosed.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.lock",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P12-TSK-006. The decisions' lock - approval, rejection, withdrawal - on"
+                                        + " the operator's PAIRING /merchants/{merchantId}/bnpl-enablement"
+                                        + "/{enablementId}: id = ? AND merchant_id = ? FOR UPDATE, the payout"
+                                        + " destination's shape. Negative:"
+                                        + " BnplMerchantEndpointDatabaseTest#theDoorsAreClosed.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.decide",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.merchant.JdbcBnplEnablementStore.lock",
+                                    "P12-TSK-006. The conditional decision on the row the owner-scoped lock"
+                                        + " just took in the same transaction (WHERE status = 'PROPOSED', the"
+                                        + " approval also AND proposed_by <> ?).")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.withdraw",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.merchant.JdbcBnplEnablementStore.lock",
+                                    "P12-TSK-006. The conditional withdrawal on the row the owner-scoped lock"
+                                        + " just took (WHERE status = 'ACTIVE').")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.activeForShare",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-006. The standing's share lock on a merchant's ACTIVE enablement -"
+                                        + " merchant_id = ? in the statement. Reached through bnpl's"
+                                        + " BnplMerchants for the merchant a checkout session names, after the"
+                                        + " merchant row's FOR SHARE; no request names it and nothing is"
+                                        + " returned to a caller but the standing.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.live",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-006. The merchant's live enablement, merchant_id = ? in the"
+                                        + " statement, for an operator's path; MERCHANT_ADMINISTER at the"
+                                        + " boundary.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplPricingStore.findAssignment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-006, JdbcFeeScheduleStore.findAssignment's reasoning per"
+                                        + " product: merchant_id = ? AND product = ? in the statement for"
+                                        + " INV-MER-01's reason, the identifier an operator's URL or the merchant a"
+                                        + " bnpl transaction holds; FEE_ADMINISTER at the door.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplPricingStore.assign",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-006, JdbcFeeScheduleStore.assign's reasoning per product: the"
+                                        + " pointer write and its history under the merchant row's FOR UPDATE,"
+                                        + " FEE_ADMINISTER and the required reason the substitute.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplPricingStore.findPin",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-006, JdbcPaymentFeePinStore.findFor's reasoning for a purchase:"
+                                        + " a bare UUID reached only from bnpl's own refund and proof, inside"
+                                        + " transactions holding the purchase; the pin names the merchant it"
+                                        + " prices.")),
                     Map.entry(
                             "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare",
                             new Entry(
@@ -3460,6 +3543,12 @@ class OwnershipIsScopedTest {
                             "com.finapp.merchant.JdbcPayoutDestinationStore.findForUpdate",
                             "com.finapp.app.merchant.PayoutDestinationEndpointDatabaseTest"
                                     + ".oneNotFound"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.find",
+                            "com.finapp.app.bnpl.BnplMerchantEndpointDatabaseTest.theDoorsAreClosed"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplEnablementStore.lock",
+                            "com.finapp.app.bnpl.BnplMerchantEndpointDatabaseTest.theDoorsAreClosed"),
                     Map.entry(
                             "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare",
                             "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"

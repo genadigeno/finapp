@@ -96,11 +96,16 @@ public enum MerchantErrorCode implements ErrorCode {
      * {@code INV-AUD-04}). A {@code 409}, the ledger's {@code SelfApprovalRefused} status for the
      * same control: the request is well formed, and the refusal is the state of the change —
      * it still waits for a second person. The refusal is audited as {@code DENIED}.
+     *
+     * <p>Since `P12-TSK-006` the module's one four-eyes refusal: also the proposer of a BNPL
+     * enablement approving it, audited {@code FAILED} in a transaction of its own (the Phase 11
+     * gate's R4). The title was generalised then; the code, the status and the meaning did not
+     * move.
      */
     SELF_APPROVAL_REFUSED(
             "merchant.SelfApprovalRefused",
             409,
-            "A payout destination change requires a second approver distinct from its proposer."),
+            "A four-eyes change requires a second approver distinct from its proposer."),
 
     /**
      * The merchant already has an open payout destination change (`P6-TSK-011`): one change at
@@ -183,7 +188,39 @@ public enum MerchantErrorCode implements ErrorCode {
     PAYOUT_PROVIDER_UNAVAILABLE(
             "merchant.PayoutProviderUnavailable",
             503,
-            "Payouts are unavailable right now; retry later.");
+            "Payouts are unavailable right now; retry later."),
+
+    /**
+     * The merchant already has a live BNPL enablement - a proposal awaiting its second person,
+     * or the enablement in force (`P12-TSK-006`; `V010`'s one-live index). Ten proposers, one
+     * proposal; the remedy is to decide the open one, or withdraw the active one first.
+     */
+    BNPL_ENABLEMENT_PENDING(
+            "merchant.BnplEnablementPending",
+            409,
+            "A BNPL enablement is already proposed or active for this merchant."),
+
+    /**
+     * The BNPL enablement is no longer open to the decision asked of it - decided, rejected or
+     * withdrawn since, or not yet active for a withdrawal (`P12-TSK-006`). Not
+     * {@code merchant.IllegalTransition}, whose title speaks of the merchant's own status (the
+     * {@code DestinationChangeNotOpen} reasoning).
+     */
+    BNPL_ENABLEMENT_NOT_OPEN(
+            "merchant.BnplEnablementNotOpen",
+            409,
+            "The BNPL enablement is no longer open to this decision."),
+
+    /**
+     * A fee schedule that does not return its fee on a refund was named for BNPL
+     * (`P12-TSK-006`; ADR-0105 decision 3): a BNPL fee is pro-rated back by the cumulative
+     * method, so every version of a BNPL schedule is {@code RETURNED}. A {@code 422}: the
+     * request is coherent, the schedule refuses it.
+     */
+    BNPL_SCHEDULE_NOT_RETURNING(
+            "merchant.BnplScheduleNotReturning",
+            422,
+            "A BNPL fee schedule must return its fee on refund; this schedule retains it.");
 
     private final String code;
     private final int status;
