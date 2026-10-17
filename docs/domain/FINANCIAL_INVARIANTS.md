@@ -2331,7 +2331,7 @@ when the capital was already deployed - the bank's evidence withdrawn after the 
 prevented nor locked further) and confirmed by this review - `CURRENT_STATE.md` §Known Architectural Debt.)*
 **Phase:** 11
 
-*(Extended at the Phase 11 → 12 transition (2026-10-16), ADR-0104 (`Proposed`), in force when `P12-TSK-005` lands: the headroom also subtracts every BNPL obligation's outstanding principal (`BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE`, read by ledger purpose so lending learns no bnpl type) and is judged under the same capital row lock (L6) at every BNPL purchase and every principal-re-instating BNPL repayment reversal; a BNPL purchase has no committed-but-undisbursed term. `INV-BNPL-10` is the BNPL side.)*
+*(Extended at the Phase 11 → 12 transition (2026-10-16), ADR-0104 (`Proposed`), in force since `P12-TSK-005` (2026-10-17; read "in force when `P12-TSK-005` lands" until its gate): the headroom also subtracts every BNPL obligation's outstanding principal (`BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE`, read by ledger purpose so lending learns no bnpl type) and is judged under the same capital row lock (L6) at every BNPL purchase and every principal-re-instating BNPL repayment reversal; a BNPL purchase has no committed-but-undisbursed term. `INV-BNPL-10` is the BNPL side.)*
 
 ### INV-LND-14 — A draw never exceeds the available limit
 **Statement:** A credit line draw is admitted only if its amount is at most the line's available
@@ -2629,6 +2629,14 @@ exposure version 3, the extended `ExposureCensus` and the replay of version 1 an
 (`P12-TSK-012`); `LendingCapitalProof` with the BNPL term, `finapp.lending.capital.proof{verdict}`
 (`P12-TSK-005`); the probe skipping L6 letting two purchases over-deploy (`MUTATION_TESTING.md` §2);
 the capital proof and the exposure census in every storm round (`P12-TST-001`).
+*(As built by `P12-TSK-005` (2026-10-17), part (a): `LendingCapitalHeadroom.PRINCIPAL` is the four purposes, read in
+one `PurposeBalances` statement, so `underLock`, `atRest`, `lending_funded` and `LendingCapitalProof` count BNPL
+principal; bnpl's `BnplCapital` port (`app`'s `LendingBnplCapital`) judges it under L6 in bnpl's transaction, returning
+`BnplHeadroom`. Hermetic: `LendingCapitalHeadroomTest` (the set, the one read, the lock and read order, the proof,
+`lending_funded`, the `headroom.low` count), `LendingBnplCapitalTest`, `BnplHeadroomTest`, `BnplBooksHaveOnePosterTest`'s
+reader permit. Database, written and owed a first run: `LendingCapitalDatabaseTest` orders 15 to 20 and
+`BnplCapitalDatabaseTest` (the L6 race against a real loan acceptance, both orders; the last capital admitting one).
+The `422 bnpl.CapitalUnavailable` refusal, (b) and the real purchase are `-012`/`-013`'s.)*
 **Phase:** 12
 
 *`INV-BNPL-01`…`INV-BNPL-10` catalogued by the Phase 11 → 12 transition (2026-10-16), the `INV-LND`

@@ -43,6 +43,10 @@
  * {@code V002}): {@link com.finapp.bnpl.BnplTerms}, each product's term set judged whole, versioned under four eyes by
  * {@link com.finapp.bnpl.BnplTermsAdministration} (advisory namespace {@code 12}, A0 to A2) and pinned
  * {@code FOR SHARE} by its reader; the module's first port ({@link com.finapp.bnpl.BnplProductBounds}, credit's bounds
- * through {@code app}), first door, first event and first gauge - all in {@code app}'s wiring. No schedule.
+ * through {@code app}), first door, first event and first gauge - all in {@code app}'s wiring. And capital
+ * ({@code P12-TSK-005}): the port {@link com.finapp.bnpl.BnplCapital} - lending's one headroom, BNPL principal counted
+ * by ledger purpose, judged under the capital row's lock (L6) in bnpl's own transaction - returning bnpl's own
+ * {@link com.finapp.bnpl.BnplHeadroom}; {@code app}'s {@code LendingBnplCapital} implements it, and its first consumer
+ * is the purchase ({@code P12-TSK-013}). No schedule.
  */
 package com.finapp.bnpl;

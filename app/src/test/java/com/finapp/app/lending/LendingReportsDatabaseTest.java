@@ -256,7 +256,9 @@ class LendingReportsDatabaseTest {
             assertThat(row.path("ties").asBoolean()).isTrue();
         }
 
-        // ---- the capital: the very headroom the acceptance judges, at rest
+        // ---- the capital: the very headroom the acceptance judges, at rest - BNPL principal in it (P12-TSK-005's gate:
+        // the report folds the headroom's own principal set, so a BNPL obligation's principal is counted here too)
+        plantBnplPrincipal(Money.ofMinorUnits(321_00, EUR));
         JsonNode capital = read("capital?date=" + today, officer);
         LendingCapitalHeadroom.Headroom judged = lendingTransactions.inSnapshot(uow -> headroom.atRest(uow, EUR));
         JsonNode eur = capital.path("rows").valueStream().filter(row -> row.path("currency").asString().equals("EUR"))
@@ -267,6 +269,8 @@ class LendingReportsDatabaseTest {
         assertThat(eur.path("outstandingMinor").asLong()).isEqualTo(judged.outstanding().minorUnits());
         assertThat(eur.path("headroomMinor").asLong()).isEqualTo(judged.headroom().minorUnits());
         assertThat(eur.path("lendingFundedMinor").asLong()).isEqualTo(judged.lendingFunded().minorUnits());
+        assertThat(judged.outstanding().minorUnits()).as("not vacuous: the BNPL principal is in the headroom's term")
+                .isGreaterThanOrEqualTo(321_00);
         assertThat(capital.path("rows").size()).isEqualTo(com.finapp.ledger.SupportedCurrencies.ALL.size());
 
         // ---- every serving recorded, naming the report and the date - never a figure
@@ -509,6 +513,27 @@ class LendingReportsDatabaseTest {
                 Duration.ofSeconds(5), 500, Duration.ofMinutes(15));
         while (servicing.sweepOnce() == 500) {
             // every due account serviced
+        }
+    }
+
+    /**
+     * A BNPL obligation's principal (`P12-TSK-005`): its six accounts opened by bnpl's real opener and {@code amount}
+     * posted DR BNPL_PRINCIPAL / CR its credit balance - a journal fixture until `P12-TSK-013`'s real financing.
+     */
+    private void plantBnplPrincipal(Money amount) {
+        try (SecurityContext.Scope system = SecurityContext.enterSystem();
+                CorrelationContext.Scope scope = CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.generate(ids)).causing(CausationId.of("p12t5")))) {
+            lendingTransactions.inTransaction(uow -> {
+                com.finapp.bnpl.BnplLedgerAccounts obligation =
+                        new com.finapp.bnpl.BnplAccounts(ledgerAccountStore, ids, java.time.Clock.systemUTC())
+                                .openFor(uow, com.finapp.bnpl.BnplObligationId.next(ids), EUR);
+                LocalDate today = LocalDate.now(ZoneOffset.UTC);
+                return postingService.post(uow, new PostingCommand("p12t5-bnpl:" + UUID.randomUUID(), today, today,
+                        "the suite's BNPL principal", List.of(
+                                new JournalLine(obligation.principal().id(), Direction.DEBIT, amount),
+                                new JournalLine(obligation.creditBalance().id(), Direction.CREDIT, amount))));
+            });
         }
     }
 

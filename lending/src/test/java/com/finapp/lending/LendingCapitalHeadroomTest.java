@@ -145,6 +145,17 @@ class LendingCapitalHeadroomTest {
     }
 
     @Test
+    @DisplayName("the principal set is published once, unmodifiable, for the derivations that cannot call the headroom -"
+            + " the audited as-of-date capital report folds exactly these four")
+    void thePrincipalSetIsPublishedOnce() {
+        assertThat(LendingCapitalHeadroom.principalPurposes()).containsExactlyInAnyOrder(
+                AccountPurpose.LOAN_PRINCIPAL, AccountPurpose.LOAN_PRINCIPAL_DUE,
+                AccountPurpose.BNPL_PRINCIPAL, AccountPurpose.BNPL_PRINCIPAL_DUE);
+        assertThatThrownBy(() -> LendingCapitalHeadroom.principalPurposes().add(AccountPurpose.BNPL_FEES_DUE))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
     @DisplayName("with no BNPL line the headroom is Phase 11's exactly - capital less committed less loan and line"
             + " principal - and every lending consumer's verdict unchanged")
     void withoutBnplLinesTheHeadroomIsPhase11s() {

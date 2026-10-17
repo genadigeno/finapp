@@ -85,6 +85,15 @@ public final class LendingCapitalHeadroom {
             AccountPurpose.BNPL_PRINCIPAL,
             AccountPurpose.BNPL_PRINCIPAL_DUE);
 
+    /**
+     * The principal purposes the outstanding term sums - the one set, for every derivation of the headroom that cannot
+     * call this class (the audited as-of-date capital report, `P11-TSK-030`, folds dated lines in its own snapshot), so
+     * no second copy of the formula can fall behind it (`P12-TSK-005`'s gate). Unmodifiable.
+     */
+    public static Set<AccountPurpose> principalPurposes() {
+        return java.util.Collections.unmodifiableSet(PRINCIPAL);
+    }
+
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PurposeBalances<Connection> balances;
     @NonNull private final LoanStore loans;

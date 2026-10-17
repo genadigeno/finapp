@@ -404,6 +404,9 @@ new reference and send the money again. A rejected contribution's reference stay
 - **`finapp.lending.capital.headroom.low` above 0** (`LendingCapitalHeadroomLow`, ticket) - a currency's headroom stands below
   `finapp.lending.capital.headroom-floor.<CCY>` (minor units, 0 when unset): contribute more capital before
   acceptances start refusing `422 lending.CapitalUnavailable`.
+  *(Since `P12-TSK-005`: one pool - the headroom also falls by every unit of BNPL principal outstanding, so a busy BNPL
+  book can bring this alert and refuse loans; the capital report's outstanding term is loan, line and BNPL principal
+  together. BNPL purchases will refuse on the same shortfall from `P12-TSK-013`.)*
 
 ### 7.3 Loan terms versions
 
