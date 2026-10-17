@@ -138,14 +138,15 @@ class AdjustmentProposalMigrationTest {
 
     @Test
     @DisplayName("the binding's purpose list is AccountPurpose.closedToFreeAdjustments(),"
-            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V026's"
-            + " (P11-TSK-003: the loan book and LENDING_CAPITAL join the closed set)")
+            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V027's"
+            + " (P12-TSK-003: the BNPL book joins the closed set, after V026's loan book and"
+            + " LENDING_CAPITAL)")
     void theBindingListIsTheEnums() {
         assertThat(migrationV015())
                 .contains("CREATE TRIGGER adjustment_line_respects_reconciled_positions")
                 .contains("BEFORE INSERT ON ledger.adjustment_proposal_line");
         assertThat(read(
-                        "db/migration/ledger/V026__the_loan_book_and_lending_capital_join_the_chart.sql"))
+                        "db/migration/ledger/V027__the_bnpl_book_joins_the_chart.sql"))
                 .as("the current generated list lives in the latest re-statement")
                 .contains(
                         "CREATE OR REPLACE FUNCTION"

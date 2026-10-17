@@ -227,6 +227,22 @@ ADR-0058, ADR-0096.
   the task that posts it: F1 and P4's F2/F3 at purchase `-013`; F2, F3a `-015`; F2a `-017`; F3 and
   the closure refund `-018`, `-019`; F4 `-020`; F5, F5a `-021`; F6 `-022`; F9 `-023`; F7, F8 `-024`;
   F10 proven over BNPL-financed money and the drill-down `-016`; the proofs `-025`.
+- **Decision 1 as built by `P12-TSK-003`** (2026-10-17): ledger `V027` (the four enum-fed `CHECK`s
+  recreated from `OwnerKind` / `AccountPurpose`; the four operational accounts seeded in all five
+  supported currencies, ids `01a0e2bc-8200-7027-…` stamped 2026-09-27T12:00:00Z, below the
+  ceiling; the binding trigger restated with all ten), bnpl's `BnplAccounts` and
+  `BnplLedgerAccounts`. Refinements, each on the invariant's side: the opener reads the obligation's
+  existing accounts once (`findAllOwned`, no lock) and judges them before its first insert, then
+  judges each converged account again - so a mis-shaped account already there (another type,
+  normal balance or currency, or another purpose under the obligation's id) is refused with nothing
+  written, and one a concurrent writer lands between the read and the insert is refused before the
+  caller can commit; the refusals are typed by exception class, the `LoanAccounts` precedent
+  (`IllegalArgumentException` for an unsupported currency, before the ledger is asked;
+  `IllegalStateException` for a mis-shaped account, naming no obligation id); `BnplLedgerAccounts`
+  holds each named component to its purpose. The ledger declares no per-obligation type (the opener
+  does), so the plan's types are held in two places by design: `BnplAccountsTest` (per obligation)
+  and `OperationalChartMigrationTest`'s pinned seed types, which `BnplBookPurposesTest` holds to the
+  plan with every normal side.
 - `P12-TSK-021` decides what happens to a late fee already **paid** on an instalment a refund
   cancels (F5a releases only the unpaid fee; the plan names none for the paid part) and to a fee on
   an instalment a refund only shortens.

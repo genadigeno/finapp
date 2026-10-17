@@ -30,12 +30,13 @@ class LedgerAccountMigrationTest {
      * `V013` had for `INSTANT_CLEARING`, `V012` for `PAYOUT_CLEARING` and `V011` for
      * `MERCHANT_PAYABLE`, because applied history cannot follow its enums - and, latest, `V026`
      * for {@code OwnerKind.LOAN} and the ten loan-book and lending-capital purposes
-     * (`P11-TSK-003`). The reconciliation
+     * (`P11-TSK-003`), then `V027` for {@code OwnerKind.BNPL_OBLIGATION} and the ten BNPL-book
+     * purposes (`P12-TSK-003`). The reconciliation
      * follows the latest definition — an enum member added without a fresh recreation
      * migration fails here, which is the entire point.
      */
     private static final String LATEST_CHART_RULES =
-            "db/migration/ledger/V026__the_loan_book_and_lending_capital_join_the_chart.sql";
+            "db/migration/ledger/V027__the_bnpl_book_joins_the_chart.sql";
 
     /** Where the counterparty registry was created (`P9-TSK-010`) - no later migration restates it. */
     private static final String COUNTERPARTY_REGISTRY =

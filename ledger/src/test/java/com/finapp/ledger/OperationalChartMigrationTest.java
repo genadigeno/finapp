@@ -49,14 +49,16 @@ class OperationalChartMigrationTest {
                     // P9-TSK-012: FX_REALISED_GAINS and FX_REALISED_LOSSES in five currencies.
                     "db/migration/ledger/V023__fx_realised_results_join_the_chart.sql",
                     // P11-TSK-003: the loan P&L purposes and LENDING_CAPITAL in five currencies.
-                    "db/migration/ledger/V026__the_loan_book_and_lending_capital_join_the_chart.sql");
+                    "db/migration/ledger/V026__the_loan_book_and_lending_capital_join_the_chart.sql",
+                    // P12-TSK-003: the BNPL P&L purposes in five currencies.
+                    "db/migration/ledger/V027__the_bnpl_book_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
      * a platform account and deserves exactly this edit plus its reasoning in the migration —
      * and once anything has posted, the trigger refuses it anyway ({@code INV-LED-06}).
      */
-    private static final Map<AccountPurpose, AccountType> SEEDED_TYPES =
+    static final Map<AccountPurpose, AccountType> SEEDED_TYPES =
             Map.ofEntries(
                     Map.entry(AccountPurpose.SETTLEMENT_CLEARING, AccountType.ASSET),
                     // ADR-0057: instructed and not yet settled is an obligation we still owe,
@@ -112,6 +114,15 @@ class OperationalChartMigrationTest {
                     // committed to lending - EQUITY, a source of funds, never a platform-owned
                     // LIABILITY (the platform cannot owe itself), credited only by bank recognition.
                     Map.entry(AccountPurpose.LENDING_CAPITAL, AccountType.EQUITY),
+                    // ADR-0103 decision 1 (P12-TSK-003, V027): the merchant discount, pay-in-N
+                    // interest and BNPL late fees - income, growing on the credit side the financing,
+                    // an accrual and an assessment credit; never merchant's FEE_REVENUE (OQ-19).
+                    Map.entry(AccountPurpose.BNPL_MERCHANT_FEE_INCOME, AccountType.REVENUE),
+                    Map.entry(AccountPurpose.BNPL_INTEREST_INCOME, AccountType.REVENUE),
+                    Map.entry(AccountPurpose.BNPL_FEE_INCOME, AccountType.REVENUE),
+                    // ADR-0103 F11: the deferred write-off's loss (Phase 14) - an expense, seeded
+                    // now so the account plan never changes, posted by nothing in Phase 12.
+                    Map.entry(AccountPurpose.BNPL_WRITE_OFF_EXPENSE, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));
 
     private static final Pattern ROW =

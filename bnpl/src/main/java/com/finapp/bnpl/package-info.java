@@ -36,6 +36,9 @@
  * closed vocabularies ({@code P12-TSK-002}): the products, their plans and the instalment frequencies; the application,
  * offer, purchase, obligation and dispute lifecycles with the application's and the obligation's closure reasons (each
  * {@code BNPL_LIFECYCLES.md}'s); bnpl's own engine identities ({@link com.finapp.bnpl.BnplEngine}); and the aggregates'
- * typed identifiers. No port, bean, route, event or schedule.
+ * typed identifiers. And the obligation's chart ({@code P12-TSK-003}, ledger {@code V027}):
+ * {@link com.finapp.bnpl.BnplAccounts} opens an obligation's six ledger accounts - typed, in its one currency,
+ * converged under concurrency, a mis-shaped account refused - into a {@link com.finapp.bnpl.BnplLedgerAccounts};
+ * unwired until the purchase ({@code P12-TSK-013}), and it posts nothing. No port, bean, route, event or schedule.
  */
 package com.finapp.bnpl;

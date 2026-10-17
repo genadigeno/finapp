@@ -79,6 +79,45 @@ public enum AccountPurpose {
      */
     LOAN_CREDIT_BALANCE(OwnerKind.LOAN),
 
+    // ------------------------------------------------------------------------------------------
+    // THE BNPL BOOK (`P12-TSK-003`, ledger `V027`; ADR-0103 decision 1, PHASE_12_PLAN.md section
+    // 12.11; INV-BNPL-01). Six accounts per customer repayment obligation, opened together in the
+    // obligation's one currency by bnpl's BnplAccounts in the purchase's transaction - the loan
+    // book's split (due from not-due, interest from principal) for the same reasons, but separate
+    // purposes under their own owner kind (OQ-11): lending's posters, proofs and identities never
+    // see a BNPL line, and bnpl's never a loan's. Every figure a BNPL customer owes is a balance of
+    // one of these, derived from journal lines; posted only by bnpl's operations
+    // (BnplBooksHaveOnePosterTest) and closed to free adjustments. None is a reconciled position:
+    // bnpl moves no money across a rail, so they open no expectations (no *_CLEARING purpose,
+    // INV-RAIL-04) and are proven by bnpl's subledger and three-way proofs (`P12-TSK-025`).
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * Purchase principal not yet due. An ASSET, debit-normal: the platform's claim on the customer,
+     * raised by the purchase's financing (rule F1), re-classified to {@link #BNPL_PRINCIPAL_DUE} by
+     * billing (F2) and cancelled by a merchant refund, latest instalments first (F5).
+     */
+    BNPL_PRINCIPAL(OwnerKind.BNPL_OBLIGATION),
+
+    /** Billed principal unpaid. An ASSET, debit-normal; days past due read from it (F2, F3). */
+    BNPL_PRINCIPAL_DUE(OwnerKind.BNPL_OBLIGATION),
+
+    /** Pay-in-N interest earned and not yet due. An ASSET, debit-normal (F2a); pay-in-4 holds none. */
+    BNPL_INTEREST_ACCRUED(OwnerKind.BNPL_OBLIGATION),
+
+    /** Pay-in-N billed interest unpaid. An ASSET, debit-normal (F2). */
+    BNPL_INTEREST_DUE(OwnerKind.BNPL_OBLIGATION),
+
+    /** Assessed late fees unpaid. An ASSET, debit-normal (F4; waived by F7). */
+    BNPL_FEES_DUE(OwnerKind.BNPL_OBLIGATION),
+
+    /**
+     * Money received beyond every receivable, or a refund's excess the wallet could not take, owed
+     * back to the customer. A LIABILITY, credit-normal: the one per-obligation account the platform
+     * owes on (F3, F3a, F6).
+     */
+    BNPL_CREDIT_BALANCE(OwnerKind.BNPL_OBLIGATION),
+
     /**
      * The CARD rail's value in flight: what the card PSP owes the platform for captures, net of
      * refunds, chargebacks and fees, until its clearing reports discharge it. Phase 8's seam.
@@ -262,6 +301,36 @@ public enum AccountPurpose {
      */
     LENDING_CAPITAL(OwnerKind.OPERATIONAL),
 
+    /**
+     * The merchant discount a BNPL purchase earns, per currency (`P12-TSK-003`, `V027`; ADR-0103
+     * decisions 1 and 2, OQ-19): REVENUE, credit-normal - credited by the financing (F1) out of the
+     * merchant's payable, debited by a refund's pro-rated return (F5). Its own purpose, never
+     * merchant's {@link #FEE_REVENUE}: a card processing fee and a credit-funded discount are
+     * different income whose Phase 14 treatment may part. Posted only by bnpl's operations; closed
+     * to free adjustments. <strong>Not capital</strong> (lending A29).
+     */
+    BNPL_MERCHANT_FEE_INCOME(OwnerKind.OPERATIONAL),
+
+    /**
+     * Pay-in-N interest earned, per currency (`V027`; F2a): REVENUE, credit-normal, released only by
+     * a refund's cancellation (F5a). Posted only by bnpl's operations; closed to free adjustments.
+     */
+    BNPL_INTEREST_INCOME(OwnerKind.OPERATIONAL),
+
+    /**
+     * BNPL late fees earned, per currency (`V027`; F4): REVENUE, credit-normal, debited by a
+     * four-eyes waiver (F7) or a refund's release (F5a). Posted only by bnpl's operations; closed to
+     * free adjustments.
+     */
+    BNPL_FEE_INCOME(OwnerKind.OPERATIONAL),
+
+    /**
+     * A BNPL obligation written off, per currency (`V027`; F11): EXPENSE, debit-normal. Seeded now so
+     * the account plan never changes when Phase 14 builds the write-off; <strong>posted by nothing in
+     * Phase 12</strong>, and closed to free adjustments so no person can post a loss here either.
+     */
+    BNPL_WRITE_OFF_EXPENSE(OwnerKind.OPERATIONAL),
+
     /** Unattributable value, parked, aged and reported ({@code INV-REC-05}). Phase 8's seam. */
     SUSPENSE_UNMATCHED(OwnerKind.SUSPENSE);
 
@@ -294,7 +363,10 @@ public enum AccountPurpose {
      * every-writer half of the single-poster discipline {@code LendingBooksHaveOnePosterTest}
      * holds statically. The six per-loan purposes and the three loan P&amp;L purposes do NOT join:
      * lending opens no expectations, so completeness would report every lending line unattributed;
-     * they are proven by the subledger proof instead (`P11-TSK-029`).
+     * they are proven by the subledger proof instead (`P11-TSK-029`). Nor does any of the ten BNPL
+     * purposes (`P12-TSK-003`, `V027`; ADR-0103 decision 1): bnpl opens no expectation either, so
+     * {@code finapp.reconciliation.line.unattributed} - one series per member of this set - gains no
+     * BNPL series; the BNPL book is proven by bnpl's subledger and three-way proofs (`P12-TSK-025`).
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
@@ -333,6 +405,12 @@ public enum AccountPurpose {
      * own corrections (waivers, reversals, amendments) are four-eyes lending acts that post
      * through {@code PostingService} / {@code ReversalService}, never a ledger free adjustment.
      * {@code LENDING_CAPITAL} is closed through {@link #reconciledPositions()}.
+     *
+     * <p>The BNPL book joined (`P12-TSK-003`, `V027`; ADR-0103 decision 1, {@code INV-BNPL-01}): the
+     * six per-obligation purposes and {@code BNPL_MERCHANT_FEE_INCOME}, {@code BNPL_INTEREST_INCOME},
+     * {@code BNPL_FEE_INCOME} and {@code BNPL_WRITE_OFF_EXPENSE} - every line on them is a bnpl
+     * operation's, and bnpl's own corrections (a fee waived, a repayment reversed) are four-eyes bnpl
+     * acts through {@code ReversalService} (F7, F8), never a ledger free adjustment.
      */
     public static java.util.Set<AccountPurpose> closedToFreeAdjustments() {
         java.util.Set<AccountPurpose> closed = java.util.EnumSet.copyOf(reconciledPositions());
@@ -350,6 +428,16 @@ public enum AccountPurpose {
         closed.add(LOAN_INTEREST_INCOME);
         closed.add(LOAN_FEE_INCOME);
         closed.add(LOAN_WRITE_OFF_EXPENSE);
+        closed.add(BNPL_PRINCIPAL);
+        closed.add(BNPL_PRINCIPAL_DUE);
+        closed.add(BNPL_INTEREST_ACCRUED);
+        closed.add(BNPL_INTEREST_DUE);
+        closed.add(BNPL_FEES_DUE);
+        closed.add(BNPL_CREDIT_BALANCE);
+        closed.add(BNPL_MERCHANT_FEE_INCOME);
+        closed.add(BNPL_INTEREST_INCOME);
+        closed.add(BNPL_FEE_INCOME);
+        closed.add(BNPL_WRITE_OFF_EXPENSE);
         return closed;
     }
 
