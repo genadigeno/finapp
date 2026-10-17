@@ -149,16 +149,23 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
     | Case | Cancelled (latest first) | E | r_f | Payable (change → balance) | Obligation |
     |---|---|---|---|---|---|
     | **Before** instalment 2 — full refund R = 100 | #4 25, #3 25, #2 25 (unbilled) | 25.00 to wallet | cum(100) − cum(0) = 4.00 | −96.00 → 0 | `CLOSED (REFUNDED)` |
-    | **During** — #2 billed unpaid; R = 30 | #4 25, #3 5 (→ 20) | 0 | cum(30) = round(1.20) = 1.00 | −29.00 → 67.00 | `ACTIVE`; v2: #2 25 due, #3 20 |
-    | then R = 70 | #3 20, #2 25 (`…PRINCIPAL_DUE`, cures #2's DPD) | 25.00 to wallet | cum(100) − cum(30) = 3.00 | −67.00 → 0 | `CLOSED (REFUNDED)` |
-    | **After** completion (`CLOSED (REPAID)`) — R = 40 | nothing | 40.00 to wallet | cum(40) = round(1.60) = 2.00 | −38.00 → 58.00 | stays `CLOSED` |
+    | **During** — #2 billed unpaid; R = 30 | #4 25, #3 5 (→ 20) | 0 | cum(30) = 4.00 × 30 / 100 = 1.20 | −28.80 → 67.20 | `ACTIVE`; v2: #2 25 due, #3 20 |
+    | then R = 70 | #3 20, #2 25 (`…PRINCIPAL_DUE`, cures #2's DPD) | 25.00 to wallet | cum(100) − cum(30) = 2.80 | −67.20 → 0 | `CLOSED (REFUNDED)` |
+    | **After** completion (`CLOSED (REPAID)`) — R = 40 | nothing | 40.00 to wallet | cum(40) = 1.60 | −38.40 → 57.60 | stays `CLOSED` |
 
-    Order independence: 70 then 30 returns cum(70) = round(2.80) = 3.00 then 1.00 — the same 4.00 = f. **After payout**:
-    had the merchant paid out its 96.00, the same two refunds leave the payable at −29.00, then −96.00 = −(G − f), the
+    Order independence: 70 then 30 returns cum(70) = 2.80 then 1.20 — the same 4.00 = f. **After payout**:
+    had the merchant paid out its 96.00, the same two refunds leave the payable at −28.80, then −96.00 = −(G − f), the
     bound exactly; every payout is refused until later captures and financings restore a positive payable. **PN**
     (G = 600.00, 6 monthly): a refund of 150.00 in month 2 first accrues to date (T-acc), then shortens the plan from its
     end by `recalculateAtInstalment` at the same instalment; the month's accrued interest stays owed; a later refund
     cancelling every remaining unit of principal also releases the unpaid interest and closes the agreement.
+
+    *(Corrected by `P12-TSK-009` (2026-10-17), whose golden cases compute these rows: the table and the order-independence
+    sentence read "cum(30) = round(1.20) = 1.00 | −29.00 → 67.00", "cum(100) − cum(30) = 3.00 | −67.00 → 0",
+    "cum(40) = round(1.60) = 2.00 | −38.00 → 58.00" and "cum(70) = round(2.80) = 3.00 then 1.00 … −29.00" - rounded to
+    whole euros. `cum_fee` rounds to the currency's minor unit under the pinned version's policy (merchant's
+    `FeeCalculation`, decision 3; A8), so the shares are exact to the cent here; the full refund's row, the totals (f =
+    4.00, Σ payable debits = 96.00 = G − f) and every conclusion drawn from them are unchanged.)*
 
 ## Alternatives Considered
 
@@ -223,7 +230,11 @@ only other movements are point 5's and 6's releases), `INV-BNPL-07` (Σ refunds 
 ## Follow-up
 
 - `P12-TSK-009` — the pure allocator and the fee arithmetic; properties: value preserved for every refund sequence,
-  the fee telescoping to f in every order, the B7 bound, `r_f ≤ R` for every refund.
+  the fee telescoping to f in every order, the B7 bound, `r_f ≤ R` for every refund. *(As built, 2026-10-17:
+  `RefundAllocationEngineV1` over a `RefundPosition`, the fee arithmetic a parameter (`MerchantFeeReturn`) bound to
+  merchant's `FeeCalculation.returnedFee` through `BnplMerchants.returnedFee` by `P12-TSK-021` - one arithmetic, never
+  restated in bnpl; each property above held over generated sequences; decision 12's worked figures corrected to the
+  cent.)*
 - `P12-TSK-021` — T-ref, F5/F5a, the doors, the versions, closure; mandatory scenarios 7, 8, 9, 16 and 17's release;
   the pair-element race against a wallet-paid capture in both id orders; the `INV-MER-07` amendment put in force.
 - `P12-TSK-016` — the drill-down's `BNPL_REFUND` kind and `INV-MER-02`'s equation with the BNPL terms.

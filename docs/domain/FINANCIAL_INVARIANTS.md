@@ -2540,7 +2540,12 @@ fee's release on a cancelled instalment, `BnplLateFeeDatabaseTest` (`P12-TSK-020
 the probes refunding earliest first and pro-rating the fee by a running clamp (`MUTATION_TESTING.md`
 §2); the battery's value-preservation and fee-telescoping properties for every refund order
 (`P12-TST-002`); the three-way proof's identity arm, Σ refunds = Σ principal cancelled + Σ excess, per
-purchase (`P12-TSK-025`), at rest in every storm round (`P12-TST-001`).
+purchase (`P12-TSK-025`), at rest in every storm round (`P12-TST-001`). *(Since `P12-TSK-009`: the
+allocator's half is `RefundAllocationEngineV1Test` - the plan's worked check, `#refundCancelsLatestFirst`, a
+partly paid instalment, a refund after completion all excess - and `RefundAllocationEngineV1PropertiesTest` over
+generated refund sequences in three currencies and every rounding policy, two JVMs; the fee is merchant's
+`FeeCalculation.returnedFee` bound in as a parameter, its hermetic reference proven equal by `app`'s
+`BnplFeeArithmeticAgreesWithMerchantTest`; eleven probes, `MUTATION_TESTING.md` §2.)*
 **Phase:** 12
 
 ### INV-BNPL-07 — Refunds never exceed the purchase

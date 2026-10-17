@@ -22,6 +22,11 @@ buildscript {
 plugins {
     id("finapp.java-conventions")
     alias(libs.plugins.flyway)
+    // The refund allocator's reference merchant fee arithmetic (ReferenceMerchantFeeReturn, P12-TSK-009) is shared by
+    // this module's engine suites and app's BnplFeeArithmeticAgreesWithMerchantTest - which proves it equal to
+    // merchant's FeeCalculation.returnedFee, the production arithmetic bnpl cannot see - so it is published as test
+    // fixtures rather than copied: one reference, one proof. Test code: it ships in no jar.
+    `java-test-fixtures`
 }
 
 // Connection details, resolved exactly as platform resolves them and from the same environment variables, so
@@ -97,6 +102,9 @@ dependencies {
     // The engines' second JVM (SecondJvm, creditmath's published test fixtures - one harness, never a copy): pay-in-4's
     // schedule engine is proven deterministic across JVMs in it (P12-TSK-008), as lending's engines are.
     testImplementation(testFixtures(project(":creditmath")))
+
+    // The fixtures see the engine's MerchantFeeReturn (main) and sharedkernel's money - nothing of merchant.
+    testFixturesImplementation(project(":sharedkernel"))
 }
 
 // The `database` tier's module-specific configuration - the container image, from the version catalog, exactly as
