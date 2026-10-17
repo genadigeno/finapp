@@ -334,6 +334,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}/rejection",
+                        // P12-TSK-006: a merchant's BNPL enablement under four eyes (MERCHANT_ADMINISTER, keyed) and
+                        // its BNPL fee schedule per product (FEE_ADMINISTER, a converging PUT).
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/rejection",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/withdrawal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}",
                         // P11-TSK-020: the loan servicing agent's doors - any loan read (LOAN_SERVICE, audited) and the
                         // repayment reversal under four eyes (LOAN_SERVICE proposes and rejects, LOAN_SERVICE_APPROVE approves).
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}",

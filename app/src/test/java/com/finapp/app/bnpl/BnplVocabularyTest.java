@@ -42,6 +42,23 @@ class BnplVocabularyTest {
     }
 
     @Test
+    @DisplayName("merchant's BNPL product names are exactly bnpl's products, by name (P12-TSK-006)")
+    void merchantsBnplProductsAreBnplsProducts() {
+        assertThat(Arrays.stream(com.finapp.merchant.MerchantBnplProduct.values()).map(Enum::name))
+                .as("a merchant is priced per BNPL product bnpl offers, and for no other")
+                .containsExactlyElementsOf(Arrays.stream(BnplProduct.values()).map(Enum::name).toList());
+    }
+
+    @Test
+    @DisplayName("merchant's BNPL standing answers are exactly the port's, by name - the adapter maps them by name"
+            + " (P12-TSK-006)")
+    void theStandingAnswersAgree() {
+        assertThat(Arrays.stream(com.finapp.merchant.BnplPricing.Standing.values()).map(Enum::name))
+                .containsExactlyElementsOf(Arrays.stream(com.finapp.bnpl.BnplMerchants.Standing.values())
+                        .map(Enum::name).toList());
+    }
+
+    @Test
     @DisplayName("each pair shares one currency")
     void oneCurrency() {
         for (BnplProduct product : BnplProduct.values()) {

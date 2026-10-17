@@ -459,7 +459,7 @@ instalment and no system-initiated card charge (B6).
 |---|---|---|---|
 | Agreement version · acceptance evidence | `bnpl_agreement`, `bnpl_acceptance` | the acceptance (v1); a schedule-changing refund (v n+1) | `UNIQUE (obligation_id, version)`; `INSERT`-only for every role; `terms_sha256` re-verified by replay |
 | Merchant financing | `merchant_financing` | T-pur | `UNIQUE (purchase_id)`, `UNIQUE (journal_entry_id)`; `gross = fee + net` (`INV-BNPL-04`) |
-| Fee pin | `bnpl_fee_pin` (merchant `V010`) | T-pur | one per purchase — the intent-keyed `PaymentFeePin` cannot hold it |
+| Fee pin | `bnpl_fee_pin` (merchant `V010`, built by `P12-TSK-006`) | T-pur, through `BnplMerchants.pinFee` | the purchase is the primary key - one per purchase, never a second version; insert-only, V004's immutability trigger, no truncate; a trigger holds it to a returning version of the merchant's BNPL schedule for the product, in force by `pinned_at`, the merchant BNPL-enabled - the intent-keyed `PaymentFeePin` cannot hold it |
 | Schedule version · instalment | `bnpl_schedule`, `bnpl_instalment` | T-pur (v1); a schedule-changing refund (v n+1) | `UNIQUE (obligation_id, schedule_version)`, `UNIQUE (schedule_id, sequence)`; deferred conservation Σ principal = purchase principal (`INV-BNPL-05`) |
 | Interest accrual (PN) | `bnpl_interest_accrual` | T-acc, per elapsed date, oldest first | `UNIQUE (obligation_id, accrual_date)` + ledger key `bnpl.accrual:<obligation>:<date>` (scenario 18) |
 | Billing · credit-balance application | `bnpl_billing`, `bnpl_credit_balance_application` | T-svc at the due date (P4 instalment 1 in T-pur); the catch-up application in every servicing step and the payoff (R2) | `UNIQUE (instalment_id)` |
@@ -470,6 +470,35 @@ instalment and no system-initiated card charge (B6).
 | Payoff quote · execution | `bnpl_payoff_quote`, `bnpl_payoff_execution` | C | `UNIQUE (quote_id)`, `UNIQUE (obligation_id)` |
 
 ---
+
+### 4.15 Merchant BNPL enablement (`merchant.merchant_bnpl_enablement`) — `P12-TSK-006`
+
+```
+ (birth) PROPOSED --a second, distinct operator--> ACTIVE --any one operator--> WITHDRAWN
+             \--any operator, the proposer included--> REJECTED
+```
+
+Merchant's machine, not bnpl's (OQ-8, owner accepted default under B8: a four-eyes operator act). All four
+doors are `MERCHANT_ADMINISTER`, keyed per principal (`merchant.bnpl-enablement:<type>:<id>`), reasoned; reasons
+`RESTRICTED-PII`, never served. **One live** (proposed or active) per merchant by partial unique - ten proposers,
+one proposal, nine `409 merchant.BnplEnablementPending`; a proposal beside an `ACTIVE` enablement is refused the
+same way. **Four eyes at three ranks**: the domain, the approval's own `proposed_by <> ?`, and
+`merchant_bnpl_enablement_approver_is_not_proposer` (`CHECK`); the proposer's approval is `409
+merchant.SelfApprovalRefused`, recorded `FAILED` in a transaction of its own (R4). Every decision takes the row
+`FOR UPDATE` and writes conditionally, so an approval and a rejection racing leave exactly one (`409
+merchant.BnplEnablementNotOpen` for the other); the same person's retry converges. **The withdrawal is one
+person's act** - stopping BNPL reduces risk, the merchant suspension's precedent; it waits for every standing read
+holding the row `FOR SHARE`, so no purchase is admitted after it commits and none financed before it is touched. A
+closed merchant takes no proposal and no approval (`409 merchant.IllegalTransition`). Every instant is the
+database's (`clock_timestamp()` in the edge trigger, after the lock, clamped forward); each decision whole and frozen
+on the row; never deleted or truncated.
+
+**The standing** (`BnplMerchants.standing`, the first failing condition): the merchant row `FOR SHARE` -
+`ACTIVE`, else `NOT_TRADING`; its `ACTIVE` enablement `FOR SHARE`, else `NOT_ENABLED`; the product's BNPL fee
+schedule (`merchant_bnpl_fee_schedule`, `PUT .../bnpl-fee-schedules/{product}`, `FEE_ADMINISTER`, reasoned,
+converging) with a version in force that returns its fee, else `NOT_PRICED`. A schedule with any `RETAINED` version
+is refused at the assignment (`422 merchant.BnplScheduleNotReturning`, and by trigger for every writer); a
+`RETAINED` version added later makes the product `NOT_PRICED` rather than ever pricing a BNPL purchase.
 
 ## 5. Conditions (orthogonal to the lifecycle; append-only histories) — `P12-TSK-020`, `-023`
 

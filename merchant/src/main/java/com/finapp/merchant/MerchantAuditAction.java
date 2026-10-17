@@ -229,7 +229,68 @@ public enum MerchantAuditAction implements AuditableAction {
             "merchant.PayoutReturnApplied",
             "The platform applied a payout return from settlement evidence: the payable credited"
                     + " back by the return's own posting, the payout still COMPLETED.",
-            false);
+            false),
+
+    /**
+     * An operator proposed offering BNPL at a merchant (`P12-TSK-006`; OQ-8). Nothing is offered
+     * until a second operator approves. Reasoned. Emitted by the proposing call only - a keyed
+     * replay records nothing.
+     */
+    BNPL_ENABLEMENT_PROPOSED(
+            "merchant.BnplEnablementProposed",
+            "An operator proposed enabling BNPL at a merchant; nothing is offered until a second"
+                    + " operator approves; the reason is required.",
+            true),
+
+    /**
+     * A second operator, distinct from the proposer, approved the merchant's BNPL enablement
+     * ({@code INV-AUD-04}): the merchant may offer BNPL on every product it is priced for.
+     */
+    BNPL_ENABLEMENT_APPROVED(
+            "merchant.BnplEnablementApproved",
+            "A second operator, distinct from the proposer, approved a merchant's BNPL enablement;"
+                    + " the reason is required.",
+            true),
+
+    /** A BNPL enablement proposal was turned down - by any operator, its proposer included. */
+    BNPL_ENABLEMENT_REJECTED(
+            "merchant.BnplEnablementRejected",
+            "An operator rejected a merchant's BNPL enablement proposal - terminal; the reason is"
+                    + " required.",
+            true),
+
+    /**
+     * An operator stopped BNPL at a merchant - one person's risk-reducing act, the suspension
+     * precedent. Purchases already financed are untouched; none is admitted after it commits.
+     */
+    BNPL_ENABLEMENT_WITHDRAWN(
+            "merchant.BnplEnablementWithdrawn",
+            "An operator withdrew a merchant's BNPL enablement - terminal; financed purchases are"
+                    + " untouched; the reason is required.",
+            true),
+
+    /**
+     * The proposer of a BNPL enablement tried to approve it and was refused
+     * ({@code INV-AUD-04}) - recorded {@code FAILED} in a transaction of its own after the act
+     * rolled back, so the attempt survives (the Phase 11 gate's R4). The summary names the
+     * enablement, the merchant and the act; no reason is kept.
+     */
+    BNPL_ENABLEMENT_APPROVAL_REFUSED(
+            "merchant.BnplEnablementApprovalRefused",
+            "The proposer of a merchant's BNPL enablement tried to approve it and was refused"
+                    + " (INV-AUD-04); recorded FAILED in a transaction of its own.",
+            false),
+
+    /**
+     * An operator changed which fee schedule prices a merchant's BNPL product (`P12-TSK-006`).
+     * Reasoned: it changes a counterparty's commercial terms. Emitted by the moving call only.
+     */
+    MERCHANT_BNPL_FEE_SCHEDULE_ASSIGNED(
+            "merchant.BnplFeeScheduleAssigned",
+            "An operator assigned a merchant's BNPL product to a fee schedule whose versions return"
+                    + " their fee on refund; the record names the merchant, the product and both"
+                    + " schedules; the reason is required.",
+            true);
 
     private final String code;
     private final String description;

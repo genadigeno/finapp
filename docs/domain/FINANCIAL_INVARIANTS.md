@@ -3133,7 +3133,10 @@ versions frozen by trigger; the session carries the version it was priced under)
 assessment row: an assessment is the pinned version applied to the captured gross, posted in
 the capture's entry and announced by `merchant.FeeAssessed` with the version on the wire.
 *(Corrected at the Phase 6 review, `P6-DOC-001`, which found this naming rows that do not
-exist.)*
+exist.)* *(Since `P12-TSK-006` a BNPL purchase's version is pinned the same way by
+`merchant.bnpl_fee_pin` - keyed by the purchase, `INSERT`-only, frozen by V004's trigger, and held by
+a trigger to a returning version of the merchant's BNPL schedule in force by its instant; the BNPL
+fee and its returns are that version applied to the pinned gross, never stored.)*
 **Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
 proving the pinned version priced the capture.
 **Phase:** 6

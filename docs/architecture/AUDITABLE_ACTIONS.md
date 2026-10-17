@@ -418,6 +418,12 @@ record nothing.
 | `merchant.MerchantPayoutInitiatedByOperator` | **Yes** | An operator initiated a payout of a merchant's payable on its behalf; the reason is required. |
 | `merchant.MerchantPayoutOutcomeApplied` | No | The platform applied the payout provider's answer to a payout (completed, failed or unknown); acting transitions only. |
 | `merchant.PayoutReturnApplied` | No | The platform applied a payout return from settlement evidence: the payable credited back by the return's own posting, the payout still COMPLETED. |
+| `merchant.BnplEnablementProposed` | **Yes** | An operator proposed enabling BNPL at a merchant; nothing is offered until a second operator approves; the reason is required. |
+| `merchant.BnplEnablementApproved` | **Yes** | A second operator, distinct from the proposer, approved a merchant's BNPL enablement; the reason is required. |
+| `merchant.BnplEnablementRejected` | **Yes** | An operator rejected a merchant's BNPL enablement proposal - terminal; the reason is required. |
+| `merchant.BnplEnablementWithdrawn` | **Yes** | An operator withdrew a merchant's BNPL enablement - terminal; financed purchases are untouched; the reason is required. |
+| `merchant.BnplEnablementApprovalRefused` | No | The proposer of a merchant's BNPL enablement tried to approve it and was refused (INV-AUD-04); recorded FAILED in a transaction of its own. |
+| `merchant.BnplFeeScheduleAssigned` | **Yes** | An operator assigned a merchant's BNPL product to a fee schedule whose versions return their fee on refund; the record names the merchant, the product and both schedules; the reason is required. |
 
 The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
 `MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
@@ -455,6 +461,18 @@ only when it applies — a refusal (the payout not completed, another amount, th
 and a losing racer write nothing, so ten workers on one return leave one record. When a return
 cannot apply, the person who later transfers its value is recorded by the resolution desk's own
 actions, as themselves.
+
+**The six merchant BNPL actions** (`P12-TSK-006`; OQ-8, `INV-AUD-04`). Proposing, approving,
+rejecting and withdrawing a merchant's BNPL enablement are each an operator's judgement about the
+merchant's standing, reasoned (`INV-AUD-03`); the target is `merchant.BnplEnablement` by id, the
+summary names it and its merchant. `merchant.BnplEnablementApprovalRefused` is the refused
+self-approval, recorded `FAILED` **in a transaction of its own after the act rolled back** - the
+Phase 11 gate's R4, applied from this module's second four-eyes subject (the payout destination's
+older `DENIED`-in-the-same-transaction shape is kept for it, unchanged); it keeps no reason, its
+summary names the enablement, the merchant and `act=bnpl-enablement:approve`. A withdrawal is one
+operator's act, the suspension's precedent: stopping BNPL reduces risk. `merchant.BnplFeeScheduleAssigned`
+is emitted by the moving call only, as `MerchantFeeScheduleAssigned` is. The fee pin a purchase is
+born with is not audited here: it is part of the purchase's own transaction and record (`P12-TSK-013`).
 
 ### `checkout` — `CheckoutAuditAction`
 

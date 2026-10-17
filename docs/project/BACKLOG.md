@@ -18708,7 +18708,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 
 # Phase 12 — Buy Now, Pay Later (BNPL)
 
-Status: `IN_PROGRESS` (2026-10-17; `P12-TSK-001`…`-005`, `-007`, `-008` and `-009` `COMPLETE`, 8 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 `CLOSED` at 2 of 2) *(read "`P12-TSK-001`…`-005`, `-007` and `-008` `COMPLETE`, 7 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 at 1 of 2" until `P12-TSK-009`'s gate)* *(read "`P12-TSK-001`…`-005` and `-007` `COMPLETE`, 6 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2" until `P12-TSK-008`'s merge-in)* *(read "`P12-TSK-001`…`-004` `COMPLETE`, 4 of 29; M12.1 at 4 of 5" until `P12-TSK-007`'s gate - `P12-TSK-005`'s left it unadvanced)* *(read "`P12-TSK-001`…`-003` `COMPLETE`, 3 of 29; M12.1 at 3 of 5" until `P12-TSK-004`'s gate)* *(read "`P12-TSK-001` and `-002` `COMPLETE`, 2 of 29; M12.1 at 2 of 5" until `P12-TSK-003`'s gate)* *(read "`P12-TSK-001` `COMPLETE`, 1 of 29; M12.1 at 1 of 5" until `P12-TSK-002`'s gate)* *(read `READY` from the transition until `P12-TSK-001`'s gate)* — entry gate passed by the Phase 11 → 12 transition
+Status: `IN_PROGRESS` (2026-10-17; `P12-TSK-001`…`-009` `COMPLETE`, 9 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 `CLOSED` at 2 of 2, M12.3 `CLOSED` at 2 of 2; `P12-TSK-010` `READY`) *(read "`P12-TSK-001`…`-005`, `-007`, `-008` and `-009` `COMPLETE`, 8 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 `CLOSED` at 2 of 2" until `P12-TSK-006`'s merge-in)* *(read "`P12-TSK-001`…`-005`, `-007` and `-008` `COMPLETE`, 7 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 at 1 of 2" until `P12-TSK-009`'s gate)* *(read "`P12-TSK-001`…`-005` and `-007` `COMPLETE`, 6 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2" until `P12-TSK-008`'s merge-in)* *(read "`P12-TSK-001`…`-004` `COMPLETE`, 4 of 29; M12.1 at 4 of 5" until `P12-TSK-007`'s gate - `P12-TSK-005`'s left it unadvanced)* *(read "`P12-TSK-001`…`-003` `COMPLETE`, 3 of 29; M12.1 at 3 of 5" until `P12-TSK-004`'s gate)* *(read "`P12-TSK-001` and `-002` `COMPLETE`, 2 of 29; M12.1 at 2 of 5" until `P12-TSK-003`'s gate)* *(read "`P12-TSK-001` `COMPLETE`, 1 of 29; M12.1 at 1 of 5" until `P12-TSK-002`'s gate)* *(read `READY` from the transition until `P12-TSK-001`'s gate)* — entry gate passed by the Phase 11 → 12 transition
 ([`reviews/PHASE_11_TO_12_TRANSITION.md`](reviews/PHASE_11_TO_12_TRANSITION.md): Phase 11 confirmed after repair,
 R1–R6 closed in lending `V029` and `V030`), elaborated to task granularity by the same transition: twenty-nine items
 (`P12-TSK-001`…`-026`, `P12-TST-001`, `P12-TST-002`, `P12-DOC-001`) across nine milestones, with `P12-TSK-001` marked
@@ -19297,7 +19297,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (capital; F2, F6, F7 binding; F1, F3, F4, F5 vacuous — a read; F8: the capital
   proof's BNPL term). **Risk**: High. **Cx**: S.
 
-**P12-TSK-006 — Merchant BNPL enablement and fee schedule** — `READY` (marked by `P12-TSK-005`'s completion gate, 2026-10-17; its dependency `-002` `COMPLETE`)
+**P12-TSK-006 — Merchant BNPL enablement and fee schedule** — `COMPLETE` (2026-10-17; started by the owner beside `P12-TSK-007` — Phase 12 wave A; marked `READY` by `P12-TSK-005`'s completion gate; its dependency `-002` `COMPLETE`; marks `P12-TSK-010` `READY` at its merge-in, the coordinator's instruction - `-010`'s last dependency)
 - **Objective**: a merchant can offer BNPL only after a four-eyes enablement, priced by its own BNPL fee schedule, with
   the fee version pinned per purchase and one fee arithmetic for the split and the return (OQ-8, B8; ADR-0058, ADR-0102).
 - **Bounded context**: Merchant; BNPL (the port); `app` (the operator doors, the adapter).
@@ -19367,6 +19367,64 @@ after everything.
 - **Definition of done**: `DOD-FIN` (the merchant fee; F3, F6, F7 binding; F1, F2, F4, F5 vacuous — no posting here,
   the fee posts in `-013`; F8: the three-way proof's fee arm, `-025`), `DOD-SEC`, `DOD-API`. **Risk**: Medium.
   **Cx**: M.
+- **Design** (2026-10-17, the three-command loop run straight through on the owner's instruction): the enablement is
+  merchant's machine and the pin merchant's fact; bnpl sees both only through its own port. **Merchant**
+  (`V010`): `merchant_bnpl_enablement` - `PROPOSED -> ACTIVE | REJECTED`, `ACTIVE -> WITHDRAWN` (`BnplEnablementStatus`),
+  each decision whole and frozen on the row (the row is its own history: no `_event` table beside the audit trail),
+  one live (proposed or active) per merchant by partial unique, four eyes as
+  `merchant_bnpl_enablement_approver_is_not_proposer` (`decided_by <> proposed_by` for every approved state), every
+  instant `clock_timestamp()` in the edge trigger after the lock, clamped forward (the Phase 11 gate's stamp lesson);
+  `merchant_bnpl_fee_schedule` + `_event` (V004's pointer per (merchant, product), a trigger refusing a schedule with
+  any `RETAINED` version for every writer); `bnpl_fee_pin` (the purchase the primary key, merchant, product, version,
+  the gross - no fee or net stored -, `pinned_at` on the application clock, the fee schedules' own basis; insert-only,
+  V004's immutability function reused, no truncate; a trigger holding it to a returning version of the assigned
+  schedule in force by `pinned_at`, in the gross's currency, for an enabled merchant). Services `BnplEnablements`
+  (propose / approve / reject / withdraw; lock-then-look; the same person's retry converges; a self-approval thrown so
+  the act rolls back whole, `recordRefusal` writing it `FAILED` in a transaction of its own - R4) and `BnplPricing`
+  (assign; `standing` - merchant `FOR SHARE`, then its `ACTIVE` enablement `FOR SHARE`, then the assignment and the
+  version in force; `pin` - the standing re-judged, the version read once after the locks, `FeeCalculation.assess`,
+  the sale refused unless the net is positive, the pin inserted; `returnedFee` - `FeeCalculation.returnedFee` under
+  the pinned version). **bnpl**: the port `BnplMerchants` (`standing`, `payableAccount`, `pinFee` returning bnpl's
+  `MerchantFeeSplit` - `G = f + net` re-asserted, `0 <= f < G` -, `returnedFee`; refusals `NotOffered(standing)`,
+  `BelowFee`, `AlreadyPinned`, `NotPinned`); the merchant by value as a `UUID` (agreed with `-007` on the board).
+  **app**: `MerchantBnplMerchants` (the adapter), `MerchantBnplDesk` / `MerchantBnplController` (five routes),
+  `MerchantBnplBeans`. Multi-instance: ten proposers - one live (the index, a savepoint); a decision race - one (the
+  row lock and the conditional write); ten pinners - one (the key); a suspension, re-assignment or withdrawal against
+  a standing read - serialised on the share locks; no JVM state. Financial chain: no posting here (the fee posts in
+  F1, `-013`); the split conserves by subtraction; the return telescopes to exactly f.
+- **As built** (2026-10-17): merchant `V010` (`V010__bnpl_enablement_and_fee_schedule.sql`), merchant's
+  `MerchantBnplProduct`, `BnplEnablementStatus`, `BnplEnablementId`, `BnplEnablement`, `BnplEnablementStore` /
+  `JdbcBnplEnablementStore`, `BnplEnablements`, `BnplFeePin`, `BnplPricingStore` / `JdbcBnplPricingStore`,
+  `BnplPricing`, `MerchantErrorCode` (+3: `BNPL_ENABLEMENT_PENDING`, `BNPL_ENABLEMENT_NOT_OPEN`,
+  `BNPL_SCHEDULE_NOT_RETURNING`; `SELF_APPROVAL_REFUSED`'s title generalised), `MerchantAuditAction` (+6),
+  `MerchantClosedException`'s message generalised; bnpl's `BnplMerchants`, `MerchantFeeSplit`; `app`'s
+  `MerchantBnplMerchants`, `MerchantBnplDesk`, `MerchantBnplController`, `MerchantBnplBeans`. Suites: merchant's
+  `BnplEnablementMigrationTest`, `BnplEnablementsTest`, `BnplPricingTest` (over `BnplFakes`, in-memory stores holding the
+  JDBC statements' conditions), bnpl's `MerchantFeeSplitTest`, `app`'s `BnplMerchantFeeSplitPropertiesTest` (seeded:
+  20,000 splits over every rounding policy and 0/2/3-minor-unit currencies, 3,000 refund sequences in three orders
+  each), `BnplVocabularyTest` (+1), the registers (`RoutePermissionRegisterTest`, `OpenApiContractTest` and
+  `docs/api/openapi.json`, `OwnershipIsScopedTest`), and - written, **not run** (owner's instruction) -
+  `MerchantBnplEnablementDatabaseTest` (this entry's nine cases), `BnplMerchantEndpointDatabaseTest` and
+  `MerchantOnboardingDatabaseTest`'s sweep extended over the pin. **Refinements of this entry's wording**: (1) the
+  extended migration test is a new `BnplEnablementMigrationTest` (merchant's one-test-per-migration convention), not
+  `MerchantMigrationTest`, which holds `V002`; (2) a fourth code, `merchant.BnplEnablementNotOpen` - a decision race's
+  loser, the `DestinationChangeNotOpen` precedent (`IllegalTransition` speaks of the merchant's status); (3)
+  `merchant.SelfApprovalRefused` is the existing code, its `409` and meaning unchanged, its title generalised to "A
+  four-eyes change requires a second approver distinct from its proposer."; the BNPL refusal is recorded `FAILED` in
+  its own transaction (R4) while the payout destination keeps its older `DENIED`-in-one-transaction shape, untouched;
+  (4) the withdrawal is confirmed a single-operator act (the suspension precedent), on `ACTIVE` only; a proposer's
+  change of mind is a rejection, which anyone may make; a closed merchant takes no proposal and no approval
+  (`merchant.IllegalTransition`); (5) the door key reads `merchant.bnpl-enablement:CUSTOMER:<id>` today - the session
+  actor's type (`BnplTermsDesk`'s A5-04 note); (6) `standing` returns the first failing condition
+  (`ENABLED | NOT_TRADING | NOT_ENABLED | NOT_PRICED`) rather than a boolean, so `-010` can map it, and an unknown or
+  non-merchant reference is `NOT_TRADING`, one answer; (7) a `RETAINED` version added to a BNPL schedule after its
+  assignment (no lock can arbitrate it - V004) is caught where it would price: the product is `NOT_PRICED` and the pin
+  refused, never a `RETAINED` BNPL fee; (8) the fee's rounding is the pinned version's policy (`INV-MON-03`); A8's and
+  `INV-BNPL-04`'s `HALF_EVEN` is the default an operator gives a BNPL version, not a refusal of the others - an owner
+  judgement; (9) `PHASE_12_PLAN.md` section 3.3 and `MODULE_ARCHITECTURE.md` said the returned fee came "through its
+  least-share arithmetic" - corrected to the exact cumulative share section 12.5 and ADR-0105 decide; (10) no read
+  door: the backlog names none, reasons are never served, and the four act receipts carry the state.
+- **Gate** (2026-10-17): NOT COMPLETE on its first pass - **IMPORTANT (1)**: merchant's own telescoping case (`BnplPricingTest#theReturnedFeeTelescopes`) could not tell the cumulative return from each refund's own rounded share - the backlog's third probe, run against it, was **not caught** (its one sequence, 5,000 then 5,001 of 10,001 at a fee of 299, sums to f under both formulas); strengthened with the shape that over-returns, an odd fee of 3 on 100.00 refunded in halves, and the probe re-run caught it (the property suite caught it from the first). **IMPORTANT (2)**: the backlog's "a suspension racing a standing read -> serialised on the merchant row's FOR SHARE" had no counting case, and the withdrawal's wait behind a standing reader was asserted by a 500 ms sleep - both now observed lock-waiting (`pg_stat_activity`, the `P0-TST-004` idiom) in `MerchantBnplEnablementDatabaseTest#aSuspendedMerchantIsNotEnabled` and `#aWithdrawnEnablementOffersNothing`. MINOR, fixed: `MerchantClosedException`'s message spoke only of payout destinations (generalised); merchant's and the port's standing answers crossed by name with no guard (`BnplVocabularyTest#theStandingAnswersAgree`); the (merchant, enablement) pairing had no tenant negative (`BnplMerchantEndpointDatabaseTest#theDoorsAreClosed` now addresses another merchant's enablement - `OwnershipIsScopedTest`'s two `OWNER_SCOPED` entries name it). MINOR, recorded for the owner: merchant's reasons are bounded but not screened for instrument shapes (the merchant precedent; bnpl's `BnplReasons` screens); the fee's rounding is the pinned version's (refinement 8). Then COMPLETE. **Multi-instance `PASS`**: ten proposers - one live proposal by the partial unique behind a savepoint; a decision race - one, by the row lock and the conditional write (`proposed_by <> ?` on the approval); ten pinners - one, by the primary key, never a second version; a suspension, a re-pricing or a withdrawal against a standing read - serialised on the merchant and enablement rows' share locks, taken after the purchase's own rows and before any ledger row, no cycle (each operator act holds one row lock); every decision instant the database's after the lock; no JVM state. **Probes**: eleven, all caught (one after the strengthening), restores sha256-verified; `MUTATION_TESTING.md` section 2 +11 rows. **Not run** (owner's instruction): every case of `MerchantBnplEnablementDatabaseTest` and `BnplMerchantEndpointDatabaseTest`, and `MerchantOnboardingDatabaseTest`'s sweep over the pin - with the backlog's two live probes (the four-eyes `CHECK` with the domain check; the pin's key) - owed a first run at the next database pass (`MUTATION_TESTING.md` section 2's not-run paragraph). **Verified**, each from a fresh run after master (`P12-TSK-007`) was merged in - merchant's `BnplEnablementMigrationTest`, `BnplEnablementsTest` and `BnplPricingTest` by name 27 tests across 3 suites, `:merchant:architectureTest` filtered to `MerchantModuleIsolationTest` 2, `:bnpl:test` 55 across 8, `:bnpl:architectureTest` 3, `:app:test` filtered to the bnpl package and the guard suites (route permissions, the OpenAPI contract, the error and audit registries, audit completeness, `MutationDemonstrationTest` after the last row, and the rule suites the filters match) 87 across 21, `:app:architectureTest` 171 across 32 - all 0 failures; the rest of merchant's suites, `build`, every `databaseTest` tier and `kafkaTest` not run (owner's instruction). **Merge-in** (board rule 7): master merged twice more, `P12-TSK-008` then `P12-TSK-009` (records reconciled - this task's block alone in §Just completed, `-008`'s and `-009`'s archived to `TASK_HISTORY`, 299 then 300; phase 9 of 29, M12.2 and M12.3 `CLOSED`); `MerchantFeeSplitTest#thePortBindsAsTheAllocatorsFeeReturn` pins `-009`'s `MerchantFeeReturn` as `(before, refunded) -> returnedFee(uow, purchase, before, refunded)`; re-verified on the final merge - merchant by name 27 across 3, merchant architecture (isolation) 2, `:bnpl:test` 105 across 12, `:bnpl:architectureTest` 3, `:app:test` filtered as above 90 across 22, `:app:architectureTest` 171 across 32, all 0 failures.
 
 **P12-TSK-007 — Checkout completed by a BNPL purchase** — `COMPLETE` (2026-10-17; started by the owner beside `P12-TSK-006` and `-008` — Phase 12 wave A; its dependency `-002` `COMPLETE`; marks no task `READY`: `-008` runs beside it and marks `-009`, and `-010` needs `-006`)
 - **As built** (2026-10-17): checkout `V004` - `checkout_session.financed_by_ref uuid` (the purchase by value), `CHECK (financed_by_ref IS NULL OR (status = 'COMPLETED' AND payment_intent_ref IS NULL))` (never both, never late, never pending), the partial unique `checkout_session_one_session_per_financing`, the edge trigger replaced whole (`OPEN → {PAYMENT_PENDING, COMPLETED, EXPIRED, ABANDONED}`; the financing reference set once and only on `OPEN → COMPLETED`; that edge only with it, no intent, and `OLD.expires_at > statement_timestamp()`), the deferred `checkout_session_financed_beside_its_order` (an edge commits only beside its order), `GRANT UPDATE (financed_by_ref)`; `CheckoutSessionStatus` (`OPEN` reaches `COMPLETED`, `isFinancingEdge`), `CheckoutSession.completeByFinancing(databaseNow, purchase)` / `financingRefusalAt` / `financedByRef` / `completedAs` (`CheckoutCompletion`: `COMPLETED`, `COMPLETED_LATE`, `FINANCED`; `FinancingRefusal`: `NOT_OPEN`, `EXPIRED`), `complete()` held to `PAYMENT_PENDING`; the store's `databaseNow` (its own statement, after the lock) and conditional `completeByFinancing` (re-judging the deadline at the trigger's instant); `CheckoutSessionToken.presented(Sensitive)`; `app`'s `CheckoutSessions.lockForFinancing` (B3) and `completedByFinancing` (the order with the financing entry, `ORDER_CREATED` audited with `financedBy`, `checkout.OrderPaid` `completedAs = FINANCED`, the `financed` meters), bnpl's port `BnplCheckoutSessions` (`read` by token → `Session(sessionRef, merchantRef, gross, expiresAt, open, expired)`; `lockForPurchase` → `Payable` | `NotPayable(NOT_OPEN | EXPIRED)`; `completeByFinancing` → `Completed(orderRef)` | `NotPayable`), `app`'s `CheckoutBnplSessions` wired in `BnplBeans`; the session read's additive `completedAs`; the confirmation refusing a financed session `409 checkout.NotConfirmable` (it was a latent `500`: the paid branch demanded an intent).
@@ -19609,7 +19667,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (a pure engine: F7 binding, F2 in the replay sense; F1, F3, F4, F5, F6, F8 vacuous —
   no state). **Risk**: High. **Cx**: M.
 
-**P12-TSK-010 — The BNPL application at checkout** — `PLANNED`
+**P12-TSK-010 — The BNPL application at checkout** — `READY` (marked by `P12-TSK-006`'s completion gate at its merge-in, 2026-10-17; its dependencies `-001`, `-004`, `-006` and `-007` `COMPLETE`)
 - **Objective**: a customer at an open checkout can apply for a BNPL product, which opens exactly one credit decision
   request for the session's amount through the BNPL origin — one open application per session and per (party,
   product) (B5, `PHASE_12_PLAN.md` §5.1, §7.1 T-app).

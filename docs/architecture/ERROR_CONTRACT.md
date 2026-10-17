@@ -379,7 +379,7 @@ folds into `api.NotFound` exactly as above; the operator learns nothing a custom
 | `merchant.NotKeyable` | 409 | A closed merchant cannot be issued an API key. |
 | `merchant.FeeScheduleNotForward` | 422 | A fee schedule version takes effect forward; it cannot be backdated. |
 | `merchant.FeeCurrencyMismatch` | 422 | The fee schedule's currency does not match. |
-| `merchant.SelfApprovalRefused` | 409 | A payout destination change requires a second approver distinct from its proposer. |
+| `merchant.SelfApprovalRefused` | 409 | A four-eyes change requires a second approver distinct from its proposer. |
 | `merchant.DestinationChangePending` | 409 | A payout destination change is already open for this merchant; withdraw it first. |
 | `merchant.DestinationChangeNotOpen` | 409 | The payout destination change is no longer open to this decision. |
 | `merchant.DestinationNotTokenised` | 422 | The destination grant was refused; obtain a fresh grant and retry. |
@@ -390,6 +390,9 @@ folds into `api.NotFound` exactly as above; the operator learns nothing a custom
 | `merchant.NotSettled` | 409 | This merchant is still owed money or has a payment in flight, so it cannot be closed. |
 | `merchant.PayoutCurrencyMismatch` | 422 | A payout must be in the merchant's settlement currency. |
 | `merchant.PayoutProviderUnavailable` | 503 | Payouts are unavailable right now; retry later. |
+| `merchant.BnplEnablementPending` | 409 | A BNPL enablement is already proposed or active for this merchant. |
+| `merchant.BnplEnablementNotOpen` | 409 | The BNPL enablement is no longer open to this decision. |
+| `merchant.BnplScheduleNotReturning` | 422 | A BNPL fee schedule must return its fee on refund; this schedule retains it. |
 
 `merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
 actually meets: *"make this effective from the first of the month"* is a natural thing to type
@@ -416,6 +419,21 @@ one `api.NotFound`, the merchant surface's standing rule.
   grant shaped like an account number never reaches either: it is `api.ValidationFailed` naming
   `destinationToken`, never the value.
 - Unknown, malformed and another merchant's destination identifiers are one `api.NotFound`.
+
+**The merchant BNPL codes (`P12-TSK-006`; OQ-8).**
+- `merchant.SelfApprovalRefused` is reused - one code for the module's four-eyes refusal - for the
+  proposer of a BNPL enablement approving it; its title was generalised from the payout
+  destination's wording then (the code, the `409` and the meaning unchanged). Unlike the payout
+  destination's, this refusal is recorded `FAILED` in a transaction of its own after the act rolled
+  back (the Phase 11 gate's R4).
+- `merchant.BnplEnablementPending` is the one-live rule: a merchant has at most one proposed or
+  active enablement - decide the proposal, or withdraw the enablement first.
+- `merchant.BnplEnablementNotOpen` is every decision asked of an enablement that has moved on
+  (the `DestinationChangeNotOpen` reasoning: not `merchant.IllegalTransition`, which speaks of
+  the merchant's own status - that one answers a proposal or approval for a closed merchant).
+- `merchant.BnplScheduleNotReturning` (`422`) refuses a fee schedule with any version that
+  retains its fee for a BNPL product: a BNPL fee is pro-rated back on refund (ADR-0105).
+- Unknown and malformed merchant, enablement, product and schedule identifiers are one `api.NotFound`.
 
 **The payout's five codes (`P6-TSK-012`, ADR-0051, ADR-0057).**
 - `merchant.PayoutUnfunded` is `INV-MER-05` refusing a payout the payable cannot fund, judged
