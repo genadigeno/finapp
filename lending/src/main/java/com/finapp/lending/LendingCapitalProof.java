@@ -27,11 +27,15 @@ import lombok.RequiredArgsConstructor;
  *       recorded against that entry, and every recognition's entry touches it. A line no recognition explains - a raw
  *       SQL posting, a second poster - fails the currency; so does a recognition whose credit is missing.
  *   <li><strong>Headroom</strong> - recognised capital less committed and outstanding principal is at least zero at
- *       rest.
+ *       rest; the outstanding term is {@link LendingCapitalHeadroom}'s, so it counts loan, line and - since
+ *       `P12-TSK-005` - BNPL principal ({@code BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE}, by ledger purpose) alike: capital
+ *       recognised from bank evidence = headroom + committed + loan and BNPL principal outstanding (ADR-0104 decision 7,
+ *       the formula versioned by that change). One derivation, never a second copy of the formula here.
  *   <li><strong>The safeguarding adjustment</strong> - {@code lending_funded(c) = principal outstanding + committed}
- *       is published: the term by which a future safeguarding proof (Phase 14/15) subtracts loan-funded wallet money
- *       from customer-funded money. Published, not judged - an amount, so it leaves only through the audited capital
- *       report, never a metric (ADR-0072).
+ *       is published: the term by which a future safeguarding proof (Phase 14/15) subtracts the capital-funded part of
+ *       the platform's liabilities - loan-funded wallet money and BNPL-funded merchant payables - from customer-funded
+ *       money. Published, not judged - an amount, so it leaves only through the audited capital report, never a metric
+ *       (ADR-0072).
  * </ol>
  *
  * <p>Read-only and deciding nothing: a failure is an alert ({@code finapp.lending.capital.proof}), never a correction

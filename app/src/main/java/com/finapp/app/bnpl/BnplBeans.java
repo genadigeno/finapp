@@ -1,9 +1,11 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.bnpl.BnplCapital;
 import com.finapp.bnpl.BnplProductBounds;
 import com.finapp.bnpl.BnplTermsAdministration;
 import com.finapp.bnpl.BnplTermsStore;
 import com.finapp.bnpl.JdbcBnplTermsStore;
+import com.finapp.lending.LendingCapitalHeadroom;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
@@ -20,7 +22,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Wiring for bnpl (`P12-TSK-004`) - the module's first beans: its unit of work, the BNPL terms versions' store, the port
  * {@code app} implements over credit's products (the amount and plan bounds the terms door judges against), the
- * four-eyes administration publishing through the outbox, the BNPL officer's doors and the active-version gauge.
+ * four-eyes administration publishing through the outbox, the BNPL officer's doors and the active-version gauge; and
+ * (`P12-TSK-005`) the capital port over lending's headroom, judged under L6 in bnpl's transaction - its first consumer
+ * the purchase (`P12-TSK-013`).
  */
 @Configuration(proxyBeanMethods = false)
 public class BnplBeans {
@@ -40,6 +44,15 @@ public class BnplBeans {
     @Bean
     BnplProductBounds bnplProductBounds() {
         return new CreditBnplProductBounds();
+    }
+
+    /**
+     * Lending capital as bnpl judges it (`P12-TSK-005`, ADR-0104 decision 3): lending's one headroom - BNPL principal
+     * counted by ledger purpose - under the capital row's lock (L6), in bnpl's own transaction.
+     */
+    @Bean
+    BnplCapital bnplCapital(LendingCapitalHeadroom lendingCapitalHeadroom) {
+        return new LendingBnplCapital(lendingCapitalHeadroom);
     }
 
     @Bean
