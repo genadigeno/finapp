@@ -367,7 +367,10 @@ collected-then-refunded → more excess; refunded-then-collected → nothing lef
 cannot take is held in `BNPL_CREDIT_BALANCE` and refunded at closure or when postable (OQ-13 — but see §8 on
 a `CLOSED` obligation). **Invalid:** a refund row without its entry and adjustment rows; an adjustment that
 cancels a paid amount, or an earlier instalment while a later one still owes principal; Σ refunds above the
-gross; a refund on a `FULLY_REFUNDED` purchase.
+gross; a refund on a `FULLY_REFUNDED` purchase. *(The split is `REFUND_ALLOCATION_ENGINE_V1`'s, built pure by `P12-TSK-009`: `RefundAllocationEngineV1.allocate`
+over the `RefundPosition` derived under B5 then B4, the fee merchant's arithmetic bound in as a parameter; it refuses a
+refund in another currency, not positive or above `G − Σ refunds` with typed reasons and writes nothing - this
+machine's rows and entry are `-021`'s.)*
 
 ### 4.10 BNPL dispute (`bnpl.bnpl_dispute`) — `P12-TSK-023`
 

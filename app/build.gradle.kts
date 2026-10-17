@@ -178,6 +178,9 @@ dependencies {
     // which is exactly what this task removes.
     testImplementation(testFixtures(project(":platform")))
     testImplementation(testFixtures(project(":identity")))
+    // The refund allocator's reference merchant fee arithmetic, proven equal here to merchant's FeeCalculation
+    // (BnplFeeArithmeticAgreesWithMerchantTest, P12-TSK-009) - app is the one module that sees both.
+    testImplementation(testFixtures(project(":bnpl")))
 
     // Architecture rules live here because `app` is the only module that sees every other
     // one — enforcing a boundary requires being able to observe both sides of it. As

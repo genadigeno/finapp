@@ -803,7 +803,10 @@ billings and allocations, plus unbilled instalments' principal).
    between schedule v n and v n+1** (instalments removed from the end, the new last one shortened), with any part of
    `R` beyond the unbilled principal cancelling billed-unpaid principal from the latest billed instalment backwards;
    accrued and billed interest stays owed except at a full cancellation (A11). `P12-TSK-009` proves the rows sum to
-   the reduction exactly (`INV-BNPL-06`).
+   the reduction exactly (`INV-BNPL-06`). *(Read with `P12-TSK-009`'s design, 2026-10-17: that task is the pure allocator, and
+   `recalculateAtInstalment` is out of its scope (its backlog entry), so it proves its own split - Σ cancelled + E = R,
+   latest first, by class (unbilled / billed-unpaid) - and the proof that pay-in-N's version-difference rows sum to that
+   split's unbilled total is `P12-TSK-021`'s, which composes the two.)*
 6. A schedule v n+1 and agreement v n+1 whenever any unbilled instalment is cancelled or shortened.
 7. If every receivable is now zero → closure (`REFUNDED` / `REFUNDED_PARTIALLY_REPAID`), credit balance refunded — in the
    refund's transaction when the excess reached the wallet, else in the transaction that refunds the held credit (OQ-13).

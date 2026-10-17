@@ -18708,7 +18708,7 @@ after `-005` (with `-010`); `-015` after `-014`; `-018` after `-017` and `-008` 
 
 # Phase 12 — Buy Now, Pay Later (BNPL)
 
-Status: `IN_PROGRESS` (2026-10-17; `P12-TSK-001`…`-005`, `-007` and `-008` `COMPLETE`, 7 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 at 1 of 2) *(read "`P12-TSK-001`…`-005` and `-007` `COMPLETE`, 6 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2" until `P12-TSK-008`'s merge-in)* *(read "`P12-TSK-001`…`-004` `COMPLETE`, 4 of 29; M12.1 at 4 of 5" until `P12-TSK-007`'s gate - `P12-TSK-005`'s left it unadvanced)* *(read "`P12-TSK-001`…`-003` `COMPLETE`, 3 of 29; M12.1 at 3 of 5" until `P12-TSK-004`'s gate)* *(read "`P12-TSK-001` and `-002` `COMPLETE`, 2 of 29; M12.1 at 2 of 5" until `P12-TSK-003`'s gate)* *(read "`P12-TSK-001` `COMPLETE`, 1 of 29; M12.1 at 1 of 5" until `P12-TSK-002`'s gate)* *(read `READY` from the transition until `P12-TSK-001`'s gate)* — entry gate passed by the Phase 11 → 12 transition
+Status: `IN_PROGRESS` (2026-10-17; `P12-TSK-001`…`-005`, `-007`, `-008` and `-009` `COMPLETE`, 8 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 `CLOSED` at 2 of 2) *(read "`P12-TSK-001`…`-005`, `-007` and `-008` `COMPLETE`, 7 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2, M12.3 at 1 of 2" until `P12-TSK-009`'s gate)* *(read "`P12-TSK-001`…`-005` and `-007` `COMPLETE`, 6 of 29; M12.1 `CLOSED` at 5 of 5, M12.2 at 1 of 2" until `P12-TSK-008`'s merge-in)* *(read "`P12-TSK-001`…`-004` `COMPLETE`, 4 of 29; M12.1 at 4 of 5" until `P12-TSK-007`'s gate - `P12-TSK-005`'s left it unadvanced)* *(read "`P12-TSK-001`…`-003` `COMPLETE`, 3 of 29; M12.1 at 3 of 5" until `P12-TSK-004`'s gate)* *(read "`P12-TSK-001` and `-002` `COMPLETE`, 2 of 29; M12.1 at 2 of 5" until `P12-TSK-003`'s gate)* *(read "`P12-TSK-001` `COMPLETE`, 1 of 29; M12.1 at 1 of 5" until `P12-TSK-002`'s gate)* *(read `READY` from the transition until `P12-TSK-001`'s gate)* — entry gate passed by the Phase 11 → 12 transition
 ([`reviews/PHASE_11_TO_12_TRANSITION.md`](reviews/PHASE_11_TO_12_TRANSITION.md): Phase 11 confirmed after repair,
 R1–R6 closed in lending `V029` and `V030`), elaborated to task granularity by the same transition: twenty-nine items
 (`P12-TSK-001`…`-026`, `P12-TST-001`, `P12-TST-002`, `P12-DOC-001`) across nine milestones, with `P12-TSK-001` marked
@@ -19503,7 +19503,61 @@ after everything.
 - **Definition of done**: `DOD-FIN` (a pure engine: F7 binding, F2 in the replay sense; F1, F3, F4, F5, F6, F8 vacuous
   — no state). **Risk**: Low. **Cx**: S.
 
-**P12-TSK-009 — The refund allocator and fee pro-rating (pure)** — `READY` (2026-10-17; marked by `P12-TSK-008`'s completion gate - its only dependency)
+**P12-TSK-009 — The refund allocator and fee pro-rating (pure)** — `COMPLETE` (2026-10-17; marked `READY` by `P12-TSK-008`'s completion gate - its only dependency; run beside `P12-TSK-006` in Phase 12 wave A; marks no task `READY` - `P12-TSK-010` is `-006`'s to mark, `P12-TSK-011` needs `-010`) *(read "`IN_PROGRESS`" until its gate)*
+- **As built** (2026-10-17): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when
+  superseded). The code is bnpl's `RefundAllocationEngineV1`, `RefundPosition` (with `RefundPosition.Instalment`),
+  `RefundAllocation` (with `RefundAllocation.Cancellation` and its `Kind`), `RefundAllocationOutcome`,
+  `RefundAllocationRefusal` and `MerchantFeeReturn`; bnpl's first test fixtures, `com.finapp.bnpl.testing.
+  ReferenceMerchantFeeReturn` (`java-test-fixtures` on bnpl, its lockfile gaining only the fixtures' configurations);
+  `app`'s test classpath gains bnpl's fixtures. No migration, port, door, event or meter; `merchant`, `creditmath`
+  and `app` main code untouched. **Design, in brief:** *the function* - `allocate(RefundPosition, R, MerchantFeeReturn)`
+  → sealed `RefundAllocationOutcome`: refused first, typed (`CURRENCY_MISMATCH` - another currency or scale;
+  `REFUND_NOT_POSITIVE`; `REFUND_EXCEEDS_PURCHASE` - `R > G − refundedBefore`, a fully refunded purchase among them);
+  then the instalments walked from the last, each cancelling `min(remaining R, principal − allocated − cancelled)`,
+  `UNBILLED` or `BILLED_UNPAID` by the instalment's billing, `whole` when it takes the instalment's whole unpaid
+  principal (OQ-14's release); `E = R − Σ cancelled`; `r_f` asked of the binding once, `returnedFee(refundedBefore,
+  R)`; the payable debit `R − r_f`; `leavesNoPrincipalUnpaid` (A11's fact - true also when nothing was unpaid before).
+  No division, no rounding, no clock. *The values* - `RefundPosition` is consistent or does not exist (one currency at
+  its scale, `0 ≤ f < G`, `0 ≤ refundedBefore ≤ G`, instalments 1..n summing to `G`, `allocated + cancelled ≤
+  principal`, nothing allocated while unbilled, Σ cancelled ≤ refundedBefore) - an inconsistency is the deriving code's
+  defect (`IllegalArgumentException`), never a refusal; `RefundAllocation` preserves value at construction (Σ
+  cancelled + E = R, sequences strictly descending, `0 ≤ r_f ≤ R`, debit `R − r_f`). `toString`s name engine,
+  sequences, currency and counts only. *One fee arithmetic* - the fee is merchant's `FeeCalculation.returnedFee`
+  under the pinned version; bnpl has no merchant edge, so the arithmetic is a parameter, `MerchantFeeReturn
+  .returnedFee(refundedBefore, refunded)` - exactly `-006`'s `BnplMerchants.returnedFee` less `(uow, purchaseId)`,
+  which `-021` binds; the engine checks the answer's properties (currency and scale, `0 ≤ r_f ≤ R`,
+  `returnedFee(0, refundedBefore) + r_f ≤ f`, `= f` when the refund completes the purchase - an
+  `IllegalStateException` otherwise) and never restates it. The hermetic suites bind `ReferenceMerchantFeeReturn`,
+  which mirrors merchant's twelve-place working scale exactly and is proven equal to `FeeCalculation.returnedFee` by
+  `app`'s `BnplFeeArithmeticAgreesWithMerchantTest` (20,000 generated purchases' refund sequences, three currencies,
+  every policy; the crafted case where a single exact rounding differs; the engine bound to merchant's method directly
+  splitting identically). *Multi-instance* - pure, static, no state: the same inputs give the same bytes in every JVM
+  (a two-JVM digest of 4,000 purchases' refund sequences); the ordering of concurrent refunds is `-021`'s (B5).
+- **Refinements to the wording (and why):** the input is a `RefundPosition` value, not loose arguments - so an
+  inconsistent due state cannot reach the walk, and the client's `R` (refused, typed) is kept apart from the
+  platform's own derived facts (a defect, thrown); the "cumulative-fee function" parameter takes merchant's method's
+  shape `(refundedBefore, refunded) → r_f` rather than `cum(x)`, so production binds `BnplMerchants.returnedFee` with
+  no adapter arithmetic and the differencing stays merchant's (never a second version), the engine checking its
+  telescoping rather than performing it; the "full-cancellation flag" is `leavesNoPrincipalUnpaid`, true also when no
+  principal was unpaid before the refund (so a full refund after every instalment was paid still releases a pay-in-N
+  residual interest - `INV-BNPL-09`'s "nothing stranded"); the "instalments wholly cancelled" are
+  `RefundAllocation.whollyCancelled()`, judged against the instalment's unpaid principal, so a partly paid instalment
+  whose rest is cancelled is whole (ADR-0105 decision 5's "whose whole unpaid principal the refund cancels"); the
+  reference implementation lives in bnpl's new test fixtures (one reference shared by bnpl's suites and `app`'s
+  proof), not in either suite.
+- **Findings for the owner:** (1) **ADR-0105 decision 12's worked table was wrong to the cent** - it rounded the fee
+  shares to whole euros (`cum(30) = round(1.20) = 1.00`, payable `−29.00 → 67.00`; `cum(40) = 2.00`; `cum(70) = 3.00`),
+  whereas `cum_fee` rounds to the currency's minor unit under the pinned policy (merchant's arithmetic): 1.20, 67.20,
+  1.60 / 57.60, 2.80. Corrected in place with an italic note recording the original reading; the full-refund row, the
+  totals (f = 4.00, Σ payable debits = 96.00) and every conclusion stand. (2) `PHASE_12_PLAN.md` §12.6 point 5 assigns
+  to this task the proof that pay-in-N's version-difference rows sum to the reduction, while this entry puts
+  `recalculateAtInstalment` out of scope: this engine proves its own split by class, and the version-difference proof
+  is recorded as `-021`'s (an italic note in the plan). (3) Merchant's twelve-place intermediate (`FeeCalculation
+  .SHARE_SCALE`, `HALF_UP`) is a double rounding: on a gross above about 10^10 minor units (EUR 100,000,000.00) it can
+  answer a minor unit away from an exact single rounding (G = 200,000,000.01, f = 100,000,000.01, a refund of 0.01:
+  merchant 0.00). It is consistent - it still telescopes - and no BNPL product comes near; recorded, not changed
+  (`merchant` is a previous phase's module, and the B7 bound holds under any monotone rounding).
+- **Gate** (2026-10-17): COMPLETE on its first pass. Every acceptance criterion held by a named test: the worked check, `#refundCancelsLatestFirst`, the partly paid instalment, the after-completion all-excess refund and the refusals (`RefundAllocationEngineV1Test`, 20); value preserved, never a paid amount, latest first, the fee telescoping to f and order-independent in total, Σ payable debits ≤ G − f, a full refund leaving nothing unpaid, two JVMs (`RefundAllocationEngineV1PropertiesTest`, 3 - over generated sequences in EUR, JPY and BHD and every rounding policy); the reference equal to merchant's (`app`'s `BnplFeeArithmeticAgreesWithMerchantTest`, 3). Repaired in review before the gate closed: **IMPORTANT** - ADR-0105 decision 12's table rounded the fee shares to whole euros (corrected to the cent; the golden cases compute the corrected figures); **MINOR** - a figure in another currency or scale reached the values as sharedkernel's `CurrencyMismatchException` while every other inconsistency is an `IllegalArgumentException` (now judged explicitly, with cases); **MINOR** - the probe on the no-principal-left fact found the golden suite blind to a full refund with no excess (case added, probe re-performed); **MINOR** (found by the gate's `app` architecture run) - five of the new `MUTATION_TESTING.md` §2 rows named two invariants, or a suffix, in the invariant column, which `MutationDemonstrationTest`'s parser refuses - one invariant per row now, the other named in the probe text, and the suite re-run green. Multi-instance: "Would this remain correct if 10 instances executed it concurrently?" - **`PASS`**: a pure function with no state, clock or I/O, byte-identical across JVMs; concurrent refunds of one purchase are ordered by `-021`'s B5 before a position is derived. Eleven probes caught (`MUTATION_TESTING.md` §2). Verified fresh: bnpl 100, bnpl architecture 3, `app` `com.finapp.app.bnpl.*` 27, `app` architecture 171 (`MutationDemonstrationTest` red on the first run - the §2 rows - repaired and re-run green, 9 of 9), all 0 failures; not run (owner's instruction): `build`, `databaseTest`, `kafkaTest`, previous phases' module suites (`merchant` code untouched, so no merchant class owed a run).
 - **Objective**: a pure, versioned engine splits any merchant refund latest-instalments-first into cancelled principal
   and customer excess, with the merchant fee pro-rated back so that value is preserved and a full refund returns
   exactly the fee (B3, ADR-0105, `INV-BNPL-06`, `-07`, `-09`).
