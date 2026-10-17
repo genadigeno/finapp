@@ -24,6 +24,14 @@ class CheckoutSessionMigrationTest {
     private static final String MIGRATION =
             "db/migration/checkout/V002__create_checkout_session_and_order.sql";
 
+    /**
+     * The migration holding the trigger's CURRENT definition (`P12-TSK-007`): `V004` replaces
+     * `V002`'s function whole, so the edge and set-once guards read it here - the definition the
+     * database runs, not the one it ran first.
+     */
+    private static final String FINANCING =
+            "db/migration/checkout/V004__completed_by_financing.sql";
+
     @Test
     @DisplayName("the status CHECKs are generated from the machine, on all three columns")
     void statusChecksMatchTheEnum() {
@@ -35,11 +43,12 @@ class CheckoutSessionMigrationTest {
     }
 
     @Test
-    @DisplayName("every trigger edge is generated from the machine, and no terminal state has one")
+    @DisplayName("every trigger edge is generated from the machine, and no terminal state has one"
+            + " - in the trigger's current definition (V004)")
     void triggerEdgesMatchTheMachine() {
         for (CheckoutSessionStatus from : CheckoutSessionStatus.values()) {
             if (from.isTerminal()) {
-                assertThat(migration())
+                assertThat(currentTrigger())
                         .as("a terminal state has no trigger edge (%s)", from)
                         .doesNotContain("OLD.status = '" + from.name() + "' AND NEW.status");
                 continue;
@@ -48,7 +57,7 @@ class CheckoutSessionMigrationTest {
                     from.permittedTransitions().stream()
                             .map(to -> "'" + to.name() + "'")
                             .collect(Collectors.joining(", "));
-            assertThat(migration())
+            assertThat(currentTrigger())
                     .as("the trigger's %s edge set is the machine's", from)
                     .contains(
                             "(OLD.status = '" + from.name() + "' AND NEW.status IN (" + targets
@@ -67,6 +76,7 @@ class CheckoutSessionMigrationTest {
                                                         CheckoutSessionStatus.OPEN)))
                 .isFalse();
         assertThat(migration()).doesNotContain("NEW.status IN ('OPEN'");
+        assertThat(currentTrigger()).doesNotContain("NEW.status IN ('OPEN'");
     }
 
     @Test
@@ -77,12 +87,14 @@ class CheckoutSessionMigrationTest {
         // would arrive inside the capture's transaction, after the money had moved.
         assertThat(migration())
                 .contains("(OLD.status = 'EXPIRED' AND NEW.status IN ('COMPLETED_LATE'))");
+        assertThat(currentTrigger())
+                .contains("(OLD.status = 'EXPIRED' AND NEW.status IN ('COMPLETED_LATE'))");
     }
 
     @Test
     @DisplayName("the payment intent reference is SET ONCE - one payment intent per session")
     void thePaymentIntentIsSetOnceInTheTrigger() {
-        assertThat(migration())
+        assertThat(currentTrigger())
                 .contains("IF OLD.payment_intent_ref IS NOT NULL")
                 .contains("NEW.payment_intent_ref IS DISTINCT FROM OLD.payment_intent_ref");
     }
@@ -90,7 +102,7 @@ class CheckoutSessionMigrationTest {
     @Test
     @DisplayName("the offer is frozen: everything but status, its timestamp and the intent ref")
     void theOfferIsFrozen() {
-        assertThat(migration())
+        assertThat(currentTrigger())
                 .contains("NEW.merchant_ref IS DISTINCT FROM OLD.merchant_ref")
                 .contains("NEW.amount_minor IS DISTINCT FROM OLD.amount_minor")
                 .contains("NEW.line_summary IS DISTINCT FROM OLD.line_summary")
@@ -234,6 +246,110 @@ class CheckoutSessionMigrationTest {
     @DisplayName("the guard can actually read the migration")
     void theGuardIsNotVacuous() {
         assertThat(migration()).contains("CREATE TABLE checkout.checkout_session");
+        assertThat(financing()).contains("ADD COLUMN financed_by_ref uuid");
+    }
+
+    // ----------------------------------------------------------------- P12-TSK-007 (V004)
+
+    @Test
+    @DisplayName("V004 replaces the trigger's function whole")
+    void theFinancingMigrationIsTheTriggersCurrentDefinition() {
+        assertThat(statementsOf(financing()))
+                .contains(
+                        "CREATE OR REPLACE FUNCTION"
+                                + " checkout.checkout_session_permits_only_machine_edges()");
+        assertThat(currentTrigger()).contains("RETURN NEW;");
+    }
+
+    @Test
+    @DisplayName("THE FINANCING EDGE BESIDE ITS EVIDENCE: OPEN -> COMPLETED requires the financing"
+            + " reference, no intent, and the deadline not passed on the database clock")
+    void theFinancingEdgeRequiresItsEvidence() {
+        assertThat(
+                        CheckoutSessionStatus.isFinancingEdge(
+                                CheckoutSessionStatus.OPEN, CheckoutSessionStatus.COMPLETED))
+                .isTrue();
+        assertThat(currentTrigger())
+                .contains("IF OLD.status = 'OPEN' AND NEW.status = 'COMPLETED' THEN")
+                .contains(
+                        "IF NEW.financed_by_ref IS NULL OR NEW.payment_intent_ref IS NOT NULL"
+                                + " THEN")
+                .contains("IF OLD.expires_at <= statement_timestamp() THEN");
+        // Every other edge into COMPLETED is a capture's: only OPEN's is the financing edge.
+        for (CheckoutSessionStatus from : CheckoutSessionStatus.values()) {
+            if (from != CheckoutSessionStatus.OPEN) {
+                assertThat(
+                                CheckoutSessionStatus.isFinancingEdge(
+                                        from, CheckoutSessionStatus.COMPLETED))
+                        .as("%s -> COMPLETED is not the financing edge", from)
+                        .isFalse();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the financing reference is SET ONCE, and only by the financing edge")
+    void theFinancingReferenceIsSetOnceAndOnlyOnItsEdge() {
+        assertThat(currentTrigger())
+                .contains("IF OLD.financed_by_ref IS NOT NULL")
+                .contains("NEW.financed_by_ref IS DISTINCT FROM OLD.financed_by_ref")
+                .contains("IF OLD.financed_by_ref IS NULL AND NEW.financed_by_ref IS NOT NULL")
+                .contains("AND NOT (OLD.status = 'OPEN' AND NEW.status = 'COMPLETED')");
+    }
+
+    @Test
+    @DisplayName("NEVER BOTH, NEVER LATE: a financed session is COMPLETED without an intent, by"
+            + " CHECK - so there is no COMPLETED_LATE by financing")
+    void aFinancedSessionIsCompletedWithoutAnIntent() {
+        assertThat(statementsOf(financing()))
+                .contains(
+                        "CHECK (financed_by_ref IS NULL OR (status = 'COMPLETED' AND"
+                                + " payment_intent_ref IS NULL))");
+    }
+
+    @Test
+    @DisplayName("one session per purchase, by a partial unique index - V003's shape for intents")
+    void oneSessionPerPurchase() {
+        assertThat(statementsOf(financing()))
+                .contains("CREATE UNIQUE INDEX checkout_session_one_session_per_financing")
+                .contains("WHERE financed_by_ref IS NOT NULL");
+    }
+
+    @Test
+    @DisplayName("a session completed by financing commits only beside its order - deferred")
+    void aFinancedSessionCommitsBesideItsOrder() {
+        String statements = statementsOf(financing());
+        assertThat(statements)
+                .contains("CREATE CONSTRAINT TRIGGER checkout_session_financed_beside_its_order")
+                .contains("DEFERRABLE INITIALLY DEFERRED")
+                .contains("WHEN (OLD.status = 'OPEN' AND NEW.status = 'COMPLETED')")
+                .contains("FROM checkout.checkout_order o WHERE o.session_ref = NEW.id");
+        // Over the function BODIES, not the file: the column's own COMMENT names the purchase's
+        // table by value, which is the reference travelling as data rather than a read.
+        String bodies =
+                java.util.Arrays.stream(statements.split("\\$\\$"))
+                        .filter(part -> part.contains("BEGIN"))
+                        .collect(Collectors.joining("\n"));
+        assertThat(bodies).as("the guard reads the two function bodies").contains("BEGIN");
+        assertThat(bodies)
+                .as("no cross-schema read: the purchase's half is bnpl's (ADR-0029)")
+                .doesNotContain("bnpl.")
+                .doesNotContain("ledger.")
+                .doesNotContain("merchant.");
+    }
+
+    @Test
+    @DisplayName("the financing reference's grant arrives with its column - and nothing wider")
+    void theFinancingGrantIsTheOneColumn() {
+        assertThat(
+                        financing()
+                                .lines()
+                                .map(String::trim)
+                                .filter(line -> line.startsWith("GRANT "))
+                                .toList())
+                .containsExactly(
+                        "GRANT UPDATE (financed_by_ref) ON checkout.checkout_session TO"
+                                + " finapp_app;");
     }
 
     /**
@@ -281,12 +397,38 @@ class CheckoutSessionMigrationTest {
     }
 
     private static String migration() {
+        return read(MIGRATION);
+    }
+
+    private static String financing() {
+        return read(FINANCING);
+    }
+
+    /** The trigger function as the database now runs it: `V004`'s definition, statements only. */
+    private static String currentTrigger() {
+        String text = statementsOf(financing());
+        int start =
+                text.indexOf(
+                        "CREATE OR REPLACE FUNCTION"
+                                + " checkout.checkout_session_permits_only_machine_edges()");
+        assertThat(start).as("V004 redefines the trigger function").isNotNegative();
+        return text.substring(start, text.indexOf("$$;", start));
+    }
+
+    /** {@code text} with every {@code --} comment stripped. */
+    private static String statementsOf(String text) {
+        return text.lines()
+                .map(line -> line.replaceFirst("--.*$", ""))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private static String read(String resource) {
         try (InputStream migration =
                 CheckoutSessionMigrationTest.class
                         .getClassLoader()
-                        .getResourceAsStream(MIGRATION)) {
+                        .getResourceAsStream(resource)) {
             if (migration == null) {
-                throw new IllegalStateException("Migration not on the classpath: " + MIGRATION);
+                throw new IllegalStateException("Migration not on the classpath: " + resource);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8)
                     .replace("\r\n", "\n");

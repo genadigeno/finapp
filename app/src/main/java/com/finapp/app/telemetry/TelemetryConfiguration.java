@@ -362,7 +362,7 @@ class TelemetryConfiguration {
     /**
      * The checkout surface's meters (`P6-TSK-008`): how the platform's offers END. Eager and
      * unconditional for the reason above — a deployment with no checkout traffic publishes
-     * four healthy zeros rather than four absences, and {@code completed_late} is precisely a
+     * five healthy zeros rather than five absences, and {@code completed_late} is precisely a
      * number an operator wants to alert on BEFORE it has ever been non-zero.
      */
     @Bean

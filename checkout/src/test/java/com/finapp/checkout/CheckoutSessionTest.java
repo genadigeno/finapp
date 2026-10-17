@@ -66,7 +66,9 @@ class CheckoutSessionTest {
                 landed++;
             }
         }
-        assertThat(landed).as("six edges: 3 + 2 + 1").isEqualTo(6);
+        assertThat(landed)
+                .as("seven edges: 4 + 2 + 1 - OPEN -> COMPLETED by financing since P12-TSK-007")
+                .isEqualTo(7);
     }
 
     @Test
@@ -239,6 +241,106 @@ class CheckoutSessionTest {
                 .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
     }
 
+    // ----------------------------------------------------------------- by financing (P12-TSK-007)
+
+    @Test
+    @DisplayName("completeByFinancing from OPEN only: the financing reference set, no intent,"
+            + " COMPLETED, stamped at the database instant it was judged on")
+    void completeByFinancingFromOpenOnly() {
+        UUID purchase = UUID.randomUUID();
+        Instant databaseNow = NOW.plusSeconds(60);
+        CheckoutSession financed = open().completeByFinancing(databaseNow, purchase);
+
+        assertThat(financed.status()).isEqualTo(CheckoutSessionStatus.COMPLETED);
+        assertThat(financed.financedByRef()).contains(purchase);
+        assertThat(financed.paymentIntentRef()).as("intent-less").isEmpty();
+        assertThat(financed.statusChangedAt()).isEqualTo(databaseNow);
+        assertThat(financed.completedAs()).contains(CheckoutCompletion.FINANCED);
+
+        for (CheckoutSessionStatus from : CheckoutSessionStatus.values()) {
+            if (from == CheckoutSessionStatus.OPEN) {
+                continue;
+            }
+            CheckoutSession session = sessionIn(from);
+            assertThat(session.financingRefusalAt(NOW))
+                    .as("%s is not financeable", from)
+                    .contains(FinancingRefusal.NOT_OPEN);
+            assertThatThrownBy(() -> session.completeByFinancing(NOW, purchase))
+                    .as("%s -> COMPLETED by financing is refused", from)
+                    .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("the deadline is judged on the DATABASE instant given, exclusive at expires_at -"
+            + " never the instance's clock")
+    void theFinancingDeadlineIsTheDatabaseInstant() {
+        CheckoutSession open = open();
+        assertThat(open.financingRefusalAt(DEADLINE.minusNanos(1000))).isEmpty();
+        assertThat(open.financingRefusalAt(DEADLINE)).contains(FinancingRefusal.EXPIRED);
+        assertThat(open.financingRefusalAt(DEADLINE.plusSeconds(5)))
+                .contains(FinancingRefusal.EXPIRED);
+        assertThatThrownBy(() -> open.completeByFinancing(DEADLINE, UUID.randomUUID()))
+                .as("still OPEN by its row, dead by the database clock")
+                .isInstanceOf(CheckoutSessionExpiredException.class);
+        // The session was opened by an instance whose clock reads NOW; a database clock 5 s
+        // behind it still admits the financing up to the deadline and stamps no earlier than
+        // birth (the P1-TSK-031 floor).
+        CheckoutSession behind = open.completeByFinancing(NOW.minusSeconds(5), UUID.randomUUID());
+        assertThat(behind.statusChangedAt()).isEqualTo(open.createdAt());
+    }
+
+    @Test
+    @DisplayName("a capture never takes OPEN -> COMPLETED: complete() is PAYMENT_PENDING's only")
+    void aCaptureNeverCompletesAnOpenSession() {
+        assertThatThrownBy(() -> open().complete(CLOCK))
+                .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
+        assertThat(sessionIn(CheckoutSessionStatus.PAYMENT_PENDING).complete(CLOCK).completedAs())
+                .contains(CheckoutCompletion.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("a financed session is terminal and can never be late, pending or paid twice -"
+            + " the constructor holds V004's CHECK")
+    void aFinancedSessionIsCoherent() {
+        CheckoutSession financed = open().completeByFinancing(NOW, UUID.randomUUID());
+        assertThat(financed.status().isTerminal()).isTrue();
+        assertThatThrownBy(() -> financed.completeByFinancing(NOW, UUID.randomUUID()))
+                .as("set once: a second purchase cannot finance a financed session")
+                .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
+        for (CheckoutSessionStatus status :
+                java.util.EnumSet.complementOf(
+                        java.util.EnumSet.of(CheckoutSessionStatus.COMPLETED))) {
+            assertThatThrownBy(() -> rehydrated(status, java.util.Optional.empty(), true))
+                    .as("financed and %s", status)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThatThrownBy(
+                        () ->
+                                rehydrated(
+                                        CheckoutSessionStatus.COMPLETED,
+                                        java.util.Optional.of(UUID.randomUUID()),
+                                        true))
+                .as("financed AND paid by an intent - never both")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(
+                        rehydrated(CheckoutSessionStatus.COMPLETED, java.util.Optional.empty(), true)
+                                .completedAs())
+                .contains(CheckoutCompletion.FINANCED);
+    }
+
+    @Test
+    @DisplayName("completedAs is derived for every state: the two captures, the financing, and"
+            + " nothing while unpaid")
+    void completedAsIsDerivedForEveryState() {
+        for (CheckoutSessionStatus status : CheckoutSessionStatus.values()) {
+            java.util.Optional<CheckoutCompletion> ending = sessionIn(status).completedAs();
+            assertThat(ending.isPresent()).as("%s", status).isEqualTo(status.isPaid());
+        }
+        assertThat(sessionIn(CheckoutSessionStatus.COMPLETED_LATE).completedAs())
+                .contains(CheckoutCompletion.COMPLETED_LATE);
+    }
+
     // ----------------------------------------------------------------- coherence
 
     @Test
@@ -319,6 +421,27 @@ class CheckoutSessionTest {
                 status == CheckoutSessionStatus.OPEN
                         ? java.util.Optional.empty()
                         : java.util.Optional.of(UUID.randomUUID()),
+                java.util.Optional.empty(),
+                status,
+                born.expiresAt(),
+                born.createdAt(),
+                born.statusChangedAt());
+    }
+
+    /** A row as storage could hand one back, with the given intent and financing reference. */
+    private static CheckoutSession rehydrated(
+            CheckoutSessionStatus status, java.util.Optional<UUID> intent, boolean financed) {
+        CheckoutSession born = open();
+        return CheckoutSession.rehydrate(
+                born.id(),
+                born.merchantRef(),
+                born.amount(),
+                born.lineSummary(),
+                born.feeScheduleVersionRef(),
+                born.tokenHash(),
+                born.algorithm(),
+                intent,
+                financed ? java.util.Optional.of(UUID.randomUUID()) : java.util.Optional.empty(),
                 status,
                 born.expiresAt(),
                 born.createdAt(),
@@ -328,7 +451,12 @@ class CheckoutSessionTest {
     private static CheckoutSession move(CheckoutSession session, CheckoutSessionStatus to) {
         return switch (to) {
             case PAYMENT_PENDING -> session.confirm(CLOCK, UUID.randomUUID());
-            case COMPLETED -> session.complete(CLOCK);
+            // Two producers of one state (P12-TSK-007): a financing from OPEN, a capture from
+            // anywhere else - and the capture refuses every state but PAYMENT_PENDING itself.
+            case COMPLETED ->
+                    session.status() == CheckoutSessionStatus.OPEN
+                            ? session.completeByFinancing(NOW, UUID.randomUUID())
+                            : session.complete(CLOCK);
             case COMPLETED_LATE -> session.completeLate(CLOCK);
             case EXPIRED -> session.expire(CLOCK);
             case ABANDONED -> session.abandon(CLOCK);

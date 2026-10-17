@@ -462,7 +462,7 @@ actions, as themselves.
 |---|---|---|
 | `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
 | `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
-| `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
+| `checkout.OrderCreated` | No | A capture or a BNPL financing completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it - and, for a financing, the purchase. |
 | `checkout.CheckoutSessionExpired` | No | The expiry sweeper ended a checkout session whose offer had run out; the record names the session and the state it expired from. |
 | `checkout.CheckoutSessionAbandoned` | **Yes** | A merchant withdrew a checkout session before it was paid; the record names the session and the merchant, and the reason is required. |
 

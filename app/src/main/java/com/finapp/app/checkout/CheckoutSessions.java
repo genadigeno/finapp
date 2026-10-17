@@ -2,11 +2,13 @@ package com.finapp.app.checkout;
 
 import com.finapp.app.telemetry.CheckoutMeters;
 import com.finapp.checkout.CheckoutAuditAction;
+import com.finapp.checkout.CheckoutCompletion;
 import com.finapp.checkout.CheckoutSession;
 import com.finapp.checkout.CheckoutSessionId;
 import com.finapp.checkout.CheckoutSessionStatus;
 import com.finapp.checkout.CheckoutSessionStore;
 import com.finapp.checkout.CheckoutSessionToken;
+import com.finapp.checkout.FinancingRefusal;
 import com.finapp.checkout.Order;
 import com.finapp.checkout.OrderStore;
 import com.finapp.merchant.FeeScheduleVersion;
@@ -418,7 +420,7 @@ public final class CheckoutSessions {
                         Optional.of(
                                 "order=" + order.id() + ", session=" + session.id()
                                         + ", entry=" + capturedEntryRef
-                                        + ", completedAs=" + moved.get().status())));
+                                        + ", completedAs=" + endingOf(moved.get()))));
         // THE MOVED SESSION, not the one read (P6-DOC-001): completedAs is the ending this
         // transition made. Given the row as it was read, the event announced PAYMENT_PENDING
         // or EXPIRED - never COMPLETED or COMPLETED_LATE - to every consumer of a paid order.
@@ -433,6 +435,155 @@ public final class CheckoutSessions {
                         : CheckoutMeters.Outcome.COMPLETED,
                 Duration.between(session.createdAt(), moved.get().statusChangedAt()));
         return Optional.of(order);
+    }
+
+    // ----------------------------------------------------------------- by financing
+
+    /**
+     * B3's judgement (`P12-TSK-007`, PHASE_12_PLAN.md section 7.2): the session row
+     * {@code FOR UPDATE} on the caller's connection, then the database clock read <strong>as its
+     * own statement after the lock</strong>, then the aggregate's judgement - nothing written.
+     *
+     * @param refusal empty when the session may be completed by financing now
+     */
+    public record FinancingJudgement(CheckoutSession session, Optional<FinancingRefusal> refusal) {
+
+        public FinancingJudgement {
+            Objects.requireNonNull(session, "session must not be null");
+            Objects.requireNonNull(refusal, "refusal must not be null");
+        }
+    }
+
+    /** What a completion by financing answers: the order it bore, or why nothing was written. */
+    public sealed interface FinancingCompletion {
+
+        /** The session is {@code COMPLETED} by financing and {@code order} exists. */
+        record Financed(Order order) implements FinancingCompletion {}
+
+        /** Nothing was written. */
+        record Refused(FinancingRefusal reason) implements FinancingCompletion {}
+    }
+
+    /**
+     * Locks the session and judges whether it can be completed by financing (`P12-TSK-007`) -
+     * BNPL's B3. The lock is held to the caller's commit; the judgement is on the database clock
+     * read after it, never on this instance's clock, and never on an instant a waiting lock
+     * statement fixed before its wait.
+     *
+     * @throws UnknownCheckoutSessionException no session has {@code id}
+     */
+    public FinancingJudgement lockForFinancing(Connection unitOfWork, CheckoutSessionId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        CheckoutSession session =
+                sessions.findByIdForUpdate(unitOfWork, id)
+                        .orElseThrow(UnknownCheckoutSessionException::new);
+        Instant databaseNow = sessions.databaseNow(unitOfWork);
+        return new FinancingJudgement(session, session.financingRefusalAt(databaseNow));
+    }
+
+    /**
+     * A BNPL purchase financed the sale: the session {@code OPEN → COMPLETED} by financing and
+     * its order born - <strong>in the purchase's own transaction</strong> (`P12-TSK-007`,
+     * ADR-0101, {@code INV-BNPL-03}, {@code INV-MER-06}; the caller is {@code P12-TSK-013}'s T-pur
+     * through bnpl's {@code BnplCheckoutSessions}).
+     *
+     * <p><strong>Intent-less.</strong> No payment intent, no attempt, no rail: the session's
+     * financing reference is the purchase, set once, and the order's {@code captured_entry_ref}
+     * is the financing entry. The order's {@code UNIQUE (session_ref)} is the second arbiter
+     * behind the conditional write, so ten completions of one session bear one order.
+     *
+     * <p><strong>Judged three times, refused once.</strong> The session is locked (re-entrant
+     * when B3 already holds it), judged on the database clock read after the lock, and written
+     * conditionally by a statement that judges the deadline again at its own instant - the one
+     * `V004`'s trigger judges. Any refusal writes nothing, and the caller rolls back whole: a
+     * rollback leaves the session {@code OPEN}.
+     *
+     * <p>The order is audited ({@code ORDER_CREATED}, the capture's own action), announced
+     * ({@code checkout.OrderPaid}, {@code completedAs = FINANCED}) and counted
+     * ({@code finapp.checkout.session{outcome=financed}} and its conversion age) on the acting
+     * transition only, exactly as a capture's.
+     *
+     * @throws UnknownCheckoutSessionException no session has {@code sessionId}
+     */
+    public FinancingCompletion completedByFinancing(
+            Connection unitOfWork,
+            CheckoutSessionId sessionId,
+            UUID purchaseRef,
+            UUID entryRef,
+            Correlation correlation) {
+        Objects.requireNonNull(purchaseRef, "purchaseRef must not be null");
+        Objects.requireNonNull(entryRef, "entryRef must not be null");
+        Objects.requireNonNull(correlation, "correlation must not be null");
+        FinancingJudgement judged = lockForFinancing(unitOfWork, sessionId);
+        if (judged.refusal().isPresent()) {
+            return new FinancingCompletion.Refused(judged.refusal().get());
+        }
+        CheckoutSession session = judged.session();
+        // The database instant the edge is stamped at, read under the lock this transaction
+        // holds; the aggregate judges the deadline against it once more.
+        Instant databaseNow = sessions.databaseNow(unitOfWork);
+        if (session.financingRefusalAt(databaseNow).isPresent()) {
+            return new FinancingCompletion.Refused(FinancingRefusal.EXPIRED);
+        }
+        CheckoutSession financed = session.completeByFinancing(databaseNow, purchaseRef);
+        if (!sessions.completeByFinancing(unitOfWork, session, financed)) {
+            // The row is locked by this transaction, so nothing else moved it: the write's own
+            // judgement found the deadline passed between the read above and its statement.
+            return new FinancingCompletion.Refused(FinancingRefusal.EXPIRED);
+        }
+
+        Order order = Order.paid(ids, clock, financed, entryRef);
+        orders.insert(unitOfWork, order);
+        Correlation caused = withCause(correlation);
+
+        Actor actor = SecurityContext.require();
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        actor,
+                        Instant.now(clock),
+                        CheckoutAuditAction.ORDER_CREATED,
+                        ORDER_TARGET_TYPE,
+                        order.id().value().toString(),
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        caused.correlationId(),
+                        // The chain's last link, in the trail: order -> the financing entry ->
+                        // the purchase that financed it. Identifiers only (INV-AUD-02).
+                        Optional.of(
+                                "order=" + order.id() + ", session=" + session.id()
+                                        + ", entry=" + entryRef
+                                        + ", financedBy=" + purchaseRef
+                                        + ", completedAs=" + CheckoutCompletion.FINANCED)));
+        announceOrder(unitOfWork, order, financed, caused);
+        // ON THE ACTING TRANSITION ONLY, inside the transaction - the capture's seam and its
+        // recorded compromise (CheckoutMeters): a rolled-back purchase overcounts by one.
+        meters.converted(
+                CheckoutMeters.Outcome.FINANCED,
+                Duration.between(session.createdAt(), financed.statusChangedAt()));
+        return new FinancingCompletion.Financed(order);
+    }
+
+    /**
+     * A root flow causes itself (the sweeper's {@code resolvedCorrelation} idiom): every
+     * envelope field is mandatory ({@code INV-EVT-03}).
+     */
+    private static Correlation withCause(Correlation correlation) {
+        return correlation.cause().isPresent()
+                ? correlation
+                : correlation.causing(
+                        com.finapp.sharedkernel.correlation.CausationId.of(
+                                correlation.correlationId().value()));
+    }
+
+    /**
+     * How a paid session ended (`P12-TSK-007`): {@code COMPLETED}, {@code COMPLETED_LATE} or
+     * {@code FINANCED} - the one vocabulary for the event, the trail and the view; a session not
+     * paid answers its status.
+     */
+    static String endingOf(CheckoutSession session) {
+        return session.completedAs().map(Enum::name).orElse(session.status().name());
     }
 
     // ----------------------------------------------------------------- abandon
@@ -549,7 +700,9 @@ public final class CheckoutSessions {
                         .with("capturedEntryId", order.capturedEntryRef().toString())
                         // NOT the line summary: what somebody bought is not for every consumer
                         // of this event (DATA_CLASSIFICATION's reasoning for that column).
-                        .with("completedAs", session.status().name())
+                        // P12-TSK-007: COMPLETED, COMPLETED_LATE or FINANCED - one more VALUE
+                        // of the field Phase 6 published; event version 1 unchanged.
+                        .with("completedAs", endingOf(session))
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
     }
@@ -569,6 +722,23 @@ public final class CheckoutSessions {
     public Optional<CheckoutSession> ownedBy(
             Connection unitOfWork, MerchantId merchant, CheckoutSessionId id) {
         return sessions.findOwnedBy(unitOfWork, merchant.value(), id);
+    }
+
+    /**
+     * The session a presented token opens, or empty (`P12-TSK-007`) - {@link #byToken}'s read
+     * without the refusal, for bnpl's port. Resolved by hash, never logged.
+     */
+    public Optional<CheckoutSession> findByToken(
+            Connection unitOfWork, CheckoutSessionToken presented) {
+        return sessions.findByToken(unitOfWork, presented);
+    }
+
+    /**
+     * The database's clock, read as its own statement (`P12-TSK-007`) - the clock bnpl's reading
+     * of a session's deadline is judged on, never an instance's.
+     */
+    public Instant databaseNow(Connection unitOfWork) {
+        return sessions.databaseNow(unitOfWork);
     }
 
     /** The order a session produced, or empty when it died unpaid. */

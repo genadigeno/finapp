@@ -340,6 +340,8 @@ class CheckoutSessionDatabaseTest {
                         session.tokenHash(),
                         session.algorithm(),
                         Optional.of(IDS.next()),
+                        // P12-TSK-007: no financing reference - this row is a capture's.
+                        Optional.empty(),
                         CheckoutSessionStatus.COMPLETED,
                         session.expiresAt(),
                         session.createdAt(),

@@ -161,3 +161,23 @@ None of them changes the model; each corrects an answer.
 - **The merchant's standing is read `FOR SHARE`**, so a close committing mid-confirmation is
   waited for rather than read around — and a close refuses while the merchant is owed money or a
   payment crediting it is in flight (`merchant.NotSettled`).
+
+## Amendment — `P12-TSK-007` (2026-10-17): completed by financing
+
+ADR-0101 (`Proposed`) adds **one edge and no state**: a BNPL purchase completes an `OPEN` session
+`OPEN → COMPLETED` "by financing", in the purchase's own transaction (checkout `V004`). The decision
+here — one order per session, born in the completion's transaction, no unpaid order — is unchanged and
+now holds for two producers:
+
+- **Intent-less.** §3's "one payment intent per session" stays true of payments; a financed session
+  carries none. Its `financed_by_ref` (the purchase, by value) is set once, never beside an intent
+  (`CHECK`), and one purchase finances one session (a partial unique index, §3's shape for intents).
+- **The order's entry is the financing entry**, so §6's chain reads order → entry → the purchase's
+  financing (F1) as it reads order → entry → ADR-0050 §3's four lines for a capture.
+- **§5's race rule is not widened.** Expiry gates the financing like any dispatch — judged under the
+  session's row lock on the database clock, refused at or after `expires_at` at every rank — and there
+  is **no `COMPLETED_LATE` by financing**: no money can land late, because the financing exists only in
+  the commit that completes the session. `EXPIRED → COMPLETED_LATE` stays a capture's.
+- **The confirmation's instrument seam (§2, ADR-0059 §6) does not route BNPL.** `"BNPL"` is an unknown
+  instrument at the confirmation door; a BNPL choice is the application door's command (`P12-TSK-010`).
+  A confirmation that loses to a financing is answered `checkout.NotConfirmable`.

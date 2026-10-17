@@ -129,7 +129,14 @@ public class CheckoutService {
              * session's own credentials; additive on the contract; the render is a
              * registered {@code expose()} site.
              */
-            String authorizationHandle) {
+            String authorizationHandle,
+            /**
+             * How the session was paid (`P12-TSK-007`): {@code COMPLETED}, {@code COMPLETED_LATE}
+             * or {@code FINANCED} - a BNPL purchase financed it, intent-less, and {@code orderId}
+             * names the one order either way; absent while the session is unpaid. Additive on
+             * the contract.
+             */
+            String completedAs) {
 
         /**
          * The identifier and the state only - never the amount, never the line summary
@@ -369,19 +376,14 @@ public class CheckoutService {
         // THE INSTRUMENT CHOICE, exactly one (P7-TSK-011): a registered method, or the
         // payer's own wallet - which the platform RESOLVES, never a named account. A body
         // saying both or neither is malformed, refused before anything is read.
-        boolean fromWallet = "WALLET".equals(body.instrument());
-        if (body.instrument() != null && !fromWallet) {
-            throw new ApiException(
-                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
-                    "A confirmation named an unknown instrument choice",
-                    "instrument must be \"WALLET\" or absent.");
-        }
-        if (fromWallet == (body.paymentMethodId() != null)) {
-            throw new ApiException(
-                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
-                    "A confirmation names exactly one instrument",
-                    "send paymentMethodId, or instrument=\"WALLET\" - not both, not neither.");
-        }
+        //
+        // "BNPL" IS NOT A PAYMENT CONFIRMATION (P12-TSK-007, PHASE_12_PLAN.md section 3.3 read
+        // and confirmed): a BNPL choice is the application door's command (P12-TSK-010) - a
+        // credit decision, an offer, an acceptance that finances the sale and completes the
+        // session intent-less - never a payment intent or a "BNPL rail" (section 2.1). So it is
+        // an unknown instrument here, the same 422 platform.ValidationFailed as any other,
+        // before anything is read.
+        instrumentChoice(body);
         // THE ONE UNWRAP ON THE INBOUND PATH: the presented value goes straight into the
         // token type, which hashes it to look the session up and never surrenders it again.
         CheckoutSessionToken presented = CheckoutSessionToken.of(body.sessionToken().expose());
@@ -486,6 +488,46 @@ public class CheckoutService {
     }
 
     /**
+     * The instrument choice, parsed and refused before anything is read (`P7-TSK-011`; its own
+     * method since `P12-TSK-007`, so the door's refusal of {@code "BNPL"} is held by a hermetic
+     * test): {@code true} for the payer's own wallet, {@code false} for a registered method.
+     *
+     * @throws ApiException {@code platform.ValidationFailed} for any other instrument -
+     *     {@code "BNPL"} included - or for both or neither
+     */
+    static boolean instrumentChoice(ConfirmSessionRequest body) {
+        boolean fromWallet = "WALLET".equals(body.instrument());
+        if (body.instrument() != null && !fromWallet) {
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                    "A confirmation named an unknown instrument choice",
+                    "instrument must be \"WALLET\" or absent.");
+        }
+        if (fromWallet == (body.paymentMethodId() != null)) {
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                    "A confirmation names exactly one instrument",
+                    "send paymentMethodId, or instrument=\"WALLET\" - not both, not neither.");
+        }
+        return fromWallet;
+    }
+
+    /**
+     * A session a BNPL purchase financed is not a payment to converge on (`P12-TSK-007`,
+     * PHASE_12_PLAN.md section 5.2a): paid, but by no payment - there is no intent - so a card or
+     * wallet confirmation that lost to the financing is refused by checkout's existing
+     * {@code NotConfirmable}. Asked before the paid branch, which would demand the intent the
+     * financed session never carries - a {@code 500} for the customer whose card lost.
+     *
+     * @throws CheckoutSessionNotOpenException the session was completed by financing
+     */
+    static void refuseAFinancedSession(CheckoutSession session) {
+        if (session.financedByRef().isPresent()) {
+            throw new CheckoutSessionNotOpenException(session.status());
+        }
+    }
+
+    /**
      * The confirming transaction - run once more if it lost the open to a concurrent writer.
      *
      * <p>The loser's transaction rolls back whole: an intent it opened, the pin it wrote and a
@@ -573,6 +615,9 @@ public class CheckoutService {
             }
             return new Opened(session.id(), intent, false);
         }
+        // A SESSION A BNPL PURCHASE FINANCED (P12-TSK-007): NotConfirmable, before the paid
+        // branch below demands an intent it never carries.
+        refuseAFinancedSession(session);
         if (session.status().isPaid()) {
             // THE RETRY OF A PURCHASE THAT WORKED. Nothing is confirmed and nothing chained:
             // the order is created in the capture's own transaction, so a paid session means
@@ -763,7 +808,8 @@ public class CheckoutService {
                         .orderOf(unitOfWork, session.id())
                         .map(order -> order.id().value().toString())
                         .orElse(null),
-                authorizationHandle);
+                authorizationHandle,
+                session.completedAs().map(Enum::name).orElse(null));
     }
 
     private UUID partyOf(Connection unitOfWork, Session current) {

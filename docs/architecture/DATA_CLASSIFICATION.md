@@ -953,6 +953,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `checkout_session` | `expires_at` | `CONFIDENTIAL` | When an offer stops; with `created_at`, how long a customer was given |
 | `checkout_session` | `created_at` | `CONFIDENTIAL` | When one person started buying something |
 | `checkout_session` | `status_changed_at` | `CONFIDENTIAL` | Dates the purchase's last move |
+| `checkout_session` | `financed_by_ref` | `RESTRICTED-FINANCIAL` | The BNPL purchase that financed the sale, by value (`P12-TSK-007`, checkout `V004`) — `payment_intent_ref`'s reasoning: an identifier of a financed commercial fact, and of the customer receivable born with it, inherits the sensitivity of what it names. Set once, never beside an intent |
 | `checkout_session_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `checkout_session_event` | `session_id` | `INTERNAL` | An identifier of a thing |
 | `checkout_session_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |

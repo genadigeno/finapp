@@ -48,6 +48,17 @@ import java.util.UUID;
  * {@code INV-HIST-04}) — so a schedule version created while a customer is at the payment page
  * reprices nothing.
  *
+ * <h2>Completed by financing (`P12-TSK-007`, ADR-0101, {@code INV-BNPL-03})</h2>
+ *
+ * <p>{@link #completeByFinancing} is the intent-less {@code OPEN → COMPLETED} edge a BNPL
+ * purchase takes: from {@code OPEN} only, and only before the deadline <em>on the database
+ * clock read under the session's row lock</em> — the instant is the caller's to read after the
+ * lock, so this aggregate judges it rather than its own instance clock. It sets
+ * {@link #financedByRef} once, never beside a payment intent, and never reaches
+ * {@code COMPLETED_LATE}: the financing exists only in the commit that completes the session, so
+ * no money can land late. {@link #complete} stays the capture's, from {@code PAYMENT_PENDING}
+ * only.
+ *
  * <p>Immutable; every transition returns a new instance.
  */
 public final class CheckoutSession {
@@ -63,6 +74,7 @@ public final class CheckoutSession {
     private final Sensitive<String> tokenHash;
     private final String algorithm;
     private final Optional<UUID> paymentIntentRef;
+    private final Optional<UUID> financedByRef;
     private final CheckoutSessionStatus status;
     private final Instant expiresAt;
     private final Instant createdAt;
@@ -77,6 +89,7 @@ public final class CheckoutSession {
             Sensitive<String> tokenHash,
             String algorithm,
             Optional<UUID> paymentIntentRef,
+            Optional<UUID> financedByRef,
             CheckoutSessionStatus status,
             Instant expiresAt,
             Instant createdAt,
@@ -97,7 +110,15 @@ public final class CheckoutSession {
         this.algorithm = Objects.requireNonNull(algorithm, "algorithm must not be null");
         this.paymentIntentRef =
                 Objects.requireNonNull(paymentIntentRef, "paymentIntentRef must not be null");
+        this.financedByRef = Objects.requireNonNull(financedByRef, "financedByRef must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
+        if (financedByRef.isPresent()
+                && (status != CheckoutSessionStatus.COMPLETED || paymentIntentRef.isPresent())) {
+            // `V004`'s CHECK, for the writer that never ran it: a financed session is COMPLETED
+            // and carries no payment intent - never both, never late, never pending.
+            throw new IllegalArgumentException(
+                    "a financed checkout session is COMPLETED and carries no payment intent");
+        }
         this.expiresAt = Objects.requireNonNull(expiresAt, "expiresAt must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         if (!expiresAt.isAfter(createdAt)) {
@@ -135,6 +156,7 @@ public final class CheckoutSession {
                 token.hash(),
                 CheckoutSessionToken.ALGORITHM,
                 Optional.empty(),
+                Optional.empty(),
                 CheckoutSessionStatus.OPEN,
                 expiresAt,
                 now,
@@ -151,6 +173,7 @@ public final class CheckoutSession {
             Sensitive<String> tokenHash,
             String algorithm,
             Optional<UUID> paymentIntentRef,
+            Optional<UUID> financedByRef,
             CheckoutSessionStatus status,
             Instant expiresAt,
             Instant createdAt,
@@ -164,6 +187,7 @@ public final class CheckoutSession {
                 tokenHash,
                 algorithm,
                 paymentIntentRef,
+                financedByRef,
                 status,
                 expiresAt,
                 createdAt,
@@ -192,9 +216,78 @@ public final class CheckoutSession {
         return moved.withIntent(intentRef);
     }
 
-    /** The capture landed in time: {@code PAYMENT_PENDING → COMPLETED}. */
+    /**
+     * The capture landed in time: {@code PAYMENT_PENDING → COMPLETED}.
+     *
+     * <p><strong>From {@code PAYMENT_PENDING} only</strong> (`P12-TSK-007`): the machine admits
+     * {@code OPEN → COMPLETED} since a financing may take it, and a capture is never that
+     * edge — a session a capture completes always carries the intent the capture landed on.
+     */
     public CheckoutSession complete(Clock clock) {
+        if (status != CheckoutSessionStatus.PAYMENT_PENDING) {
+            throw new IllegalCheckoutSessionTransitionException(
+                    status, CheckoutSessionStatus.COMPLETED);
+        }
         return transitioned(CheckoutSessionStatus.COMPLETED, clock);
+    }
+
+    /**
+     * Why this session cannot be completed by financing at {@code databaseNow}, or empty when it
+     * can (`P12-TSK-007`) — the one judgement {@link #completeByFinancing} applies and a caller
+     * asks first, so a refusal is a value and nothing is written.
+     *
+     * @param databaseNow the database's clock, read <strong>after</strong> the session's row
+     *     lock was taken — an instant read before it would judge a deadline the wait may have
+     *     crossed
+     */
+    public Optional<FinancingRefusal> financingRefusalAt(Instant databaseNow) {
+        Objects.requireNonNull(databaseNow, "databaseNow must not be null");
+        if (status != CheckoutSessionStatus.OPEN) {
+            return Optional.of(FinancingRefusal.NOT_OPEN);
+        }
+        if (!databaseNow.isBefore(expiresAt)) {
+            return Optional.of(FinancingRefusal.EXPIRED);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * A BNPL purchase financed the sale: {@code OPEN → COMPLETED} by financing (`P12-TSK-007`,
+     * ADR-0101, {@code INV-BNPL-03}).
+     *
+     * <p>Intent-less: {@link #paymentIntentRef} stays empty and {@link #financedByRef} is set,
+     * once, to the purchase. Stamped at {@code databaseNow} — the instant the deadline was judged
+     * against — never earlier than the offer's birth.
+     *
+     * @param databaseNow the database's clock read under the session's row lock
+     * @param financedByRef the BNPL purchase that financed the sale, by value (ADR-0029)
+     * @throws IllegalCheckoutSessionTransitionException the session has left {@code OPEN}
+     * @throws CheckoutSessionExpiredException the deadline has passed on the database clock
+     */
+    public CheckoutSession completeByFinancing(Instant databaseNow, UUID financedByRef) {
+        Objects.requireNonNull(financedByRef, "financedByRef must not be null");
+        Optional<FinancingRefusal> refusal = financingRefusalAt(databaseNow);
+        if (refusal.isPresent()) {
+            if (refusal.get() == FinancingRefusal.EXPIRED) {
+                throw new CheckoutSessionExpiredException();
+            }
+            throw new IllegalCheckoutSessionTransitionException(
+                    status, CheckoutSessionStatus.COMPLETED);
+        }
+        return new CheckoutSession(
+                id,
+                merchantRef,
+                amount,
+                lineSummary,
+                feeScheduleVersionRef,
+                tokenHash,
+                algorithm,
+                Optional.empty(),
+                Optional.of(financedByRef),
+                CheckoutSessionStatus.COMPLETED,
+                expiresAt,
+                createdAt,
+                databaseNow.isBefore(createdAt) ? createdAt : databaseNow);
     }
 
     /**
@@ -235,6 +328,7 @@ public final class CheckoutSession {
                 tokenHash,
                 algorithm,
                 paymentIntentRef,
+                financedByRef,
                 to,
                 expiresAt,
                 createdAt,
@@ -263,6 +357,7 @@ public final class CheckoutSession {
                 tokenHash,
                 algorithm,
                 Optional.of(intentRef),
+                financedByRef,
                 status,
                 expiresAt,
                 createdAt,
@@ -333,6 +428,30 @@ public final class CheckoutSession {
 
     public Optional<UUID> paymentIntentRef() {
         return paymentIntentRef;
+    }
+
+    /**
+     * The BNPL purchase that financed this session, by value (`P12-TSK-007`) — present exactly
+     * when the session was completed by financing, and then never beside a payment intent.
+     */
+    public Optional<UUID> financedByRef() {
+        return financedByRef;
+    }
+
+    /**
+     * How this session was paid, or empty while it is not ({@link CheckoutCompletion}) — derived
+     * from the state and the financing reference, never stored.
+     */
+    public Optional<CheckoutCompletion> completedAs() {
+        return switch (status) {
+            case COMPLETED ->
+                    Optional.of(
+                            financedByRef.isPresent()
+                                    ? CheckoutCompletion.FINANCED
+                                    : CheckoutCompletion.COMPLETED);
+            case COMPLETED_LATE -> Optional.of(CheckoutCompletion.COMPLETED_LATE);
+            case OPEN, PAYMENT_PENDING, EXPIRED, ABANDONED -> Optional.empty();
+        };
     }
 
     public CheckoutSessionStatus status() {

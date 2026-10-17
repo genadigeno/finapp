@@ -10,10 +10,21 @@ import java.util.stream.Collectors;
  * §2, {@code INV-LIFE-01}):
  *
  * <pre>
- * OPEN            → PAYMENT_PENDING | EXPIRED | ABANDONED
+ * OPEN            → PAYMENT_PENDING | COMPLETED (by financing) | EXPIRED | ABANDONED
  * PAYMENT_PENDING → COMPLETED | EXPIRED
  * EXPIRED         → COMPLETED_LATE
  * </pre>
+ *
+ * <h2>One edge, two producers, never both (`P12-TSK-007`, ADR-0101, {@code INV-BNPL-03})</h2>
+ *
+ * <p>{@code COMPLETED} is reached two ways and the edge says which. From {@code PAYMENT_PENDING}
+ * it is a capture landing on the session's one payment intent; from {@code OPEN} it is a BNPL
+ * purchase <em>financing</em> the sale — intent-less, the session's {@code financed_by_ref} set
+ * once in the same write, the order born with the financing entry. No new state: a financed
+ * session is as paid as a captured one, and the merchant sees one order whatever paid for it.
+ * {@link #isFinancingEdge} names the edge so the aggregate, the store and `V004`'s trigger can
+ * each hold it to its evidence; a financed session never reaches {@code COMPLETED_LATE} — no
+ * money lands late, because the financing exists only in the commit that completes the session.
  *
  * <p>Declared on the enum so the machine is readable in one place and a test can enumerate every
  * transition rather than the ones somebody remembered. The schema {@code CHECK}s are generated
@@ -57,7 +68,10 @@ public enum CheckoutSessionStatus {
     /** The customer confirmed; a payment intent is dispatched and the provider is deciding. */
     PAYMENT_PENDING,
 
-    /** The payment captured in time; the order exists; the merchant is credited. */
+    /**
+     * The sale is paid for and the order exists: the payment captured in time, or — from
+     * {@code OPEN}, by financing (`P12-TSK-007`) — a BNPL purchase financed it.
+     */
     COMPLETED,
 
     /**
@@ -77,7 +91,7 @@ public enum CheckoutSessionStatus {
     /** The states reachable from this one. */
     public Set<CheckoutSessionStatus> permittedTransitions() {
         return switch (this) {
-            case OPEN -> EnumSet.of(PAYMENT_PENDING, EXPIRED, ABANDONED);
+            case OPEN -> EnumSet.of(PAYMENT_PENDING, COMPLETED, EXPIRED, ABANDONED);
             case PAYMENT_PENDING -> EnumSet.of(COMPLETED, EXPIRED);
             case EXPIRED -> EnumSet.of(COMPLETED_LATE);
             case COMPLETED, COMPLETED_LATE, ABANDONED ->
@@ -91,6 +105,15 @@ public enum CheckoutSessionStatus {
 
     public boolean canTransitionTo(CheckoutSessionStatus target) {
         return permittedTransitions().contains(target);
+    }
+
+    /**
+     * Whether {@code from → to} is the edge only a financing may take: {@code OPEN → COMPLETED}
+     * (`P12-TSK-007`). Every other edge into {@code COMPLETED} is a capture's; this one carries
+     * no payment intent and must carry its financing reference, at every rank.
+     */
+    public static boolean isFinancingEdge(CheckoutSessionStatus from, CheckoutSessionStatus to) {
+        return from == OPEN && to == COMPLETED;
     }
 
     /** Whether a session in this state may still start something — a confirmation, a dispatch. */
