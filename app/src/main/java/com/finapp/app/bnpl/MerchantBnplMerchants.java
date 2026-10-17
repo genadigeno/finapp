@@ -50,6 +50,14 @@ final class MerchantBnplMerchants implements BnplMerchants {
     }
 
     @Override
+    public boolean coversFee(Connection unitOfWork, UUID merchantRef, BnplProduct product, Money gross) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(gross, "gross must not be null");
+        Optional<MerchantId> merchant = merchant(merchantRef);
+        return merchant.isPresent() && pricing.coversFee(unitOfWork, merchant.get(), product(product), gross);
+    }
+
+    @Override
     public Optional<LedgerAccountId> payableAccount(Connection unitOfWork, UUID merchantRef, CurrencyCode currency) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(merchantRef, "merchantRef must not be null");

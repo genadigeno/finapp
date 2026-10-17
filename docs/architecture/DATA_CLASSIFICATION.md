@@ -3461,6 +3461,31 @@ template versions `INTERNAL`.
 | `bnpl_terms_version_event` | `reason` | `RESTRICTED-PII` | Free prose by a person - screened for instrument shapes |
 | `bnpl_terms_version_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_terms_version_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `bnpl_application` | `id` | `CONFIDENTIAL` | A customer's BNPL application reference - *added by `P12-TSK-010`* |
+| `bnpl_application` | `party_id` | `CONFIDENTIAL` | The applicant |
+| `bnpl_application` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_application` | `plan` | `INTERNAL` | A closed plan code |
+| `bnpl_application` | `status` | `INTERNAL` | The machine's state |
+| `bnpl_application` | `closure_reason` | `INTERNAL` | A closed reason code (`CLOSED_UNDECIDED` only) |
+| `bnpl_application` | `checkout_session_id` | `CONFIDENTIAL` | The checkout session, by value - never its token |
+| `bnpl_application` | `merchant_id` | `CONFIDENTIAL` | The merchant the session pays, by value |
+| `bnpl_application` | `decision_request_id` | `CONFIDENTIAL` | Credit's decision request, by value |
+| `bnpl_application` | `terms_version_id` | `INTERNAL` | The terms version active at submission |
+| `bnpl_application` | `submitted_by` | `CONFIDENTIAL` | The customer who submitted it |
+| `bnpl_application` | `submitted_by_type` | `INTERNAL` | A closed actor type (`CUSTOMER`) |
+| `bnpl_application` | `submitted_at` | `INTERNAL` | System time, stamped by the trigger after the act's locks |
+| `bnpl_application` | `closed_at` | `INTERNAL` | System time, stamped by the trigger at the terminal edge |
+| `bnpl_application` | `next_step_at` | `INTERNAL` | The origination sweep's permit (`P12-TSK-011`) |
+| `bnpl_application` | `correlation_id` | `INTERNAL` | The submission's correlation - credit's request carries the same |
+| `bnpl_application_event` | `id` | `INTERNAL` | Generated |
+| `bnpl_application_event` | `application_id` | `CONFIDENTIAL` | The application it moved |
+| `bnpl_application_event` | `from_status` | `INTERNAL` | The machine edge |
+| `bnpl_application_event` | `to_status` | `INTERNAL` | The machine edge |
+| `bnpl_application_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `bnpl_application_event` | `actor` | `CONFIDENTIAL` | Who moved it - the customer, or the system |
+| `bnpl_application_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `bnpl_application_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_application_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 

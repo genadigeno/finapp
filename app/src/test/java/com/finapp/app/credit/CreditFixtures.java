@@ -50,6 +50,14 @@ public final class CreditFixtures {
     }
 
     /**
+     * A BNPL product's credit policy in force - proposed by one person, activated by another (`P12-TSK-010` - the BNPL
+     * application's suites; no migration activates one).
+     */
+    public static void bnplInForce(com.finapp.credit.CreditProduct product) {
+        CreditWorld.bnplInForce(product);
+    }
+
+    /**
      * Steps {@code request} through credit's progress - over the simulated sources, never deciding - until it is
      * {@code status}, at most six steps; the status it reached.
      */

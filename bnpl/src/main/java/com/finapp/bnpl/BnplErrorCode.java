@@ -54,7 +54,35 @@ public enum BnplErrorCode implements ErrorCode {
      * No terms version of the product is {@code ACTIVE}, so it is not offered (ADR-0102 decision 4, the production-closed
      * rule): met from the application door (`P12-TSK-010`) through {@code BnplTermsAdministration#pinActive}.
      */
-    PRODUCT_NOT_OFFERED("bnpl.ProductNotOffered", 422, "The BNPL product is not offered.");
+    PRODUCT_NOT_OFFERED("bnpl.ProductNotOffered", 422, "The BNPL product is not offered."),
+
+    /**
+     * The checkout session already has an open BNPL application, or the customer an open application - or credit
+     * request - for the product (`P12-TSK-010`; {@code INV-BNPL-03}).
+     */
+    APPLICATION_OPEN(
+            "bnpl.ApplicationOpen",
+            409,
+            "A BNPL application is already open for this checkout or product; wait for its decision or withdraw it."),
+
+    /** The application is past withdrawal - decided or closed, or credit has evaluated its request (`P12-TSK-010`). */
+    APPLICATION_NOT_WITHDRAWABLE(
+            "bnpl.ApplicationNotWithdrawable", 409, "The BNPL application can no longer be withdrawn."),
+
+    /**
+     * The checkout's merchant may not offer the product now - not trading, not BNPL-enabled, or the product not priced
+     * (`P12-TSK-010`). Never which: the customer cannot act on the merchant's configuration.
+     */
+    MERCHANT_NOT_ENABLED("bnpl.MerchantNotEnabled", 422, "The merchant does not offer this BNPL product."),
+
+    /**
+     * The checkout session cannot be financed: no open, unexpired session answers the token, it is not in the product's
+     * currency, or the sale does not cover the merchant's fee (`P12-TSK-010`).
+     */
+    SESSION_NOT_ELIGIBLE("bnpl.SessionNotEligible", 422, "The checkout session is not eligible for BNPL."),
+
+    /** The purchase amount is outside the product's bounds - credit's (`P12-TSK-010`). The detail names the bound. */
+    AMOUNT_OUT_OF_RANGE("bnpl.AmountOutOfRange", 422, "The purchase amount is outside the BNPL product's bounds.");
 
     private final String code;
     private final int status;

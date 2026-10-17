@@ -1,0 +1,100 @@
+package com.finapp.bnpl;
+
+import com.finapp.platform.security.Actor;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import java.sql.Connection;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Persistence for the BNPL applications (`P12-TSK-010`, {@code bnpl V003}): the machine row ({@code bnpl_application},
+ * its status, closure reason and permit the only columns that move) and its history ({@code bnpl_application_event},
+ * append-only). Every read a customer reaches is owner-scoped: the party is a predicate of the statement, so another
+ * party's application is the same empty answer as an absent one. The origination sweep's claim and its system lock are
+ * `P12-TSK-011`'s.
+ */
+public interface BnplApplicationStore {
+
+    /**
+     * Births the application {@code SUBMITTED}; {@code false} - nothing written - when the checkout session already has
+     * an open application ({@code bnpl_application_one_open_per_session}, over {@code SUBMITTED}, {@code AWAITING_DECISION}
+     * and {@code OFFERED}), or the party one for the product ({@code bnpl_application_one_open_per_party_product}, the
+     * backstop beneath credit's one-open-request partial unique). A conflict is nothing written, never an aborted
+     * transaction.
+     */
+    boolean insert(Connection unitOfWork, NewApplication application);
+
+    /** Moves the application {@code from -> to}, conditional on {@code from}; {@code false} when it was not there. */
+    boolean transition(
+            Connection unitOfWork, BnplApplicationId id, BnplApplicationStatus from, BnplApplicationStatus to);
+
+    /** Appends one history row; the database stamps the time. */
+    void appendEvent(Connection unitOfWork, HistoryRow row);
+
+    /** {@code party}'s application {@code id}, unlocked. */
+    Optional<BnplApplication> ownedBy(Connection unitOfWork, BnplApplicationId id, UUID party);
+
+    /** B1: {@code party}'s application {@code id}, {@code FOR UPDATE}. */
+    Optional<BnplApplication> lockOwnedBy(Connection unitOfWork, BnplApplicationId id, UUID party);
+
+    // ------------------------------------------------------------------ rows
+
+    /** An application at birth - its choices and references, never a figure. */
+    record NewApplication(
+            BnplApplicationId id,
+            UUID party,
+            BnplProduct product,
+            BnplPlan plan,
+            UUID checkoutSession,
+            UUID merchant,
+            UUID decisionRequest,
+            BnplTermsVersionId termsVersion,
+            Actor submittedBy,
+            CorrelationId correlation) {
+
+        public NewApplication {
+            Objects.requireNonNull(id, "id must not be null");
+            Objects.requireNonNull(party, "party must not be null");
+            Objects.requireNonNull(product, "product must not be null");
+            Objects.requireNonNull(plan, "plan must not be null");
+            Objects.requireNonNull(checkoutSession, "checkoutSession must not be null");
+            Objects.requireNonNull(merchant, "merchant must not be null");
+            Objects.requireNonNull(decisionRequest, "decisionRequest must not be null");
+            Objects.requireNonNull(termsVersion, "termsVersion must not be null");
+            Objects.requireNonNull(submittedBy, "submittedBy must not be null");
+            Objects.requireNonNull(correlation, "correlation must not be null");
+        }
+
+        @Override
+        public String toString() {
+            return "NewApplication[" + id.value() + ", " + product + ", " + plan + "]";
+        }
+    }
+
+    /** One edge of the history; {@code reason} a code, never free text. */
+    record HistoryRow(
+            UUID eventId,
+            BnplApplicationId application,
+            Optional<BnplApplicationStatus> from,
+            BnplApplicationStatus to,
+            String reason,
+            Actor actor,
+            CorrelationId correlation) {
+
+        public HistoryRow {
+            Objects.requireNonNull(eventId, "eventId must not be null");
+            Objects.requireNonNull(application, "application must not be null");
+            Objects.requireNonNull(from, "from must not be null");
+            Objects.requireNonNull(to, "to must not be null");
+            Objects.requireNonNull(reason, "reason must not be null");
+            Objects.requireNonNull(actor, "actor must not be null");
+            Objects.requireNonNull(correlation, "correlation must not be null");
+        }
+
+        @Override
+        public String toString() {
+            return "HistoryRow[" + application.value() + ", " + from.map(Enum::name).orElse("-") + " -> " + to + "]";
+        }
+    }
+}

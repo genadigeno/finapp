@@ -843,6 +843,28 @@ class OwnershipIsScopedTest {
                                         + " transaction just inserted (the submission's SUBMITTED -> AWAITING_DECISION);"
                                         + " the move is conditional on its from-state, lending V004's trigger beneath.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/bnpl-applications/{id} - the identifier from the path, and a.party_id = ?"
+                                        + " in the statement is the session's own party; another party's application and an"
+                                        + " absent one are one empty answer, the 404 (P12-TSK-010).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/bnpl-applications/{id}/withdrawal - ownedBy's statement plus FOR UPDATE OF"
+                                        + " a (B1), the withdrawal's serialization point (P12-TSK-010).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.transition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplApplicationStore.lockOwnedBy",
+                                    "P12-TSK-010. The application id comes from lockOwnedBy (the withdrawal), which this"
+                                        + " transaction holds FOR UPDATE under party_id = ?, or from the application this"
+                                        + " transaction just inserted (the submission's SUBMITTED -> AWAITING_DECISION);"
+                                        + " the move is conditional on its from-state, bnpl V003's trigger beneath.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.lockClaimed",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1285,6 +1307,21 @@ class OwnershipIsScopedTest {
                                         + " the effective periods, the ACTIVE status or the FOR SHARE pin answered, or the"
                                         + " operator's own request on a door behind @RequiresPermission(BNPL_ADMINISTER);"
                                         + " terms have no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplTermsStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-004; seen since P12-TSK-010 widened TENANT_PACKAGES to bnpl (its SQL is the"
+                                        + " same-class row helper's). A read of platform-wide product configuration by"
+                                        + " version id, behind @RequiresPermission(BNPL_ADMINISTER); terms have no owner"
+                                        + " to scope by.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplTermsStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-004; seen since P12-TSK-010's widening. A1: the version row FOR UPDATE under"
+                                        + " the product's advisory lock (namespace 12), the decision's own row, behind"
+                                        + " @RequiresPermission(BNPL_ADMINISTER); terms have no owner to scope by.")),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
@@ -3489,6 +3526,12 @@ class OwnershipIsScopedTest {
                             "com.finapp.credit.JdbcDecisionRequestStore.ownedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.ownedBy",
+                            "com.finapp.app.bnpl.BnplApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.lockOwnedBy",
+                            "com.finapp.app.bnpl.BnplApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
                             "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
                     Map.entry(
@@ -3708,9 +3751,14 @@ class OwnershipIsScopedTest {
      * widening does not cover is stated rather than implied: a merchant's LEDGER rows are
      * reached by {@code owner_ref}, a column the ledger module classifies for every owner
      * alike, and a customer module's by-value reads are the same blind spot left for later.
+     *
+     * <p>Three since `P12-TSK-010`: {@code bnpl} records the merchant a BNPL application's checkout pays
+     * ({@code bnpl_application.merchant_id}, by value), and its purchase, financing and merchant refunds
+     * (`-013`, `-021`) are tenant-scoped by that column ({@code INV-MER-01}) - so the widening follows the
+     * column into {@code bnpl} rather than the column being renamed out of the guard's sight.
      */
     private static final Set<String> TENANT_PACKAGES =
-            Set.of("com.finapp.merchant", "com.finapp.checkout");
+            Set.of("com.finapp.merchant", "com.finapp.checkout", "com.finapp.bnpl");
 
     /** The tenant columns, as a statement spells them - never as prose about them. */
     private static final java.util.regex.Pattern TENANT_COLUMN =

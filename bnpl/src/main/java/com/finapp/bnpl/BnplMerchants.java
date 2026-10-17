@@ -44,6 +44,14 @@ public interface BnplMerchants {
      */
     Standing standing(Connection unitOfWork, UUID merchantRef, BnplProduct product);
 
+    /**
+     * Whether a sale of {@code gross} covers the merchant's fee for {@code product} now (`P12-TSK-010`, the application's
+     * eligibility read; ADR-0058's rule) - judged as {@link #pinFee} judges it, under the same share locks, and with
+     * nothing written: no pin. {@code false} when the merchant may not offer the product now. A reading for the
+     * application door; the purchase's {@link #pinFee} re-judges.
+     */
+    boolean coversFee(Connection unitOfWork, UUID merchantRef, BnplProduct product, Money gross);
+
     /** The merchant's {@code MERCHANT_PAYABLE} ledger account in {@code currency}, unlocked, or empty. */
     Optional<LedgerAccountId> payableAccount(Connection unitOfWork, UUID merchantRef, CurrencyCode currency);
 

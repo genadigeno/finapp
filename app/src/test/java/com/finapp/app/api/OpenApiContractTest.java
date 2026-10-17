@@ -367,6 +367,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications",
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/loan-applications/{id}/withdrawal",
+                        // P12-TSK-010: the customer's BNPL applications at checkout (a MULTI_FACTOR session to apply,
+                        // 202, the session named by its token in the body; the owner's own application only; the
+                        // withdrawal under the conditional step-up).
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-applications",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-applications/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-applications/{id}/withdrawal",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

@@ -1246,6 +1246,11 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.TermsInvalid` | 422 | The terms are not complete or not within bounds. |
 | `bnpl.TermsNotAmortising` | 422 | The terms cannot schedule every purchase within the product's bounds; nothing was proposed. |
 | `bnpl.ProductNotOffered` | 422 | The BNPL product is not offered. |
+| `bnpl.ApplicationOpen` | 409 | A BNPL application is already open for this checkout or product; wait for its decision or withdraw it. |
+| `bnpl.ApplicationNotWithdrawable` | 409 | The BNPL application can no longer be withdrawn. |
+| `bnpl.MerchantNotEnabled` | 422 | The merchant does not offer this BNPL product. |
+| `bnpl.SessionNotEligible` | 422 | The checkout session is not eligible for BNPL. |
+| `bnpl.AmountOutOfRange` | 422 | The purchase amount is outside the BNPL product's bounds. |
 
 The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
 `/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route
@@ -1262,6 +1267,26 @@ recorded `FAILED`; `ReasonRequired` a missing, unbounded or instrument-bearing r
 version id, an unknown product, or no version in force at the instant asked. `ProductNotOffered` is the closed product's
 answer, declared here and met from the application door (`P12-TSK-010`) through `BnplTermsAdministration#pinActive`
 while no version is `ACTIVE` - production's state until two persons activate one (ADR-0101 decision 14).
+
+The application doors (`P12-TSK-010`, `BNPL_LIFECYCLES.md` §4.2; `POST /v1/me/bnpl-applications` (`202`), `GET
+/v1/me/bnpl-applications/{id}`, `POST /v1/me/bnpl-applications/{id}/withdrawal`; a `MULTI_FACTOR` session to apply -
+`identity.AssuranceRequired` otherwise - and the conditional step-up to withdraw; keyed `bnpl.application:CUSTOMER:<id>`
+and `bnpl.application-withdrawal:CUSTOMER:<id>`; the session named by its TOKEN in the body, never echoed): `ProductNotOffered`
+(first raised here) refuses an unknown product, a product with no `ACTIVE` terms version, or a plan the active version does
+not offer; a plan of another product, or none, is `api.ValidationFailed`. `SessionNotEligible` refuses a token that opens no
+session, a session no longer `OPEN` or past its deadline on the database clock (one answer - no oracle over tokens), one not
+in the product's currency, or a sale that does not cover the merchant's fee (ADR-0058, judged without pinning).
+`AmountOutOfRange` refuses a gross outside credit's product bounds - judged by bnpl against credit's published bounds
+before credit is asked, and credit's own bound refusal mapped to it; the detail names the bound, never the figure.
+`MerchantNotEnabled` refuses a session whose merchant is not trading, not BNPL-enabled or has the product unpriced - never
+saying which. `ApplicationOpen` refuses a second open application for the checkout session (another customer's included -
+`bnpl V003`'s partial unique over `SUBMITTED`, `AWAITING_DECISION`, `OFFERED`) or for the party and product (credit's
+one-open-request partial unique, met first, and `bnpl V003`'s backstop beneath it); the losing transaction's credit request
+rolls back with it. Credit's refusals pass through unchanged: `credit.ApplicantNotEligible` (standing - bnpl judges it first
+through credit's own rule), `consent.ConsentRequired`, `credit.ProductNotOffered` (no BNPL credit policy in force).
+`ApplicationNotWithdrawable` refuses a withdrawal of an application no longer `AWAITING_DECISION`, or whose credit request
+credit has already evaluated (nothing is moved - the decision will arrive, and an offer may be declined). `NotFound` answers
+another party's application exactly as an unknown or malformed id, on the read and the withdrawal alike.
 
 ## 3a. Rejection at the boundary
 

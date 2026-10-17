@@ -47,6 +47,11 @@
  * ({@code P12-TSK-005}): the port {@link com.finapp.bnpl.BnplCapital} - lending's one headroom, BNPL principal counted
  * by ledger purpose, judged under the capital row's lock (L6) in bnpl's own transaction - returning bnpl's own
  * {@link com.finapp.bnpl.BnplHeadroom}; {@code app}'s {@code LendingBnplCapital} implements it, and its first consumer
- * is the purchase ({@code P12-TSK-013}). No schedule.
+ * is the purchase ({@code P12-TSK-013}). And the application ({@code P12-TSK-010}, {@code V003}):
+ * {@link com.finapp.bnpl.BnplApplications} - a customer's application at checkout opening exactly one credit decision
+ * request from the BNPL origin for the session's gross, one open application per session and per party and product,
+ * withdrawn under B1 - over {@link com.finapp.bnpl.BnplApplicationStore} and the ports
+ * {@link com.finapp.bnpl.BnplCreditDecisions} and {@link com.finapp.bnpl.BnplPartyStanding} beside the checkout, merchant
+ * and terms ports; the customer's doors in {@code app}. No schedule.
  */
 package com.finapp.bnpl;

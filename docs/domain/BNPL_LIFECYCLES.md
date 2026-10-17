@@ -184,7 +184,7 @@ kind, OQ-4); the servicing zone is `UTC` only (A22); pay-in-N's plans are an asc
 first-period floor 1-28 days (A6). The reader the application and the offer pin is `BnplTermsAdministration#pinActive`
 (the `ACTIVE` row `FOR SHARE`; none → `422 bnpl.ProductNotOffered`).
 
-### 4.2 BNPL application (`bnpl.bnpl_application`) — `P12-TSK-010`, offered `-011`
+### 4.2 BNPL application (`bnpl.bnpl_application`) — built by `P12-TSK-010` (`bnpl V003`), offered `-011`
 
 ```
  (keyed submission) SUBMITTED ──credit request opened, same tx──> AWAITING_DECISION ──decision APPROVED, offerable──> OFFERED
@@ -212,6 +212,28 @@ which the partial unique over open states admits for the same session. The appli
 admitted only while `AWAITING_DECISION`. **Invalid:** anything out of a terminal; `SUBMITTED → OFFERED |
 DECLINED`; `→ OFFERED` without its offer beside it, or on a decision not `APPROVED` (the domain's alone —
 the decision is credit's); `DECLINED → OFFERED`; a second open application for one session.
+
+**As built (`P12-TSK-010`, 2026-10-17).** `bnpl V003` holds the machine at three ranks: `BnplApplications`' conditional
+edges under B1 (the withdrawal), the every-writer edge trigger `bnpl_application_permits_only_machine_edges` (born
+`SUBMITTED` on its product's `ACTIVE` terms version with a plan that version offers; identity frozen; only the edges above;
+a permit-only update only while `AWAITING_DECISION`; the closure reason said exactly for `CLOSED_UNDECIDED` by `CHECK`;
+every stamp `clock_timestamp()` after the act's locks, the closure clamped forward of the submission) and the status
+`CHECK`, beside the deferred never-rests-`SUBMITTED` trigger and the append-only `bnpl_application_event`. The arbiters:
+the session's partial unique over `SUBMITTED`, `AWAITING_DECISION`, `OFFERED`; a backstop partial unique per (party,
+product) over `SUBMITTED`, `AWAITING_DECISION` beneath credit's one-open-request partial unique (lending `V004`'s); `UNIQUE
+(decision_request_id)`; the store's insert is `ON CONFLICT DO NOTHING` against both partial uniques, so a loser is
+`409 bnpl.ApplicationOpen` and rolls back whole - its credit request with it. Read here one way and settled by the build:
+**the application holds no figure** (the backlog's "requested amount frozen by column grant" would have made the machine
+row a money table, which may never take its status `UPDATE` - `INV-BNPL-01`, `BnplSchemaHasNoMutableMoneyTest`); the amount
+is the session's gross and credit's request's. The submission's order is T-app's: the standing (`BnplPartyStanding`), the
+session by its token (one answer - `422 bnpl.SessionNotEligible` - for an unknown token, a session not `OPEN` or past its
+deadline on the database clock, and one in another currency), credit's bounds (`422 bnpl.AmountOutOfRange`, before credit
+is asked), the merchant's standing and the sale covering its fee (`BnplMerchants.standing`, `coversFee` - merchant's
+`FeeCalculation`, judged without pinning; `422 bnpl.MerchantNotEnabled`, `422 bnpl.SessionNotEligible`), the terms pinned
+`FOR SHARE` and the plan judged against them (`422 bnpl.ProductNotOffered`), then `BnplCreditDecisions.open` from the BNPL
+origin for exactly the gross, P4 no term, PN the plan's months. Audited (`bnpl.ApplicationSubmitted`,
+`bnpl.ApplicationWithdrawn`) though the table above reads "—": every customer act that opens credit is audited. The
+withdrawal takes the platform's conditional step-up; its credit cancellation is asked from the BNPL origin.
 
 ### 4.3 BNPL offer (`bnpl.bnpl_offer`) — `P12-TSK-011`, accepted `-013`
 
@@ -570,7 +592,8 @@ until its task's design settles it; none is a decision the transition took.
   though §7.4 names `409 checkout.SessionNotPayable` and §9's error list names neither (it has `422
   bnpl.SessionNotEligible`, which this document keeps for the application door). The card door's refusal is
   checkout's existing `409 checkout.NotConfirmable`, not a new code.
-- **The application's exits on a closed session** (`-010`, `-011`): §5.1 lists "abandons checkout" under
+- **The application's exits on a closed session** (`-010`, `-011`; `-010`'s half confirmed by `P12-TSK-010` - its only
+  `WITHDRAWN` edge is the customer's withdrawal door): §5.1 lists "abandons checkout" under
   `WITHDRAWN` and "the checkout session expired/closed" under `CLOSED_UNDECIDED`. Here `WITHDRAWN` is only the
   customer's withdrawal door; any session no longer `OPEN` (expired, abandoned, or paid by another
   instrument) is found by the sweep and closes `CLOSED_UNDECIDED (SESSION_CLOSED)`. `BnplEligibilityAssessed`

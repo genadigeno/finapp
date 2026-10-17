@@ -2461,7 +2461,10 @@ purchase; `CheckoutFinancingDatabaseTest` written and not run under the owner's 
 hermetic half `CheckoutBnplSessionsTest` and `CheckoutSessionMigrationTest`); ten consumers
 of one decision for `BNPL_AGREEMENT`, one consumption (`P12-TSK-001`); the probe dropping `UNIQUE
 (checkout_session_id)` on purchase (`MUTATION_TESTING.md` §2); one financing per purchase and one
-purchase per session at every storm round (`P12-TST-001`).
+purchase per session at every storm round (`P12-TST-001`). Upstream of the purchase, one session holds at most one
+open application (`P12-TSK-010` — built: `bnpl V003`'s partial unique over `SUBMITTED`, `AWAITING_DECISION`,
+`OFFERED`, `UNIQUE (decision_request_id)`; `BnplApplicationDatabaseTest#tenApplicationsForOneSessionOpenOne` written
+and not run under the owner's instruction, its hermetic half `BnplApplicationsTest` and `BnplApplicationMigrationTest`).
 **Phase:** 12
 
 ### INV-BNPL-04 — The financing conserves the purchase
