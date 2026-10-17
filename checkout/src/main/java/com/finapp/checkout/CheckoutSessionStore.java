@@ -111,4 +111,26 @@ public interface CheckoutSessionStore<T> {
             T unitOfWork, java.time.Instant openBefore, java.time.Instant pendingBefore, int limit);
 
     boolean transition(T unitOfWork, CheckoutSession before, CheckoutSession transitioned);
+
+    /**
+     * The database's clock, read <strong>as its own statement</strong> (`P12-TSK-007`) — called
+     * after the session's row lock was taken, so the instant is the lock's and not the moment a
+     * waiting {@code SELECT ... FOR UPDATE} began (its {@code statement_timestamp()} is fixed
+     * before the wait). The judgement a financing makes is on this clock, never an instance's.
+     */
+    java.time.Instant databaseNow(T unitOfWork);
+
+    /**
+     * Applies the financing edge {@code OPEN → COMPLETED} conditionally (`P12-TSK-007`) and
+     * appends the history row when the write landed.
+     *
+     * <p>The write <strong>re-judges in its own statement</strong>: {@code status = 'OPEN'}, no
+     * intent, no financing reference yet, and {@code expires_at > statement_timestamp()} — the
+     * same instant `V004`'s trigger judges, so a row the predicate admits the trigger admits.
+     * {@code false} means nothing was written: the session left {@code OPEN}, or its deadline
+     * passed between the caller's judgement and this statement.
+     *
+     * @param financed the session as {@link CheckoutSession#completeByFinancing} returned it
+     */
+    boolean completeByFinancing(T unitOfWork, CheckoutSession before, CheckoutSession financed);
 }

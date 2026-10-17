@@ -73,7 +73,9 @@ class CheckoutRecordsRedactTest {
                         null,
                         // The payer's authorization handle (P7-TSK-009): a capability URL,
                         // and the identifiers-only toString below must hold for it too.
-                        "https://payer-psp.example/authorize/opaque-handle");
+                        "https://payer-psp.example/authorize/opaque-handle",
+                        // How it was paid (P12-TSK-007): absent while unpaid.
+                        null);
 
         assertThat(view.toString())
                 .doesNotContain(AMOUNT)

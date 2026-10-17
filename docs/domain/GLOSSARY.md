@@ -1522,6 +1522,10 @@ under which every refund and dispute is bounded (`INV-BNPL-07`). Planned (`P12-T
 **Not:** the Order — checkout's commercial fact, which BNPL's commit brings into being — and not a
 Payment: no intent, attempt or rail exists, because the merchant is paid from the platform's capital
 against a customer receivable, not by money crossing a network. Nor a Customer Payment.
+*Checkout's half is built (`P12-TSK-007`): the session the purchase finances moves `OPEN → COMPLETED`
+"by financing" — intent-less, its `financed_by_ref` naming the purchase, set once and one session per
+purchase (checkout `V004`) — and the order is born with the financing entry as its
+`captured_entry_ref`; the session read and `checkout.OrderPaid` say `completedAs = FINANCED`.*
 **Owned by:** `bnpl`
 
 ### Merchant Financing

@@ -31,7 +31,13 @@ class CheckoutMetersTest {
 
         assertThat(registry.find(CONVERSION_AGE).timers())
                 .extracting(timer -> timer.getId().getTag("outcome"))
-                .containsExactlyInAnyOrder("completed", "completed_late");
+                .containsExactlyInAnyOrder("completed", "completed_late", "financed");
+        // P12-TSK-007: the financed ending is registered at zero too, beside the four.
+        assertThat(registry.find(SESSION).counters())
+                .extracting(counter -> counter.getId().getTag("outcome"))
+                .containsExactlyInAnyOrder(
+                        "completed", "completed_late", "expired", "abandoned", "financed");
+        assertThat(timer(registry, "financed").count()).isZero();
         assertThat(timer(registry, "completed").count()).isZero();
     }
 
@@ -52,6 +58,27 @@ class CheckoutMetersTest {
                 .as("the late conversion never reaches the in-window series")
                 .isEqualTo(90.0d);
         assertThat(timer(registry, "completed_late").max(TimeUnit.MINUTES)).isEqualTo(45.0d);
+    }
+
+    @Test
+    @DisplayName("a FINANCED completion is counted and timed in its own series - never the"
+            + " capture's (P12-TSK-007)")
+    void aFinancingIsCountedAndTimedApart() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        CheckoutMeters meters = new CheckoutMeters(registry);
+
+        meters.converted(CheckoutMeters.Outcome.FINANCED, Duration.ofMinutes(4));
+
+        assertThat(registry.get(SESSION).tag("outcome", "financed").counter().count())
+                .isEqualTo(1.0d);
+        assertThat(timer(registry, "financed").totalTime(TimeUnit.MINUTES)).isEqualTo(4.0d);
+        assertThat(registry.get(SESSION).tag("outcome", "completed").counter().count())
+                .as("a financing is not a capture")
+                .isZero();
+        assertThat(timer(registry, "completed").count()).isZero();
+        assertThatThrownBy(() -> meters.session(CheckoutMeters.Outcome.FINANCED))
+                .as("a completion carries its age")
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

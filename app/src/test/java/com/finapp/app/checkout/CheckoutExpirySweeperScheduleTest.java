@@ -97,9 +97,10 @@ class CheckoutExpirySweeperScheduleTest {
         assertThat(counter(registry, "expired"))
                 .as("no acting transition, no count - the counter exists and reads zero")
                 .isZero();
-        // The four outcomes are REGISTERED even at zero: an alert on completed_late cannot be
-        // written against a meter that only appears once the thing has already happened.
-        assertThat(registry.find("finapp.checkout.session").counters()).hasSize(4);
+        // The five outcomes are REGISTERED even at zero: an alert on completed_late cannot be
+        // written against a meter that only appears once the thing has already happened
+        // (the fifth, financed, P12-TSK-007).
+        assertThat(registry.find("finapp.checkout.session").counters()).hasSize(5);
 
         meters.session(CheckoutMeters.Outcome.EXPIRED);
         assertThat(counter(registry, "expired")).isEqualTo(1.0d);

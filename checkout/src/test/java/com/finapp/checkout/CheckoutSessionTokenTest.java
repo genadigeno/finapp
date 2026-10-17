@@ -67,6 +67,21 @@ class CheckoutSessionTokenTest {
     }
 
     @Test
+    @DisplayName("a token presented STILL WRAPPED verifies as the bare one does, and stays"
+            + " wrapped (P12-TSK-007)")
+    void aWrappedPresentedTokenVerifies() {
+        CheckoutSessionToken issued = CheckoutSessionToken.issue(randomness);
+        CheckoutSessionToken presented = CheckoutSessionToken.presented(issued.presentedOnce());
+
+        assertThat(presented.matches(issued.hash().expose())).isTrue();
+        assertThat(presented.hash().expose()).isEqualTo(issued.hash().expose());
+        assertThat(CheckoutSessionToken.presented(Sensitive.of("not-a-token"))
+                        .matches(issued.hash().expose()))
+                .isFalse();
+        assertThat(presented.toString()).doesNotContain(issued.presentedOnce().expose());
+    }
+
+    @Test
     @DisplayName("nothing renders the token: toString is masked and the value stays wrapped")
     void nothingRendersTheToken() {
         CheckoutSessionToken token = CheckoutSessionToken.issue(randomness);

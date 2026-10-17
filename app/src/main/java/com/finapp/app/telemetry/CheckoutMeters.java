@@ -63,7 +63,8 @@ public final class CheckoutMeters {
     private static final String CONVERSION_AGE = "finapp.checkout.conversion.age";
 
     /**
-     * The four ways an offer ends. There is deliberately no counter for a session that is still
+     * The five ways an offer ends (the fifth, {@link #FINANCED}, `P12-TSK-007`). There is
+     * deliberately no counter for a session that is still
      * {@code OPEN} or {@code PAYMENT_PENDING}: those are not outcomes, they are waiting.
      */
     public enum Outcome {
@@ -79,7 +80,14 @@ public final class CheckoutMeters {
         /** A deadline passed with nobody paying, or with a payment that never landed. */
         EXPIRED,
         /** A merchant withdrew its own offer before anybody paid. */
-        ABANDONED
+        ABANDONED,
+        /**
+         * A BNPL purchase financed the sale (`P12-TSK-007`): the session completed from
+         * {@code OPEN}, intent-less, counted and timed in the purchase's own transaction on the
+         * acting transition - a completion like the two captures, its own series because it
+         * measures a different decision (a credit approval), never late.
+         */
+        FINANCED
     }
 
     private final Map<Outcome, Counter> outcomes = new EnumMap<>(Outcome.class);
@@ -102,7 +110,8 @@ public final class CheckoutMeters {
                                         + " session on the conditional transition that actually"
                                         + " committed: completed, completed_late (money that"
                                         + " landed after the offer expired - INV-MER-06),"
-                                        + " expired and abandoned. Racing sweepers, a retried"
+                                        + " expired, abandoned and financed (a BNPL purchase"
+                                        + " completed it, P12-TSK-007). Racing sweepers, a retried"
                                         + " confirmation and a duplicate capture outcome are"
                                         + " never throughput. Per instance; rate() and sum()"
                                         + " aggregate")
@@ -120,7 +129,8 @@ public final class CheckoutMeters {
                                                 + " completed it, once per completion. completed"
                                                 + " measures the customer inside the offer's"
                                                 + " window, completed_late the provider's"
-                                                + " lateness after it (INV-MER-06). No histogram"
+                                                + " lateness after it (INV-MER-06), financed the"
+                                                + " BNPL purchase's (P12-TSK-007). No histogram"
                                                 + " buckets: read _count, _sum and _max. Per"
                                                 + " instance; rate() and sum() aggregate")
                                 .register(registry));
@@ -158,7 +168,9 @@ public final class CheckoutMeters {
     }
 
     private static boolean isCompletion(Outcome outcome) {
-        return outcome == Outcome.COMPLETED || outcome == Outcome.COMPLETED_LATE;
+        return outcome == Outcome.COMPLETED
+                || outcome == Outcome.COMPLETED_LATE
+                || outcome == Outcome.FINANCED;
     }
 
     private static String lower(String name) {
