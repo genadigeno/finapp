@@ -378,13 +378,18 @@ public final class BnplTermsAdministration {
         if (!within.minimumAmount().currency().equals(terms.currency())) {
             throw new IllegalStateException("a product's bounds are in its terms' currency");
         }
-        terms.payIn4().ifPresent(payIn4 -> {
-            // floor(P / 4) is the smallest instalment (A4): at the smallest purchase it must be at least one minor unit.
-            if (within.minimumAmount().minorUnits() < payIn4.instalments()) {
-                throw new TermsNotAmortising("a pay-in-4 purchase at the product's smallest amount would have an"
-                        + " instalment of nothing");
+        if (terms.payIn4().isPresent()) {
+            // BNPL_SCHEDULE_ENGINE_V1's own judgement (P12-TSK-008), never a second statement of its rule: floor(P / 4)
+            // is the smallest instalment (A4), so credit's smallest purchase schedules exactly when every larger one does.
+            Optional<BnplScheduleOutcome.Refused> refused =
+                    BnplScheduleEngineV1.judgeSchedulable(terms, within.minimumAmount());
+            if (refused.isPresent()) {
+                if (refused.get().reason() == BnplScheduleRefusal.INSTALMENT_OF_NOTHING) {
+                    throw new TermsNotAmortising("at the product's smallest amount, " + refused.get().detail());
+                }
+                throw new BnplTerms.TermsInvalid(refused.get().detail());
             }
-        });
+        }
         terms.payInN().ifPresent(payInN -> {
             if (!within.admittedTermMonths().containsAll(payInN.allowedTerms())) {
                 throw new BnplTerms.TermsInvalid("the terms offer a plan credit cannot decide");

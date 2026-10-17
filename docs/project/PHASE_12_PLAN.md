@@ -721,7 +721,7 @@ drawn against it — ADR-0100's exposure shape) was considered and refused for P
 ### 12.2 Schedules — reuse vs a BNPL engine
 
 - **P4 — `BNPL_SCHEDULE_ENGINE_V1` (new, pure; where it lives is `P12-TSK-008`'s design, never a new member of lending's
-  `EngineVersion`)**: `n = 4`, frequency `BIWEEKLY` (a BNPL
+  `EngineVersion` — *placed in `bnpl` by `P12-TSK-008`, 2026-10-17: `BnplScheduleEngineV1` over the pinned `BnplTerms`*)**: `n = 4`, frequency `BIWEEKLY` (a BNPL
   vocabulary member, not lending's `RepaymentFrequency`), `D1` = the purchase's business date, `Dk = D1 + 14(k−1)`;
   amounts per A4; no interest; refuses any other shape. Reason for a new engine: `ScheduleEngineV1` is a monthly
   annuity with a ≥ 15-day first period and actual-day interest; P4 has none of these.

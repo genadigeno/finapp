@@ -2502,7 +2502,8 @@ any other shape) + `DB-CONSTRAINT` (`bnpl_schedule UNIQUE (obligation_id, schedu
 `bnpl_instalment UNIQUE (schedule_id, sequence)`, both `INSERT`-only; a deferred conservation trigger
 at commit).
 **Verify:** `BnplScheduleEngineV1`'s property tests and golden cases — amounts not divisible by four, a
-leap day, a year end (`P12-TSK-008`); pay-in-N on the extracted engines with every Phase 11 engine
+leap day, a year end (`P12-TSK-008` - built: `BnplScheduleEngineV1Test`, `BnplScheduleEngineV1PropertiesTest` with its
+two-JVM digest; the record `BnplSchedule` refuses a non-conserving value at construction); pay-in-N on the extracted engines with every Phase 11 engine
 identity and golden hash unchanged and `P11-TST-002`'s battery re-run `IDENTICAL` (`P12-TSK-002`); the
 deferred trigger proven alone by a raw-SQL writer (`P12-TSK-013`); the battery's ≥ 10,000 generated
 purchases conserving exactly and replayed `IDENTICAL` in two JVMs (`P12-TST-002`); `BnplReplayProof`
