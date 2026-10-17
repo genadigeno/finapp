@@ -256,3 +256,49 @@ every one of the ten is posted except `LOAN_WRITE_OFF_EXPENSE` - seeded, posted 
 deferred to Phase 14 - `LENDING_CAPITAL` by bank recognition alone (rule 0), the other eight by lending's own
 transactions (rules 1 to 13). *(This read "Nothing posts to any of the ten yet" until the Phase 11 exit review,
 `P11-DOC-001`, 2026-10-15.)*
+
+## 11. BNPL — *as built by Phase 12*
+
+**The account plan** (ledger `V027`, `P12-TSK-003`; ADR-0103 decision 1, `PHASE_12_PLAN.md` §12.11).
+`OwnerKind.BNPL_OBLIGATION` - `owner_ref` names the customer repayment obligation by value, opaque, no
+foreign key into bnpl's schema (the `LOAN` reasoning) - owns six accounts per obligation, opened together in
+the obligation's one currency by bnpl's `BnplAccounts.openFor` over `LedgerAccountStore.createOrConverge`
+(the partial unique index on `(owner_ref, purpose, currency)` arbitrates concurrent openers into one set):
+
+| Purpose | Owner | Type / normal | Holds |
+|---|---|---|---|
+| `BNPL_PRINCIPAL` | BNPL_OBLIGATION | ASSET / DEBIT | purchase principal not yet due |
+| `BNPL_PRINCIPAL_DUE` | BNPL_OBLIGATION | ASSET / DEBIT | billed principal unpaid |
+| `BNPL_INTEREST_ACCRUED` | BNPL_OBLIGATION | ASSET / DEBIT | pay-in-N interest earned, not yet due (pay-in-4: none) |
+| `BNPL_INTEREST_DUE` | BNPL_OBLIGATION | ASSET / DEBIT | pay-in-N billed interest unpaid |
+| `BNPL_FEES_DUE` | BNPL_OBLIGATION | ASSET / DEBIT | assessed late fees unpaid |
+| `BNPL_CREDIT_BALANCE` | BNPL_OBLIGATION | LIABILITY / CREDIT | an overpayment, or a refund's excess the wallet could not take, owed back |
+| `BNPL_MERCHANT_FEE_INCOME` | OPERATIONAL | REVENUE / CREDIT | the merchant discount; seeded per supported currency |
+| `BNPL_INTEREST_INCOME` | OPERATIONAL | REVENUE / CREDIT | pay-in-N interest; seeded per supported currency |
+| `BNPL_FEE_INCOME` | OPERATIONAL | REVENUE / CREDIT | BNPL late fees; seeded per supported currency |
+| `BNPL_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE / DEBIT | seeded; posted by nothing in Phase 12 (Phase 14) |
+
+Separate purposes and a separate owner kind from the loan book (OQ-11): lending's posters, proofs and
+identities never see a BNPL line. The merchant discount is its own income, never merchant's `FEE_REVENUE`
+(OQ-19). The per-obligation type is declared once, by the opener (`BnplAccounts.declaredTypeOf`); the
+obligation's existing accounts are judged before the first insert and each converged account again, so an
+account of any other purpose, type, normal balance, currency or owner is refused, never adopted
+(`INV-LED-06`). The four operational accounts are seeded with UUIDv7 literals below the id ceiling
+(`01a0e2bc-8200-7027-…`) and hold zero - every currency's trial balance is unchanged (`INV-ACC-01`).
+
+**Guarded.** All ten are closed to free adjustments (`AccountPurpose.closedToFreeAdjustments()`, the `V015`
+binding trigger restated by `V027`): a `MANUAL` line on any of them is refused at the domain and by the
+trigger. None is a reconciled position - bnpl opens no expectation, so `finapp.reconciliation.line.unattributed`
+(one series per reconciled position) gains no BNPL series - and no `*_CLEARING` purpose arrived
+(`INV-RAIL-04`): BNPL moves no money across a rail. The book is proven by bnpl's subledger and three-way
+proofs (`P12-TSK-025`). Statically, `BnplBooksHaveOnePosterTest` lets only bnpl (and the declaration) name a
+`BNPL_*` purpose; its reader-permit list is empty until lending's capital headroom reads the BNPL principal
+purposes (`P12-TSK-005`).
+
+**`MERCHANT_PAYABLE` gains bnpl as a poster** - the financing credits it the gross and debits it the discount
+(F1), a refund debits it (F5) - beside merchant settlement's captures and refunds and merchant's payouts. No
+single-poster rule binds `MERCHANT_PAYABLE` (it is not a reconciled position, and no `*HasOnePosterTest`
+names it), so admitting a third poster changes no guard; `INV-MER-02`'s equation gains the BNPL terms with the
+drill-down (`P12-TSK-016`) - until then a BNPL line on the payable reads in `MerchantPayable`'s `other` bucket,
+never a failure. The posting rules are ADR-0103's F1–F11, each built by the task that posts it; **nothing posts
+to any of the ten yet.**

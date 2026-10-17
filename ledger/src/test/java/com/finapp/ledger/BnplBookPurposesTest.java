@@ -147,6 +147,37 @@ class BnplBookPurposesTest {
                         AccountPurpose.CORRIDOR_CLEARING);
     }
 
+    /**
+     * DoD-FIN F1, asserted rather than assumed (the gate's finding): the chart arrives holding nothing - `V027`
+     * writes accounts and a trigger function and no money row - so every currency's trial balance is unchanged
+     * ({@code INV-ACC-01}). Read with the SQL comments stripped, so the header's prose cannot satisfy or break it.
+     */
+    @Test
+    @DisplayName("V027 moves no money: it inserts only ledger accounts and touches no entry, line, balance, hold or"
+            + " adjustment (F1, INV-ACC-01)")
+    void theMigrationMovesNoMoney() throws Exception {
+        String statements;
+        try (java.io.InputStream migration = BnplBookPurposesTest.class.getClassLoader()
+                .getResourceAsStream("db/migration/ledger/V027__the_bnpl_book_joins_the_chart.sql")) {
+            assertThat(migration).as("V027 on the test classpath").isNotNull();
+            statements = java.util.Arrays.stream(
+                            new String(migration.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n"))
+                    .filter(line -> !line.trim().startsWith("--"))
+                    .collect(java.util.stream.Collectors.joining("\n"));
+        }
+        assertThat(java.util.regex.Pattern.compile("INSERT INTO ledger\\.(\\w+)").matcher(statements).results()
+                        .map(insert -> insert.group(1)).distinct())
+                .as("not vacuous, and only the chart: the seed inserts ledger accounts and nothing else")
+                .containsExactly("ledger_account");
+        for (String moneyTable : java.util.List.of(
+                "journal_entry", "journal_line", "account_balance", "hold", "adjustment_proposal", "adjustment_proposal_line")) {
+            assertThat(java.util.regex.Pattern.compile("(INSERT INTO|UPDATE|DELETE FROM)\\s+ledger\\." + moneyTable + "\\b")
+                            .matcher(statements).find())
+                    .as("V027 writes no %s row - the seeded BNPL accounts hold zero", moneyTable)
+                    .isFalse();
+        }
+    }
+
     @Test
     @DisplayName("the domain refuses each mismatched pair before the schema is asked")
     void theDomainRefusesTheWrongOwner() {

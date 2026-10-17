@@ -124,7 +124,7 @@ class BnplBooksHaveOnePosterTest {
                 "/x/app/src/main/java/com/finapp/app/Prose.java",
                 "// posts to AccountPurpose.BNPL_PRINCIPAL only via bnpl\n/** BNPL_MERCHANT_FEE_INCOME */ int i = 0;");
         planted.put(
-                "/x/bnpl/src/main/java/com/finapp/bnpl/Financing.java",
+                "/x/bnpl/src/main/java/com/finapp/bnpl/PurchaseFinancing.java",
                 "chart.resolve(uow, AccountPurpose.BNPL_MERCHANT_FEE_INCOME, eur); accounts.principal();");
         planted.put(
                 "/x/app/src/main/java/com/finapp/app/NotTheBook.java",
@@ -135,7 +135,7 @@ class BnplBooksHaveOnePosterTest {
                 .anyMatch(violation -> violation.contains("StaticImportPoster.java"))
                 .anyMatch(violation -> violation.contains("LendingPostsBnpl.java"))
                 .noneMatch(violation -> violation.contains("Prose.java"))
-                .noneMatch(violation -> violation.contains("Financing.java"))
+                .noneMatch(violation -> violation.contains("PurchaseFinancing.java"))
                 .noneMatch(violation -> violation.contains("NotTheBook.java"));
     }
 
