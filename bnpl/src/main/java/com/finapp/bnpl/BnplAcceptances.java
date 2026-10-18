@@ -308,7 +308,7 @@ public final class BnplAcceptances {
         Optional<Collected> collected = Optional.empty();
         if (wallet.isPresent()) {
             collected = Optional.of(collectFirstInstalment(unitOfWork, purchaseId, obligationId, agreement, pinned,
-                    schedule, first, accounts, wallet.get(), businessDate));
+                    schedule, first, accounts, wallet.get(), businessDate, flow));
         }
 
         // The session completed by financing - checkout's order born with F1, the deadline re-judged in the write.
@@ -403,14 +403,18 @@ public final class BnplAcceptances {
     private Collected collectFirstInstalment(Connection unitOfWork, BnplPurchaseId purchase, BnplObligationId obligation,
             BnplAgreement agreement, BnplTerms pinned, BnplPurchaseStore.StoredSchedule schedule,
             BnplPurchaseStore.StoredInstalment first, BnplLedgerAccounts accounts, LedgerAccountId wallet,
-            LocalDate businessDate) {
+            LocalDate businessDate, CorrelationId flow) {
         // F2: DR BNPL_PRINCIPAL_DUE a1 / CR BNPL_PRINCIPAL a1.
         JournalEntryId billingEntry = book.post(unitOfWork, new PostingCommand(BILLING_KEY_PREFIX + first.id(),
                 businessDate, businessDate, obligation.value().toString(), List.of(
                         new JournalLine(accounts.principalDue().id(), Direction.DEBIT, first.principal()),
                         new JournalLine(accounts.principal().id(), Direction.CREDIT, first.principal()))));
-        purchases.insertBilling(unitOfWork, new BnplPurchaseStore.Billing(ids.next(), first.id(), obligation, businessDate,
-                first.principal(), first.interest(), billingEntry));
+        // bnpl V008: the billing names the versions and engines it ran under and the period it closes (the schedule's
+        // start to instalment 1's due date - both the purchase's business date).
+        purchases.insertBilling(unitOfWork, new BnplBilling(ids.next(), first.id(), first.sequence(), obligation,
+                schedule.id(), schedule.version(), schedule.engine(), agreement.id(), agreement.version(),
+                agreement.accrualEngine(), schedule.start(), first.dueDate(), first.principal(), first.interest(),
+                Optional.of(billingEntry), flow));
 
         // F3 allocated by the pinned allocation engine over the due state the purchase itself just created.
         Money zero = Money.ofPersisted(0, first.amount().currency(), first.amount().scale());

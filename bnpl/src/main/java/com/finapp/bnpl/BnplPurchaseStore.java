@@ -55,8 +55,11 @@ public interface BnplPurchaseStore {
     /** Births a schedule version and its instalments - INSERT-only, conserving at commit. */
     void insertSchedule(Connection unitOfWork, StoredSchedule schedule);
 
-    /** Births an instalment's billing - once per instalment. */
-    void insertBilling(Connection unitOfWork, Billing billing);
+    /**
+     * Births an instalment's billing - once per instalment and per due date; {@code bnpl V008}'s trigger holds its
+     * versions, its period, its interest (the period's posted accruals) and its principal to the rows for every writer.
+     */
+    void insertBilling(Connection unitOfWork, BnplBilling billing);
 
     /** Births a repayment and its allocation - once per key. */
     void insertRepayment(Connection unitOfWork, Repayment repayment);
@@ -72,8 +75,12 @@ public interface BnplPurchaseStore {
     /** The obligation's schedule version {@code version}, its instalments in order. */
     Optional<StoredSchedule> schedule(Connection unitOfWork, BnplObligationId obligation, int version);
 
-    /** The instalments of the obligation that have been billed - by id. */
-    List<UUID> billedInstalments(Connection unitOfWork, BnplObligationId obligation);
+    /**
+     * The obligation's billed items, oldest due date first: each billing's billed and paid figures per component (every
+     * payer's, {@code bnpl.billing_component_paid}) - the one read the due state ({@link BnplReceivables}, under B4) and
+     * the owner's schedule ({@link BnplObligations}) derive from (`P12-TSK-015`).
+     */
+    List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation);
 
     // ------------------------------------------------------------------ rows
 
@@ -215,23 +222,66 @@ public interface BnplPurchaseStore {
         }
     }
 
-    /** An instalment billed, with the entry F2 that reclassified it due. */
-    record Billing(UUID id, UUID instalment, BnplObligationId obligation, LocalDate valueDate, Money principal,
-            Money interest, JournalEntryId entry) {
+    /**
+     * A billed item as the due state reads it (`P12-TSK-015`): the billing, its instalment and due date, what it billed and
+     * what every payer has paid of each component. RESTRICTED-FINANCIAL.
+     */
+    record BilledItem(UUID billing, UUID instalment, LocalDate dueDate, Money billedFees, Money billedInterest,
+            Money billedPrincipal, Money paidFees, Money paidInterest, Money paidPrincipal) {
 
-        public Billing {
-            Objects.requireNonNull(id, "id must not be null");
+        public BilledItem {
+            Objects.requireNonNull(billing, "billing must not be null");
             Objects.requireNonNull(instalment, "instalment must not be null");
-            Objects.requireNonNull(obligation, "obligation must not be null");
-            Objects.requireNonNull(valueDate, "valueDate must not be null");
-            Objects.requireNonNull(principal, "principal must not be null");
-            Objects.requireNonNull(interest, "interest must not be null");
-            Objects.requireNonNull(entry, "entry must not be null");
+            Objects.requireNonNull(dueDate, "dueDate must not be null");
+            Objects.requireNonNull(billedFees, "billedFees must not be null");
+            Objects.requireNonNull(billedInterest, "billedInterest must not be null");
+            Objects.requireNonNull(billedPrincipal, "billedPrincipal must not be null");
+            Objects.requireNonNull(paidFees, "paidFees must not be null");
+            Objects.requireNonNull(paidInterest, "paidInterest must not be null");
+            Objects.requireNonNull(paidPrincipal, "paidPrincipal must not be null");
+        }
+
+        /** What it billed of {@code component}. */
+        public Money billed(com.finapp.creditmath.AllocationComponent component) {
+            return switch (component) {
+                case FEES -> billedFees;
+                case INTEREST -> billedInterest;
+                case PRINCIPAL -> billedPrincipal;
+            };
+        }
+
+        /** What every payer has paid of {@code component}. */
+        public Money paid(com.finapp.creditmath.AllocationComponent component) {
+            return switch (component) {
+                case FEES -> paidFees;
+                case INTEREST -> paidInterest;
+                case PRINCIPAL -> paidPrincipal;
+            };
+        }
+
+        /** What it still has due of {@code component} - billed less paid. */
+        public Money due(com.finapp.creditmath.AllocationComponent component) {
+            return billed(component).minus(paid(component));
+        }
+
+        /** Everything it billed. */
+        public Money billedTotal() {
+            return billedFees.plus(billedInterest).plus(billedPrincipal);
+        }
+
+        /** Everything paid of it. */
+        public Money paidTotal() {
+            return paidFees.plus(paidInterest).plus(paidPrincipal);
+        }
+
+        /** Everything it still has due. */
+        public Money dueTotal() {
+            return billedTotal().minus(paidTotal());
         }
 
         @Override
         public String toString() {
-            return "Billing[" + instalment + ", " + valueDate + "]";
+            return "BilledItem[" + instalment + ", due " + dueDate + "]";
         }
     }
 
