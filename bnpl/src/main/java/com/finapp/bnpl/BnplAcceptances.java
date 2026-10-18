@@ -244,7 +244,15 @@ public final class BnplAcceptances {
                 purchaseId, offer.id(), offer.checkoutSession(), party, session.merchantRef(), offer.product(),
                 offer.plan(), currency, flow));
         LocalDate businessDate = authorised.businessDate();
-        MerchantFeeSplit split = merchants.pinFee(unitOfWork, session.merchantRef(), offer.product(), purchaseId, gross);
+        MerchantFeeSplit split;
+        try {
+            split = merchants.pinFee(unitOfWork, session.merchantRef(), offer.product(), purchaseId, gross);
+        } catch (BnplMerchants.NotOffered | BnplMerchants.BelowFee notPriced) {
+            // Re-judged under the pin's own share locks: a merchant re-priced since the offer so the sale no longer
+            // covers its fee, or no longer priced at all, is a merchant that does not offer the product now - 422,
+            // nothing written; never a 500.
+            throw new MerchantNotEnabled(offer);
+        }
         if (!split.gross().equals(gross)) {
             throw new IllegalStateException("the fee split is of exactly the purchase's gross (INV-BNPL-04)");
         }

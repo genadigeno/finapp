@@ -2436,6 +2436,7 @@ order; the deferred trigger proven alone by a raw-SQL writer (`P12-TSK-013`);
 (`P12-TSK-013`); the three-way proof's merchant and customer legs agreeing for every purchase,
 gauged `finapp.bnpl.threeway.proof{verdict}` (`P12-TSK-025`), at rest in every storm round
 (`P12-TST-001`).
+*(As built by `P12-TSK-013` (2026-10-18): `BnplAcceptances` (T-pur) - one transaction in the Phase 12 lock order; `bnpl V006`'s three deferred constraint triggers on `purchase_is_financed_at_commit` (a purchase, its financing and its obligation commit together, the purchase `FINANCED` beside its `ACCEPTED` offer, agreement version 1, its evidence and schedule version 1). Refined: the financing entry is named by id (`NOT NULL`, `UNIQUE`) - no bnpl trigger reads a ledger table (each module migrates its own schema in no guaranteed order, the `P11-TSK-013` refinement), so the entry's existence and lines are the one transaction's and the three-way proof's (`-025`). Hermetic: `BnplAcceptancesTest#aFailureAtEveryStepLeavesNothing` (23 steps), `BnplAcceptanceMigrationTest`. Database, written and owed a first run: `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing`, `BnplAcceptanceDatabaseTest#aFinancingRowWithoutItsObligationIsRefused`, `BnplOutboxAtomicityDatabaseTest`.)*
 **Phase:** 12
 
 ### INV-BNPL-03 — One decision, one agreement; one session, one purchase; one purchase, one financing
@@ -2470,6 +2471,7 @@ One approved decision is offered once, for exactly the purchase (`P12-TSK-011` �
 application holding its session for good - a declined or expired offer frees no second application on it;
 `BnplOriginationDatabaseTest#tenSweepersOfferOnce` written and not run under the owner's instruction, its hermetic half
 `BnplOriginationTest#tenSweepersOfferOnce` and `BnplOfferMigrationTest#theArbitersArePresent`).
+*(As built by `P12-TSK-013`: `purchase UNIQUE (checkout_session_id)`, `UNIQUE (offer_id)`; `merchant_financing` keyed by its purchase, `UNIQUE (journal_entry_id)`; `bnpl_obligation UNIQUE (purchase_id)`, `(agreement_id)`, `(decision_id)`; the claim `bnpl.offer-acceptance:CUSTOMER:<id>`; B2's conditional `OFFERED` and B3 judged at once. Hermetic: `BnplAcceptancesTest#theSameAcceptanceTwiceFinancesOnce`; database, owed: `BnplPurchaseDatabaseTest#theSameAcceptanceTwiceFinancesOnce`, `#bnplAndCardOnOneSessionCompleteOnce`, `#bnplAndAWalletPaymentOnOneSessionCompleteOnce`.)*
 **Phase:** 12
 
 ### INV-BNPL-04 — The financing conserves the purchase
@@ -2491,6 +2493,7 @@ entry's lines to its row) + the journal's per-currency balance (`INV-LED-01`).
 three-way proof's merchant leg — Σ (gross − fee) over purchases less refunds' payable debits equal to
 the BNPL lines on `MERCHANT_PAYABLE`, per merchant — and its identity leg per purchase (`P12-TSK-025`);
 the battery (`P12-TST-002`).
+*(As built by `P12-TSK-013`: F1 `DR BNPL_PRINCIPAL G; DR MERCHANT_PAYABLE f / CR MERCHANT_PAYABLE G; CR BNPL_MERCHANT_FEE_INCOME f` (a zero fee two lines) from merchant's pinned split; `merchant_financing CHECK (gross = fee + net)`. Refined: no trigger holds the entry's lines to the row (no bnpl trigger reads the ledger) - one code path builds both from one `MerchantFeeSplit`, proven by `BnplAcceptancesTest#theFinancingConservesThePurchase`; database, owed: `BnplPurchaseDatabaseTest#theFinancingConservesThePurchase`.)*
 **Phase:** 12
 
 ### INV-BNPL-05 — A schedule conserves principal exactly
@@ -2516,6 +2519,7 @@ identity and golden hash unchanged and `P11-TST-002`'s battery re-run `IDENTICAL
 deferred trigger proven alone by a raw-SQL writer (`P12-TSK-013`); the battery's ≥ 10,000 generated
 purchases conserving exactly and replayed `IDENTICAL` in two JVMs (`P12-TST-002`); `BnplReplayProof`
 re-running the pinned engine over every schedule version (`P12-TSK-025`).
+*(As built by `P12-TSK-013`: schedule version 1 stored (`bnpl_schedule`, `bnpl_instalment`) from the pinned engine over the purchase's business date; `bnpl_schedule_conserves`, deferred, holds Σ instalment principal = the schedule's principal = the financed gross and the numbering 1..n; pay-in-4's 14-day dates ranked at insert. Hermetic: `BnplAcceptanceMigrationTest#theScheduleConserves`; database, owed: `BnplAcceptanceDatabaseTest#aScheduleThatDoesNotConserveIsRefused`.)*
 **Phase:** 12
 
 ### INV-BNPL-06 — A refund preserves value
@@ -2654,6 +2658,7 @@ principal; bnpl's `BnplCapital` port (`app`'s `LendingBnplCapital`) judges it un
 reader permit. Database, written and owed a first run: `LendingCapitalDatabaseTest` orders 15 to 20 and
 `BnplCapitalDatabaseTest` (the L6 race against a real loan acceptance, both orders; the last capital admitting one).
 The `422 bnpl.CapitalUnavailable` refusal, (b) and the real purchase are `-012`/`-013`'s.)*
+*(As built by the pair (2026-10-18), part (b) and the purchase: `app`'s `BnplCreditExposure` (credit's `PlatformCreditExposure` version 3) over `bnpl V007`'s view - one statement with lending's arm; T-pur takes L0 first and judges L6 for the gross after the consumption. Hermetic: `BnplCreditExposureTest`, `BnplAcceptancesTest#acceptanceAndADecisionSerialiseOnTheProfile`, `#acceptancesRacingForTheLastCapitalAdmitOne`; database, owed: `BnplCreditExposureDatabaseTest`, `BnplPurchaseDatabaseTest#acceptanceAndADecisionSerialiseOnTheProfile`, `#acceptancesRacingForTheLastCapitalAdmitOne`.)*
 **Phase:** 12
 
 *`INV-BNPL-01`…`INV-BNPL-10` catalogued by the Phase 11 → 12 transition (2026-10-16), the `INV-LND`

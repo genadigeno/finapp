@@ -377,6 +377,16 @@ class BnplAcceptancesTest {
     }
 
     @Test
+    @DisplayName("a merchant re-priced since the offer - its fee now the whole gross - refuses MerchantNotEnabled at the"
+            + " pin, re-judged under its share locks; nothing written, never a 500")
+    void aRepricedMerchantRefusesAtThePin() {
+        BnplOffer offer = offered(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        world.merchants.feeBasisPoints = 10_000;
+        assertThatThrownBy(() -> accept(offer)).isInstanceOf(BnplAcceptances.MerchantNotEnabled.class);
+        assertNothingWritten(offer);
+    }
+
+    @Test
     @DisplayName("standing lost refuses before the consumption - credit's ApplicantNotEligible at the door; nothing written")
     void standingLostRefuses() {
         BnplOffer offer = offered(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);

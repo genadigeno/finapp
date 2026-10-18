@@ -231,6 +231,13 @@ rule extended to `BNPL_AGREEMENT`), `INV-CRD-01`, `INV-CRD-09`, `INV-SET-06`, `I
   replay `IDENTICAL`; `-013` the first BNPL consumer: purchases racing loans and draws for the last capital, one
   admitted, the L6 lock-wait asserted (the Phase 11 M3 lesson); the probe "skip L6" letting two purchases over-deploy
   (`MUTATION_TESTING.md` §2).
+  *(As built by the pair (2026-10-18): `bnpl V007`'s `bnpl.party_principal_exposure` (per obligation, no figure, no ledger
+  table named); `app`'s `BnplCreditExposure` (version 3) wired into credit's freezer - one statement, lending's arm `UNION
+  ALL` bnpl's, each over its own principal purposes bound from its module's declaration; an obligation counted whatever its
+  status, a negative principal zero, no principal line refused; the census's BNPL statement. `-013`'s T-pur judges
+  headroom ≥ the gross under L6 after the consumption (`422 bnpl.CapitalUnavailable`). The race against a LOAN acceptance
+  for the last capital is `-005`'s `BnplCapitalDatabaseTest` (unchanged); `-013`'s suite races two BNPL acceptances for
+  it, the L6 lock-wait asserted. Database suites written, owed a first run - the owner's instruction for the pair.)*
 - `P12-TSK-024` — T-rev's L6 re-check and its refusal leaving the proposal `PROPOSED`.
 - `P12-TST-001` — the capital proof and the census at every storm round with capital contested across lending and BNPL;
   the lock-wait measurement of Decision 9, recorded in `CURRENT_STATE.md` §Known Architectural Debt.

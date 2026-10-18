@@ -3533,6 +3533,177 @@ template versions `INTERNAL`.
 | `bnpl_offer_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_offer_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
+### `bnpl` - the acceptance - *added by `P12-TSK-013`*
+
+`bnpl V006`: the purchase, its history, the merchant financing, the obligation, its history, the agreement, the
+acceptance evidence, the schedule, its instalments, the billing, the repayment and its allocation. Every money column
+is on an INSERT-only table and `RESTRICTED-FINANCIAL`; the evidence's session, address and agent `CONFIDENTIAL`; no
+figure leaves in a log line, tag, span attribute or exception message (`INV-AUD-02`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `purchase` | `id` | `CONFIDENTIAL` | A BNPL purchase reference - *added by `P12-TSK-013`* |
+| `purchase` | `offer_id` | `CONFIDENTIAL` | The offer it accepts - once |
+| `purchase` | `checkout_session_id` | `CONFIDENTIAL` | The checkout session it pays, by value - once, never its token |
+| `purchase` | `party_id` | `CONFIDENTIAL` | The customer |
+| `purchase` | `merchant_id` | `CONFIDENTIAL` | The merchant financed, by value |
+| `purchase` | `product` | `INTERNAL` | A closed product code |
+| `purchase` | `plan` | `INTERNAL` | A closed plan code |
+| `purchase` | `currency` | `INTERNAL` | Its currency |
+| `purchase` | `status` | `INTERNAL` | The machine's state |
+| `purchase` | `servicing_zone` | `INTERNAL` | The pinned terms' servicing zone |
+| `purchase` | `business_date` | `INTERNAL` | The purchase's business date, stamped by the trigger after the act's locks |
+| `purchase` | `authorised_at` | `INTERNAL` | System time, stamped by the trigger after the act's locks |
+| `purchase` | `financed_at` | `INTERNAL` | System time, stamped by the trigger at the FINANCED edge |
+| `purchase` | `order_id` | `CONFIDENTIAL` | Checkout's order, by value |
+| `purchase` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `purchase_event` | `id` | `INTERNAL` | Generated |
+| `purchase_event` | `purchase_id` | `CONFIDENTIAL` | The row it moved |
+| `purchase_event` | `from_status` | `INTERNAL` | The machine edge |
+| `purchase_event` | `to_status` | `INTERNAL` | The machine edge |
+| `purchase_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `purchase_event` | `actor` | `CONFIDENTIAL` | Who moved it - the accepting customer |
+| `purchase_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `purchase_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `purchase_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `merchant_financing` | `purchase_id` | `CONFIDENTIAL` | The purchase financed - once |
+| `merchant_financing` | `journal_entry_id` | `INTERNAL` | The financing entry F1 - once |
+| `merchant_financing` | `merchant_id` | `CONFIDENTIAL` | The merchant financed, by value |
+| `merchant_financing` | `currency` | `INTERNAL` | Its currency |
+| `merchant_financing` | `scale` | `INTERNAL` | Its scale |
+| `merchant_financing` | `gross_minor` | `RESTRICTED-FINANCIAL` | The gross financed - the receivable |
+| `merchant_financing` | `fee_minor` | `RESTRICTED-FINANCIAL` | The merchant discount |
+| `merchant_financing` | `net_minor` | `RESTRICTED-FINANCIAL` | The net credited to the merchant's payable |
+| `merchant_financing` | `fee_schedule_version_id` | `INTERNAL` | The merchant's BNPL fee schedule version pinned, by value |
+| `merchant_financing` | `financed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_obligation` | `id` | `CONFIDENTIAL` | A customer repayment obligation reference - the accounts' owner |
+| `bnpl_obligation` | `purchase_id` | `CONFIDENTIAL` | Its purchase - once |
+| `bnpl_obligation` | `agreement_id` | `CONFIDENTIAL` | Its agreement - once |
+| `bnpl_obligation` | `party_id` | `CONFIDENTIAL` | The customer |
+| `bnpl_obligation` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value - once |
+| `bnpl_obligation` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_obligation` | `plan` | `INTERNAL` | A closed plan code |
+| `bnpl_obligation` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_obligation` | `status` | `INTERNAL` | The machine's state |
+| `bnpl_obligation` | `servicing_zone` | `INTERNAL` | The purchase's servicing zone |
+| `bnpl_obligation` | `purchase_date` | `INTERNAL` | The purchase's business date - the principal value floor's start |
+| `bnpl_obligation` | `opened_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_obligation` | `next_servicing_at` | `INTERNAL` | The servicing sweep's permit (`P12-TSK-015`) |
+| `bnpl_obligation` | `closed_at` | `INTERNAL` | System time of its closure (later tasks) |
+| `bnpl_obligation` | `closure_reason` | `INTERNAL` | A closed reason code (`CLOSED` only) |
+| `bnpl_obligation` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `bnpl_obligation_event` | `id` | `INTERNAL` | Generated |
+| `bnpl_obligation_event` | `obligation_id` | `CONFIDENTIAL` | The row it moved |
+| `bnpl_obligation_event` | `from_status` | `INTERNAL` | The machine edge |
+| `bnpl_obligation_event` | `to_status` | `INTERNAL` | The machine edge |
+| `bnpl_obligation_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `bnpl_obligation_event` | `actor` | `CONFIDENTIAL` | Who moved it - the accepting customer |
+| `bnpl_obligation_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `bnpl_obligation_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_obligation_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `bnpl_agreement` | `agreement_id` | `CONFIDENTIAL` | The agreement's identity - credit's consumer reference |
+| `bnpl_agreement` | `version` | `INTERNAL` | The version number |
+| `bnpl_agreement` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_agreement` | `offer_id` | `CONFIDENTIAL` | The offer version 1 copies |
+| `bnpl_agreement` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
+| `bnpl_agreement` | `terms_version_id` | `INTERNAL` | The pinned terms version |
+| `bnpl_agreement` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_agreement` | `plan` | `INTERNAL` | A closed plan code |
+| `bnpl_agreement` | `schedule_engine` | `INTERNAL` | The pinned schedule engine version |
+| `bnpl_agreement` | `accrual_engine` | `INTERNAL` | Pay-in-N's pinned accrual engine version |
+| `bnpl_agreement` | `allocation_engine` | `INTERNAL` | The pinned allocation engine version |
+| `bnpl_agreement` | `refund_allocation_engine` | `INTERNAL` | The pinned refund allocation engine version |
+| `bnpl_agreement` | `fee_schedule_version_id` | `INTERNAL` | The merchant's fee schedule version that priced the purchase |
+| `bnpl_agreement` | `agreement_template_id` | `INTERNAL` | The registered template |
+| `bnpl_agreement` | `agreement_template_version` | `INTERNAL` | The template's version |
+| `bnpl_agreement` | `canonical_format` | `INTERNAL` | The canonical terms' format |
+| `bnpl_agreement` | `canonical_terms` | `RESTRICTED-FINANCIAL` | The accepted terms, the offer's bytes - amounts and the schedule |
+| `bnpl_agreement` | `terms_sha256` | `INTERNAL` | The terms' hash, held to the bytes by `CHECK` |
+| `bnpl_agreement` | `document_sha256` | `INTERNAL` | The offer document's hash |
+| `bnpl_agreement` | `effective_from` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_agreement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_acceptance` | `id` | `INTERNAL` | Generated |
+| `bnpl_acceptance` | `agreement_id` | `CONFIDENTIAL` | The agreement accepted |
+| `bnpl_acceptance` | `agreement_version` | `INTERNAL` | Its version |
+| `bnpl_acceptance` | `offer_id` | `CONFIDENTIAL` | The offer accepted |
+| `bnpl_acceptance` | `terms_sha256` | `INTERNAL` | The terms' hash the customer accepted |
+| `bnpl_acceptance` | `document_sha256` | `INTERNAL` | The document's hash the customer was shown |
+| `bnpl_acceptance` | `identity_id` | `CONFIDENTIAL` | The identity that accepted |
+| `bnpl_acceptance` | `session_id` | `CONFIDENTIAL` | The session that accepted |
+| `bnpl_acceptance` | `assurance` | `INTERNAL` | The session's assurance (`MULTI_FACTOR`, `CHECK`) |
+| `bnpl_acceptance` | `channel` | `INTERNAL` | A closed channel (`API`) |
+| `bnpl_acceptance` | `client_ip` | `CONFIDENTIAL` | The socket peer's address |
+| `bnpl_acceptance` | `user_agent` | `CONFIDENTIAL` | The request's agent, bounded |
+| `bnpl_acceptance` | `accepted_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_acceptance` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
+| `bnpl_schedule` | `id` | `INTERNAL` | Generated |
+| `bnpl_schedule` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_schedule` | `schedule_version` | `INTERNAL` | The version number |
+| `bnpl_schedule` | `engine` | `INTERNAL` | The engine version that projected it |
+| `bnpl_schedule` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_schedule` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_schedule` | `principal_minor` | `RESTRICTED-FINANCIAL` | The principal it schedules |
+| `bnpl_schedule` | `start_date` | `INTERNAL` | The purchase's business date |
+| `bnpl_schedule` | `instalment_count` | `INTERNAL` | Its instalment count |
+| `bnpl_schedule` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_instalment` | `id` | `INTERNAL` | Generated |
+| `bnpl_instalment` | `schedule_id` | `INTERNAL` | Its schedule |
+| `bnpl_instalment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_instalment` | `sequence` | `INTERNAL` | Its sequence |
+| `bnpl_instalment` | `due_date` | `INTERNAL` | Its due date |
+| `bnpl_instalment` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_instalment` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_instalment` | `principal_minor` | `RESTRICTED-FINANCIAL` | Its principal |
+| `bnpl_instalment` | `interest_minor` | `RESTRICTED-FINANCIAL` | Its scheduled interest |
+| `bnpl_instalment` | `amount_minor` | `RESTRICTED-FINANCIAL` | Its amount |
+| `bnpl_billing` | `id` | `INTERNAL` | Generated |
+| `bnpl_billing` | `instalment_id` | `INTERNAL` | The instalment billed - once |
+| `bnpl_billing` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_billing` | `value_date` | `INTERNAL` | The billing's value date - never before the floor |
+| `bnpl_billing` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_billing` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_billing` | `principal_minor` | `RESTRICTED-FINANCIAL` | The principal billed |
+| `bnpl_billing` | `interest_minor` | `RESTRICTED-FINANCIAL` | The interest billed |
+| `bnpl_billing` | `journal_entry_id` | `INTERNAL` | The billing entry F2 - once |
+| `bnpl_billing` | `billed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_repayment` | `id` | `INTERNAL` | Generated |
+| `bnpl_repayment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_repayment` | `kind` | `INTERNAL` | A closed kind (`AT_PURCHASE`) |
+| `bnpl_repayment` | `request_key` | `CONFIDENTIAL` | The requester's key - here the purchase's id |
+| `bnpl_repayment` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_repayment` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_repayment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount taken from the wallet |
+| `bnpl_repayment` | `agreement_id` | `CONFIDENTIAL` | The agreement repaid |
+| `bnpl_repayment` | `agreement_version` | `INTERNAL` | Its version |
+| `bnpl_repayment` | `allocation_engine` | `INTERNAL` | The pinned allocation engine version |
+| `bnpl_repayment` | `journal_entry_id` | `INTERNAL` | The repayment entry F3 - once |
+| `bnpl_repayment` | `value_date` | `INTERNAL` | The repayment's value date - never before the floor |
+| `bnpl_repayment` | `received_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_repayment_allocation` | `id` | `INTERNAL` | Generated |
+| `bnpl_repayment_allocation` | `repayment_id` | `INTERNAL` | Its repayment |
+| `bnpl_repayment_allocation` | `sequence` | `INTERNAL` | Its order |
+| `bnpl_repayment_allocation` | `target` | `INTERNAL` | A closed allocation target |
+| `bnpl_repayment_allocation` | `instalment_id` | `INTERNAL` | The instalment a due item pays |
+| `bnpl_repayment_allocation` | `component` | `INTERNAL` | A closed component |
+| `bnpl_repayment_allocation` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_repayment_allocation` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_repayment_allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount allocated |
+
+### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
+
+`bnpl V007`'s definer view `party_principal_exposure`, one row per obligation: each column classified as the column it
+projects - no figure. SELECT to the application role only; read by credit's exposure (`BnplCreditExposure`, version 3)
+and the exposure census.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `party_principal_exposure` | `obligation_id` | `CONFIDENTIAL` | The obligation (`bnpl_obligation.id`) |
+| `party_principal_exposure` | `party_id` | `CONFIDENTIAL` | The customer (`bnpl_obligation.party_id`) |
+| `party_principal_exposure` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
+| `party_principal_exposure` | `product` | `INTERNAL` | A closed product code |
+| `party_principal_exposure` | `status` | `INTERNAL` | The machine's state |
+| `party_principal_exposure` | `currency` | `INTERNAL` | Its currency |
+
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 
 Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FINANCIAL` as every reconciliation amount.
