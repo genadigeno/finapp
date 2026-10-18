@@ -20219,7 +20219,7 @@ after everything.
   financing joined, so any instance answers `404` or the whole purchase, identically; no instance-local state, no
   lock, no clock. Criterion 7 the standing deviation: the database tiers not run.
 
-**P12-TSK-015 — Instalment billing, the catch-up application and the servicing schedule** — `PLANNED`
+**P12-TSK-015 — Instalment billing, the catch-up application and the servicing schedule** — `COMPLETE` (2026-10-18; started beside `-014` and `-016`, Phase 12 wave B, branch `P12-TSK-015`, bnpl `V008`; its dependency `-013` `COMPLETE`; marks `P12-TSK-017` `READY` - `-018` depends on `-015` alone too)
 - **Objective**: on each due date exactly what is due becomes due — P4's instalments 2–4 on `D1 + 14(k−1)`,
   PN's on its monthly dates with the interest actually accrued, never the projection — and money already
   held pays what is due, at a billing's birth and whenever something is already past due (the Phase 11
@@ -20313,6 +20313,65 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — no billing is reversed, a
   refund cancels billed principal by its own entry (`-021`); F5 vacuous — no external event; F8: the
   subledger proof's due arms, `-025`). **Risk**: High. **Cx**: M.
+- **As built** (2026-10-18): **bnpl `V008`** (`V008__instalment_billing_the_catch_up_application_and_the_servicing_permit.sql`)
+  - `bnpl_billing` extended (schedule id, version and engine, agreement id and version, accrual engine, period start, the
+  business date the trigger stamps, correlation - NULL only on a row before V008; `UNIQUE (obligation_id, value_date)`;
+  a billing of nothing admitted, its entry NULL - lending V012's shape) and its trigger replaced: B4 re-taken for every
+  writer, the latest schedule version and the agreement version in force, **dated its due date** once that date has come
+  on the database clock (`business_date_latest`), oldest first, the period it closes, pay-in-N's interest exactly Σ the
+  period's posted accruals with every date of the period accrued, the principal `least(remaining, max(0, amount -
+  interest))` and the last instalment the remainder; the accrual RECORD `bnpl_interest_accrual` (`UNIQUE (obligation_id,
+  accrual_date)`, append-only, SELECT only to the application role - its writer is `-017`'s); `bnpl.principal_value_floor`
+  replaced with its accrual arm; `bnpl_credit_balance_application` + `_allocation` (two occasions, `UNIQUE (billing_id)`,
+  `UNIQUE (obligation_id, catch_up_sequence)`, the next number and the floor's two ranks judged under B4 by the trigger,
+  the deferred conservation); `bnpl.billing_component_paid` (credit applications + repayments' due-item lines) and
+  `bnpl.billing_component_billed`; the obligation's edge function replaced to admit the permit's move alone, `GRANT UPDATE
+  (next_servicing_at)`. bnpl's `BnplServicing` (T-svc), `BnplCreditBalanceApplications` (F3a, at billing and catch-up),
+  `BnplReceivables` (the one due-state derivation, refused unless the rows explain the due accounts), `BnplBilling`,
+  `BnplCreditBalanceApplication`, `ServicingOutcome`, `BnplServicingStore` / `JdbcBnplServicingStore`;
+  `BnplPurchaseStore.insertBilling(BnplBilling)` (T-pur's instalment 1 now names its versions too) and `billedItems` (in
+  place of `billedInstalments`); `app`'s `BnplServicingBeans`, `BnplServicingSchedule`, `BnplServicingMetrics`
+  (`finapp.bnpl.billing{product, outcome}`, `finapp.bnpl.servicing{step, outcome}`, `finapp.bnpl.servicing.sweeper.enabled`;
+  platform `MetricNames` gains `step`), the schedule view's `billedPrincipal`, `billedInterest`, `paid`, `due` (OpenAPI
+  additions only). **The posting chain**: an instalment's due date comes → T-svc under B4 → F2 `DR BNPL_PRINCIPAL_DUE p /
+  CR BNPL_PRINCIPAL p` (pay-in-N also `DR BNPL_INTEREST_DUE i / CR BNPL_INTEREST_ACCRUED i`, `i` = Σ the period's
+  accruals), key `bnpl.billing:<instalment>`, posting date the business date, value date the due date → the same claim
+  reclassified (`BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE` unchanged, the base of accrual untouched); then F3a `DR
+  BNPL_CREDIT_BALANCE / CR <due accounts>` by `ALLOCATION_ENGINE_V1` oldest first `FEES -> INTEREST -> PRINCIPAL`, at the
+  billing (`bnpl.credit-application:<billing>`) and as the catch-up (`…:<obligation>:catch-up:<n>`), value date `max(today,
+  floor)` → credit held falls by exactly what the due accounts fall. **Refinements of the scope above, with reasons**: (1)
+  the accrual RECORD is born here, SELECT-only - so billed interest is held to rows for every writer from the first
+  billing and the floor's accrual arm exists from the first table; `-017` adds the writer (its entry records it); (2) a
+  billing is dated its due date and posted on the business date (the plan's §12.11 "dated the business date" is the
+  posting date; the scope's "dated its due date" the value date) - base-neutral, so the floor never forbids it; (3) the
+  principal rule is lending's `least(remaining, max(0, amount - interest))`, which for pay-in-4 is exactly its scheduled
+  principal - one rule for both products, held by the trigger to the rows; (4) the at-billing application spans every
+  billed item still due (lending's), so a catch-up is born only when no billing of the step met the credit; (5) BEHIND_ACCRUAL
+  leaves the claim's retry cadence as the permit (nothing written) - until `-017` lands every pay-in-N obligation past its
+  purchase day is BEHIND_ACCRUAL each cadence, by design (no projection is ever billed); (6) `BnplBillingDatabaseTest`
+  lives in `bnpl` over bnpl's JDBC stores and the in-memory book (the `-013` precedent: the real postings are `app`'s),
+  the due dates reached by `BnplClockFrame` (lending's `ClockStep`, in a schema of bnpl's own); (7) spans per step
+  (`BnplFlowScope`) stay `-026`'s, as `-013` recorded. **Gate** - CRITICAL: none. IMPORTANT (repaired): (1) the last
+  instalment's remainder rule was unprobed in its only distinguishing case - with accrued interest at or below the
+  projection the amount rule meets the remainder, so removing the rule stayed green; the gate's
+  `BnplServicingTest#theLastInstalmentBillsTheRemainderWhateverTheInterest` (accrued interest above the projection) now
+  catches it. MINOR: (1) `BnplServicingMetrics` counted with `Counter.increment(double)` - refused by
+  `NoFloatingPointMoneyRulesTest` on the first fresh run; one increment per item; (2) the OpenAPI baseline regenerated
+  (four additions, all compatible); (3) the first probe runner measured nothing (0 tests - the shell never reached
+  gradle, and CRLF anchors failed to match) - no result taken from it, every probe re-run; (4) recorded, not fixed: the
+  backlog's first probe (`UNIQUE (instalment_id)` dropped) is unobservable hermetically and probably live too, B4 and the
+  ledger key deciding first (`MUTATION_TESTING.md` §2's note); the schedule loop's failing-obligation case has no hermetic
+  test (`BnplTransactions` needs a `DataSource`) and is `BnplBillingDatabaseTest#aFailingObligationDoesNotHoldThePage`'s,
+  owed. **Multi-instance: `PASS`** - ten instances claim disjoint pages (`FOR UPDATE SKIP LOCKED`, the permit re-stamped
+  in the claim); B4 serialises every step on one obligation, the billings, the floor and the catch-up number read after
+  it and re-judged under it by the triggers; `UNIQUE (instalment_id)`, `(obligation_id, value_date)`, `(billing_id)`,
+  `(obligation_id, catch_up_sequence)` and the ledger keys beneath; every date the database clock's after the lock, the
+  due date never early, every application floored; one transaction per step with its outbox row; no JVM state.
+  **Probes** (`MUTATION_TESTING.md` §2): twelve caught on hermetic suites, each restore sha256-verified byte-identical; the
+  first owed. **Verified** (fresh, `--rerun`): bnpl hermetic **229** (`BnplServicingTest` 20, `BnplServicingMigrationTest`
+  6), bnpl architecture **3**, app **133** (the `bnpl` package and the guard suites by name), app architecture **171**
+  (the whole tier), all 0 failures. **Written, not run**, owed a first run: `BnplBillingDatabaseTest` (fifteen cases), the
+  amended `BnplAcceptanceDatabaseTest`.
 
 **P12-TSK-016 — The merchant payable drill-down and payouts of BNPL-financed money** — `PLANNED`
 - **Objective**: the merchant leg as the merchant sees it — every BNPL financing and every BNPL refund named
@@ -20407,7 +20466,7 @@ after everything.
   replay; F4: a `FAILED` payout's hold released, the payout return path existing (ADR-0073); F8: the
   payout's existing expectation), `DOD-API`. **Risk**: High. **Cx**: M.
 
-**P12-TSK-017 — PN interest accrual** — `PLANNED`
+**P12-TSK-017 — PN interest accrual** — `READY` (marked by `P12-TSK-015`'s completion gate, 2026-10-18: its one dependency `-015` `COMPLETE`; `-018` depends on `-015` alone and may run beside it)
 - **Objective**: a PN obligation earns interest every day, exactly once per obligation and date, on the
   database clock, caught up after any outage — in its own transaction, so the currency's shared
   `BNPL_INTEREST_INCOME` row is never held across a wallet wait (T-acc; the Phase 11 gate's A2-F1 designed
@@ -20479,6 +20538,16 @@ after everything.
   a principal-only base, in a transaction that holds no wallet or payable.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — a correction run is reserved,
   not built, recorded; F5 vacuous — no external event; F8: the subledger proof). **Risk**: High. **Cx**: M.
+
+- **Refined by `P12-TSK-015`** (2026-10-18): `bnpl V008` already creates the accrual RECORD, `bnpl.bnpl_interest_accrual`, in the
+  shape above (`UNIQUE (obligation_id, accrual_date)`, base, cumulative exact, `posted_minor`, period start and end, agreement
+  version, accrual engine, entry id null for a zero day; INSERT-only, never truncated; its trigger: an `ACTIVE` pay-in-N
+  obligation only, never early on the database clock, never before the purchase date, oldest first, never into a billed
+  period) with **SELECT only** granted to the application role - so the billing's interest is held to rows for every writer
+  from the first billing and `bnpl.principal_value_floor` already has its accrual arm (`max(accrual_date) + 1`). `bnpl V009`
+  therefore adds the **writer**: the `INSERT` grant, the agreement/engine checks in the trigger it replaces, T-acc and F2a.
+  The "caught up" check `-015` calls is `BnplServicing#accruedThroughTheEve` (the latest accrual on or after the eve) - this
+  task refines it for dates with no principal outstanding (which write no row) and moves it to `BnplAccruals`.
 
 **P12-TSK-018 — Customer repayment from the wallet and closure** — `PLANNED`
 - **Objective**: the customer repays any amount from their wallet; it is allocated exactly by the pinned

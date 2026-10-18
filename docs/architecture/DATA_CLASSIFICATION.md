@@ -3673,6 +3673,15 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_billing` | `interest_minor` | `RESTRICTED-FINANCIAL` | The interest billed |
 | `bnpl_billing` | `journal_entry_id` | `INTERNAL` | The billing entry F2 - once |
 | `bnpl_billing` | `billed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_billing` | `schedule_id` | `INTERNAL` | The schedule version billed (`P12-TSK-015`; null on a row before V008) |
+| `bnpl_billing` | `schedule_version` | `INTERNAL` | Its version |
+| `bnpl_billing` | `schedule_engine` | `INTERNAL` | The schedule engine version |
+| `bnpl_billing` | `agreement_id` | `CONFIDENTIAL` | The agreement in force |
+| `bnpl_billing` | `agreement_version` | `INTERNAL` | Its version |
+| `bnpl_billing` | `accrual_engine` | `INTERNAL` | The pinned accrual engine (pay-in-N) |
+| `bnpl_billing` | `period_start` | `INTERNAL` | The start of the period the billing closes |
+| `bnpl_billing` | `business_date` | `INTERNAL` | The business date it was made on, stamped by the trigger |
+| `bnpl_billing` | `correlation_id` | `INTERNAL` | The obligation's correlation |
 | `bnpl_repayment` | `id` | `INTERNAL` | Generated |
 | `bnpl_repayment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
 | `bnpl_repayment` | `kind` | `INTERNAL` | A closed kind (`AT_PURCHASE`) |
@@ -3695,6 +3704,44 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_repayment_allocation` | `currency` | `INTERNAL` | Its currency |
 | `bnpl_repayment_allocation` | `scale` | `INTERNAL` | Its scale |
 | `bnpl_repayment_allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount allocated |
+| `bnpl_credit_balance_application` | `id` | `INTERNAL` | Generated (`P12-TSK-015`) |
+| `bnpl_credit_balance_application` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_credit_balance_application` | `billing_id` | `INTERNAL` | The billing at whose birth it applied - once; null for a catch-up |
+| `bnpl_credit_balance_application` | `catch_up_sequence` | `INTERNAL` | A catch-up's number - once per obligation |
+| `bnpl_credit_balance_application` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_credit_balance_application` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_credit_balance_application` | `amount_minor` | `RESTRICTED-FINANCIAL` | The credit applied |
+| `bnpl_credit_balance_application` | `agreement_id` | `CONFIDENTIAL` | The agreement in force |
+| `bnpl_credit_balance_application` | `agreement_version` | `INTERNAL` | Its version |
+| `bnpl_credit_balance_application` | `allocation_engine` | `INTERNAL` | The pinned allocation engine version |
+| `bnpl_credit_balance_application` | `value_date` | `INTERNAL` | Its value date - never before the floor |
+| `bnpl_credit_balance_application` | `journal_entry_id` | `INTERNAL` | The application entry F3a - once |
+| `bnpl_credit_balance_application` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_credit_balance_application` | `correlation_id` | `INTERNAL` | The obligation's correlation |
+| `bnpl_credit_balance_allocation` | `id` | `INTERNAL` | Generated (`P12-TSK-015`) |
+| `bnpl_credit_balance_allocation` | `application_id` | `INTERNAL` | Its application |
+| `bnpl_credit_balance_allocation` | `ordinal` | `INTERNAL` | Its order |
+| `bnpl_credit_balance_allocation` | `billing_id` | `INTERNAL` | The billing it pays |
+| `bnpl_credit_balance_allocation` | `component` | `INTERNAL` | A closed component |
+| `bnpl_credit_balance_allocation` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_credit_balance_allocation` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_credit_balance_allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount paid of the component |
+| `bnpl_interest_accrual` | `id` | `INTERNAL` | Generated (`P12-TSK-015`; written by `-017`'s T-acc) |
+| `bnpl_interest_accrual` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_interest_accrual` | `accrual_date` | `INTERNAL` | The date accrued - once |
+| `bnpl_interest_accrual` | `period_start` | `INTERNAL` | The period it is rounded within |
+| `bnpl_interest_accrual` | `period_end` | `INTERNAL` | The period's end |
+| `bnpl_interest_accrual` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_interest_accrual` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_interest_accrual` | `base_minor` | `RESTRICTED-FINANCIAL` | The principal the date accrued on |
+| `bnpl_interest_accrual` | `cumulative_exact` | `RESTRICTED-FINANCIAL` | The period's exact cumulative interest |
+| `bnpl_interest_accrual` | `posted_minor` | `RESTRICTED-FINANCIAL` | What the date posted |
+| `bnpl_interest_accrual` | `agreement_id` | `CONFIDENTIAL` | The agreement in force |
+| `bnpl_interest_accrual` | `agreement_version` | `INTERNAL` | Its version |
+| `bnpl_interest_accrual` | `accrual_engine` | `INTERNAL` | The pinned accrual engine version |
+| `bnpl_interest_accrual` | `journal_entry_id` | `INTERNAL` | The accrual entry F2a - null for a zero day |
+| `bnpl_interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_interest_accrual` | `correlation_id` | `INTERNAL` | The obligation's correlation |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

@@ -103,7 +103,14 @@ class BnplObligationsTest {
                 party).orElseThrow();
         assertThat(schedule.schedule().version()).isEqualTo(1);
         assertThat(schedule.schedule().instalments()).hasSize(4);
-        assertThat(schedule.billed()).containsExactly(schedule.schedule().instalments().get(0).id());
+        UUID first = schedule.schedule().instalments().get(0).id();
+        assertThat(schedule.billed()).containsOnlyKeys(first);
+        // P12-TSK-015: the billed item - instalment 1 billed and paid at purchase, nothing still due.
+        BnplPurchaseStore.BilledItem item = schedule.billedItem(first).orElseThrow();
+        assertThat(item.billedPrincipal()).isEqualTo(eur(150_00));
+        assertThat(item.paidPrincipal()).isEqualTo(eur(150_00));
+        assertThat(item.dueTotal()).isEqualTo(eur(0));
+        assertThat(schedule.billedItem(schedule.schedule().instalments().get(1).id())).isEmpty();
     }
 
     @Test

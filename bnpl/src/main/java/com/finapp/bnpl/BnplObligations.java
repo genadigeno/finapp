@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -64,13 +63,22 @@ public final class BnplObligations {
         }
     }
 
-    /** A schedule as its owner reads it: the version, its instalments, and which have been billed. */
-    public record Schedule(BnplPurchaseStore.Owned owned, BnplPurchaseStore.StoredSchedule schedule, Set<UUID> billed) {
+    /**
+     * A schedule as its owner reads it: the version, its instalments, and each billed one's billed item - what it billed
+     * and what has been paid of it, every payer's (`P12-TSK-015`), keyed by instalment.
+     */
+    public record Schedule(BnplPurchaseStore.Owned owned, BnplPurchaseStore.StoredSchedule schedule,
+            Map<UUID, BnplPurchaseStore.BilledItem> billed) {
 
         public Schedule {
             Objects.requireNonNull(owned, "owned must not be null");
             Objects.requireNonNull(schedule, "schedule must not be null");
-            billed = Set.copyOf(Objects.requireNonNull(billed, "billed must not be null"));
+            billed = Map.copyOf(Objects.requireNonNull(billed, "billed must not be null"));
+        }
+
+        /** The instalment's billed item - empty while it is not yet billed. */
+        public Optional<BnplPurchaseStore.BilledItem> billedItem(UUID instalment) {
+            return Optional.ofNullable(billed.get(instalment));
         }
     }
 
@@ -87,13 +95,21 @@ public final class BnplObligations {
                 .map(owned -> new Read(owned, balancesOf(unitOfWork, owned)));
     }
 
-    /** {@code party}'s agreement {@code id}'s schedule version 1 and its billed marks. */
+    /** {@code party}'s agreement {@code id}'s schedule version 1, each billed instalment with what it billed and was paid. */
     public Optional<Schedule> schedule(Connection unitOfWork, BnplAgreementId id, UUID party) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         return store.agreementOwnedBy(unitOfWork, Objects.requireNonNull(id, "id"), Objects.requireNonNull(party, "party"))
                 .map(owned -> new Schedule(owned, store.schedule(unitOfWork, owned.obligation().id(), 1)
                         .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1")),
-                        Set.copyOf(store.billedInstalments(unitOfWork, owned.obligation().id()))));
+                        billedByInstalment(store.billedItems(unitOfWork, owned.obligation().id()))));
+    }
+
+    private static Map<UUID, BnplPurchaseStore.BilledItem> billedByInstalment(List<BnplPurchaseStore.BilledItem> items) {
+        Map<UUID, BnplPurchaseStore.BilledItem> byInstalment = new java.util.LinkedHashMap<>();
+        for (BnplPurchaseStore.BilledItem item : items) {
+            byInstalment.put(item.instalment(), item);
+        }
+        return byInstalment;
     }
 
     private Balances balancesOf(Connection unitOfWork, BnplPurchaseStore.Owned owned) {

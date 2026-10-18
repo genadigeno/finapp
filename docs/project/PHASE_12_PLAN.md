@@ -1031,7 +1031,7 @@ re-dispatch a payout on `UNKNOWN` → scenario 5 red **by a count of dispatches 
 Counters (closed tags, no amounts — ADR-0072): `finapp.bnpl.application{product,outcome}`, `.eligibility{product,outcome}`
 (approval rate), `.offer`, `.purchase{product,plan,outcome}` (plan mix), `.refund{kind=full|partial,outcome}` (refund
 rate), `.dispute{outcome}`, `.repayment{kind,outcome}`, `.collection{outcome}`, `.accrual{outcome}`, `.fee{outcome}`,
-`.payoff`, `.reversal`, `.waiver`, `.allocation.anomaly` (alert > 0). Gauges: `finapp.bnpl.delinquency{product,bucket}`,
+`.payoff`, `.reversal`, `.waiver`, `.allocation.anomaly` (alert > 0), `.billing{product,outcome}` (`billed`, `credit_applied`) and `.servicing{step,outcome}` (`step = service`: `serviced`, `behind_accrual`, `not_serviced`, `failed`; `step = catch_up`: `applied` - the Phase 11 gate's R2 visible; added by `P12-TSK-015`, the plan having named no servicing series; the later steps join the `step` set). Gauges: `finapp.bnpl.delinquency{product,bucket}`,
 `.default{product}`, `.obligations{product,status}`, `.threeway.proof{verdict}` (alert), `.subledger.proof`, `.replay`
 (alert DIVERGED), `.capital.headroom.low` (shared), `.terms.active{product}`, the three `…sweeper.enabled`. **Amounts**
 — merchant financing exposure, outstanding, refund impact on outstanding — are audited reports, never series.

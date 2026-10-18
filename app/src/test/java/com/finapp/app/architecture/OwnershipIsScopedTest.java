@@ -960,11 +960,46 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
                                     "P12-TSK-013. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - a schedule is read only for an agreement the caller owns.")),
                     Map.entry(
-                            "com.finapp.bnpl.JdbcBnplPurchaseStore.billedInstalments",
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.billedItems",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
                                     "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
-                                    "P12-TSK-013. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - the billed marks of the caller's own schedule.")),
+                                    "P12-TSK-013, renamed and widened by P12-TSK-015. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - the billed items of the caller's own schedule - or is the one the servicing sweep claimed and its step holds FOR UPDATE (B4, JdbcBnplServicingStore.lock) for the due state; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-015. The servicing step's B4: the obligation id comes only from the servicing sweep's own claimed page (claimDue), never a request value; no door, customer's or operator's, reaches it - servicing is the system's act (PHASE_12_PLAN.md section 7.1 T-svc).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.principalValueFloor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "Phase 11 gate R1, P12-TSK-015. The first date the record leaves open to a principal fact of an obligation this transaction holds FOR UPDATE (B4) - claimed by the servicing sweep; read after the lock, the id never reaches it from a request.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.latestAccrualDate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-015. The accrual gate's read of an obligation the servicing sweep claimed and this transaction holds FOR UPDATE (B4); never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.periodInterest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-015. The accruals of one period of an obligation the servicing sweep claimed and this transaction holds FOR UPDATE (B4) - the interest a billing makes due; never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.latestSchedule",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-015. The latest schedule version of an obligation the servicing sweep claimed and this transaction holds FOR UPDATE (B4), read by the billing step; never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.latestCatchUpSequence",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "Phase 11 gate R2, P12-TSK-015. The latest catch-up application's number of an obligation this transaction holds FOR UPDATE (B4) - claimed by the servicing sweep - read after the lock so the next number is this plus one; bnpl V008's trigger re-takes B4 and re-judges the number.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplServicingStore.restamp",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-015. The servicing step's permit, for the obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4); conditional on ACTIVE, bnpl V008's edge function admitting the permit's move alone; no door reaches it.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
                             new Entry(

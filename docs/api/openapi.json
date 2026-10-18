@@ -10315,10 +10315,22 @@
           "billed": {
             "type": "boolean"
           },
+          "billedInterest": {
+            "type": "string"
+          },
+          "billedPrincipal": {
+            "type": "string"
+          },
+          "due": {
+            "type": "string"
+          },
           "dueDate": {
             "type": "string"
           },
           "interest": {
+            "type": "string"
+          },
+          "paid": {
             "type": "string"
           },
           "principal": {
