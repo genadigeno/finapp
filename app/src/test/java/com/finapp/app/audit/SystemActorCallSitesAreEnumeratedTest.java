@@ -427,6 +427,14 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " histories as the system's, under the application's own correlation. The customer's own acts"
                         + " on an offer are theirs."),
                     Map.entry(
+                            "com.finapp.app.bnpl.BnplServicingSchedule.sweepOnce",
+                    "The BNPL servicing sweep (P12-TSK-015, PHASE_12_PLAN.md section 7.1 T-svc: servicing is never a"
+                        + " person's act): nobody commands an instalment's billing or the application of money already"
+                        + " held - an instalment falls due because its date came on the database clock, and credit held"
+                        + " beside a past-due item settles it; the platform writes each billing, application and entry"
+                        + " under the obligation's own correlation, a scheduled process whose rows and entries are its"
+                        + " trail. The customer's own acts on an agreement are theirs."),
+                    Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
                         + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"

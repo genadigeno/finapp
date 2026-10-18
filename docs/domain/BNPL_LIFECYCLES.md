@@ -389,7 +389,7 @@ agent bounded. No money column: the amounts are the canonical terms' and the fin
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
 | (birth) → `ACTIVE` | C, the acceptance (§4.3) | inside T-pur, after L0, B2, B3, L6; `UNIQUE (purchase_id)`; no money column; product and plan frozen; `next_servicing_at` stamped | §4.3 | `BnplAgreementCreated` | `bnpl.OfferAccepted` |
-| `ACTIVE → ACTIVE` (permit only) | S, the servicing claim | `next_servicing_at` re-stamped — the only update admitted on an `ACTIVE` row besides closure | — | — | — |
+| `ACTIVE → ACTIVE` (permit only) | S, the servicing claim and a completed servicing step | `next_servicing_at` re-stamped — the only update admitted on an `ACTIVE` row besides closure (*built by `P12-TSK-015`*: `bnpl V008`'s edge function admits the permit's move alone on an `ACTIVE` row, the application role granted `UPDATE (next_servicing_at)` only; the claim stamps `clock_timestamp() + retry`, a completed step the next business date's start in the pinned zone) | — | — | — |
 | `ACTIVE → CLOSED` | S — the transaction that zeroes the last receivable: a repayment (T-rep), an auto-collection or a credit-balance application (T-svc), a payoff (T-pay), a refund (T-ref, or T-dsp's refund outcome), a waiver (T-wvr) | B4; the six balances derived from journal lines under it; PN every elapsed date accrued; any credit balance refunded to the wallet in the same transaction (`bnpl.closure-refund:<obligation>`) | — | `BnplAgreementClosed` (reason) | — |
 
 **Closure reasons, by the closing act** (this document's reading of §5.5 and §12.6 point 7 — §8): a refund

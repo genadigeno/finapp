@@ -32,7 +32,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -88,22 +87,34 @@ class BnplAgreementDeskTest {
     }
 
     @Test
-    @DisplayName("a schedule lists every instalment with its billed mark")
+    @DisplayName("a schedule lists every instalment with its billed mark and - billed - what it billed, what was paid and"
+            + " what is still due (P12-TSK-015)")
     void theScheduleView() {
         UUID first = IDS.next();
+        UUID second = IDS.next();
         BnplPurchaseStore.StoredSchedule schedule = new BnplPurchaseStore.StoredSchedule(IDS.next(), obligation().id(), 1,
                 "BNPL_SCHEDULE_ENGINE_V1", eur(600_00), LocalDate.of(2026, 10, 17), List.of(
                         instalment(first, 1, LocalDate.of(2026, 10, 17)),
-                        instalment(IDS.next(), 2, LocalDate.of(2026, 10, 31)),
+                        instalment(second, 2, LocalDate.of(2026, 10, 31)),
                         instalment(IDS.next(), 3, LocalDate.of(2026, 11, 14)),
                         instalment(IDS.next(), 4, LocalDate.of(2026, 11, 28))));
         BnplPurchaseStore.Owned owned = new BnplPurchaseStore.Owned(obligation(), purchase(IDS.next()), agreement(),
                 eur(600_00));
+        BnplPurchaseStore.BilledItem paid = new BnplPurchaseStore.BilledItem(IDS.next(), first,
+                LocalDate.of(2026, 10, 17), eur(0), eur(0), eur(150_00), eur(0), eur(0), eur(150_00));
+        BnplPurchaseStore.BilledItem partly = new BnplPurchaseStore.BilledItem(IDS.next(), second,
+                LocalDate.of(2026, 10, 31), eur(0), eur(0), eur(150_00), eur(0), eur(0), eur(40_00));
         BnplAgreementDesk.BnplScheduleView view = BnplAgreementDesk.schedule(new BnplObligations.Schedule(owned,
-                schedule, Set.of(first)));
+                schedule, java.util.Map.of(first, paid, second, partly)));
         assertThat(view.instalments()).extracting(BnplAgreementDesk.BnplScheduledInstalmentView::billed)
-                .containsExactly(true, false, false, false);
+                .containsExactly(true, true, false, false);
         assertThat(view.instalments().get(0).amount()).isEqualTo("150.00");
+        assertThat(view.instalments().get(0).due()).isEqualTo("0.00");
+        assertThat(view.instalments().get(1).billedPrincipal()).isEqualTo("150.00");
+        assertThat(view.instalments().get(1).paid()).isEqualTo("40.00");
+        assertThat(view.instalments().get(1).due()).isEqualTo("110.00");
+        assertThat(view.instalments().get(2).billedPrincipal()).isEqualTo("0.00");
+        assertThat(view.instalments().get(2).due()).isEqualTo("0.00");
     }
 
     @Test

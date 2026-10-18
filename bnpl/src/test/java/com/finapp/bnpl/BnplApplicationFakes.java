@@ -71,6 +71,7 @@ final class BnplApplicationFakes {
     final Book book = new Book();
     final Capital capital = new Capital();
     final Wallets wallets = new Wallets();
+    final Servicing servicing = new Servicing();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -114,6 +115,7 @@ final class BnplApplicationFakes {
         Map<UUID, MerchantFeeSplit> pins = new LinkedHashMap<>(merchants.pins);
         Purchases.State purchaseState = purchases.state();
         Book.State bookState = book.state();
+        Servicing.State servicingState = servicing.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -144,6 +146,7 @@ final class BnplApplicationFakes {
             merchants.pins.putAll(pins);
             purchases.restore(purchaseState);
             book.restore(bookState);
+            servicing.restore(servicingState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -823,7 +826,7 @@ final class BnplApplicationFakes {
         final Map<UUID, BnplAgreement> agreements = new LinkedHashMap<>();
         final Map<UUID, BnplAcceptanceEvidence> acceptances = new LinkedHashMap<>();
         final Map<UUID, StoredSchedule> schedules = new LinkedHashMap<>();
-        final Map<UUID, Billing> billings = new LinkedHashMap<>();
+        final Map<UUID, BnplBilling> billings = new LinkedHashMap<>();
         final Map<UUID, Repayment> repayments = new LinkedHashMap<>();
         final List<String> history = new ArrayList<>();
 
@@ -831,7 +834,7 @@ final class BnplApplicationFakes {
         record State(Map<UUID, BnplPurchase> rows, Map<UUID, MerchantFinancing> financings,
                 Map<UUID, BnplObligation> obligations, Map<UUID, BnplAgreement> agreements,
                 Map<UUID, BnplAcceptanceEvidence> acceptances, Map<UUID, StoredSchedule> schedules,
-                Map<UUID, Billing> billings, Map<UUID, Repayment> repayments, List<String> history) {}
+                Map<UUID, BnplBilling> billings, Map<UUID, Repayment> repayments, List<String> history) {}
 
         State state() {
             return new State(new LinkedHashMap<>(rows), new LinkedHashMap<>(financings), new LinkedHashMap<>(obligations),
@@ -969,14 +972,68 @@ final class BnplApplicationFakes {
         }
 
         @Override
-        public void insertBilling(Connection unitOfWork, Billing billing) {
+        public void insertBilling(Connection unitOfWork, BnplBilling billing) {
             step("billing insert");
+            // bnpl V006/V008: UNIQUE (instalment_id), UNIQUE (obligation_id, value_date).
             if (billings.containsKey(billing.instalment())) {
                 throw new BnplStorageException("bnpl_billing_instalment_unique: SQLSTATE 23505");
             }
+            if (billings.values().stream().anyMatch(row -> row.obligation().equals(billing.obligation())
+                    && row.dueDate().equals(billing.dueDate()))) {
+                throw new BnplStorageException("bnpl_billing_due_date_unique: SQLSTATE 23505");
+            }
             BnplObligation obligation = obligations.get(billing.obligation().value());
-            if (billing.valueDate().isBefore(obligation.purchaseDate())) {
-                throw new BnplStorageException("a BNPL billing is value-dated on or after its floor: P0001");
+            StoredSchedule schedule = schedules.get(billing.obligation().value());
+            StoredInstalment instalment = schedule.instalments().stream()
+                    .filter(candidate -> candidate.id().equals(billing.instalment())).findFirst().orElseThrow();
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            // bnpl V008's trigger: dated its due date, once it has come; oldest first; the period it closes.
+            if (!billing.dueDate().equals(instalment.dueDate()) || instalment.dueDate().isAfter(today)
+                    || billing.dueDate().isBefore(obligation.purchaseDate())) {
+                throw new BnplStorageException("a BNPL billing is dated its instalment's due date, once that date has"
+                        + " come: P0001");
+            }
+            if (billings.values().stream().anyMatch(row -> row.obligation().equals(billing.obligation())
+                    && !row.dueDate().isBefore(billing.dueDate()))
+                    || schedule.instalments().stream().anyMatch(earlier -> earlier.sequence() < instalment.sequence()
+                            && !billings.containsKey(earlier.id()))) {
+                throw new BnplStorageException("an obligation's instalments are billed oldest first: P0001");
+            }
+            if (!billing.periodStart().equals(BnplServicing.periodStart(schedule, instalment))) {
+                throw new BnplStorageException("a BNPL billing closes its instalment's own period: P0001");
+            }
+            // The interest: pay-in-4 none; pay-in-N exactly the period's posted accruals, every date of it accrued.
+            Money zero = Money.ofPersisted(0, instalment.amount().currency(), instalment.amount().scale());
+            Money accrued = zero;
+            if (schedule.engine().equals("SCHEDULE_ENGINE_V1")) {
+                accrued = servicing.periodInterest(UOW, billing.obligation(), billing.periodStart(), billing.dueDate(),
+                        zero);
+                if (servicing.latestAccrualDate(UOW, billing.obligation())
+                        .filter(latest -> !latest.isBefore(billing.dueDate().minusDays(1))).isEmpty()) {
+                    throw new BnplStorageException("a pay-in-N billing waits for every accrual of its period: P0001");
+                }
+            }
+            if (!billing.interest().equals(accrued)) {
+                throw new BnplStorageException("a BNPL billing's interest is exactly its period's accrued interest: P0001");
+            }
+            // The principal: least(remaining, max(0, amount - interest)); the last instalment the remainder.
+            Money remaining = schedule.principal();
+            for (BnplBilling row : billings.values()) {
+                if (row.obligation().equals(billing.obligation())) {
+                    remaining = remaining.minus(row.principal());
+                }
+            }
+            Money expected;
+            if (instalment.sequence() == schedule.instalments().size()) {
+                expected = remaining;
+            } else {
+                Money portion = instalment.amount().minus(billing.interest());
+                portion = portion.isNegative() ? zero : portion;
+                expected = portion.compareTo(remaining) <= 0 ? portion : remaining;
+            }
+            if (remaining.isNegative() || !billing.principal().equals(expected)) {
+                throw new BnplStorageException("a BNPL billing bills least(remaining, amount - interest) of principal:"
+                        + " P0001");
             }
             billings.put(billing.instalment(), billing);
         }
@@ -1010,9 +1067,37 @@ final class BnplApplicationFakes {
         }
 
         @Override
-        public List<UUID> billedInstalments(Connection unitOfWork, BnplObligationId obligation) {
-            return billings.values().stream().filter(row -> row.obligation().equals(obligation))
-                    .map(Billing::instalment).toList();
+        public List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation) {
+            List<BilledItem> items = new ArrayList<>();
+            for (BnplBilling billing : billings.values().stream().filter(row -> row.obligation().equals(obligation))
+                    .sorted(java.util.Comparator.comparing(BnplBilling::dueDate)).toList()) {
+                Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                items.add(new BilledItem(billing.id(), billing.instalment(), billing.dueDate(), zero, billing.interest(),
+                        billing.principal(), paid(billing, "FEES", zero), paid(billing, "INTEREST", zero),
+                        paid(billing, "PRINCIPAL", zero)));
+            }
+            return items;
+        }
+
+        /** {@code bnpl.billing_component_paid}: every application line on the billing, every repayment line on its instalment. */
+        Money paid(BnplBilling billing, String component, Money zero) {
+            Money paid = zero;
+            for (BnplCreditBalanceApplication application : servicing.applications.values()) {
+                for (BnplCreditBalanceApplication.Line line : application.lines()) {
+                    if (line.billing().equals(billing.id()) && line.component().name().equals(component)) {
+                        paid = paid.plus(line.amount());
+                    }
+                }
+            }
+            for (Repayment repayment : repayments.values()) {
+                for (Allocation line : repayment.allocations()) {
+                    if (line.target().equals("DUE_ITEM") && line.instalment().filter(billing.instalment()::equals)
+                            .isPresent() && line.component().filter(component::equals).isPresent()) {
+                        paid = paid.plus(line.amount());
+                    }
+                }
+            }
+            return paid;
         }
 
         private Owned owned(BnplObligation obligation) {
@@ -1027,7 +1112,7 @@ final class BnplApplicationFakes {
 
         /** One posted line. */
         record Line(String key, com.finapp.ledger.LedgerAccountId account, com.finapp.ledger.Direction direction,
-                Money amount, java.time.LocalDate valueDate) {}
+                Money amount, java.time.LocalDate valueDate, java.time.LocalDate postingDate) {}
 
         final Map<com.finapp.ledger.LedgerAccountId, com.finapp.ledger.LedgerAccount> accounts = new LinkedHashMap<>();
         final Map<com.finapp.ledger.LedgerAccountId, String> labels = new LinkedHashMap<>();
@@ -1146,7 +1231,8 @@ final class BnplApplicationFakes {
             }
             keys.add(key);
             for (com.finapp.ledger.JournalLine line : command.lines()) {
-                lines.add(new Line(key, line.account(), line.direction(), line.amount(), command.valueDate()));
+                lines.add(new Line(key, line.account(), line.direction(), line.amount(), command.valueDate(),
+                        command.postingDate()));
             }
             return com.finapp.ledger.JournalEntryId.of(IDS.next());
         }
@@ -1182,6 +1268,187 @@ final class BnplApplicationFakes {
                 }
             }
             return principal;
+        }
+    }
+
+    /**
+     * {@code bnpl V008}'s servicing world, in memory (`P12-TSK-015`): the permit and its one-statement claim on the database
+     * clock, B4 (logged), the principal value floor, the accrual record (the owner-role accrual fixture's
+     * {@link #accrue}), the latest schedule, and the credit-balance application's arbiters - {@code UNIQUE (billing_id)},
+     * the next catch-up number, the floor's two ranks, the rows summing to the application and no billed component paid
+     * beyond what it billed.
+     */
+    final class Servicing implements BnplServicingStore {
+
+        /** One accrued date - the record P12-TSK-017's T-acc writes; here the owner-role fixture's. */
+        record Accrual(BnplObligationId obligation, java.time.LocalDate date, Money posted) {}
+
+        final Map<UUID, Instant> permits = new LinkedHashMap<>();
+        final List<Accrual> accruals = new ArrayList<>();
+        final Map<UUID, BnplCreditBalanceApplication> applications = new LinkedHashMap<>();
+
+        /** Everything, for the unit of work's rollback. */
+        record State(Map<UUID, Instant> permits, List<Accrual> accruals,
+                Map<UUID, BnplCreditBalanceApplication> applications) {}
+
+        State state() {
+            return new State(new LinkedHashMap<>(permits), new ArrayList<>(accruals), new LinkedHashMap<>(applications));
+        }
+
+        void restore(State state) {
+            reset(permits, state.permits());
+            accruals.clear();
+            accruals.addAll(state.accruals());
+            reset(applications, state.applications());
+        }
+
+        /** The owner-role accrual fixture: a date's posted interest on the record (and its F2a lines on the book). */
+        void accrue(BnplObligationId obligation, java.time.LocalDate date, Money posted) {
+            accruals.add(new Accrual(obligation, date, posted));
+            if (posted.isPositive()) {
+                com.finapp.ledger.LedgerAccount accrued = book.accountsOf(UOW, obligation).stream()
+                        .filter(account -> account.purpose() == com.finapp.ledger.AccountPurpose.BNPL_INTEREST_ACCRUED)
+                        .findFirst().orElseThrow();
+                com.finapp.ledger.LedgerAccountId income = book.operational(UOW,
+                        com.finapp.ledger.AccountPurpose.BNPL_INTEREST_INCOME, BnplTermsFixtures.EUR);
+                String key = "bnpl.accrual:" + obligation.value() + ":" + date;
+                book.keys.add(key);
+                book.lines.add(new Book.Line(key, accrued.id(), com.finapp.ledger.Direction.DEBIT, posted, date, date));
+                book.lines.add(new Book.Line(key, income, com.finapp.ledger.Direction.CREDIT, posted, date, date));
+            }
+        }
+
+        private java.time.LocalDate today() {
+            return java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+        }
+
+        Instant permitOf(BnplObligation obligation) {
+            return permits.getOrDefault(obligation.id().value(), obligation.openedAt());
+        }
+
+        @Override
+        public List<BnplObligationId> claimDue(Connection unitOfWork, int limit, java.time.Duration retryCadence) {
+            log.add("claim");
+            List<BnplObligation> due = purchases.obligations.values().stream()
+                    .filter(row -> row.status() == BnplObligationStatus.ACTIVE && !permitOf(row).isAfter(now))
+                    .sorted(java.util.Comparator.comparing(this::permitOf)
+                            .thenComparing(row -> row.id().value()))
+                    .limit(limit).toList();
+            for (BnplObligation row : due) {
+                permits.put(row.id().value(), now.plus(retryCadence));
+            }
+            return due.stream().map(BnplObligation::id).toList();
+        }
+
+        @Override
+        public Optional<Locked> lock(Connection unitOfWork, BnplObligationId obligation) {
+            step("B4");
+            BnplObligation row = purchases.obligations.get(obligation.value());
+            if (row == null) {
+                return Optional.empty();
+            }
+            BnplAgreement agreement = purchases.agreements.get(row.agreement().value());
+            return Optional.of(new Locked(row, agreement.id(), agreement.version(), agreement.termsVersionId(),
+                    agreement.scheduleEngine(), agreement.accrualEngine(), agreement.allocationEngine(), "UTC"));
+        }
+
+        @Override
+        public Instant databaseNow(Connection unitOfWork) {
+            return now;
+        }
+
+        @Override
+        public java.time.LocalDate principalValueFloor(Connection unitOfWork, BnplObligationId obligation) {
+            java.time.LocalDate floor = purchases.obligations.get(obligation.value()).purchaseDate();
+            for (BnplBilling billing : purchases.billings.values()) {
+                if (billing.obligation().equals(obligation) && billing.dueDate().isAfter(floor)) {
+                    floor = billing.dueDate();
+                }
+            }
+            Optional<java.time.LocalDate> accrued = latestAccrualDate(unitOfWork, obligation);
+            if (accrued.isPresent() && accrued.get().plusDays(1).isAfter(floor)) {
+                floor = accrued.get().plusDays(1);
+            }
+            return floor;
+        }
+
+        @Override
+        public Optional<java.time.LocalDate> latestAccrualDate(Connection unitOfWork, BnplObligationId obligation) {
+            return accruals.stream().filter(row -> row.obligation().equals(obligation)).map(Accrual::date)
+                    .max(java.util.Comparator.naturalOrder());
+        }
+
+        @Override
+        public Money periodInterest(Connection unitOfWork, BnplObligationId obligation, java.time.LocalDate from,
+                java.time.LocalDate toExclusive, Money zero) {
+            Money interest = zero;
+            for (Accrual row : accruals) {
+                if (row.obligation().equals(obligation) && !row.date().isBefore(from) && row.date().isBefore(toExclusive)) {
+                    interest = interest.plus(row.posted());
+                }
+            }
+            return interest;
+        }
+
+        @Override
+        public Optional<BnplPurchaseStore.StoredSchedule> latestSchedule(Connection unitOfWork,
+                BnplObligationId obligation) {
+            return Optional.ofNullable(purchases.schedules.get(obligation.value()));
+        }
+
+        @Override
+        public int latestCatchUpSequence(Connection unitOfWork, BnplObligationId obligation) {
+            return applications.values().stream().filter(row -> row.obligation().equals(obligation))
+                    .flatMap(row -> row.catchUp().stream()).max(Integer::compare).orElse(0);
+        }
+
+        @Override
+        public void insertApplication(Connection unitOfWork, BnplCreditBalanceApplication application) {
+            step("application insert");
+            BnplObligationId obligation = application.obligation();
+            if (application.billing().isPresent() && applications.values().stream()
+                    .anyMatch(row -> row.billing().equals(application.billing()))) {
+                throw new BnplStorageException("bnpl_credit_balance_application_billing_unique: SQLSTATE 23505");
+            }
+            if (application.catchUp().isPresent()
+                    && application.catchUp().get() != latestCatchUpSequence(unitOfWork, obligation) + 1) {
+                throw new BnplStorageException("a catch-up credit-balance application is its obligation's next: P0001");
+            }
+            // The Phase 11 gate's R1: never before the floor, never after the later of today and the floor.
+            java.time.LocalDate floor = principalValueFloor(unitOfWork, obligation);
+            java.time.LocalDate ceiling = today().isAfter(floor) ? today() : floor;
+            if (application.valueDate().isBefore(floor) || application.valueDate().isAfter(ceiling)) {
+                throw new BnplStorageException("a credit-balance application is value-dated on or after its obligation's"
+                        + " floor and never after today: P0001");
+            }
+            applications.put(application.id(), application);
+            // At commit: no billed component paid beyond what it billed (every payer's).
+            for (BnplCreditBalanceApplication.Line line : application.lines()) {
+                BnplBilling billing = purchases.billings.values().stream()
+                        .filter(row -> row.id().equals(line.billing())).findFirst().orElseThrow(() ->
+                                new BnplStorageException("a credit-balance allocation pays a billing of its own"
+                                        + " obligation: P0001"));
+                Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                Money billed = switch (line.component()) {
+                    case FEES -> zero;
+                    case INTEREST -> billing.interest();
+                    case PRINCIPAL -> billing.principal();
+                };
+                if (purchases.paid(billing, line.component().name(), zero).compareTo(billed) > 0) {
+                    applications.remove(application.id());
+                    throw new BnplStorageException("no billed component is ever paid beyond what it billed: P0001");
+                }
+            }
+        }
+
+        @Override
+        public boolean restamp(Connection unitOfWork, BnplObligationId obligation, java.time.LocalDate openDate) {
+            BnplObligation row = purchases.obligations.get(obligation.value());
+            if (row == null || row.status() != BnplObligationStatus.ACTIVE) {
+                return false;
+            }
+            permits.put(obligation.value(), openDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant());
+            return true;
         }
     }
 

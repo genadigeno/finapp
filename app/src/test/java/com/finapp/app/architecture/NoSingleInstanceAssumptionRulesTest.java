@@ -347,7 +347,17 @@ class NoSingleInstanceAssumptionRulesTest {
                     // UNIQUE (decision_id), its expiry stamped by the database; credit's decision and checkout's session
                     // are read, their events only pull a permit forward. Register row: DISTRIBUTED_EXECUTION.md section
                     // 3; the ten-sweeper race is BnplOriginationDatabaseTest's.
-                    "com.finapp.app.bnpl.BnplOriginationSchedule");
+                    "com.finapp.app.bnpl.BnplOriginationSchedule",
+                    // P12-TSK-015: the same half for the BNPL servicing sweep - the 28th entry (P12-TSK-011's
+                    // BnplOriginationSchedule the 27th). No external call is made: each tick claims the ACTIVE obligations
+                    // whose permit has come in ONE statement on the database clock (FOR UPDATE SKIP LOCKED, the permit
+                    // re-stamped to the retry cadence), and every step takes B4 (the obligation FOR UPDATE), reads the
+                    // database clock after it, writes nothing for a pay-in-N record behind its accrual, and bills each
+                    // instalment due by then, every instalment born once by bnpl_billing UNIQUE (instalment_id) and
+                    // posted under the ledger key bnpl.billing:<instalment>; money held applied under UNIQUE (billing_id)
+                    // and UNIQUE (obligation_id, catch_up_sequence). Register row: DISTRIBUTED_EXECUTION.md section 3;
+                    // the ten-sweeper race is BnplBillingDatabaseTest's.
+                    "com.finapp.app.bnpl.BnplServicingSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

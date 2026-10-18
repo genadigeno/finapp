@@ -233,7 +233,14 @@ public final class MetricNames {
                     // migration's CHECK, never a request's value, a person or a resource (the code writes the offer's own
                     // plan). The plan's own series carries it (PHASE_12_PLAN.md section 15: finapp.bnpl.purchase{product,
                     // plan, outcome}, the plan mix); registered eagerly per product and plan.
-                    "plan");
+                    "plan",
+                    // Which step of a servicing transaction (P12-TSK-015): service (the whole step) or catch_up (its
+                    // catch-up credit-balance application), and the steps later tasks add to T-svc (collection, closure,
+                    // condition, fee) - the closed BnplServicingMetrics.Step enum, a reviewed code change, never a
+                    // request's value, a person or a resource (the code writes a constant per step). The task's own
+                    // series carries it (PHASE_12_PLAN.md section 15 as P12-TSK-015 extends it:
+                    // finapp.bnpl.servicing{step, outcome}); registered eagerly.
+                    "step");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

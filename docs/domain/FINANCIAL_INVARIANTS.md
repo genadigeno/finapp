@@ -2520,6 +2520,7 @@ deferred trigger proven alone by a raw-SQL writer (`P12-TSK-013`); the battery's
 purchases conserving exactly and replayed `IDENTICAL` in two JVMs (`P12-TST-002`); `BnplReplayProof`
 re-running the pinned engine over every schedule version (`P12-TSK-025`).
 *(As built by `P12-TSK-013`: schedule version 1 stored (`bnpl_schedule`, `bnpl_instalment`) from the pinned engine over the purchase's business date; `bnpl_schedule_conserves`, deferred, holds Σ instalment principal = the schedule's principal = the financed gross and the numbering 1..n; pay-in-4's 14-day dates ranked at insert. Hermetic: `BnplAcceptanceMigrationTest#theScheduleConserves`; database, owed: `BnplAcceptanceDatabaseTest#aScheduleThatDoesNotConserveIsRefused`.)*
+*(As built by `P12-TSK-015`: billing conserves the schedule over the obligation's life - `bnpl V008`'s billing trigger holds every instalment's principal to `least(remaining, max(0, amount - interest))` and the last instalment's to the remainder, so Σ billed principal = the version's principal; pay-in-N's billed interest is exactly the period's posted accruals. Hermetic: `BnplServicingTest#theLastInstalmentBillsTheRemainder`, `#theLastInstalmentBillsTheRemainderWhateverTheInterest`, `#pnBillsTheAccruedInterestNotTheProjection`; database, owed: `BnplBillingDatabaseTest#theLastInstalmentBillsTheRemainder`.)*
 **Phase:** 12
 
 ### INV-BNPL-06 — A refund preserves value

@@ -189,12 +189,16 @@ class BnplAcceptanceDatabaseTest {
         Offered offered = offered();
         BnplPurchaseStore early = new Delegating(PURCHASES) {
             @Override
-            public void insertBilling(Connection unitOfWork, Billing billing) {
-                super.insertBilling(unitOfWork, new Billing(billing.id(), billing.instalment(), billing.obligation(),
-                        billing.valueDate().minusDays(1), billing.principal(), billing.interest(), billing.entry()));
+            public void insertBilling(Connection unitOfWork, BnplBilling billing) {
+                super.insertBilling(unitOfWork, new BnplBilling(billing.id(), billing.instalment(), billing.sequence(),
+                        billing.obligation(), billing.scheduleId(), billing.scheduleVersion(), billing.scheduleEngine(),
+                        billing.agreement(), billing.agreementVersion(), billing.accrualEngine(),
+                        billing.periodStart().minusDays(1), billing.dueDate().minusDays(1), billing.principal(),
+                        billing.interest(), billing.entry(), billing.correlation()));
             }
         };
-        assertThatThrownBy(() -> accept(new Scripted(), early, offered)).rootCause().hasMessageContaining("floor");
+        // bnpl V008: a billing is dated its due date - the purchase's own, the floor - never the day before.
+        assertThatThrownBy(() -> accept(new Scripted(), early, offered)).rootCause().hasMessageContaining("due date");
         assertThat(count("SELECT count(*) FROM bnpl.purchase WHERE offer_id = '" + offered.offer().value() + "'"))
                 .isZero();
     }
@@ -262,30 +266,35 @@ class BnplAcceptanceDatabaseTest {
 
     // ------------------------------------------------------------------ plumbing
 
-    private record Offered(BnplOfferId offer, UUID party, UUID session, UUID merchant) {}
+    record Offered(BnplOfferId offer, UUID party, UUID session, UUID merchant) {}
 
     /** An application offered for {@code GROSS} on pay-in-4's ACTIVE terms - the origination step's edge. */
-    private static Offered offered() {
+    static Offered offered() {
+        return offered(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+    }
+
+    /** An application offered for {@code GROSS} on {@code product}'s ACTIVE terms - the origination step's edge (P12-TSK-015). */
+    static Offered offered(BnplProduct product, BnplPlan plan) {
         UUID party = UUID.randomUUID();
         UUID session = UUID.randomUUID();
         UUID merchant = UUID.randomUUID();
         BnplApplicationStore.NewApplication row = new BnplApplicationStore.NewApplication(BnplApplicationId.next(IDS),
-                party, BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4, session, merchant, UUID.randomUUID(),
-                inOneTransaction(uow -> TERMS_STORE.active(uow, BnplProduct.BNPL_PAY_IN_4)).orElseThrow(),
+                party, product, plan, session, merchant, UUID.randomUUID(),
+                inOneTransaction(uow -> TERMS_STORE.active(uow, product)).orElseThrow(),
                 customer(party), correlation());
         BnplOfferId offer = BnplOfferId.next(IDS);
         inOneTransaction(uow -> {
             APPLICATIONS.insert(uow, row);
             APPLICATIONS.transition(uow, row.id(), BnplApplicationStatus.SUBMITTED, BnplApplicationStatus.AWAITING_DECISION);
-            BnplTermsVersion version = TERMS.pinActive(uow, BnplProduct.BNPL_PAY_IN_4);
+            BnplTermsVersion version = TERMS.pinActive(uow, product);
             BnplOfferStore.Offered born = OFFERS.insert(uow, new BnplOfferStore.NewOffer(offer, row.id(), party,
-                    BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4, UUID.randomUUID(), version.id(), session,
+                    product, plan, UUID.randomUUID(), version.id(), session,
                     Instant.now().plus(Duration.ofDays(1)), Instant.now().plus(Duration.ofHours(1)), correlation()));
-            BnplIllustration illustration = BnplIllustration.of(version.terms(), BnplPlan.PAY_IN_4,
+            BnplIllustration illustration = BnplIllustration.of(version.terms(), plan,
                     Money.ofMinorUnits(GROSS, EUR), LocalDate.ofInstant(born.offeredAt(), java.time.ZoneOffset.UTC));
             String canonical = BnplOfferTerms.render(new BnplOfferTerms.Content(offer, row.id(), UUID.randomUUID(),
-                    version.id(), version.row().version(), version.terms(), BnplPlan.PAY_IN_4, illustration));
-            OFFERS.insertTerms(uow, offer, BnplOfferStore.StoredTerms.of(BnplPlan.PAY_IN_4,
+                    version.id(), version.row().version(), version.terms(), plan, illustration));
+            OFFERS.insertTerms(uow, offer, BnplOfferStore.StoredTerms.of(plan,
                     version.terms().nominalAnnualRate(), illustration, canonical, BnplOfferTerms.sha256("document")));
             APPLICATIONS.close(uow, row.id(), BnplApplicationStatus.OFFERED, Optional.empty());
             return null;
@@ -310,13 +319,13 @@ class BnplAcceptanceDatabaseTest {
      * for exactly the gross, the session payable and completed, the merchant enabled at 4%, capital to spare, a wallet
      * with funds, postings that mint entry ids.
      */
-    private static final class Scripted implements BnplCreditDecisions, BnplCheckoutSessions, BnplMerchants,
+    static final class Scripted implements BnplCreditDecisions, BnplCheckoutSessions, BnplMerchants,
             BnplCapital, BnplWallets, BnplBook {
 
         UUID session;
         UUID merchant;
-        private final LedgerAccountId payable = LedgerAccountId.of(IDS.next());
-        private final LedgerAccountId wallet = LedgerAccountId.of(IDS.next());
+        final LedgerAccountId payable = LedgerAccountId.of(IDS.next());
+        final LedgerAccountId wallet = LedgerAccountId.of(IDS.next());
 
         @Override
         public UUID open(Connection unitOfWork, UUID party, CreditRequest request, Actor actor, CorrelationId correlation) {
@@ -515,7 +524,7 @@ class BnplAcceptanceDatabaseTest {
         }
 
         @Override
-        public void insertBilling(Connection unitOfWork, Billing billing) {
+        public void insertBilling(Connection unitOfWork, BnplBilling billing) {
             delegate.insertBilling(unitOfWork, billing);
         }
 
@@ -540,24 +549,24 @@ class BnplAcceptanceDatabaseTest {
         }
 
         @Override
-        public List<UUID> billedInstalments(Connection unitOfWork, BnplObligationId obligation) {
-            return delegate.billedInstalments(unitOfWork, obligation);
+        public List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation) {
+            return delegate.billedItems(unitOfWork, obligation);
         }
     }
 
-    private static Actor customer(UUID party) {
+    static Actor customer(UUID party) {
         return new Actor(party.toString(), ActorType.CUSTOMER);
     }
 
-    private static Actor employee() {
+    static Actor employee() {
         return new Actor("employee-" + UUID.randomUUID(), ActorType.EMPLOYEE);
     }
 
-    private static CorrelationId correlation() {
+    static CorrelationId correlation() {
         return CorrelationId.generate(IDS);
     }
 
-    private static <R> R inOneTransaction(Function<Connection, R> work) {
+    static <R> R inOneTransaction(Function<Connection, R> work) {
         try (Connection connection = DatabaseRoles.application()) {
             connection.setAutoCommit(false);
             try {
@@ -576,7 +585,7 @@ class BnplAcceptanceDatabaseTest {
         }
     }
 
-    private static String scalarOn(Connection connection, String sql) {
+    static String scalarOn(Connection connection, String sql) {
         try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery(sql)) {
             row.next();
             return row.getString(1);
@@ -585,7 +594,7 @@ class BnplAcceptanceDatabaseTest {
         }
     }
 
-    private static long count(String sql) throws SQLException {
+    static long count(String sql) throws SQLException {
         try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement();
                 ResultSet row = statement.executeQuery(sql)) {
             row.next();
@@ -593,7 +602,7 @@ class BnplAcceptanceDatabaseTest {
         }
     }
 
-    private static String scalar(String sql) throws SQLException {
+    static String scalar(String sql) throws SQLException {
         try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement();
                 ResultSet row = statement.executeQuery(sql)) {
             row.next();
@@ -601,7 +610,7 @@ class BnplAcceptanceDatabaseTest {
         }
     }
 
-    private static int pid(Connection connection) throws SQLException {
+    static int pid(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement(); ResultSet row =
                 statement.executeQuery("SELECT pg_backend_pid()")) {
             row.next();
@@ -610,7 +619,7 @@ class BnplAcceptanceDatabaseTest {
     }
 
     /** The statement of the session blocked behind {@code blocker} on a lock, awaited 30 s. */
-    private static String awaitBlockedBy(int blocker) throws Exception {
+    static String awaitBlockedBy(int blocker) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline) {
             try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement();
@@ -625,7 +634,7 @@ class BnplAcceptanceDatabaseTest {
         throw new AssertionError("nothing ever waited behind session " + blocker);
     }
 
-    private static void refused(Connection connection, String sql, String sqlState) {
+    static void refused(Connection connection, String sql, String sqlState) {
         assertThatThrownBy(() -> {
                     try (Statement statement = connection.createStatement()) {
                         statement.execute(sql);
