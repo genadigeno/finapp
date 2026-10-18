@@ -1066,4 +1066,85 @@ final class BnplPayoutWorld implements AutoCloseable {
             return now;
         }
     }
+
+    // ------------------------------------------------------------------ the merchant transaction report
+
+    /**
+     * {@code GET /v1/merchant/transactions}' report over the world's statement reading, the other modules' stores as the
+     * test supplies them. Built here, not in the test class, so the hermetic suite names no {@code DataSource} - the
+     * taxonomy's database signature - for the one-connection stand-in Spring's {@code DataSourceUtils} is handed.
+     */
+    com.finapp.app.merchant.MerchantTransactionReport transactionReport(
+            com.finapp.payments.PaymentAttemptStore<Connection> attempts, com.finapp.payments.RefundStore<Connection> refunds,
+            com.finapp.checkout.CheckoutSessionStore<Connection> sessions, com.finapp.checkout.OrderStore<Connection> orders) {
+        return new com.finapp.app.merchant.MerchantTransactionReport(statements, attempts, refunds, sessions, orders,
+                new org.springframework.transaction.support.TransactionTemplate(new NoTransactions()),
+                new OneConnection(connection));
+    }
+
+
+    /** A transaction manager with nothing to manage: the world's stores roll back on their own. */
+    private static final class NoTransactions extends org.springframework.transaction.support.AbstractPlatformTransactionManager {
+
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, org.springframework.transaction.TransactionDefinition definition) {}
+
+        @Override
+        protected void doCommit(org.springframework.transaction.support.DefaultTransactionStatus status) {}
+
+        @Override
+        protected void doRollback(org.springframework.transaction.support.DefaultTransactionStatus status) {}
+    }
+
+    /** The world's one connection, handed to {@code DataSourceUtils}. */
+    private record OneConnection(Connection connection) implements javax.sql.DataSource {
+
+        @Override
+        public Connection getConnection() {
+            return connection;
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) {
+            return connection;
+        }
+
+        @Override
+        public java.io.PrintWriter getLogWriter() {
+            return null;
+        }
+
+        @Override
+        public void setLogWriter(java.io.PrintWriter out) {}
+
+        @Override
+        public void setLoginTimeout(int seconds) {}
+
+        @Override
+        public int getLoginTimeout() {
+            return 0;
+        }
+
+        @Override
+        public java.util.logging.Logger getParentLogger() {
+            return java.util.logging.Logger.getGlobal();
+        }
+
+        @Override
+        public <T> T unwrap(Class<T> iface) {
+            throw new UnsupportedOperationException("unwrap");
+        }
+
+        @Override
+        public boolean isWrapperFor(Class<?> iface) {
+            return false;
+        }
+    }
 }

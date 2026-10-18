@@ -16,24 +16,16 @@ import com.finapp.merchant.MerchantPayable;
 import com.finapp.payments.PaymentAttemptStore;
 import com.finapp.payments.RefundStore;
 import com.finapp.sharedkernel.money.Money;
-import java.io.PrintWriter;
 import java.lang.reflect.Proxy;
-import java.sql.Connection;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.logging.Logger;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.AbstractPlatformTransactionManager;
-import org.springframework.transaction.support.DefaultTransactionStatus;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The merchant leg as the merchant sees it (`P12-TSK-016`, {@code INV-MER-02} amended): every BNPL financing and every
@@ -175,9 +167,8 @@ class BnplMerchantDrillDownTest {
 
     /** The report over the world's statement reading; payments' and checkout's stores know none of these references. */
     private MerchantTransactionReport report() {
-        return new MerchantTransactionReport(world.statements, absent(PaymentAttemptStore.class),
-                absent(RefundStore.class), absent(CheckoutSessionStore.class), absent(OrderStore.class),
-                new TransactionTemplate(new NoTransactions()), new OneConnection(world.connection));
+        return world.transactionReport(absent(PaymentAttemptStore.class), absent(RefundStore.class),
+                absent(CheckoutSessionStore.class), absent(OrderStore.class));
     }
 
     /** A store whose every lookup finds nothing: a BNPL reference names no attempt, refund, session or order. */
@@ -196,70 +187,5 @@ class BnplMerchantDrillDownTest {
 
     private static Money eur(long minor) {
         return BnplPayoutWorld.eur(minor);
-    }
-
-    /** A transaction manager with nothing to manage: the world's stores roll back on their own. */
-    private static final class NoTransactions extends AbstractPlatformTransactionManager {
-
-        private static final long serialVersionUID = 1L;
-
-        @Override
-        protected Object doGetTransaction() {
-            return new Object();
-        }
-
-        @Override
-        protected void doBegin(Object transaction, TransactionDefinition definition) {}
-
-        @Override
-        protected void doCommit(DefaultTransactionStatus status) {}
-
-        @Override
-        protected void doRollback(DefaultTransactionStatus status) {}
-    }
-
-    /** The world's one connection, handed to {@code DataSourceUtils}. */
-    private record OneConnection(Connection connection) implements DataSource {
-
-        @Override
-        public Connection getConnection() {
-            return connection;
-        }
-
-        @Override
-        public Connection getConnection(String username, String password) {
-            return connection;
-        }
-
-        @Override
-        public PrintWriter getLogWriter() {
-            return null;
-        }
-
-        @Override
-        public void setLogWriter(PrintWriter out) {}
-
-        @Override
-        public void setLoginTimeout(int seconds) {}
-
-        @Override
-        public int getLoginTimeout() {
-            return 0;
-        }
-
-        @Override
-        public Logger getParentLogger() {
-            return Logger.getGlobal();
-        }
-
-        @Override
-        public <T> T unwrap(Class<T> iface) {
-            throw new UnsupportedOperationException("unwrap");
-        }
-
-        @Override
-        public boolean isWrapperFor(Class<?> iface) {
-            return false;
-        }
     }
 }
