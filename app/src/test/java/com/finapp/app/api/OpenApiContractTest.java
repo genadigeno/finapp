@@ -379,6 +379,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-offers/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-offers/{id}/decline",
                         ApiVersion.CURRENT_PREFIX + "/checkout/sessions/bnpl-options",
+                        // P12-TSK-013: the acceptance - the purchase (a MULTI_FACTOR act, keyed, 201 with the agreement,
+                        // the purchase and checkout's order) - and the owner's agreements, each one and its schedule.
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-offers/{id}/acceptance",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/schedule",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

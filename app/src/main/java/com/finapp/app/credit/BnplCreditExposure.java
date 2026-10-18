@@ -201,6 +201,12 @@ public final class BnplCreditExposure implements PlatformCreditExposure<Connecti
         public Money figure() {
             return principal.figure();
         }
+
+        /** The kind and status only - never a figure ({@code INV-AUD-02}). */
+        @Override
+        public String toString() {
+            return "Loan[" + principal.kind() + ", " + principal.status() + "]";
+        }
     }
 
     /**
@@ -228,6 +234,12 @@ public final class BnplCreditExposure implements PlatformCreditExposure<Connecti
                 principal = principal.plus(net);
             }
             return principal.isNegative() ? principal.minus(principal) : principal;
+        }
+
+        /** The product and status only - never a figure or the obligation ({@code INV-AUD-02}). */
+        @Override
+        public String toString() {
+            return "Obligation[" + product + ", " + status + "]";
         }
 
         private IllegalStateException unknown(String what) {

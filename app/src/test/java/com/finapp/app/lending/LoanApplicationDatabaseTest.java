@@ -84,7 +84,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the loan application (P11-TSK-010)")
-class LoanApplicationDatabaseTest {
+public class LoanApplicationDatabaseTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
@@ -580,7 +580,8 @@ class LoanApplicationDatabaseTest {
         }
     }
 
-    static LoanTerms terms(LoanProduct product) {
+    /** The suites' loan terms - public since `P12-TSK-012`, whose exposure suite (app.bnpl) holds a loan and a line too. */
+    public static LoanTerms terms(LoanProduct product) {
         boolean loan = product == LoanProduct.PERSONAL_LOAN;
         return LoanTerms.builder()
                 .product(product)
