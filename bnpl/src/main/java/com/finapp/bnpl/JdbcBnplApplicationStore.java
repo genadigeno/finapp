@@ -6,6 +6,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -108,6 +111,88 @@ public final class JdbcBnplApplicationStore implements BnplApplicationStore {
             return owned(select, id, party);
         } catch (SQLException failure) {
             throw failed("locking a BNPL application", failure);
+        }
+    }
+
+    @Override
+    public boolean close(Connection unitOfWork, BnplApplicationId id, BnplApplicationStatus to,
+            Optional<BnplApplicationClosureReason> reason) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(to, "to");
+        Objects.requireNonNull(reason, "reason");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE bnpl.bnpl_application SET status = ?, closure_reason = ?"
+                        + " WHERE id = ? AND status = 'AWAITING_DECISION'")) {
+            update.setString(1, to.name());
+            update.setString(2, reason.map(Enum::name).orElse(null));
+            update.setObject(3, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("closing a BNPL application", failure);
+        }
+    }
+
+    @Override
+    public List<BnplApplicationId> claimAwaiting(Connection unitOfWork, int limit, Duration permit) {
+        Objects.requireNonNull(permit, "permit");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a claim takes at least one application");
+        }
+        try (PreparedStatement claim = unitOfWork.prepareStatement(
+                // ONE statement: the due page locked with the rows other sweepers hold skipped, and its permits
+                // re-stamped on the database clock - the instant after the page's locks.
+                "UPDATE bnpl.bnpl_application SET next_step_at = clock_timestamp() + ? * interval '1 millisecond'"
+                        + " WHERE id IN (SELECT id FROM bnpl.bnpl_application"
+                        + " WHERE status = 'AWAITING_DECISION' AND next_step_at <= clock_timestamp()"
+                        + " ORDER BY next_step_at, id LIMIT ? FOR UPDATE SKIP LOCKED)"
+                        + " RETURNING id")) {
+            claim.setLong(1, permit.toMillis());
+            claim.setInt(2, limit);
+            List<BnplApplicationId> claimed = new ArrayList<>();
+            try (ResultSet rows = claim.executeQuery()) {
+                while (rows.next()) {
+                    claimed.add(BnplApplicationId.of(rows.getObject("id", UUID.class)));
+                }
+            }
+            return claimed;
+        } catch (SQLException failure) {
+            throw failed("claiming BNPL applications", failure);
+        }
+    }
+
+    @Override
+    public Optional<BnplApplication> lockClaimed(Connection unitOfWork, BnplApplicationId id) {
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + COLUMNS + FROM + " WHERE a.id = ? FOR UPDATE OF a")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(application(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("locking a claimed BNPL application", failure);
+        }
+    }
+
+    @Override
+    public boolean hintRequest(Connection unitOfWork, UUID decisionRequest) {
+        return hint(unitOfWork, "decision_request_id", Objects.requireNonNull(decisionRequest, "decisionRequest"));
+    }
+
+    @Override
+    public boolean hintSession(Connection unitOfWork, UUID checkoutSession) {
+        return hint(unitOfWork, "checkout_session_id", Objects.requireNonNull(checkoutSession, "checkoutSession"));
+    }
+
+    /** The permit pulled to now - only forward, only while awaiting; the column name is this class's own constant. */
+    private static boolean hint(Connection unitOfWork, String column, UUID value) {
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE bnpl.bnpl_application SET next_step_at = clock_timestamp() WHERE " + column + " = ?"
+                        + " AND status = 'AWAITING_DECISION' AND next_step_at > clock_timestamp()")) {
+            update.setObject(1, value);
+            return update.executeUpdate() > 0;
+        } catch (SQLException failure) {
+            throw failed("hinting a BNPL application", failure);
         }
     }
 

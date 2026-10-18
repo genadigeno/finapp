@@ -85,8 +85,9 @@ public class BnplApplicationBeans {
             MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             IdempotentExecutor idempotentExecutor,
             BnplTransactions bnplTransactions,
-            BnplApplicationMetrics bnplApplicationMetrics) {
+            BnplApplicationMetrics bnplApplicationMetrics,
+            com.finapp.bnpl.BnplOfferStore bnplOfferStore) {
         return new BnplApplicationDesk(bnplApplications, bnplCheckoutSessions, identityStore, mfaEnrolmentStore,
-                idempotentExecutor, bnplTransactions, bnplApplicationMetrics);
+                idempotentExecutor, bnplTransactions, bnplApplicationMetrics, bnplOfferStore);
     }
 }

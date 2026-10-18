@@ -373,6 +373,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-applications",
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-applications/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-applications/{id}/withdrawal",
+                        // P12-TSK-011: the customer's BNPL offers (the owner's own offer only; the decline keyed,
+                        // under the conditional step-up) and the checkout's BNPL options (a customer session AND the
+                        // session's token in the body - the confirmation door's shape; no eligibility).
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-offers/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-offers/{id}/decline",
+                        ApiVersion.CURRENT_PREFIX + "/checkout/sessions/bnpl-options",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

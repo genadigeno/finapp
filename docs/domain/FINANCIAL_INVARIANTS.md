@@ -2465,6 +2465,11 @@ purchase per session at every storm round (`P12-TST-001`). Upstream of the purch
 open application (`P12-TSK-010` — built: `bnpl V003`'s partial unique over `SUBMITTED`, `AWAITING_DECISION`,
 `OFFERED`, `UNIQUE (decision_request_id)`; `BnplApplicationDatabaseTest#tenApplicationsForOneSessionOpenOne` written
 and not run under the owner's instruction, its hermetic half `BnplApplicationsTest` and `BnplApplicationMigrationTest`).
+One approved decision is offered once, for exactly the purchase (`P12-TSK-011` — built: `bnpl V004`'s `UNIQUE
+(application_id)`, `UNIQUE (decision_id)`, the application's `→ OFFERED` only beside its offer, and an `OFFERED`
+application holding its session for good - a declined or expired offer frees no second application on it;
+`BnplOriginationDatabaseTest#tenSweepersOfferOnce` written and not run under the owner's instruction, its hermetic half
+`BnplOriginationTest#tenSweepersOfferOnce` and `BnplOfferMigrationTest#theArbitersArePresent`).
 **Phase:** 12
 
 ### INV-BNPL-04 — The financing conserves the purchase

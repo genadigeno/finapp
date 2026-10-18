@@ -61,7 +61,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * both the application and credit's decision request from the BNPL origin for exactly the session's gross; every race
  * counted from the rows - ten customers on one session, one customer on many sessions, one key replayed; every refusal -
  * bnpl's or credit's - leaving neither row; a failure after each insert leaving neither; the withdrawal cancelling
- * credit's request, and racing the origination step's B1 move to exactly one of {@code WITHDRAWN} and {@code OFFERED}.
+ * credit's request, and racing the origination step's B1 move to exactly one of {@code WITHDRAWN} and the step's edge
+ * ({@code CLOSED_UNDECIDED} since `P12-TSK-011`: {@code bnpl V004} admits {@code -> OFFERED} only beside an offer, so the
+ * race's raw move takes the step's other B1 edge).
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): the suite brings credit's BNPL policies and each BNPL
  * product's terms into force, which the shared container's suites expect to find as they left them. Written by
@@ -317,8 +319,8 @@ class BnplApplicationDatabaseTest {
 
     @Test
     @Order(8)
-    @DisplayName("a withdrawal racing the origination step's B1 move leaves exactly one of WITHDRAWN and OFFERED, over"
-            + " ten rounds - and an offered application's credit request is never cancelled")
+    @DisplayName("a withdrawal racing the origination step's B1 move leaves exactly one of WITHDRAWN and CLOSED_UNDECIDED,"
+            + " over ten rounds - and a closed application's credit request is never cancelled by the withdrawal")
     void withdrawalAndAnOfferLeaveExactlyOne() throws Exception {
         termsInForce();
         BnplApplicationClient.Merchant merchant = enabledMerchant();
@@ -331,14 +333,14 @@ class BnplApplicationDatabaseTest {
             String request = BnplApplicationClient.field(applied.body(), "decisionRequestId");
             List<Object> outcomes = atOnce(List.<Callable<Object>>of(
                     () -> client.withdraw(customer.token(), id, BnplApplicationClient.key()).statusCode(),
-                    () -> offeredUnderB1(UUID.fromString(id))));
+                    () -> closedUnderB1(UUID.fromString(id))));
             String status = BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_application WHERE id = ?::uuid",
                     id);
-            assertThat(status).as("round %d: %s", round, outcomes).isIn("WITHDRAWN", "OFFERED");
-            if (status.equals("OFFERED")) {
+            assertThat(status).as("round %d: %s", round, outcomes).isIn("WITHDRAWN", "CLOSED_UNDECIDED");
+            if (status.equals("CLOSED_UNDECIDED")) {
                 assertThat(outcomes.get(0)).isEqualTo(409);
                 assertThat(BnplApplicationClient.scalar("SELECT status FROM credit.decision_request WHERE id = ?::uuid",
-                        request)).as("an offered application's request is never cancelled").isNotEqualTo("CANCELLED");
+                        request)).as("the withdrawal lost: it cancelled nothing").isNotEqualTo("CANCELLED");
             } else {
                 assertThat(outcomes.get(0)).isEqualTo(200);
                 assertThat(outcomes.get(1)).as("the step found it moved").isEqualTo(0);
@@ -462,13 +464,17 @@ class BnplApplicationDatabaseTest {
         }
     }
 
-    /** The origination step's B1 move, as `P12-TSK-011` will make it: the row locked, moved only from AWAITING_DECISION. */
-    private static int offeredUnderB1(UUID application) throws Exception {
+    /**
+     * The origination step's B1 move as `P12-TSK-011` makes it for a session found closed: the row locked, moved only from
+     * AWAITING_DECISION ({@code -> OFFERED} needs its offer beside it since {@code bnpl V004}).
+     */
+    private static int closedUnderB1(UUID application) throws Exception {
         try (Connection owner = DatabaseRoles.migrator()) {
             owner.setAutoCommit(false);
             try (PreparedStatement lock = owner.prepareStatement(
                     "SELECT status FROM bnpl.bnpl_application WHERE id = ? FOR UPDATE");
-                    PreparedStatement move = owner.prepareStatement("UPDATE bnpl.bnpl_application SET status = 'OFFERED'"
+                    PreparedStatement move = owner.prepareStatement("UPDATE bnpl.bnpl_application SET status ="
+                            + " 'CLOSED_UNDECIDED', closure_reason = 'SESSION_CLOSED'"
                             + " WHERE id = ? AND status = 'AWAITING_DECISION'")) {
                 lock.setObject(1, application);
                 lock.executeQuery().close();
@@ -517,6 +523,35 @@ class BnplApplicationDatabaseTest {
                     com.finapp.bnpl.BnplApplicationId id, UUID party) {
                 return applicationStore.lockOwnedBy(unitOfWork, id, party);
             }
+
+            @Override
+            public boolean close(Connection unitOfWork, com.finapp.bnpl.BnplApplicationId id,
+                    com.finapp.bnpl.BnplApplicationStatus to,
+                    java.util.Optional<com.finapp.bnpl.BnplApplicationClosureReason> reason) {
+                return applicationStore.close(unitOfWork, id, to, reason);
+            }
+
+            @Override
+            public List<com.finapp.bnpl.BnplApplicationId> claimAwaiting(Connection unitOfWork, int limit,
+                    java.time.Duration permit) {
+                return applicationStore.claimAwaiting(unitOfWork, limit, permit);
+            }
+
+            @Override
+            public java.util.Optional<BnplApplication> lockClaimed(Connection unitOfWork,
+                    com.finapp.bnpl.BnplApplicationId id) {
+                return applicationStore.lockClaimed(unitOfWork, id);
+            }
+
+            @Override
+            public boolean hintRequest(Connection unitOfWork, UUID decisionRequest) {
+                return applicationStore.hintRequest(unitOfWork, decisionRequest);
+            }
+
+            @Override
+            public boolean hintSession(Connection unitOfWork, UUID checkoutSession) {
+                return applicationStore.hintSession(unitOfWork, checkoutSession);
+            }
         };
     }
 
@@ -541,6 +576,16 @@ class BnplApplicationDatabaseTest {
             @Override
             public List<String> reasonTexts(Connection unitOfWork, UUID decisionRequest) {
                 return creditDecisions.reasonTexts(unitOfWork, decisionRequest);
+            }
+
+            @Override
+            public CreditOutcome decisionFor(Connection unitOfWork, UUID decisionRequest, UUID party) {
+                return creditDecisions.decisionFor(unitOfWork, decisionRequest, party);
+            }
+
+            @Override
+            public java.util.Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
+                return creditDecisions.requestOf(unitOfWork, decision);
             }
         };
     }

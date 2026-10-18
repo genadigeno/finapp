@@ -46,6 +46,15 @@ final class CheckoutBnplSessions implements BnplCheckoutSessions {
     }
 
     @Override
+    public Optional<Session> byRef(Connection unitOfWork, UUID sessionRef) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(sessionRef, "sessionRef must not be null");
+        return sessions.ownedBySession(unitOfWork, CheckoutSessionId.of(sessionRef))
+                // The deadline on the DATABASE clock, read after the row (the B3 rule, unlocked) - the sweep's reading.
+                .map(session -> viewOf(session, sessions.databaseNow(unitOfWork)));
+    }
+
+    @Override
     public Lock lockForPurchase(Connection unitOfWork, UUID sessionRef) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(sessionRef, "sessionRef must not be null");

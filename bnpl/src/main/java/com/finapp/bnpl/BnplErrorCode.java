@@ -82,7 +82,15 @@ public enum BnplErrorCode implements ErrorCode {
     SESSION_NOT_ELIGIBLE("bnpl.SessionNotEligible", 422, "The checkout session is not eligible for BNPL."),
 
     /** The purchase amount is outside the product's bounds - credit's (`P12-TSK-010`). The detail names the bound. */
-    AMOUNT_OUT_OF_RANGE("bnpl.AmountOutOfRange", 422, "The purchase amount is outside the BNPL product's bounds.");
+    AMOUNT_OUT_OF_RANGE("bnpl.AmountOutOfRange", 422, "The purchase amount is outside the BNPL product's bounds."),
+
+    /**
+     * The offer is no longer open to the act - already declined, expired (its {@code expires_at} at or before the
+     * database clock, though the sweep may not have recorded it yet) or accepted (`P12-TSK-011`, first raised by the
+     * decline; the acceptance's too, `P12-TSK-013`).
+     */
+    OFFER_NOT_ACCEPTABLE("bnpl.OfferNotAcceptable", 409, "The BNPL offer is no longer open: it was declined, expired or"
+            + " accepted.");
 
     private final String code;
     private final int status;

@@ -3486,6 +3486,52 @@ template versions `INTERNAL`.
 | `bnpl_application_event` | `actor_type` | `INTERNAL` | A closed actor type |
 | `bnpl_application_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_application_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `bnpl_offer` | `id` | `CONFIDENTIAL` | A customer's BNPL offer reference - *added by `P12-TSK-011`* |
+| `bnpl_offer` | `application_id` | `CONFIDENTIAL` | The application it offers |
+| `bnpl_offer` | `party_id` | `CONFIDENTIAL` | The applicant |
+| `bnpl_offer` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_offer` | `plan` | `INTERNAL` | A closed plan code |
+| `bnpl_offer` | `status` | `INTERNAL` | The machine's state |
+| `bnpl_offer` | `decision_id` | `CONFIDENTIAL` | Credit's approved decision, by value - never its figures |
+| `bnpl_offer` | `terms_version_id` | `INTERNAL` | The terms version pinned at the offering instant |
+| `bnpl_offer` | `checkout_session_id` | `CONFIDENTIAL` | The checkout session, by value - never its token |
+| `bnpl_offer` | `offered_at` | `INTERNAL` | System time, stamped by the trigger after the step's locks |
+| `bnpl_offer` | `decision_valid_until` | `INTERNAL` | Credit's decision validity, an expiry bound |
+| `bnpl_offer` | `session_expires_at` | `INTERNAL` | The checkout session's deadline, an expiry bound |
+| `bnpl_offer` | `expires_at` | `INTERNAL` | `LEAST` of the bounds and the pinned validity, stamped by the trigger (A17) |
+| `bnpl_offer` | `next_step_at` | `INTERNAL` | The expiry sweep's permit |
+| `bnpl_offer` | `closed_at` | `INTERNAL` | System time, stamped by the trigger at the terminal edge |
+| `bnpl_offer` | `correlation_id` | `INTERNAL` | The application's correlation |
+| `bnpl_offer_terms` | `offer_id` | `CONFIDENTIAL` | The offer the terms are |
+| `bnpl_offer_terms` | `product` | `INTERNAL` | A closed product code |
+| `bnpl_offer_terms` | `plan` | `INTERNAL` | A closed plan code |
+| `bnpl_offer_terms` | `currency` | `INTERNAL` | ISO 4217 |
+| `bnpl_offer_terms` | `scale` | `INTERNAL` | The currency's minor-unit scale |
+| `bnpl_offer_terms` | `amount_minor` | `RESTRICTED-FINANCIAL` | Exactly the purchase amount |
+| `bnpl_offer_terms` | `nominal_annual_rate` | `INTERNAL` | The pinned version's published rate |
+| `bnpl_offer_terms` | `schedule_engine` | `INTERNAL` | The pinned engine version |
+| `bnpl_offer_terms` | `illustrative_start` | `INTERNAL` | The offering day the illustration starts on |
+| `bnpl_offer_terms` | `instalment_count` | `INTERNAL` | The plan's instalments |
+| `bnpl_offer_terms` | `first_due_date` | `INTERNAL` | Illustrative |
+| `bnpl_offer_terms` | `last_due_date` | `INTERNAL` | Illustrative |
+| `bnpl_offer_terms` | `first_instalment_minor` | `RESTRICTED-FINANCIAL` | Illustrative |
+| `bnpl_offer_terms` | `regular_instalment_minor` | `RESTRICTED-FINANCIAL` | Illustrative |
+| `bnpl_offer_terms` | `final_instalment_minor` | `RESTRICTED-FINANCIAL` | Illustrative |
+| `bnpl_offer_terms` | `total_interest_minor` | `RESTRICTED-FINANCIAL` | Illustrative |
+| `bnpl_offer_terms` | `total_payable_minor` | `RESTRICTED-FINANCIAL` | Illustrative |
+| `bnpl_offer_terms` | `canonical_format` | `INTERNAL` | The canonical form's format |
+| `bnpl_offer_terms` | `canonical_terms` | `RESTRICTED-FINANCIAL` | The canonical terms text - amounts included |
+| `bnpl_offer_terms` | `terms_sha256` | `INTERNAL` | The terms' hash, held to the bytes by `CHECK` |
+| `bnpl_offer_terms` | `document_sha256` | `INTERNAL` | The offer document's hash |
+| `bnpl_offer_event` | `id` | `INTERNAL` | Generated |
+| `bnpl_offer_event` | `offer_id` | `CONFIDENTIAL` | The offer it moved |
+| `bnpl_offer_event` | `from_status` | `INTERNAL` | The machine edge |
+| `bnpl_offer_event` | `to_status` | `INTERNAL` | The machine edge |
+| `bnpl_offer_event` | `reason` | `INTERNAL` | A reason code - never free text (`CHECK`) |
+| `bnpl_offer_event` | `actor` | `CONFIDENTIAL` | Who moved it - the customer, or the system |
+| `bnpl_offer_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `bnpl_offer_event` | `occurred_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_offer_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 

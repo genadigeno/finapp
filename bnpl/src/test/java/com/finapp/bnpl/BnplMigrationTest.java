@@ -102,18 +102,21 @@ class BnplMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010)")
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
         // P12-TSK-004's (the terms version); each later task rewrites this list with its own.
-        assertThat(tablesIn(SCHEMA)).containsExactly("bnpl_application", "bnpl_application_event", "bnpl_terms",
+        assertThat(tablesIn(SCHEMA)).containsExactly("bnpl_application", "bnpl_application_event", "bnpl_offer",
+                "bnpl_offer_event", "bnpl_offer_terms", "bnpl_terms",
                 "bnpl_terms_version", "bnpl_terms_version_event", "flyway_schema_history");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
                 + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
                 "bnpl_application_event_is_append_only", "bnpl_application_is_never_truncated",
                 "bnpl_application_never_rests_submitted", "bnpl_application_permits_only_machine_edges",
+                "bnpl_offer_born_beside_its_application", "bnpl_offer_event_is_append_only",
+                "bnpl_offer_is_never_truncated", "bnpl_offer_permits_only_machine_edges", "bnpl_offer_terms_is_born_once",
                 "bnpl_terms_is_born_once", "bnpl_terms_is_never_truncated", "bnpl_terms_retires_only_beside_its_successor",
                 "bnpl_terms_version_event_is_append_only", "bnpl_terms_version_has_its_terms",
                 "bnpl_terms_version_permits_only_machine_edges", "holds_account_identifier_shape",

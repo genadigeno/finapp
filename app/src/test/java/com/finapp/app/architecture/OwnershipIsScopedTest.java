@@ -865,6 +865,85 @@ class OwnershipIsScopedTest {
                                         + " transaction just inserted (the submission's SUBMITTED -> AWAITING_DECISION);"
                                         + " the move is conditional on its from-state, bnpl V003's trigger beneath.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.lockClaimed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. The origination step's B1: the application id comes only from the sweep's own claimed page (claimAwaiting), never a request value; no door reaches it - origination is the system's act.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.close",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. The application id is the one lockClaimed holds FOR UPDATE in this transaction (the sweep's step); the move is conditional on AWAITING_DECISION, bnpl V004's trigger beneath (-> OFFERED only beside its offer).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.hintRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. A credit event's aggregate (or its decision resolved through credit's own read), consumed by the BNPL origination hint; only the permit of an application AWAITING_DECISION moves - never a request value, no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.hintSession",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. checkout.CheckoutSessionExpired's aggregate, consumed by the BNPL origination hint; only the permit of an application AWAITING_DECISION moves - no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplApplicationStore.hint",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. hintRequest's and hintSession's one statement - the column is the class's own constant; only a permit moves.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/bnpl-offers/{id} - the identifier from the path, and o.party_id = ? in the statement is the session's own party; another party's offer and an absent one are one empty answer, the 404 (P12-TSK-011).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/bnpl-offers/{id}/decline - ownedBy's statement plus FOR UPDATE OF o (B2), the decline's serialization point (P12-TSK-011).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.decline",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplOfferStore.lockOwnedBy",
+                                    "P12-TSK-011. The offer id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; the move is conditional on OFFERED and expires_at > clock_timestamp(), bnpl V004's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.move",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplOfferStore.lockOwnedBy",
+                                    "P12-TSK-011. decline's and expire's one statement - the id held FOR UPDATE by lockOwnedBy (the customer) or lockClaimed (the sweep), the clock side the class's own constant.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.lockClaimed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. The expiry's B2: the offer id comes only from the sweep's own claimed page (claimDue), never a request value; no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.expire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. The offer id is the one lockClaimed holds FOR UPDATE in this transaction; the move is conditional on OFFERED and expires_at <= clock_timestamp(), bnpl V004's trigger beneath.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.permitAtExpiry",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. The offer id is the one lockClaimed holds FOR UPDATE in this transaction; only its permit moves, and only while OFFERED.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.insertTerms",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-011. The offer id is minted by the origination step in this transaction, its machine row inserted just before under the application's B1; bnpl V004's trigger admits terms only beside an OFFERED offer, once - no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.terms",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplOfferStore.ownedBy",
+                                    "P12-TSK-011. The offer id comes from ownedBy (the owner's read, party_id = ?) - the terms are read only for an offer the caller owns.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.ofApplication",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplApplicationStore.ownedBy",
+                                    "P12-TSK-011. The application id comes from JdbcBnplApplicationStore.ownedBy (the owner's application read, party_id = ?), and the desk keeps the offer only when its party is the caller's.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.lockClaimed",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3531,6 +3610,12 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplApplicationStore.lockOwnedBy",
                             "com.finapp.app.bnpl.BnplApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.ownedBy",
+                            "com.finapp.app.bnpl.BnplOriginationDatabaseTest.anotherPartysOfferIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.lockOwnedBy",
+                            "com.finapp.app.bnpl.BnplOriginationDatabaseTest.anotherPartysOfferIsNotFound"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
                             "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),

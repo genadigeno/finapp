@@ -1251,6 +1251,7 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.MerchantNotEnabled` | 422 | The merchant does not offer this BNPL product. |
 | `bnpl.SessionNotEligible` | 422 | The checkout session is not eligible for BNPL. |
 | `bnpl.AmountOutOfRange` | 422 | The purchase amount is outside the BNPL product's bounds. |
+| `bnpl.OfferNotAcceptable` | 409 | The BNPL offer is no longer open: it was declined, expired or accepted. |
 
 The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
 `/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route
@@ -1287,6 +1288,18 @@ through credit's own rule), `consent.ConsentRequired`, `credit.ProductNotOffered
 `ApplicationNotWithdrawable` refuses a withdrawal of an application no longer `AWAITING_DECISION`, or whose credit request
 credit has already evaluated (nothing is moved - the decision will arrive, and an offer may be declined). `NotFound` answers
 another party's application exactly as an unknown or malformed id, on the read and the withdrawal alike.
+
+The offer doors (`P12-TSK-011`, `BNPL_LIFECYCLES.md` §4.3; `GET /v1/me/bnpl-offers/{id}`, `POST
+/v1/me/bnpl-offers/{id}/decline` - keyed `bnpl.offer-decline:CUSTOMER:<id>`, the platform's conditional step-up, no body)
+and the checkout's options (`POST /v1/checkout/sessions/bnpl-options` - a customer session and the session's TOKEN in the
+body, unkeyed, a read): `OfferNotAcceptable` (first raised here; the acceptance's too, `P12-TSK-013`) refuses a decline of
+an offer no longer `OFFERED` - declined, expired or accepted - or one whose `expires_at` has come on the database clock
+though the sweep has not yet recorded the expiry (the complementary conditional: exactly one of `DECLINED`, `EXPIRED`);
+nothing is written. `NotFound` answers another party's offer exactly as an unknown or malformed id, on the read and the
+decline alike. The options read answers `SessionNotEligible` for a token that opens no session, a session no longer
+`OPEN` or past its deadline - the application door's one answer, the token never echoed - and lists only the products the
+merchant offers within credit's bounds, covering the fee, with an `ACTIVE` terms version: no eligibility is judged, so
+there is no credit refusal to pass through.
 
 ## 3a. Rejection at the boundary
 

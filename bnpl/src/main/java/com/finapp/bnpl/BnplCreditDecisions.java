@@ -4,8 +4,10 @@ import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 
@@ -22,7 +24,10 @@ import java.util.UUID;
  * door cannot cancel it and this one cannot cancel a loan's.
  *
  * <p>Built by `P12-TSK-010`: {@link #open}, {@link #cancel}, {@link #reasonTexts}. The offer (`P12-TSK-011`) adds
- * {@code decisionFor}; the acceptance (`P12-TSK-013`) {@code lockExposure} (L0) and {@code consume}.
+ * {@link #decisionFor} - credit's request and, once decided, its decision, read authoritatively on the caller's
+ * connection with no credit lock taken, so the offering transaction never waits on credit's deciding one - and
+ * {@link #requestOf}, the decision event's hint resolved to its request. The acceptance (`P12-TSK-013`) adds
+ * {@code lockExposure} (L0) and {@code consume}.
  *
  * <p><strong>The refusals bnpl gives meaning to are declared here</strong> - an open request ({@link RequestOpen}), an
  * amount or plan outside credit's product bounds ({@link TermsOutOfBounds}), a request past cancellation
@@ -50,6 +55,81 @@ public interface BnplCreditDecisions {
 
     /** A decided request's reasons as the customer may read them, in order; empty when it has none. */
     List<String> reasonTexts(Connection unitOfWork, UUID decisionRequest);
+
+    /**
+     * Credit's authoritative answer for {@code party}'s request {@code decisionRequest} (`P12-TSK-011`, T-off): still
+     * open, closed without a decision, declined, or approved with its figures - plain reads on the caller's connection,
+     * no credit lock taken. Never an event's payload: a hint only makes the application due.
+     *
+     * @throws IllegalStateException when the request is not the party's, or a decided request has no decision - bnpl's
+     *     own record named it, so its absence is a broken database, never a refusal
+     */
+    CreditOutcome decisionFor(Connection unitOfWork, UUID decisionRequest, UUID party);
+
+    /** The request the decision {@code decision} answers - {@code credit.CreditDecisionRecorded}'s hint - or empty. */
+    Optional<UUID> requestOf(Connection unitOfWork, UUID decision);
+
+    /** What credit answers a BNPL application's request with (`P12-TSK-011`). */
+    sealed interface CreditOutcome {
+
+        /** The request is still open - collecting, evaluating or in review. */
+        record Pending() implements CreditOutcome {}
+
+        /** The request closed without a decision. */
+        record Closed(Closure closure) implements CreditOutcome {
+
+            public Closed {
+                Objects.requireNonNull(closure, "closure must not be null");
+            }
+        }
+
+        /** Credit declined. */
+        record Declined(UUID decision) implements CreditOutcome {
+
+            public Declined {
+                Objects.requireNonNull(decision, "decision must not be null");
+            }
+        }
+
+        /**
+         * Credit approved {@code amount} (at most the request - the purchase) and, for pay-in-N, {@code termMonths}, valid
+         * until {@code validUntil} on the database clock.
+         */
+        record Approved(UUID decision, UUID party, BnplProduct product, Money amount, OptionalInt termMonths,
+                Instant validUntil) implements CreditOutcome {
+
+            public Approved {
+                Objects.requireNonNull(decision, "decision must not be null");
+                Objects.requireNonNull(party, "party must not be null");
+                Objects.requireNonNull(product, "product must not be null");
+                Objects.requireNonNull(amount, "amount must not be null");
+                Objects.requireNonNull(termMonths, "termMonths must not be null");
+                Objects.requireNonNull(validUntil, "validUntil must not be null");
+            }
+
+            /** Never the amount ({@code INV-AUD-02}). */
+            @Override
+            public String toString() {
+                return "Approved[" + decision + ", " + product + ", redacted]";
+            }
+        }
+
+        /** How a request closed without a decision - each an application closure reason of its own. */
+        enum Closure {
+            CANCELLED,
+            EXPIRED,
+            ABANDONED;
+
+            /** The application's closure reason for this closure. */
+            public BnplApplicationClosureReason reason() {
+                return switch (this) {
+                    case CANCELLED -> BnplApplicationClosureReason.CREDIT_REQUEST_CANCELLED;
+                    case EXPIRED -> BnplApplicationClosureReason.CREDIT_REQUEST_EXPIRED;
+                    case ABANDONED -> BnplApplicationClosureReason.CREDIT_REQUEST_ABANDONED;
+                };
+            }
+        }
+    }
 
     /**
      * What a BNPL application asks credit for: the product (credit's of the same name), the purchase amount - the

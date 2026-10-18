@@ -6,6 +6,7 @@ import com.finapp.bnpl.BnplApplicationId;
 import com.finapp.bnpl.BnplApplications;
 import com.finapp.bnpl.BnplCheckoutSessions;
 import com.finapp.bnpl.BnplErrorCode;
+import com.finapp.bnpl.BnplOfferStore;
 import com.finapp.bnpl.BnplPlan;
 import com.finapp.bnpl.BnplProduct;
 import com.finapp.consent.ConsentNotGrantedException;
@@ -72,11 +73,13 @@ public final class BnplApplicationDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final BnplTransactions transactions;
     @NonNull private final BnplApplicationMetrics metrics;
+    @NonNull private final BnplOfferStore offers;
 
     /**
      * An application as its customer sees it - its status, product and plan, credit's request id, the terms version in
-     * force at submission, its instants, the closure reason once closed undecided, and once declined credit's reasons in
-     * the customer's words. Never a figure, a score, a decision, the session's token, the session or the merchant.
+     * force at submission, its instants, the closure reason once closed undecided, once declined credit's reasons in the
+     * customer's words, and once offered its offer's id (`P12-TSK-011` - the offer is read, declined and accepted at
+     * {@code /v1/me/bnpl-offers/{id}}). Never a figure, a score, a decision, the session's token, the session or the merchant.
      */
     public record BnplApplicationView(
             String applicationId,
@@ -88,7 +91,8 @@ public final class BnplApplicationDesk {
             String submittedAt,
             String closedAt,
             String closureReason,
-            List<String> reasons) {}
+            List<String> reasons,
+            String offerId) {}
 
     public BnplApplicationView submit(
             Session current, String idempotencyKey, BnplApplicationController.BnplApplicationBody body) {
@@ -153,7 +157,10 @@ public final class BnplApplicationDesk {
         BnplApplicationId id = applicationId(rawId);
         return transactions.inTransaction(unitOfWork -> {
             UUID party = partyOf(unitOfWork, current);
-            return applications.read(unitOfWork, id, party).map(read -> view(read.application(), read.reasonTexts()));
+            return applications.read(unitOfWork, id, party).map(read -> view(read.application(), read.reasonTexts(),
+                    offers.ofApplication(unitOfWork, id)
+                            .filter(offer -> offer.party().equals(party))
+                            .map(offer -> offer.id().value().toString())));
         }).orElseThrow(BnplApplicationDesk::notFound);
     }
 
@@ -245,6 +252,11 @@ public final class BnplApplicationDesk {
     // ------------------------------------------------------------------ the view
 
     static BnplApplicationView view(BnplApplication application, List<String> reasons) {
+        return view(application, reasons, java.util.Optional.empty());
+    }
+
+    static BnplApplicationView view(BnplApplication application, List<String> reasons,
+            java.util.Optional<String> offerId) {
         return new BnplApplicationView(
                 application.id().value().toString(),
                 application.product().name(),
@@ -255,7 +267,8 @@ public final class BnplApplicationDesk {
                 application.submittedAt().toString(),
                 application.closedAt().map(Instant::toString).orElse(null),
                 application.closureReason().map(Enum::name).orElse(null),
-                reasons.isEmpty() ? null : reasons);
+                reasons.isEmpty() ? null : reasons,
+                offerId.orElse(null));
     }
 
     /** A keyed act's recorded response: the application as it stood then - submitted or withdrawn, never decided. */
@@ -269,7 +282,7 @@ public final class BnplApplicationDesk {
     static BnplApplicationView replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new BnplApplicationView(fields[1], fields[2], fields[3], fields[4], fields[5],
-                Integer.parseInt(fields[6]), fields[7], fields[8].isEmpty() ? null : fields[8], null, null);
+                Integer.parseInt(fields[6]), fields[7], fields[8].isEmpty() ? null : fields[8], null, null, null);
     }
 
     // ------------------------------------------------------------------ plumbing

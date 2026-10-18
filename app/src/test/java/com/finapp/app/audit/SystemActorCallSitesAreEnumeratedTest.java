@@ -418,6 +418,15 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " pins the versions in force, opens the data requests, freezes, assesses and evaluates, and"
                         + " expires or abandons a request, each edge recorded in the request's history as the system's."),
                     Map.entry(
+                            "com.finapp.app.bnpl.BnplOriginationSchedule.sweepOnce",
+                    "The BNPL origination sweep (P12-TSK-011, PHASE_12_PLAN.md section 11: origination is never a"
+                        + " person's act): nobody commands an application's offer, decline or undecided closure - a"
+                        + " checkout session that closed while credit decided among them, its credit request cancelled"
+                        + " from the BNPL origin - nor an offer's expiry; the platform reads credit's decision and"
+                        + " checkout's session and acts on them, each edge recorded in the application's and the offer's"
+                        + " histories as the system's, under the application's own correlation. The customer's own acts"
+                        + " on an offer are theirs."),
+                    Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
                         + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"
