@@ -66,21 +66,45 @@ public interface PositionBreakdown<T> {
      * {@code RECONCILIATION} — an approved break resolution's attribution. Classified FIRST,
      * whatever the entry faces, so its counterparty is empty: a transfer of an OUTBOUND clearing
      * remainder faces the clearing and would otherwise read as a capture.
+     *
+     * <p>{@code namespace} (`P12-TSK-016`, the origin rule's sibling): the lines belong to a
+     * {@code POSTING} whose command's idempotency key begins with one of the posting-key
+     * namespaces the caller named - the first in the caller's order. Reported BESIDE the
+     * counterparty, never instead of it: the ledger states both facts in its own vocabulary (a
+     * key it recorded; a purpose and a direction) and the caller, which composed the entry
+     * shapes, decides which one explains the line. A merchant's BNPL refund credits the
+     * customer's wallet exactly as a wallet-paid capture's refund does, so only the key can tell
+     * the two apart.
      */
     record Bucket(
             Direction direction,
             Optional<Counterparty> counterparty,
             Money total,
-            boolean reconciliationAttributed) {
+            boolean reconciliationAttributed,
+            Optional<String> namespace) {
 
         public Bucket {
             Objects.requireNonNull(direction, "direction must not be null");
             Objects.requireNonNull(counterparty, "counterparty must not be null");
             Objects.requireNonNull(total, "total must not be null");
+            Objects.requireNonNull(namespace, "namespace must not be null");
             if (reconciliationAttributed && counterparty.isPresent()) {
                 throw new IllegalArgumentException(
                         "an attribution is classified by its origin, never by its counterparty");
             }
+            if (reconciliationAttributed && namespace.isPresent()) {
+                throw new IllegalArgumentException(
+                        "an attribution is an ADJUSTMENT, never a posting under a namespace");
+            }
+        }
+
+        /** A bucket no posting-key namespace was asked of - the shape before `P12-TSK-016`. */
+        public Bucket(
+                Direction direction,
+                Optional<Counterparty> counterparty,
+                Money total,
+                boolean reconciliationAttributed) {
+            this(direction, counterparty, total, reconciliationAttributed, Optional.empty());
         }
     }
 
@@ -112,5 +136,41 @@ public interface PositionBreakdown<T> {
      * @throws UnderivableBalanceException if the account does not exist or its history cannot
      *     be folded — the derivation's own regime: an underivable history refuses, never renders
      */
-    Breakdown breakdown(T unitOfWork, LedgerAccountId account, List<AccountPurpose> precedence);
+    default Breakdown breakdown(
+            T unitOfWork, LedgerAccountId account, List<AccountPurpose> precedence) {
+        return breakdown(unitOfWork, account, precedence, List.of());
+    }
+
+    /**
+     * {@link #breakdown(Object, LedgerAccountId, List)}, each line also labelled with the first
+     * of {@code namespaces} its entry's posting key begins with (`P12-TSK-016`). A namespace is
+     * a key prefix as the posting command carried it ({@code "bnpl.financing:"}), matched only
+     * against entries {@link PostingService} wrote - a reversal and an adjustment are keyed by
+     * their own services and never carry a poster's namespace. Every line is still folded
+     * exactly once, so the namespaces, like the precedence, can move a line between buckets but
+     * never change the position.
+     *
+     * @param namespaces posting-key prefixes, most significant first; distinct and non-blank,
+     *     empty asking for none
+     */
+    Breakdown breakdown(
+            T unitOfWork,
+            LedgerAccountId account,
+            List<AccountPurpose> precedence,
+            List<String> namespaces);
+
+    /**
+     * The guard every implementation applies to {@code namespaces}: distinct, non-blank.
+     *
+     * @return the namespaces, copied
+     */
+    static List<String> checkedNamespaces(List<String> namespaces) {
+        Objects.requireNonNull(namespaces, "namespaces must not be null");
+        List<String> copied = List.copyOf(namespaces);
+        if (copied.stream().anyMatch(String::isBlank) || java.util.Set.copyOf(copied).size() != copied.size()) {
+            throw new IllegalArgumentException(
+                    "the posting-key namespaces must be distinct and non-blank: " + copied);
+        }
+        return copied;
+    }
 }

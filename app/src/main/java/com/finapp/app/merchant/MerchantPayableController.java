@@ -45,7 +45,13 @@ public class MerchantPayableController {
     /**
      * One currency's payable. Every figure is a decimal string; {@code position} equals
      * {@code captured − fees − refunded + feesReturned − paidOut + payoutsReturned − chargedBack
-     * + chargebacksReversed + reconciliationAttributed + other} exactly. {@code paidOut} is what
+     * + chargebacksReversed + reconciliationAttributed + bnplFinanced − bnplFees − bnplRefunded
+     * + bnplFeesReturned + other} exactly. The four BNPL terms (`P12-TSK-016`) are the BNPL
+     * purchases financed at you — the gross credited and the merchant fee taken out of it, the
+     * fee being the financing entry's own (the version pinned at purchase) — and what BNPL
+     * refunds debited back and the fee they returned; a position below zero after a BNPL refund
+     * that followed a payout is merchant debt, at most that purchase's net, recovered from later
+     * captures and financings before any payout. {@code paidOut} is what
      * the payout rail accepted (`P6-TSK-012`; a payout in flight is a hold, not a posting, and
      * appears in no term); {@code payoutsReturned} is what the beneficiary banks returned of it
      * (`P8-TSK-019`, ADR-0073 §6), credited back by each return's own posting while the payout
@@ -69,6 +75,10 @@ public class MerchantPayableController {
             String chargedBack,
             String chargebacksReversed,
             String reconciliationAttributed,
+            String bnplFinanced,
+            String bnplFees,
+            String bnplRefunded,
+            String bnplFeesReturned,
             String other) {}
 
     /** {@code kind} is always {@code "DERIVED"} — see the class javadoc. */
@@ -96,6 +106,10 @@ public class MerchantPayableController {
                 decimal(payable.chargedBack()),
                 decimal(payable.chargebacksReversed()),
                 decimal(payable.reconciliationAttributed()),
+                decimal(payable.bnplFinanced()),
+                decimal(payable.bnplFees()),
+                decimal(payable.bnplRefunded()),
+                decimal(payable.bnplFeesReturned()),
                 decimal(payable.other()));
     }
 

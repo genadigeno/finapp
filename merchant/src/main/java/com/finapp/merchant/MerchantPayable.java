@@ -64,10 +64,38 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>Every bucket came from the one statement the position was folded from, so
  * {@code position = captured − fees − refunded + feesReturned − paidOut + payoutsReturned −
- * chargedBack + chargebacksReversed ± reconciliationAttributed + other} is an identity of the breakdown, not a reconciliation this class
+ * chargedBack + chargebacksReversed ± reconciliationAttributed + bnplFinanced − bnplFees −
+ * bnplRefunded + bnplFeesReturned + other} is an identity of the breakdown, not a reconciliation this class
  * performs. {@link Payable#terms()} restates it so a caller can check it without re-deriving the
  * sign convention. A payable below zero after a chargeback is merchant debt ({@code INV-MER-07}
  * amended): never more than the sale credited, recovered from later captures before any payout.
+ *
+ * <h2>BNPL lines are classified by their key, before any counterparty (`P12-TSK-016`)</h2>
+ *
+ * <p>bnpl posts to this payable as a second poster ({@code PHASE_12_PLAN.md} §6): F1, the
+ * financing ({@code DR BNPL_PRINCIPAL G; DR MERCHANT_PAYABLE f / CR MERCHANT_PAYABLE G; CR
+ * BNPL_MERCHANT_FEE_INCOME f}, keyed {@code bnpl.financing:<purchase>}) - the capture's own
+ * four-line shape with the receivable in the clearing's place - and F5, the merchant refund
+ * ({@code DR MERCHANT_PAYABLE R} against the receivable, the billed receivable and, for what the
+ * customer had already paid, {@code CR CUSTOMER_WALLET E}; the fee returned {@code DR
+ * BNPL_MERCHANT_FEE_INCOME / CR MERCHANT_PAYABLE r_f}, keyed {@code bnpl.refund:<refund>},
+ * `P12-TSK-021`). F5's excess line faces the customer's wallet - already a sale counterparty, the
+ * book rail's - so by counterparty alone a BNPL refund would read as a wallet-paid capture's
+ * refund, the `P7-TSK-010` mislabel class once more. So the line's posting-key namespace, which
+ * the ledger reports beside the counterparty, is read FIRST - after the origin rule, ADR-0073
+ * §6's precedent, because an attribution is an adjustment and carries no poster's key:
+ *
+ * <pre>
+ *   payable line | under bnpl.financing: | under bnpl.refund:
+ *   CREDIT       | bnplFinanced (G)       | bnplFeesReturned (r_f)
+ *   DEBIT        | bnplFees (f)           | bnplRefunded (R)
+ * </pre>
+ *
+ * <p>The fee is the entry's own fee line - the pinned version's arithmetic at purchase
+ * ({@code INV-MER-03}), never recomputed here. A payable below zero after a BNPL refund that
+ * followed a payout is merchant debt by owner decision B7 ({@code INV-MER-07}'s ADR-0105
+ * amendment): at most that purchase's own net, named {@code bnplRefunded} here, recovered from
+ * later captures and financings before any payout.
  *
  * <h2>Paid out, not in flight</h2>
  *
@@ -97,6 +125,14 @@ public final class MerchantPayable {
      *     from the payable (`P8-TSK-015`, ADR-0071 §2), SIGNED — every payable line of a
      *     {@code RECONCILIATION}-origin {@code ADJUSTMENT} entry, whatever it faces, classified
      *     FIRST (ADR-0073 §6's origin rule)
+     * @param bnplFinanced the BNPL purchases' gross the financing credited (`P12-TSK-016`) —
+     *     every payable CREDIT under {@code bnpl.financing:}
+     * @param bnplFees the BNPL merchant fees the financing took out of it — every payable DEBIT
+     *     under {@code bnpl.financing:}, the entry's own fee line
+     * @param bnplRefunded the BNPL refunds' gross debited back — every payable DEBIT under
+     *     {@code bnpl.refund:} (`P12-TSK-021` posts them)
+     * @param bnplFeesReturned the BNPL fee those refunds returned — every payable CREDIT under
+     *     {@code bnpl.refund:}
      * @param other movements that are none of the above, SIGNED — an operator adjustment today
      */
     public record Payable(
@@ -110,6 +146,10 @@ public final class MerchantPayable {
             Money chargedBack,
             Money chargebacksReversed,
             Money reconciliationAttributed,
+            Money bnplFinanced,
+            Money bnplFees,
+            Money bnplRefunded,
+            Money bnplFeesReturned,
             Money other) {
 
         public Payable {
@@ -124,6 +164,10 @@ public final class MerchantPayable {
             Objects.requireNonNull(chargebacksReversed, "chargebacksReversed must not be null");
             Objects.requireNonNull(
                     reconciliationAttributed, "reconciliationAttributed must not be null");
+            Objects.requireNonNull(bnplFinanced, "bnplFinanced must not be null");
+            Objects.requireNonNull(bnplFees, "bnplFees must not be null");
+            Objects.requireNonNull(bnplRefunded, "bnplRefunded must not be null");
+            Objects.requireNonNull(bnplFeesReturned, "bnplFeesReturned must not be null");
             Objects.requireNonNull(other, "other must not be null");
         }
 
@@ -137,9 +181,30 @@ public final class MerchantPayable {
                     .minus(chargedBack)
                     .plus(chargebacksReversed)
                     .plus(reconciliationAttributed)
+                    .plus(bnplFinanced)
+                    .minus(bnplFees)
+                    .minus(bnplRefunded)
+                    .plus(bnplFeesReturned)
                     .plus(other);
         }
     }
+
+    /**
+     * bnpl's financing key namespace, F1's {@code bnpl.financing:<purchase>} - spelled here
+     * because merchant has no build edge to bnpl; {@code BnplVocabularyTest} in {@code app}
+     * holds it to {@code BnplAcceptances.FINANCING_KEY_PREFIX}.
+     */
+    public static final String BNPL_FINANCING_NAMESPACE = "bnpl.financing:";
+
+    /**
+     * bnpl's refund key namespace, F5's {@code bnpl.refund:<refund>} ({@code PHASE_12_PLAN.md}
+     * §6) - nothing posts under it until `P12-TSK-021`, which re-asserts it through real refunds.
+     */
+    public static final String BNPL_REFUND_NAMESPACE = "bnpl.refund:";
+
+    /** The posting-key namespaces the drill-down asks the ledger to name, most significant first. */
+    public static final List<String> NAMESPACES =
+            List.of(BNPL_FINANCING_NAMESPACE, BNPL_REFUND_NAMESPACE);
 
     /** The counterparty purposes the drill-down reads, most significant first. */
     static final List<AccountPurpose> COUNTERPARTIES =
@@ -155,7 +220,14 @@ public final class MerchantPayable {
                     // the recoverable, or dispute costs when a written-off share returns.
                     // After the others, so no existing entry's label moves.
                     AccountPurpose.CHARGEBACK_RECOVERABLE,
-                    AccountPurpose.DISPUTE_COSTS);
+                    AccountPurpose.DISPUTE_COSTS,
+                    // The BNPL purposes F1 and F5 face (P12-TSK-016): the receivable, the billed
+                    // receivable and the merchant fee income. Last, so no existing entry's label
+                    // moves; descriptive only - a BNPL line is explained by its namespace, which
+                    // is read before any counterparty (the class javadoc).
+                    AccountPurpose.BNPL_PRINCIPAL,
+                    AccountPurpose.BNPL_PRINCIPAL_DUE,
+                    AccountPurpose.BNPL_MERCHANT_FEE_INCOME);
 
     /** The clearings a SALE moves through — one per external rail, same entry shapes. */
     private static boolean saleClearing(AccountPurpose purpose) {
@@ -186,7 +258,7 @@ public final class MerchantPayable {
 
     private Payable payableOf(Connection unitOfWork, LedgerAccount account) {
         PositionBreakdown.Breakdown breakdown =
-                breakdowns.breakdown(unitOfWork, account.id(), COUNTERPARTIES);
+                breakdowns.breakdown(unitOfWork, account.id(), COUNTERPARTIES, NAMESPACES);
         Money zero = Money.ofMinorUnits(0L, breakdown.position().currency());
         Money captured = zero;
         Money fees = zero;
@@ -197,6 +269,10 @@ public final class MerchantPayable {
         Money chargedBack = zero;
         Money chargebacksReversed = zero;
         Money reconciliationAttributed = zero;
+        Money bnplFinanced = zero;
+        Money bnplFees = zero;
+        Money bnplRefunded = zero;
+        Money bnplFeesReturned = zero;
         Money other = zero;
         for (PositionBreakdown.Bucket bucket : breakdown.buckets()) {
             Optional<PositionBreakdown.Counterparty> counterparty = bucket.counterparty();
@@ -209,6 +285,23 @@ public final class MerchantPayable {
                         credit
                                 ? reconciliationAttributed.plus(bucket.total())
                                 : reconciliationAttributed.minus(bucket.total());
+            } else if (bucket.namespace().filter(BNPL_FINANCING_NAMESPACE::equals).isPresent()) {
+                // F1, by its KEY (P12-TSK-016): the gross credited, the merchant fee debited -
+                // the capture's shape with the receivable in the clearing's place.
+                if (credit) {
+                    bnplFinanced = bnplFinanced.plus(bucket.total());
+                } else {
+                    bnplFees = bnplFees.plus(bucket.total());
+                }
+            } else if (bucket.namespace().filter(BNPL_REFUND_NAMESPACE::equals).isPresent()) {
+                // F5, by its KEY, BEFORE the sale-clearing rule: its excess line credits the
+                // customer's wallet, the book rail's sale counterparty, and by counterparty it
+                // would read as a wallet-paid capture's refund.
+                if (credit) {
+                    bnplFeesReturned = bnplFeesReturned.plus(bucket.total());
+                } else {
+                    bnplRefunded = bnplRefunded.plus(bucket.total());
+                }
             } else if (counterparty.isPresent() && saleClearing(counterparty.get().purpose())) {
                 if (counterparty.get().direction() == Direction.DEBIT) {
                     // A capture: money arrived in clearing, the gross was credited, the fee
@@ -268,7 +361,7 @@ public final class MerchantPayable {
         return new Payable(
                 breakdown.position(), captured, fees, refunded, feesReturned, paidOut,
                 payoutsReturned, chargedBack, chargebacksReversed, reconciliationAttributed,
-                other);
+                bnplFinanced, bnplFees, bnplRefunded, bnplFeesReturned, other);
     }
 
     /** The platform's side of a chargeback's attribution entries — never a sale clearing. */

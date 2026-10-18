@@ -51,6 +51,10 @@ public class MerchantTransactionController {
      * One movement. {@code gross} and {@code fee} are magnitudes; {@code net} carries the sign —
      * what this entry did to what the platform owes you. Within a currency, the {@code net}s sum
      * to {@code closing − opening}: the report reconciles to the ledger by construction.
+     * {@code kind} is {@code CAPTURE}, {@code REFUND}, {@code BNPL_FINANCING} (a BNPL purchase
+     * financed at you: {@code gross} credited, {@code fee} the BNPL merchant fee,
+     * {@code purchaseId} the purchase), {@code BNPL_REFUND} ({@code refundId} the BNPL refund)
+     * or {@code OTHER} (`P12-TSK-016`).
      */
     public record MovementView(
             String kind,
@@ -62,7 +66,8 @@ public class MerchantTransactionController {
             String checkoutId,
             String orderId,
             String paymentIntentId,
-            String refundId) {}
+            String refundId,
+            String purchaseId) {}
 
     /** One currency: opening, the movements, and the closing they reconcile to. */
     public record SectionView(
@@ -114,7 +119,8 @@ public class MerchantTransactionController {
                 text(movement.checkoutId()),
                 text(movement.orderId()),
                 text(movement.paymentIntentId()),
-                text(movement.refundId()));
+                text(movement.refundId()),
+                text(movement.purchaseId()));
     }
 
     private static String text(Optional<UUID> id) {
