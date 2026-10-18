@@ -1272,6 +1272,13 @@ before it expires (B6); credit's `409 credit.ApplicantNotEligible` a customer no
 commits nothing - no consumption, no capital, no purchase, no order - and rolls the key back. A card or wallet
 confirmation that loses the session to an acceptance keeps checkout's `409 checkout.NotConfirmable`.
 
+The merchant's purchase read (`P12-TSK-014`; `GET /v1/merchant/bnpl-purchases/{id}`, the merchant's own key): `NotFound`
+answers another merchant's purchase exactly as an unknown or malformed id - one body, never `403`, so existence is not
+revealed (`INV-MER-01`, ADR-0031). No, a revoked or a suspended merchant's key is the platform's `401` before the read;
+a storage fault the platform's generic `500 api.InternalError` (the backlog's "`503`": the platform has no such answer
+for a failed read), its log line the route template and `BnplStorageException`'s operation and SQLSTATE - no figure or
+identifier.
+
 The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
 `/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route
 `BNPL_ADMINISTER`; the acts keyed `bnpl.terms:<type>:<id>` - `CUSTOMER`-typed for an operator session today,

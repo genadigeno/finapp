@@ -82,6 +82,16 @@ public interface BnplPurchaseStore {
      */
     List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation);
 
+    // ------------------------------------------------------------------ the merchant's read
+
+    /**
+     * The BNPL purchase {@code id} made at {@code merchant}, with its merchant financing, in one statement
+     * (`P12-TSK-014`): {@code merchant_id = ?} in the statement, so another merchant's purchase and an absent one are the
+     * same empty answer ({@code INV-MER-01}); the financing joined, so a purchase never reads without it
+     * ({@code INV-BNPL-02}). Selects nothing of the customer's - no party, plan, decision or obligation column.
+     */
+    Optional<MerchantBnplPurchaseView> atMerchant(Connection unitOfWork, BnplPurchaseId id, UUID merchant);
+
     // ------------------------------------------------------------------ rows
 
     /** A purchase at birth: its references by value; the instant and the business date are the database's. */

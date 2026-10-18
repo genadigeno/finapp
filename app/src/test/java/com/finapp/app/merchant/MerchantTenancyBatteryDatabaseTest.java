@@ -48,6 +48,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -190,8 +191,17 @@ class MerchantTenancyBatteryDatabaseTest {
         HttpResponse<String> send(World caller, String resource) throws Exception;
     }
 
-    /** One row. A probe and its resource are required of the two addressed kinds, and only them. */
-    private record Route(Kind kind, Probe probe, Function<World, String> resource, String reason) {}
+    /**
+     * One row. A probe and its resource are required of the two addressed kinds, and only them - or, for an addressed
+     * route whose resource this battery's world cannot build, {@code delegatedTo}: the {@code Class#method} that probes
+     * it in a world that can, held to exist ({@link #theTableIsEveryMerchantRoute}).
+     */
+    private record Route(Kind kind, Probe probe, Function<World, String> resource, String reason, String delegatedTo) {
+
+        Route(Kind kind, Probe probe, Function<World, String> resource, String reason) {
+            this(kind, probe, resource, reason, null);
+        }
+    }
 
     /** Every merchant route, by {@code METHOD pattern}. Held to the served set, exactly. */
     private Map<String, Route> routes() {
@@ -235,6 +245,16 @@ class MerchantTenancyBatteryDatabaseTest {
                 addressed(
                         World::payout,
                         (caller, id) -> get("/v1/merchant/payouts/" + id, caller.key())));
+        // P12-TSK-014: a BNPL purchase is born only by the customer's acceptance of credit's real
+        // decision - credit's BNPL policies and terms in force, a database of its own - which this
+        // shared world cannot build. Its probe is the own-container suite's, the same shape: A on
+        // B's purchase the 404 an unknown id answers, byte for byte, and B on its own a 200.
+        table.put(
+                "GET /v1/merchant/bnpl-purchases/{id}",
+                delegated(
+                        Kind.ID_ADDRESSED,
+                        "com.finapp.app.bnpl.BnplMerchantReadDatabaseTest#anotherMerchantsPurchaseIsNotFound",
+                        "bnpl.purchase's merchant_id = ? in the statement (OwnershipIsScopedTest)"));
         // P7-TSK-012: the dispute's tenant is the disputed payment's credit account, and the
         // predicate rides the statement - a read, so the fingerprint must not move either way.
         table.put(
@@ -351,7 +371,45 @@ class MerchantTenancyBatteryDatabaseTest {
                 subject(
                         "MERCHANT_PAYOUT; RoutePermissionRegisterTest,"
                                 + " MerchantPayoutEndpointDatabaseTest"));
+        // P12-TSK-006's BNPL doors, named here by P12-TSK-014's gate (the table had not named
+        // them, so theTableIsEveryMerchantRoute was red from -006 on its next run). The proposal
+        // names one merchant under MERCHANT_ADMINISTER; each act on an enablement pairs it with
+        // the merchant in the path, probed - another merchant's enablement the unknown one's 404,
+        // nothing moved - by the BNPL endpoint suite, whose world holds both merchants' rows;
+        // the fee schedule assignment's second variable is a product code, not a resource, so
+        // the merchant is its subject under FEE_ADMINISTER.
+        table.put(
+                "POST /v1/operator/merchants/{merchantId}/bnpl-enablement",
+                subject(
+                        "MERCHANT_ADMINISTER; RoutePermissionRegisterTest,"
+                                + " BnplMerchantEndpointDatabaseTest"));
+        for (String act : List.of("approval", "rejection", "withdrawal")) {
+            table.put(
+                    "POST /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/" + act,
+                    delegated(
+                            Kind.PAIRED,
+                            "com.finapp.app.bnpl.BnplMerchantEndpointDatabaseTest#theDoorsAreClosed",
+                            "id = ? AND merchant_id = ? (JdbcBnplEnablementStore; OwnershipIsScopedTest)"));
+        }
+        table.put(
+                "PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}",
+                delegated(
+                        Kind.PAIRED,
+                        "com.finapp.app.bnpl.BnplMerchantEndpointDatabaseTest#theFeeScheduleIsAssigned",
+                        "FEE_ADMINISTER; {product} is a vocabulary code, the merchant the subject"
+                                + " (RoutePermissionRegisterTest)"));
         return table;
+    }
+
+    /** Whether {@code reference} ({@code Class#method}) names a {@code @Test} method that exists. */
+    private static boolean probeExists(String reference) {
+        String[] parts = reference.split("#", 2);
+        try {
+            return Arrays.stream(Class.forName(parts[0]).getDeclaredMethods())
+                    .anyMatch(method -> method.getName().equals(parts[1]) && method.isAnnotationPresent(Test.class));
+        } catch (ClassNotFoundException absent) {
+            return false;
+        }
     }
 
     private static Route derived(String reason) {
@@ -360,6 +418,10 @@ class MerchantTenancyBatteryDatabaseTest {
 
     private static Route addressed(Function<World, String> resource, Probe probe) {
         return new Route(Kind.ID_ADDRESSED, probe, resource, null);
+    }
+
+    private static Route delegated(Kind kind, String probedBy, String reason) {
+        return new Route(kind, null, null, reason, probedBy);
     }
 
     private static Route paired(Function<World, String> resource, Probe probe) {
@@ -395,7 +457,11 @@ class MerchantTenancyBatteryDatabaseTest {
                     }
                     switch (shape) {
                         case ID_ADDRESSED, PAIRED -> {
-                            if (row.probe() == null || row.resource() == null) {
+                            if (row.delegatedTo() != null) {
+                                if (!probeExists(row.delegatedTo())) {
+                                    wrong.add(route + " delegates to " + row.delegatedTo() + ", no such @Test");
+                                }
+                            } else if (row.probe() == null || row.resource() == null) {
                                 wrong.add(route + " is addressed and carries no probe");
                             }
                         }

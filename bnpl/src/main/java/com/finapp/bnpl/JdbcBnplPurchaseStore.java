@@ -467,7 +467,51 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
         }
     }
 
+    @Override
+    public Optional<MerchantBnplPurchaseView> atMerchant(Connection unitOfWork, BnplPurchaseId id, UUID merchant) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(merchant, "merchant");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                // The tenant is in the statement (INV-MER-01) - the purchase's merchant and its financing's, one merchant.
+                // Nothing of the customer's is selected: no party, plan, decision, obligation or schedule column.
+                "SELECT p.id, p.checkout_session_id, p.order_id, p.product, p.status, f.currency, f.scale,"
+                        + " f.gross_minor, f.fee_minor, f.net_minor, f.fee_schedule_version_id, f.journal_entry_id,"
+                        + " f.financed_at"
+                        + " FROM bnpl.purchase p JOIN bnpl.merchant_financing f ON f.purchase_id = p.id"
+                        + " AND f.merchant_id = p.merchant_id"
+                        + " WHERE p.id = ? AND p.merchant_id = ?")) {
+            select.setObject(1, id.value());
+            select.setObject(2, merchant);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(atMerchant(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a merchant's BNPL purchase", failure);
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    private static MerchantBnplPurchaseView atMerchant(ResultSet row) throws SQLException {
+        CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());
+        int scale = row.getInt("scale");
+        UUID order = row.getObject("order_id", UUID.class);
+        if (order == null) {
+            throw new IllegalStateException("a financed BNPL purchase carries checkout's order (bnpl V006)");
+        }
+        return new MerchantBnplPurchaseView(
+                BnplPurchaseId.of(row.getObject("id", UUID.class)),
+                row.getObject("checkout_session_id", UUID.class),
+                order,
+                BnplProduct.valueOf(row.getString("product")),
+                BnplPurchaseStatus.valueOf(row.getString("status")),
+                Money.ofPersisted(row.getLong("gross_minor"), currency, scale),
+                Money.ofPersisted(row.getLong("fee_minor"), currency, scale),
+                Money.ofPersisted(row.getLong("net_minor"), currency, scale),
+                row.getObject("fee_schedule_version_id", UUID.class),
+                com.finapp.ledger.JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)),
+                row.getTimestamp("financed_at").toInstant());
+    }
 
     private static Owned owned(ResultSet row) throws SQLException {
         CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());

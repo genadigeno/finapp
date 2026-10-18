@@ -11,6 +11,7 @@ import com.finapp.bnpl.BnplMerchants;
 import com.finapp.bnpl.BnplObligations;
 import com.finapp.bnpl.BnplOfferStore;
 import com.finapp.bnpl.BnplPartyStanding;
+import com.finapp.bnpl.BnplPurchaseReads;
 import com.finapp.bnpl.BnplPurchaseStore;
 import com.finapp.bnpl.BnplTermsStore;
 import com.finapp.bnpl.BnplWallets;
@@ -98,6 +99,18 @@ public class BnplPurchaseBeans {
     @Bean
     BnplObligations bnplObligations(BnplPurchaseStore bnplPurchaseStore, BnplBook bnplBook) {
         return new BnplObligations(bnplPurchaseStore, bnplBook);
+    }
+
+    /** The merchant's reads of its BNPL purchases (`P12-TSK-014`). */
+    @Bean
+    BnplPurchaseReads bnplPurchaseReads(BnplPurchaseStore bnplPurchaseStore) {
+        return new BnplPurchaseReads(bnplPurchaseStore);
+    }
+
+    @Bean
+    BnplMerchantPurchaseDesk bnplMerchantPurchaseDesk(BnplPurchaseReads bnplPurchaseReads,
+            BnplTransactions bnplTransactions) {
+        return new BnplMerchantPurchaseDesk(bnplPurchaseReads, bnplTransactions);
     }
 
     /** {@code finapp.bnpl.purchase{product, plan, outcome}} - every series eager. */

@@ -682,6 +682,11 @@ names `act=investigation:explanation` or `act=investigation:replay` since).
 The four bnpl actions joined at `P12-TSK-004` - the module's first audited acts; the application's two at `P12-TSK-010`;
 the offer's decline at `P12-TSK-011`; later tasks add theirs here (`PHASE_12_PLAN.md` §11).
 
+**Not audited: the merchant's read of its own BNPL purchase** (`P12-TSK-014`, `GET /v1/merchant/bnpl-purchases/{id}`).
+A merchant reading its own record over its own key is the ordinary use of the surface, as its payable and transaction
+reads are, and none of those writes a record; the operator's BNPL reads (`bnpl.AgreementRead`, `bnpl.ReportRead`, later
+tasks') are audited because an operator reads across tenants by permission. The read writes nothing and decides nothing.
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

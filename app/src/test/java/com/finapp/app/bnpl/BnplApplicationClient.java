@@ -177,7 +177,7 @@ final class BnplApplicationClient {
 
     // ------------------------------------------------------------------ plumbing
 
-    private String operatorSession(Authorization authorization, RoleName role) throws Exception {
+    String operatorSession(Authorization authorization, RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
                 + "\"password\":\"" + PASSWORD + "\"}", null, key()).statusCode()).isEqualTo(201);
@@ -261,6 +261,17 @@ final class BnplApplicationClient {
         }
         if (key != null) {
             request.header(IdempotencyKeyHeader.NAME, key);
+        }
+        return send(request.build());
+    }
+
+    /** {@code method} on {@code path} with an optional JSON body and bearer - the merchant doors' negatives (`P12-TSK-014`). */
+    HttpResponse<String> call(String method, String path, String body, String bearer) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder().uri(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json")
+                .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
+        if (bearer != null) {
+            request.header("Authorization", "Bearer " + bearer);
         }
         return send(request.build());
     }

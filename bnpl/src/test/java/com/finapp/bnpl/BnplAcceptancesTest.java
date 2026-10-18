@@ -132,6 +132,35 @@ class BnplAcceptancesTest {
     }
 
     @Test
+    @DisplayName("P12-TSK-014: the merchant reads its own accepted purchase - FINANCED, the financing's gross, fee and net,"
+            + " the pinned version and F1 - and another merchant, or an unknown id, reads nothing")
+    void theMerchantReadsItsOwnPurchase() {
+        BnplOffer offer = offered(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        BnplAcceptances.Accepted accepted = accept(offer);
+        BnplPurchaseReads reads = new BnplPurchaseReads(world.purchases);
+        BnplPurchaseId id = accepted.purchase().id();
+
+        MerchantBnplPurchaseView view = reads.forMerchant(BnplApplicationFakes.UOW, merchant, id).orElseThrow();
+        MerchantFeeSplit pinned = world.merchants.pins.get(id.value());
+        assertThat(view.purchase()).isEqualTo(id);
+        assertThat(view.checkoutSession()).isEqualTo(offer.checkoutSession());
+        assertThat(view.order()).isEqualTo(accepted.order());
+        assertThat(view.product()).isEqualTo(BnplProduct.BNPL_PAY_IN_4);
+        assertThat(view.status()).isEqualTo(BnplPurchaseStatus.FINANCED);
+        assertThat(view.gross()).isEqualTo(eur(600_00));
+        assertThat(view.fee()).as("the pin's fee, 4% of the gross").isEqualTo(eur(24_00));
+        assertThat(view.net()).as("what F1 credited the payable").isEqualTo(eur(576_00))
+                .isEqualTo(world.book.balance(payable, false));
+        assertThat(view.feeScheduleVersion()).isEqualTo(pinned.feeScheduleVersionId());
+        assertThat(view.financingEntry()).isEqualTo(accepted.financingEntry());
+
+        assertThat(reads.forMerchant(BnplApplicationFakes.UOW, UUID.randomUUID(), id))
+                .as("another merchant's purchase is the same empty answer as an absent one").isEmpty();
+        assertThat(reads.forMerchant(BnplApplicationFakes.UOW, merchant, BnplPurchaseId.next(IDS)))
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("a pay-in-N acceptance finances the merchant and births its schedule on SCHEDULE_ENGINE_V1 - the payable"
             + " alone at (P), no wallet touched, nothing billed at purchase")
     void aPayInNAcceptanceTakesThePayableAlone() {
