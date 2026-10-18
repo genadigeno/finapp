@@ -102,17 +102,27 @@ class BnplMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011)")
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
         // P12-TSK-004's (the terms version); each later task rewrites this list with its own.
-        assertThat(tablesIn(SCHEMA)).containsExactly("bnpl_application", "bnpl_application_event", "bnpl_offer",
-                "bnpl_offer_event", "bnpl_offer_terms", "bnpl_terms",
-                "bnpl_terms_version", "bnpl_terms_version_event", "flyway_schema_history");
-        assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
+        assertThat(tablesIn(SCHEMA)).containsExactlyInAnyOrder("bnpl_acceptance", "bnpl_agreement", "bnpl_application",
+                "bnpl_application_event", "bnpl_billing", "bnpl_instalment", "bnpl_obligation", "bnpl_obligation_event",
+                "bnpl_offer", "bnpl_offer_event", "bnpl_offer_terms", "bnpl_repayment", "bnpl_repayment_allocation",
+                "bnpl_schedule", "bnpl_terms", "bnpl_terms_version", "bnpl_terms_version_event", "flyway_schema_history",
+                "merchant_financing", "purchase", "purchase_event");
+        assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'"))
+                .containsExactly("party_principal_exposure");
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
-                + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
+                + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactlyInAnyOrder(
+                "acceptance_history_is_append_only", "acceptance_rows_are_never_truncated",
+                "bnpl_acceptance_is_born_once", "bnpl_agreement_is_born_once", "bnpl_billing_is_born_once",
+                "bnpl_instalment_is_born_once", "bnpl_obligation_permits_only_machine_edges",
+                "bnpl_repayment_allocation_is_born_once", "bnpl_repayment_is_allocated_whole",
+                "bnpl_repayment_is_born_once", "bnpl_schedule_conserves", "bnpl_schedule_is_born_once", "business_date",
+                "business_date_latest", "merchant_financing_is_born_once", "principal_value_floor",
+                "purchase_is_financed_at_commit", "purchase_permits_only_machine_edges",
                 "bnpl_application_event_is_append_only", "bnpl_application_is_never_truncated",
                 "bnpl_application_never_rests_submitted", "bnpl_application_permits_only_machine_edges",
                 "bnpl_offer_born_beside_its_application", "bnpl_offer_event_is_append_only",
@@ -125,6 +135,31 @@ class BnplMigrationTest {
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))
+                .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
+        application.rollback();
+    }
+
+    @Test
+    @DisplayName("the exposure view is the read's columns alone: a definer view owned by the migrator, SELECT to the"
+            + " application role and nothing else, never writable by it (P12-TSK-012)")
+    void theExposureViewIsTheReadsAlone() throws SQLException {
+        assertThat(column("SELECT column_name FROM information_schema.columns WHERE table_schema = '" + SCHEMA
+                + "' AND table_name = 'party_principal_exposure' ORDER BY ordinal_position")).containsExactly(
+                "obligation_id", "party_id", "decision_id", "product", "status", "currency");
+        assertThat(scalar("SELECT pg_get_userbyid(c.relowner) FROM pg_class c JOIN pg_namespace n ON n.oid ="
+                + " c.relnamespace WHERE n.nspname = '" + SCHEMA + "' AND c.relname = 'party_principal_exposure'"))
+                .isEqualTo("finapp_migrator");
+        assertThat(scalar("SELECT array_to_string(c.reloptions, ',') FROM pg_class c JOIN pg_namespace n ON n.oid ="
+                + " c.relnamespace WHERE n.nspname = '" + SCHEMA + "' AND c.relname = 'party_principal_exposure'"))
+                .isEqualTo("security_invoker=false");
+        assertThat(column("SELECT grantee || ':' || privilege_type FROM information_schema.role_table_grants"
+                + " WHERE table_schema = '" + SCHEMA + "' AND table_name = 'party_principal_exposure'"
+                + " AND grantee <> 'finapp_migrator'")).containsExactly("finapp_app:SELECT");
+        assertThatCode(() -> asApplication("SELECT count(*) FROM " + SCHEMA + ".party_principal_exposure"))
+                .doesNotThrowAnyException();
+        application.rollback();
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> asApplication("DELETE FROM " + SCHEMA + ".party_principal_exposure"))
                 .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
         application.rollback();
     }

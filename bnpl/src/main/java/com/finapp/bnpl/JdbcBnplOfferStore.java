@@ -234,6 +234,11 @@ public final class JdbcBnplOfferStore implements BnplOfferStore {
     }
 
     @Override
+    public boolean accept(Connection unitOfWork, BnplOfferId id) {
+        return move(unitOfWork, id, "ACCEPTED", "expires_at > clock_timestamp()", "accepting a BNPL offer");
+    }
+
+    @Override
     public void permitAtExpiry(Connection unitOfWork, BnplOfferId id) {
         Objects.requireNonNull(id, "id");
         try (PreparedStatement update = unitOfWork.prepareStatement(

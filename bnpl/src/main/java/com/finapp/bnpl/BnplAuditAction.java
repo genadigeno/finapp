@@ -79,6 +79,32 @@ public enum BnplAuditAction implements AuditableAction {
                     + " of the sweep's expiry, so exactly one of DECLINED and EXPIRED. Nothing is released: credit's"
                     + " unconsumed approval lapses at its own validity, and the checkout session stays OPEN for another"
                     + " instrument. Its target the offer; the summary names it and its application - never an amount.",
+            false),
+
+    /** A customer accepted a BNPL offer - the purchase (`P12-TSK-013`). */
+    OFFER_ACCEPTED(
+            "bnpl.OfferAccepted",
+            "A customer accepted their own BNPL offer from a MULTI_FACTOR session (POST /v1/me/bnpl-offers/{id}/acceptance,"
+                    + " keyed bnpl.offer-acceptance:CUSTOMER:<id>, the offer's terms hash echoed) - the purchase: under the"
+                    + " party's credit profile lock credit's decision consumed (credit's own credit.DecisionConsumed beside"
+                    + " it), the capital judged under its row lock, agreement version 1 committed as an exact copy of the"
+                    + " offer's terms with its evidence, the purchase, the obligation, schedule version 1 and its six ledger"
+                    + " accounts born, the merchant financed and - for pay-in-4 - instalment 1 collected from the wallet,"
+                    + " and the checkout session completed by financing with its order, all in one transaction. Its target"
+                    + " the purchase; the summary names the offer, the agreement and its version and the purchase - never an"
+                    + " amount (INV-AUD-02). Refusals and the losers of a race record nothing.",
+            false),
+
+    /** The purchase financed its merchant (`P12-TSK-013`). */
+    MERCHANT_FINANCED(
+            "bnpl.MerchantFinanced",
+            "A BNPL purchase financed its merchant (owner decision B2): the merchant's MERCHANT_PAYABLE credited the gross"
+                    + " less the merchant discount priced by its pinned BNPL fee schedule version, the receivable"
+                    + " BNPL_PRINCIPAL debited the gross and BNPL_MERCHANT_FEE_INCOME credited the fee by the entry F1"
+                    + " (bnpl.financing:<purchase>), funded from lending capital - in the acceptance's transaction, under"
+                    + " the accepting customer as actor (the act that commits the financing). Its target the purchase; the"
+                    + " summary names the purchase, the financing entry and the fee schedule version - never an amount or"
+                    + " the merchant's figures.",
             false);
 
     private final String code;

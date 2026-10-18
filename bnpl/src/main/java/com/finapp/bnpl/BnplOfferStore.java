@@ -72,6 +72,13 @@ public interface BnplOfferStore {
      */
     boolean decline(Connection unitOfWork, BnplOfferId id);
 
+    /**
+     * {@code OFFERED -> ACCEPTED} (`P12-TSK-013`), conditional on {@code OFFERED} and {@code expires_at > clock_timestamp()}
+     * - the decline's side of the clock, the complement of the sweep's expiry - and admitted by {@code bnpl V006} only
+     * beside the offer's {@code FINANCED} purchase; {@code false} when not there or already past its expiry.
+     */
+    boolean accept(Connection unitOfWork, BnplOfferId id);
+
     /** An offer claimed before its expiry has its permit set back to the expiry. */
     void permitAtExpiry(Connection unitOfWork, BnplOfferId id);
 

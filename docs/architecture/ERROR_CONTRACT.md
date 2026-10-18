@@ -1252,6 +1252,25 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.SessionNotEligible` | 422 | The checkout session is not eligible for BNPL. |
 | `bnpl.AmountOutOfRange` | 422 | The purchase amount is outside the BNPL product's bounds. |
 | `bnpl.OfferNotAcceptable` | 409 | The BNPL offer is no longer open: it was declined, expired or accepted. |
+| `bnpl.TermsChanged` | 409 | The terms accepted are not the BNPL offer's. |
+| `bnpl.SessionNotPayable` | 409 | The checkout session can no longer be paid by this BNPL offer. |
+| `bnpl.CapitalUnavailable` | 422 | The BNPL purchase cannot be funded now. |
+| `bnpl.InsufficientFunds` | 422 | The wallet cannot fund the first instalment. |
+
+The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
+`bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its
+`expires_at` on the database clock (judged under B2 and again at its `ACCEPTED` edge, the act's last write), or whose
+decision credit would not consume (lapsed, consumed by another); `TermsChanged` an echoed terms hash that is not the
+offer's - read the offer and accept what it shows; `SessionNotPayable` the checkout session judged at once under B3 -
+no longer `OPEN` (a card or wallet confirmation won it, it completed or ended) or past its deadline - before anything
+else is locked (the plan's section 9 catalogue omitted it; sections 5.2a and 7.1 name it); `MerchantNotEnabled` the
+merchant not trading, not BNPL-enabled or not priced for the product now, or its payable not creditable;
+`CapitalUnavailable` the currency's recognised lending capital, judged under its row lock (L6), below the gross - the
+checkout may fall back to another payment method; `InsufficientFunds` pay-in-4's first instalment, collected at
+purchase, beyond what the customer's wallet can spend (or no wallet in the currency) - top up and accept the same offer
+before it expires (B6); credit's `409 credit.ApplicantNotEligible` a customer no longer in good standing. Every refusal
+commits nothing - no consumption, no capital, no purchase, no order - and rolls the key back. A card or wallet
+confirmation that loses the session to an acceptance keeps checkout's `409 checkout.NotConfirmable`.
 
 The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
 `/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route

@@ -347,6 +347,18 @@ a full refund, the merchant's act — the platform never "un-finances" by editin
 anything out of `FULLY_REFUNDED`; `FINANCED → AUTHORISED`; `AUTHORISED → FULLY_REFUNDED`; `→ FINANCED`
 without its financing row and entry; `→ FULLY_REFUNDED` while Σ refunds < gross.
 
+*(As built by `P12-TSK-013`, `bnpl V006`: the purchase row holds **no money** - a table whose status moves carries no
+`*_minor` column (`BnplSchemaHasNoMutableMoneyTest`) - so the gross, fee and net are `merchant_financing`'s, INSERT-only,
+`CHECK (gross = fee + net)`, keyed by its purchase with `UNIQUE (journal_entry_id)`; the fee pin is merchant's
+`bnpl_fee_pin` (by value). The purchase's business date is stamped by its trigger on `clock_timestamp()` in the pinned
+zone after the act's locks, and is every principal fact's date. `AUTHORISED → FINANCED` is admitted only beside its
+financing and with checkout's order id (`UPDATE (status, order_id)` the only grant); three deferred triggers on one
+function hold the purchase, its financing and its obligation to one commit - and the purchase to its `ACCEPTED` offer,
+agreement version 1, evidence and schedule version 1 (`INV-BNPL-02`). No bnpl trigger reads the ledger: the entry is named
+by id, its lines the one transaction's and the three-way proof's (`-025`). `bnpl.MerchantFinanced` is recorded under the
+accepting customer, the act that commits the financing (`SystemActorRulesTest` forbids `Actor.SYSTEM` outside
+`SecurityContext`). `FULLY_REFUNDED` refused until `-021`.)*
+
 ### 4.6 BNPL agreement (`bnpl.bnpl_agreement`) — versioned, immutable rows; the status is the obligation's — `P12-TSK-013`, `-021`, `-023`
 
 No machine: each version is a born-once, `INSERT`-only row for every role (`UNIQUE (obligation_id,
@@ -358,6 +370,14 @@ refund (or a dispute resolved as a refund) that cancels or shortens any unbilled
 6), with schedule v n+1 — billed instalments kept, unbilled superseded. A dispute upheld or withdrawn
 changes nothing and makes no version. Never edited (`INV-HIST-04`); every servicing row names the version
 it was computed under; every version's hash is re-verified by `BnplReplayProof` (`-025`).
+
+*(As built by `P12-TSK-013`, `bnpl V006`: `bnpl_agreement` keyed `(agreement_id, version)` - one identity across
+versions, the obligation's `UNIQUE (agreement_id)` - with `UNIQUE (obligation_id, version)`; version 1 only (`CHECK`) until
+`-021`; its trigger holds it to an exact copy of the offer's canonical terms, hash and document hash, the offer's decision
+and terms version, and the engines (schedule, pay-in-N's accrual, allocation, refund allocation) and template of that
+terms version; immutable for every role. The evidence `bnpl_acceptance` (`UNIQUE (agreement_id, agreement_version)`)
+is bound to that version's offer and hashes, `MULTI_FACTOR` by `CHECK`, the channel `API`, the address `inet` and the
+agent bounded. No money column: the amounts are the canonical terms' and the financing's.)*
 
 ### 4.7 Customer repayment obligation (`bnpl.bnpl_obligation`) — `P12-TSK-013`, `-015`, `-018`, `-021`, `-022`
 
@@ -384,6 +404,17 @@ repayment, collection or fee on it answers `409 bnpl.ObligationClosed` or is ski
 written after closure (scenario 13). **Invalid:** anything out of `CLOSED` (`INV-LIFE-04`); `CLOSED`
 without its reason, or with a receivable or credit balance not zero; a reason that does not match its
 closing act (`REFUNDED` without the purchase `FULLY_REFUNDED`, `PAID_OFF_EARLY` without a payoff execution).
+
+*(As built by `P12-TSK-013`, `bnpl V006`: born `ACTIVE` beside its `AUTHORISED` purchase, its party, product, plan,
+currency and decision the purchase's and offer's, its purchase date the purchase's business date, `next_servicing_at` due
+at once; `UNIQUE (purchase_id)`, `(agreement_id)`, `(decision_id)`. **No edge and no permit move is admitted yet** - the
+servicing (`-015`), refund (`-021`) and payoff (`-022`) tasks replace its edge function and grant the columns they move.
+Schedule version 1 (`bnpl_schedule`, `bnpl_instalment`) from the pinned engine over the purchase's own business date,
+conserving at commit (a deferred trigger, `INV-BNPL-05`), pay-in-4's dates every 14 days by `CHECK`-like rank. Pay-in-4's
+instalment 1 is billed (`bnpl_billing`, F2) and repaid (`bnpl_repayment` kind `AT_PURCHASE`, keyed by the purchase,
+allocated by `ALLOCATION_ENGINE_V1`, F3) in T-pur; `bnpl.principal_value_floor(obligation)` - the purchase date, then the
+latest billing's date - floors both. The owner's reads `GET /v1/me/bnpl-agreements`, `/{id}`, `/{id}/schedule` derive the
+six balances from journal lines in one `REPEATABLE READ` snapshot.)*
 
 ### 4.8 Merchant settlement, as BNPL sees it — no bnpl machine — `P12-TSK-016`, `-021`
 

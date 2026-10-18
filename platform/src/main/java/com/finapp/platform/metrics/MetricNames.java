@@ -227,7 +227,13 @@ public final class MetricNames {
                     // (finapp.lending.delinquency{product, bucket}, PHASE_11_PLAN.md section 15): a category every past-due
                     // account in it shares, never one account's condition - an account's DPD, bucket or default flag is
                     // RESTRICTED-FINANCIAL and never a tag (ADR-0098). Registered eagerly per product and bucket.
-                    "bucket");
+                    "bucket",
+                    // Which BNPL plan (P12-TSK-013): PAY_IN_4, PAY_IN_3_MONTHS, PAY_IN_6_MONTHS or PAY_IN_12_MONTHS, the
+                    // closed BnplPlan enum - a category every purchase on it shares, a reviewed code change with its
+                    // migration's CHECK, never a request's value, a person or a resource (the code writes the offer's own
+                    // plan). The plan's own series carries it (PHASE_12_PLAN.md section 15: finapp.bnpl.purchase{product,
+                    // plan, outcome}, the plan mix); registered eagerly per product and plan.
+                    "plan");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

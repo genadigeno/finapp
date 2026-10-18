@@ -89,7 +89,12 @@ class CreditBnplDecisionsTest {
         };
         @SuppressWarnings("unchecked")
         CreditDecisions<Connection> decisions = unsupported(CreditDecisions.class);
-        CreditBnplDecisions port = new CreditBnplDecisions(requests(standing), decisions);
+        @SuppressWarnings("unchecked")
+        CreditProfiles<Connection> profiles = unsupported(CreditProfiles.class);
+        @SuppressWarnings("unchecked")
+        com.finapp.credit.CreditDecisionConsumptions<Connection> consumptions =
+                unsupported(com.finapp.credit.CreditDecisionConsumptions.class);
+        CreditBnplDecisions port = new CreditBnplDecisions(requests(standing), decisions, profiles, consumptions);
         for (BnplProduct product : BnplProduct.values()) {
             assertThatThrownBy(() -> port.open(UOW, UUID.randomUUID(), BnplCreditDecisions.CreditRequest.of(product,
                     product.plans().get(0), Money.ofMinorUnits(600_00, EUR)), CUSTOMER, CorrelationId.of("p12t10")))
@@ -101,6 +106,54 @@ class CreditBnplDecisionsTest {
                                 Money.ofMinorUnits(600_00, EUR))),
                 RequestOrigin.CUSTOMER_DOOR, CUSTOMER, CorrelationId.of("p12t10")))
                 .as("the control: the other origin is refused first").isInstanceOf(DecisionRequests.ProductNotOffered.class);
+    }
+
+    @Test
+    @DisplayName("the acceptance's consumption asks credit for ConsumerRef(BNPL_AGREEMENT, agreement) and folds credit's"
+            + " refusals into the port's by name; the exposure lock is credit's own profile lock (P12-TSK-013)")
+    void theConsumptionIsTheAgreementsAndRefusalsFoldByName() {
+        IdGenerator ids = new IdGenerator(Clock.systemUTC(), new SecureRandom());
+        com.finapp.credit.CreditDecisionId decision = com.finapp.credit.CreditDecisionId.of(ids.next());
+        com.finapp.bnpl.BnplAgreementId agreement = com.finapp.bnpl.BnplAgreementId.next(ids);
+        java.util.List<Object> asked = new java.util.ArrayList<>();
+        java.util.Map<String, com.finapp.credit.CreditDecisionConsumptions.Consumption> answers = new java.util.LinkedHashMap<>();
+        answers.put("NOT_APPROVED", new com.finapp.credit.CreditDecisionConsumptions.Consumption.NotApproved(decision));
+        answers.put("LAPSED", new com.finapp.credit.CreditDecisionConsumptions.Consumption.Lapsed(decision,
+                java.time.Instant.parse("2026-10-17T10:00:00Z")));
+        answers.put("ALREADY_CONSUMED", new com.finapp.credit.CreditDecisionConsumptions.Consumption.AlreadyConsumed(
+                decision, new com.finapp.credit.ConsumerRef(com.finapp.credit.ConsumerKind.BNPL_AGREEMENT, ids.next())));
+        answers.put("NOT_FOUND", new com.finapp.credit.CreditDecisionConsumptions.Consumption.NotFound(decision));
+        for (java.util.Map.Entry<String, com.finapp.credit.CreditDecisionConsumptions.Consumption> answer
+                : answers.entrySet()) {
+            @SuppressWarnings("unchecked")
+            com.finapp.credit.CreditDecisionConsumptions<Connection> consumptions =
+                    (com.finapp.credit.CreditDecisionConsumptions<Connection>) Proxy.newProxyInstance(
+                            CreditBnplDecisionsTest.class.getClassLoader(),
+                            new Class<?>[] {com.finapp.credit.CreditDecisionConsumptions.class},
+                            (proxy, method, args) -> {
+                                asked.add(args[2]);
+                                return answer.getValue();
+                            });
+            @SuppressWarnings("unchecked")
+            CreditDecisions<Connection> decisions = unsupported(CreditDecisions.class);
+            @SuppressWarnings("unchecked")
+            CreditProfiles<Connection> profiles = (CreditProfiles<Connection>) Proxy.newProxyInstance(
+                    CreditBnplDecisionsTest.class.getClassLoader(), new Class<?>[] {CreditProfiles.class},
+                    (proxy, method, args) -> {
+                        assertThat(method.getName()).isEqualTo("lockForDecision");
+                        return java.util.Optional.empty();
+                    });
+            @SuppressWarnings("unchecked")
+            CreditPartyStanding<Connection> unreached = unsupported(CreditPartyStanding.class);
+            CreditBnplDecisions port = new CreditBnplDecisions(requests(unreached), decisions, profiles,
+                    consumptions);
+            assertThat(port.consume(UOW, decision.value(), agreement)).as(answer.getKey())
+                    .isEqualTo(new BnplCreditDecisions.Consumption.Refused(
+                            BnplCreditDecisions.Consumption.Refusal.valueOf(answer.getKey())));
+            assertThat(port.lockExposure(UOW, UUID.randomUUID())).as("no profile").isFalse();
+        }
+        assertThat(asked).hasSize(4).allSatisfy(consumer -> assertThat(consumer).isEqualTo(
+                new com.finapp.credit.ConsumerRef(com.finapp.credit.ConsumerKind.BNPL_AGREEMENT, agreement.value())));
     }
 
     // -----------------------------------------------------------------

@@ -938,6 +938,49 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplOfferStore.ownedBy",
                                     "P12-TSK-011. The offer id comes from ownedBy (the owner's read, party_id = ?) - the terms are read only for an offer the caller owns.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOfferStore.accept",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplOfferStore.lockOwnedBy",
+                                    "P12-TSK-013. The acceptance's B2: the offer id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; the move is conditional on OFFERED and expires_at > clock_timestamp(), bnpl V006's edge function (beside the FINANCED purchase) beneath.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.ownedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/bnpl-agreements - o.party_id = ? in the statement is the session's own party (P12-TSK-013).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/me/bnpl-agreements/{id} (and /schedule) - the identifier from the path, and o.party_id = ? in the statement is the session's own party; another party's agreement and an absent one are one empty answer, the 404 (P12-TSK-013).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.schedule",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P12-TSK-013. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - a schedule is read only for an agreement the caller owns.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.billedInstalments",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P12-TSK-013. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - the billed marks of the caller's own schedule.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.finance",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-013. The purchase id is minted by the acceptance in this transaction, the row inserted under the offer's B2; the move is conditional on AUTHORISED, bnpl V006's trigger admitting it only beside the purchase's merchant financing - no door reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.insertAcceptance",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-013. The evidence's id is minted in this transaction and its agreement born just before in it; bnpl V006's trigger binds it to that agreement version's offer and hashes - no door names it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.history",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-013. appendPurchaseEvent's and appendObligationEvent's one statement - the table and key column the class's own constants, the subject minted in this transaction; append-only.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplOfferStore.ofApplication",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -3616,6 +3659,12 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplOfferStore.lockOwnedBy",
                             "com.finapp.app.bnpl.BnplOriginationDatabaseTest.anotherPartysOfferIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.ownedBy",
+                            "com.finapp.app.bnpl.BnplAcceptanceApiTest.anotherPartysAgreementIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                            "com.finapp.app.bnpl.BnplAcceptanceApiTest.anotherPartysAgreementIsNotFound"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
                             "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),

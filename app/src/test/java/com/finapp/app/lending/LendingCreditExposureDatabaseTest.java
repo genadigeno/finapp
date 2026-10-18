@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.credit.ExposureCensus;
 import com.finapp.app.credit.ExposureCensusMetrics;
-import com.finapp.app.credit.LendingCreditExposure;
+import com.finapp.app.credit.BnplCreditExposure;
 import com.finapp.credit.AttributeProvenance;
 import com.finapp.credit.AttributeValue;
 import com.finapp.credit.CanonicalSnapshot;
@@ -79,6 +79,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * Platform credit exposure version 2 against the real paths (`P11-TSK-013`; PHASE_11_PLAN.md section 12.10, ADR-0091
  * points 5 to 9; {@code INV-CRD-09}, {@code INV-LND-06}, {@code INV-CRD-01}, {@code INV-BAL-05}): the application's
  * wired {@code LendingCreditExposure} - the figure credit's own deciding transaction reads - over loans and lines
+ * *(re-pointed by `P12-TSK-012` at the wired version 3, {@code BnplCreditExposure}: version 2's table plus the BNPL arm,
+ * which these loan-and-line cases hold at zero - so its ten cases stand unchanged and now prove version 3's loan arm)*
  * accepted end to end through {@code LoanAcceptances} and {@code LoanAccountDesk}, credit's real decision, consumption
  * and profile lock beneath.
  *
@@ -110,7 +112,7 @@ class LendingCreditExposureDatabaseTest {
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
     @LocalServerPort private int port;
-    @Autowired private LendingCreditExposure exposure;
+    @Autowired private BnplCreditExposure exposure;
     @Autowired private ExposureCensusMetrics census;
     @Autowired private DecisionMaking deciding;
     @Autowired private DecisionReplayer replayer;
@@ -207,7 +209,7 @@ class LendingCreditExposureDatabaseTest {
             } else {
                 assertThat(reserved).as("consumed before the decision read it").isEqualTo(eur(0));
                 assertThat(moneyOf(platform)).as("the commitment, read by version 2").isEqualTo(eur(8_000_00));
-                assertThat(platform.provenance()).isEqualTo(new AttributeProvenance.Port("platform-exposure", 2));
+                assertThat(platform.provenance()).isEqualTo(new AttributeProvenance.Port("platform-exposure", BnplCreditExposure.VERSION));
             }
             assertThat(reserved.plus(moneyOf(platform))).as("exactly once - never neither, never both").isEqualTo(eur(8_000_00));
             assertThat(v2(customer.party())).as("after both: the commitment").isEqualTo(eur(8_000_00));
@@ -262,7 +264,7 @@ class LendingCreditExposureDatabaseTest {
         CreditAttribute platform = latest(second, CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT);
         assertThat(moneyOf(platform)).as("two products for one party - the open line's limit counted")
                 .isEqualTo(eur(2_500_00));
-        assertThat(platform.provenance()).isEqualTo(new AttributeProvenance.Port("platform-exposure", 2));
+        assertThat(platform.provenance()).isEqualTo(new AttributeProvenance.Port("platform-exposure", BnplCreditExposure.VERSION));
     }
 
     @Test

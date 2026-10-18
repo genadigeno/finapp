@@ -75,6 +75,16 @@ public final class BnplAccounts {
     }
 
     /**
+     * The two per-obligation purposes that hold principal - not yet due and billed (`P12-TSK-012`; ADR-0104, lending A3):
+     * bnpl's declaration of which of its accounts are credit the platform extended, bound by {@code app}'s exposure read
+     * (credit's {@code PlatformCreditExposure} version 3) so that {@code app} never names the BNPL book
+     * ({@code BnplBooksHaveOnePosterTest}). Interest, fees and the credit balance are not exposure.
+     */
+    public static List<AccountPurpose> principalPurposes() {
+        return List.of(AccountPurpose.BNPL_PRINCIPAL, AccountPurpose.BNPL_PRINCIPAL_DUE);
+    }
+
+    /**
      * The declared type of a per-obligation purpose (ADR-0103 decision 1): the five receivables ASSET, the
      * credit balance LIABILITY. Any other purpose is not an obligation account and is refused.
      */

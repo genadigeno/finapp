@@ -587,6 +587,16 @@ class BnplApplicationDatabaseTest {
             public java.util.Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
                 return creditDecisions.requestOf(unitOfWork, decision);
             }
+
+            @Override
+            public boolean lockExposure(Connection unitOfWork, UUID party) {
+                return creditDecisions.lockExposure(unitOfWork, party);
+            }
+
+            @Override
+            public Consumption consume(Connection unitOfWork, UUID decision, com.finapp.bnpl.BnplAgreementId agreement) {
+                return creditDecisions.consume(unitOfWork, decision, agreement);
+            }
         };
     }
 
