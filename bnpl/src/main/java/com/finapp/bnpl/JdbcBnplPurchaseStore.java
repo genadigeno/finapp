@@ -271,21 +271,37 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
     }
 
     @Override
-    public void insertBilling(Connection unitOfWork, Billing billing) {
+    public void insertBilling(Connection unitOfWork, BnplBilling billing) {
         Objects.requireNonNull(billing, "billing");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
+                // business_date and billed_at are the trigger's.
                 "INSERT INTO bnpl.bnpl_billing (id, instalment_id, obligation_id, value_date, currency, scale,"
-                        + " principal_minor, interest_minor, journal_entry_id, billed_at)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp())")) {
+                        + " principal_minor, interest_minor, journal_entry_id, billed_at, schedule_id, schedule_version,"
+                        + " schedule_engine, agreement_id, agreement_version, accrual_engine, period_start, business_date,"
+                        + " correlation_id)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp(), ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, billing.id());
             insert.setObject(2, billing.instalment());
             insert.setObject(3, billing.obligation().value());
-            insert.setDate(4, Date.valueOf(billing.valueDate()));
+            insert.setDate(4, Date.valueOf(billing.dueDate()));
             insert.setString(5, billing.principal().currency().code());
             insert.setInt(6, billing.principal().scale());
             insert.setLong(7, billing.principal().minorUnits());
             insert.setLong(8, billing.interest().minorUnits());
-            insert.setObject(9, billing.entry().value());
+            if (billing.entry().isPresent()) {
+                insert.setObject(9, billing.entry().get().value());
+            } else {
+                insert.setNull(9, Types.OTHER);
+            }
+            insert.setObject(10, billing.scheduleId());
+            insert.setInt(11, billing.scheduleVersion());
+            insert.setString(12, billing.scheduleEngine());
+            insert.setObject(13, billing.agreement().value());
+            insert.setInt(14, billing.agreementVersion());
+            insert.setString(15, billing.accrualEngine().orElse(null));
+            insert.setDate(16, Date.valueOf(billing.periodStart()));
+            insert.setDate(17, Date.valueOf(billing.dueDate()));
+            insert.setString(18, billing.correlation().value());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw failed("inserting a BNPL billing", failure);
@@ -419,20 +435,35 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
     }
 
     @Override
-    public List<UUID> billedInstalments(Connection unitOfWork, BnplObligationId obligation) {
+    public List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation) {
         Objects.requireNonNull(obligation, "obligation");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT instalment_id FROM bnpl.bnpl_billing WHERE obligation_id = ? ORDER BY value_date, instalment_id")) {
+                // What every payer paid, and what a billing billed of fees, through V008's one definition each.
+                "SELECT b.id, b.instalment_id, b.value_date, b.currency, b.scale, b.principal_minor, b.interest_minor,"
+                        + " bnpl.billing_component_billed(b.id, 'FEES') AS billed_fees,"
+                        + " bnpl.billing_component_paid(b.id, 'FEES') AS paid_fees,"
+                        + " bnpl.billing_component_paid(b.id, 'INTEREST') AS paid_interest,"
+                        + " bnpl.billing_component_paid(b.id, 'PRINCIPAL') AS paid_principal"
+                        + " FROM bnpl.bnpl_billing b WHERE b.obligation_id = ? ORDER BY b.value_date, b.id")) {
             select.setObject(1, obligation.value());
-            List<UUID> billed = new ArrayList<>();
+            List<BilledItem> items = new ArrayList<>();
             try (ResultSet rows = select.executeQuery()) {
                 while (rows.next()) {
-                    billed.add(rows.getObject("instalment_id", UUID.class));
+                    CurrencyCode currency = CurrencyCode.of(rows.getString("currency").strip());
+                    int scale = rows.getInt("scale");
+                    items.add(new BilledItem(rows.getObject("id", UUID.class), rows.getObject("instalment_id", UUID.class),
+                            rows.getDate("value_date").toLocalDate(),
+                            Money.ofPersisted(rows.getLong("billed_fees"), currency, scale),
+                            Money.ofPersisted(rows.getLong("interest_minor"), currency, scale),
+                            Money.ofPersisted(rows.getLong("principal_minor"), currency, scale),
+                            Money.ofPersisted(rows.getLong("paid_fees"), currency, scale),
+                            Money.ofPersisted(rows.getLong("paid_interest"), currency, scale),
+                            Money.ofPersisted(rows.getLong("paid_principal"), currency, scale)));
                 }
             }
-            return billed;
+            return items;
         } catch (SQLException failure) {
-            throw failed("reading a BNPL obligation's billings", failure);
+            throw failed("reading a BNPL obligation's billed items", failure);
         }
     }
 

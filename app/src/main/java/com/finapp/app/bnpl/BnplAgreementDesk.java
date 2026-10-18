@@ -124,9 +124,22 @@ public final class BnplAgreementDesk {
             String start,
             List<BnplScheduledInstalmentView> instalments) {}
 
-    /** One scheduled instalment and whether it has been billed. */
+    /**
+     * One scheduled instalment: its projection, whether it has been billed and - once billed (`P12-TSK-015`) - what it
+     * billed (principal and pay-in-N's accrued interest, which may differ from the projection), what has been paid of it
+     * and what is still due; zeros while unbilled.
+     */
     public record BnplScheduledInstalmentView(
-            int sequence, String dueDate, String amount, String principal, String interest, boolean billed) {}
+            int sequence,
+            String dueDate,
+            String amount,
+            String principal,
+            String interest,
+            boolean billed,
+            String billedPrincipal,
+            String billedInterest,
+            String paid,
+            String due) {}
 
     /** Accepts the caller's offer - the purchase, the merchant financing and the obligation in one transaction. */
     public BnplAcceptedView accept(Session current, String rawOfferId, String idempotencyKey,
@@ -237,11 +250,20 @@ public final class BnplAgreementDesk {
         return new BnplScheduleView(read.owned().agreement().id().value().toString(), schedule.version(),
                 schedule.engine(), schedule.principal().currency().code(), decimal(schedule.principal()),
                 schedule.start().toString(), schedule.instalments().stream()
-                        .map(instalment -> new BnplScheduledInstalmentView(instalment.sequence(),
-                                instalment.dueDate().toString(), decimal(instalment.amount()),
-                                decimal(instalment.principal()), decimal(instalment.interest()),
-                                read.billed().contains(instalment.id())))
+                        .map(instalment -> instalment(instalment, read.billedItem(instalment.id())))
                         .toList());
+    }
+
+    private static BnplScheduledInstalmentView instalment(BnplPurchaseStore.StoredInstalment instalment,
+            java.util.Optional<BnplPurchaseStore.BilledItem> billed) {
+        Money zero = Money.ofPersisted(0, instalment.amount().currency(), instalment.amount().scale());
+        return new BnplScheduledInstalmentView(instalment.sequence(), instalment.dueDate().toString(),
+                decimal(instalment.amount()), decimal(instalment.principal()), decimal(instalment.interest()),
+                billed.isPresent(),
+                decimal(billed.map(BnplPurchaseStore.BilledItem::billedPrincipal).orElse(zero)),
+                decimal(billed.map(BnplPurchaseStore.BilledItem::billedInterest).orElse(zero)),
+                decimal(billed.map(BnplPurchaseStore.BilledItem::paidTotal).orElse(zero)),
+                decimal(billed.map(BnplPurchaseStore.BilledItem::dueTotal).orElse(zero)));
     }
 
     private static String decimal(Money amount) {
