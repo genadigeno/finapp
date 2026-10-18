@@ -49,8 +49,12 @@ public class BnplApplicationBeans {
     /** Credit decisioning as bnpl reaches it - the port over credit's published API, the BNPL origin always. */
     @Bean
     BnplCreditDecisions bnplCreditDecisions(
-            DecisionRequests decisionRequests, CreditDecisions<Connection> creditDecisions) {
-        return new CreditBnplDecisions(decisionRequests, creditDecisions);
+            DecisionRequests decisionRequests,
+            CreditDecisions<Connection> creditDecisions,
+            com.finapp.credit.CreditDecisionConsumptions<Connection> creditDecisionConsumptions,
+            com.finapp.sharedkernel.id.IdGenerator idGenerator) {
+        return new CreditBnplDecisions(decisionRequests, creditDecisions,
+                new com.finapp.credit.JdbcCreditProfiles(idGenerator), creditDecisionConsumptions);
     }
 
     @Bean

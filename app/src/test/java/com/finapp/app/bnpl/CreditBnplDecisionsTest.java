@@ -89,7 +89,12 @@ class CreditBnplDecisionsTest {
         };
         @SuppressWarnings("unchecked")
         CreditDecisions<Connection> decisions = unsupported(CreditDecisions.class);
-        CreditBnplDecisions port = new CreditBnplDecisions(requests(standing), decisions);
+        @SuppressWarnings("unchecked")
+        CreditProfiles<Connection> profiles = unsupported(CreditProfiles.class);
+        @SuppressWarnings("unchecked")
+        com.finapp.credit.CreditDecisionConsumptions<Connection> consumptions =
+                unsupported(com.finapp.credit.CreditDecisionConsumptions.class);
+        CreditBnplDecisions port = new CreditBnplDecisions(requests(standing), decisions, profiles, consumptions);
         for (BnplProduct product : BnplProduct.values()) {
             assertThatThrownBy(() -> port.open(UOW, UUID.randomUUID(), BnplCreditDecisions.CreditRequest.of(product,
                     product.plans().get(0), Money.ofMinorUnits(600_00, EUR)), CUSTOMER, CorrelationId.of("p12t10")))

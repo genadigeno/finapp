@@ -46,7 +46,13 @@ import java.util.UUID;
  * (`-020`/`-023`) count their drawn principal here as in the exposure read - if that breaches a limit, it is a breach the
  * operator must see.
  *
- * <p>Two statements in the caller's ONE {@code REPEATABLE READ} snapshot (the caller opens it - {@link
+ * <p><strong>The BNPL arm</strong> (`P12-TSK-012`, platform exposure version 3, {@code INV-BNPL-10}): every BNPL
+ * obligation is an item too - its principal outstanding ({@link BnplCreditExposure}'s figure) with the maximum exposure
+ * of the policy its consumed decision was made under. A purchase consumes its decision in the commit that posts the
+ * principal, under L0, so the census's order-free rule holds for BNPL exactly as for a loan; an obligation with
+ * principal and no decision found fails it.
+ *
+ * <p>Three statements in the caller's ONE {@code REPEATABLE READ} snapshot (the caller opens it - {@link
  * ExposureCensusMetrics}): every row from one instant. Report-only and lock-free: nothing is written, so N instances
  * reading it can only agree.
  */
@@ -71,6 +77,20 @@ public final class ExposureCensus {
             + " AND j.currency = e.currency AND a.purpose IN (?, ?)"
             + " GROUP BY j.scale) p ON true"
             + " ORDER BY e.loan_id, p.scale";
+
+    /** Every BNPL obligation, the exposure read's columns, with its party, currency and its decision's policy limit. */
+    static final String BNPL_OUTSTANDING = "SELECT b.obligation_id, b.product, b.status, q.scale, q.net_minor,"
+            + " b.party_id, b.currency, pv.maximum_exposure_minor"
+            + " FROM bnpl.party_principal_exposure b"
+            + " LEFT JOIN credit.credit_decision d ON d.id = b.decision_id"
+            + " LEFT JOIN credit.credit_policy_version pv ON pv.id = d.policy_version_id"
+            + " LEFT JOIN LATERAL (SELECT j.scale,"
+            + " sum(CASE j.direction WHEN 'DEBIT' THEN j.amount_minor ELSE -j.amount_minor END) AS net_minor"
+            + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id"
+            + " WHERE a.owner_kind = ? AND a.owner_ref = b.obligation_id AND a.currency = b.currency"
+            + " AND j.currency = b.currency AND a.purpose IN (?, ?)"
+            + " GROUP BY j.scale) q ON true"
+            + " ORDER BY b.obligation_id, q.scale";
 
     /** What a census found: how many parties hold and fail, and which fail (ids only - never a figure). */
     public record Report(int holding, int failing, Set<UUID> failingParties) {
@@ -108,6 +128,13 @@ public final class ExposureCensus {
                 LendingCreditExposure.bindPrincipalPurposes(read);
                 for (Lent lent : lent(read)) {
                     items(byParty, lent.party(), lent.loan().agreed().currency()).add(new Item(lent.limit(), lent.loan().figure()));
+                }
+            }
+            try (PreparedStatement read = snapshot.prepareStatement(BNPL_OUTSTANDING)) {
+                BnplCreditExposure.bindBnplArm(read, 1);
+                for (Owed owed : owed(read)) {
+                    items(byParty, owed.party(), owed.obligation().currency())
+                            .add(new Item(owed.limit(), owed.obligation().figure()));
                 }
             }
         } catch (SQLException failure) {
@@ -149,6 +176,33 @@ public final class ExposureCensus {
 
     private static List<Item> items(Map<UUID, Map<CurrencyCode, List<Item>>> byParty, UUID party, CurrencyCode currency) {
         return byParty.computeIfAbsent(party, key -> new HashMap<>()).computeIfAbsent(currency, key -> new ArrayList<>());
+    }
+
+    /** A BNPL obligation with its party and its decision's policy limit. */
+    private record Owed(UUID party, Optional<Money> limit, BnplCreditExposure.Obligation obligation) {}
+
+    private static List<Owed> owed(PreparedStatement read) throws SQLException {
+        Map<UUID, Owed> byObligation = new LinkedHashMap<>();
+        try (ResultSet rows = read.executeQuery()) {
+            while (rows.next()) {
+                UUID obligation = rows.getObject(1, UUID.class);
+                Owed known = byObligation.get(obligation);
+                CurrencyCode currency = CurrencyCode.of(rows.getString(7).strip());
+                if (known == null) {
+                    long maximum = rows.getLong(8);
+                    Optional<Money> limit = rows.wasNull() ? Optional.empty()
+                            : Optional.of(Money.ofMinorUnits(maximum, currency));
+                    known = new Owed(rows.getObject(6, UUID.class), limit, new BnplCreditExposure.Obligation(obligation,
+                            rows.getString(2), rows.getString(3), currency, new ArrayList<>()));
+                    byObligation.put(obligation, known);
+                }
+                BigDecimal net = rows.getBigDecimal(5);
+                if (net != null) {
+                    known.obligation().lines().add(Money.ofPersisted(net.longValueExact(), currency, rows.getInt(4)));
+                }
+            }
+        }
+        return List.copyOf(byObligation.values());
     }
 
     /** A loan account with its party and its decision's policy limit. */

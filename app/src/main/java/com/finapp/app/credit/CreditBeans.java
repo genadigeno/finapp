@@ -284,24 +284,26 @@ public class CreditBeans {
     // ------------------------------------------------------------------ the progress (P10-TSK-015)
 
     /**
-     * The platform's credit exposure, version 2 (`P11-TSK-013`; ADR-0091): every loan's committed and outstanding
-     * principal and every open line's limit, in one statement over lending's definer view and the ledger's journal
-     * lines - read by the freezer and, under the party's profile lock, by the deciding transaction.
+     * The platform's credit exposure, version 3 (`P12-TSK-012`; ADR-0104): version 2's every loan's committed and
+     * outstanding principal and every open line's limit, plus every BNPL obligation's principal outstanding, in one
+     * statement over lending's and bnpl's definer views and the ledger's journal lines - read by the freezer and, under the
+     * party's profile lock, by the deciding transaction. Version 2 ({@link LendingCreditExposure}) is no longer wired:
+     * the decisions it decided replay from their own snapshots.
      */
     @Bean
-    LendingCreditExposure lendingCreditExposure() {
-        return new LendingCreditExposure();
+    BnplCreditExposure bnplCreditExposure() {
+        return new BnplCreditExposure();
     }
 
     @Bean
     com.finapp.credit.SnapshotFreezer snapshotFreezer(
             CreditDataCollection creditDataCollection,
             com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
-            LendingCreditExposure lendingCreditExposure,
+            BnplCreditExposure bnplCreditExposure,
             IdGenerator idGenerator) {
         return new com.finapp.credit.SnapshotFreezer(new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
                 creditPartyStanding, new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(),
-                lendingCreditExposure, idGenerator);
+                bnplCreditExposure, idGenerator);
     }
 
     /** The exposure census and its gauge (`P11-TSK-013`; ADR-0091 point 9): {@code finapp.credit.exposure.census{verdict}}. */

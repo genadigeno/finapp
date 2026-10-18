@@ -19869,7 +19869,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (credit exposure; F2, F6, F7 binding; F1, F3, F4, F5 vacuous — a read; F8: the
   census). **Risk**: High. **Cx**: M.
 
-**P12-TSK-013 — The acceptance: purchase, merchant financing and the obligation, atomically** — `PLANNED` *(paired with `-012` on branch `P12-TSK-012-013`; the pair merges together)*
+**P12-TSK-013 — The acceptance: purchase, merchant financing and the obligation, atomically** — `IN_PROGRESS` (started 2026-10-18 beside `-012` on the pair's branch `P12-TSK-012-013`; its last dependency `-011` `COMPLETE`) *(paired with `-012` on branch `P12-TSK-012-013`; the pair merges together)*
 - **Objective**: the customer's acceptance *is* the purchase authorisation: in one transaction it consumes the
   decision, commits the capital, births the agreement, the purchase, the merchant financing and the obligation, credits
   the merchant's payable net of fee, collects P4's first instalment from the wallet, and completes the checkout session

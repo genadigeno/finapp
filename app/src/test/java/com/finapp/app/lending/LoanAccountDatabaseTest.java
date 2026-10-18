@@ -9,7 +9,7 @@ import static com.finapp.app.lending.LoanApplicationClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
-import com.finapp.app.credit.LendingCreditExposure;
+import com.finapp.app.credit.BnplCreditExposure;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -109,7 +109,7 @@ class LoanAccountDatabaseTest {
     @Autowired private LoanDisbursementMetrics disbursementMetrics;
     @Autowired private com.finapp.lending.LoanServicing loanServicing;
     @Autowired private LoanServicingMetrics servicingMetrics;
-    @Autowired private LendingCreditExposure creditExposure;
+    @Autowired private BnplCreditExposure creditExposure;
     @Autowired private Authorization authorization;
     @Autowired private com.finapp.app.credit.ExposureCensusMetrics exposureCensus;
     @Autowired private com.finapp.lending.LoanWallets loanWallets;

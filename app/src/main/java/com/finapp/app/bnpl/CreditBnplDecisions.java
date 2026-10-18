@@ -1,11 +1,16 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplCreditDecisions;
 import com.finapp.bnpl.BnplProduct;
+import com.finapp.credit.ConsumerKind;
+import com.finapp.credit.ConsumerRef;
 import com.finapp.credit.CreditDecision;
+import com.finapp.credit.CreditDecisionConsumptions;
 import com.finapp.credit.CreditDecisionId;
 import com.finapp.credit.CreditDecisions;
 import com.finapp.credit.CreditProduct;
+import com.finapp.credit.CreditProfiles;
 import com.finapp.credit.DecisionRequest;
 import com.finapp.credit.DecisionOutcome;
 import com.finapp.credit.DecisionRequestId;
@@ -43,6 +48,13 @@ import lombok.RequiredArgsConstructor;
  * connection, no credit lock taken, so the offering transaction never waits on credit's deciding one (and credit locks no
  * bnpl row). {@link #requestOf} resolves a decision id - the aggregate of {@code credit.CreditDecisionRecorded} - to its
  * request for the hint. Lending's {@code CreditLoanDecisions} shape.
+ *
+ * <p><strong>The acceptance's two calls</strong> (`P12-TSK-013`): {@link #lockExposure} is credit's own profile lock -
+ * {@code CreditProfiles.lockForDecision}, credit's element (1), the Phase 12 order's L0 - taken first by the purchase, so it
+ * and a credit decision for the party serialise; {@link #consume} is credit's published consumption port, the consumer
+ * {@code ConsumerRef(BNPL_AGREEMENT, agreement id)} - credit re-takes the lock (re-entrant), judges the lapse on its own
+ * clock, writes its consumption under its two uniques and its own audit record. Credit's five answers fold into the port's
+ * two: consumed, or refused by name.
  */
 @RequiredArgsConstructor
 final class CreditBnplDecisions implements BnplCreditDecisions {
@@ -52,6 +64,8 @@ final class CreditBnplDecisions implements BnplCreditDecisions {
 
     @NonNull private final DecisionRequests requests;
     @NonNull private final CreditDecisions<Connection> decisions;
+    @NonNull private final CreditProfiles<Connection> profiles;
+    @NonNull private final CreditDecisionConsumptions<Connection> consumptions;
 
     @Override
     public UUID open(Connection unitOfWork, UUID party, CreditRequest request, Actor actor, CorrelationId correlation) {
@@ -103,6 +117,35 @@ final class CreditBnplDecisions implements BnplCreditDecisions {
     @Override
     public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
         return decisions.byId(unitOfWork, CreditDecisionId.of(decision)).map(CreditDecision::decisionRequest);
+    }
+
+    @Override
+    public boolean lockExposure(Connection unitOfWork, UUID party) {
+        return profiles.lockForDecision(unitOfWork, party).isPresent();
+    }
+
+    @Override
+    public Consumption consume(Connection unitOfWork, UUID decision, BnplAgreementId agreement) {
+        CreditDecisionConsumptions.Consumption answer = consumptions.consume(unitOfWork, CreditDecisionId.of(decision),
+                new ConsumerRef(ConsumerKind.BNPL_AGREEMENT, agreement.value()));
+        return switch (answer) {
+            case CreditDecisionConsumptions.Consumption.Consumed consumed -> {
+                if (consumed.decision().product().family() != CreditProduct.Family.BNPL) {
+                    throw new IllegalStateException("a BNPL agreement consumes a BNPL product's decision");
+                }
+                yield new Consumption.Consumed(consumed.decision().id().value(), consumed.decision().party(),
+                        consumed.decision().approved().orElseThrow(
+                                () -> new IllegalStateException("a consumed decision is an approval with its amount")));
+            }
+            case CreditDecisionConsumptions.Consumption.NotApproved notApproved ->
+                    new Consumption.Refused(Consumption.Refusal.NOT_APPROVED);
+            case CreditDecisionConsumptions.Consumption.Lapsed lapsed ->
+                    new Consumption.Refused(Consumption.Refusal.LAPSED);
+            case CreditDecisionConsumptions.Consumption.AlreadyConsumed taken ->
+                    new Consumption.Refused(Consumption.Refusal.ALREADY_CONSUMED);
+            case CreditDecisionConsumptions.Consumption.NotFound absent ->
+                    new Consumption.Refused(Consumption.Refusal.NOT_FOUND);
+        };
     }
 
     /** Credit's decision in bnpl's words: a decline, or an approval with its amount, term and validity. */

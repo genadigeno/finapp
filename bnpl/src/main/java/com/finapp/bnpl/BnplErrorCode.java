@@ -90,7 +90,28 @@ public enum BnplErrorCode implements ErrorCode {
      * decline; the acceptance's too, `P12-TSK-013`).
      */
     OFFER_NOT_ACCEPTABLE("bnpl.OfferNotAcceptable", 409, "The BNPL offer is no longer open: it was declined, expired or"
-            + " accepted.");
+            + " accepted."),
+
+    /** The terms hash the customer echoed is not the offer's (`P12-TSK-013`): read the offer and accept what it shows. */
+    TERMS_CHANGED("bnpl.TermsChanged", 409, "The terms accepted are not the BNPL offer's."),
+
+    /**
+     * The checkout session can no longer be paid by the purchase (`P12-TSK-013`): a card or wallet confirmation won it,
+     * it completed, ended or expired on the database clock - judged at once under its row lock, nothing else taken.
+     */
+    SESSION_NOT_PAYABLE("bnpl.SessionNotPayable", 409, "The checkout session can no longer be paid by this BNPL offer."),
+
+    /**
+     * The currency's recognised lending capital cannot fund the purchase now (`P12-TSK-013`; {@code INV-BNPL-10},
+     * {@code INV-LND-13}) - judged under the capital row's lock; the checkout may fall back to another payment method.
+     */
+    CAPITAL_UNAVAILABLE("bnpl.CapitalUnavailable", 422, "The BNPL purchase cannot be funded now."),
+
+    /**
+     * The wallet cannot fund pay-in-4's first instalment, collected at purchase (`P12-TSK-013`; B6) - nothing committed;
+     * the customer may top up and accept the same offer again before it expires.
+     */
+    INSUFFICIENT_FUNDS("bnpl.InsufficientFunds", 422, "The wallet cannot fund the first instalment.");
 
     private final String code;
     private final int status;

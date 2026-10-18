@@ -27,7 +27,7 @@ import java.util.UUID;
  * {@link #decisionFor} - credit's request and, once decided, its decision, read authoritatively on the caller's
  * connection with no credit lock taken, so the offering transaction never waits on credit's deciding one - and
  * {@link #requestOf}, the decision event's hint resolved to its request. The acceptance (`P12-TSK-013`) adds
- * {@code lockExposure} (L0) and {@code consume}.
+ * {@link #lockExposure} (L0) and {@link #consume}.
  *
  * <p><strong>The refusals bnpl gives meaning to are declared here</strong> - an open request ({@link RequestOpen}), an
  * amount or plan outside credit's product bounds ({@link TermsOutOfBounds}), a request past cancellation
@@ -68,6 +68,64 @@ public interface BnplCreditDecisions {
 
     /** The request the decision {@code decision} answers - {@code credit.CreditDecisionRecorded}'s hint - or empty. */
     Optional<UUID> requestOf(Connection unitOfWork, UUID decision);
+
+    /**
+     * (L0) {@code party}'s credit profile {@code FOR UPDATE} on the caller's connection (`P12-TSK-013`, T-pur) - credit's own
+     * profile lock, the one its deciding transaction takes first, so an acceptance and a credit decision for the party
+     * serialise and the decision sees the reservation or the obligation's principal, never neither ({@code INV-BNPL-10}).
+     * Taken FIRST, before any bnpl row.
+     *
+     * @return whether the party has a profile - an offered party always does, its decision was made under it
+     */
+    boolean lockExposure(Connection unitOfWork, UUID party);
+
+    /**
+     * Consumes credit's decision {@code decision} for the BNPL agreement {@code agreement} (`P12-TSK-013`) - credit's
+     * published consumption, the consumer {@code ConsumerRef(BNPL_AGREEMENT, agreement)}: credit re-takes L0 (re-entrant),
+     * judges the lapse on its own clock under it, writes its consumption under its two uniques and its own audit record,
+     * all on the caller's unit of work.
+     */
+    Consumption consume(Connection unitOfWork, UUID decision, BnplAgreementId agreement);
+
+    /** What credit answers a consumption with (`P12-TSK-013`). */
+    sealed interface Consumption {
+
+        /** Consumed for this agreement: the decision's party and approved amount, which the purchase holds to its own. */
+        record Consumed(UUID decision, UUID party, Money amount) implements Consumption {
+
+            public Consumed {
+                Objects.requireNonNull(decision, "decision must not be null");
+                Objects.requireNonNull(party, "party must not be null");
+                Objects.requireNonNull(amount, "amount must not be null");
+            }
+
+            /** Never the amount ({@code INV-AUD-02}). */
+            @Override
+            public String toString() {
+                return "Consumed[" + decision + ", redacted]";
+            }
+        }
+
+        /** Refused by name - nothing consumed. */
+        record Refused(Refusal refusal) implements Consumption {
+
+            public Refused {
+                Objects.requireNonNull(refusal, "refusal must not be null");
+            }
+        }
+
+        /** Why credit would not consume the decision. */
+        enum Refusal {
+            /** Not an approval. */
+            NOT_APPROVED,
+            /** Its validity has passed on credit's clock. */
+            LAPSED,
+            /** Consumed already, by another consumer. */
+            ALREADY_CONSUMED,
+            /** No such decision. */
+            NOT_FOUND
+        }
+    }
 
     /** What credit answers a BNPL application's request with (`P12-TSK-011`). */
     sealed interface CreditOutcome {
