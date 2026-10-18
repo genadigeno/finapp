@@ -205,7 +205,9 @@ class CheckoutBnplSessionsTest {
                     .contains("financedBy=" + purchase.value())
                     .contains("entry=" + entry.value())
                     .contains("completedAs=FINANCED")
-                    .doesNotContain("120");
+                    // The gross never - as a decimal or in minor units. Not the bare digits "120": the UUIDv7
+                    // identifiers in the summary can carry them (P12-TSK-011's gate found this order-dependent).
+                    .doesNotContain("120.00").doesNotContain("12000");
         });
         assertThat(registry.get("finapp.checkout.session").tag("outcome", "financed").counter().count())
                 .isEqualTo(1.0d);

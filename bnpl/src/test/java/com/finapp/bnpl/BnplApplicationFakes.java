@@ -32,6 +32,14 @@ import java.util.function.Supplier;
  * {@link #inTransaction unit of work} that rolls every fake back on a thrown refusal - so "nothing written" is asserted
  * on the fakes' state exactly as the database tests assert it on rows. Every port call is logged in order, so the
  * submission's sequence is observable. The database's own ranks are {@code BnplApplicationStoreDatabaseTest}'s.
+ *
+ * <p>Extended by `P12-TSK-011` with the origination step's world: the application's permit, claim, system lock, closure
+ * with its reason and hints; credit's decisions ({@link Credit#approve}, {@link Credit#decline}) behind
+ * {@code decisionFor}; the session read by reference on a database clock ({@link #now}); and {@link Offers}, an in-memory
+ * {@code bnpl V004} - {@code UNIQUE (application_id)}, {@code UNIQUE (decision_id)}, the expiry stamped as
+ * {@code LEAST(decision validity, session expiry, offered_at + validity)}, never born expired, the decline and the expiry
+ * complementary on the clock, the terms hash held to the bytes, and the application's {@code -> OFFERED} only beside its
+ * offer.
  */
 final class BnplApplicationFakes {
 
@@ -51,6 +59,9 @@ final class BnplApplicationFakes {
     final Sessions sessions = new Sessions();
     final Merchants merchants = new Merchants();
     final Terms terms = new Terms();
+    final Offers offers = new Offers();
+    /** The database clock - what every stamp and every clock-sided conditional reads. */
+    Instant now = Instant.parse("2026-10-17T10:10:00Z");
     final List<EventEnvelope> events = new ArrayList<>();
     final List<String> payloads = new ArrayList<>();
     final List<AuditRecord> audited = new ArrayList<>();
@@ -78,6 +89,10 @@ final class BnplApplicationFakes {
         Map<UUID, BnplApplication> rows = new LinkedHashMap<>(store.rows);
         List<BnplApplicationStore.HistoryRow> history = new ArrayList<>(store.history);
         Map<UUID, Credit.Request> requests = new LinkedHashMap<>(credit.requests);
+        Map<UUID, Instant> permits = new LinkedHashMap<>(store.permits);
+        Map<UUID, BnplOffer> offerRows = new LinkedHashMap<>(offers.rows);
+        Map<UUID, BnplOfferStore.StoredTerms> offerTerms = new LinkedHashMap<>(offers.terms);
+        List<BnplOfferStore.HistoryRow> offerHistory = new ArrayList<>(offers.history);
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -90,6 +105,14 @@ final class BnplApplicationFakes {
             store.history.addAll(history);
             credit.requests.clear();
             credit.requests.putAll(requests);
+            store.permits.clear();
+            store.permits.putAll(permits);
+            offers.rows.clear();
+            offers.rows.putAll(offerRows);
+            offers.terms.clear();
+            offers.terms.putAll(offerTerms);
+            offers.history.clear();
+            offers.history.addAll(offerHistory);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -108,7 +131,9 @@ final class BnplApplicationFakes {
 
         final Map<UUID, BnplApplication> rows = new LinkedHashMap<>();
         final List<HistoryRow> history = new ArrayList<>();
-        /** A failure injected at the named operation - "insert", "transition", "appendEvent". */
+        /** Each application's permit, {@code next_step_at}. */
+        final Map<UUID, Instant> permits = new LinkedHashMap<>();
+        /** A failure injected at the named operation - "insert", "transition", "appendEvent", "close". */
         String failAt = "";
 
         @Override
@@ -129,6 +154,7 @@ final class BnplApplicationFakes {
                     application.checkoutSession(), application.merchant(), application.decisionRequest(),
                     application.termsVersion(), version.row().version(), Optional.empty(),
                     Instant.parse("2026-10-17T10:00:00Z"), Optional.empty(), application.correlation()));
+            permits.put(application.id().value(), now);
             return true;
         }
 
@@ -163,14 +189,82 @@ final class BnplApplicationFakes {
             return ownedBy(unitOfWork, id, party);
         }
 
+        @Override
+        public boolean close(Connection unitOfWork, BnplApplicationId id, BnplApplicationStatus to,
+                Optional<BnplApplicationClosureReason> reason) {
+            log.add("close " + to + reason.map(r -> " " + r).orElse(""));
+            fail("close");
+            BnplApplication row = rows.get(id.value());
+            if (row == null || row.status() != BnplApplicationStatus.AWAITING_DECISION) {
+                return false;
+            }
+            if ((to == BnplApplicationStatus.CLOSED_UNDECIDED) != reason.isPresent()) {
+                throw new BnplStorageException("bnpl_application_closure_reason_coherent: SQLSTATE 23514");
+            }
+            // bnpl V004's rank: -> OFFERED only beside its offer.
+            if (to == BnplApplicationStatus.OFFERED && offers.rows.values().stream()
+                    .noneMatch(offer -> offer.application().equals(id))) {
+                throw new BnplStorageException("a BNPL application is OFFERED only beside its offer: SQLSTATE P0001");
+            }
+            put(row, to, reason);
+            return true;
+        }
+
+        @Override
+        public List<BnplApplicationId> claimAwaiting(Connection unitOfWork, int limit, java.time.Duration permit) {
+            log.add("claim applications");
+            List<BnplApplicationId> claimed = new ArrayList<>();
+            for (BnplApplication row : rows.values()) {
+                if (claimed.size() < limit && row.status() == BnplApplicationStatus.AWAITING_DECISION
+                        && !permits.get(row.id().value()).isAfter(now)) {
+                    permits.put(row.id().value(), now.plus(permit));
+                    claimed.add(row.id());
+                }
+            }
+            return claimed;
+        }
+
+        @Override
+        public Optional<BnplApplication> lockClaimed(Connection unitOfWork, BnplApplicationId id) {
+            log.add("B1 " + id.value());
+            return Optional.ofNullable(rows.get(id.value()));
+        }
+
+        @Override
+        public boolean hintRequest(Connection unitOfWork, UUID decisionRequest) {
+            log.add("hint request");
+            return hint(row -> row.decisionRequest().equals(decisionRequest));
+        }
+
+        @Override
+        public boolean hintSession(Connection unitOfWork, UUID checkoutSession) {
+            log.add("hint session");
+            return hint(row -> row.checkoutSession().equals(checkoutSession));
+        }
+
+        private boolean hint(java.util.function.Predicate<BnplApplication> which) {
+            boolean hinted = false;
+            for (BnplApplication row : rows.values()) {
+                if (which.test(row) && row.status() == BnplApplicationStatus.AWAITING_DECISION
+                        && permits.get(row.id().value()).isAfter(now)) {
+                    permits.put(row.id().value(), now);
+                    hinted = true;
+                }
+            }
+            return hinted;
+        }
+
         /** Moves a row as another writer would (the origination step, `P12-TSK-011`). */
         void put(BnplApplication row, BnplApplicationStatus to) {
+            put(row, to, to == BnplApplicationStatus.CLOSED_UNDECIDED
+                    ? Optional.of(BnplApplicationClosureReason.SESSION_CLOSED) : Optional.empty());
+        }
+
+        void put(BnplApplication row, BnplApplicationStatus to, Optional<BnplApplicationClosureReason> reason) {
             boolean terminal = to != BnplApplicationStatus.AWAITING_DECISION;
             rows.put(row.id().value(), new BnplApplication(row.id(), row.party(), row.product(), row.plan(), to,
                     row.checkoutSession(), row.merchant(), row.decisionRequest(), row.termsVersionId(),
-                    row.termsVersion(),
-                    to == BnplApplicationStatus.CLOSED_UNDECIDED
-                            ? Optional.of(BnplApplicationClosureReason.SESSION_CLOSED) : Optional.empty(),
+                    row.termsVersion(), reason,
                     row.submittedAt(), terminal ? Optional.of(Instant.parse("2026-10-17T10:05:00Z")) : Optional.empty(),
                     row.correlation()));
         }
@@ -190,6 +284,8 @@ final class BnplApplicationFakes {
         record Request(UUID party, BnplProduct product, Money amount, OptionalInt termMonths, Actor actor, String status) {}
 
         final Map<UUID, Request> requests = new LinkedHashMap<>();
+        /** Each DECIDED request's decision. */
+        final Map<UUID, CreditOutcome> decisions = new LinkedHashMap<>();
         /** Credit's bound refusal, when set. */
         Optional<String> outOfBounds = Optional.empty();
         List<String> reasons = List.of("We could not verify your income.");
@@ -231,6 +327,60 @@ final class BnplApplicationFakes {
             return reasons;
         }
 
+        @Override
+        public CreditOutcome decisionFor(Connection unitOfWork, UUID decisionRequest, UUID party) {
+            log.add("credit decision");
+            Request request = requests.get(decisionRequest);
+            if (request == null || !request.party().equals(party)) {
+                throw new IllegalStateException("an application's credit request is its own party's");
+            }
+            return switch (request.status()) {
+                case "SUBMITTED", "EVALUATED" -> new CreditOutcome.Pending();
+                case "CANCELLED" -> new CreditOutcome.Closed(CreditOutcome.Closure.CANCELLED);
+                case "EXPIRED" -> new CreditOutcome.Closed(CreditOutcome.Closure.EXPIRED);
+                case "ABANDONED" -> new CreditOutcome.Closed(CreditOutcome.Closure.ABANDONED);
+                case "DECIDED" -> decisions.get(decisionRequest);
+                default -> throw new IllegalStateException(request.status());
+            };
+        }
+
+        @Override
+        public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
+            return decisions.entrySet().stream()
+                    .filter(entry -> switch (entry.getValue()) {
+                        case CreditOutcome.Approved approved -> approved.decision().equals(decision);
+                        case CreditOutcome.Declined declined -> declined.decision().equals(decision);
+                        default -> false;
+                    })
+                    .map(Map.Entry::getKey)
+                    .findFirst();
+        }
+
+        /** Credit approves {@code minorUnits} on the request, valid until {@code validUntil}; the decision's id. */
+        UUID approve(UUID decisionRequest, long minorUnits, Instant validUntil) {
+            Request request = requests.get(decisionRequest);
+            UUID decision = UUID.randomUUID();
+            decisions.put(decisionRequest, new CreditOutcome.Approved(decision, request.party(), request.product(),
+                    Money.ofMinorUnits(minorUnits, BnplTermsFixtures.EUR), request.termMonths(), validUntil));
+            status(decisionRequest, "DECIDED");
+            return decision;
+        }
+
+        /** Credit declines the request; the decision's id. */
+        UUID decline(UUID decisionRequest) {
+            UUID decision = UUID.randomUUID();
+            decisions.put(decisionRequest, new CreditOutcome.Declined(decision));
+            status(decisionRequest, "DECIDED");
+            return decision;
+        }
+
+        /** Credit's request moves, as credit's own sweep or the customer's door would move it. */
+        void status(UUID decisionRequest, String status) {
+            Request request = requests.get(decisionRequest);
+            requests.put(decisionRequest, new Request(request.party(), request.product(), request.amount(),
+                    request.termMonths(), request.actor(), status));
+        }
+
         /** Credit evaluates the request - past cancellation. */
         void evaluate(UUID decisionRequest) {
             Request request = requests.get(decisionRequest);
@@ -268,6 +418,23 @@ final class BnplApplicationFakes {
         public Optional<Session> read(Connection unitOfWork, Sensitive<String> sessionToken) {
             log.add("session read");
             return Optional.ofNullable(byToken.get(sessionToken.expose()));
+        }
+
+        @Override
+        public Optional<Session> byRef(Connection unitOfWork, UUID sessionRef) {
+            log.add("session by ref");
+            return byToken.values().stream().filter(session -> session.sessionRef().equals(sessionRef)).findFirst()
+                    // The deadline on the database clock, read after the row.
+                    .map(session -> new Session(session.sessionRef(), session.merchantRef(), session.gross(),
+                            session.expiresAt(), session.open(), !now.isBefore(session.expiresAt())));
+        }
+
+        /** Checkout moves the session out of {@code OPEN} - paid by card, abandoned or expired. */
+        void close(UUID sessionRef) {
+            byToken.replaceAll((token, session) -> session.sessionRef().equals(sessionRef)
+                    ? new Session(session.sessionRef(), session.merchantRef(), session.gross(), session.expiresAt(),
+                            false, session.expired())
+                    : session);
         }
 
         @Override
@@ -344,8 +511,150 @@ final class BnplApplicationFakes {
                             yield Optional.ofNullable(active.get((BnplProduct) args[1]));
                         }
                         case "version" -> Optional.ofNullable(versions.get((BnplTermsVersionId) args[1]));
+                        case "active" -> Optional.ofNullable(active.get((BnplProduct) args[1]));
                         default -> throw new UnsupportedOperationException(method.getName() + ": not the pin's read");
                     });
+        }
+    }
+
+    // ------------------------------------------------------------------ bnpl V004, in memory (P12-TSK-011)
+
+    final class Offers implements BnplOfferStore {
+
+        final Map<UUID, BnplOffer> rows = new LinkedHashMap<>();
+        final Map<UUID, StoredTerms> terms = new LinkedHashMap<>();
+        final List<HistoryRow> history = new ArrayList<>();
+        final Map<UUID, Instant> permits = new LinkedHashMap<>();
+
+        @Override
+        public Offered insert(Connection unitOfWork, NewOffer offer) {
+            log.add("offer insert");
+            if (rows.values().stream().anyMatch(row -> row.application().equals(offer.application()))) {
+                throw new BnplStorageException("bnpl_offer_application_unique: SQLSTATE 23505");
+            }
+            if (rows.values().stream().anyMatch(row -> row.decision().equals(offer.decision()))) {
+                throw new BnplStorageException("bnpl_offer_decision_unique: SQLSTATE 23505");
+            }
+            BnplApplication application = store.rows.get(offer.application().value());
+            if (application == null || application.status() != BnplApplicationStatus.AWAITING_DECISION
+                    || !application.party().equals(offer.party()) || application.product() != offer.product()
+                    || application.plan() != offer.plan()
+                    || !application.checkoutSession().equals(offer.checkoutSession())) {
+                throw new BnplStorageException("a BNPL offer is born for its own application AWAITING_DECISION: P0001");
+            }
+            if (!offer.termsVersion().equals(BnplApplicationFakes.this.terms.active.get(offer.product()))) {
+                throw new BnplStorageException("a BNPL offer pins its product's ACTIVE terms version: P0001");
+            }
+            BnplTermsVersion version = BnplApplicationFakes.this.terms.versions.get(offer.termsVersion());
+            Instant offeredAt = now;
+            Instant expiresAt = java.util.stream.Stream.of(offer.decisionValidUntil(), offer.sessionExpiresAt(),
+                    offeredAt.plus(java.time.Duration.ofMinutes(version.terms().offerValidityMinutes())))
+                    .min(Instant::compareTo).orElseThrow();
+            if (!expiresAt.isAfter(offeredAt)) {
+                throw new BnplStorageException("a BNPL offer is never born expired: P0001");
+            }
+            rows.put(offer.id().value(), new BnplOffer(offer.id(), offer.application(), offer.party(), offer.product(),
+                    offer.plan(), BnplOfferStatus.OFFERED, offer.decision(), offer.termsVersion(),
+                    version.row().version(), offer.checkoutSession(), offeredAt, expiresAt, Optional.empty(),
+                    offer.correlation()));
+            permits.put(offer.id().value(), expiresAt);
+            return new Offered(offeredAt, expiresAt);
+        }
+
+        @Override
+        public void insertTerms(Connection unitOfWork, BnplOfferId offer, StoredTerms stored) {
+            log.add("offer terms");
+            BnplOffer row = rows.get(offer.value());
+            if (row == null || row.status() != BnplOfferStatus.OFFERED || terms.containsKey(offer.value())) {
+                throw new BnplStorageException("a BNPL offer's terms are born once beside it: P0001");
+            }
+            if (!java.util.Arrays.equals(BnplOfferTerms.sha256(stored.canonicalTerms()), stored.termsSha256())) {
+                throw new BnplStorageException("bnpl_offer_terms_hash_is_the_terms: SQLSTATE 23514");
+            }
+            terms.put(offer.value(), stored);
+        }
+
+        @Override
+        public void appendEvent(Connection unitOfWork, HistoryRow row) {
+            log.add("offer history " + row.to());
+            history.add(row);
+        }
+
+        @Override
+        public Instant databaseNow(Connection unitOfWork) {
+            return now;
+        }
+
+        @Override
+        public List<BnplOfferId> claimDue(Connection unitOfWork, int limit, java.time.Duration permit) {
+            log.add("claim offers");
+            List<BnplOfferId> claimed = new ArrayList<>();
+            for (BnplOffer row : rows.values()) {
+                if (claimed.size() < limit && row.status() == BnplOfferStatus.OFFERED
+                        && !permits.get(row.id().value()).isAfter(now)) {
+                    permits.put(row.id().value(), now.plus(permit));
+                    claimed.add(row.id());
+                }
+            }
+            return claimed;
+        }
+
+        @Override
+        public Optional<BnplOffer> lockClaimed(Connection unitOfWork, BnplOfferId id) {
+            log.add("B2 " + id.value());
+            return Optional.ofNullable(rows.get(id.value()));
+        }
+
+        @Override
+        public Optional<BnplOffer> lockOwnedBy(Connection unitOfWork, BnplOfferId id, UUID party) {
+            log.add("B2 " + id.value());
+            return ownedBy(unitOfWork, id, party);
+        }
+
+        @Override
+        public Optional<BnplOffer> ownedBy(Connection unitOfWork, BnplOfferId id, UUID party) {
+            return Optional.ofNullable(rows.get(id.value())).filter(row -> row.party().equals(party));
+        }
+
+        @Override
+        public Optional<BnplOffer> ofApplication(Connection unitOfWork, BnplApplicationId application) {
+            return rows.values().stream().filter(row -> row.application().equals(application)).findFirst();
+        }
+
+        @Override
+        public Optional<StoredTerms> terms(Connection unitOfWork, BnplOfferId id) {
+            return Optional.ofNullable(terms.get(id.value()));
+        }
+
+        @Override
+        public boolean expire(Connection unitOfWork, BnplOfferId id) {
+            return move(id, BnplOfferStatus.EXPIRED, row -> !row.expiresAt().isAfter(now));
+        }
+
+        @Override
+        public boolean decline(Connection unitOfWork, BnplOfferId id) {
+            return move(id, BnplOfferStatus.DECLINED, row -> row.expiresAt().isAfter(now));
+        }
+
+        @Override
+        public void permitAtExpiry(Connection unitOfWork, BnplOfferId id) {
+            log.add("offer permit at expiry");
+            BnplOffer row = rows.get(id.value());
+            if (row != null && row.status() == BnplOfferStatus.OFFERED) {
+                permits.put(id.value(), row.expiresAt());
+            }
+        }
+
+        private boolean move(BnplOfferId id, BnplOfferStatus to, java.util.function.Predicate<BnplOffer> clockSide) {
+            log.add("offer " + to);
+            BnplOffer row = rows.get(id.value());
+            if (row == null || row.status() != BnplOfferStatus.OFFERED || !clockSide.test(row)) {
+                return false;
+            }
+            rows.put(id.value(), new BnplOffer(row.id(), row.application(), row.party(), row.product(), row.plan(), to,
+                    row.decision(), row.termsVersionId(), row.termsVersion(), row.checkoutSession(), row.offeredAt(),
+                    row.expiresAt(), Optional.of(now), row.correlation()));
+            return true;
         }
     }
 }

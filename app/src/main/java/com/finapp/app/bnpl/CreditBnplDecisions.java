@@ -1,10 +1,13 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.bnpl.BnplCreditDecisions;
+import com.finapp.bnpl.BnplProduct;
 import com.finapp.credit.CreditDecision;
+import com.finapp.credit.CreditDecisionId;
 import com.finapp.credit.CreditDecisions;
 import com.finapp.credit.CreditProduct;
 import com.finapp.credit.DecisionRequest;
+import com.finapp.credit.DecisionOutcome;
 import com.finapp.credit.DecisionRequestId;
 import com.finapp.credit.DecisionRequests;
 import com.finapp.credit.ReasonCode;
@@ -15,6 +18,7 @@ import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +36,13 @@ import lombok.RequiredArgsConstructor;
  * pay-in-4 sends no term, pay-in-N its plan's months; no declared figure is sent. The refusals bnpl gives meaning to are
  * translated into the port's own; every other refusal of credit's ({@code ApplicantNotEligible}, {@code ConsentAbsent},
  * {@code ProductNotOffered}) passes through untouched, so the door answers it exactly as credit's own door would.
+ *
+ * <p><strong>The origination step's read</strong> (`P12-TSK-011`): {@link #decisionFor} reads credit's request through
+ * credit's own owner-scoped read - a request bnpl names is the party's and the BNPL origin's, or the database is broken -
+ * and, once {@code DECIDED}, its decision through the published {@code CreditDecisions} read: plain reads on the caller's
+ * connection, no credit lock taken, so the offering transaction never waits on credit's deciding one (and credit locks no
+ * bnpl row). {@link #requestOf} resolves a decision id - the aggregate of {@code credit.CreditDecisionRecorded} - to its
+ * request for the hint. Lending's {@code CreditLoanDecisions} shape.
  */
 @RequiredArgsConstructor
 final class CreditBnplDecisions implements BnplCreditDecisions {
@@ -71,6 +82,40 @@ final class CreditBnplDecisions implements BnplCreditDecisions {
                 .map(CreditDecision::reasons)
                 .map(reasons -> reasons.stream().map(ReasonCode::customerText).toList())
                 .orElse(List.of());
+    }
+
+    @Override
+    public CreditOutcome decisionFor(Connection unitOfWork, UUID decisionRequest, UUID party) {
+        DecisionRequest request = requests.read(unitOfWork, DecisionRequestId.of(decisionRequest), party)
+                .filter(owned -> owned.origin() == ORIGIN)
+                .orElseThrow(() -> new IllegalStateException(
+                        "a BNPL application's credit request is its own party's, from the BNPL origin, never deleted"));
+        return switch (request.status()) {
+            case SUBMITTED, COLLECTING, READY, EVALUATED, IN_REVIEW -> new CreditOutcome.Pending();
+            case CANCELLED -> new CreditOutcome.Closed(CreditOutcome.Closure.CANCELLED);
+            case EXPIRED -> new CreditOutcome.Closed(CreditOutcome.Closure.EXPIRED);
+            case ABANDONED -> new CreditOutcome.Closed(CreditOutcome.Closure.ABANDONED);
+            case DECIDED -> decided(decisions.forRequest(unitOfWork, decisionRequest)
+                    .orElseThrow(() -> new IllegalStateException("a DECIDED request has its decision")));
+        };
+    }
+
+    @Override
+    public Optional<UUID> requestOf(Connection unitOfWork, UUID decision) {
+        return decisions.byId(unitOfWork, CreditDecisionId.of(decision)).map(CreditDecision::decisionRequest);
+    }
+
+    /** Credit's decision in bnpl's words: a decline, or an approval with its amount, term and validity. */
+    static CreditOutcome decided(CreditDecision decision) {
+        if (decision.outcome() == DecisionOutcome.DECLINED) {
+            return new CreditOutcome.Declined(decision.id().value());
+        }
+        if (decision.product().family() != CreditProduct.Family.BNPL) {
+            throw new IllegalStateException("a BNPL request's decision is of a BNPL product");
+        }
+        return new CreditOutcome.Approved(decision.id().value(), decision.party(),
+                BnplProduct.valueOf(decision.product().name()), decision.approved().orElseThrow(),
+                decision.termMonths().map(OptionalInt::of).orElse(OptionalInt.empty()), decision.validUntil());
     }
 
     /**

@@ -235,7 +235,7 @@ origin for exactly the gross, P4 no term, PN the plan's months. Audited (`bnpl.A
 `bnpl.ApplicationWithdrawn`) though the table above reads "—": every customer act that opens credit is audited. The
 withdrawal takes the platform's conditional step-up; its credit cancellation is asked from the BNPL origin.
 
-### 4.3 BNPL offer (`bnpl.bnpl_offer`) — `P12-TSK-011`, accepted `-013`
+### 4.3 BNPL offer (`bnpl.bnpl_offer`) — built by `P12-TSK-011` (`bnpl V004`), accepted `-013`
 
 ```
  (born by the offer step) OFFERED ──customer accepts = the purchase: decision consumed, agreement v1, purchase financed,
@@ -261,6 +261,39 @@ before the offer expires (no card-funded instalment — B6). **Invalid:** anythi
 `DECLINED`, `EXPIRED` — `EXPIRED → ACCEPTED` above all; `→ ACCEPTED` without its purchase, financing,
 obligation, agreement v1 and evidence beside it (deferred), or at `expires_at <= statement_timestamp()`;
 `→ EXPIRED` before it.
+
+**As built (`P12-TSK-011`, 2026-10-18).** `bnpl V004` holds the offer at three ranks - `BnplOrigination`'s and
+`BnplOffers`' conditional edges under B1 and B2, the every-writer edge trigger `bnpl_offer_permits_only_machine_edges`
+(born `OFFERED` beside its application `AWAITING_DECISION` of the same party, product, plan and session, on the product's
+`ACTIVE` terms version; `offered_at := clock_timestamp()`, `expires_at := LEAST(decision_valid_until, session_expires_at,
+offered_at + the pinned validity)`, never born expired, the permit at the expiry; identity, pin and expiry frozen;
+`DECLINED` refused once the statement's start has reached the expiry, `EXPIRED` while the trigger's clock has not;
+`ACCEPTED` refused until `-013`) and the status `CHECK` with `expires_at <= decision_valid_until AND <= session_expires_at
+AND <= offered_at + 30 min` - beside the deferred birth check, the INSERT-only `bnpl_offer_terms` (exactly the purchase,
+the illustration's figures, the canonical terms as text with `terms_sha256 = sha256(convert_to(canonical_terms,
+'UTF8'))` by `CHECK`, the document's hash) and the append-only `bnpl_offer_event`. `V004` replaces the application's edge
+function verbatim but for `→ OFFERED` only beside its offer. The origination step is §4.2's table in this order: B1; credit's
+answer (`decisionFor`, plain reads); still pending - the session read by reference, and if no longer `OPEN` or past its
+deadline credit's request cancelled while cancellable (B1 → credit's request row, the withdrawal's order) and the
+application `CLOSED_UNDECIDED (SESSION_CLOSED)`; closed - `CREDIT_REQUEST_*`; declined - `DECLINED`; approved - the
+session still open, the approval exactly the gross (below it `APPROVED_BELOW_PURCHASE`; above it, another party,
+product or term a defect that rolls back), the terms pinned and offering the plan (`PRODUCT_NOT_OFFERED`), the database
+clock after the pin (`DECISION_LAPSED`), the illustration from the pinned engine (`BnplIllustration`: P4
+`BNPL_SCHEDULE_ENGINE_V1`, PN `SCHEDULE_ENGINE_V1` on the start's day of the month), the offer, its terms, its history,
+the application `OFFERED`. The read re-projects the illustration, re-renders the canonical terms and the document and
+refuses to show any byte that is not the hashed one. **Settled here:** (1) an `OFFERED` application holds its session
+for good (`V003`'s partial unique unchanged) - a declined or expired offer does NOT free the session for a second BNPL
+application: owner decision B5 is one decision per purchase, credit's approval keeps its reservation until its own
+validity whichever way the offer goes, so a second application would stack a second reservation on one purchase and
+invite plan-shopping; the session stays `OPEN` for the card or the wallet (the owner's to revisit - it would need
+credit's release of an unconsumed decision); (2) `BnplEligibilityAssessed` is `NOT_ELIGIBLE` for an approval below the
+purchase as for a decline - the merchant's one bit says whether this purchase can be financed (§8's open point); (3) the
+plan's `GET /v1/checkout/sessions/{id}/bnpl-options` is `POST /v1/checkout/sessions/bnpl-options` with the session's
+token in the body - the holder's capability is the token, which may travel only in a body; (4) the checkout hint is
+`checkout.CheckoutSessionExpired` (the session's one outboxed event; a card payment moves the session with no event and is
+found by the sweep within one permit), beside credit's `CreditDecisionRecorded` and `CreditDecisionRequestClosed`; (5) an
+offer whose session is paid by another instrument is not expired early - it runs to its expiry, which is never after
+the session's, and the acceptance's B3 refuses it (`-013`).
 
 ### 4.4 The checkout session, as BNPL changes it (`checkout.checkout_session`) — `P12-TSK-007`, `-013`
 
@@ -597,7 +630,8 @@ until its task's design settles it; none is a decision the transition took.
   `WITHDRAWN` and "the checkout session expired/closed" under `CLOSED_UNDECIDED`. Here `WITHDRAWN` is only the
   customer's withdrawal door; any session no longer `OPEN` (expired, abandoned, or paid by another
   instrument) is found by the sweep and closes `CLOSED_UNDECIDED (SESSION_CLOSED)`. `BnplEligibilityAssessed`
-  for an `APPROVED_BELOW_PURCHASE` closure is unspecified (§10 says "offer or decline").
+  for an `APPROVED_BELOW_PURCHASE` closure is unspecified (§10 says "offer or decline") - *settled by `P12-TSK-011`:
+  `NOT_ELIGIBLE`, as a decline (§4.3's as-built note).*
 - **The obligation's closure reasons** (`-018`, `-021`): §5.5 says `REFUNDED_PARTIALLY_REPAID` is "refunds and
   repayments together"; here each reason is named by the closing act (§4.7).
 - **When an agreement version is born** (`-021`, `-022`): §5.4 and §3.1 name "a payoff recalculation" and "a

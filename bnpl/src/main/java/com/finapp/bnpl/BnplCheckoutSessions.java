@@ -109,6 +109,13 @@ public interface BnplCheckoutSessions {
     Optional<Session> read(Connection unitOfWork, Sensitive<String> sessionToken);
 
     /**
+     * The session bnpl's own record names, or empty - unlocked, for the origination sweep (`P12-TSK-011`), which holds
+     * no token: its deadline judged on the database clock read after the row, as {@link #read}'s. A reading only - the
+     * purchase's B3 judgement is the binding one.
+     */
+    Optional<Session> byRef(Connection unitOfWork, UUID sessionRef);
+
+    /**
      * B3: the session row {@code FOR UPDATE} on {@code unitOfWork}, judged at once on the database clock read after the
      * lock.
      *

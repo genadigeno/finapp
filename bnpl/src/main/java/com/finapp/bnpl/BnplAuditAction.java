@@ -68,6 +68,17 @@ public enum BnplAuditAction implements AuditableAction {
                     + " under credit's own row lock in the same transaction (credit's credit.DecisionRequestCancelled"
                     + " record beside it). Refused, with nothing written, once credit has evaluated the request. Its"
                     + " target the application; the summary names it and credit's request.",
+            false),
+
+    /** A customer declined a BNPL offer (`P12-TSK-011`). */
+    OFFER_DECLINED(
+            "bnpl.OfferDeclined",
+            "A customer declined their own BNPL offer (POST /v1/me/bnpl-offers/{id}/decline, keyed"
+                    + " bnpl.offer-decline:CUSTOMER:<id>, the platform's conditional step-up) - the offer locked (B2) and"
+                    + " moved DECLINED only while OFFERED and before its expires_at on the database clock, the complement"
+                    + " of the sweep's expiry, so exactly one of DECLINED and EXPIRED. Nothing is released: credit's"
+                    + " unconsumed approval lapses at its own validity, and the checkout session stays OPEN for another"
+                    + " instrument. Its target the offer; the summary names it and its application - never an amount.",
             false);
 
     private final String code;

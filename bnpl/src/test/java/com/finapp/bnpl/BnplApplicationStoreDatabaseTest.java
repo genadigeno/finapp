@@ -105,7 +105,8 @@ class BnplApplicationStoreDatabaseTest {
                 UUID.randomUUID(), UUID.randomUUID(), request, payIn4, customer(UUID.randomUUID()), correlation())))
                 .as("one application per credit request").isFalse();
 
-        raw("UPDATE bnpl.bnpl_application SET status = 'OFFERED' WHERE id = '" + first.value() + "'");
+        // bnpl V004 (P12-TSK-011): -> OFFERED only beside its offer, so the offer is born with it.
+        offered(first);
         assertThat(inserted(application(UUID.randomUUID(), session,
                 BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4, payIn4))).as("an offer holds its session").isFalse();
         UUID freed = UUID.randomUUID();
@@ -187,6 +188,33 @@ class BnplApplicationStoreDatabaseTest {
                     Optional.of(BnplApplicationStatus.SUBMITTED), BnplApplicationStatus.AWAITING_DECISION,
                     "CREDIT_REQUEST_OPENED", customer(party), correlation()));
             return row.id();
+        });
+    }
+
+    /**
+     * The origination step's OFFERED edge as {@code bnpl V004} admits it (`P12-TSK-011`): under B1, the offer born on the
+     * product's terms version ACTIVE now with its terms, then the application moved - one transaction.
+     */
+    private static void offered(BnplApplicationId id) {
+        inOneTransaction(uow -> {
+            BnplApplication application = STORE.lockClaimed(uow, id).orElseThrow();
+            BnplTermsVersion version = TERMS.pinActive(uow, application.product());
+            JdbcBnplOfferStore offers = new JdbcBnplOfferStore();
+            BnplOfferId offer = BnplOfferId.next(IDS);
+            BnplOfferStore.Offered born = offers.insert(uow, new BnplOfferStore.NewOffer(offer, id,
+                    application.party(), application.product(), application.plan(), UUID.randomUUID(), version.id(),
+                    application.checkoutSession(), java.time.Instant.now().plus(java.time.Duration.ofDays(1)),
+                    java.time.Instant.now().plus(java.time.Duration.ofHours(1)), correlation()));
+            BnplIllustration illustration = BnplIllustration.of(version.terms(), application.plan(),
+                    com.finapp.sharedkernel.money.Money.ofMinorUnits(600_00, BnplTermsFixtures.EUR),
+                    java.time.LocalDate.ofInstant(born.offeredAt(), java.time.ZoneOffset.UTC));
+            offers.insertTerms(uow, offer, BnplOfferStore.StoredTerms.of(application.plan(),
+                    version.terms().nominalAnnualRate(), illustration,
+                    "{\"format\":\"1\",\"offer\":\"" + offer.value() + "\"}", new byte[32]));
+            if (!STORE.close(uow, id, BnplApplicationStatus.OFFERED, Optional.empty())) {
+                throw new IllegalStateException("the application was awaiting a decision");
+            }
+            return null;
         });
     }
 

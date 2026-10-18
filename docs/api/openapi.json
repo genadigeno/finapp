@@ -787,6 +787,41 @@
           }
         }
       },
+      "bnpl.OfferNotAcceptable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.OfferNotAcceptable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.OfferNotAcceptable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL offer is no longer open: it was declined, expired or accepted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "bnpl.ProductNotOffered": {
         "content": {
           "application/problem+json": {
@@ -9625,6 +9660,9 @@
           "decisionRequestId": {
             "type": "string"
           },
+          "offerId": {
+            "type": "string"
+          },
           "plan": {
             "type": "string"
           },
@@ -9705,6 +9743,201 @@
           },
           "product": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplIllustrationView": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "finalInstalment": {
+            "type": "string"
+          },
+          "firstDueDate": {
+            "type": "string"
+          },
+          "firstInstalment": {
+            "type": "string"
+          },
+          "instalmentCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "instalments": {
+            "items": {
+              "$ref": "#/components/schemas/BnplInstalmentView"
+            },
+            "type": "array"
+          },
+          "lastDueDate": {
+            "type": "string"
+          },
+          "regularInstalment": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "totalInterest": {
+            "type": "string"
+          },
+          "totalPayable": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplInstalmentView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "interest": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplOfferDecision": {
+        "properties": {
+          "closedAt": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplOfferView": {
+        "properties": {
+          "agreementTemplate": {
+            "type": "string"
+          },
+          "agreementTemplateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string"
+          },
+          "documentSha256": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "illustration": {
+            "$ref": "#/components/schemas/BnplIllustrationView"
+          },
+          "nominalAnnualRate": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "offeredAt": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "termsSha256": {
+            "type": "string"
+          },
+          "termsVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplOptionsBody": {
+        "properties": {
+          "sessionToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionToken"
+        ],
+        "type": "object"
+      },
+      "BnplOptionsView": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/BnplProductOptionView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplPlanOptionView": {
+        "properties": {
+          "illustration": {
+            "$ref": "#/components/schemas/BnplIllustrationView"
+          },
+          "plan": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplProductOptionView": {
+        "properties": {
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/BnplPlanOptionView"
+            },
+            "type": "array"
+          },
+          "product": {
+            "type": "string"
+          },
+          "termsVersion": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -20418,6 +20651,33 @@
         }
       }
     },
+    "/v1/checkout/sessions/bnpl-options": {
+      "post": {
+        "operationId": "readBnplOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplOptionsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplOptionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/checkout/sessions/confirmation": {
       "post": {
         "operationId": "confirmCheckoutSession",
@@ -21151,6 +21411,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BnplApplicationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/bnpl-offers/{id}": {
+      "get": {
+        "operationId": "readBnplOffer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplOfferView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/bnpl-offers/{id}/decline": {
+      "post": {
+        "operationId": "declineBnplOffer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplOfferDecision"
                 }
               }
             },

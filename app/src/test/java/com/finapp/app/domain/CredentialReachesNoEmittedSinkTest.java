@@ -492,6 +492,10 @@ class CredentialReachesNoEmittedSinkTest {
                         // fingerprint names the session it resolves to), and a product and plan CODE. Closed: never an
                         // amount, a merchant, a rate, a score or a party.
                         "BnplApplicationBody",
+                        // P12-TSK-011: the checkout's BNPL options read - the session's TOKEN alone, wrapped in Sensitive
+                        // from deserialisation (BnplApplicationBody's shape: never answered, stored, evented or logged).
+                        // Closed: no amount, merchant, rate, score or party.
+                        "BnplOptionsBody",
                         // P11-TSK-012: the customer's acceptance - the offer's terms hash (a public SHA-256 of terms the
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.
