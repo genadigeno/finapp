@@ -3540,6 +3540,13 @@ acceptance evidence, the schedule, its instalments, the billing, the repayment a
 is on an INSERT-only table and `RESTRICTED-FINANCIAL`; the evidence's session, address and agent `CONFIDENTIAL`; no
 figure leaves in a log line, tag, span attribute or exception message (`INV-AUD-02`).
 
+**Who reads which, since `P12-TSK-014`.** The merchant's read (`GET /v1/merchant/bnpl-purchases/{id}`, its own key)
+serves exactly the purchase's `id`, `checkout_session_id` (as `checkoutId`), `order_id`, `product` and `status` and the
+financing's `currency`, `gross_minor`, `fee_minor`, `net_minor`, `fee_schedule_version_id`, `journal_entry_id` and
+`financed_at` - the `RESTRICTED-FINANCIAL` figures to the one counterparty they are about, the tenant in the statement
+(`INV-MER-01`). No `bnpl_obligation`, agreement, schedule, billing or repayment column and no `party_id` or `plan`
+reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`MerchantBnplPurchaseView`).
+
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `purchase` | `id` | `CONFIDENTIAL` | A BNPL purchase reference - *added by `P12-TSK-013`* |

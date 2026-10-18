@@ -10107,6 +10107,47 @@
         },
         "type": "object"
       },
+      "BnplMerchantPurchaseView": {
+        "properties": {
+          "checkoutId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "feeScheduleVersionId": {
+            "type": "string"
+          },
+          "financedAt": {
+            "type": "string"
+          },
+          "gross": {
+            "type": "string"
+          },
+          "net": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplOfferDecision": {
         "properties": {
           "closedAt": {
@@ -23677,6 +23718,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WithdrawalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/bnpl-purchases/{id}": {
+      "get": {
+        "operationId": "readMerchantBnplPurchase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplMerchantPurchaseView"
                 }
               }
             },

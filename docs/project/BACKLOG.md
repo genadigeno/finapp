@@ -20089,7 +20089,7 @@ after everything.
   (`-012`) implemented, the three-way proof deferred to `-025`), `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: Critical.
   **Cx**: L.
 
-**P12-TSK-014 — Merchant reads of BNPL purchases** — `READY` (marked by the `P12-TSK-012` + `-013` pair's completion gate, 2026-10-18: its one dependency `-013` `COMPLETE`; `-015` and `-016` depend on `-013` alone and may run beside it)
+**P12-TSK-014 — Merchant reads of BNPL purchases** — `COMPLETE` (2026-10-18; **M12.5 at 1 of 2**; started in wave B beside `-015` and `-016`; marks no task `READY` - the wave's board gives that to `-015`) *(read "`IN_PROGRESS`" from its start until its gate; "`READY`" before)* (marked `READY` by the `P12-TSK-012` + `-013` pair's completion gate, 2026-10-18: its one dependency `-013` `COMPLETE`; `-015` and `-016` depend on `-013` alone and may run beside it)
 - **Objective**: a merchant reads, over its own API key, every BNPL purchase made at it — the gross, the
   merchant fee and its pinned version, the financed net, the refunds — and never anything of the customer's
   credit: no eligibility reason, score, credit amount, plan schedule, repayment or delinquency
@@ -20162,6 +20162,62 @@ after everything.
   entry, and no credit datum reaches it by any field.
 - **Definition of done**: `DOD-API`, `DOD-SEC` (criterion 7 the standing B4 deviation, recorded). **Risk**:
   Medium. **Cx**: S.
+- **As built** (2026-10-18): **no migration**. bnpl's `MerchantBnplPurchaseView` (the closed record: purchase,
+  checkout session, order, product, status, gross, fee, net, the pinned fee schedule version, the financing entry F1
+  and its instant; refuses `AUTHORISED` (`INV-BNPL-02`) and a non-conserving split (`INV-BNPL-04`) as read; text
+  redacted), `BnplPurchaseReads.forMerchant(uow, merchant, id)` over the new `BnplPurchaseStore.atMerchant` -
+  `JdbcBnplPurchaseStore`'s one statement `purchase JOIN merchant_financing ON f.purchase_id = p.id AND f.merchant_id =
+  p.merchant_id WHERE p.id = ? AND p.merchant_id = ?`, selecting no party, plan, decision or obligation column;
+  `app`'s `BnplMerchantPurchaseController` (`GET /v1/merchant/bnpl-purchases/{id}`, `RequiresMerchantKey`, handler
+  `readMerchantBnplPurchase`) and `BnplMerchantPurchaseDesk` (the tenant the key's merchant only; one read-only
+  `REPEATABLE READ` snapshot through `BnplTransactions.inSnapshot`; the answer `BnplMerchantPurchaseView` - the
+  schema name `Bnpl`-prefixed, the session named `checkoutId` as checkout's own merchant reads name it; an unknown, a
+  malformed, a non-v7 and another merchant's id one `404 bnpl.NotFound`), beans in `BnplPurchaseBeans`.
+  `openapi.json` regenerated (one path, one schema - compatible; the classifier's `BREAKING` mark on a new path's
+  required path parameter, as every earlier new path). Registers: `OwnershipIsScopedTest` (`atMerchant`
+  `OWNER_SCOPED`, `merchant_id = ?`; its negative `BnplMerchantReadDatabaseTest#anotherMerchantsPurchaseIsNotFound`),
+  `OpenApiContractTest`'s path list, `MerchantTenancyBatteryDatabaseTest` (see the gate), `ERROR_CONTRACT.md` (the
+  read's `404`/`401`/`500` prose), `AUDITABLE_ACTIONS.md` (not audited, with the reason), `DATA_CLASSIFICATION.md`
+  (which columns reach a merchant), `MODULE_ARCHITECTURE.md`, `BNPL_LIFECYCLES.md` §4.5; `BnplMerchantReadDatabaseTest`
+  registered in `app`'s `ownContainerSuites`. **Refinements of the backlog, with reasons**: (1) **the merchant's
+  eligibility signal is not built here** - `-011`'s design placed it (`BnplEligibilityAssessed`, `ELIGIBLE` /
+  `NOT_ELIGIBLE` only, "the merchant's one signal"; `-010`'s out-of-scope names it so), which the scope's "unless
+  `-010`/`-011`'s design already placed it" defers to: no checkout read changed; (2) **"partially refunded" joins with
+  the refunds at `-021`** - it is derived from refunds no table holds yet, so the status shown is the stored
+  `FINANCED` / `FULLY_REFUNDED`; (3) **the version shown is the pin's id** (`merchant_financing.fee_schedule_version_id`,
+  the pin's by value) - the per-schedule ordinal would need a cross-module read for a label, and no merchant surface
+  shows fee schedule versions; (4) **a storage fault is the platform's `500 api.InternalError`**, not "`503`" - the
+  platform has no such answer for a failed read; the log line carries the route template and `BnplStorageException`'s
+  operation and SQLSTATE only; (5) the needle walk's late fee and DPD do not exist yet (`-019`, `-020`), so the walk
+  plants what is on record - party, decision, request, score, reasons, agreement, obligation, schedule, instalment
+  amounts, repayment, offer, plan - and the closed type and its test cover every future datum. **Tests**: hermetic -
+  bnpl `MerchantBnplPurchaseViewTest` (4), `BnplAcceptancesTest#theMerchantReadsItsOwnPurchase` (the read after a real
+  acceptance on the fakes: figures equal F1's payable movement and the pin; another merchant and an unknown id empty),
+  `app` `BnplMerchantPurchaseDeskTest` (5: the closed field set, the exact figures, the needle walk over the serialised
+  answer, the uniform `404` with the tenant bound, the read inside the snapshot); database, written and **not run**
+  (the owner's instruction) - `BnplMerchantReadDatabaseTest` (own-container, the backlog's eight cases) and
+  `BnplMerchantReadApiTest` (the route's negatives: no key, a customer's session, an operator's session, an unknown
+  key - each `401`).
+- **Gate** (2026-10-18): `COMPLETE`. **CRITICAL** none. **IMPORTANT** (1) `MerchantTenancyBatteryDatabaseTest` - the
+  cross-tenant battery whose table must name every served merchant route - named neither this route nor
+  `P12-TSK-006`'s five BNPL operator doors, so `#theTableIsEveryMerchantRoute` was red from `-006` on its next run
+  (unobserved: a database suite): **fixed** - a row may delegate its probe to a named `@Test` in a suite whose world
+  can build the resource (held to exist by reflection), this route to `BnplMerchantReadDatabaseTest`, `-006`'s acts on
+  an enablement to `BnplMerchantEndpointDatabaseTest#theDoorsAreClosed`, its fee schedule assignment to
+  `#theFeeScheduleIsAssigned`, its proposal a `SUBJECT`; (2) the backlog's "`503`" for a storage fault - corrected to
+  the platform's `500` in the record (refinement 4). **MINOR** `checkoutSessionId` would trip
+  `CredentialReachesNoEmittedSinkTest`'s `session`+`id` pair - named `checkoutId`, the merchant precedent; the merchant
+  view's fake `UUID`s had to be v7 (`EntityId`), and a non-v7 id is the uniform `404` before any read. **Probes**
+  (`MUTATION_TESTING.md` §2, six rows, each restored byte-identical, sha256-verified): the merchant predicate moved to a
+  skipped post-filter → `OwnershipIsScopedTest#ownerScopedStatementsCarryThePredicate` red; the schedule added to the
+  answer → `BnplMerchantPurchaseDeskTest#theViewIsClosed`, `#noCreditDataReachesTheMerchant`, `#theViewIsTheFinancing`
+  red; the key's id bound as tenant → `#anotherMerchantsPurchaseIsTheUniformNotFound` red; fee and net swapped →
+  `#theViewIsTheFinancing` red; the view's conservation check skipped → `MerchantBnplPurchaseViewTest
+  #theFinancingConservesThePurchase` red; `AUTHORISED` admitted → `#neverAuthorised` red. The live halves on
+  `BnplMerchantReadDatabaseTest` owed. **Ten instances**: `PASS` - read-only, nothing shared written; each answer one
+  statement in one read-only `REPEATABLE READ` snapshot over rows the acceptance commits in one transaction, the
+  financing joined, so any instance answers `404` or the whole purchase, identically; no instance-local state, no
+  lock, no clock. Criterion 7 the standing deviation: the database tiers not run.
 
 **P12-TSK-015 — Instalment billing, the catch-up application and the servicing schedule** — `PLANNED`
 - **Objective**: on each due date exactly what is due becomes due — P4's instalments 2–4 on `D1 + 14(k−1)`,

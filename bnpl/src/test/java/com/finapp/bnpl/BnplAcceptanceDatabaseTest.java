@@ -543,6 +543,11 @@ class BnplAcceptanceDatabaseTest {
         public List<UUID> billedInstalments(Connection unitOfWork, BnplObligationId obligation) {
             return delegate.billedInstalments(unitOfWork, obligation);
         }
+
+        @Override
+        public Optional<MerchantBnplPurchaseView> atMerchant(Connection unitOfWork, BnplPurchaseId id, UUID merchant) {
+            return delegate.atMerchant(unitOfWork, id, merchant);
+        }
     }
 
     private static Actor customer(UUID party) {

@@ -359,6 +359,11 @@ by id, its lines the one transaction's and the three-way proof's (`-025`). `bnpl
 accepting customer, the act that commits the financing (`SystemActorRulesTest` forbids `Actor.SYSTEM` outside
 `SecurityContext`). `FULLY_REFUNDED` refused until `-021`.)*
 
+*(Read by its merchant since `P12-TSK-014`: `GET /v1/merchant/bnpl-purchases/{id}` answers the purchase's status as
+stored - `FINANCED` or `FULLY_REFUNDED`, never `AUTHORISED`, which no transaction commits - beside its financing, in one
+statement with the tenant in it; a purchase is read whole with its financing or not at all. "Partially refunded" is
+derived from the refunds, so it joins the merchant's view with them at `-021`.)*
+
 ### 4.6 BNPL agreement (`bnpl.bnpl_agreement`) — versioned, immutable rows; the status is the obligation's — `P12-TSK-013`, `-021`, `-023`
 
 No machine: each version is a born-once, `INSERT`-only row for every role (`UNIQUE (obligation_id,

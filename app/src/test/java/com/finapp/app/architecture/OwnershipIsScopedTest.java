@@ -966,6 +966,11 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
                                     "P12-TSK-013. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - the billed marks of the caller's own schedule.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/bnpl-purchases/{id} - the identifier from the path, and p.merchant_id = ? in the statement is the authenticated key's merchant (INV-MER-01, ADR-0052), the financing joined on the same merchant; another merchant's purchase and an absent one are one empty answer, the 404 (P12-TSK-014).")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.finance",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3665,6 +3670,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
                             "com.finapp.app.bnpl.BnplAcceptanceApiTest.anotherPartysAgreementIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
+                            "com.finapp.app.bnpl.BnplMerchantReadDatabaseTest.anotherMerchantsPurchaseIsNotFound"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
                             "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),

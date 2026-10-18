@@ -1015,6 +1015,21 @@ final class BnplApplicationFakes {
                     .map(Billing::instalment).toList();
         }
 
+        /** {@code JdbcBnplPurchaseStore.atMerchant}'s statement: the purchase at the merchant, joined to its financing. */
+        @Override
+        public Optional<MerchantBnplPurchaseView> atMerchant(Connection unitOfWork, BnplPurchaseId id, UUID merchant) {
+            BnplPurchase purchase = rows.get(id.value());
+            MerchantFinancing financing = financings.get(id.value());
+            if (purchase == null || financing == null || !purchase.merchant().equals(merchant)
+                    || !financing.merchant().equals(purchase.merchant())) {
+                return Optional.empty();
+            }
+            MerchantFeeSplit split = financing.split();
+            return Optional.of(new MerchantBnplPurchaseView(purchase.id(), purchase.checkoutSession(),
+                    purchase.order().orElseThrow(), purchase.product(), purchase.status(), split.gross(), split.fee(),
+                    split.net(), split.feeScheduleVersionId(), financing.entry(), purchase.financedAt().orElseThrow()));
+        }
+
         private Owned owned(BnplObligation obligation) {
             return new Owned(obligation, rows.get(obligation.purchase().value()),
                     agreements.get(obligation.agreement().value()),
