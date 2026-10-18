@@ -139,7 +139,7 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    shape is `P12-TSK-016`'s design), so **`INV-MER-02`'s equation gains "+ financed − BNPL fees −
    BNPL refunds + BNPL fees returned"**. A BNPL refund after a payout may drive the payable below
    zero only within the amended `INV-MER-07` bound, the debt recovered before any payout
-   (`INV-MER-05`; B7, ADR-0105).
+   (`INV-MER-05`; B7, ADR-0105). *(As built by `P12-TSK-016`: the lines are classified by their entry's posting-key namespace (`bnpl.financing:`, `bnpl.refund:`) - which the ledger's `PositionBreakdown` and `StatementDerivation` now report beside the counterparty, in the ledger's own vocabulary, for the namespaces a caller names - after the attribution rule and before any counterparty rule, because F5's excess credits `CUSTOMER_WALLET`, the book rail's sale counterparty; `COUNTERPARTIES` gains `BNPL_PRINCIPAL`, `BNPL_PRINCIPAL_DUE` and `BNPL_MERCHANT_FEE_INCOME`, descriptive only; the payable gains `bnplFinanced`, `bnplFees`, `bnplRefunded`, `bnplFeesReturned`; a `BNPL_FINANCING` movement carries the purchase (the entry's reference), a `BNPL_REFUND` the BNPL refund.)*
 
 9. **Three numbers, one authority.** *Ledger* (authoritative): the per-obligation balances. *BNPL's
    rows*: immutable facts that explain the ledger and must sum to it — `BnplSubledgerProof`

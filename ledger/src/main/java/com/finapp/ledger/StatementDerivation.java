@@ -4,6 +4,7 @@ import com.finapp.sharedkernel.money.Money;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -55,6 +56,11 @@ public interface StatementDerivation<T> {
      * <p>{@code reconciliationAttribution} (`P8-TSK-015`, ADR-0071 §2): the line belongs to an
      * {@code ADJUSTMENT} entry of a {@code RECONCILIATION}-origin proposal — an approved break
      * resolution attributing value to this account — so the owner's own record names the act.
+     *
+     * <p>{@code namespace} (`P12-TSK-016`, {@link PositionBreakdown.Bucket}'s rule): the first
+     * of the caller's posting-key namespaces the entry's command key begins with - only ever a
+     * {@link PostingService} entry's, and only when the caller named any. The key itself never
+     * leaves the ledger: a line carries the prefix the caller already knew, nothing more.
      */
     record StatementLine(
             JournalEntryId entry,
@@ -64,7 +70,8 @@ public interface StatementDerivation<T> {
             String reference,
             Direction direction,
             Money amount,
-            boolean reconciliationAttribution) {
+            boolean reconciliationAttribution,
+            Optional<String> namespace) {
 
         public StatementLine {
             Objects.requireNonNull(entry, "entry must not be null");
@@ -74,6 +81,21 @@ public interface StatementDerivation<T> {
             Objects.requireNonNull(reference, "reference must not be null");
             Objects.requireNonNull(direction, "direction must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
+            Objects.requireNonNull(namespace, "namespace must not be null");
+        }
+
+        /** A line no namespace was asked of - the shape before `P12-TSK-016`. */
+        public StatementLine(
+                JournalEntryId entry,
+                LocalDate postingDate,
+                LocalDate valueDate,
+                JournalEntryType entryType,
+                String reference,
+                Direction direction,
+                Money amount,
+                boolean reconciliationAttribution) {
+            this(entry, postingDate, valueDate, entryType, reference, direction, amount,
+                    reconciliationAttribution, Optional.empty());
         }
     }
 
@@ -106,5 +128,18 @@ public interface StatementDerivation<T> {
      * @throws UnderivableBalanceException the derivation's own regime: an underivable
      *     history must refuse loudly, never render a plausible statement
      */
-    List<AccountStatement> statementsFor(T unitOfWork, UUID ownerRef, LocalDate from, LocalDate to);
+    default List<AccountStatement> statementsFor(
+            T unitOfWork, UUID ownerRef, LocalDate from, LocalDate to) {
+        return statementsFor(unitOfWork, ownerRef, from, to, List.of());
+    }
+
+    /**
+     * {@link #statementsFor(Object, UUID, LocalDate, LocalDate)}, each line labelled with the
+     * first of {@code namespaces} its entry's posting key begins with (`P12-TSK-016`).
+     *
+     * @param namespaces posting-key prefixes, most significant first; distinct and non-blank,
+     *     empty asking for none ({@link PositionBreakdown#checkedNamespaces})
+     */
+    List<AccountStatement> statementsFor(
+            T unitOfWork, UUID ownerRef, LocalDate from, LocalDate to, List<String> namespaces);
 }

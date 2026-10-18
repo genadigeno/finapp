@@ -20258,7 +20258,7 @@ after everything.
   refund cancels billed principal by its own entry (`-021`); F5 vacuous — no external event; F8: the
   subledger proof's due arms, `-025`). **Risk**: High. **Cx**: M.
 
-**P12-TSK-016 — The merchant payable drill-down and payouts of BNPL-financed money** — `PLANNED`
+**P12-TSK-016 — The merchant payable drill-down and payouts of BNPL-financed money** — `IN_PROGRESS`
 - **Objective**: the merchant leg as the merchant sees it — every BNPL financing and every BNPL refund named
   in the payable's drill-down and the merchant's transactions, `INV-MER-02`'s equation holding with the BNPL
   terms, and BNPL-financed money paid out through the existing on-demand payout only, bounded by the payable

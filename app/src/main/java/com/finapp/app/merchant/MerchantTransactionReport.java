@@ -7,6 +7,7 @@ import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.StatementDerivation;
 import com.finapp.merchant.AuthenticatedMerchant;
+import com.finapp.merchant.MerchantPayable;
 import com.finapp.payments.PaymentAttempt;
 import com.finapp.payments.PaymentAttemptId;
 import com.finapp.payments.PaymentAttemptStore;
@@ -83,6 +84,19 @@ public final class MerchantTransactionReport {
         /** A refund: the gross debited from the payable, any returned fee credited back. */
         REFUND,
         /**
+         * A BNPL purchase financed at the merchant (`P12-TSK-016`, F1, keyed
+         * {@code bnpl.financing:}): the gross credited to the payable, the BNPL merchant fee
+         * debited from it — paid upfront, net of the fee, whatever the customer later repays.
+         */
+        BNPL_FINANCING,
+        /**
+         * A BNPL refund (F5, keyed {@code bnpl.refund:}, posted by `P12-TSK-021`): the gross
+         * debited from the payable, the BNPL fee it returned credited back. Never a
+         * {@link #REFUND}, though its excess line credits the customer's wallet as a wallet-paid
+         * capture's refund does — the key decides, before any reference.
+         */
+        BNPL_REFUND,
+        /**
          * Anything else that moved the payable — a payout (`P6-TSK-012`), an operator
          * adjustment. Shown with its money and <em>without</em> commercial identifiers,
          * because the honest answer to "which purchase is this" is sometimes "none".
@@ -99,6 +113,11 @@ public final class MerchantTransactionReport {
      *     under a {@code RETURNED} policy; zero when there is none, absent for {@link Kind#OTHER}
      * @param net what this entry did to what the platform owes the merchant, SIGNED — the only
      *     figure whose sum over the report reconciles to the payable
+     * @param refundId a {@link Kind#REFUND}'s payments refund, or a {@link Kind#BNPL_REFUND}'s
+     *     BNPL refund — the entry's own reference, the refund the merchant itself asked for
+     * @param purchaseId a {@link Kind#BNPL_FINANCING}'s BNPL purchase — the financing entry's
+     *     own reference, the purchase {@code GET /v1/merchant/bnpl-purchases/{id}} reads
+     *     (`P12-TSK-014`); nothing of the customer's beyond it
      */
     public record Movement(
             Kind kind,
@@ -110,7 +129,8 @@ public final class MerchantTransactionReport {
             Optional<UUID> checkoutId,
             Optional<UUID> orderId,
             Optional<UUID> paymentIntentId,
-            Optional<UUID> refundId) {}
+            Optional<UUID> refundId,
+            Optional<UUID> purchaseId) {}
 
     /** One currency's movements, between an opening and a closing they reconcile to. */
     public record Section(Money opening, List<Movement> movements, Money closing) {}
@@ -144,7 +164,7 @@ public final class MerchantTransactionReport {
         UUID tenant = merchant.merchantId().value();
         return inOneTransaction(
                 uow ->
-                        statements.statementsFor(uow, tenant, from, to).stream()
+                        statements.statementsFor(uow, tenant, from, to, MerchantPayable.NAMESPACES).stream()
                                 .map(statement -> section(uow, tenant, statement))
                                 .toList());
     }
@@ -185,6 +205,37 @@ public final class MerchantTransactionReport {
         Money net = credited.minus(debited);
 
         Optional<UUID> reference = asUuid(first.reference());
+        // BNPL's entries by their KEY first (P12-TSK-016, MerchantPayable's rule): the ledger
+        // names the namespace beside the line, and only bnpl posts under it.
+        Optional<String> namespace = first.namespace();
+        if (namespace.filter(MerchantPayable.BNPL_FINANCING_NAMESPACE::equals).isPresent()) {
+            return new Movement(
+                    Kind.BNPL_FINANCING,
+                    first.entry(),
+                    first.postingDate(),
+                    Optional.of(credited),
+                    Optional.of(debited),
+                    net,
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    reference);
+        }
+        if (namespace.filter(MerchantPayable.BNPL_REFUND_NAMESPACE::equals).isPresent()) {
+            return new Movement(
+                    Kind.BNPL_REFUND,
+                    first.entry(),
+                    first.postingDate(),
+                    Optional.of(debited),
+                    Optional.of(credited),
+                    net,
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    reference,
+                    Optional.empty());
+        }
         Optional<PaymentAttempt> captured =
                 reference.flatMap(id -> attemptNamed(uow, id));
         if (captured.isPresent()) {
@@ -200,6 +251,7 @@ public final class MerchantTransactionReport {
                     commercial.checkout(),
                     commercial.order(),
                     commercial.intent(),
+                    Optional.empty(),
                     Optional.empty());
         }
         Optional<Refund> refunded = reference.flatMap(id -> refundNamed(uow, id));
@@ -221,7 +273,8 @@ public final class MerchantTransactionReport {
                     commercial.intent(),
                     commercial.intent().isPresent()
                             ? Optional.of(refund.id().value())
-                            : Optional.empty());
+                            : Optional.empty(),
+                    Optional.empty());
         }
         return new Movement(
                 Kind.OTHER,
@@ -230,6 +283,7 @@ public final class MerchantTransactionReport {
                 Optional.empty(),
                 Optional.empty(),
                 net,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),

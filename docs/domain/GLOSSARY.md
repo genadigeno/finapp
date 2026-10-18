@@ -589,7 +589,7 @@ every payable line of a reconciliation resolution's adjustment entry, whatever i
 `P8-TSK-015`). *(Amended by the Phase 7 → 8 transition: this read "captured − fees − refunds −
 payouts", which had lacked the fee-return term since the Phase 6 review amended `INV-MER-02`, and
 the chargeback terms since `P7-TSK-013`. The Phase 8 terms' owners and the attribution rule were
-settled by the transition's consistency review, A12 and A13.)*
+settled by the transition's consistency review, A12 and A13.)* *(The BNPL terms, `P12-TSK-016`: + BNPL financed − BNPL fees − BNPL refunded + BNPL fees returned - the financing (F1, `bnpl.financing:`) and the BNPL merchant refund (F5, `bnpl.refund:`), told apart from a capture's and a refund's by their posting key, never their counterparty. A merchant transaction of the kinds `BNPL_FINANCING` and `BNPL_REFUND` in `GET /v1/merchant/transactions`.)*
 **Not:** a stored balance field. It exists nowhere except as postings.
 **Owned by:** `ledger` (the position); `merchant` (the account's purpose)
 
