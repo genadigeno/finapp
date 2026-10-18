@@ -38,7 +38,10 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
 
     @Override
     public Breakdown breakdown(
-            Connection unitOfWork, LedgerAccountId account, List<AccountPurpose> precedence) {
+            Connection unitOfWork,
+            LedgerAccountId account,
+            List<AccountPurpose> precedence,
+            List<String> namespaces) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(account, "account must not be null");
         Objects.requireNonNull(precedence, "precedence must not be null");
@@ -47,6 +50,7 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                     "the counterparty precedence must name at least one purpose, each once: "
                             + precedence);
         }
+        List<String> keyPrefixes = PositionBreakdown.checkedNamespaces(namespaces);
         try {
             CurrencyCode currency;
             NormalBalance normalBalance;
@@ -84,10 +88,24 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                             + "     AND other_account.purpose = ANY (?)"
                                             + "   ORDER BY array_position(?, other_account.purpose),"
                                             + "            other.seq"
-                                            + "   LIMIT 1) AS counterparty"
+                                            + "   LIMIT 1) AS counterparty,"
+                                            // The posting-key namespace (P12-TSK-016): the
+                                            // first caller-named prefix the entry's recorded
+                                            // command key begins with - PostingService's scope
+                                            // only, so no reversal or adjustment can carry one.
+                                            + " (SELECT ns.prefix"
+                                            + "    FROM unnest(?::text[]) WITH ORDINALITY"
+                                            + "         AS ns(prefix, ord)"
+                                            + "   WHERE starts_with(entry.idempotency_scope,"
+                                            + "                     ?::text || ns.prefix)"
+                                            + "   ORDER BY ns.ord"
+                                            + "   LIMIT 1) AS namespace"
                                             + " FROM ledger.journal_line line"
+                                            + " JOIN ledger.journal_entry entry"
+                                            + "   ON entry.id = line.entry_id"
                                             + " WHERE line.ledger_account_id = ?");
-                    ResultSet row = executed(unitOfWork, select, precedence, account)) {
+                    ResultSet row =
+                            executed(unitOfWork, select, precedence, keyPrefixes, account)) {
                 while (row.next()) {
                     CurrencyCode lineCurrency =
                             CurrencyCode.of(row.getString("currency").stripTrailing());
@@ -111,6 +129,12 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                     ? Optional.empty()
                                     : Optional.ofNullable(row.getString("counterparty"))
                                             .map(JdbcPositionBreakdown::counterparty);
+                    // An ADJUSTMENT never matches PostingService's scope; the guard keeps the
+                    // Bucket's own refusal unreachable rather than trusting the data to.
+                    Optional<String> namespace =
+                            attributed
+                                    ? Optional.empty()
+                                    : Optional.ofNullable(row.getString("namespace"));
 
                     if (direction == Direction.DEBIT) {
                         debits = JournalEntry.sum(debits, amount);
@@ -119,6 +143,7 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                     }
                     String key =
                             direction + "|"
+                                    + namespace.orElse("") + "|"
                                     + (attributed
                                             ? "RECONCILIATION"
                                             : other.map(c -> c.purpose() + ":" + c.direction())
@@ -130,7 +155,8 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                     direction,
                                     other,
                                     so == null ? amount : JournalEntry.sum(so.total(), amount),
-                                    attributed));
+                                    attributed,
+                                    namespace));
                 }
             } catch (ScaleMismatchException mixedScales) {
                 throw refused(account, "its history mixes scales within " + currency.code()
@@ -162,6 +188,7 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
             Connection unitOfWork,
             PreparedStatement select,
             List<AccountPurpose> precedence,
+            List<String> namespaces,
             LedgerAccountId account)
             throws SQLException {
         Array purposes =
@@ -169,9 +196,17 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                         "text", precedence.stream().map(AccountPurpose::name).toArray());
         select.setArray(1, purposes);
         select.setArray(2, purposes);
-        select.setObject(3, account.value());
+        select.setArray(3, unitOfWork.createArrayOf("text", namespaces.toArray()));
+        select.setString(4, POSTING_SCOPE);
+        select.setObject(5, account.value());
         return select.executeQuery();
     }
+
+    /**
+     * What {@code journal_entry.idempotency_scope} begins with for an entry PostingService wrote:
+     * its scope and the separator, ahead of the command's own key.
+     */
+    static final String POSTING_SCOPE = PostingService.IDEMPOTENCY_SCOPE + ":";
 
     /** Parses the subquery's {@code PURPOSE|DIRECTION} label, both halves the ledger's own. */
     private static Counterparty counterparty(String label) {

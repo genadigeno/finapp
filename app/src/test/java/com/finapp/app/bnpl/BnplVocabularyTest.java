@@ -59,6 +59,19 @@ class BnplVocabularyTest {
     }
 
     @Test
+    @DisplayName("merchant's drill-down reads F1 under exactly the key prefix bnpl posts it with, and the refund"
+            + " namespace in bnpl's own key family (P12-TSK-016)")
+    void theDrillDownsNamespacesAreBnplsKeys() {
+        assertThat(com.finapp.merchant.MerchantPayable.BNPL_FINANCING_NAMESPACE)
+                .as("a renamed F1 key would leave every financing in 'other', silently")
+                .isEqualTo(com.finapp.bnpl.BnplAcceptances.FINANCING_KEY_PREFIX);
+        assertThat(com.finapp.merchant.MerchantPayable.NAMESPACES)
+                .containsExactly(com.finapp.bnpl.BnplAcceptances.FINANCING_KEY_PREFIX, "bnpl.refund:")
+                .doesNotContain(com.finapp.bnpl.BnplAcceptances.BILLING_KEY_PREFIX,
+                        com.finapp.bnpl.BnplAcceptances.REPAYMENT_KEY_PREFIX);
+    }
+
+    @Test
     @DisplayName("each pair shares one currency")
     void oneCurrency() {
         for (BnplProduct product : BnplProduct.values()) {

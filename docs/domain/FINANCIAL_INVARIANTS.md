@@ -3098,7 +3098,16 @@ resource, assert the one refusal and zero rows touched.
 **Statement:** What the platform owes a merchant is the merchant's payable ledger account
 position — captured minus fees, minus refunded plus fees returned, minus payouts, minus
 chargebacks plus chargebacks reversed, plus payouts returned, plus or minus reconciliation
-attributions — and exists nowhere else. *(The refund terms were added by the Phase 6 review,
+attributions, plus BNPL financed, minus BNPL fees, minus BNPL refunded, plus BNPL fees returned —
+and exists nowhere else. *(The BNPL terms were added by `P12-TSK-016`, the plan's §6 reading
+built: bnpl posts to the payable as a second poster - F1, the financing, keyed
+`bnpl.financing:<purchase>`, and F5, the merchant refund, keyed `bnpl.refund:<refund>` (posted from
+`P12-TSK-021`) - and `MerchantPayable` names them `bnplFinanced`, `bnplFees`, `bnplRefunded` and
+`bnplFeesReturned`, classified by the entry's posting-key namespace, which the ledger reports
+beside the counterparty, after the attribution rule and BEFORE any counterparty rule: F5's excess
+line credits the customer's wallet, the book rail's sale counterparty, so by counterparty alone a
+BNPL refund would read as a wallet-paid capture's refund. The BNPL fee is the entry's own fee line,
+never recomputed.)* *(The refund terms were added by the Phase 6 review,
 `P6-DOC-001`: ADR-0054 made them part of the position, and this statement predated it.)* *(The
 chargeback terms were added at the Phase 7 → 8 transition: `MerchantPayable` has named
 `chargedBack` and `chargebacksReversed` since `P7-TSK-013`, `INV-MER-07`'s amendment made a
@@ -3131,7 +3140,7 @@ dispute the books cannot win.
 **Verify:** The payable reconciles against independent SQL over the payment, fee and payout
 records; schema sweep asserts no stored-balance column in `merchant`; the resolution suite
 counts an approved transfer to a payable — from suspense and from an OUTBOUND clearing
-remainder — as `reconciliationAttributed`, never `captured` (`P8-TSK-015`).
+remainder — as `reconciliationAttributed`, never `captured` (`P8-TSK-015`); a BNPL refund whose excess credits a wallet is `bnplRefunded`, never `refunded`, and a line facing `BNPL_PRINCIPAL` under no BNPL key is `other`, never financed (`BnplMerchantDrillDownTest`, hermetic; the independent-SQL reconciliation re-run with BNPL lines is `BnplMerchantPayoutDatabaseTest#thePayableReconcilesWithIndependentSql`, first run owed - `P12-TSK-016`).
 **Phase:** 6
 
 ### INV-MER-03 — Fees are deterministic and version-pinned

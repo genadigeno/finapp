@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -40,11 +41,16 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
 
     @Override
     public List<AccountStatement> statementsFor(
-            Connection unitOfWork, UUID ownerRef, LocalDate from, LocalDate to) {
+            Connection unitOfWork,
+            UUID ownerRef,
+            LocalDate from,
+            LocalDate to,
+            List<String> namespaces) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(ownerRef, "ownerRef must not be null");
         Objects.requireNonNull(from, "from must not be null");
         Objects.requireNonNull(to, "to must not be null");
+        List<String> keyPrefixes = PositionBreakdown.checkedNamespaces(namespaces);
         if (from.isAfter(to)) {
             // The caller's own mistake, refused before any read - and without echoing the
             // values back through an exception message that reaches logs (they are the
@@ -55,7 +61,7 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
 
         List<AccountStatement> statements = new ArrayList<>();
         for (OwnedAccount owned : accountsOf(unitOfWork, ownerRef)) {
-            statements.add(statementOf(unitOfWork, owned, from, to));
+            statements.add(statementOf(unitOfWork, owned, from, to, keyPrefixes));
         }
         return List.copyOf(statements);
     }
@@ -92,7 +98,8 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
     }
 
     private AccountStatement statementOf(
-            Connection unitOfWork, OwnedAccount owned, LocalDate from, LocalDate to) {
+            Connection unitOfWork, OwnedAccount owned, LocalDate from, LocalDate to,
+            List<String> namespaces) {
         // The opening: everything up to the day before the period - the definition's own
         // posting-date cut. A period starting at the calendar's floor has no earlier day, and
         // its opening over the empty range is exactly zero (guarding the minusDays underflow).
@@ -106,7 +113,7 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
         List<StatementLine> lines = new ArrayList<>();
         Money debits = Money.zero(owned.currency());
         Money credits = Money.zero(owned.currency());
-        try (PreparedStatement read = periodLines(unitOfWork, owned.id(), from, to);
+        try (PreparedStatement read = periodLines(unitOfWork, owned.id(), from, to, namespaces);
                 ResultSet rows = read.executeQuery()) {
             while (rows.next()) {
                 CurrencyCode lineCurrency =
@@ -139,7 +146,8 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
                                 rows.getString("reference"),
                                 direction,
                                 amount,
-                                rows.getBoolean("attributed")));
+                                rows.getBoolean("attributed"),
+                                Optional.ofNullable(rows.getString("namespace"))));
             }
         } catch (SQLException failure) {
             throw new LedgerStorageException(
@@ -176,7 +184,11 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
      * not a linearisation claim), then the entry's own line sequence.
      */
     private static PreparedStatement periodLines(
-            Connection unitOfWork, LedgerAccountId account, LocalDate from, LocalDate to)
+            Connection unitOfWork,
+            LedgerAccountId account,
+            LocalDate from,
+            LocalDate to,
+            List<String> namespaces)
             throws SQLException {
         PreparedStatement read =
                 unitOfWork.prepareStatement(
@@ -188,15 +200,25 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
                                 // resolution's ADJUSTMENT entry is an attribution.
                                 + " EXISTS (SELECT 1 FROM ledger.adjustment_proposal p"
                                 + "          WHERE p.journal_entry_id = line.entry_id"
-                                + "            AND p.origin = 'RECONCILIATION') AS attributed"
+                                + "            AND p.origin = 'RECONCILIATION') AS attributed,"
+                                // The posting-key namespace (P12-TSK-016): JdbcPositionBreakdown's
+                                // rule - PostingService's scope only, the caller's order.
+                                + " (SELECT ns.prefix"
+                                + "    FROM unnest(?::text[]) WITH ORDINALITY AS ns(prefix, ord)"
+                                + "   WHERE starts_with(entry.idempotency_scope,"
+                                + "                     ?::text || ns.prefix)"
+                                + "   ORDER BY ns.ord"
+                                + "   LIMIT 1) AS namespace"
                                 + " FROM ledger.journal_line line"
                                 + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
                                 + " WHERE line.ledger_account_id = ?"
                                 + " AND entry.posting_date BETWEEN ? AND ?"
                                 + " ORDER BY entry.posting_date, entry.id, line.seq");
-        read.setObject(1, account.value());
-        read.setObject(2, from);
-        read.setObject(3, to);
+        read.setArray(1, unitOfWork.createArrayOf("text", namespaces.toArray()));
+        read.setString(2, JdbcPositionBreakdown.POSTING_SCOPE);
+        read.setObject(3, account.value());
+        read.setObject(4, from);
+        read.setObject(5, to);
         return read;
     }
 

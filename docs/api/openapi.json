@@ -16053,6 +16053,9 @@
           "postingDate": {
             "type": "string"
           },
+          "purchaseId": {
+            "type": "string"
+          },
           "refundId": {
             "type": "string"
           }
@@ -16844,6 +16847,18 @@
       },
       "PayableLine": {
         "properties": {
+          "bnplFees": {
+            "type": "string"
+          },
+          "bnplFeesReturned": {
+            "type": "string"
+          },
+          "bnplFinanced": {
+            "type": "string"
+          },
+          "bnplRefunded": {
+            "type": "string"
+          },
           "captured": {
             "type": "string"
           },

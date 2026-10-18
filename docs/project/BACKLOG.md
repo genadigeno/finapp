@@ -20089,7 +20089,7 @@ after everything.
   (`-012`) implemented, the three-way proof deferred to `-025`), `DOD-API`, `DOD-SEC`, `DOD-EVENT`. **Risk**: Critical.
   **Cx**: L.
 
-**P12-TSK-014 — Merchant reads of BNPL purchases** — `COMPLETE` (2026-10-18; **M12.5 at 1 of 2**; started in wave B beside `-015` and `-016`; marks no task `READY` - the wave's board gives that to `-015`) *(read "`IN_PROGRESS`" from its start until its gate; "`READY`" before)* (marked `READY` by the `P12-TSK-012` + `-013` pair's completion gate, 2026-10-18: its one dependency `-013` `COMPLETE`; `-015` and `-016` depend on `-013` alone and may run beside it)
+**P12-TSK-014 — Merchant reads of BNPL purchases** — `COMPLETE` (2026-10-18; **M12.5 `CLOSED` at 2 of 2** - merged after `-016`, the last of wave B; started in wave B beside `-015` and `-016`; marks no task `READY` - the wave's board gives that to `-015`) *(read "`IN_PROGRESS`" from its start until its gate; "`READY`" before)* (marked `READY` by the `P12-TSK-012` + `-013` pair's completion gate, 2026-10-18: its one dependency `-013` `COMPLETE`; `-015` and `-016` depend on `-013` alone and may run beside it)
 - **Objective**: a merchant reads, over its own API key, every BNPL purchase made at it — the gross, the
   merchant fee and its pinned version, the financed net, the refunds — and never anything of the customer's
   credit: no eligibility reason, score, credit amount, plan schedule, repayment or delinquency
@@ -20373,7 +20373,7 @@ after everything.
   (the whole tier), all 0 failures. **Written, not run**, owed a first run: `BnplBillingDatabaseTest` (fifteen cases), the
   amended `BnplAcceptanceDatabaseTest`.
 
-**P12-TSK-016 — The merchant payable drill-down and payouts of BNPL-financed money** — `PLANNED`
+**P12-TSK-016 — The merchant payable drill-down and payouts of BNPL-financed money** — `COMPLETE` (2026-10-18; Phase 12 wave B; marks no task `READY`, board rule 8)
 - **Objective**: the merchant leg as the merchant sees it — every BNPL financing and every BNPL refund named
   in the payable's drill-down and the merchant's transactions, `INV-MER-02`'s equation holding with the BNPL
   terms, and BNPL-financed money paid out through the existing on-demand payout only, bounded by the payable
@@ -20465,6 +20465,38 @@ after everything.
   answer and the merchant's duplicated retry produce no second effect; F2 binding over the payable's
   replay; F4: a `FAILED` payout's hold released, the payout return path existing (ADR-0073); F8: the
   payout's existing expectation), `DOD-API`. **Risk**: High. **Cx**: M.
+- **As built** (2026-10-18): **no migration** (merchant `V011` not taken), no scheduler, no new lock taking.
+  **ledger** (a compatible addition, refined in from the scope - the namespace is a fact only the ledger holds,
+  `journal_entry.idempotency_scope`): `PositionBreakdown.breakdown(uow, account, precedence, namespaces)` and
+  `StatementDerivation.statementsFor(uow, owner, from, to, namespaces)`, the old signatures defaulting to none;
+  `Bucket` and `StatementLine` gain `Optional<String> namespace` (old constructors kept) - the first caller-named
+  prefix the entry's `PostingService` key (`ledger.post:<key>`) begins with, in the same one statement, so no
+  reversal or adjustment ever carries one; `checkedNamespaces` the shared guard. **merchant**: `MerchantPayable`
+  - `NAMESPACES` (`BNPL_FINANCING_NAMESPACE`, `BNPL_REFUND_NAMESPACE`, held to bnpl's key by
+  `BnplVocabularyTest#theDrillDownsNamespacesAreBnplsKeys`), the namespace read after the attribution rule and
+  before any counterparty rule, `Payable` +4 terms in `terms()`, `COUNTERPARTIES` +3 BNPL purposes (descriptive).
+  **app**: `MerchantPayableController.PayableLine` +4 fields; `MerchantTransactionReport.Kind` +`BNPL_FINANCING`,
+  `BNPL_REFUND`, `Movement`/`MovementView` +`purchaseId` (a financing's own reference; a BNPL refund's reference
+  rides `refundId`); `openapi.json` regenerated (five COMPATIBLE additions). **Docs**: `INV-MER-02` statement and
+  Verify amended, the Merchant Payable glossary entry, ADR-0103 decision 8's as-built note,
+  `DISTRIBUTED_EXECUTION.md`'s payout row (the serialisation as built: merchant row first, then the payable).
+  **Tests**: hermetic `BnplMerchantPayoutTest` (6) and `BnplMerchantDrillDownTest` (4) over `BnplPayoutWorld`;
+  `BnplVocabularyTest` +1; `BnplMerchantPayoutDatabaseTest` (own-container, 8, registered in `ownContainerSuites`)
+  written and **owed a first run**. **Refinements of this entry**: (1) the namespace classification needed the
+  ledger's breakdown and statement to report the key's namespace - a ledger port addition the entry's "Domain
+  changes" did not name; (2) `MerchantPayableTest` and `MerchantTransactionsDatabaseTest` became
+  `BnplMerchantDrillDownTest` (hermetic, `app`, over the real `MerchantPayable` and `MerchantTransactionReport`)
+  and `BnplMerchantPayoutDatabaseTest#bnplFinancingAndRefundKindsAreListed`; (3) a payout racing a financing is
+  serialised FIRST on the merchant row (the dispatch `FOR UPDATE`, T-pur's standing `FOR SHARE`), the payable
+  row second - the entry said "on the payable's `ledger_account` row"; both orders are acyclic; (4) the races the
+  entry asked as "ten retries on two instances" and "two resolvers" are counted hermetically in sequence and
+  concurrently in the database suite (owed). **Carried**: `-021` re-asserts the refund pair through real refunds
+  and owns a second rank for a `BNPL_REFUND`'s `refundId` (bnpl's own merchant-scoped read). **Gate** (2026-10-18):
+  `COMPLETE` - CRITICAL none; IMPORTANT one, fixed (the hermetic drill-down suite named a `DataSource` - the
+  taxonomy's database signature - `TestTaxonomyTest` red; the stand-in moved into `BnplPayoutWorld`); MINOR: the
+  hermetic world's breakdown is a second reading of `JdbcPositionBreakdown`'s rules (the database suite owed is
+  the check), a `BNPL_REFUND`'s `refundId` rests on the first rank alone until `-021`. Five probes caught
+  (`MUTATION_TESTING.md` §2), the ledger half and the race's live order owed. Ten-instance answer `PASS`.
 
 **P12-TSK-017 — PN interest accrual** — `READY` (marked by `P12-TSK-015`'s completion gate, 2026-10-18: its one dependency `-015` `COMPLETE`; `-018` depends on `-015` alone and may run beside it)
 - **Objective**: a PN obligation earns interest every day, exactly once per obligation and date, on the
