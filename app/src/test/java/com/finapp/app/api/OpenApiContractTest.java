@@ -402,6 +402,17 @@ class OpenApiContractTest {
                         // the operator's door beside it (PAYMENT_REFUND, keyed, reasoned, audited).
                         ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-purchases/{id}/refunds",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-purchases/{id}/refunds",
+                        // P12-TSK-024: the servicing corrections under four eyes - the repayment reversal and the fee
+                        // waiver, each proposed (201), approved by another (naming the proposal) and rejected; keyed,
+                        // reasoned, audited.
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/rejection",
                         // P12-TSK-023: the dispute doors - the customer's opening (keyed, 201) and withdrawal, the
                         // merchant's list of its open disputes and its response over its own key (another merchant's the
                         // uniform 404), the operator's audited read and the resolution with its four-eyes approval and

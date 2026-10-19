@@ -3869,6 +3869,54 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_payoff_execution` | `executed_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
 | `bnpl_payoff_execution` | `correlation_id` | `INTERNAL` | The request's correlation |
 | `bnpl_refund_adjustment` | `late_fee_released_minor` | `RESTRICTED-FINANCIAL` | The unpaid late fees of a billed instalment cancelled whole, released (OQ-14) - added by `P12-TSK-020` |
+| `bnpl_repayment_reversal` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
+| `bnpl_repayment_reversal` | `obligation_id` | `CONFIDENTIAL` | The obligation whose repayment is reversed |
+| `bnpl_repayment_reversal` | `repayment_id` | `CONFIDENTIAL` | The repayment reversed - one live proposal per repayment |
+| `bnpl_repayment_reversal` | `agreement_id` | `CONFIDENTIAL` | The repayment's agreement |
+| `bnpl_repayment_reversal` | `agreement_version` | `INTERNAL` | The version the repayment was allocated under - nothing recomputed |
+| `bnpl_repayment_reversal` | `status` | `INTERNAL` | `PROPOSED`, `APPROVED`, `REJECTED` |
+| `bnpl_repayment_reversal` | `proposed_by` | `CONFIDENTIAL` | The proposing operator - a principal id, never shown to the customer |
+| `bnpl_repayment_reversal` | `proposed_by_type` | `INTERNAL` | Its actor type |
+| `bnpl_repayment_reversal` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
+| `bnpl_repayment_reversal` | `proposal_reason` | `RESTRICTED-PII` | A person's prose - bounded, screened for card and account numbers; never in an event or a view |
+| `bnpl_repayment_reversal` | `decided_by` | `CONFIDENTIAL` | The deciding operator - never the proposer for an approval (four-eyes `CHECK`) |
+| `bnpl_repayment_reversal` | `decided_by_type` | `INTERNAL` | Its actor type |
+| `bnpl_repayment_reversal` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_repayment_reversal` | `decision_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
+| `bnpl_repayment_reversal` | `journal_entry_id` | `INTERNAL` | F8's entry (`bnpl.repayment-reversal:<id>`), by value - exactly when `APPROVED` |
+| `bnpl_repayment_reversal` | `value_date` | `INTERNAL` | F8's value date - `max(today, floor)` |
+| `bnpl_repayment_reversal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_repayment_allocation_reversal` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
+| `bnpl_repayment_allocation_reversal` | `reversal_id` | `INTERNAL` | The approved reversal |
+| `bnpl_repayment_allocation_reversal` | `allocation_id` | `INTERNAL` | The allocation line negated - once, ever |
+| `bnpl_repayment_allocation_reversal` | `currency` | `INTERNAL` | The allocation's currency |
+| `bnpl_repayment_allocation_reversal` | `scale` | `INTERNAL` | Its persisted scale |
+| `bnpl_repayment_allocation_reversal` | `amount_minor` | `RESTRICTED-FINANCIAL` | The allocation line's amount, mirrored exactly |
+| `bnpl_waiver` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
+| `bnpl_waiver` | `obligation_id` | `CONFIDENTIAL` | The fee's obligation |
+| `bnpl_waiver` | `kind` | `INTERNAL` | `FEE` |
+| `bnpl_waiver` | `fee_assessment_id` | `INTERNAL` | The fee - one undecided waiver at a time |
+| `bnpl_waiver` | `instalment_id` | `CONFIDENTIAL` | The fee's billed instalment |
+| `bnpl_waiver` | `currency` | `INTERNAL` | The fee's currency |
+| `bnpl_waiver` | `scale` | `INTERNAL` | Its persisted scale |
+| `bnpl_waiver` | `amount_minor` | `RESTRICTED-FINANCIAL` | The amount forgone - bounded by `bnpl.fee_waiver_room` |
+| `bnpl_waiver` | `agreement_id` | `CONFIDENTIAL` | The agreement |
+| `bnpl_waiver` | `agreement_version` | `INTERNAL` | The agreement version in force at the proposal |
+| `bnpl_waiver` | `proposed_by` | `CONFIDENTIAL` | The proposing operator |
+| `bnpl_waiver` | `proposed_by_type` | `INTERNAL` | Its actor type |
+| `bnpl_waiver` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
+| `bnpl_waiver` | `proposal_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
+| `bnpl_waiver` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_waiver_decision` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
+| `bnpl_waiver_decision` | `waiver_id` | `INTERNAL` | The waiver decided - once |
+| `bnpl_waiver_decision` | `proposed_by` | `CONFIDENTIAL` | The proposer's copy, pinned by the composite foreign key - the four-eyes `CHECK`'s input |
+| `bnpl_waiver_decision` | `outcome` | `INTERNAL` | `APPROVED`, `REJECTED` |
+| `bnpl_waiver_decision` | `decided_by` | `CONFIDENTIAL` | The deciding operator |
+| `bnpl_waiver_decision` | `decided_by_type` | `INTERNAL` | Its actor type |
+| `bnpl_waiver_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_waiver_decision` | `decision_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
+| `bnpl_waiver_decision` | `journal_entry_id` | `INTERNAL` | F7's entry (`bnpl.waiver:<id>` in the ledger's reversal scope), by value - exactly when `APPROVED` |
+| `bnpl_waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
 | `bnpl_refund` | `dispute_id` | `CONFIDENTIAL` | The dispute a refund of door `DISPUTE` resolves (`P12-TSK-023`); NULL for the merchant's and the operator's doors |
 | `bnpl_dispute` | `id` | `INTERNAL` | Generated (`P12-TSK-023`) |
 | `bnpl_dispute` | `purchase_id` | `CONFIDENTIAL` | The purchase contested |

@@ -483,6 +483,18 @@ class BnplAcceptanceDatabaseTest {
                 java.util.Set<LedgerAccountId> accounts, java.time.LocalDate valueDateThrough) {
             return List.of();
         }
+
+        @Override
+        public com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork,
+                com.finapp.ledger.ReversalCommand command) {
+            throw new UnsupportedOperationException("the acceptance reverses nothing (P12-TSK-024's corrections)");
+        }
+
+        @Override
+        public List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
+                com.finapp.ledger.JournalEntryId entry) {
+            return List.of();
+        }
     }
 
     /** The JDBC store, one write tampered with by the case. */

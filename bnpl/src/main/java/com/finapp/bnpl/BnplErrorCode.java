@@ -156,10 +156,39 @@ public enum BnplErrorCode implements ErrorCode {
 
     /**
      * An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`; the self-dealing rule,
-     * {@code INV-LND-11} by analogy) - refused before anything was written, the attempt recorded {@code FAILED}.
+     * {@code INV-LND-11} by analogy) - or, since `P12-TSK-024`, to propose, approve or reject a repayment reversal or a
+     * waiver on an agreement of their own party (fail-closed: an operator the platform cannot place in a party is refused
+     * too) - refused before anything was written, the attempt recorded {@code FAILED}.
      */
     SELF_DEALING_REFUSED(
-            "bnpl.SelfDealingRefused", 403, "An employee never refunds a BNPL purchase of their own party; nothing was done."),
+            "bnpl.SelfDealingRefused", 403, "An employee never acts on a BNPL purchase or agreement of their own party;"
+                    + " nothing was done."),
+
+    /**
+     * The repayment reversal or waiver was already decided - approved or rejected by somebody else, or differently - the
+     * loser of a decision race (`P12-TSK-024`; lending's {@code ProposalNotPending}). Nothing was written.
+     */
+    PROPOSAL_NOT_PENDING("bnpl.ProposalNotPending", 409, "The proposal is no longer awaiting a decision."),
+
+    /**
+     * The repayment cannot be reversed (`P12-TSK-024`; the Phase 11 {@code RepaymentNotReversible} precedent): it is
+     * already reversed, it is a payoff's (which closed its agreement - `P12-TSK-022`), or the credit it held has since been
+     * applied (the exact swap would drive the credit balance below zero). Nothing was written.
+     */
+    REPAYMENT_NOT_REVERSIBLE("bnpl.RepaymentNotReversible", 409, "The BNPL repayment cannot be reversed."),
+
+    /**
+     * The waiver exceeds what may still be forgiven of the fee (`P12-TSK-024`; {@code INV-REV-02}, the Phase 11 gate's
+     * R3): its unpaid remainder, and never what was already paid, released by a refund or waived. Judged under the
+     * obligation's lock at the proposal and again at the approval - nothing was posted, the proposal still {@code PROPOSED}.
+     */
+    WAIVER_EXCEEDS_DUE("bnpl.WaiverExceedsDue", 422, "The waiver exceeds what is due of the fee."),
+
+    /**
+     * The wallet the reversed repayment debited cannot be credited now - absent or not {@code ACTIVE} (`P12-TSK-024`;
+     * lending's {@code WalletUnavailable}). Nothing was posted; the proposal is still {@code PROPOSED}.
+     */
+    WALLET_UNAVAILABLE("bnpl.WalletUnavailable", 409, "The customer's wallet cannot be credited now; nothing was posted."),
 
     /**
      * The purchase already has an open dispute (`P12-TSK-023`; ADR-0106 decisions 1 and 7): a second dispute is refused, and

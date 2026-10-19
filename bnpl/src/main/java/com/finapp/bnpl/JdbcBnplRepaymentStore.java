@@ -26,7 +26,7 @@ import java.util.UUID;
 public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
 
     /** A repayment's columns and its allocation's, one row per allocation line. */
-    private static final String REPAYMENTS = "SELECT r.id, r.obligation_id, r.kind, r.request_key, r.currency, r.scale,"
+    static final String REPAYMENTS = "SELECT r.id, r.obligation_id, r.kind, r.request_key, r.currency, r.scale,"
             + " r.amount_minor, r.agreement_id, r.agreement_version, r.allocation_engine, r.journal_entry_id, r.value_date,"
             + " r.received_at, l.id AS line_id, l.sequence, l.target, l.instalment_id, l.component,"
             + " l.amount_minor AS line_minor"
@@ -187,7 +187,7 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
 
     // ------------------------------------------------------------------ plumbing
 
-    private static List<BnplPurchaseStore.Repayment> read(PreparedStatement select) throws SQLException {
+    static List<BnplPurchaseStore.Repayment> read(PreparedStatement select) throws SQLException {
         Map<UUID, RowsOf> byId = new LinkedHashMap<>();
         try (ResultSet rows = select.executeQuery()) {
             while (rows.next()) {

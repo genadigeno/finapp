@@ -1,0 +1,206 @@
+package com.finapp.bnpl;
+
+import static com.finapp.bnpl.BnplAcceptanceDatabaseTest.count;
+import static com.finapp.bnpl.BnplAcceptanceDatabaseTest.refused;
+import static com.finapp.bnpl.BnplAcceptanceDatabaseTest.scalar;
+import static com.finapp.bnpl.BnplConditionDatabaseWorld.eur;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finapp.creditmath.AllocationComponent;
+import com.finapp.ledger.AccountPurpose;
+import com.finapp.platform.testing.database.DatabaseRoles;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.List;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Fee waivers against a real database (`P12-TSK-024`; {@code bnpl V016}; {@code INV-REV-02}, {@code INV-AUD-04}; the Phase
+ * 11 gate's R3): T-wvr over bnpl's JDBC stores on a moved database clock - only the unpaid remainder forgiven, a released or
+ * waived fee never again ({@code bnpl.fee_waiver_room}, both arms, for every writer), ten approvers one waiver, a waiver
+ * racing a repayment of the fee, a waiver of the last receivable closing, the income row taken last. The book is the
+ * in-memory one behind a lock; the income row's place in the order (after (P), inside the one L8 call) is proven
+ * hermetically by {@code BnplWaiversTest#theWaiverTakesTheIncomeRowLast}.
+ *
+ * <p>Written by `P12-TSK-024` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
+ */
+@Tag("database")
+@DisplayName("fee waivers against bnpl V016's ranks (P12-TSK-024)")
+class BnplWaiverDatabaseTest {
+
+    @BeforeAll
+    static void termsAndClock() {
+        BnplBillingDatabaseTest.termsAndClock();
+    }
+
+    private static BnplFeeAssessment lateFee(BnplCorrectionDatabaseWorld world,
+            BnplConditionDatabaseWorld.Purchased bought) {
+        world.base.serviceOn(bought.due(2), bought);
+        world.base.serviceOn(bought.due(2).plusDays(5), bought);
+        return world.fees(bought).get(0);
+    }
+
+    @Test
+    @DisplayName("a fee waiver reverses only the unpaid remainder: 3.00 paid, 5.00 refused, 2.00 waived - FEES billed 3.00,"
+            + " nothing due; the trigger refuses a proposal beyond the room for every writer")
+    void aFeeWaiverReversesOnlyTheUnpaidRemainder() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        LocalDate day = bought.due(2).plusDays(5);
+        world.base.repayOn(day, bought, "part", 3_00);
+        assertThatThrownBy(() -> world.proposeWaiver(day, bought, fee.id(), 5_00, world.operator()))
+                .isInstanceOf(BnplWaivers.WaiverExceedsDue.class);
+        BnplWaiver proposed = world.proposeWaiver(day, bought, fee.id(), 2_00, world.operator());
+        world.approveWaiver(day, bought, proposed.id(), world.operator());
+        assertThat(scalar("SELECT bnpl.billing_component_billed(b.id, 'FEES')::text FROM bnpl.bnpl_billing b WHERE"
+                + " b.instalment_id = '" + bought.instalment(2) + "'")).isEqualTo("300");
+        assertThat(world.due(bought, 2, AllocationComponent.FEES.name())).isZero();
+        assertThat(world.base.balance(bought, AccountPurpose.BNPL_FEES_DUE)).isEqualTo(eur(0));
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            refused(migrator, "INSERT INTO bnpl.bnpl_waiver (id, obligation_id, kind, fee_assessment_id, instalment_id,"
+                    + " currency, scale, amount_minor, agreement_id, agreement_version, proposed_by, proposed_by_type,"
+                    + " proposed_at, proposal_reason, correlation_id) SELECT gen_random_uuid(), f.obligation_id, 'FEE',"
+                    + " f.id, f.instalment_id, f.currency, f.scale, 1, f.agreement_id, f.agreement_version, 'someone',"
+                    + " 'EMPLOYEE', clock_timestamp(), 'again', 'c' FROM bnpl.bnpl_fee_assessment f WHERE f.id = '"
+                    + fee.id() + "'", "P0001");
+            migrator.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("R3: a fee a refund released, and one already waived, is never waived again - refused by the domain and,"
+            + " for every writer, by the decision's trigger")
+    void aReleasedOrRefundedFeeIsNeverWaivedAgain() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        world.base.serviceOn(bought.due(2), bought);
+        world.base.serviceOn(bought.due(3), bought);
+        world.base.serviceOn(bought.due(3).plusDays(5), bought);
+        List<BnplFeeAssessment> fees = world.fees(bought);
+        assertThat(fees).hasSize(2);
+        BnplFeeAssessment standing = fees.get(0);
+        BnplFeeAssessment released = fees.get(1);
+        LocalDate day = bought.due(3).plusDays(5);
+        world.base.refundOn(day, bought, "ref", 350_00);
+        assertThatThrownBy(() -> world.proposeWaiver(day, bought, released.id(), 1, world.operator()))
+                .isInstanceOf(BnplWaivers.WaiverExceedsDue.class);
+        BnplWaiver whole = world.proposeWaiver(day, bought, standing.id(), 5_00, world.operator());
+        world.approveWaiver(day, bought, whole.id(), world.operator());
+        assertThatThrownBy(() -> world.proposeWaiver(day, bought, standing.id(), 1, world.operator()))
+                .isInstanceOf(BnplWaivers.WaiverExceedsDue.class);
+        assertThat(scalar("SELECT bnpl.fee_waiver_room('" + standing.id() + "')::text")).isEqualTo("0");
+        assertThat(scalar("SELECT bnpl.fee_waiver_room('" + released.id() + "')::text")).isEqualTo("0");
+    }
+
+    @Test
+    @DisplayName("ten approvers on ten instances, one waiver - UNIQUE (waiver_id) beneath B4; one F7 entry")
+    void tenApproversOneWaiver() throws Exception {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        LocalDate day = bought.due(2).plusDays(5);
+        BnplWaiver proposed = world.proposeWaiver(day, bought, fee.id(), 5_00, world.operator());
+        List<String> outcomes = world.base.concurrently(10, index -> {
+            try {
+                world.approveWaiver(day, bought, proposed.id(), world.operator());
+                return "approved";
+            } catch (BnplWaivers.ProposalNotPending lost) {
+                return "lost";
+            }
+        });
+        assertThat(outcomes).filteredOn("approved"::equals).hasSize(1);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_waiver_decision WHERE waiver_id = '" + proposed.id() + "'"))
+                .isEqualTo(1);
+        assertThat(world.base.book.keys()).filteredOn(key -> key.contains(BnplWaivers.WAIVER_KEY_PREFIX)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a waiver racing a repayment of the fee: either order is exact - the repayment first makes the approval"
+            + " WaiverExceedsDue; nothing is ever forgiven and paid at once")
+    void waiverRacingARepaymentOfTheFee() throws Exception {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        LocalDate day = bought.due(2).plusDays(6);
+        BnplWaiver proposed = world.proposeWaiver(day, bought, fee.id(), 5_00, world.operator());
+        world.base.concurrently(2, index -> {
+            try {
+                if (index == 0) {
+                    world.approveWaiver(day, bought, proposed.id(), world.operator());
+                } else {
+                    world.base.repayOn(day, bought, "fee", 5_00);
+                }
+            } catch (BnplWaivers.WaiverExceedsDue exceeds) {
+                return "refused";
+            }
+            return "done";
+        });
+        long waived = count("SELECT count(*) FROM bnpl.bnpl_waiver_decision WHERE waiver_id = '" + proposed.id()
+                + "' AND outcome = 'APPROVED'");
+        long paidFees = Long.parseLong(scalar("SELECT coalesce(sum(a.amount_minor), 0)::text FROM"
+                + " bnpl.bnpl_repayment_allocation a WHERE a.instalment_id = '" + bought.instalment(2)
+                + "' AND a.component = 'FEES'"));
+        assertThat(waived * 5_00 + paidFees).as("the fee forgiven or paid, never both").isEqualTo(5_00);
+        assertThat(world.due(bought, 2, "FEES")).isZero();
+    }
+
+    @Test
+    @DisplayName("a waiver of the last receivable closes the obligation REPAID beside its closure row")
+    void aWaiverOfTheLastReceivableCloses() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.purchaseUnder(BnplTermsFixtures.payIn4()
+                .lateFee(eur(5_00)).allocationOrder(List.of(AllocationComponent.PRINCIPAL, AllocationComponent.INTEREST,
+                        AllocationComponent.FEES)).build());
+        world.base.serviceOn(bought.due(2), bought);
+        world.base.repayOn(bought.due(2), bought, "i2", 150_00);
+        world.base.serviceOn(bought.due(3), bought);
+        world.base.repayOn(bought.due(3), bought, "i3", 150_00);
+        world.base.serviceOn(bought.due(4), bought);
+        world.base.serviceOn(bought.due(4).plusDays(5), bought);
+        world.base.repayOn(bought.due(4).plusDays(5), bought, "i4", 150_00);
+        BnplFeeAssessment last = world.fees(bought).get(0);
+        LocalDate day = bought.due(4).plusDays(6);
+        BnplWaiver proposed = world.proposeWaiver(day, bought, last.id(), 5_00, world.operator());
+        assertThat(world.approveWaiver(day, bought, proposed.id(), world.operator()).closure()).isPresent();
+        assertThat(scalar("SELECT status || ':' || closure_reason FROM bnpl.bnpl_obligation WHERE id = '" + bought.id()
+                + "'")).isEqualTo("CLOSED:REPAID");
+    }
+
+    @Test
+    @DisplayName("the decision's four-eyes CHECK and its UNIQUE (waiver_id), for every writer")
+    void theDecisionsRanks() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        BnplWaiver proposed = world.proposeWaiver(bought.due(2).plusDays(5), bought, fee.id(), 5_00, world.operator());
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            refused(migrator, "INSERT INTO bnpl.bnpl_waiver_decision (id, waiver_id, proposed_by, outcome, decided_by,"
+                    + " decided_by_type, decided_at, decision_reason, journal_entry_id, correlation_id) SELECT"
+                    + " gen_random_uuid(), w.id, w.proposed_by, 'APPROVED', w.proposed_by, 'EMPLOYEE', clock_timestamp(),"
+                    + " 'mine', gen_random_uuid(), 'c' FROM bnpl.bnpl_waiver w WHERE w.id = '" + proposed.id() + "'",
+                    "23514");
+            migrator.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("the waiver takes no profile row (no L0) - exposure does not move")
+    void theWaiverTakesTheIncomeRowLast() {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        LocalDate day = bought.due(2).plusDays(5);
+        BnplWaiver proposed = world.proposeWaiver(day, bought, fee.id(), 5_00, world.operator());
+        world.profilesLocked.clear();
+        world.approveWaiver(day, bought, proposed.id(), world.operator());
+        assertThat(world.profilesLocked).isEmpty();
+    }
+}

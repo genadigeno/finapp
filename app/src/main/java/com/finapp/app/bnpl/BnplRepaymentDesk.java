@@ -64,6 +64,8 @@ public final class BnplRepaymentDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final BnplTransactions transactions;
     @NonNull private final BnplRepaymentMetrics metrics;
+    /** The derived {@code REVERSED} status's read (`P12-TSK-024`). */
+    @NonNull private final com.finapp.bnpl.BnplRepaymentReversals reversals;
 
     /**
      * What a repayment answers - and replays. Amounts are exact decimal strings, the value date ISO; {@code status} is
@@ -166,9 +168,11 @@ public final class BnplRepaymentDesk {
             List<BnplPurchaseStore.Repayment> found = repayments.history(unitOfWork, id, partyOf(unitOfWork, current))
                     .orElseThrow(BnplRepaymentDesk::notFound);
             List<BnplRepaymentView> views = new ArrayList<>();
+            // REVERSED is derived from the approved reversal naming the repayment (P12-TSK-024), read in this snapshot.
+            java.util.Set<UUID> reversed = reversals.reversedAmong(unitOfWork,
+                    found.stream().map(BnplPurchaseStore.Repayment::id).toList());
             for (BnplPurchaseStore.Repayment repayment : found) {
-                // REVERSED is P12-TSK-024's, derived from its approved reversal; until then every repayment is ALLOCATED.
-                views.add(view(id, repayment, Optional.empty(), false));
+                views.add(view(id, repayment, Optional.empty(), reversed.contains(repayment.id())));
             }
             return new BnplRepaymentListView(List.copyOf(views));
         });

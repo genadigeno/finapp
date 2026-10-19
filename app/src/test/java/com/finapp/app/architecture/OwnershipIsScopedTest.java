@@ -1068,6 +1068,66 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
                                     "P12-TSK-022. A payoff already executed: the obligation id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; UNIQUE (obligation_id) beneath it.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.liveReversal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The live reversal of a repayment read and matched to the obligation the correction holds FOR UPDATE (B4) - the operator's agreement, addressed by permission and the not-self rule; the partial UNIQUE (repayment_id) beneath it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.lockReversal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. (B6) The proposal named by the decision's body, locked under the obligation's B4 and kept only when it is a proposal for this repayment of this obligation (BnplRepaymentReversals.lockedProposal) - another's is the uniform 404.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.reversal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The reversal this transaction just decided under B4 and B6, re-read to answer it; no door names it unlocked.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.insertNegations",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The negating rows of the reversal this transaction approved under B4 and B6 - bnpl V016's trigger holds each to an allocation of the reversed repayment, exactly, for every writer.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.waiversOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The waivers of an assessment already matched to the obligation the waiver holds FOR UPDATE (B4, the assessment read) - the bound's and the one-pending rule's input.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.releasedOn",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The late fees released on an instalment of an assessment already matched to the obligation the waiver holds FOR UPDATE (B4) - the R3 arm's input; no door names it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.addressed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "POST /v1/operator/bnpl-agreements/{id}/repayments/{rid}/reversal (+ approval, rejection) and /waivers (+ approval, rejection) - the operator names the agreement from the path by permission: BNPL_SERVICE or BNPL_SERVICE_APPROVE at the boundary, and the not-self rule in the domain (BnplRepaymentReversals.judgeSelfDealing through BnplActingParty - an operator of the agreement's own party, or one the platform cannot place in a party, is refused bnpl.SelfDealingRefused, recorded FAILED) stands in for the predicate; unknown is the uniform 404 (P12-TSK-024).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.repayment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. A repayment matched to the obligation the correction holds FOR UPDATE (B4, JdbcBnplServicingStore.lock) - addressed by the operator's agreement; r.obligation_id = ? in the statement, so another agreement's repayment is the uniform 404 (BnplRepaymentReversalsTest#unknownTargetsAndReasons).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.reversalsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The reversals of the obligation the operator's agreement addresses (addressed, administered) - no door reaches it before P12-TSK-025's operator read; obligation_id = ? in the statement.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.assessment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. A fee assessment matched to the obligation the waiver holds FOR UPDATE (B4) - obligation_id = ? in the statement, so another agreement's fee is the uniform 404 (BnplWaiversTest#theRefusals).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.waiver",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. A waiver matched to the obligation the decision holds FOR UPDATE (B4) - obligation_id = ? in the statement, so another agreement's waiver is the uniform 404; its decision born once beneath B4.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.waiversOfObligation",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-024. The waivers of the obligation the operator's agreement addresses (addressed, administered) - no door reaches it before P12-TSK-025's operator read; obligation_id = ? in the statement.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
                             new Entry(
                                     Scope.OWNER_SCOPED,

@@ -507,6 +507,14 @@ class CredentialReachesNoEmittedSinkTest {
                         // for card and account numbers). No secret; closed: the merchant is the key's, and the body
                         // carries no instalment, customer, wallet or key.
                         "BnplRefundBody",
+                        // P12-TSK-024: the servicing corrections - a reversal's reason, its decision (the proposal named and
+                        // the decider's reason), a waiver's proposal (the fee named, an amount, its currency and the reason)
+                        // and its decision (the reason). No secret; every reason RESTRICTED-PII, screened for card and
+                        // account numbers; closed: no party, wallet, key or proposer.
+                        "BnplReversalProposalBody",
+                        "BnplReversalDecisionBody",
+                        "BnplWaiverProposalBody",
+                        "BnplWaiverDecisionBody",
                         // P12-TSK-022: a BNPL payoff quote - the good-through date alone - and its execution - the quote
                         // it executes, an opaque id. No secret; closed: the figure is the domain's to compute and the
                         // quote's to name, and neither body carries an amount, party, wallet or key.
