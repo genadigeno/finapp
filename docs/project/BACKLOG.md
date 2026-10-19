@@ -20855,7 +20855,7 @@ after everything.
 - **As built** (2026-10-19, `P12-TSK-019`'s gate): `bnpl V011` (`bnpl_collection_attempt` and its every-writer trigger, the deferred `bnpl_repayment_auto_collection_has_its_attempt`, the repayment's trigger admitting `AUTO_COLLECTION`); `BnplCollections`, `BnplCollectionAttempt`, `CollectionOutcome`, `BnplCollectionStore`/`JdbcBnplCollectionStore`; `BnplRepayments.receive` (T-rep's posting half, extracted unchanged); `BnplServicing`'s collection slot and `ServicingOutcome.collections`; in `app` the `BnplCollections` bean and `finapp.bnpl.collection{outcome}` with `repayment{kind=auto_collection}` in `BnplServicingMetrics`. **Gate**: IMPORTANT (fixed in-task) - a servicing step's refused conservation (an `AllocationAnomaly` from an application or a collection, or the deferred conservation at commit) reached only `servicing{failed}`, never `finapp.bnpl.allocation.anomaly` (the plan's alert above 0): `BnplServicingMetrics.failed(failure)` now raises it, `BnplServicingScheduleTest#aSweepsAnomalyRaisesTheAlert`; IMPORTANT (fixed) - `-018`'s `BnplRepaymentDatabaseTest#theAllocationsRanksHoldForEveryWriter` expected `V010`'s immediate refusal of a raw `AUTO_COLLECTION` repayment, which `V011` defers to commit - it would have gone red on its first run; it now raws a `PAYOFF`. MINOR (fixed) - `BnplCollectionsTest#theAttemptsShape` asserted a random UUID free of "40" (a flake seen on a run); the design note's `INV-LND-09` reference. Sixteen probes performed and caught on hermetic suites (`MUTATION_TESTING.md` §2). Ten-instance `PASS`. Owed a first run: `BnplCollectionDatabaseTest` (nine cases) and `app`'s own-container `BnplCollectionLedgerDatabaseTest` (four), with the backlog's probe (drop the unique → `#tenSweepersCollectOnce` red) and `-018`'s `40P01` probe (`#aRepaymentRacingACollectionNeverDeadlocks`).
   **For `-020`**: the condition step follows the collection in T-svc (the closure between them); an instalment is past due when billed and unpaid at the end of its due date - the collection attempts are evidence, never the DPD; the late fee's `BNPL_FEE_INCOME` at L8 comes after the wallet the collection already holds, so take it in the fee's own `lockBalancesInOrder` after (P), never before; a collection on the fee's day pays FEES first (the pinned order), so assess before collecting only if the plan says so - it does not (§7.1: collect, close, condition, fee).
 
-**P12-TSK-020 — Delinquency, default and late fees** — `IN_PROGRESS` (marked `READY` by `P12-TSK-019`'s completion gate, 2026-10-19: its one dependency `-019` `COMPLETE`; started 2026-10-19, Phase 12 wave E beside `-022`)
+**P12-TSK-020 — Delinquency, default and late fees** — `COMPLETE` (2026-10-19, Phase 12 wave E beside `-022`; **M12.6 `CLOSED` at 5 of 5**; marks **`P12-TSK-023`** `READY` - its dependencies `-021` and `-020` `COMPLETE`; frees `P12-TSK-024`, its one dependency) *(read "`READY`" - marked by `P12-TSK-019`'s completion gate - and "`IN_PROGRESS`" until its gate)*
 - **Objective**: days past due, buckets, cure and default derived honestly from the rows on the database
   clock and recorded as an append-only history of changes; a configured late fee assessed once per
   instalment on its pinned day, capped (A13, A14; `PHASE_12_PLAN.md` §12.8).
@@ -20976,6 +20976,59 @@ after everything.
     condition, outcome = recorded}` (the `step` set the plan opened). No new tag key.
   - **(11) Credit exposure and reporting**: unchanged - `-012`'s exposure counts every obligation's principal whatever
     its condition, and a default posts nothing (A14); the delinquency report is `-026`'s.
+- **As built** (2026-10-19): `bnpl V013` - `bnpl_condition_event` (`UNIQUE (obligation_id, business_date, kind)`; its
+  every-writer trigger: B4, `ACTIVE`, the agreement version in force, the database clock's business date, never dated
+  before a recorded change, DPD (`bnpl.days_past_due`), bucket (`bnpl.delinquency_bucket`) and flag re-derived from the
+  rows, only on a change) and `bnpl_fee_assessment` (`UNIQUE (instalment_id, kind)`, `UNIQUE (journal_entry_id)`; its
+  trigger: B4, `ACTIVE`, a billed instalment of its own obligation, the version in force, the clock's date, own age >= the
+  pinned day, <= the pinned fee, Σ within the cap, still owing interest or principal), both INSERT-only and never
+  truncated; `billing_component_billed` (FEES = assessed fees) and `billing_component_paid` (FEES settled by a release)
+  replaced; `late_fee_released_minor` on `bnpl_refund_adjustment` and `bnpl_refund`; `bnpl_refund_conserves` replaced.
+  `BnplConditions` (the condition step, the late-fee step, the read), `BnplDelinquencyState`, `BnplDelinquencyBucket`,
+  `BnplConditionKind`, `BnplConditionEvent`, `BnplFeeKind`, `BnplFeeAssessment`, `BnplConditionStore` /
+  `JdbcBnplConditionStore`; `BnplServicing`'s slot after the closure; `ServicingOutcome.conditionChanges/fees/feesCapped`;
+  `BnplRefunds`' release (`lateFeesReleased`, F5a's fee lines inside T-ref's one L8 call); `BnplRefund.lateFeeReleased()`.
+  In `app`: the beans, `BnplConditionMetrics` (`finapp.bnpl.delinquency{product, bucket}`, `finapp.bnpl.default{product}`),
+  `finapp.bnpl.fee{outcome}` and `servicing{condition, recorded}`, the agreement read's `condition` (`BnplConditionView`)
+  and the schedule's `billedFees`; `docs/api/openapi.json` (compatible additions only).
+- **Gate** (2026-10-19): CRITICAL - none. IMPORTANT - none. MINOR (fixed in-task) - the customer's schedule showed an
+  instalment's `due` including its late fee but no field saying what was charged: `BnplScheduledInstalmentView.billedFees`
+  (`BnplAgreementDeskTest#theScheduleView` now on a fee-bearing instalment; `openapi.json` one compatible addition). MINOR
+  (recorded) - `bnpl V013`'s fee trigger admits a fee below `least(fee, cap room)` (lending V021's parity: the rank is "at
+  most"); the domain always assesses the full room. MINOR (recorded) - the release's commit rank ("an instalment cancelled
+  whole owes no fee after the refund") has its hermetic and text halves; no raw-writer database case reaches it (a whole
+  adjustment needs a refund row of its own obligation), so its live half is the domain refund's path in
+  `BnplLateFeeDatabaseTest#aCancelledInstalmentsLateFeeIsReleased`, owed. **Owner judgements** (recorded, not changed):
+  (a) a pay-in-N instalment whose principal a partial refund cancels whole while its billed interest stays owed (A11) has
+  its fee released, yet may be charged one later if it was not charged before (the interest it still owes is late); (b) a
+  released fee frees no cap room; (c) an obligation cured by its closure keeps its last `DEFAULT` row (the gauges count
+  `ACTIVE` obligations only). **Seventeen probes performed, all caught on their first run** (`MUTATION_TESTING.md` §2):
+  the backlog's first two (DPD a counter; a row every day) and fifteen more - the once-a-day guard, the `ACTIVE` guards of
+  the step and the read, the flag held at cure, the once-per-instalment check, the fee by DPD instead of own age, grace for
+  the fee day, the cap, the income row before (P), no release, the whole-cancellation arm, a paid fee released again, the
+  fee not joined to `FEES` and the release not settled (`V013` text), the fee meter once per step; each restore
+  byte-identical, sha256-verified. Owed (database-only, written, not run): the backlog's third probe (`UNIQUE (instalment_id,
+  kind)` dropped) and the condition unique's, the live triggers, the income row's real lock order. **Ten-instance `PASS`**:
+  B4 serialises every act on an obligation - the sweep's steps, repayments, refunds, payoffs - each reading the history and
+  the assessments after the lock on the database clock read after it; `UNIQUE (obligation_id, business_date, kind)`,
+  `UNIQUE (instalment_id, kind)` and the ledger key `bnpl.fee:<instalment>:LATE` beneath it; `bnpl V013`'s triggers re-take
+  B4 and re-judge DPD, bucket, flag, change, day, fee, cap and owing for every writer; the shared `BNPL_FEE_INCOME` row is
+  taken at L8 after any (P) and nothing but inserts follows it, so no step or refund holds it while waiting on a wallet (a
+  refund that needs the wallet must first take its `ledger_account` row at (P), which a collecting step already holds);
+  DPD is a difference of dates, so skew, missed and repeated sweeps cannot drift it; nothing rests on JVM state or a
+  scheduler of its own (`LEASE_PROTECTED_SCHEDULERS` stays 28). Verified, fresh results: bnpl 383 (`BnplConditionsTest`
+  12, `BnplLateFeesTest` 17, `BnplDelinquencyStateTest` 3, `BnplConditionMigrationTest` 5), bnpl architecture 3, `app`
+  `com.finapp.app.bnpl.*` and the guard suites by name 236 (`BnplConditionMetricsTest` 1, `BnplServicingScheduleTest` 7,
+  `BnplAgreementDeskTest` 5), `app` architecture 171 at the end of implementation and 171 again after the gate's fix -
+  every one 0 failures; `build`, `databaseTest` and `kafkaTest` not run (the owner's instruction, a criterion-7
+  deviation). Owed a first run: `BnplConditionDatabaseTest` (nine cases), `BnplLateFeeDatabaseTest` (six),
+  `BnplMigrationTest` through `V013`, and `app`'s own-container `BnplCollectionLedgerDatabaseTest#theFeeIncomeRowIsTakenAfterTheWallet`.
+  **For `-022`**: the payoff quote counts `BNPL_FEES_DUE` from the ledger, which now carries late fees - add a payoff with an
+  assessed fee (board rule 4), and the payoff to `BnplConditionDatabaseTest#noConditionAfterClosure`'s race. **For
+  `-023`**: the dispute hold amends `BnplConditions.evaluate`/`assessLateFees` (no DPD, no fee on a held instalment) and
+  the derivation in `bnpl.days_past_due`. **For `-024`**: the waiver subtracts approved waivers in
+  `bnpl.billing_component_billed(.., 'FEES')` (lending V021's shape); the release and the waiver are both bounded by billed
+  less settled, so neither can forgive what the other already did (the Phase 11 gate's R3).
 
 **P12-TSK-021 — Merchant refunds, latest instalments first** — `COMPLETE` (2026-10-19, Phase 12 wave D beside `-019`, master `9aca4d2c` (`-019`) merged in; marks no task `READY` - the wave's board rule 9 gives that to `-019`; leaves `P12-TSK-022` dependency-free once merged (its other dependency `-017` `COMPLETE`)) *(read "`IN_PROGRESS`" from its start until its gate)*
 - **Objective**: a merchant refunds all or part of a BNPL purchase over its own key at any point in the
@@ -21287,7 +21340,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — a closing repayment is not
   reversible (`-024`); F5 vacuous — internal; F8: the subledger proof), `DOD-API`. **Risk**: High. **Cx**: M.
 
-**P12-TSK-023 — BNPL disputes** — `PLANNED`
+**P12-TSK-023 — BNPL disputes** — `READY` (marked by `P12-TSK-020`'s completion gate, 2026-10-19: its dependencies `-021` and `-020` `COMPLETE`)
 - **Objective**: a customer contests a BNPL purchase with the platform (there is no card network on it); the
   disputed amount is held — no late fee, no DPD, no collection on it — until the merchant accepts, the
   deadline passes, the customer withdraws or an operator resolves; a refund outcome *is* a refund under the

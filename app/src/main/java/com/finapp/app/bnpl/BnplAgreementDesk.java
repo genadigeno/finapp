@@ -142,8 +142,9 @@ public final class BnplAgreementDesk {
 
     /**
      * One scheduled instalment: its projection, whether it has been billed and - once billed (`P12-TSK-015`) - what it
-     * billed (principal and pay-in-N's accrued interest, which may differ from the projection), what has been paid of it
-     * and what is still due; zeros while unbilled.
+     * billed (principal and pay-in-N's accrued interest, which may differ from the projection), the late fees assessed on
+     * it ({@code billedFees}, `P12-TSK-020` - part of what it owes, paid first), what has been paid of it and what is still
+     * due; zeros while unbilled.
      */
     public record BnplScheduledInstalmentView(
             int sequence,
@@ -155,7 +156,8 @@ public final class BnplAgreementDesk {
             String billedPrincipal,
             String billedInterest,
             String paid,
-            String due) {}
+            String due,
+            String billedFees) {}
 
     /** Accepts the caller's offer - the purchase, the merchant financing and the obligation in one transaction. */
     public BnplAcceptedView accept(Session current, String rawOfferId, String idempotencyKey,
@@ -286,7 +288,8 @@ public final class BnplAgreementDesk {
                 decimal(billed.map(BnplPurchaseStore.BilledItem::billedPrincipal).orElse(zero)),
                 decimal(billed.map(BnplPurchaseStore.BilledItem::billedInterest).orElse(zero)),
                 decimal(billed.map(BnplPurchaseStore.BilledItem::paidTotal).orElse(zero)),
-                decimal(billed.map(BnplPurchaseStore.BilledItem::dueTotal).orElse(zero)));
+                decimal(billed.map(BnplPurchaseStore.BilledItem::dueTotal).orElse(zero)),
+                decimal(billed.map(BnplPurchaseStore.BilledItem::billedFees).orElse(zero)));
     }
 
     private static String decimal(Money amount) {

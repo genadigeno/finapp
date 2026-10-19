@@ -10783,6 +10783,9 @@
           "billed": {
             "type": "boolean"
           },
+          "billedFees": {
+            "type": "string"
+          },
           "billedInterest": {
             "type": "string"
           },
