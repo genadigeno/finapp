@@ -142,6 +142,21 @@ class BnplServicingScheduleTest {
                 .count()).as("the customer's door untouched").isZero();
     }
 
+    @Test
+    @DisplayName("a failed step counts failed; one whose failure is a refused conservation - an AllocationAnomaly, or the"
+            + " database's deferred conservation at commit - also raises finapp.bnpl.allocation.anomaly (P12-TSK-019)")
+    void aSweepsAnomalyRaisesTheAlert() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplServicingMetrics metrics = new BnplServicingMetrics(registry, new BnplRepaymentMetrics(registry));
+        metrics.failed(new IllegalStateException("a lost connection"));
+        assertThat(registry.get(BnplRepaymentMetrics.ANOMALY).counter().count()).isZero();
+        metrics.failed(new com.finapp.bnpl.AllocationAnomaly("an automatic collection pays only its instalment"));
+        metrics.failed(new RuntimeException("commit", new IllegalStateException(
+                "no billed component is ever paid beyond what it billed (P12-TSK-018, INV-LND-04)")));
+        assertThat(registry.get(BnplRepaymentMetrics.ANOMALY).counter().count()).isEqualTo(2.0);
+        assertThat(servicing(registry, "service", "failed")).isEqualTo(3.0);
+    }
+
     private static double collection(SimpleMeterRegistry registry, String outcome) {
         return registry.get(BnplServicingMetrics.COLLECTION).tags("outcome", outcome).counter().count();
     }

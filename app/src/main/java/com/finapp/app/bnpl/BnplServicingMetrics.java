@@ -1,5 +1,6 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.bnpl.AllocationAnomaly;
 import com.finapp.bnpl.BnplProduct;
 import com.finapp.bnpl.CollectionOutcome;
 import com.finapp.bnpl.ServicingOutcome;
@@ -155,6 +156,19 @@ public final class BnplServicingMetrics {
     /** A step that failed - rolled back; its claim's cadence retries it. */
     public void failed() {
         servicing(Step.SERVICE, Outcome.FAILED).increment();
+    }
+
+    /**
+     * A step that failed - and, when the failure is a refused conservation (`P12-TSK-019`: the step's applications and
+     * collections allocate like a repayment - an {@link AllocationAnomaly} in the domain, or the database's deferred
+     * conservation at commit), also one {@code finapp.bnpl.allocation.anomaly}, the alert the customer's door raises for
+     * the same defect: a sweep's anomaly is never only a failed step.
+     */
+    public void failed(RuntimeException failure) {
+        failed();
+        if (failure instanceof AllocationAnomaly || BnplRepaymentDesk.refusedConservation(failure)) {
+            repayments.anomaly();
+        }
     }
 
     private Counter billing(BnplProduct product, BillingOutcome outcome) {

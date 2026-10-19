@@ -327,6 +327,27 @@ class BnplCollectionsTest {
     }
 
     @Test
+    @DisplayName("an older instalment still due but not retried today (the pinned cadence) keeps its priority: a younger"
+            + " one due today is INSUFFICIENT_FUNDS though the wallet could cover it - the allocation would pay the older"
+            + " first - and nothing moves")
+    void anOlderInstalmentNotRetriedTodayKeepsItsPriority() {
+        collecting(false, 7);
+        Agreement p4 = payIn4();
+        availableTo(0);
+        serviceOn(DUE_2, p4);
+        serviceOn(DUE_2.plusDays(8), p4); // retried a week on: still short
+        availableTo(150_00);
+        int keys = world.book.keys.size();
+        ServicingOutcome step = serviceOn(DUE_3, p4); // six days after its latest attempt: instalment 2 not retried
+        assertThat(world.collections.of(p4.obligation())).filteredOn(row -> row.attemptDate().equals(DUE_3))
+                .extracting(BnplCollectionAttempt::instalment, BnplCollectionAttempt::outcome).containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(instalment(p4, 3).id(), CollectionOutcome.INSUFFICIENT_FUNDS));
+        assertThat(step.collected(CollectionOutcome.INSUFFICIENT_FUNDS)).isEqualTo(1);
+        assertThat(world.book.keys).as("the billing alone").hasSize(keys + 1);
+        assertThat(available()).isEqualTo(eur(150_00));
+    }
+
+    @Test
     @DisplayName("an instalment the customer paid before its due date's attempt records NOTHING_DUE - the attempt still"
             + " happened, nothing moved")
     void anInstalmentAlreadyPaidRecordsNothingDue() {
@@ -507,7 +528,8 @@ class BnplCollectionsTest {
         }
         BnplCollectionAttempt ok = new BnplCollectionAttempt(id, obligation, id, DUE_2, CollectionOutcome.PARTIAL,
                 eur(100), eur(40), 1, moved, CORRELATION);
-        assertThat(ok.toString()).doesNotContain("40").doesNotContain("100");
+        assertThat(ok.toString()).as("identifiers and the outcome only - never a figure")
+                .isEqualTo("BnplCollectionAttempt[" + id + ", obligation " + obligation.value() + ", 2026-10-31, PARTIAL]");
         assertThat(BnplCollectionAttempt.requestKey(id, DUE_2)).isEqualTo(id + ":2026-10-31");
         assertThat(CollectionOutcome.PARTIAL.collected()).isTrue();
         assertThat(CollectionOutcome.WALLET_NOT_POSTABLE.failed()).isTrue();

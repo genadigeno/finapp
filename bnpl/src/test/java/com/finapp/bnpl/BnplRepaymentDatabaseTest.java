@@ -331,7 +331,8 @@ class BnplRepaymentDatabaseTest {
 
     @Test
     @DisplayName("an allocation's ranks for every writer: no not-due principal (23514), no unbilled instalment (P0001), no"
-            + " component paid beyond its billing at commit, no AUTO_COLLECTION or PAYOFF kind before its task")
+            + " component paid beyond its billing at commit, no PAYOFF kind before its task (AUTO_COLLECTION admitted by"
+            + " bnpl V011 beside its attempt - refused at commit without one, BnplCollectionDatabaseTest)")
     void theAllocationsRanksHoldForEveryWriter() throws SQLException {
         World world = new World();
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
@@ -349,7 +350,7 @@ class BnplRepaymentDatabaseTest {
                     + repaid.repayment().id() + "', 9, 'DUE_ITEM', '" + unbilled + "', 'PRINCIPAL', 'EUR', 2, 1)", "P0001");
             refused(migrator, "INSERT INTO bnpl.bnpl_repayment (id, obligation_id, kind, request_key, currency, scale,"
                     + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
-                    + " received_at) SELECT gen_random_uuid(), o.id, 'AUTO_COLLECTION', 'raw', 'EUR', 2, 100,"
+                    + " received_at) SELECT gen_random_uuid(), o.id, 'PAYOFF', 'raw', 'EUR', 2, 100,"
                     + " o.agreement_id, 1, 'ALLOCATION_ENGINE_V1', gen_random_uuid(), DATE '" + due + "',"
                     + " clock_timestamp() FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'", "P0001");
         }
