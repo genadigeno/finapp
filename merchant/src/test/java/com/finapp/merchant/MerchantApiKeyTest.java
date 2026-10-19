@@ -51,6 +51,25 @@ class MerchantApiKeyTest {
                 .isThrownBy(() -> revoked.revoke(behind));
     }
 
+    @Test
+    @DisplayName("a key carries the scopes it was issued with - none by default, so a key issued before the scope existed"
+            + " fails closed - and a revocation keeps them; the authenticated tenant holds exactly them (P12-TSK-021)")
+    void aKeyCarriesTheScopesItWasIssuedWith() {
+        assertThat(issued().scopes()).isEmpty();
+        MerchantApiKey scoped = MerchantApiKey.issue(IDS, CLOCK, MerchantId.next(IDS),
+                MerchantApiKeySecret.issue(new SecureRandom()), "operator",
+                java.util.Set.of(MerchantApiKeyScope.BNPL_REFUND));
+        assertThat(scoped.scopes()).containsExactly(MerchantApiKeyScope.BNPL_REFUND);
+        assertThat(scoped.revoke(CLOCK).scopes()).containsExactly(MerchantApiKeyScope.BNPL_REFUND);
+        assertThat(new AuthenticatedMerchant(scoped.merchantId(), scoped.id(), scoped.scopes())
+                .holds(MerchantApiKeyScope.BNPL_REFUND)).isTrue();
+        assertThat(new AuthenticatedMerchant(scoped.merchantId(), scoped.id())
+                .holds(MerchantApiKeyScope.BNPL_REFUND)).as("a scopeless key").isFalse();
+        assertThat(MerchantApiKeys.scopesFingerprint(java.util.Set.of())).as("a scopeless issuance fingerprints as before")
+                .isEmpty();
+        assertThat(MerchantApiKeys.scopesFingerprint(scoped.scopes())).isEqualTo(", scopes=BNPL_REFUND");
+    }
+
     private static MerchantApiKey issued() {
         return MerchantApiKey.issue(
                 IDS,

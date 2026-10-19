@@ -119,7 +119,39 @@ public enum BnplErrorCode implements ErrorCode {
      * The BNPL agreement is {@code CLOSED} (`P12-TSK-018`; {@code INV-LIFE-04}): a repayment - later a collection, a payoff
      * or a fee - on it is refused, nothing posted.
      */
-    OBLIGATION_CLOSED("bnpl.ObligationClosed", 409, "The BNPL agreement is closed.");
+    OBLIGATION_CLOSED("bnpl.ObligationClosed", 409, "The BNPL agreement is closed."),
+
+    /**
+     * The refund exceeds what remains of the purchase - {@code R > G - refunded} (`P12-TSK-021`; {@code INV-BNPL-07}),
+     * judged under the purchase's row lock; nothing was written. The detail never names the remainder.
+     */
+    REFUND_EXCEEDS_PURCHASE(
+            "bnpl.RefundExceedsPurchase", 422, "The refund exceeds what remains of the BNPL purchase."),
+
+    /** The purchase is already {@code FULLY_REFUNDED} (`P12-TSK-021`): terminal, nothing more to refund; nothing written. */
+    PURCHASE_FULLY_REFUNDED("bnpl.PurchaseFullyRefunded", 409, "The BNPL purchase is already fully refunded."),
+
+    /**
+     * The merchant's API key was not issued with the {@code BNPL_REFUND} scope (`P12-TSK-021`; ADR-0105 decision 9): a key
+     * issued before the scope existed carries none (fails closed). Recorded {@code FAILED}; nothing else written - the
+     * operator who administers the merchant's keys issues one with the scope.
+     */
+    REFUND_SCOPE_REQUIRED(
+            "bnpl.RefundScopeRequired", 403, "This API key may not refund BNPL purchases; a key with the refund scope may."),
+
+    /**
+     * The refund cannot be posted now (`P12-TSK-021`): the customer's wallet cannot take the excess of a refund on a
+     * {@code CLOSED} agreement (a closed agreement holds no credit balance, OQ-15), or the merchant's payable cannot be
+     * debited. Nothing was written; retry later under the same key.
+     */
+    REFUND_NOT_POSTABLE("bnpl.RefundNotPostable", 409, "The BNPL refund cannot be posted now; nothing was written."),
+
+    /**
+     * An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`; the self-dealing rule,
+     * {@code INV-LND-11} by analogy) - refused before anything was written, the attempt recorded {@code FAILED}.
+     */
+    SELF_DEALING_REFUSED(
+            "bnpl.SelfDealingRefused", 403, "An employee never refunds a BNPL purchase of their own party; nothing was done.");
 
     private final String code;
     private final int status;

@@ -3,6 +3,7 @@ package com.finapp.bnpl;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.sharedkernel.money.Money;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -40,7 +41,16 @@ public record MerchantBnplPurchaseView(
         Money net,
         UUID feeScheduleVersion,
         JournalEntryId financingEntry,
-        Instant financedAt) {
+        Instant financedAt,
+        List<MerchantBnplRefundView> refunds) {
+
+    /** The purchase before its refunds are read - {@link BnplPurchaseStore#atMerchant}'s one statement (`P12-TSK-014`). */
+    public MerchantBnplPurchaseView(BnplPurchaseId purchase, UUID checkoutSession, UUID order, BnplProduct product,
+            BnplPurchaseStatus status, Money gross, Money fee, Money net, UUID feeScheduleVersion,
+            JournalEntryId financingEntry, Instant financedAt) {
+        this(purchase, checkoutSession, order, product, status, gross, fee, net, feeScheduleVersion, financingEntry,
+                financedAt, List.of());
+    }
 
     public MerchantBnplPurchaseView {
         Objects.requireNonNull(purchase, "purchase must not be null");
@@ -54,6 +64,7 @@ public record MerchantBnplPurchaseView(
         Objects.requireNonNull(feeScheduleVersion, "feeScheduleVersion must not be null");
         Objects.requireNonNull(financingEntry, "financingEntry must not be null");
         Objects.requireNonNull(financedAt, "financedAt must not be null");
+        refunds = List.copyOf(Objects.requireNonNull(refunds, "refunds must not be null"));
         if (status == BnplPurchaseStatus.AUTHORISED) {
             throw new IllegalStateException(
                     "a BNPL purchase is never committed AUTHORISED - it is FINANCED beside its financing (INV-BNPL-02)");
@@ -62,6 +73,29 @@ public record MerchantBnplPurchaseView(
             throw new IllegalStateException(
                     "a BNPL merchant financing conserves its purchase: gross = fee + net (INV-BNPL-04)");
         }
+    }
+
+    /** The same purchase with its refunds (`P12-TSK-021`, `-014`'s carry) - each read with the tenant in its statement. */
+    public MerchantBnplPurchaseView withRefunds(List<MerchantBnplRefundView> read) {
+        return new MerchantBnplPurchaseView(purchase, checkoutSession, order, product, status, gross, fee, net,
+                feeScheduleVersion, financingEntry, financedAt, read);
+    }
+
+    /** Σ the purchase's refunds - zero when none. */
+    public Money refunded() {
+        Money refunded = gross.minus(gross);
+        for (MerchantBnplRefundView refund : refunds) {
+            refunded = refunded.plus(refund.amount());
+        }
+        return refunded;
+    }
+
+    /**
+     * "Partially refunded" - derived, never a state ({@code PHASE_12_PLAN.md} section 5.3): {@code FINANCED} with at least
+     * one refund (`P12-TSK-014`'s carry).
+     */
+    public boolean partiallyRefunded() {
+        return status == BnplPurchaseStatus.FINANCED && !refunds.isEmpty();
     }
 
     /** The purchase and its status only - never a figure, the merchant or the order ({@code INV-AUD-02}). */

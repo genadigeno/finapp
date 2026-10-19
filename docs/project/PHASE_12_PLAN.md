@@ -806,7 +806,11 @@ billings and allocations, plus unbilled instalments' principal).
    the reduction exactly (`INV-BNPL-06`). *(Read with `P12-TSK-009`'s design, 2026-10-17: that task is the pure allocator, and
    `recalculateAtInstalment` is out of its scope (its backlog entry), so it proves its own split - Σ cancelled + E = R,
    latest first, by class (unbilled / billed-unpaid) - and the proof that pay-in-N's version-difference rows sum to that
-   split's unbilled total is `P12-TSK-021`'s, which composes the two.)*
+   split's unbilled total is `P12-TSK-021`'s, which composes the two.)* *(Refined by `P12-TSK-021`, 2026-10-19: the adjustment rows are the allocator's
+   latest-first split for both products - an annuity re-amortised at the same instalment moves every remaining
+   instalment's principal, earlier ones up, so a per-instalment version difference is not a cancellation; what is held,
+   at the schedule's commit, is `principal(v n+1) = principal(v n) - the unbilled principal cancelled`, every billed
+   instalment kept as billed. Accrued interest is also released when the refund leaves nothing more to bill.)*
 6. A schedule v n+1 and agreement v n+1 whenever any unbilled instalment is cancelled or shortened.
 7. If every receivable is now zero → closure (`REFUNDED` / `REFUNDED_PARTIALLY_REPAID`), credit balance refunded — in the
    refund's transaction when the excess reached the wallet, else in the transaction that refunds the held credit (OQ-13).
@@ -1089,8 +1093,8 @@ renumber within its module and says so.
 | `P12-TSK-017` | PN interest accrual | M12.6 | `-015` | `bnpl V009` | `DOD-FIN` |
 | `P12-TSK-018` | Customer repayment from the wallet and closure | M12.6 | `-015` | `bnpl V010` | `DOD-FIN`, `DOD-API`, `DOD-SEC` |
 | `P12-TSK-019` | Auto-collection | M12.6 | `-018` | `bnpl V011` | `DOD-FIN` |
-| `P12-TSK-020` | Delinquency, default and late fees | M12.6 | `-019` | `bnpl V012` | `DOD-FIN` |
-| `P12-TSK-021` | Merchant refunds, latest instalments first | M12.7 | `-009`, `-016`, `-018` | `bnpl V013`, merchant `V011` (the merchant key's refund scope) | `DOD-FIN`, `DOD-API`, `DOD-SEC` |
+| `P12-TSK-020` | Delinquency, default and late fees | M12.6 | `-019` | `bnpl V013` (*renumbered from `V012`, wave D, 2026-10-19*) | `DOD-FIN` |
+| `P12-TSK-021` | Merchant refunds, latest instalments first | M12.7 | `-009`, `-016`, `-018` | `bnpl V012` (*renumbered from `V013`, wave D, 2026-10-19*), merchant `V011` (the merchant key's refund scope) | `DOD-FIN`, `DOD-API`, `DOD-SEC` |
 | `P12-TSK-022` | Early payoff (both products) | M12.7 | `-021`, `-017` | `bnpl V014` | `DOD-FIN`, `DOD-API` |
 | `P12-TSK-023` | BNPL disputes | M12.7 | `-021`, `-020` | `bnpl V015` | `DOD-FIN`, `DOD-SEC`, `DOD-API` |
 | `P12-TSK-024` | Repayment reversal and fee waiver (four-eyes) | M12.7 | `-020` | `bnpl V016` | `DOD-FIN`, `DOD-SEC` |

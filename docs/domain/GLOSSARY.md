@@ -1592,6 +1592,7 @@ it. Delinquency, default and a dispute hold are conditions beside it. Planned (`
 the servicing step that zeroes the last receivable, refunding its BNPL credit balance - money held beyond every receivable,
 `BNPL_CREDIT_BALANCE`, applied at the next billing and never to principal not yet due - to the wallet under
 `bnpl.closure-refund:<obligation>`.
+Its refunds' closures (`REFUNDED`, `REFUNDED_PARTIALLY_REPAID`) built by `P12-TSK-021`.
 **Not:** a Loan — not born by a disbursement, reducible by a merchant's refund, never `CANCELLED`, and
 never a lending row (ADR-0101). Nor the Merchant Financing, the other flow of the same event, and not
 the customer's Exposure, credit's per-party figure, which counts its outstanding principal from version 3.
@@ -1628,7 +1629,9 @@ first merchant-key refund door, OQ-9), by an operator, or executed as a BNPL Dis
 refunds (`INV-BNPL-07`), cancels unpaid instalments from the last backwards, credits any excess to the
 customer's wallet, debits the merchant's payable net of the Merchant Discount returned, and posts the
 whole as one entry (`INV-BNPL-06`); a full refund closes the obligation with nothing stranded
-(`INV-BNPL-09`). Planned (`P12-TSK-021`).
+(`INV-BNPL-09`). Built by `P12-TSK-021` (`bnpl.bnpl_refund`, `BnplRefunds`): the merchant's key must carry the
+`BNPL_REFUND` **API key scope** - an insert-time fact of the key, chosen at issuance (`merchant V011`), keys issued before
+carrying none; the operator's door beside it under `PAYMENT_REFUND`.
 **Not:** payments' Refund of a card capture — no provider, no `PENDING` state, no rail — and not a
 Repayment Reversal, which undoes money the customer paid. After a payout it may drive the payable below
 zero only within its purchase's own net (owner decision B7; `INV-MER-07` amended).
@@ -1641,7 +1644,10 @@ refund by a deferred trigger — with the late fees on a cancelled instalment re
 cancellation, Pay-in-N's unpaid interest waived (A11, OQ-14).
 **Not:** the BNPL Refund itself (the act and its entry), and not a Waiver: nothing is forgiven at the
 platform's expense — the merchant funds every unit of it. Never edited, and never re-cut by a later
-refund.
+refund. Built by `P12-TSK-021` (`bnpl.bnpl_refund_adjustment`): one row per instalment touched, the excess on the refund
+row itself; the principal cancelled (`UNBILLED` or `BILLED_UNPAID`), pay-in-N billed interest released, and whether the
+instalment owes no principal after it (`whole`) - the late fee's release joins with `-020`. The interest released is
+platform income forgone, not part of the refund the merchant funds.
 **Owned by:** `bnpl`
 
 ### BNPL Dispute

@@ -353,6 +353,15 @@ public final class BnplAcceptances {
      */
     Map<LedgerAccountId, LedgerAccountStatus> lockAsOneElement(Connection unitOfWork, LedgerAccountId payable,
             Optional<LedgerAccountId> wallet) {
+        return lockAsOneElement(book, unitOfWork, payable, wallet);
+    }
+
+    /**
+     * (P) on {@code book} - the one implementation of the pair's order, which the refund (`P12-TSK-021`, T-ref) takes too:
+     * {@code UUID.compareTo} of the two account ids, the payable alone when there is no wallet.
+     */
+    static Map<LedgerAccountId, LedgerAccountStatus> lockAsOneElement(BnplBook book, Connection unitOfWork,
+            LedgerAccountId payable, Optional<LedgerAccountId> wallet) {
         List<LedgerAccountId> order = new ArrayList<>(List.of(payable));
         wallet.filter(other -> !other.equals(payable)).ifPresent(other -> {
             if (other.value().compareTo(payable.value()) < 0) {

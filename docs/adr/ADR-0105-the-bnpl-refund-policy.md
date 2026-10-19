@@ -236,7 +236,15 @@ only other movements are point 5's and 6's releases), `INV-BNPL-07` (Σ refunds 
   restated in bnpl; each property above held over generated sequences; decision 12's worked figures corrected to the
   cent.)*
 - `P12-TSK-021` — T-ref, F5/F5a, the doors, the versions, closure; mandatory scenarios 7, 8, 9, 16 and 17's release;
-  the pair-element race against a wallet-paid capture in both id orders; the `INV-MER-07` amendment put in force.
+  the pair-element race against a wallet-paid capture in both id orders; the `INV-MER-07` amendment put in force. *(As
+  built, 2026-10-19: `BnplRefunds` over `bnpl V012`, one body for both doors; the operator door `POST
+  /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND` (decision 9's default), self-dealing refused; the merchant
+  key's `BNPL_REFUND` scope an insert-time fact of the key (merchant `V011`), keys issued before carrying none; the
+  wallet never opened - an absent or unpostable one holds the excess as credit, or (after closure) refuses the refund
+  `409 bnpl.RefundNotPostable`; pay-in-N's adjustment rows the allocator's split, the version identity `principal(v n+1)
+  = principal(v n) - unbilled cancelled`; accrued interest released also when nothing is left to bill (decision 6
+  refined); the late fee's release (decision 5) and scenario 17's half carried to `P12-TSK-020`; `AccountClosing`'s
+  pending-credits port not built (recorded for the owner); `INV-MER-07`'s amendment in force.)*
 - `P12-TSK-016` — the drill-down's `BNPL_REFUND` kind and `INV-MER-02`'s equation with the BNPL terms.
 - To settle in `P12-TSK-021`'s design: the operator door's route and permission; whether `AccountClosing`'s
   pending-credits port refuses closing a wallet while a BNPL obligation is `ACTIVE`.

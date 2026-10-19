@@ -18778,7 +18778,10 @@ credit `V022` (`-001`); identity `V022` (`-002`); `bnpl` `V001` (`-002`, the mod
 `bnpl` `V002` (`-004`); merchant `V010` (`-006`); checkout `V004` (`-007`); `bnpl` `V003` (`-010`), `V004` (`-011`),
 `V006` (`-013`), `V007` (`-012`, the exposure definer view over `-013`'s obligation table — **`-012` and `-013` are a
 pair built on one branch and merged together**), then `V008` (`-015`), `V009` (`-017`), `V010` (`-018`), `V011`
-(`-019`), `V012` (`-020`), `V013` (`-021`), `V014` (`-022`), `V015` (`-023`), `V016` (`-024`). `bnpl V005` is unassigned
+(`-019`), `V012` (`-021`), `V013` (`-020`), `V014` (`-022`), `V015` (`-023`), `V016` (`-024`) - *`-021` and `-020`
+swapped by the Phase 12 wave D coordinator (2026-10-19): `-021` started before `-020` (which waits on `-019`), and Flyway
+runs with out-of-order off, so a lower number must never land after a higher one; the plan's `V012` (`-020`), `V013`
+(`-021`) read so until then; merge order `-019` (`V011`) before `-021` (`V012`).* `bnpl V005` is unassigned
 by the plan (the credit `V018` precedent: a gap Flyway admits) unless the pair's design renumbers. Lending takes no
 migration (the capital headroom is Java; lending's next free stays `V031`). Advisory namespace **`12`** is reserved for
 bnpl's administrations (terms versions, `hashtext(product)`). `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS`
@@ -20875,7 +20878,12 @@ after everything.
   shows the condition; **never the merchant** (`-014`'s closed view). **Not built**, each recorded:
   acceleration, default or penalty interest, notifications, bureau reporting, a collections case (Phase 13 —
   bnpl emits the facts), write-off (Phase 14); the dispute hold's suspension of DPD and fees (`-023` amends
-  these steps); the late fee's release on a refund-cancelled instalment (`-021`).
+  these steps); the late fee's release on a refund-cancelled instalment (`-021`) - *carried here by `P12-TSK-021`,
+  which landed first: its refund already releases what `-021` can see (pay-in-N interest) and records a wholly
+  cancelled instalment (`bnpl_refund_adjustment.whole`), so this task adds a `late_fee_released_minor` arm to the
+  adjustment and F5a's `DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE` line inside T-ref's entry for an assessed fee on a
+  wholly cancelled instalment (OQ-14), and `BnplLateFeeDatabaseTest#aCancelledInstalmentsLateFeeIsReleased` (scenario
+  17's release half).*
 - **Out of scope**: waivers (`-024`); collections operations (Phase 13); write-off and provisioning (Phase
   14).
 - **Domain changes**: `BnplDelinquencyState` (derived), `BnplConditionEvent`, `BnplFeeAssessment`; the
@@ -20926,7 +20934,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 by `-024` (the waiver) and `-021` (the
   release), recorded; F5 vacuous — no external event; F8: the subledger proof). **Risk**: Medium. **Cx**: M.
 
-**P12-TSK-021 — Merchant refunds, latest instalments first** — `PLANNED`
+**P12-TSK-021 — Merchant refunds, latest instalments first** — `COMPLETE` (2026-10-19, Phase 12 wave D beside `-019`, master `9aca4d2c` (`-019`) merged in; marks no task `READY` - the wave's board rule 9 gives that to `-019`; leaves `P12-TSK-022` dependency-free once merged (its other dependency `-017` `COMPLETE`)) *(read "`IN_PROGRESS`" from its start until its gate)*
 - **Objective**: a merchant refunds all or part of a BNPL purchase over its own key at any point in the
   instalment lifecycle; the refund cancels unpaid instalments from the last backwards, returns any excess to
   the customer's wallet, takes the merchant fee back pro rata by the cumulative method, and preserves value
@@ -20934,7 +20942,8 @@ after everything.
 - **Bounded context**: BNPL (the refund and its adjustment); Merchant (the refund authority, the payable, the
   key scope); Ledger; Accounts (the wallet).
 - **Dependencies**: `-009`, `-016`, `-018`.
-- **Scope**: `bnpl V013`: `bnpl_refund` (`UNIQUE (merchant_id, refund_key)`; purchase, amount `R`, fee
+- **Scope**: `bnpl V012` (*renumbered from the plan's `V013` by the wave D coordinator, 2026-10-19; `-020` takes
+  `V013`*): `bnpl_refund` (`UNIQUE (merchant_id, refund_key)`; purchase, amount `R`, fee
   returned, payable debit, principal cancelled unbilled and billed, excess to the customer, the merchant's
   reason (`RESTRICTED-PII`), the merchant key, the entry; born `APPLIED` — a row exists only once its effects
   posted), `bnpl_refund_adjustment` (one row per instalment touched: unbilled or billed principal cancelled;
@@ -20988,7 +20997,7 @@ after everything.
   operator threshold review of merchant refunds (OQ-9: none); any "un-financing" by editing (§5.3).
 - **Domain changes**: `BnplRefund`, `BnplRefundAdjustment`, `BnplRefunds` (T-ref's body, one implementation
   for the merchant door, the operator door and the dispute's resolution); the purchase's terminal edge.
-- **Persistence**: `bnpl V013`; merchant `V011` (the key scope).
+- **Persistence**: `bnpl V012` (renumbered from `V013`, above); merchant `V011` (the key scope).
 - **APIs**: the merchant route, keyed `bnpl.refund:MERCHANT:<id>`, and the operator door; errors `422
   bnpl.RefundExceedsPurchase`, `409 bnpl.PurchaseFullyRefunded`, `404 bnpl.NotFound`, `403` for a key without
   the scope — catalogued in `ERROR_CONTRACT.md` by this task; `openapi.json` regenerated.
@@ -21058,6 +21067,106 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F4 (the full refund is the compensation of the financing;
   nothing edits history), F6, F7 binding; F5 vacuous — no external event, the merchant's retry is F3's; F8:
   the three-way proof's refund identities, `-025`), `DOD-API`, `DOD-SEC`. **Risk**: Critical. **Cx**: L.
+- **As built** (2026-10-19): `bnpl V012` (`V012__merchant_refunds_latest_instalments_first.sql`) - `bnpl_refund` (born
+  `APPLIED`, INSERT-only; `UNIQUE (merchant_id, requested_by, refund_key)`, `UNIQUE (journal_entry_id)`; row `CHECK`s
+  `R = r_f + payable debit = cancelled unbilled + cancelled billed + excess`, the excess somewhere exactly when positive,
+  the reason screened; its trigger re-takes B5 then B4 for every writer and holds `Σ refunds <= G` (`INV-BNPL-07`), `Σ
+  payable debits <= the financed net` and `Σ fees returned <= f` (B7's second rank), the versions in force, the floor,
+  and a `CLOSED` obligation's refund all excess to the wallet), `bnpl_refund_adjustment` (one row per instalment, `UNIQUE
+  (refund_id, sequence)`), the deferred `bnpl_refund_conserves` (Σ adjustments + excess = R, no billed component settled
+  beyond its billing, a version beside an unbilled cancellation, `FULLY_REFUNDED` exactly at the gross);
+  `bnpl.billing_component_paid` replaced to count refund cancellations and releases; the billing's and the closure's
+  every-instalment-billed ranks judged by due date; schedule and agreement version n+1 (`refund_id`, deferrable FKs; the
+  schedule from the purchase date - `-017`'s `V009` rule kept - its principal version n's less exactly the unbilled
+  cancellation, every billing kept as billed, an empty version admitted; the agreement a copy of version n governing the
+  next schedule version); the purchase's `FINANCED -> FULLY_REFUNDED`; the closure admitting `REFUNDED` and
+  `REFUNDED_PARTIALLY_REPAID` (`refund_id`). Merchant `V011` - `merchant_api_key.scopes text[]` (default empty: keys
+  issued before fail closed), frozen by the replaced trigger; `MerchantApiKeyScope.BNPL_REFUND`, `MerchantApiKey.scopes`,
+  `AuthenticatedMerchant.scopes`/`holds`, `MerchantApiKeys.issue(..., scopes)` (the fingerprint unchanged for none).
+  bnpl: `BnplRefunds` (T-ref - `atMerchant`, `byOperator`; the reason screened, B5, the key's arbiter, self-dealing, the
+  bound, B4, `BnplAccruals.caughtUp`, the position derived from the rows, `RefundAllocationEngineV1` with
+  `BnplMerchants.returnedFee`, pay-in-N's releases, schedule v n+1 - pay-in-4 shortened from the end, pay-in-N
+  `ScheduleEngineV1.recalculateAtInstalment` - (P) the payable and the wallet in `UUID.compareTo` order
+  (`BnplAcceptances.lockAsOneElement`, now static and shared), L8, F5 + F5a under `bnpl.refund:<refund>`, the rows, the
+  edge, `bnpl.BnplRefundApplied`, `bnpl.RefundApplied`, the closure), `BnplRefund`, `BnplRefundStore` /
+  `JdbcBnplRefundStore`, `BnplActingParty` (app's `IdentityActingParty`), `MerchantBnplRefundView`, `BnplPurchaseReads`
+  with refunds and `refundAtMerchant`; `BnplClosures` (the reason by purchase and act, every instalment billed by due date,
+  `Closing.refund`), `BnplClosure.closingRefund`, `BnplServicing.dueUnbilled` by due date, `BnplAccruals` (an empty
+  version accrues nothing), `BnplObligations.schedule` (the latest version), `BnplPurchaseStore.purchaseStatus`, the
+  schedule reads' `LEFT JOIN`; `BnplErrorCode` +5 (`RefundExceedsPurchase`, `PurchaseFullyRefunded`, `RefundScopeRequired`,
+  `RefundNotPostable`, `SelfDealingRefused`), `BnplAuditAction` +3 (`RefundApplied`, `RefundScopeRefused`,
+  `SelfDealingRefused`). app: `BnplRefundController` (`POST /v1/merchant/bnpl-purchases/{id}/refunds`),
+  `BnplOperatorRefundController` (`POST /v1/operator/bnpl-purchases/{id}/refunds`, `PAYMENT_REFUND`), `BnplRefundDesk`
+  (the claim, T-acc first in its own transaction up to 8 rounds, the receipts, the FAILED records), `BnplRefundMetrics`
+  (`finapp.bnpl.refund{kind, outcome}`), `BnplRefundBeans`; the merchant purchase read with its refunds
+  (`PARTIALLY_REFUNDED` derived); `MerchantTransactionReport.BnplRefundOwnership` (the `BNPL_REFUND` identifier's second
+  rank); the key issuance's `?scope=` parameter and the key list's `scopes`. **The B7 amendment is in force** from this
+  task's merge (`INV-MER-07`).
+- **Refinements of the backlog, with reasons**: (1) **the refund's unique is `(merchant_id, requested_by, refund_key)`**,
+  not `(merchant_id, refund_key)` - the operator's door keys per operator (`OPERATOR:<identity>`), and two operators, or an
+  operator and the merchant, are distinct requesters; at the merchant's door it is the same rule. (2) **Schedule version
+  n+1 is a whole schedule** (the billed instalments carried as new rows, their billed principal and interest; the
+  unbilled tail as the refund left it), so `V009`'s periods and the billing's period and principal rules hold unchanged;
+  **"billed" is therefore judged by due date** (one billing per due date, `UNIQUE (obligation_id, value_date)`) in the
+  billing's oldest-first rank, the closure's every-instalment-billed rank, `BnplServicing.dueUnbilled` and
+  `BnplClosures` - the billings keep naming version n's instalment. (3) **Pay-in-N's adjustment rows are the allocator's
+  latest-first split, not "the difference between schedule v n and v n+1"** (plan §12.6 point 5): an annuity re-amortised
+  at the same instalment shifts every remaining instalment's principal - earlier ones up, later ones down or gone - so a
+  per-instalment difference is not a cancellation; the identity held at the database rank is the version's, `principal(v
+  n+1) = principal(v n) - the unbilled principal cancelled`, so the principal still to bill falls by exactly the split's
+  unbilled total (the proof `P12-TSK-009` carried here). (4) **Pay-in-N interest accrued is released also when the refund
+  leaves nothing more to bill** (the whole unbilled tail cancelled, billed principal still owed): no instalment remains
+  to make that accrued interest due, so it could never be billed and the obligation could never close; A11's "stays owed"
+  holds for every refund that leaves an unbilled instalment - recorded for the owner. (5) **An empty schedule version is
+  admitted** (a pay-in-N refund of every unit of principal before the first billing): `instalment_count 0`, principal 0;
+  the accrual span is then empty. (6) **The closure's reason**: `REFUNDED` whenever the purchase is `FULLY_REFUNDED` -
+  also when a later servicing step refunds a credit balance the refund held (OQ-13); `REFUNDED_PARTIALLY_REPAID` only in
+  a partial refund's own transaction; `REPAID` otherwise (`BNPL_LIFECYCLES.md` §4.7, read with OQ-13). (7) **The operator
+  door** - the plan named none (OQ-9): `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, the ADR's
+  default (the payments refund's one permission, held by `LEDGER_OPERATOR`), keyed per operator (`bnpl.refund:<actor type>:<id>` - `CUSTOMER`-typed for an operator session today, the platform's known debt), the
+  reason audited, an operator of the purchase's own party refused `403 bnpl.SelfDealingRefused` and recorded `FAILED`.
+  (8) **The 403 is `bnpl.RefundScopeRequired`** (the backlog's "`403` for a key without the scope", the ADR's "merchant's
+  key-scope refusals"): judged at bnpl's door, recorded `FAILED` (`bnpl.RefundScopeRefused`). (9) **The scope is issued
+  by a query parameter** - `POST /v1/operator/merchants/{id}/api-keys?scope=BNPL_REFUND` - not a body: the issuance door
+  takes no body, and a required one would refuse every existing issuance. (10) **`409 bnpl.RefundNotPostable`** (new):
+  a refund of a `CLOSED` agreement whose wallet cannot take it (OQ-15's refusal), or a payable that cannot be debited -
+  nothing written, the merchant retries under the same key. (11) **The wallet is never opened** (ADR-0105 decision 2.2
+  said "resolved or opened"): bnpl's `BnplWallets` answers the existing wallet only; an absent or unpostable one holds
+  the excess as credit (an `ACTIVE` obligation) or refuses (a `CLOSED` one). (12) **The merchant's view** shows each
+  refund's id, amount, fee returned, payable debit, instant and door, and the merchant's own reason only for a
+  merchant-door refund (an operator's reason is the operator's record); "partially refunded" derived. (13) **The kind
+  meter** counts after the transaction: `applied`, `closed`, `exceeds_purchase`, `fully_refunded`, `not_postable`,
+  `self_dealing_refused`; the scope refusal is its audit record. (14) **Carried**: the late fee's release (OQ-14) and
+  `BnplLateFeeDatabaseTest`'s release half to `-020` (above); `409 bnpl.DisputeOpen` to `-023` (no dispute table yet);
+  ADR-0105's open question on `AccountClosing`'s pending-credits port - not built: a closed wallet makes the excess held
+  (or, after closure, the refund refused), which is safe - recorded for the owner.
+- **Gate** (2026-10-19): IMPORTANT (fixed in-task) - the operator door admitted only an `EMPLOYEE` actor, and an operator
+  session's actor is `CUSTOMER`-typed today (`CURRENT_STATE.md`'s Known Architectural Debt), so OQ-9's door refused
+  every operator; it now admits a person's session (`EMPLOYEE` or `CUSTOMER`), never the system's or a merchant's,
+  keyed and recorded `OPERATOR:<identity>` (`bnpl V012`'s `requested_by` rank `^OPERATOR:.{1,200}$`). MINOR (fixed) - a
+  scope refusal's audit target was the caller's raw path segment; it is now the canonical purchase id or `malformed`
+  (`BnplRefundDesk.parsedOrMalformed`). MINOR (fixed) - four hermetic gaps found by probes that survived their first
+  runs: the fee's cumulative rounding (split 0.10, 0.10, 599.80), the value floor on a stepped-back clock
+  (`#theRefundIsFloored`, new), the bound judged under B5 before B4, `partiallyRefunded` false before any refund. MINOR
+  (fixed, found in passing) - `app`'s `BnplAgreementDeskTest` asserted a receipt never contains `"600"`, which a UUIDv7
+  identifier can (a red run on this merge); it now asserts the amount's forms. **Merge-in** (`-019`): the collection
+  wired into the test worlds; scenario 7 now on collecting terms (hermetic and database), and
+  `BnplRefundsTest#aCollectionAfterARefundCollectsOnlyWhatIsLeft` (new) proves a collection after a refund that cancelled
+  part of a billed instalment collects exactly the rest; the Phase 12 lock-order row, which this task's edit had split
+  across lines, rejoined with `-019`'s collection on one line. Twenty probes performed - sixteen caught on their first
+  run, four after the tests above; restores sha256-verified (`MUTATION_TESTING.md` §2). Ten-instance `PASS`: B5 orders
+  every refund of a purchase and judges the bound and the key's arbiter under it; B4 orders a refund against servicing,
+  collection, repayment and accrual, none of which waits on B5; (P) is one element in `UUID.compareTo` order shared with
+  T-pur; the database clock is read after the locks; `bnpl V012`'s trigger re-takes B5 then B4 and re-judges the bound and
+  B7 for every writer; nothing rests on local memory or a scheduler. Owed a first run: `BnplRefundDatabaseTest` (fourteen
+  cases) and `app`'s own-container `BnplRefundApiTest` (six) - the live halves listed in `MUTATION_TESTING.md` §2.
+  Verified on the merge, fresh results: bnpl 346 (`BnplRefundsTest` 28,
+  `BnplRefundMigrationTest` 8), bnpl architecture 3, merchant `MerchantApiKeyTest` 3 + `MerchantApiKeyMigrationTest` 8,
+  `app` `com.finapp.app.bnpl.*` and the guard suites by name 220 (`BnplRefundDeskTest` 6), `app` architecture 171 -
+  every one 0 failures; `build`, `databaseTest` and `kafkaTest` not run (the owner's instruction, a criterion-7
+  deviation). **For `-022` and `-023`**: T-ref's body is `BnplRefunds.refund`
+  (private; `-023` calls it through a door of its own); a payoff after a partial refund reads the latest schedule version
+  and the position from `BnplRefunds.derive`'s rows.
 
 **P12-TSK-022 — Early payoff (both products)** — `PLANNED`
 - **Objective**: the customer can know, and pay, exactly what ends the obligation on a given day — P4 its

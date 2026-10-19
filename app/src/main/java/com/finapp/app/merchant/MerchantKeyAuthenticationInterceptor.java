@@ -150,7 +150,8 @@ public final class MerchantKeyAuthenticationInterceptor implements HandlerInterc
     }
 
     private static AuthenticatedMerchant tenantOf(MerchantApiKey key) {
-        return new AuthenticatedMerchant(key.merchantId(), key.id());
+        // The key's scopes from the same authoritative row (P12-TSK-021): what it was issued to do.
+        return new AuthenticatedMerchant(key.merchantId(), key.id(), key.scopes());
     }
 
     /**

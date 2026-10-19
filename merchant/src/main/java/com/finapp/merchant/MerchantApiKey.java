@@ -4,8 +4,10 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.Sensitive;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * A merchant's API credential (`P6-TSK-002`, ADR-0052): the platform's fourth authentication
@@ -35,6 +37,7 @@ public final class MerchantApiKey {
     private final Instant issuedAt;
     private final String issuedBy;
     private final Instant revokedAt;
+    private final Set<MerchantApiKeyScope> scopes;
 
     private MerchantApiKey(
             MerchantApiKeyId id,
@@ -44,7 +47,8 @@ public final class MerchantApiKey {
             MerchantApiKeyStatus status,
             Instant issuedAt,
             String issuedBy,
-            Instant revokedAt) {
+            Instant revokedAt,
+            Set<MerchantApiKeyScope> scopes) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.merchantId = Objects.requireNonNull(merchantId, "merchantId must not be null");
         Objects.requireNonNull(secretHash, "secretHash must not be null");
@@ -55,6 +59,10 @@ public final class MerchantApiKey {
         this.issuedAt = Objects.requireNonNull(issuedAt, "issuedAt must not be null");
         this.issuedBy = requireText(issuedBy, "issuedBy");
         this.revokedAt = revokedAt;
+        Objects.requireNonNull(scopes, "scopes must not be null");
+        this.scopes = scopes.isEmpty()
+                ? Set.of()
+                : java.util.Collections.unmodifiableSet(EnumSet.copyOf(scopes));
         // The coherence the schema also holds: a revocation instant exists exactly when the
         // key is revoked, and never precedes issuance.
         if ((status == MerchantApiKeyStatus.REVOKED) != (revokedAt != null)) {
@@ -66,13 +74,24 @@ public final class MerchantApiKey {
         }
     }
 
-    /** A freshly issued key. Born {@code ACTIVE}; the secret is the caller's to hand over once. */
+    /** A freshly issued key with no scope. Born {@code ACTIVE}; the secret is the caller's to hand over once. */
     public static MerchantApiKey issue(
             IdGenerator ids,
             Clock clock,
             MerchantId merchantId,
             MerchantApiKeySecret secret,
             String issuedBy) {
+        return issue(ids, clock, merchantId, secret, issuedBy, Set.of());
+    }
+
+    /** A freshly issued key carrying {@code scopes} (`P12-TSK-021`) - chosen once, here, and frozen thereafter. */
+    public static MerchantApiKey issue(
+            IdGenerator ids,
+            Clock clock,
+            MerchantId merchantId,
+            MerchantApiKeySecret secret,
+            String issuedBy,
+            Set<MerchantApiKeyScope> scopes) {
         Objects.requireNonNull(secret, "secret must not be null");
         return new MerchantApiKey(
                 MerchantApiKeyId.next(ids),
@@ -82,7 +101,8 @@ public final class MerchantApiKey {
                 MerchantApiKeyStatus.ACTIVE,
                 Instant.now(clock),
                 issuedBy,
-                null);
+                null,
+                scopes);
     }
 
     /** Reconstitutes from storage. Applies the coherence; a corrupt row is refused at read. */
@@ -95,8 +115,22 @@ public final class MerchantApiKey {
             Instant issuedAt,
             String issuedBy,
             Instant revokedAt) {
+        return rehydrate(id, merchantId, secretHash, algorithm, status, issuedAt, issuedBy, revokedAt, Set.of());
+    }
+
+    /** Reconstitutes from storage with the scopes the key was issued with (`P12-TSK-021`). */
+    public static MerchantApiKey rehydrate(
+            MerchantApiKeyId id,
+            MerchantId merchantId,
+            Sensitive<String> secretHash,
+            String algorithm,
+            MerchantApiKeyStatus status,
+            Instant issuedAt,
+            String issuedBy,
+            Instant revokedAt,
+            Set<MerchantApiKeyScope> scopes) {
         return new MerchantApiKey(
-                id, merchantId, secretHash, algorithm, status, issuedAt, issuedBy, revokedAt);
+                id, merchantId, secretHash, algorithm, status, issuedAt, issuedBy, revokedAt, scopes);
     }
 
     /** {@code ACTIVE → REVOKED}, terminal. A revoked key is never reinstated. */
@@ -118,7 +152,8 @@ public final class MerchantApiKey {
                 MerchantApiKeyStatus.REVOKED,
                 issuedAt,
                 issuedBy,
-                now.isBefore(issuedAt) ? issuedAt : now);
+                now.isBefore(issuedAt) ? issuedAt : now,
+                scopes);
     }
 
     /**
@@ -174,6 +209,11 @@ public final class MerchantApiKey {
 
     public Optional<Instant> revokedAt() {
         return Optional.ofNullable(revokedAt);
+    }
+
+    /** The scopes the key was issued with - none for a key issued before `P12-TSK-021` (fails closed). */
+    public Set<MerchantApiKeyScope> scopes() {
+        return scopes;
     }
 
     /**

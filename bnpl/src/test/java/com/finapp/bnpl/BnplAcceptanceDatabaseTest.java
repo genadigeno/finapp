@@ -406,12 +406,23 @@ class BnplAcceptanceDatabaseTest {
         public MerchantFeeSplit pinFee(Connection unitOfWork, UUID merchantRef, BnplProduct product,
                 BnplPurchaseId purchaseId, Money gross) {
             Money fee = Money.ofPersisted(gross.minorUnits() * 4 / 100, EUR, gross.scale());
-            return new MerchantFeeSplit(gross, fee, gross.minus(fee), UUID.randomUUID());
+            MerchantFeeSplit split = new MerchantFeeSplit(gross, fee, gross.minus(fee), UUID.randomUUID());
+            pins.put(purchaseId.value(), split);
+            return split;
         }
 
+        /** Each purchase's pinned split - the refund's fee arithmetic reads it (`P12-TSK-021`). */
+        final java.util.Map<UUID, MerchantFeeSplit> pins = new java.util.concurrent.ConcurrentHashMap<>();
+
+        /** The reference arithmetic over the pin - merchant's {@code FeeCalculation.returnedFee} by proof (`P12-TSK-009`). */
         @Override
         public Money returnedFee(Connection unitOfWork, BnplPurchaseId purchaseId, Money refundedBefore, Money refunded) {
-            throw new UnsupportedOperationException();
+            MerchantFeeSplit pinned = pins.get(purchaseId.value());
+            if (pinned == null) {
+                throw new NotPinned();
+            }
+            return com.finapp.bnpl.testing.ReferenceMerchantFeeReturn.halfEven(pinned.gross(), pinned.fee())
+                    .returnedFee(refundedBefore, refunded);
         }
 
         @Override
@@ -496,6 +507,11 @@ class BnplAcceptanceDatabaseTest {
         @Override
         public void appendPurchaseEvent(Connection unitOfWork, HistoryRow row) {
             delegate.appendPurchaseEvent(unitOfWork, row);
+        }
+
+        @Override
+        public Optional<BnplPurchaseStatus> purchaseStatus(Connection unitOfWork, BnplPurchaseId purchase) {
+            return delegate.purchaseStatus(unitOfWork, purchase);
         }
 
         @Override

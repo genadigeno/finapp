@@ -1257,6 +1257,11 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.CapitalUnavailable` | 422 | The BNPL purchase cannot be funded now. |
 | `bnpl.InsufficientFunds` | 422 | The wallet cannot fund the payment. |
 | `bnpl.ObligationClosed` | 409 | The BNPL agreement is closed. |
+| `bnpl.RefundExceedsPurchase` | 422 | The refund exceeds what remains of the BNPL purchase. |
+| `bnpl.PurchaseFullyRefunded` | 409 | The BNPL purchase is already fully refunded. |
+| `bnpl.RefundScopeRequired` | 403 | This API key may not refund BNPL purchases; a key with the refund scope may. |
+| `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted now; nothing was written. |
+| `bnpl.SelfDealingRefused` | 403 | An employee never refunds a BNPL purchase of their own party; nothing was done. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its
@@ -1284,6 +1289,26 @@ currency and minor units, `403 identity.AssuranceRequired` an MFA-enrolled custo
 another party's agreement exactly as an unknown or malformed id. No standing check - a suspended customer may still
 repay. Every refusal posts nothing and rolls the key back; a refused conservation (the rows not explaining the ledger) is
 the platform's `500`, counted `finapp.bnpl.allocation.anomaly`.
+
+The refund doors (`P12-TSK-021`, ADR-0105 decision 9; `POST /v1/merchant/bnpl-purchases/{id}/refunds` over the
+merchant's own API key carrying the `BNPL_REFUND` scope, keyed `bnpl.refund:MERCHANT:<merchant>`, and the operator's door
+beside it, `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, keyed `bnpl.refund:<actor type>:<id> (CUSTOMER-typed for an operator session today)`,
+each `201`): `RefundExceedsPurchase` a refund above what remains of the purchase (`R > G - Σ refunds`, `INV-BNPL-07`)
+and `PurchaseFullyRefunded` any refund of a `FULLY_REFUNDED` purchase - both judged under the purchase's row lock, nothing
+written; `RefundScopeRequired` a merchant key not issued with the scope (every key issued before `merchant V011` - fails
+closed), before anything is read, recorded `FAILED` (`bnpl.RefundScopeRefused`); `RefundNotPostable` the customer's wallet
+cannot take a refund of an agreement already `CLOSED` (a closed agreement holds no credit balance - the merchant retries
+later under the same key) or the merchant's payable cannot be debited; `SelfDealingRefused` an operator refunding a
+purchase of their own party, recorded `FAILED`; `ReasonRequired` a reason missing, past 1,000 characters or holding a card
+or account number; `NotFound` another merchant's purchase exactly as an unknown or malformed id (`INV-MER-01`); the
+platform's `409 api.Conflict` the key reused for another purchase or amount (the arbiter `UNIQUE (merchant_id,
+requested_by, refund_key)` behind a lapsed claim) or a pay-in-N agreement still being caught up on its accrual after the
+door's T-acc rounds, `422 api.ValidationFailed` an amount not positive or not at the purchase's currency and minor units.
+A refund is never refused for a short payable: after a payout it may leave the payable below zero by at most the
+purchase's financed net (B7, `INV-MER-07` as amended). Every refusal writes nothing and rolls the key back; a refused
+conservation is the platform's `500`, counted `finapp.bnpl.allocation.anomaly`. The operator's API-key issuance
+(`POST /v1/operator/merchants/{id}/api-keys`) takes the optional `scope` query parameter (`BNPL_REFUND`); an unknown scope
+is `422 api.ValidationFailed`.
 
 The merchant's purchase read (`P12-TSK-014`; `GET /v1/merchant/bnpl-purchases/{id}`, the merchant's own key): `NotFound`
 answers another merchant's purchase exactly as an unknown or malformed id - one body, never `403`, so existence is not

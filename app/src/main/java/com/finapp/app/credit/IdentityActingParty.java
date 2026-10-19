@@ -20,7 +20,8 @@ import lombok.RequiredArgsConstructor;
  * (`P11-TSK-020` - a servicing agent never acts on their own party's loan): one read of whose party a person is, for both.
  */
 @RequiredArgsConstructor
-public final class IdentityActingParty implements CreditActingParty<Connection>, com.finapp.lending.LoanActingParty {
+public final class IdentityActingParty
+        implements CreditActingParty<Connection>, com.finapp.lending.LoanActingParty, com.finapp.bnpl.BnplActingParty {
 
     @NonNull private final IdentityStore<Connection> identities;
 

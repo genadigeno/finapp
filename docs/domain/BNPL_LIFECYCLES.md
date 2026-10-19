@@ -423,6 +423,11 @@ six balances from journal lines in one `REPEATABLE READ` snapshot.)*
 
 *(The closure as built by `P12-TSK-018`, `bnpl V010`: `ACTIVE -> CLOSED (REPAID)` by `BnplClosures`, called by the customer's repayment (T-rep) and by the servicing step after its credit-balance applications (T-svc's closure slot) - under B4: the five receivables zero (ledger), every instalment of the latest schedule billed, and pay-in-N no elapsed date with principal outstanding at its end unaccrued; then the credit balance refunded to the customer's existing wallet under (P) (`DR BNPL_CREDIT_BALANCE / CR CUSTOMER_WALLET`, `bnpl.closure-refund:<obligation>`), the `bnpl_obligation_closure` row (`UNIQUE (obligation_id)`; its trigger re-taking B4 and holding every billed component paid in full; a deferred check tying it to `CLOSED` for the same reason), the edge (admitted only beside that row, `closed_at` the database's) with its history row and `bnpl.BnplAgreementClosed`. A wallet that cannot be credited leaves the obligation open with its credit balance, closed by a later step. Out of `CLOSED` nothing - not even the permit; the sweep never claims it again.)*
 
+*(The refund's closures as built by `P12-TSK-021`: `BnplClosures` names the reason by the purchase and the act -
+`REFUNDED` whenever the purchase is `FULLY_REFUNDED`, `REFUNDED_PARTIALLY_REPAID` in a partial refund's own transaction,
+`REPAID` otherwise - with `bnpl_obligation_closure.refund_id`; every instalment billed judged by due date, since a refund's
+schedule version carries the billed instalments as new rows. §8's "closure reasons" point settled so.)*
+
 ### 4.8 Merchant settlement, as BNPL sees it — no bnpl machine — `P12-TSK-016`, `-021`
 
 BNPL owns no settlement machine and never pays a merchant. The merchant leg walks existing machines:
@@ -464,6 +469,19 @@ gross; a refund on a `FULLY_REFUNDED` purchase. *(The split is `REFUND_ALLOCATIO
 over the `RefundPosition` derived under B5 then B4, the fee merchant's arithmetic bound in as a parameter; it refuses a
 refund in another currency, not positive or above `G − Σ refunds` with typed reasons and writes nothing - this
 machine's rows and entry are `-021`'s.)*
+
+*(As built by `P12-TSK-021`, `bnpl V012` and `BnplRefunds` - T-ref, one body for both doors: the merchant's (`POST
+/v1/merchant/bnpl-purchases/{id}/refunds`, a key issued with the `BNPL_REFUND` scope, keyed `bnpl.refund:MERCHANT:<merchant>`;
+a key without it `403 bnpl.RefundScopeRequired`, recorded `FAILED`) and the operator's beside it (`POST
+/v1/operator/bnpl-purchases/{id}/refunds`, `PAYMENT_REFUND`, keyed `bnpl.refund:<actor type>:<id> (CUSTOMER-typed for an operator session today)`; self-dealing refused, recorded
+`FAILED`). The reason screened; B5 merchant-scoped; the key's refund converges (`UNIQUE (merchant_id, requested_by,
+refund_key)`); the bound; B4; pay-in-N caught up (the door runs T-acc in its own transaction first); the position from the
+rows; the split; schedule and agreement v n+1 - pay-in-4 shortened from the end, pay-in-N `recalculateAtInstalment`, every
+billed instalment kept; (P) the payable and the wallet in `UUID.compareTo` order; L8; F5 + F5a; the rows; the edge; the
+event and the audit record; the closure. The refusals as listed, plus `409 bnpl.RefundNotPostable` (a closed agreement's
+wallet that cannot take the refund). Not yet: `409 bnpl.DisputeOpen` (`-023`), the late fee's release (`-020`). §8's
+"operator refund door" and "a credit balance on a CLOSED obligation" points settled: the door above; a `CLOSED`
+obligation's refund needs a postable wallet, else it is refused.)*
 
 ### 4.10 BNPL dispute (`bnpl.bnpl_dispute`) — `P12-TSK-023`
 
@@ -695,9 +713,11 @@ until its task's design settles it; none is a decision the transition took.
   hold is read from the dispute row's state and history, not a once-per-date condition row. (e) A dispute on a
   `CLOSED` obligation is admitted (the purchase is not terminal) with a vacuous hold. (f) No event announces
   the merchant's response and no audit act the withdrawal.
-- **The operator refund door** (`-021`): A19 and OQ-9 place one "beside" the merchant's; §9 has no route.
+- **The operator refund door** (`-021`): A19 and OQ-9 place one "beside" the merchant's; §9 has no route. *Settled by
+  `P12-TSK-021`: `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`.*
 - **Late fees on a partly cancelled instalment** (`-021`): OQ-14 releases fees on "an instalment later
-  cancelled"; here only when the refund cancels the instalment's whole unpaid principal.
+  cancelled"; here only when the refund cancels the instalment's whole unpaid principal. *`P12-TSK-021` records the
+  wholeness on each adjustment (`whole`); the release itself is `-020`'s, which lands after it.*
 - **Waivers** (`-024`): F7 posts fee waivers only; no PN interest waiver is planned (lending's rule 9 has no
   BNPL counterpart).
 - **Repayment events** (`-018`): §10 has no repayment event — a repayment that settles no instalment

@@ -250,6 +250,10 @@ public final class BnplAccruals {
         if (!schedule.start().equals(start)) {
             throw new IllegalStateException("a pay-in-N schedule starts at its purchase's business date (ADR-0102)");
         }
+        if (schedule.instalments().isEmpty()) {
+            // A refund's version that left nothing to bill and nothing billed (`P12-TSK-021`): no period, no accrual span.
+            return List.of();
+        }
         List<AccrualPeriod> periods = periodsOf(schedule);
         LocalDate spanEnd = periods.get(periods.size() - 1).endExclusive();
         LocalDate lastElapsed = today.minusDays(1);

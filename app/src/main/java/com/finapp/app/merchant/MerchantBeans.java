@@ -53,7 +53,8 @@ public class MerchantBeans {
     MerchantTransactionReport merchantTransactionReport(
             com.finapp.ledger.StatementDerivation<Connection> statementDerivation,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.bnpl.BnplPurchaseReads bnplPurchaseReads) {
         return new MerchantTransactionReport(
                 statementDerivation,
                 new com.finapp.payments.JdbcPaymentAttemptStore(),
@@ -61,7 +62,10 @@ public class MerchantBeans {
                 new com.finapp.checkout.JdbcCheckoutSessionStore(),
                 new com.finapp.checkout.JdbcOrderStore(),
                 new TransactionTemplate(transactionManager),
-                dataSource);
+                dataSource,
+                // The BNPL refund's second rank (P12-TSK-021): bnpl's tenant-scoped read.
+                (uow, merchant, refund) -> bnplPurchaseReads.refundAtMerchant(uow, merchant, refund)
+                        .map(com.finapp.bnpl.BnplPurchaseId::value));
     }
 
     @Bean

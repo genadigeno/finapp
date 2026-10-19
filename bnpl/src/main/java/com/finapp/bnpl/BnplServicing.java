@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -196,16 +195,20 @@ public final class BnplServicing {
                 appliedAtBilling, caughtUp, false, collected.attempts());
     }
 
-    /** The unbilled instalments of {@code schedule} due by {@code today}, oldest first - none after the first not due. */
+    /**
+     * The unbilled instalments of {@code schedule} due by {@code today}, oldest first - none after the first not due. An
+     * instalment is billed when a billing is dated its due date (`P12-TSK-021`: one billing per due date, and a refund's
+     * schedule version carries its billed instalments as new rows beside the billings that name the earlier version's).
+     */
     static List<BnplPurchaseStore.StoredInstalment> dueUnbilled(BnplPurchaseStore.StoredSchedule schedule,
             List<BnplPurchaseStore.BilledItem> billed, LocalDate today) {
-        Set<UUID> billedInstalments = new HashSet<>();
+        Set<LocalDate> billedDates = new HashSet<>();
         for (BnplPurchaseStore.BilledItem item : billed) {
-            billedInstalments.add(item.instalment());
+            billedDates.add(item.dueDate());
         }
         List<BnplPurchaseStore.StoredInstalment> due = new ArrayList<>();
         for (BnplPurchaseStore.StoredInstalment instalment : schedule.instalments()) {
-            if (billedInstalments.contains(instalment.id())) {
+            if (billedDates.contains(instalment.dueDate())) {
                 continue;
             }
             if (instalment.dueDate().isAfter(today)) {

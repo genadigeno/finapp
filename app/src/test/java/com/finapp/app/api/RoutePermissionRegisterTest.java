@@ -306,6 +306,9 @@ class RoutePermissionRegisterTest {
                     entry("PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}",
                             PermissionName.FEE_ADMINISTER),
                     entry("GET /v1/operator/bnpl/terms", PermissionName.BNPL_ADMINISTER),
+                    // The operator's BNPL refund beside the merchant's (P12-TSK-021, ADR-0105 decision 9): the payments
+                    // refund's one permission, the money-operating population - the ADR's default.
+                    entry("POST /v1/operator/bnpl-purchases/{id}/refunds", PermissionName.PAYMENT_REFUND),
                     entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */

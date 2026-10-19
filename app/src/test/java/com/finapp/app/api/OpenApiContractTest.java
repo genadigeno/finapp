@@ -392,6 +392,11 @@ class OpenApiContractTest {
                         // version, the net and the financing entry; nothing of the customer's credit; another merchant's
                         // purchase the uniform 404.
                         ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-purchases/{id}",
+                        // P12-TSK-021: the merchant's BNPL refund over its own key carrying the BNPL_REFUND scope (keyed,
+                        // 201 with the refund's purchase-level figures; another merchant's purchase the uniform 404) and
+                        // the operator's door beside it (PAYMENT_REFUND, keyed, reasoned, audited).
+                        ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-purchases/{id}/refunds",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-purchases/{id}/refunds",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

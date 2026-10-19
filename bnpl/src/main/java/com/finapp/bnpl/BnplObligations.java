@@ -95,19 +95,43 @@ public final class BnplObligations {
                 .map(owned -> new Read(owned, balancesOf(unitOfWork, owned)));
     }
 
-    /** {@code party}'s agreement {@code id}'s schedule version 1, each billed instalment with what it billed and was paid. */
+    /**
+     * {@code party}'s agreement {@code id}'s schedule - its latest version (`P12-TSK-021`: a refund that cancels or shortens
+     * an unbilled instalment makes version n+1) - each billed instalment with what it billed and was paid (settled by a
+     * refund's cancellation included).
+     */
     public Optional<Schedule> schedule(Connection unitOfWork, BnplAgreementId id, UUID party) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         return store.agreementOwnedBy(unitOfWork, Objects.requireNonNull(id, "id"), Objects.requireNonNull(party, "party"))
-                .map(owned -> new Schedule(owned, store.schedule(unitOfWork, owned.obligation().id(), 1)
-                        .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1")),
-                        billedByInstalment(store.billedItems(unitOfWork, owned.obligation().id()))));
+                .map(owned -> {
+                    BnplPurchaseStore.StoredSchedule latest = store.schedule(unitOfWork, owned.obligation().id(), 1)
+                            .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1"));
+                    for (Optional<BnplPurchaseStore.StoredSchedule> next = store.schedule(unitOfWork,
+                            owned.obligation().id(), 2); next.isPresent(); next = store.schedule(unitOfWork,
+                            owned.obligation().id(), latest.version() + 1)) {
+                        latest = next.get();
+                    }
+                    return new Schedule(owned, latest,
+                            billedByInstalment(latest, store.billedItems(unitOfWork, owned.obligation().id())));
+                });
     }
 
-    private static Map<UUID, BnplPurchaseStore.BilledItem> billedByInstalment(List<BnplPurchaseStore.BilledItem> items) {
-        Map<UUID, BnplPurchaseStore.BilledItem> byInstalment = new java.util.LinkedHashMap<>();
+    /**
+     * Each billed item under the schedule's own instalment with its due date - one billing per due date, and a refund's
+     * version carries its billed instalments as new rows beside the billings that name the earlier version's.
+     */
+    private static Map<UUID, BnplPurchaseStore.BilledItem> billedByInstalment(BnplPurchaseStore.StoredSchedule schedule,
+            List<BnplPurchaseStore.BilledItem> items) {
+        Map<java.time.LocalDate, BnplPurchaseStore.BilledItem> byDate = new java.util.LinkedHashMap<>();
         for (BnplPurchaseStore.BilledItem item : items) {
-            byInstalment.put(item.instalment(), item);
+            byDate.put(item.dueDate(), item);
+        }
+        Map<UUID, BnplPurchaseStore.BilledItem> byInstalment = new java.util.LinkedHashMap<>();
+        for (BnplPurchaseStore.StoredInstalment instalment : schedule.instalments()) {
+            BnplPurchaseStore.BilledItem item = byDate.get(instalment.dueDate());
+            if (item != null) {
+                byInstalment.put(instalment.id(), item);
+            }
         }
         return byInstalment;
     }

@@ -103,10 +103,11 @@ public class BnplPurchaseBeans {
         return new BnplObligations(bnplPurchaseStore, bnplBook);
     }
 
-    /** The merchant's reads of its BNPL purchases (`P12-TSK-014`). */
+    /** The merchant's reads of its BNPL purchases (`P12-TSK-014`) - with their refunds (`P12-TSK-021`). */
     @Bean
-    BnplPurchaseReads bnplPurchaseReads(BnplPurchaseStore bnplPurchaseStore) {
-        return new BnplPurchaseReads(bnplPurchaseStore);
+    BnplPurchaseReads bnplPurchaseReads(BnplPurchaseStore bnplPurchaseStore,
+            com.finapp.bnpl.BnplRefundStore bnplRefundStore) {
+        return new BnplPurchaseReads(bnplPurchaseStore, bnplRefundStore);
     }
 
     @Bean

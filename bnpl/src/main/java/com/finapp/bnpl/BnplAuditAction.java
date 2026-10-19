@@ -105,6 +105,41 @@ public enum BnplAuditAction implements AuditableAction {
                     + " the accepting customer as actor (the act that commits the financing). Its target the purchase; the"
                     + " summary names the purchase, the financing entry and the fee schedule version - never an amount or"
                     + " the merchant's figures.",
+            false),
+
+    /** A merchant refund of a BNPL purchase applied - at the merchant's door or the operator's (`P12-TSK-021`). */
+    REFUND_APPLIED(
+            "bnpl.RefundApplied",
+            "A BNPL purchase was refunded (owner decisions B3 and B7, ADR-0105) - by its merchant over an API key carrying"
+                    + " the BNPL refund scope (POST /v1/merchant/bnpl-purchases/{id}/refunds, keyed"
+                    + " bnpl.refund:MERCHANT:<merchant>) or by an operator holding PAYMENT_REFUND"
+                    + " (POST /v1/operator/bnpl-purchases/{id}/refunds, keyed bnpl.refund:<actor type>:<id> - CUSTOMER-typed"
+                    + " for an operator session today), with a reason:"
+                    + " under the purchase's lock the refund bounded by what remains of it (INV-BNPL-07), under the"
+                    + " obligation's the unpaid instalments cancelled latest first and the excess returned to the"
+                    + " customer's wallet (or held as credit), the merchant fee returned by the cumulative method and the"
+                    + " merchant's payable debited the refund's net - below zero after a payout by at most the purchase's"
+                    + " financed net (INV-MER-07 as amended) - in one entry (bnpl.refund:<refund>), the schedule and"
+                    + " agreement versions it made and any closure in the same transaction. Its target the refund; the"
+                    + " summary names the purchase, the door and the merchant's key id - never an amount (INV-AUD-02).",
+            true),
+
+    /** A merchant key without the BNPL refund scope tried to refund (`P12-TSK-021`). */
+    REFUND_SCOPE_REFUSED(
+            "bnpl.RefundScopeRefused",
+            "A merchant's API key that was not issued with the BNPL_REFUND scope tried to refund a BNPL purchase and was"
+                    + " refused 403 bnpl.RefundScopeRequired before anything was locked or written; recorded FAILED in a"
+                    + " transaction of its own so the attempt survives. Its target the purchase named in the path (not"
+                    + " confirmed to be the merchant's - nothing was read); the summary names the key id.",
+            false),
+
+    /** An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`). */
+    SELF_DEALING_REFUSED(
+            "bnpl.SelfDealingRefused",
+            "An operator tried to refund, at the operator's BNPL refund door, a purchase whose customer is the operator's"
+                    + " own party, and was refused 403 bnpl.SelfDealingRefused with nothing written; recorded FAILED in a"
+                    + " transaction of its own after the act rolled back. Its target the purchase; the summary names it"
+                    + " and the act - never an amount.",
             false);
 
     private final String code;
