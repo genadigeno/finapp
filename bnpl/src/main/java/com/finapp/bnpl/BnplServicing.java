@@ -58,7 +58,10 @@ import lombok.RequiredArgsConstructor;
  *       the obligation's next catch-up application (F3a), so no arrears the customer's own held money covers is collected,
  *       aged or charged a fee; each application value-dated {@code max(today, floor)};
  *   <li>the steps later tasks add, in this fixed order after the application, under the same lock: collection
- *       (`P12-TSK-019`), closure (`-018`), condition and late fee (`-020`);
+ *       (`P12-TSK-019`), closure (`-018`), condition and late fee (`-020`); <strong>the closure is built by
+ *       `P12-TSK-018`</strong> ({@link BnplClosures}): settled - every receivable zero, every instalment billed, pay-in-N
+ *       every elapsed date with principal outstanding accrued - the credit balance refunded to the wallet under (P) and
+ *       {@code CLOSED (REPAID)}; a closed obligation's permit is not re-stamped (nothing services it again);
  *   <li>the permit: the start of the next business date in the pinned zone, stamped by the database.
  * </ol>
  *
@@ -80,6 +83,7 @@ public final class BnplServicing {
     @NonNull private final BnplPurchaseStore purchases;
     @NonNull private final BnplTermsStore terms;
     @NonNull private final BnplBook book;
+    @NonNull private final BnplClosures closures;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -134,6 +138,7 @@ public final class BnplServicing {
         int billed = 0;
         int appliedAtBilling = 0;
         boolean caughtUp;
+        boolean closed;
         Correlation flow = Correlation.startingWith(obligation.correlation())
                 .causing(CausationId.of(obligation.correlation().value()));
         try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
@@ -155,6 +160,18 @@ public final class BnplServicing {
             // What is held settles what is already due (the Phase 11 gate's R2) - after billing, before the collection
             // (-019), the closure (-018), the condition and the late fee (-020), which run after it under this lock.
             caughtUp = applications.catchUp(unitOfWork, context).isPresent();
+            // (-019's collection joins here, before the closure.) The closure (`P12-TSK-018`): an obligation whose last
+            // receivable a billing's or a catch-up's application brought to zero - and, pay-in-N, every elapsed date with
+            // principal outstanding accrued - closes in this step: the credit balance refunded under (P) the wallet,
+            // CLOSED (REPAID). The system actor is the sweep's scope.
+            closed = closures.closeIfSettled(unitOfWork, new BnplClosures.Closing(locked, accounts, today,
+                    Optional.empty(), Optional.empty()), com.finapp.platform.security.SecurityContext::require,
+                    obligation.correlation()).isPresent();
+        }
+        if (closed) {
+            // A closed obligation is never serviced again: its permit stays where the claim put it, and nothing moves it.
+            return new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(obligation.product()), billed,
+                    appliedAtBilling, caughtUp, true);
         }
         if (!store.restamp(unitOfWork, id, today.plusDays(1))) {
             throw new IllegalStateException("the locked obligation left servicing under its own row lock");

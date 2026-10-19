@@ -466,6 +466,12 @@ class BnplAcceptanceDatabaseTest {
         public Money balanceOf(Connection unitOfWork, LedgerAccount account) {
             return Money.zero(EUR);
         }
+
+        @Override
+        public List<com.finapp.ledger.PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
+                java.util.Set<LedgerAccountId> accounts, java.time.LocalDate valueDateThrough) {
+            return List.of();
+        }
     }
 
     /** The JDBC store, one write tampered with by the case. */

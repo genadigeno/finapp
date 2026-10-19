@@ -1,6 +1,7 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.bnpl.BnplBook;
+import com.finapp.bnpl.BnplClosures;
 import com.finapp.bnpl.BnplPurchaseStore;
 import com.finapp.bnpl.BnplServicing;
 import com.finapp.bnpl.BnplServicingStore;
@@ -31,18 +32,19 @@ public class BnplServicingBeans {
         return new JdbcBnplServicingStore();
     }
 
-    /** T-svc - one obligation's servicing step: the accrual gate, billing, the applications, the permit. */
+    /** T-svc - one obligation's servicing step: the accrual gate, billing, the applications, the closure, the permit. */
     @Bean
     BnplServicing bnplServicing(
             BnplServicingStore bnplServicingStore,
             BnplPurchaseStore bnplPurchaseStore,
             BnplTermsStore bnplTermsStore,
             BnplBook bnplBook,
+            BnplClosures bnplClosures,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock) {
-        return new BnplServicing(bnplServicingStore, bnplPurchaseStore, bnplTermsStore, bnplBook, outboxWriter,
-                idGenerator, clock);
+        return new BnplServicing(bnplServicingStore, bnplPurchaseStore, bnplTermsStore, bnplBook, bnplClosures,
+                outboxWriter, idGenerator, clock);
     }
 
     /** {@code finapp.bnpl.billing{product, outcome}} and {@code finapp.bnpl.servicing{step, outcome}} - every series eager. */

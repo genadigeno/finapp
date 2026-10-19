@@ -6,11 +6,12 @@ import java.util.Optional;
 /**
  * What one servicing step did (`P12-TSK-015`) - for the meters; never a figure, a date or a party: its kind, the obligation's
  * product, the instalments it {@code billed} (F2), the credit-balance applications born at them ({@code appliedAtBilling},
- * F3a) and whether a catch-up application settled what was already due ({@code caughtUp}, the Phase 11 gate's R2). The
- * steps later tasks add (collection, closure, condition, late fee) extend it.
+ * F3a), whether a catch-up application settled what was already due ({@code caughtUp}, the Phase 11 gate's R2) and whether
+ * the step's closure closed the obligation ({@code closed}, `P12-TSK-018`). The steps later tasks add (collection,
+ * condition, late fee) extend it.
  */
 public record ServicingOutcome(Kind kind, Optional<BnplProduct> product, int billed, int appliedAtBilling,
-        boolean caughtUp) {
+        boolean caughtUp, boolean closed) {
 
     public ServicingOutcome {
         Objects.requireNonNull(kind, "kind must not be null");
@@ -18,12 +19,17 @@ public record ServicingOutcome(Kind kind, Optional<BnplProduct> product, int bil
         if (billed < 0 || appliedAtBilling < 0 || appliedAtBilling > billed) {
             throw new IllegalArgumentException("counts are not negative, and at most one application per billing");
         }
-        if (kind != Kind.SERVICED && (billed > 0 || caughtUp)) {
+        if (kind != Kind.SERVICED && (billed > 0 || caughtUp || closed)) {
             throw new IllegalArgumentException("only a serviced step writes anything");
         }
         if ((kind == Kind.NOT_SERVICED) == product.isPresent()) {
             throw new IllegalArgumentException("a step names its obligation's product exactly when it found one in servicing");
         }
+    }
+
+    /** A step that closed nothing - `P12-TSK-015`'s shape. */
+    public ServicingOutcome(Kind kind, Optional<BnplProduct> product, int billed, int appliedAtBilling, boolean caughtUp) {
+        this(kind, product, billed, appliedAtBilling, caughtUp, false);
     }
 
     static ServicingOutcome notServiced() {

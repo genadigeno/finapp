@@ -20581,7 +20581,7 @@ after everything.
   The "caught up" check `-015` calls is `BnplServicing#accruedThroughTheEve` (the latest accrual on or after the eve) - this
   task refines it for dates with no principal outstanding (which write no row) and moves it to `BnplAccruals`.
 
-**P12-TSK-018 — Customer repayment from the wallet and closure** — `PLANNED`
+**P12-TSK-018 — Customer repayment from the wallet and closure** — `IN_PROGRESS` (wave C, beside `-017`; its one dependency `-015` `COMPLETE`)
 - **Objective**: the customer repays any amount from their wallet; it is allocated exactly by the pinned
   order, once, and the obligation closes exactly when every receivable is zero, every elapsed date accrued
   and any credit balance returned (B6: the wallet is the only source).
@@ -20669,6 +20669,39 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 by `-024`, recorded; F5 vacuous —
   wallet repayments are internal and final; F8: the subledger proof), `DOD-API`, `DOD-SEC`. **Risk**: High.
   **Cx**: M.
+- **Refined by `P12-TSK-018`'s design (2026-10-19), each with its reason:**
+  - **T-rep does not run T-acc first.** The backlog read "PN caught up (else T-acc first, `-017`)". The repayment is
+    value-dated `max(today, floor)` and the floor is the day after the latest accrual, so no accrued date's base moves; a
+    date not yet accrued later reads a base valued on or before it, which this repayment is not; the allocation pays only
+    billed items, which the accrual does not change. Only the closure needs the record caught up, and it judges that
+    itself - the next servicing step (T-acc first) closes an obligation the repayment settled over an unaccrued day.
+    Requiring T-acc in the customer's door would make it hostage to a sweep for no correctness gain. `-017` agrees (board).
+  - **The closure's accrual test is T-acc's own span**: no date from `max(purchase date, latest accrual + 1)` through
+    `min(eve, final due date - 1)` with principal outstanding at its end left unaccrued (`-017`: nothing accrues at or
+    after the latest schedule version's final due date). With every instalment billed this is implied for pay-in-N (the
+    last billing waits on every accrual of its period) - kept as the closure's own defence; on `-017`'s merge it becomes
+    `BnplAccruals.caughtUp`. `#anObligationIsNotClosedOverAnUnaccruedDay` therefore proves the predicate hermetically; the
+    database suite proves a pay-in-N obligation repaid after maturity closes at once (`#aPnRepaidAfterItsFinalDueDateCloses`).
+  - **`bnpl.billing_component_paid` is not replaced**: `bnpl V008` already counts the repayments' due-item lines beside
+    the applications'; V010 adds the repayment side's own deferred "no component over-paid" check over that definition.
+  - **The allocation row keeps `sequence` and `instalment_id`** (`-013`'s V006 columns) for the backlog's "ordinal" and
+    "billing": one billing per instalment (`UNIQUE (instalment_id)`), so the instalment names the billed item exactly;
+    no `NOT_DUE_PRINCIPAL` target admitted (the CHECK replaced), one line per (instalment, component), one credit line.
+  - **No `BnplRepayment` / `BnplRepaymentAllocation` types beside `-013`'s `BnplPurchaseStore.Repayment`/`Allocation`**:
+    one row type for every kind (kinds as its constants `CUSTOMER`, `AUTO_COLLECTION`, `PAYOFF`); a parallel domain type
+    would be a second copy of one fact. `BnplClosure`, `BnplClosures`, `AllocationAnomaly` (which `BnplReceivables.Anomaly`
+    now extends) are new.
+  - **`AUTO_COLLECTION` and `PAYOFF` are known to the kind `CHECK` but refused by the trigger** until `-019`/`-022`
+    replace it beside their own facts (the attempt, the payoff execution) - so no repayment of those kinds can exist
+    without its fact.
+  - **`422 bnpl.InsufficientFunds`'s title widened** from "the first instalment" to "the payment" (one code for both
+    wallet refusals; `ERROR_CONTRACT.md` and `openapi.json` follow); `409 bnpl.ObligationClosed` added.
+  - **T-svc's closure takes (P) after the step's own L8**: the step locks the obligation's six projection rows before
+    billing; those rows are written only by holders of B4, so waiting on the wallet while holding them closes no cycle,
+    and the wallet's own projection row is taken after (P). Recorded in `DISTRIBUTED_EXECUTION.md` §3.
+  - **Events**: `InstalmentPaid` per item a repayment settles (amount and fees/interest/principal paid by it) - not per
+    partly-paid item; `BnplAgreementClosed` on the obligation aggregate. No repayment-received event (none planned).
+  - **The repayment's view carries no `receivedAt`** (the receipt is the replay; the history is newest-first by it).
 
 **P12-TSK-019 — Auto-collection** — `PLANNED`
 - **Objective**: what is due is collected from the customer's wallet on the due date — once per instalment

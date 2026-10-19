@@ -72,6 +72,7 @@ final class BnplApplicationFakes {
     final Capital capital = new Capital();
     final Wallets wallets = new Wallets();
     final Servicing servicing = new Servicing();
+    final Repayments repayments = new Repayments();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -116,6 +117,7 @@ final class BnplApplicationFakes {
         Purchases.State purchaseState = purchases.state();
         Book.State bookState = book.state();
         Servicing.State servicingState = servicing.state();
+        Map<UUID, BnplClosure> closureState = repayments.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -147,6 +149,7 @@ final class BnplApplicationFakes {
             purchases.restore(purchaseState);
             book.restore(bookState);
             servicing.restore(servicingState);
+            repayments.restore(closureState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1045,7 +1048,46 @@ final class BnplApplicationFakes {
                     && row.kind().equals(repayment.kind()) && row.requestKey().equals(repayment.requestKey()))) {
                 throw new BnplStorageException("bnpl_repayment_request_unique: SQLSTATE 23505");
             }
+            // bnpl V010's trigger: an ACTIVE obligation; never before the floor nor after the later of today and it
+            BnplObligation obligation = obligations.get(repayment.obligation().value());
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE) {
+                throw new BnplStorageException("a BNPL repayment repays its ACTIVE obligation: P0001");
+            }
+            if (!repayment.kind().equals(Repayment.AT_PURCHASE)) {
+                java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, repayment.obligation());
+                java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+                java.time.LocalDate ceiling = today.isAfter(floor) ? today : floor;
+                if (repayment.valueDate().isBefore(floor) || repayment.valueDate().isAfter(ceiling)) {
+                    throw new BnplStorageException("a BNPL repayment is value-dated on or after its obligation's floor"
+                            + " and never after today: P0001");
+                }
+            }
+            for (Allocation line : repayment.allocations()) {
+                if (line.target().equals("NOT_DUE_PRINCIPAL")) {
+                    throw new BnplStorageException("bnpl_repayment_allocation_target: SQLSTATE 23514");
+                }
+                if (line.target().equals("DUE_ITEM") && !billings.containsKey(line.instalment().orElseThrow())) {
+                    throw new BnplStorageException("a BNPL repayment pays only a billed instalment: P0001");
+                }
+            }
             repayments.put(repayment.id(), repayment);
+            // At commit: no billed component paid beyond what it billed (every payer's).
+            for (Allocation line : repayment.allocations()) {
+                if (!line.target().equals("DUE_ITEM")) {
+                    continue;
+                }
+                BnplBilling billing = billings.get(line.instalment().orElseThrow());
+                Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                Money billed = switch (line.component().orElseThrow()) {
+                    case "INTEREST" -> billing.interest();
+                    case "PRINCIPAL" -> billing.principal();
+                    default -> zero;
+                };
+                if (paid(billing, line.component().orElseThrow(), zero).compareTo(billed) > 0) {
+                    repayments.remove(repayment.id());
+                    throw new BnplStorageException("no billed component is ever paid beyond what it billed: P0001");
+                }
+            }
         }
 
         @Override
@@ -1257,6 +1299,18 @@ final class BnplApplicationFakes {
             return balance(account.id(), account.normalBalance() == com.finapp.ledger.NormalBalance.DEBIT);
         }
 
+        @Override
+        public List<com.finapp.ledger.PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
+                Set<com.finapp.ledger.LedgerAccountId> rows, java.time.LocalDate valueDateThrough) {
+            return lines.stream()
+                    .filter(line -> rows.contains(line.account()) && !line.valueDate().isAfter(valueDateThrough))
+                    .sorted(java.util.Comparator.comparing(Line::valueDate))
+                    .map(line -> new com.finapp.ledger.PurposeBalances.DatedLine(com.finapp.ledger.JournalEntryId.of(IDS.next()),
+                            line.account(),
+                            line.valueDate(), line.direction(), line.amount()))
+                    .toList();
+        }
+
         /** DR - CR of {@code account}'s lines (debit-normal), or CR - DR; zero in EUR when it has none. */
         Money balance(com.finapp.ledger.LedgerAccountId account, boolean debitNormal) {
             Money balance = Money.ofMinorUnits(0, BnplTermsFixtures.EUR);
@@ -1463,6 +1517,112 @@ final class BnplApplicationFakes {
                 return false;
             }
             permits.put(obligation.value(), openDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant());
+            return true;
+        }
+    }
+
+    /**
+     * {@code bnpl V010}'s repayment and closure world, in memory (`P12-TSK-018`): the owner-scoped B4 (logged), the key's
+     * arbiter, the history, and the closure - {@code UNIQUE (obligation_id)}, its trigger's ranks (an {@code ACTIVE}
+     * obligation closing {@code REPAID}, every instalment of the schedule billed, every billed component paid in full) and
+     * the conditional edge.
+     */
+    final class Repayments implements BnplRepaymentStore {
+
+        final Map<UUID, BnplClosure> closures = new LinkedHashMap<>();
+        /** The owner-scoped locks taken, in order - for the lock-order assertions. */
+        final List<UUID> lockedAgreements = new ArrayList<>();
+
+        Map<UUID, BnplClosure> state() {
+            return new LinkedHashMap<>(closures);
+        }
+
+        void restore(Map<UUID, BnplClosure> state) {
+            reset(closures, state);
+        }
+
+        @Override
+        public Optional<BnplServicingStore.Locked> lockOwnedBy(Connection unitOfWork, BnplAgreementId agreement,
+                UUID party) {
+            step("B4");
+            Optional<BnplObligation> row = purchases.obligations.values().stream()
+                    .filter(candidate -> candidate.agreement().equals(agreement) && candidate.party().equals(party))
+                    .findFirst();
+            if (row.isEmpty()) {
+                return Optional.empty();
+            }
+            lockedAgreements.add(agreement.value());
+            BnplAgreement signed = purchases.agreements.get(agreement.value());
+            return Optional.of(new BnplServicingStore.Locked(row.get(), signed.id(), signed.version(),
+                    signed.termsVersionId(), signed.scheduleEngine(), signed.accrualEngine(), signed.allocationEngine(),
+                    "UTC"));
+        }
+
+        @Override
+        public Optional<BnplPurchaseStore.Repayment> findByKey(Connection unitOfWork, BnplObligationId obligation,
+                String kind, String requestKey) {
+            return purchases.repayments.values().stream().filter(row -> row.obligation().equals(obligation)
+                    && row.kind().equals(kind) && row.requestKey().equals(requestKey)).findFirst();
+        }
+
+        @Override
+        public List<BnplPurchaseStore.Repayment> ofObligation(Connection unitOfWork, BnplObligationId obligation,
+                int limit) {
+            List<BnplPurchaseStore.Repayment> rows = new ArrayList<>(purchases.repayments.values().stream()
+                    .filter(row -> row.obligation().equals(obligation)).toList());
+            java.util.Collections.reverse(rows);
+            return rows.stream().limit(limit).toList();
+        }
+
+        @Override
+        public Optional<BnplClosure> closureOf(Connection unitOfWork, BnplObligationId obligation) {
+            return Optional.ofNullable(closures.get(obligation.value()));
+        }
+
+        @Override
+        public void insertClosure(Connection unitOfWork, BnplClosure closure) {
+            step("closure insert");
+            if (closures.containsKey(closure.obligation().value())) {
+                throw new BnplStorageException("bnpl_obligation_closure_obligation_unique: SQLSTATE 23505");
+            }
+            BnplObligation obligation = purchases.obligations.get(closure.obligation().value());
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE
+                    || closure.reason() != BnplClosureReason.REPAID) {
+                throw new BnplStorageException("an ACTIVE BNPL obligation closes REPAID here: P0001");
+            }
+            BnplPurchaseStore.StoredSchedule schedule = purchases.schedules.get(closure.obligation().value());
+            if (schedule.instalments().stream().anyMatch(instalment -> !purchases.billings.containsKey(instalment.id()))) {
+                throw new BnplStorageException("a BNPL obligation closes only once every instalment is billed: P0001");
+            }
+            for (BnplBilling billing : purchases.billings.values()) {
+                if (!billing.obligation().equals(closure.obligation())) {
+                    continue;
+                }
+                Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                if (!purchases.paid(billing, "INTEREST", zero).equals(billing.interest())
+                        || !purchases.paid(billing, "PRINCIPAL", zero).equals(billing.principal())
+                        || !purchases.paid(billing, "FEES", zero).isZero()) {
+                    throw new BnplStorageException("a BNPL obligation closes only once every billed item is paid in"
+                            + " full: P0001");
+                }
+            }
+            closures.put(closure.obligation().value(), closure);
+        }
+
+        @Override
+        public boolean close(Connection unitOfWork, BnplObligationId obligation, BnplClosureReason reason) {
+            step("obligation CLOSED");
+            BnplObligation row = purchases.obligations.get(obligation.value());
+            if (row == null || row.status() != BnplObligationStatus.ACTIVE) {
+                return false;
+            }
+            BnplClosure closure = closures.get(obligation.value());
+            if (closure == null || closure.reason() != reason) {
+                throw new BnplStorageException("a BNPL obligation is CLOSED only beside its closure: P0001");
+            }
+            purchases.obligations.put(obligation.value(), new BnplObligation(row.id(), row.purchase(), row.agreement(),
+                    row.party(), row.decision(), row.product(), row.plan(), row.currency(), BnplObligationStatus.CLOSED,
+                    row.purchaseDate(), row.openedAt(), Optional.of(reason), row.correlation()));
             return true;
         }
     }

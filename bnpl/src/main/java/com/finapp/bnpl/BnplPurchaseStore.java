@@ -295,13 +295,26 @@ public interface BnplPurchaseStore {
         }
     }
 
-    /** A repayment, its allocation in order, and the entry F3 that took it from the wallet. */
+    /**
+     * A repayment, its allocation in order, and the entry F3 that took it from the wallet - pay-in-4's instalment 1 at
+     * purchase (`P12-TSK-013`), the customer's own (`P12-TSK-018`) and, later, a collection's and a payoff's. INSERT-only:
+     * {@code REVERSED} is derived from `P12-TSK-024`'s approved reversal, never a column. RESTRICTED-FINANCIAL.
+     */
     record Repayment(UUID id, BnplObligationId obligation, String kind, String requestKey, Money amount,
             BnplAgreementId agreement, int agreementVersion, String allocationEngine, JournalEntryId entry,
             LocalDate valueDate, List<Allocation> allocations) {
 
         /** Pay-in-4's instalment 1, collected inside the purchase. */
         public static final String AT_PURCHASE = "AT_PURCHASE";
+
+        /** The customer's own, from the wallet, keyed by their idempotency key (`P12-TSK-018`). */
+        public static final String CUSTOMER = "CUSTOMER";
+
+        /** An automatic collection on the due date, keyed by its attempt (`P12-TSK-019`). */
+        public static final String AUTO_COLLECTION = "AUTO_COLLECTION";
+
+        /** A payoff's one repayment (`P12-TSK-022`). */
+        public static final String PAYOFF = "PAYOFF";
 
         public Repayment {
             Objects.requireNonNull(id, "id must not be null");

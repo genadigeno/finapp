@@ -407,6 +407,8 @@ class BnplBillingDatabaseTest {
         final BnplApplicationFakes fakes = new BnplApplicationFakes();
         final SharedBook book = new SharedBook(fakes.book);
         final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book,
+                new BnplClosures(new JdbcBnplRepaymentStore(), SERVICING, PURCHASES, ports, book, new JdbcOutboxWriter(),
+                        IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
                 (uow, party) -> true, ports, ports, ports, ports, book, new JdbcOutboxWriter(), new JdbcAuditWriter(),
@@ -553,6 +555,12 @@ class BnplBillingDatabaseTest {
         @Override
         public synchronized Money balanceOf(Connection unitOfWork, LedgerAccount account) {
             return delegate.balanceOf(unitOfWork, account);
+        }
+
+        @Override
+        public synchronized List<com.finapp.ledger.PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
+                java.util.Set<LedgerAccountId> accounts, LocalDate valueDateThrough) {
+            return delegate.datedLinesOn(unitOfWork, accounts, valueDateThrough);
         }
     }
 }

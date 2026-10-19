@@ -777,7 +777,7 @@
             }
           }
         },
-        "description": "[422] The wallet cannot fund the first instalment.",
+        "description": "[422] The wallet cannot fund the payment.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -848,6 +848,41 @@
           }
         },
         "description": "[404] No BNPL record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.ObligationClosed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.ObligationClosed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.ObligationClosed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL agreement is closed.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -10273,6 +10308,103 @@
           "termsVersion": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplRepaymentAllocationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "instalmentId": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplRepaymentBody": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "type": "object"
+      },
+      "BnplRepaymentClosureView": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "refunded": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplRepaymentListView": {
+        "properties": {
+          "repayments": {
+            "items": {
+              "$ref": "#/components/schemas/BnplRepaymentView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplRepaymentView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/BnplRepaymentAllocationView"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "closure": {
+            "$ref": "#/components/schemas/BnplRepaymentClosureView"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -21776,6 +21908,76 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/bnpl-agreements/{id}/repayments": {
+      "get": {
+        "operationId": "listBnplRepayments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplRepaymentListView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "repayBnplAgreement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplRepaymentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplRepaymentView"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

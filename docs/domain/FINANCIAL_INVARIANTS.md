@@ -2408,6 +2408,8 @@ equal to its rows' sums, no due account negative, a `CLOSED` obligation's six ze
 subledger proof for every obligation in every round (`P12-TST-001`).
 **Phase:** 12
 
+*(As built by `P12-TSK-018`: the customer's repayment allocates over the due state `BnplReceivables` derives under B4 - each billed item's billed less every payer's paid, refused (`AllocationAnomaly`, metered `finapp.bnpl.allocation.anomaly`) unless those rows explain the due accounts' ledger balances - and `bnpl V010` holds every repayment allocation to a billed instalment, never principal not yet due, and no component paid beyond what it billed at commit, over every payer. The closure's "every receivable zero" is the five receivable accounts' ledger balances under B4 beside the rows' side its trigger re-judges. Hermetic: `BnplRepaymentsTest#theDueStateIsDerivedFromRowsNotTheProjection`, `#tenKeysOneObligationConserve`; database: `BnplRepaymentDatabaseTest` (owed).)*
+
 ### INV-BNPL-02 — Financing and obligation are born atomically
 **Statement:** A BNPL purchase's merchant financing and the customer's obligation are one commit:
 the credit decision's consumption, the capital judgement, agreement version 1 and its acceptance
@@ -2624,6 +2626,8 @@ accrued) + `DB-CONSTRAINT` (the obligation's every-writer edge trigger admitting
 proof's `CLOSED` arm all zero (`P12-TSK-025`); the battery's full refunds each leaving exactly zero
 (`P12-TST-002`); every closed obligation zero at every storm round (`P12-TST-001`).
 **Phase:** 12
+
+*(The closure mechanism built by `P12-TSK-018` for the `REPAID` reason, which `-021` extends with its two: `BnplClosures` - called by every zeroing transaction under B4 - closes only when the five receivables are zero, every instalment of the latest schedule is billed and (pay-in-N) no elapsed date with principal outstanding is unaccrued, refunds the credit balance to the wallet under `bnpl.closure-refund:<obligation>` in the same transaction, and `bnpl V010`'s every-writer edge function admits `ACTIVE -> CLOSED` only beside a `bnpl_obligation_closure` row for the same reason and nothing out of `CLOSED`; a repayment on a closed obligation answers `409 bnpl.ObligationClosed`. Hermetic: `BnplRepaymentsTest#theLastRepaymentClosesAndRefunds`, `#aClosedObligationRefuses`.)*
 
 ### INV-BNPL-10 — BNPL principal counts in capital headroom and credit exposure from the purchase's commit
 **Statement:** From the commit of the purchase that creates it, BNPL principal outstanding

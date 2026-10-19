@@ -24,6 +24,7 @@ import com.finapp.ledger.ChartOfAccounts;
 import com.finapp.ledger.JdbcHoldStore;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingService;
+import com.finapp.ledger.PurposeBalances;
 import com.finapp.party.PartyStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -66,11 +67,13 @@ public class BnplPurchaseBeans {
             LedgerAccountStore<Connection> ledgerAccountStore,
             BalanceDerivation<Connection> balanceDerivation,
             PostingService postingService,
+            PurposeBalances<Connection> purposeBalances,
             IdGenerator idGenerator,
             Clock clock) {
         return new LedgerBnplBook(new BnplAccounts(ledgerAccountStore, idGenerator, clock), ledgerAccountStore,
                 new ChartOfAccounts<>(ledgerAccountStore),
-                new AvailableBalance<>(balanceDerivation, new JdbcHoldStore()), balanceDerivation, postingService);
+                new AvailableBalance<>(balanceDerivation, new JdbcHoldStore()), balanceDerivation, postingService,
+                purposeBalances);
     }
 
     /** T-pur - the customer's acceptance, the purchase, the merchant financing and the obligation in one transaction. */

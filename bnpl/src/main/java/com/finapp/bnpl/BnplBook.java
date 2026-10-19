@@ -6,12 +6,15 @@ import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PurposeBalances;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * The ledger, as bnpl's money-moving acts command and read it (`P12-TSK-013`; {@code INV-LED-04}, {@code INV-BNPL-01},
@@ -53,4 +56,13 @@ public interface BnplBook {
 
     /** The settled balance of {@code account}, by its normal balance, derived from its committed journal lines. */
     Money balanceOf(Connection unitOfWork, LedgerAccount account);
+
+    /**
+     * Every line of {@code accounts} whose entry's value date is on or before {@code valueDateThrough}, ordered by value date
+     * then entry, read in ONE statement (`P12-TSK-018`; the ledger's {@code PurposeBalances.datedLinesOn}) - so a balance "at
+     * the end of a date" is the fold of the lines dated on or before it: the closure's "no unaccrued date with principal
+     * outstanding at its end", derived from journal lines and never from the projection ({@code INV-BAL-05}).
+     */
+    List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork, Set<LedgerAccountId> accounts,
+            LocalDate valueDateThrough);
 }

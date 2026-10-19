@@ -421,6 +421,8 @@ allocated by `ALLOCATION_ENGINE_V1`, F3) in T-pur; `bnpl.principal_value_floor(o
 latest billing's date - floors both. The owner's reads `GET /v1/me/bnpl-agreements`, `/{id}`, `/{id}/schedule` derive the
 six balances from journal lines in one `REPEATABLE READ` snapshot.)*
 
+*(The closure as built by `P12-TSK-018`, `bnpl V010`: `ACTIVE -> CLOSED (REPAID)` by `BnplClosures`, called by the customer's repayment (T-rep) and by the servicing step after its credit-balance applications (T-svc's closure slot) - under B4: the five receivables zero (ledger), every instalment of the latest schedule billed, and pay-in-N no elapsed date with principal outstanding at its end unaccrued; then the credit balance refunded to the customer's existing wallet under (P) (`DR BNPL_CREDIT_BALANCE / CR CUSTOMER_WALLET`, `bnpl.closure-refund:<obligation>`), the `bnpl_obligation_closure` row (`UNIQUE (obligation_id)`; its trigger re-taking B4 and holding every billed component paid in full; a deferred check tying it to `CLOSED` for the same reason), the edge (admitted only beside that row, `closed_at` the database's) with its history row and `bnpl.BnplAgreementClosed`. A wallet that cannot be credited leaves the obligation open with its credit balance, closed by a later step. Out of `CLOSED` nothing - not even the permit; the sweep never claims it again.)*
+
 ### 4.8 Merchant settlement, as BNPL sees it — no bnpl machine — `P12-TSK-016`, `-021`
 
 BNPL owns no settlement machine and never pays a merchant. The merchant leg walks existing machines:
@@ -543,6 +545,8 @@ a collection attempt, never a repayment.
 The same key replays one answer; two keys serialise on B4, each allocating against what it finds (scenario
 6); ten sweepers and a customer's repayment collect once (scenario 4). Wallet only — no card-funded
 instalment and no system-initiated card charge (B6).
+
+*(The customer repayment as built by `P12-TSK-018`, `BnplRepayments` and `bnpl V010`: `POST /v1/me/bnpl-agreements/{id}/repayments` under the conditional step-up, keyed `bnpl.repayment:CUSTOMER:<id>`; B4 owner-scoped in the locking statement; the key's repayment converges (same amount, a replay) or is refused (another amount); `ACTIVE` else `409 bnpl.ObligationClosed`; the database clock after the lock; the due state from `BnplReceivables`; `ALLOCATION_ENGINE_V1` with the pinned rules (`HOLD_AS_CREDIT` - a line to principal not yet due is an anomaly in the domain and a `CHECK` refusal in the database); (P) the existing wallet alone, `ACTIVE` and available ≥ amount under its lock (`422 bnpl.InsufficientFunds`); (L8); F3 under `bnpl.repayment:<repayment>` posted today and value-dated `max(today, floor)`; the rows (kind `CUSTOMER`; `AUTO_COLLECTION` and `PAYOFF` refused by the trigger until `-019`/`-022`); `bnpl.InstalmentPaid` per item it settles, by component; the closure. **Refined**: the repayment does not run T-acc first - its value date is never before the floor, so no accrued date's base moves; only the closure needs the record caught up, and it judges that itself.)*
 
 ### 4.14 The born-once facts (not machines)
 
