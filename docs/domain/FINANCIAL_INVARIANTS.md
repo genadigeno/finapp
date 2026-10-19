@@ -288,6 +288,14 @@ attempt's repayment born under the key `<item>:<date>` (`repayment UNIQUE (loan_
 (scenario 2's sweeper half: two and ten racing steps - one attempt, one repayment, one entry, one event) and
 `#aCrashMidStepLeavesNothing`. The probe drops the unique - `MUTATION_TESTING.md` section 2.)*
 
+*(As built by `P12-TSK-019`, 2026-10-19 - BNPL's auto-collection, the same shape: per billed instalment and business date,
+`bnpl.bnpl_collection_attempt UNIQUE (instalment_id, attempt_date)` beneath the obligation's row lock (B4), the attempt's
+repayment born under `<instalment>:<date>` (`bnpl_repayment UNIQUE (obligation_id, kind, request_key)`), never back-filled
+(no attempt dated before a later one of its instalment), and an `AUTO_COLLECTION` repayment without its attempt refused at
+commit. `BnplCollectionsTest#theSameDateCollectsOnce`/`#tenStepsCollectOnce` (hermetic, run) and
+`BnplCollectionDatabaseTest#tenSweepersCollectOnce` (scenario 4: ten sweepers and a customer's repayment; owed a first
+run). The probes - `MUTATION_TESTING.md` section 2.)*
+
 *(As built by `P11-TSK-022`, 2026-10-13 - the statement, per (line, cycle end): `credit_line_statement UNIQUE (loan_id, cycle_end)` beneath the line's lock and the ledger key `lending.statement:<line>:<statement date>`, whose replay the step refuses as a defect; the credit balance applied at it once (`credit_balance_application UNIQUE (billing_id)`); its minimum auto-collected once per business date (`-019`'s unique). `CreditLineStatementDatabaseTest#tenSweepersOneStatement` (thirty racing steps over three lines, the unique proven with the triggers suspended) and `#theMinimumPaymentIsAutoCollectedOnItsDueDate` (ten racing steps, one collection).)*
 
 ### INV-IDEM-03 — Key reuse with a different request is rejected

@@ -1614,7 +1614,8 @@ schedule.
 **Is:** one scheduled repayment of a BNPL Schedule version — principal (and Pay-in-N's projected
 interest) and a due date — which a refund may cancel in whole or in part, latest first; what became
 due at its date is its billing, what paid it its allocations, and each automatic try to collect it a
-collection attempt, born once per instalment and date.
+collection attempt, born once per instalment and date (`bnpl_collection_attempt`, `P12-TSK-019`: from the
+customer's wallet only, owner decision B6 - a failed attempt posts nothing and is the evidence).
 **Not:** a Loan Instalment (§7's Instalment): the same word, a different lifecycle — a BNPL instalment
 can be cancelled by a third party's refund, a loan instalment cannot (`MODULE_ARCHITECTURE.md` §5).
 Nor a Repayment, which is money received.

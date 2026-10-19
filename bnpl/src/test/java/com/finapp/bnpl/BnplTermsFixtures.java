@@ -76,7 +76,9 @@ final class BnplTermsFixtures {
                 .allocationSequence(AllocationSequence.OLDEST_DUE_FIRST)
                 .allocationOrder(List.of(AllocationComponent.FEES, AllocationComponent.INTEREST, AllocationComponent.PRINCIPAL))
                 .overpaymentTreatment(OverpaymentTreatment.HOLD_AS_CREDIT)
-                .autoCollection(true)
+                // Off unless a suite turns it on (P12-TSK-019): the lending precedent - so the suites written before
+                // the collection step service exactly as they did; the collection suites pin terms that collect.
+                .autoCollection(false)
                 .partialCollection(true)
                 .collectionRetryDays(1)
                 .servicingZone("UTC")

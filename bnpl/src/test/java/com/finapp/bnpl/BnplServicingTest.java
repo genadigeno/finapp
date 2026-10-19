@@ -70,10 +70,10 @@ class BnplServicingTest {
         acceptances = new BnplAcceptances(world.offers, world.terms.store(), world.purchases, world.credit,
                 world.standing, world.sessions, world.merchants, world.capital, world.wallets, world.book, world.outbox,
                 world.audit, IDS, CLOCK);
-        servicing = new BnplServicing(world.servicing, world.purchases, world.terms.store(), world.book,
-                new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets, world.book,
-                        world.outbox, IDS, CLOCK),
-                world.outbox, IDS, CLOCK);
+        BnplClosures closures = new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets,
+                world.book, world.outbox, IDS, CLOCK);
+        servicing = new BnplServicing(world.servicing, world.purchases, world.terms.store(), world.book, closures,
+                world.collectionsOver(closures, IDS, CLOCK), world.outbox, IDS, CLOCK);
         party = UUID.randomUUID();
         merchant = UUID.randomUUID();
         world.merchants.standings.put(merchant, BnplMerchants.Standing.ENABLED);

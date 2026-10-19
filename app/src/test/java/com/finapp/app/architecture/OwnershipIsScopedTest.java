@@ -1001,6 +1001,11 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-017. T-acc's predecessor read: the latest accrual of an obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4, JdbcBnplServicingStore.lock), read after the lock; never a request value, no door reaches it - accrual is the system's act (PHASE_12_PLAN.md section 7.1 T-acc).")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCollectionStore.latestAttempts",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-019. The collection slot's read of its own attempts: the latest attempt date per instalment of an obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4, JdbcBnplServicingStore.lock), read after the lock; never a request value, no door reaches it - collection is the system's act under the agreement's pinned terms (A7, owner decision B6).")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplServicingStore.restamp",
                             new Entry(
                                     Scope.ADMINISTERED,

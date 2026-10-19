@@ -20752,7 +20752,7 @@ after everything.
   `bnpl_repayment_is_born_once` to admit `AUTO_COLLECTION` beside its attempt; add `auto_collection` outcomes to
   `BnplRepaymentMetrics` (its series are eager already).
 
-**P12-TSK-019 — Auto-collection** — `READY` (marked by `P12-TSK-018`'s completion gate, 2026-10-19: its one dependency `-018` `COMPLETE`)
+**P12-TSK-019 — Auto-collection** — `COMPLETE` (2026-10-19, wave D beside `-021`; its gate marks `P12-TSK-020` `READY`) *(read "`READY`" - marked by `P12-TSK-018`'s gate - and "`IN_PROGRESS`" until its gate)*
 - **Objective**: what is due is collected from the customer's wallet on the due date — once per instalment
   per day, partially when the pinned terms allow, retried daily while due (A7; B6 — the wallet only, no card
   charge).
@@ -20809,14 +20809,57 @@ after everything.
   wallet only.
 - **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F1, F2 as `-018`; F4, F5 vacuous — an attempt that
   moves nothing posts nothing, and no external event; F8: internal). **Risk**: Medium. **Cx**: M.
+- **Refined by `P12-TSK-019`'s design (2026-10-19), each with its reason:**
+  - **The retry cadence is the pinned one.** The backlog read "retried at the first step of each later business date while
+    due". The terms pin `collection_retry_days` (`bnpl V002`, A7: "daily" is its default of 1) and the pinned version
+    governs (the plan's policy and model versioning), so a past-due instalment is attempted on the first step of a business date at least
+    that many days after its latest attempt - daily under every term set activated so far; a missed date is never
+    back-filled (the attempt is dated the day it is made, and `bnpl V011`'s trigger refuses an attempt dated before an
+    earlier attempt of the same instalment).
+  - **The attempt names the instalment and the agreement version.** `UNIQUE (instalment_id, attempt_date)` as the backlog
+    says - the instalment, not the billing, is the due item every allocation row already names (one billing per instalment,
+    `UNIQUE (instalment_id)`); and `agreement_version`, the version whose pinned terms (auto, partial) governed the attempt,
+    so the "partial on/off from the pinned agreement version" rule is a row fact the trigger re-judges.
+  - **Oldest first, as lending's rule says it**: once an instalment is not collected in full - or an older one is still due
+    and not attempted in this step (the cadence) - every younger candidate that day records `INSUFFICIENT_FUNDS`: the
+    pinned allocation would pay the older one first, so a younger collection could not stay on its own instalment.
+    `NOTHING_DUE` is recorded only for an instalment on its due date (settled earlier - a repayment or held credit applied
+    at its billing); a past-due instalment with nothing due is not a candidate.
+  - **One posting half.** No collection-specific posting: `BnplRepayments.receive` (extracted from T-rep, behaviour
+    unchanged) is the L8, the F3 entry, the repayment and allocation rows and `InstalmentPaid` for both the customer's
+    repayment and the collection (`-018`'s hand-off); the attempt's natural key `<instalment>:<date>` is the repayment's
+    `request_key`, so `UNIQUE (obligation_id, kind, request_key)` is a second arbiter of once per instalment and date.
+  - **The step's closure follows the collection with the wallet the collection holds** (`walletHeld`, so the wallet row is
+    locked once a step) and names the collection's last repayment as the closing one when a collection moved money.
+  - **The lock order in T-svc**: B4 → the obligation's own six projection rows (the step's L8 before billing) → (P) the
+    wallet alone → L8 over the entry's rows (re-entrant for the obligation's, the wallet's projection row after (P)) - the
+    order `-018` recorded for the closure, now taken by the collection first. No shared income row in T-svc at all (T-acc
+    commits alone before it).
+  - **Test fixtures collect only when a suite asks.** `BnplTermsFixtures` now pins `autoCollection(false)` (lending's
+    `LoanTermsFixtures` precedent), so every suite written before the collection step services exactly as it did; the
+    collection suites pin terms that collect. Production terms are the operator's (A7 expects them to collect).
+  - **The real-ledger proofs live in `app`.** `bnpl`'s database suites run over an in-memory book behind one lock, which
+    has no wallet row lock: `#twoObligationsOfOneCustomerSerialiseOnTheWallet` and `#theOnlySourceIsTheWallet` (no
+    payment intent or attempt) are therefore in `app`'s own-container `BnplCollectionLedgerDatabaseTest`, beside the two
+    proofs owed to the first collection - `-017`'s (a pay-in-N step waiting at (P) holds no `BNPL_INTEREST_INCOME` row) and
+    `-018`'s (a repayment queued behind a collection never `40P01`s). `BnplCollectionDatabaseTest` keeps the rest of the
+    backlog's list and `bnpl V011`'s ranks by raw writers.
+  - **Meters**: `finapp.bnpl.collection{outcome}` (eager, every outcome); a collection that moved money is one
+    `finapp.bnpl.repayment{kind=auto_collection, outcome=repaid}` (`closed` for the one the step's closure followed) and an
+    attempt that took nothing from an instalment with something due one `{auto_collection, insufficient_funds}` - lending's
+    `LoanServicingMetrics` precedent; `Counter.increment()` once per attempt. No new tag key.
+  - **Migration**: `bnpl V011` (the wave D board's reservation; `-021` takes `V012`, `-020` `V013`).
+- **As built** (2026-10-19, `P12-TSK-019`'s gate): `bnpl V011` (`bnpl_collection_attempt` and its every-writer trigger, the deferred `bnpl_repayment_auto_collection_has_its_attempt`, the repayment's trigger admitting `AUTO_COLLECTION`); `BnplCollections`, `BnplCollectionAttempt`, `CollectionOutcome`, `BnplCollectionStore`/`JdbcBnplCollectionStore`; `BnplRepayments.receive` (T-rep's posting half, extracted unchanged); `BnplServicing`'s collection slot and `ServicingOutcome.collections`; in `app` the `BnplCollections` bean and `finapp.bnpl.collection{outcome}` with `repayment{kind=auto_collection}` in `BnplServicingMetrics`. **Gate**: IMPORTANT (fixed in-task) - a servicing step's refused conservation (an `AllocationAnomaly` from an application or a collection, or the deferred conservation at commit) reached only `servicing{failed}`, never `finapp.bnpl.allocation.anomaly` (the plan's alert above 0): `BnplServicingMetrics.failed(failure)` now raises it, `BnplServicingScheduleTest#aSweepsAnomalyRaisesTheAlert`; IMPORTANT (fixed) - `-018`'s `BnplRepaymentDatabaseTest#theAllocationsRanksHoldForEveryWriter` expected `V010`'s immediate refusal of a raw `AUTO_COLLECTION` repayment, which `V011` defers to commit - it would have gone red on its first run; it now raws a `PAYOFF`. MINOR (fixed) - `BnplCollectionsTest#theAttemptsShape` asserted a random UUID free of "40" (a flake seen on a run); the design note's `INV-LND-09` reference. Sixteen probes performed and caught on hermetic suites (`MUTATION_TESTING.md` §2). Ten-instance `PASS`. Owed a first run: `BnplCollectionDatabaseTest` (nine cases) and `app`'s own-container `BnplCollectionLedgerDatabaseTest` (four), with the backlog's probe (drop the unique → `#tenSweepersCollectOnce` red) and `-018`'s `40P01` probe (`#aRepaymentRacingACollectionNeverDeadlocks`).
+  **For `-020`**: the condition step follows the collection in T-svc (the closure between them); an instalment is past due when billed and unpaid at the end of its due date - the collection attempts are evidence, never the DPD; the late fee's `BNPL_FEE_INCOME` at L8 comes after the wallet the collection already holds, so take it in the fee's own `lockBalancesInOrder` after (P), never before; a collection on the fee's day pays FEES first (the pinned order), so assess before collecting only if the plan says so - it does not (§7.1: collect, close, condition, fee).
 
-**P12-TSK-020 — Delinquency, default and late fees** — `PLANNED`
+**P12-TSK-020 — Delinquency, default and late fees** — `READY` (marked by `P12-TSK-019`'s completion gate, 2026-10-19: its one dependency `-019` `COMPLETE`)
 - **Objective**: days past due, buckets, cure and default derived honestly from the rows on the database
   clock and recorded as an append-only history of changes; a configured late fee assessed once per
   instalment on its pinned day, capped (A13, A14; `PHASE_12_PLAN.md` §12.8).
 - **Bounded context**: BNPL; Ledger.
 - **Dependencies**: `-019`.
-- **Scope**: `bnpl V012`: `bnpl_condition_event` (`UNIQUE (obligation_id, business_date, kind)`; kind
+- **Scope**: `bnpl V013` (renumbered from the plan's `V012` by the Phase 12 wave D board: `-019` took `V011`, `-021`
+  `V012`; Flyway runs `outOfOrder = false`): `bnpl_condition_event` (`UNIQUE (obligation_id, business_date, kind)`; kind
   `DELINQUENCY` | `DEFAULT`; old and new bucket, DPD, the default flag, agreement version; INSERT-only),
   `bnpl_fee_assessment` (`UNIQUE (instalment_id, kind)`; kind `LATE`; amount; agreement version; entry; the
   per-agreement cap judged under B4); T-svc's condition step after collection: an instalment past due when
@@ -20837,7 +20880,7 @@ after everything.
   14).
 - **Domain changes**: `BnplDelinquencyState` (derived), `BnplConditionEvent`, `BnplFeeAssessment`; the
   condition and fee steps in T-svc.
-- **Persistence**: `bnpl V012`.
+- **Persistence**: `bnpl V013` (see Scope).
 - **APIs**: the customer's agreement read extended with the condition; no new route, no new error.
 - **Events**: `BnplDelinquencyChanged` (old and new bucket, DPD), `BnplDefaulted`, `BnplDefaultCleared`,
   `BnplLateFeeAssessed` (ids, amount) — consumed by the future collections owner (Phase 13).

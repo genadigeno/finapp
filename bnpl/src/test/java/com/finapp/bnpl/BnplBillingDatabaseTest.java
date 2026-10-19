@@ -417,9 +417,12 @@ class BnplBillingDatabaseTest {
         final BnplAcceptanceDatabaseTest.Scripted ports = new BnplAcceptanceDatabaseTest.Scripted();
         final BnplApplicationFakes fakes = new BnplApplicationFakes();
         final SharedBook book = new SharedBook(fakes.book);
-        final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book,
-                new BnplClosures(new JdbcBnplRepaymentStore(), SERVICING, PURCHASES, ports, book, new JdbcOutboxWriter(),
-                        IDS, CLOCK),
+        final BnplClosures closures = new BnplClosures(new JdbcBnplRepaymentStore(), SERVICING, PURCHASES, ports, book,
+                new JdbcOutboxWriter(), IDS, CLOCK);
+        final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book, closures,
+                new BnplCollections(new JdbcBnplCollectionStore(), new BnplRepayments(new JdbcBnplRepaymentStore(),
+                        SERVICING, PURCHASES, TERMS_STORE, ports, book, closures, new JdbcOutboxWriter(), IDS, CLOCK),
+                        PURCHASES, ports, book, new JdbcOutboxWriter(), IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE,
                 book, IDS);

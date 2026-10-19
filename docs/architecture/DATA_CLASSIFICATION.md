@@ -3752,6 +3752,19 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_obligation_closure` | `repayment_id` | `INTERNAL` | The repayment whose transaction closed it, if any |
 | `bnpl_obligation_closure` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_obligation_closure` | `correlation_id` | `INTERNAL` | The closing act's correlation |
+| `bnpl_collection_attempt` | `id` | `INTERNAL` | Generated (`P12-TSK-019`) |
+| `bnpl_collection_attempt` | `obligation_id` | `CONFIDENTIAL` | The obligation collected for |
+| `bnpl_collection_attempt` | `instalment_id` | `CONFIDENTIAL` | The billed instalment attempted - once per business date |
+| `bnpl_collection_attempt` | `attempt_date` | `INTERNAL` | The business date of the database clock in the pinned zone |
+| `bnpl_collection_attempt` | `outcome` | `INTERNAL` | `COLLECTED`, `PARTIAL`, `INSUFFICIENT_FUNDS`, `WALLET_NOT_POSTABLE` or `NOTHING_DUE` |
+| `bnpl_collection_attempt` | `currency` | `INTERNAL` | The obligation's currency |
+| `bnpl_collection_attempt` | `scale` | `INTERNAL` | The amounts' persisted scale |
+| `bnpl_collection_attempt` | `due_minor` | `RESTRICTED-FINANCIAL` | What the instalment had due when attempted |
+| `bnpl_collection_attempt` | `collected_minor` | `RESTRICTED-FINANCIAL` | What was taken from the wallet - zero unless money moved |
+| `bnpl_collection_attempt` | `agreement_version` | `INTERNAL` | The agreement version whose pinned terms (auto, partial) governed it |
+| `bnpl_collection_attempt` | `repayment_id` | `CONFIDENTIAL` | The `AUTO_COLLECTION` repayment that moved it - null when nothing moved |
+| `bnpl_collection_attempt` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_collection_attempt` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the obligation's own flow) |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 
