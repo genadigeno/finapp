@@ -166,7 +166,8 @@ public final class BnplServicing {
             }
             Money notDue = receivables.principalNotDue(unitOfWork, accounts);
             for (BnplPurchaseStore.StoredInstalment instalment : due) {
-                BnplBilling billing = bill(unitOfWork, locked, schedule, instalment, notDue, accounts, today);
+                BnplBilling billing = bill(unitOfWork, locked, schedule, instalment, notDue, accounts, today,
+                        instalment.dueDate());
                 notDue = notDue.minus(billing.principal());
                 billed++;
                 Optional<BnplCreditBalanceApplication> applied = applications.atBilling(unitOfWork, context, billing.id());
@@ -237,10 +238,64 @@ public final class BnplServicing {
 
     // ------------------------------------------------------------------ F2
 
-    /** Bills {@code instalment}: its row, and its entry when it bills something. */
+    /**
+     * The payoff's billing (`P12-TSK-022`, T-pay; lending's {@code InstalmentBillings#billForPayoff}): every unbilled
+     * instalment of the latest schedule version, oldest first, whatever its due date - on the caller's unit of work under
+     * its B4, inside the payoff's transaction (beside its execution, which alone admits a billing before its due date,
+     * {@code bnpl V014}). One billing rule for both: the interest exactly the period's posted accruals (pay-in-N, caught up
+     * through the payoff's eve - a future period's none), the principal {@code least(not yet due, max(0, amount -
+     * interest))}, the last instalment all of it. An instalment already due is billed exactly as the servicing step bills
+     * it, its entry valued its due date; one not yet due is billed early, its entry valued {@code payoffValueDate} - the
+     * payoff's {@code max(today, floor)} - never its future due date (RG-M1: no payoff fact dated outside the payoff). Each
+     * is followed by the credit-balance application at its birth (F3a, valued {@code max(today, floor)} itself) and
+     * {@code bnpl.InstalmentDue}. The caller holds the obligation's own projection rows (L8) already.
+     *
+     * @return the billings born, oldest first
+     */
+    List<BnplBilling> billForPayoff(Connection unitOfWork, BnplServicingStore.Locked locked, BnplLedgerAccounts accounts,
+            BnplCreditBalanceApplications applications, BnplCreditBalanceApplications.Context context, LocalDate today,
+            LocalDate payoffValueDate) {
+        BnplObligationId id = locked.obligation().id();
+        BnplPurchaseStore.StoredSchedule schedule = store.latestSchedule(unitOfWork, id)
+                .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1"));
+        Money notDue = new BnplReceivables(purchases, book).principalNotDue(unitOfWork, accounts);
+        List<BnplBilling> billed = new ArrayList<>();
+        for (BnplPurchaseStore.StoredInstalment instalment : everythingUnbilled(schedule,
+                purchases.billedItems(unitOfWork, id))) {
+            LocalDate entryValueDate = instalment.dueDate().isAfter(today) ? payoffValueDate : instalment.dueDate();
+            BnplBilling billing = bill(unitOfWork, locked, schedule, instalment, notDue, accounts, today,
+                    entryValueDate);
+            notDue = notDue.minus(billing.principal());
+            applications.atBilling(unitOfWork, context, billing.id());
+            publish(unitOfWork, billing);
+            billed.add(billing);
+        }
+        return List.copyOf(billed);
+    }
+
+    /** Every unbilled instalment of {@code schedule}, oldest first, whatever its due date - billed judged by due date. */
+    static List<BnplPurchaseStore.StoredInstalment> everythingUnbilled(BnplPurchaseStore.StoredSchedule schedule,
+            List<BnplPurchaseStore.BilledItem> billed) {
+        Set<LocalDate> billedDates = new HashSet<>();
+        for (BnplPurchaseStore.BilledItem item : billed) {
+            billedDates.add(item.dueDate());
+        }
+        List<BnplPurchaseStore.StoredInstalment> unbilled = new ArrayList<>();
+        for (BnplPurchaseStore.StoredInstalment instalment : schedule.instalments()) {
+            if (!billedDates.contains(instalment.dueDate())) {
+                unbilled.add(instalment);
+            }
+        }
+        return unbilled;
+    }
+
+    /**
+     * Bills {@code instalment}: its row, and its entry when it bills something - valued {@code entryValueDate}: the due
+     * date (the servicing step; a base-neutral reclassification) or, for a payoff's early billing, the payoff's value date.
+     */
     private BnplBilling bill(Connection unitOfWork, BnplServicingStore.Locked locked,
             BnplPurchaseStore.StoredSchedule schedule, BnplPurchaseStore.StoredInstalment instalment, Money notDue,
-            BnplLedgerAccounts accounts, LocalDate today) {
+            BnplLedgerAccounts accounts, LocalDate today, LocalDate entryValueDate) {
         BnplObligationId obligation = locked.obligation().id();
         Money zero = Money.ofPersisted(0, instalment.amount().currency(), instalment.amount().scale());
         LocalDate periodStart = periodStart(schedule, instalment);
@@ -263,7 +318,7 @@ public final class BnplServicing {
             // Posted on the business date, valued at the due date; the reference is the billed instalment, so a second
             // attempt at it is the same request under the same key - a replay the book refuses as the defect it is.
             entry = Optional.of(book.post(unitOfWork, new PostingCommand(BILLING_KEY_PREFIX + instalment.id(), today,
-                    instalment.dueDate(), instalment.id().toString(), lines)));
+                    entryValueDate, instalment.id().toString(), lines)));
         }
         BnplBilling billing = new BnplBilling(ids.next(), instalment.id(), instalment.sequence(), obligation,
                 schedule.id(), schedule.version(), schedule.engine(), locked.agreement(), locked.agreementVersion(),

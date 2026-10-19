@@ -87,7 +87,7 @@ public final class BnplClosures {
      * holds under (P) (the repayment's), if any.
      */
     public record Closing(BnplServicingStore.Locked locked, BnplLedgerAccounts accounts, LocalDate today,
-            Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld, Optional<UUID> refund) {
+            Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld, Optional<UUID> refund, boolean payoff) {
 
         public Closing {
             Objects.requireNonNull(locked, "locked must not be null");
@@ -99,6 +99,24 @@ public final class BnplClosures {
             if (repayment.isPresent() && refund.isPresent()) {
                 throw new IllegalArgumentException("one closing act: a repayment or a refund");
             }
+            if (payoff && refund.isPresent()) {
+                throw new IllegalArgumentException("one closing act: a payoff or a refund");
+            }
+        }
+
+        /** A closing transaction that is no payoff's - the repayment's, the servicing step's or a refund's. */
+        public Closing(BnplServicingStore.Locked locked, BnplLedgerAccounts accounts, LocalDate today,
+                Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld, Optional<UUID> refund) {
+            this(locked, accounts, today, repayment, walletHeld, refund, false);
+        }
+
+        /**
+         * The payoff's closing transaction (`P12-TSK-022`, T-pay): its {@code PAYOFF} repayment, if money moved, and the
+         * wallet it holds under (P), if any - the closure's reason {@code PAID_OFF_EARLY}.
+         */
+        static Closing payoff(BnplServicingStore.Locked locked, BnplLedgerAccounts accounts, LocalDate today,
+                Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld) {
+            return new Closing(locked, accounts, today, repayment, walletHeld, Optional.empty(), true);
         }
 
         /** A closing transaction that is no refund's - the repayment's or the servicing step's. */
@@ -173,6 +191,10 @@ public final class BnplClosures {
      * earlier partial refunds notwithstanding, the closing act names it ({@code BNPL_LIFECYCLES.md} section 4.7).
      */
     private BnplClosureReason reasonOf(Connection unitOfWork, BnplObligation obligation, Closing closing) {
+        if (closing.payoff()) {
+            // The payoff names its own reason (`P12-TSK-022`): every receivable settled before the schedule ended.
+            return BnplClosureReason.PAID_OFF_EARLY;
+        }
         if (purchases.purchaseStatus(unitOfWork, obligation.purchase())
                 .filter(BnplPurchaseStatus.FULLY_REFUNDED::equals).isPresent()) {
             return BnplClosureReason.REFUNDED;

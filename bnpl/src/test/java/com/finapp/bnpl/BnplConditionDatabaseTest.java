@@ -61,6 +61,38 @@ class BnplConditionDatabaseTest {
     }
 
     @Test
+    @DisplayName("scenario 13, the payoff during the worker (P12-TSK-022): ten servicing steps and a payoff race on a"
+            + " delinquent, fee-bearing obligation - B4 orders them; the payoff pays the assessed fee with the rest, and once"
+            + " CLOSED (PAID_OFF_EARLY) no condition or fee row is written")
+    void noConditionAfterAPayoff() throws Exception {
+        BnplConditionDatabaseWorld world = new BnplConditionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.feeBearing();
+        LocalDate day = bought.due(2).plusDays(5);
+        world.serviceOn(day, bought);
+        assertThat(world.balance(bought, com.finapp.ledger.AccountPurpose.BNPL_FEES_DUE).minorUnits())
+                .as("the late fee assessed").isEqualTo(5_00);
+        world.concurrently(11, index -> {
+            if (index == 10) {
+                return world.payOffOn(day, bought, "payoff");
+            }
+            return world.serviceOn(day, bought);
+        });
+        assertThat(scalar("SELECT status || ':' || closure_reason FROM bnpl.bnpl_obligation WHERE id = '" + bought.id()
+                + "'")).isEqualTo("CLOSED:PAID_OFF_EARLY");
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event e JOIN bnpl.bnpl_obligation_closure c ON"
+                + " c.obligation_id = e.obligation_id WHERE e.obligation_id = '" + bought.id() + "' AND e.created_at >"
+                + " c.created_at")).as("nothing after the closure").isZero();
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + bought.id() + "'"))
+                .isEqualTo(1);
+        for (com.finapp.ledger.AccountPurpose purpose : BnplAccounts.purposes()) {
+            assertThat(world.balance(bought, purpose).isZero()).as(purpose.name()).isTrue();
+        }
+        world.serviceOn(day.plusDays(10), bought);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + bought.id() + "'"))
+                .as("no fee after the payoff").isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("current to each bucket and cure, recorded once per change from the rows (DPD 1, 30, 60, then CURRENT)")
     void currentToEachBucketAndCure() throws SQLException {
         BnplConditionDatabaseWorld world = new BnplConditionDatabaseWorld();

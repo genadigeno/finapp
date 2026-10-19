@@ -88,6 +88,9 @@ final class BnplConditionDatabaseWorld {
             conditions, new JdbcOutboxWriter(), IDS, CLOCK);
     final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book, closures,
             (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
+    /** T-pay (`P12-TSK-022`): the quote and the execution over the same stores - scenario 13's payoff during the worker. */
+    final BnplPayoffs payoffs = new BnplPayoffs(REPAYMENTS, new JdbcBnplPayoffStore(), SERVICING, PURCHASES, TERMS_STORE,
+            new JdbcBnplAccrualStore(), ports, book, servicing, repayments, closures, IDS);
     private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
             (uow, party) -> true, ports, ports, ports, ports, book, new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS,
             CLOCK);
@@ -155,6 +158,15 @@ final class BnplConditionDatabaseWorld {
     BnplRepayments.Repaid repayOn(LocalDate date, Purchased bought, String key, long minor) {
         return BnplClockFrame.inOneTransaction(frameOn(date), uow -> repayments.repay(uow, bought.agreement(),
                 bought.party(), new BnplRepayments.Request(key, eur(minor)), customer(bought.party()), correlation()));
+    }
+
+    /** A quote good through {@code date}, made on it, and its execution on it (`P12-TSK-022`). */
+    BnplPayoffs.Executed payOffOn(LocalDate date, Purchased bought, String key) {
+        BnplPayoffQuote quote = BnplClockFrame.inOneTransaction(frameOn(date), uow -> payoffs.quote(uow,
+                bought.agreement(), bought.party(), new BnplPayoffs.QuoteRequest("q-" + key, Optional.empty()),
+                correlation())).quote();
+        return BnplClockFrame.inOneTransaction(frameOn(date), uow -> payoffs.execute(uow, bought.agreement(),
+                bought.party(), key, quote.id(), customer(bought.party()), correlation()));
     }
 
     BnplRefunds.Refunded refundOn(LocalDate date, Purchased bought, String key, long minor) {

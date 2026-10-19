@@ -315,6 +315,14 @@ public final class BnplAccruals {
         BnplTerms pinned = terms.version(unitOfWork, locked.termsVersionId())
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
+        return accrualTerms(pinned, locked);
+    }
+
+    /**
+     * {@link AccrualTerms}' canonical constructor over {@code pinned} and the agreement's accrual engine - one construction
+     * for T-acc and the payoff quote's projection (`P12-TSK-022`), so the projection posts exactly what T-acc will.
+     */
+    static AccrualTerms accrualTerms(BnplTerms pinned, BnplServicingStore.Locked locked) {
         BnplTerms.PayInNTerms own = pinned.payInN()
                 .orElseThrow(() -> new IllegalStateException("a pay-in-N agreement pins pay-in-N terms"));
         EngineVersion engine = EngineVersion.valueOf(locked.accrualEngine().orElseThrow());

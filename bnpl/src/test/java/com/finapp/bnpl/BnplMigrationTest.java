@@ -102,7 +102,7 @@ class BnplMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021), V013 the condition history and the late fee (P12-TSK-020)")
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021), V013 the condition history and the late fee (P12-TSK-020), V014 the payoff quote and execution (P12-TSK-022)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
@@ -112,7 +112,8 @@ class BnplMigrationTest {
                 "bnpl_credit_balance_application", "bnpl_fee_assessment",
                 "bnpl_instalment", "bnpl_interest_accrual", "bnpl_obligation", "bnpl_obligation_closure",
                 "bnpl_obligation_event",
-                "bnpl_offer", "bnpl_offer_event", "bnpl_offer_terms", "bnpl_refund", "bnpl_refund_adjustment",
+                "bnpl_offer", "bnpl_offer_event", "bnpl_offer_terms", "bnpl_payoff_execution", "bnpl_payoff_quote",
+                "bnpl_refund", "bnpl_refund_adjustment",
                 "bnpl_repayment", "bnpl_repayment_allocation",
                 "bnpl_schedule", "bnpl_terms", "bnpl_terms_version", "bnpl_terms_version_event", "flyway_schema_history",
                 "merchant_financing", "purchase", "purchase_event");
@@ -146,7 +147,10 @@ class BnplMigrationTest {
                 "bnpl_refund_adjustment_is_born_once", "bnpl_refund_conserves", "bnpl_refund_is_born_once",
                 // V013 (P12-TSK-020).
                 "bnpl_condition_event_is_born_once", "bnpl_fee_assessment_is_born_once", "days_past_due",
-                "delinquency_bucket");
+                "delinquency_bucket",
+                // V014 (P12-TSK-022).
+                "bnpl_payoff_execution_closes_its_obligation", "bnpl_payoff_execution_is_born_once",
+                "bnpl_payoff_quote_is_born_once");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))
