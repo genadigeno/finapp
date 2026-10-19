@@ -334,6 +334,17 @@ class BnplRefundsTest {
         Money other = refundAt("2026-10-20T10:00:00Z", reversed, "a", eur(420_00)).refund().feeReturned()
                 .plus(refundAt("2026-10-20T10:00:01Z", reversed, "b", eur(180_00)).refund().feeReturned());
         assertThat(other).isEqualTo(eur(24_00));
+
+        // Where the cumulative and a standalone rounding part: 0.10 returns 0.00 (0.004), the second 0.10 returns 0.01
+        // (cum 0.008 - 0.00), never its own 0.00 - and the rest returns exactly what is left of f.
+        init(IDS.next(), IDS.next());
+        Agreement cents = payIn4();
+        List<Money> parted = new ArrayList<>();
+        for (long minor : new long[] {10, 10, 599_80}) {
+            parted.add(refundAt("2026-10-20T10:00:00Z", cents, "cents-" + parted.size(), eur(minor)).refund()
+                    .feeReturned());
+        }
+        assertThat(parted).as("cum(after) - cum(before)").containsExactly(eur(0), eur(1), eur(23_99));
     }
 
     @Test
@@ -343,8 +354,11 @@ class BnplRefundsTest {
         Agreement p4 = payIn4();
         refundAt("2026-10-20T10:00:00Z", p4, "first", eur(180_00));
         int keys = world.book.keys.size();
+        world.log.clear();
         assertThatThrownBy(() -> refundAt("2026-10-20T11:00:00Z", p4, "over", eur(420_01)))
                 .isInstanceOf(BnplRefunds.RefundExceedsPurchase.class);
+        assertThat(world.log).as("judged under B5 over the committed refunds, before the obligation is taken")
+                .contains("B5").doesNotContain("B4");
         assertThat(world.book.keys).hasSize(keys);
         assertThat(world.refunds.rows).hasSize(1);
         refundAt("2026-10-20T12:00:00Z", p4, "rest", eur(420_00));
@@ -485,6 +499,20 @@ class BnplRefundsTest {
         assertThat(world.refunds.rows).isEmpty();
     }
 
+    @Test
+    @DisplayName("a refund is value-dated never before the latest billing: on a database clock stepped back behind it the"
+            + " entry posts today and is value-dated the billing's date (the Phase 11 gate's R1, INV-BNPL-05)")
+    void theRefundIsFloored() {
+        Agreement p4 = payIn4();
+        serviceAt("2026-10-31T00:00:05Z", p4);
+        BnplRefund refund = refundAt("2026-10-30T23:59:58Z", p4, "behind", eur(180_00)).refund();
+        assertThat(refund.valueDate()).isEqualTo(LocalDate.of(2026, 10, 31));
+        assertThat(world.book.linesOf(BnplRefunds.POSTING_KEY_PREFIX + refund.id())).isNotEmpty().allSatisfy(line -> {
+            assertThat(line.valueDate()).isEqualTo(LocalDate.of(2026, 10, 31));
+            assertThat(line.postingDate()).isEqualTo(LocalDate.of(2026, 10, 30));
+        });
+    }
+
     // ------------------------------------------------------------------ the lock order, the races
 
     @Test
@@ -583,8 +611,10 @@ class BnplRefundsTest {
             + " of the customer's; another merchant's refund is empty at the transaction report's second rank")
     void theMerchantReadsItsRefunds() {
         Agreement p4 = payIn4();
-        BnplRefund refund = refundAt("2026-10-20T10:00:00Z", p4, "read", eur(180_00)).refund();
         BnplPurchaseReads reads = new BnplPurchaseReads(world.purchases, world.refunds);
+        assertThat(reads.forMerchant(BnplApplicationFakes.UOW, merchant, p4.purchase()).orElseThrow().partiallyRefunded())
+                .as("no refund yet").isFalse();
+        BnplRefund refund = refundAt("2026-10-20T10:00:00Z", p4, "read", eur(180_00)).refund();
         MerchantBnplPurchaseView view = reads.forMerchant(BnplApplicationFakes.UOW, merchant, p4.purchase()).orElseThrow();
         assertThat(view.partiallyRefunded()).isTrue();
         assertThat(view.refunded()).isEqualTo(eur(180_00));
