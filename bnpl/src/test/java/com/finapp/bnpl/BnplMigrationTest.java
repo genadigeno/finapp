@@ -102,13 +102,14 @@ class BnplMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V012 the refund (P12-TSK-021)")
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
         // P12-TSK-004's (the terms version); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA)).containsExactlyInAnyOrder("bnpl_acceptance", "bnpl_agreement", "bnpl_application",
-                "bnpl_application_event", "bnpl_billing", "bnpl_credit_balance_allocation", "bnpl_credit_balance_application",
+                "bnpl_application_event", "bnpl_billing", "bnpl_collection_attempt", "bnpl_credit_balance_allocation",
+                "bnpl_credit_balance_application",
                 "bnpl_instalment", "bnpl_interest_accrual", "bnpl_obligation", "bnpl_obligation_closure",
                 "bnpl_obligation_event",
                 "bnpl_offer", "bnpl_offer_event", "bnpl_offer_terms", "bnpl_refund", "bnpl_refund_adjustment",
@@ -135,11 +136,12 @@ class BnplMigrationTest {
                 "bnpl_terms_version_permits_only_machine_edges", "holds_account_identifier_shape",
                 "holds_card_number_shape", "holds_instrument_shape", "is_strictly_ascending", "luhn_valid",
                 "mod97_check_holds",
-                // V008 (P12-TSK-015) and V010 (P12-TSK-018).
+                // V008 (P12-TSK-015), V010 (P12-TSK-018) and V011 (P12-TSK-019).
                 "billing_component_billed", "billing_component_paid", "bnpl_credit_balance_allocation_is_born_once",
                 "bnpl_credit_balance_application_conserves", "bnpl_credit_balance_application_is_born_once",
                 "bnpl_interest_accrual_is_born_once", "bnpl_obligation_closure_closes_its_obligation",
                 "bnpl_obligation_closure_is_born_once", "bnpl_repayment_allocation_conserves",
+                "bnpl_auto_collection_has_its_attempt", "bnpl_collection_attempt_is_born_once",
                 // V012 (P12-TSK-021).
                 "bnpl_refund_adjustment_is_born_once", "bnpl_refund_conserves", "bnpl_refund_is_born_once");
 

@@ -4,11 +4,16 @@ import com.finapp.bnpl.BnplAccrualStore;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplBook;
 import com.finapp.bnpl.BnplClosures;
+import com.finapp.bnpl.BnplCollectionStore;
+import com.finapp.bnpl.BnplCollections;
 import com.finapp.bnpl.BnplPurchaseStore;
+import com.finapp.bnpl.BnplRepayments;
 import com.finapp.bnpl.BnplServicing;
 import com.finapp.bnpl.BnplServicingStore;
 import com.finapp.bnpl.BnplTermsStore;
+import com.finapp.bnpl.BnplWallets;
 import com.finapp.bnpl.JdbcBnplAccrualStore;
+import com.finapp.bnpl.JdbcBnplCollectionStore;
 import com.finapp.bnpl.JdbcBnplServicingStore;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -36,7 +41,10 @@ public class BnplServicingBeans {
         return new JdbcBnplServicingStore();
     }
 
-    /** T-svc - one obligation's servicing step: the accrual gate, billing, the applications, the closure, the permit. */
+    /**
+     * T-svc - one obligation's servicing step: the accrual gate, billing, the applications, the collection, the closure, the
+     * permit.
+     */
     @Bean
     BnplServicing bnplServicing(
             BnplServicingStore bnplServicingStore,
@@ -44,10 +52,35 @@ public class BnplServicingBeans {
             BnplTermsStore bnplTermsStore,
             BnplBook bnplBook,
             BnplClosures bnplClosures,
+            BnplCollections bnplCollections,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock) {
         return new BnplServicing(bnplServicingStore, bnplPurchaseStore, bnplTermsStore, bnplBook, bnplClosures,
+                bnplCollections, outboxWriter, idGenerator, clock);
+    }
+
+    /** The collection attempts' store (`P12-TSK-019`, {@code bnpl V011}). */
+    @Bean
+    BnplCollectionStore bnplCollectionStore() {
+        return new JdbcBnplCollectionStore();
+    }
+
+    /**
+     * T-svc's collection slot (`P12-TSK-019`): what is due, from the customer's wallet alone, through T-rep's posting half -
+     * no door, no card instrument (owner decision B6).
+     */
+    @Bean
+    BnplCollections bnplCollections(
+            BnplCollectionStore bnplCollectionStore,
+            BnplRepayments bnplRepayments,
+            BnplPurchaseStore bnplPurchaseStore,
+            BnplWallets bnplWallets,
+            BnplBook bnplBook,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new BnplCollections(bnplCollectionStore, bnplRepayments, bnplPurchaseStore, bnplWallets, bnplBook,
                 outboxWriter, idGenerator, clock);
     }
 
@@ -77,10 +110,14 @@ public class BnplServicingBeans {
         return new BnplAccrualMetrics(bnplAccrualStore, dataSource::getConnection, clock, meterRegistry);
     }
 
-    /** {@code finapp.bnpl.billing{product, outcome}} and {@code finapp.bnpl.servicing{step, outcome}} - every series eager. */
+    /**
+     * {@code finapp.bnpl.billing{product, outcome}}, {@code finapp.bnpl.servicing{step, outcome}} and
+     * {@code finapp.bnpl.collection{outcome}} - every series eager; a collection's money also one
+     * {@code finapp.bnpl.repayment{kind = auto_collection}} (`P12-TSK-019`).
+     */
     @Bean
-    BnplServicingMetrics bnplServicingMetrics(MeterRegistry meterRegistry) {
-        return new BnplServicingMetrics(meterRegistry);
+    BnplServicingMetrics bnplServicingMetrics(MeterRegistry meterRegistry, BnplRepaymentMetrics bnplRepaymentMetrics) {
+        return new BnplServicingMetrics(meterRegistry, bnplRepaymentMetrics);
     }
 
     /** The servicing sweep - every instance, no lease, off in test contexts. */

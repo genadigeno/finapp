@@ -101,7 +101,7 @@ public final class BnplServicingSchedule implements SmartLifecycle {
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's cadence stands and a later tick steps again; the class name only - never a party.
-                    metrics.failed();
+                    metrics.failed(failure);
                     log.warn("BNPL servicing step failed: {}", failure.getClass().getSimpleName());
                 }
             }

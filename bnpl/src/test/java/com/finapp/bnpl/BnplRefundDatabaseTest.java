@@ -426,10 +426,12 @@ class BnplRefundDatabaseTest {
         final SharedBook book = new SharedBook(fakes.book);
         final BnplClosures closures = new BnplClosures(REPAYMENTS, SERVICING, PURCHASES, ports, book,
                 new JdbcOutboxWriter(), IDS, CLOCK);
-        final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book, closures,
-                new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRepayments repayments = new BnplRepayments(REPAYMENTS, SERVICING, PURCHASES, TERMS_STORE, ports, book,
                 closures, new JdbcOutboxWriter(), IDS, CLOCK);
+        final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book, closures,
+                new BnplCollections(new JdbcBnplCollectionStore(), repayments, PURCHASES, ports, book,
+                        new JdbcOutboxWriter(), IDS, CLOCK),
+                new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
                 closures, (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
         private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,

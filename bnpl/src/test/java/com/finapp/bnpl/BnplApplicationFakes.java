@@ -75,6 +75,7 @@ final class BnplApplicationFakes {
     final Repayments repayments = new Repayments();
     final Accruals accruals = new Accruals();
     final Refunds refunds = new Refunds();
+    final Collections collections = new Collections();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -122,11 +123,15 @@ final class BnplApplicationFakes {
         Map<UUID, BnplClosure> closureState = repayments.state();
         List<BnplInterestAccrual> accrualState = accruals.state();
         Refunds.State refundState = refunds.state();
+        List<BnplCollectionAttempt> attemptState = collections.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
         try {
-            return work.get();
+            T result = work.get();
+            // At commit (bnpl V011's deferred trigger): every AUTO_COLLECTION repayment is named by its attempt.
+            collections.atCommit();
+            return result;
         } catch (RuntimeException refused) {
             store.rows.clear();
             store.rows.putAll(rows);
@@ -156,6 +161,7 @@ final class BnplApplicationFakes {
             repayments.restore(closureState);
             accruals.restore(accrualState);
             refunds.restore(refundState);
+            collections.restore(attemptState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1684,6 +1690,117 @@ final class BnplApplicationFakes {
     }
 
     /**
+     * {@code bnpl V011}'s collection attempts, in memory (`P12-TSK-019`): {@code UNIQUE (instalment_id, attempt_date)} and
+     * {@code UNIQUE (repayment_id)}; the trigger's ranks - an {@code ACTIVE} obligation under its agreement version in force
+     * whose pinned terms collect automatically, {@code PARTIAL} only when they allow it, dated the database clock's business
+     * date, a billed instalment of its own obligation due by the date, never back-filled, due less collected what the
+     * instalment still has due, and the repayment its own {@code AUTO_COLLECTION} under the attempt's key for the amount
+     * collected, every line on the instalment; and at commit every {@code AUTO_COLLECTION} repayment named by its attempt.
+     */
+    final class Collections implements BnplCollectionStore {
+
+        final List<BnplCollectionAttempt> rows = new ArrayList<>();
+        /** Drop {@code UNIQUE (instalment_id, attempt_date)} - for a probe only. */
+        boolean dateUniqueDropped;
+
+        List<BnplCollectionAttempt> state() {
+            return new ArrayList<>(rows);
+        }
+
+        void restore(List<BnplCollectionAttempt> state) {
+            rows.clear();
+            rows.addAll(state);
+        }
+
+        /** The deferred trigger: an automatic collection's money always has its attempt. */
+        void atCommit() {
+            for (BnplPurchaseStore.Repayment repayment : purchases.repayments.values()) {
+                if (repayment.kind().equals(BnplPurchaseStore.Repayment.AUTO_COLLECTION) && rows.stream()
+                        .noneMatch(row -> row.repayment().filter(repayment.id()::equals).isPresent())) {
+                    throw new BnplStorageException("an automatic BNPL collection's repayment is named by its collection"
+                            + " attempt: P0001");
+                }
+            }
+        }
+
+        List<BnplCollectionAttempt> of(BnplObligationId obligation) {
+            return rows.stream().filter(row -> row.obligation().equals(obligation)).toList();
+        }
+
+        @Override
+        public Map<UUID, java.time.LocalDate> latestAttempts(Connection unitOfWork, BnplObligationId obligation) {
+            log.add("attempts read");
+            Map<UUID, java.time.LocalDate> latest = new LinkedHashMap<>();
+            for (BnplCollectionAttempt row : of(obligation)) {
+                latest.merge(row.instalment(), row.attemptDate(), (a, b) -> a.isAfter(b) ? a : b);
+            }
+            return latest;
+        }
+
+        @Override
+        public void insertAttempt(Connection unitOfWork, BnplCollectionAttempt attempt) {
+            step("attempt insert");
+            if (!dateUniqueDropped && rows.stream().anyMatch(row -> row.instalment().equals(attempt.instalment())
+                    && row.attemptDate().equals(attempt.attemptDate()))) {
+                throw new BnplStorageException("bnpl_collection_attempt_instalment_date_unique: SQLSTATE 23505");
+            }
+            if (attempt.repayment().isPresent()
+                    && rows.stream().anyMatch(row -> row.repayment().equals(attempt.repayment()))) {
+                throw new BnplStorageException("bnpl_collection_attempt_repayment_unique: SQLSTATE 23505");
+            }
+            BnplObligation obligation = purchases.obligations.get(attempt.obligation().value());
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE) {
+                throw new BnplStorageException("a BNPL collection is attempted only on an ACTIVE obligation: P0001");
+            }
+            BnplAgreement agreement = purchases.agreements.get(obligation.agreement().value());
+            BnplTerms pinned = terms.versions.get(agreement.termsVersionId()).terms();
+            if (attempt.agreementVersion() != agreement.version() || !pinned.autoCollection()) {
+                throw new BnplStorageException("a BNPL collection is attempted only under an agreement whose pinned terms"
+                        + " collect automatically: P0001");
+            }
+            if (attempt.outcome() == CollectionOutcome.PARTIAL && !pinned.partialCollection()) {
+                throw new BnplStorageException("a partial BNPL collection only where the pinned terms allow it: P0001");
+            }
+            if (!attempt.attemptDate().equals(java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC))) {
+                throw new BnplStorageException("a BNPL collection attempt is dated the business date of the database"
+                        + " clock: P0001");
+            }
+            BnplBilling billing = purchases.billings.get(attempt.instalment());
+            if (billing == null || !billing.obligation().equals(attempt.obligation())
+                    || billing.dueDate().isAfter(attempt.attemptDate())) {
+                throw new BnplStorageException("a BNPL collection is attempted on a billed instalment of its own"
+                        + " obligation, on or after its due date: P0001");
+            }
+            if (rows.stream().anyMatch(row -> row.instalment().equals(attempt.instalment())
+                    && row.attemptDate().isAfter(attempt.attemptDate()))) {
+                throw new BnplStorageException("a BNPL collection attempt is never back-filled: P0001");
+            }
+            Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+            Money stillDue = billing.interest().minus(purchases.paid(billing, "INTEREST", zero))
+                    .plus(billing.principal().minus(purchases.paid(billing, "PRINCIPAL", zero)))
+                    .minus(purchases.paid(billing, "FEES", zero));
+            if (!attempt.due().minus(attempt.collected()).equals(stillDue)) {
+                throw new BnplStorageException("a BNPL collection attempt records what its instalment had due and what"
+                        + " it collected: P0001");
+            }
+            if (attempt.repayment().isPresent()) {
+                BnplPurchaseStore.Repayment repayment = purchases.repayments.get(attempt.repayment().get());
+                if (repayment == null || !repayment.obligation().equals(attempt.obligation())
+                        || !repayment.kind().equals(BnplPurchaseStore.Repayment.AUTO_COLLECTION)
+                        || !repayment.requestKey().equals(BnplCollectionAttempt.requestKey(attempt.instalment(),
+                                attempt.attemptDate()))
+                        || !repayment.amount().equals(attempt.collected())
+                        || repayment.allocations().stream().anyMatch(line -> !line.target().equals("DUE_ITEM")
+                                || !line.instalment().orElseThrow().equals(attempt.instalment()))) {
+                    throw new BnplStorageException("a BNPL collection names its own AUTO_COLLECTION repayment, which pays"
+                            + " only its instalment: P0001");
+                }
+            }
+            rows.add(attempt);
+        }
+    }
+
+    /**
      * {@code bnpl V009}'s accrual writer, in memory (`P12-TSK-017`): the rows T-acc births - each also on
      * {@link Servicing#accruals}, the record the billing reads - and the trigger's ranks: {@code UNIQUE (obligation_id,
      * accrual_date)}, oldest first, never early on the database clock, never before the purchase's business date, an
@@ -2057,6 +2174,14 @@ final class BnplApplicationFakes {
                 com.finapp.sharedkernel.money.CurrencyCode currency) {
             return Optional.ofNullable(byParty.get(party));
         }
+    }
+
+    /** T-svc's collection slot over these fakes (`P12-TSK-019`): the collections, through T-rep's posting half. */
+    BnplCollections collectionsOver(BnplClosures closures, com.finapp.sharedkernel.id.IdGenerator ids,
+            java.time.Clock clock) {
+        BnplRepayments posting = new BnplRepayments(repayments, servicing, purchases, terms.store(), wallets, book,
+                closures, outbox, ids, clock);
+        return new BnplCollections(collections, posting, purchases, wallets, book, outbox, ids, clock);
     }
 
     private static <K, V> void reset(Map<K, V> into, Map<K, V> from) {

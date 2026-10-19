@@ -94,7 +94,7 @@ class BnplRefundsTest {
         BnplClosures closures = new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets,
                 world.book, world.outbox, IDS, CLOCK);
         servicing = new BnplServicing(world.servicing, world.purchases, world.terms.store(), world.book, closures,
-                world.outbox, IDS, CLOCK);
+                world.collectionsOver(closures, IDS, CLOCK), world.outbox, IDS, CLOCK);
         repayments = new BnplRepayments(world.repayments, world.servicing, world.purchases, world.terms.store(),
                 world.wallets, world.book, closures, world.outbox, IDS, CLOCK);
         refunds = new BnplRefunds(world.refunds, world.servicing, world.purchases, world.terms.store(), world.merchants,
@@ -539,12 +539,17 @@ class BnplRefundsTest {
     }
 
     @Test
-    @DisplayName("a refund racing an instalment collection conserves in both orders: collected-then-refunded returns the"
-            + " collected amount in the excess; refunded-then-collected leaves nothing to collect (scenario 7)")
+    @DisplayName("a refund racing an auto-collection conserves in both orders (both take B4): collected-then-refunded"
+            + " returns the collected instalment in the excess; refunded-then-serviced leaves nothing to collect, the"
+            + " obligation closed (scenario 7, P12-TSK-019's collection)")
     void aRefundRacingACollectionConservesInBothOrders() {
+        world.terms.activate(BnplTermsFixtures.payIn4().autoCollection(true).build(), 2);
         Agreement collectedFirst = payIn4();
         serviceAt("2026-10-31T09:00:00Z", collectedFirst);
-        repayAt("2026-11-01T10:00:00Z", collectedFirst, "collect", eur(150_00));
+        assertThat(world.collections.rows).as("one attempt, collected").singleElement()
+                .satisfies(attempt -> assertThat(attempt.collected()).isEqualTo(eur(150_00)));
+        assertThat(world.book.availableUnderLock(BnplApplicationFakes.UOW, wallet)).as("instalments 1 (at purchase) and 2 (collected) paid")
+                .isEqualTo(eur(700_00));
         BnplRefund afterCollection = refundAt("2026-11-02T10:00:00Z", collectedFirst, "full", eur(600_00)).refund();
         assertThat(afterCollection.cancelled()).isEqualTo(eur(300_00));
         assertThat(afterCollection.excess()).as("instalments 1 and 2, both paid").isEqualTo(eur(300_00));
@@ -552,16 +557,44 @@ class BnplRefundsTest {
         Money payableA = world.book.balance(payable, false);
 
         init(IDS.next(), IDS.next());
+        world.terms.activate(BnplTermsFixtures.payIn4().autoCollection(true).build(), 2);
         Agreement refundedFirst = payIn4();
-        serviceAt("2026-10-31T09:00:00Z", refundedFirst);
-        BnplRefund beforeCollection = refundAt("2026-11-01T10:00:00Z", refundedFirst, "full", eur(600_00)).refund();
+        BnplRefund beforeCollection = refundAt("2026-10-31T08:00:00Z", refundedFirst, "full", eur(600_00)).refund();
         assertThat(beforeCollection.cancelled()).isEqualTo(eur(450_00));
         assertThat(beforeCollection.excess()).isEqualTo(eur(150_00));
-        assertThatThrownBy(() -> repayAt("2026-11-02T10:00:00Z", refundedFirst, "collect", eur(150_00)))
-                .isInstanceOf(BnplRepayments.ObligationClosed.class);
+        serviceAt("2026-10-31T09:00:00Z", refundedFirst);
+        assertThat(world.collections.rows).as("nothing attempted on a closed obligation").isEmpty();
         assertThat(world.book.availableUnderLock(BnplApplicationFakes.UOW, wallet)).as("the customer whole either way")
                 .isEqualTo(walletA).isEqualTo(eur(1_000_00));
         assertThat(world.book.balance(payable, false)).isEqualTo(payableA).isEqualTo(eur(0));
+    }
+
+    @Test
+    @DisplayName("a refund cancelling part of a billed instalment the collection could not take leaves the collection"
+            + " exactly the rest: 400 cancels 4, 3 and 100 of 2; the next attempt collects 50 and the servicing step"
+            + " closes the obligation REPAID (P12-TSK-019's collection beside T-ref)")
+    void aCollectionAfterARefundCollectsOnlyWhatIsLeft() {
+        world.terms.activate(BnplTermsFixtures.payIn4().autoCollection(true).build(), 2);
+        world.book.funds.put(wallet, eur(150_00));
+        Agreement p4 = payIn4();
+        serviceAt("2026-10-31T09:00:00Z", p4);
+        assertThat(world.collections.rows).singleElement()
+                .satisfies(attempt -> assertThat(attempt.outcome()).isEqualTo(CollectionOutcome.INSUFFICIENT_FUNDS));
+        BnplRefunds.Refunded refunded = refundAt("2026-10-31T12:00:00Z", p4, "part", eur(400_00));
+        assertThat(refunded.refund().cancelledUnbilled()).isEqualTo(eur(300_00));
+        assertThat(refunded.refund().cancelledBilled()).as("100 of instalment 2's 150").isEqualTo(eur(100_00));
+        assertThat(refunded.closure()).isEmpty();
+        world.book.funds.put(wallet, eur(650_00));
+        try (SecurityContext.Scope scope = SecurityContext.enter(SYSTEM)) { // the servicing schedule's actor, at closure
+            serviceAt("2026-11-01T09:00:00Z", p4);
+        }
+        assertThat(world.collections.rows).hasSize(2).last().satisfies(attempt -> {
+            assertThat(attempt.outcome()).isEqualTo(CollectionOutcome.COLLECTED);
+            assertThat(attempt.collected()).as("only what the refund left due").isEqualTo(eur(50_00));
+        });
+        assertThat(world.book.availableUnderLock(BnplApplicationFakes.UOW, wallet)).isEqualTo(eur(450_00));
+        assertThat(world.repayments.closures.values()).singleElement()
+                .satisfies(closure -> assertThat(closure.reason()).isEqualTo(BnplClosureReason.REPAID));
     }
 
     @Test
