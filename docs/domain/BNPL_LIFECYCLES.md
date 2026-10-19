@@ -636,6 +636,21 @@ facts; risk owns fraud and abuse judgements; neither writes the other's rows. **
 with its default): acceleration, penalty interest, interest on interest, arrears notifications, bureau
 reporting, statutory contact limits, any consumer-credit-law feature (A1).
 
+*(As built by `P12-TSK-020`, `BnplConditions` and `bnpl V013`: T-svc's condition and late-fee slot after the closure, under
+B4, only on an obligation the step did not close. **Past due** - a billed instalment owing anything (fees, interest or
+principal) at the end of its due date; **DPD** the business date less the oldest such due date, `bnpl.days_past_due` and
+`BnplDelinquencyState.derive` one rule; the bucket from the pinned bounds; **default** `DPD >= threshold or (defaulted and
+DPD > 0)`. A `bnpl_condition_event` row per change of bucket (`DELINQUENCY`, with the bucket before) or flag (`DEFAULT`),
+`UNIQUE (obligation_id, business_date, kind)`; a business date with a change recorded is not evaluated again (the history
+lags a repayment by at most a business date; the customer's agreement read derives the condition live). The cure of an
+obligation whose every instalment is billed is its closure - a closed obligation records nothing more, its last flag
+standing as the history left it. **The late fee** (A13) once per instalment whose own age reached the pinned
+`late_fee_day` (never DPD, so a younger instalment is not charged early) while it owes interest or principal - a missed day
+caught up, a settled instalment never charged - at the pinned fee or what the per-agreement cap still admits; F4 under
+`bnpl.fee:<instalment>:LATE`, its income row at L8 after the collection's (P). **The release** (OQ-14): a refund cancelling
+a billed instalment's whole unpaid principal, or leaving no principal unpaid at all, releases the fees still due on it in
+its own entry. The dispute hold's suspension (`-023`) and the waiver (`-024`) amend these steps.)*
+
 ---
 
 ## 6. The ranks, per machine (planned)

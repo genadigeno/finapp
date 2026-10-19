@@ -126,11 +126,12 @@ public class BnplPurchaseBeans {
     BnplAgreementDesk bnplAgreementDesk(
             BnplAcceptances bnplAcceptances,
             BnplObligations bnplObligations,
+            com.finapp.bnpl.BnplConditions bnplConditions,
             IdentityStore<Connection> identityStore,
             IdempotentExecutor idempotentExecutor,
             BnplTransactions bnplTransactions,
             BnplPurchaseMetrics bnplPurchaseMetrics) {
-        return new BnplAgreementDesk(bnplAcceptances, bnplObligations, identityStore, idempotentExecutor,
+        return new BnplAgreementDesk(bnplAcceptances, bnplObligations, bnplConditions, identityStore, idempotentExecutor,
                 bnplTransactions, bnplPurchaseMetrics);
     }
 }

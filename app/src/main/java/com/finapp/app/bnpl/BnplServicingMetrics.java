@@ -27,7 +27,10 @@ import java.util.Objects;
  *       {@code insufficient_funds}, {@code wallet_not_postable}, {@code nothing_due}); a collection that moved money is
  *       also one {@code finapp.bnpl.repayment{kind = auto_collection}} ({@code repaid}, or {@code closed} when the step's
  *       closure followed it), and one that took nothing from an instalment with something due one
- *       {@code insufficient_funds} there - {@link BnplRepaymentMetrics}' series, the customer's door's beside it.
+ *       {@code insufficient_funds} there - {@link BnplRepaymentMetrics}' series, the customer's door's beside it;
+ *   <li>{@code finapp.bnpl.fee{outcome}} (`P12-TSK-020`, {@code PHASE_12_PLAN.md} section 15) - each late fee a committed
+ *       step assessed: in full ({@code assessed}) or at what the agreement's cap admitted ({@code capped}); and each
+ *       condition change the step recorded, {@code servicing{step = condition, outcome = recorded}}.
  * </ul>
  *
  * <p>Every series registered eagerly. Never an amount, a party, an obligation id or a date in a tag (ADR-0072).
@@ -42,6 +45,19 @@ public final class BnplServicingMetrics {
 
     /** Exported as {@code finapp_bnpl_collection_total} (`P12-TSK-019`), the plan's name. */
     public static final String COLLECTION = "finapp.bnpl.collection";
+
+    /** Exported as {@code finapp_bnpl_fee_total} (`P12-TSK-020`), the plan's name. */
+    public static final String FEE = "finapp.bnpl.fee";
+
+    /** The fee series' closed set of outcomes: a late fee assessed in full, or capped at what the cap admitted. */
+    public enum FeeOutcome {
+        ASSESSED,
+        CAPPED;
+
+        String tag() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
 
     /** The billing series' closed set of outcomes. */
     public enum BillingOutcome {
@@ -58,7 +74,9 @@ public final class BnplServicingMetrics {
         SERVICE,
         CATCH_UP,
         /** The closure step (`P12-TSK-018`): an obligation the step settled and closed. */
-        CLOSURE;
+        CLOSURE,
+        /** The condition step (`P12-TSK-020`): a change of bucket or default flag recorded. */
+        CONDITION;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);
@@ -72,7 +90,9 @@ public final class BnplServicingMetrics {
         NOT_SERVICED,
         FAILED,
         APPLIED,
-        CLOSED;
+        CLOSED,
+        /** A condition change recorded (`P12-TSK-020`). */
+        RECORDED;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);
@@ -99,6 +119,10 @@ public final class BnplServicingMetrics {
         }
         servicing(Step.CATCH_UP, Outcome.APPLIED);
         servicing(Step.CLOSURE, Outcome.CLOSED);
+        servicing(Step.CONDITION, Outcome.RECORDED);
+        for (FeeOutcome outcome : FeeOutcome.values()) {
+            fee(outcome);
+        }
     }
 
     /** A committed step's outcome - its billings, its applications and its catch-up. */
@@ -125,6 +149,19 @@ public final class BnplServicingMetrics {
         }
         if (step.closed()) {
             servicing(Step.CLOSURE, Outcome.CLOSED).increment();
+        }
+        // One increment per change and per fee - counts, never an amount or a DPD.
+        Counter recorded = servicing(Step.CONDITION, Outcome.RECORDED);
+        for (int change = 0; change < step.conditionChanges(); change++) {
+            recorded.increment();
+        }
+        Counter assessed = fee(FeeOutcome.ASSESSED);
+        for (int fee = 0; fee < step.fees() - step.feesCapped(); fee++) {
+            assessed.increment();
+        }
+        Counter capped = fee(FeeOutcome.CAPPED);
+        for (int fee = 0; fee < step.feesCapped(); fee++) {
+            capped.increment();
         }
         int moved = 0;
         for (CollectionOutcome outcome : CollectionOutcome.values()) {
@@ -184,6 +221,14 @@ public final class BnplServicingMetrics {
                 .description("Automatic BNPL collection attempts from the wallet of committed servicing steps, by"
                         + " outcome - collected, partial, insufficient funds, wallet not postable, nothing due")
                 .tags("outcome", outcome.name().toLowerCase(Locale.ROOT))
+                .register(registry);
+    }
+
+    private Counter fee(FeeOutcome outcome) {
+        return Counter.builder(FEE)
+                .description("BNPL late fees assessed by committed servicing steps - in full (assessed) or at what the"
+                        + " agreement's cap admitted (capped)")
+                .tags("outcome", outcome.tag())
                 .register(registry);
     }
 

@@ -73,7 +73,8 @@ class BnplServicingTest {
         BnplClosures closures = new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets,
                 world.book, world.outbox, IDS, CLOCK);
         servicing = new BnplServicing(world.servicing, world.purchases, world.terms.store(), world.book, closures,
-                world.collectionsOver(closures, IDS, CLOCK), world.outbox, IDS, CLOCK);
+                world.collectionsOver(closures, IDS, CLOCK), world.conditionsOver(IDS, CLOCK), world.outbox, IDS,
+                CLOCK);
         party = UUID.randomUUID();
         merchant = UUID.randomUUID();
         world.merchants.standings.put(merchant, BnplMerchants.Standing.ENABLED);
@@ -141,8 +142,10 @@ class BnplServicingTest {
         assertThat(world.purchases.billings).hasSize(4);
         assertThat(world.book.keys).filteredOn(key -> key.startsWith(BnplServicing.BILLING_KEY_PREFIX))
                 .hasSize(4).doesNotHaveDuplicates();
+        // And the condition the first step recorded - instalments 2 and 3 past due (`P12-TSK-020`) - once, however many swept.
         assertThat(world.events).extracting(EventEnvelope::eventType)
-                .containsExactly("bnpl.InstalmentDue", "bnpl.InstalmentDue", "bnpl.InstalmentDue");
+                .containsExactly("bnpl.InstalmentDue", "bnpl.InstalmentDue", "bnpl.InstalmentDue",
+                        BnplConditions.DELINQUENCY_CHANGED_EVENT);
     }
 
     @Test

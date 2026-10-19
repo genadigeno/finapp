@@ -1006,6 +1006,17 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-019. The collection slot's read of its own attempts: the latest attempt date per instalment of an obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4, JdbcBnplServicingStore.lock), read after the lock; never a request value, no door reaches it - collection is the system's act under the agreement's pinned terms (A7, owner decision B6).")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplConditionStore.latest",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P12-TSK-020. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) - the condition of the caller's own agreement, derived live - or is the one the servicing sweep claimed and its step holds FOR UPDATE (B4, JdbcBnplServicingStore.lock) for the condition step; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplConditionStore.assessments",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-020. The late-fee step's read of the obligation's assessments (the once-per-instalment set and the cap): an obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4, JdbcBnplServicingStore.lock), read after the lock; never a request value, no door reaches it - the fee is the system's act under the agreement's pinned terms (A13).")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplServicingStore.restamp",
                             new Entry(
                                     Scope.ADMINISTERED,

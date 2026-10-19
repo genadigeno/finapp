@@ -139,8 +139,8 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
         Objects.requireNonNull(obligation, "obligation");
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT id, sequence, instalment_id, kind, currency, scale, principal_cancelled_minor,"
-                        + " interest_released_minor, whole FROM bnpl.bnpl_refund_adjustment WHERE obligation_id = ?"
-                        + " ORDER BY sequence DESC, id")) {
+                        + " interest_released_minor, whole, late_fee_released_minor FROM bnpl.bnpl_refund_adjustment"
+                        + " WHERE obligation_id = ? ORDER BY sequence DESC, id")) {
             select.setObject(1, obligation.value());
             List<BnplRefund.Adjustment> adjustments = new ArrayList<>();
             try (ResultSet rows = select.executeQuery()) {
@@ -253,9 +253,9 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
                         + " payable_debit_minor, cancelled_unbilled_minor, cancelled_billed_minor, excess_minor, excess_to,"
                         + " interest_accrued_released_minor, interest_due_released_minor, allocation_engine, agreement_id,"
                         + " agreement_version, schedule_version, reason, journal_entry_id, value_date, created_at,"
-                        + " correlation_id)"
+                        + " correlation_id, late_fee_released_minor)"
                         + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                        + " clock_timestamp(), ?) RETURNING created_at")) {
+                        + " clock_timestamp(), ?, ?) RETURNING created_at")) {
             Money amount = refund.amount();
             insert.setObject(1, refund.id());
             insert.setObject(2, refund.purchase().value());
@@ -284,6 +284,7 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
             insert.setObject(25, refund.entry().value());
             insert.setDate(26, Date.valueOf(refund.valueDate()));
             insert.setString(27, refund.correlation().value());
+            insert.setLong(28, refund.lateFeeReleased().minorUnits());
             try (ResultSet row = insert.executeQuery()) {
                 row.next();
                 created = row.getTimestamp("created_at").toInstant();
@@ -293,8 +294,8 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
         }
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO bnpl.bnpl_refund_adjustment (id, refund_id, obligation_id, sequence, instalment_id, kind,"
-                        + " currency, scale, principal_cancelled_minor, interest_released_minor, whole)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + " currency, scale, principal_cancelled_minor, interest_released_minor, whole,"
+                        + " late_fee_released_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             for (BnplRefund.Adjustment adjustment : refund.adjustments()) {
                 insert.setObject(1, adjustment.id());
                 insert.setObject(2, refund.id());
@@ -307,6 +308,7 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
                 insert.setLong(9, adjustment.principalCancelled().minorUnits());
                 insert.setLong(10, adjustment.interestReleased().minorUnits());
                 insert.setBoolean(11, adjustment.whole());
+                insert.setLong(12, adjustment.lateFeeReleased().minorUnits());
                 insert.executeUpdate();
             }
         } catch (SQLException failure) {
@@ -350,7 +352,7 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
         Map<UUID, List<BnplRefund.Adjustment>> adjustments = new LinkedHashMap<>();
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT refund_id, id, sequence, instalment_id, kind, currency, scale, principal_cancelled_minor,"
-                        + " interest_released_minor, whole FROM bnpl.bnpl_refund_adjustment"
+                        + " interest_released_minor, whole, late_fee_released_minor FROM bnpl.bnpl_refund_adjustment"
                         + " WHERE refund_id = ANY (?) ORDER BY sequence DESC")) {
             select.setArray(1, unitOfWork.createArrayOf("uuid", rows.keySet().toArray()));
             try (ResultSet row = select.executeQuery()) {
@@ -412,7 +414,8 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
                 row.getObject("instalment_id", UUID.class),
                 RefundAllocation.Cancellation.Kind.valueOf(row.getString("kind")),
                 money(row, "principal_cancelled_minor", currency, scale),
-                money(row, "interest_released_minor", currency, scale), row.getBoolean("whole"));
+                money(row, "interest_released_minor", currency, scale), row.getBoolean("whole"),
+                money(row, "late_fee_released_minor", currency, scale));
     }
 
     private static Money money(ResultSet row, String column, CurrencyCode currency, int scale) throws SQLException {

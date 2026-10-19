@@ -69,6 +69,12 @@ import lombok.RequiredArgsConstructor;
  *       condition and late fee (`-020`); <strong>the closure is built by `P12-TSK-018`</strong> ({@link BnplClosures}): settled - every receivable zero, every instalment billed, pay-in-N
  *       every elapsed date with principal outstanding accrued - the credit balance refunded to the wallet under (P) and
  *       {@code CLOSED (REPAID)}; a closed obligation's permit is not re-stamped (nothing services it again);
+ *   <li><strong>the condition and the late fee</strong> (`P12-TSK-020`, {@link BnplConditions}) - only on an obligation
+ *       the step did not close: the condition derived from the billed items on the business date and a
+ *       {@code bnpl_condition_event} appended only on a change ({@code UNIQUE (obligation_id, business_date, kind)}); then
+ *       the pinned late fee once per instalment whose own age reached the pinned day, capped per agreement - F4 under
+ *       {@code bnpl.fee:<instalment>:LATE}, the currency's {@code BNPL_FEE_INCOME} row at L8 after any wallet the collection
+ *       took ({@code UNIQUE (instalment_id, kind)});
  *   <li>the permit: the start of the next business date in the pinned zone, stamped by the database.
  * </ol>
  *
@@ -92,6 +98,7 @@ public final class BnplServicing {
     @NonNull private final BnplBook book;
     @NonNull private final BnplClosures closures;
     @NonNull private final BnplCollections collections;
+    @NonNull private final BnplConditions conditions;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -185,14 +192,23 @@ public final class BnplServicing {
         }
         if (closed) {
             // A closed obligation is never serviced again: its permit stays where the claim put it, and nothing moves it.
+            // Nor is it evaluated or charged - its condition is its closure.
             return new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(obligation.product()), billed,
                     appliedAtBilling, caughtUp, true, collected.attempts());
+        }
+        // The condition, then the late fee (`P12-TSK-020`) - after the closure, under the same lock; the fee's income row at
+        // L8 after any wallet the collection holds.
+        int changes;
+        BnplConditions.Assessed fees;
+        try (CorrelationContext.Scope scope = CorrelationContext.enter(flow)) {
+            changes = conditions.evaluate(unitOfWork, locked, pinned, today, obligation.correlation());
+            fees = conditions.assessLateFees(unitOfWork, locked, pinned, accounts, today, obligation.correlation());
         }
         if (!store.restamp(unitOfWork, id, today.plusDays(1))) {
             throw new IllegalStateException("the locked obligation left servicing under its own row lock");
         }
         return new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(obligation.product()), billed,
-                appliedAtBilling, caughtUp, false, collected.attempts());
+                appliedAtBilling, caughtUp, false, collected.attempts(), changes, fees.assessed(), fees.capped());
     }
 
     /**

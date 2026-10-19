@@ -137,7 +137,7 @@ class BnplTermsTest {
                 Map.entry("negative rate", b -> b.nominalAnnualRate(new BigDecimal("-0.01"))),
                 Map.entry("decimal places", b -> b.nominalAnnualRate(new BigDecimal("0.123456789"))),
                 Map.entry("late fee", b -> b.lateFee(euros(-1))),
-                Map.entry("late fee cap", b -> b.lateFeeCap(euros(4_99))),
+                Map.entry("late fee cap", b -> b.lateFee(euros(5_00)).lateFeeCap(euros(4_99))),
                 Map.entry("grace", b -> b.graceDays(31)),
                 Map.entry("late fee day", b -> b.lateFeeDay(3)),
                 Map.entry("late fee day past default", b -> b.lateFeeDay(91)),

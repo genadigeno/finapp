@@ -89,6 +89,23 @@ class BnplAgreementDeskTest {
     }
 
     @Test
+    @DisplayName("the agreement shows its condition, derived (P12-TSK-020): PAST_DUE with DPD, bucket and the default flag;"
+            + " CURRENT with no bucket; none for a closed agreement")
+    void theAgreementShowsItsCondition() {
+        BnplPurchaseStore.Owned owned = new BnplPurchaseStore.Owned(obligation(), purchase(IDS.next()), agreement(),
+                eur(600_00));
+        BnplObligations.Read read = new BnplObligations.Read(owned, new BnplObligations.Balances(eur(300_00),
+                eur(150_00), eur(0), eur(0), eur(5_00), eur(0)));
+        BnplAgreementDesk.BnplConditionView late = BnplAgreementDesk.view(read, java.util.Optional.of(
+                new com.finapp.bnpl.BnplDelinquencyState(91, java.util.Optional.of(
+                        com.finapp.bnpl.BnplDelinquencyBucket.B4_90_PLUS), true))).condition();
+        assertThat(late).isEqualTo(new BnplAgreementDesk.BnplConditionView("PAST_DUE", 91, "B4_90_PLUS", true));
+        assertThat(BnplAgreementDesk.view(read, java.util.Optional.of(com.finapp.bnpl.BnplDelinquencyState.CURRENT))
+                .condition()).isEqualTo(new BnplAgreementDesk.BnplConditionView("CURRENT", 0, null, false));
+        assertThat(BnplAgreementDesk.view(read).condition()).isNull();
+    }
+
+    @Test
     @DisplayName("a schedule lists every instalment with its billed mark and - billed - what it billed, what was paid and"
             + " what is still due (P12-TSK-015)")
     void theScheduleView() {
@@ -105,7 +122,7 @@ class BnplAgreementDeskTest {
         BnplPurchaseStore.BilledItem paid = new BnplPurchaseStore.BilledItem(IDS.next(), first,
                 LocalDate.of(2026, 10, 17), eur(0), eur(0), eur(150_00), eur(0), eur(0), eur(150_00));
         BnplPurchaseStore.BilledItem partly = new BnplPurchaseStore.BilledItem(IDS.next(), second,
-                LocalDate.of(2026, 10, 31), eur(0), eur(0), eur(150_00), eur(0), eur(0), eur(40_00));
+                LocalDate.of(2026, 10, 31), eur(5_00), eur(0), eur(150_00), eur(5_00), eur(0), eur(35_00));
         BnplAgreementDesk.BnplScheduleView view = BnplAgreementDesk.schedule(new BnplObligations.Schedule(owned,
                 schedule, java.util.Map.of(first, paid, second, partly)));
         assertThat(view.instalments()).extracting(BnplAgreementDesk.BnplScheduledInstalmentView::billed)
@@ -114,9 +131,12 @@ class BnplAgreementDeskTest {
         assertThat(view.instalments().get(0).due()).isEqualTo("0.00");
         assertThat(view.instalments().get(1).billedPrincipal()).isEqualTo("150.00");
         assertThat(view.instalments().get(1).paid()).isEqualTo("40.00");
-        assertThat(view.instalments().get(1).due()).isEqualTo("110.00");
+        assertThat(view.instalments().get(1).due()).isEqualTo("115.00");
         assertThat(view.instalments().get(2).billedPrincipal()).isEqualTo("0.00");
         assertThat(view.instalments().get(2).due()).isEqualTo("0.00");
+        assertThat(view.instalments()).extracting(BnplAgreementDesk.BnplScheduledInstalmentView::billedFees)
+                .as("instalment 2's late fee, part of what it owes (P12-TSK-020)")
+                .containsExactly("0.00", "5.00", "0.00", "0.00");
     }
 
     @Test

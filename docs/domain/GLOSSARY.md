@@ -1616,7 +1616,12 @@ schedule.
 interest) and a due date — which a refund may cancel in whole or in part, latest first; what became
 due at its date is its billing, what paid it its allocations, and each automatic try to collect it a
 collection attempt, born once per instalment and date (`bnpl_collection_attempt`, `P12-TSK-019`: from the
-customer's wallet only, owner decision B6 - a failed attempt posts nothing and is the evidence).
+customer's wallet only, owner decision B6 - a failed attempt posts nothing and is the evidence). Once
+billed and unpaid at the end of its due date it is past due: the oldest such instalment's age is the
+obligation's Days Past Due, recorded as a `bnpl_condition_event` only on a change of bucket or default
+flag (`P12-TSK-020`); and its own age reaching the pinned late-fee day earns it the pinned late fee once
+(`bnpl_fee_assessment`, `UNIQUE (instalment_id, kind)`, capped per agreement), which joins what it owes
+and is released if a refund cancels it whole (OQ-14).
 **Not:** a Loan Instalment (§7's Instalment): the same word, a different lifecycle — a BNPL instalment
 can be cancelled by a third party's refund, a loan instalment cannot (`MODULE_ARCHITECTURE.md` §5).
 Nor a Repayment, which is money received.
@@ -1646,7 +1651,9 @@ cancellation, Pay-in-N's unpaid interest waived (A11, OQ-14).
 platform's expense — the merchant funds every unit of it. Never edited, and never re-cut by a later
 refund. Built by `P12-TSK-021` (`bnpl.bnpl_refund_adjustment`): one row per instalment touched, the excess on the refund
 row itself; the principal cancelled (`UNBILLED` or `BILLED_UNPAID`), pay-in-N billed interest released, and whether the
-instalment owes no principal after it (`whole`) - the late fee's release joins with `-020`. The interest released is
+instalment owes no principal after it (`whole`) - and, built by `P12-TSK-020` (OQ-14), the unpaid late fees
+of a billed instalment cancelled whole, released in the refund's own entry (`late_fee_released_minor`), never a fee
+already paid and never twice. The interest released is
 platform income forgone, not part of the refund the merchant funds.
 **Owned by:** `bnpl`
 
