@@ -385,6 +385,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements",
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/schedule",
+                        // P12-TSK-018: the customer's repayment from the wallet (keyed, the conditional step-up, 201 with
+                        // the repayment and any closure) and the owner's repayments.
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/repayments",
                         // P12-TSK-014: the merchant's BNPL purchase, over its own key - the gross, the fee and its pinned
                         // version, the net and the financing entry; nothing of the customer's credit; another merchant's
                         // purchase the uniform 404.

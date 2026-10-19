@@ -3596,7 +3596,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_obligation` | `purchase_date` | `INTERNAL` | The purchase's business date - the principal value floor's start |
 | `bnpl_obligation` | `opened_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_obligation` | `next_servicing_at` | `INTERNAL` | The servicing sweep's permit (`P12-TSK-015`) |
-| `bnpl_obligation` | `closed_at` | `INTERNAL` | System time of its closure (later tasks) |
+| `bnpl_obligation` | `closed_at` | `INTERNAL` | System time of its closure (stamped by the edge function, `P12-TSK-018`) |
 | `bnpl_obligation` | `closure_reason` | `INTERNAL` | A closed reason code (`CLOSED` only) |
 | `bnpl_obligation` | `correlation_id` | `INTERNAL` | The acceptance's correlation |
 | `bnpl_obligation_event` | `id` | `INTERNAL` | Generated |
@@ -3684,7 +3684,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_billing` | `correlation_id` | `INTERNAL` | The obligation's correlation |
 | `bnpl_repayment` | `id` | `INTERNAL` | Generated |
 | `bnpl_repayment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
-| `bnpl_repayment` | `kind` | `INTERNAL` | A closed kind (`AT_PURCHASE`) |
+| `bnpl_repayment` | `kind` | `INTERNAL` | A closed kind (`AT_PURCHASE`; `CUSTOMER` from `P12-TSK-018`, `AUTO_COLLECTION` and `PAYOFF` admitted by `-019` and `-022`) |
 | `bnpl_repayment` | `request_key` | `CONFIDENTIAL` | The requester's key - here the purchase's id |
 | `bnpl_repayment` | `currency` | `INTERNAL` | Its currency |
 | `bnpl_repayment` | `scale` | `INTERNAL` | Its scale |
@@ -3742,6 +3742,16 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_interest_accrual` | `journal_entry_id` | `INTERNAL` | The accrual entry F2a - null for a zero day |
 | `bnpl_interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_interest_accrual` | `correlation_id` | `INTERNAL` | The obligation's correlation |
+| `bnpl_obligation_closure` | `id` | `INTERNAL` | Generated (`P12-TSK-018`) |
+| `bnpl_obligation_closure` | `obligation_id` | `CONFIDENTIAL` | Its obligation - one closure each |
+| `bnpl_obligation_closure` | `reason` | `INTERNAL` | A closed reason code (`REPAID` here) |
+| `bnpl_obligation_closure` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_obligation_closure` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_obligation_closure` | `refund_minor` | `RESTRICTED-FINANCIAL` | The credit balance refunded to the wallet at closure |
+| `bnpl_obligation_closure` | `refund_journal_entry_id` | `INTERNAL` | The refund's entry (`bnpl.closure-refund:<obligation>`) - exactly when positive |
+| `bnpl_obligation_closure` | `repayment_id` | `INTERNAL` | The repayment whose transaction closed it, if any |
+| `bnpl_obligation_closure` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_obligation_closure` | `correlation_id` | `INTERNAL` | The closing act's correlation |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

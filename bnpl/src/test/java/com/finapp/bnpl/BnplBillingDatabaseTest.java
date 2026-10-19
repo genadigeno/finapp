@@ -418,6 +418,8 @@ class BnplBillingDatabaseTest {
         final BnplApplicationFakes fakes = new BnplApplicationFakes();
         final SharedBook book = new SharedBook(fakes.book);
         final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book,
+                new BnplClosures(new JdbcBnplRepaymentStore(), SERVICING, PURCHASES, ports, book, new JdbcOutboxWriter(),
+                        IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE,
                 book, IDS);

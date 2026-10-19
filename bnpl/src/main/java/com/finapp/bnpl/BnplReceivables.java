@@ -140,8 +140,24 @@ public final class BnplReceivables {
         return new Derived(new DueState(items, principalNotDue), billingOf);
     }
 
-    /** The rows do not explain the ledger - an alert, never allocated over (`INV-BNPL-01`). */
-    public static final class Anomaly extends IllegalStateException {
+    /**
+     * Whether every receivable of the obligation is zero (`P12-TSK-018`): {@code BNPL_PRINCIPAL},
+     * {@code BNPL_PRINCIPAL_DUE}, {@code BNPL_INTEREST_ACCRUED}, {@code BNPL_INTEREST_DUE} and {@code BNPL_FEES_DUE}, each a
+     * ledger balance derived from journal lines under B4 - the closure's ledger side. The credit balance is not a receivable
+     * (it is owed to the customer, and refunded at the closure).
+     */
+    public boolean everyReceivableZero(Connection unitOfWork, BnplLedgerAccounts accounts) {
+        for (LedgerAccount receivable : List.of(accounts.principal(), accounts.principalDue(), accounts.interestAccrued(),
+                accounts.interestDue(), accounts.feesDue())) {
+            if (!book.balanceOf(unitOfWork, receivable).isZero()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The rows do not explain the ledger - an alert, never allocated over (`INV-BNPL-01`); an {@link AllocationAnomaly}. */
+    public static final class Anomaly extends AllocationAnomaly {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         Anomaly(String message) {

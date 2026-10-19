@@ -18,8 +18,8 @@ import java.util.Objects;
  *   <li>{@code finapp.bnpl.servicing{step, outcome}} - each servicing step ({@code step = service}) by its outcome
  *       ({@code serviced}, {@code behind_accrual}, {@code not_serviced}, {@code failed} - rolled back, retried at the
  *       claim's cadence), and each catch-up application ({@code step = catch_up}, {@code outcome = applied}) - the
- *       Phase 11 gate's R2 visible; the steps later tasks add (collection, closure, condition, late fee) join the
- *       {@code step} set.
+ *       Phase 11 gate's R2 visible; and each closure the step made ({@code step = closure}, {@code outcome = closed},
+ *       `P12-TSK-018`); the steps later tasks add (collection, condition, late fee) join the {@code step} set.
  * </ul>
  *
  * <p>Every series registered eagerly. Never an amount, a party, an obligation id or a date in a tag (ADR-0072).
@@ -45,7 +45,9 @@ public final class BnplServicingMetrics {
     /** The servicing series' closed set of steps. */
     public enum Step {
         SERVICE,
-        CATCH_UP;
+        CATCH_UP,
+        /** The closure step (`P12-TSK-018`): an obligation the step settled and closed. */
+        CLOSURE;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);
@@ -58,7 +60,8 @@ public final class BnplServicingMetrics {
         BEHIND_ACCRUAL,
         NOT_SERVICED,
         FAILED,
-        APPLIED;
+        APPLIED,
+        CLOSED;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);
@@ -79,6 +82,7 @@ public final class BnplServicingMetrics {
             servicing(Step.SERVICE, outcome);
         }
         servicing(Step.CATCH_UP, Outcome.APPLIED);
+        servicing(Step.CLOSURE, Outcome.CLOSED);
     }
 
     /** A committed step's outcome - its billings, its applications and its catch-up. */
@@ -102,6 +106,9 @@ public final class BnplServicingMetrics {
         });
         if (step.caughtUp()) {
             servicing(Step.CATCH_UP, Outcome.APPLIED).increment();
+        }
+        if (step.closed()) {
+            servicing(Step.CLOSURE, Outcome.CLOSED).increment();
         }
     }
 

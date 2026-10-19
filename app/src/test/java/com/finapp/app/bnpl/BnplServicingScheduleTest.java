@@ -86,9 +86,12 @@ class BnplServicingScheduleTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         BnplServicingMetrics metrics = new BnplServicingMetrics(registry);
         assertThat(registry.find(BnplServicingMetrics.BILLING).counters()).hasSize(2 * 2);
-        assertThat(registry.find(BnplServicingMetrics.SERVICING).counters()).hasSize(5);
+        assertThat(registry.find(BnplServicingMetrics.SERVICING).counters())
+                .as("P12-TSK-018 adds closure/closed").hasSize(6);
         metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 3, 1,
                 true));
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 0, 0,
+                false, true));
         metrics.record(new ServicingOutcome(ServicingOutcome.Kind.BEHIND_ACCRUAL, Optional.of(BnplProduct.BNPL_PAY_IN_N),
                 0, 0, false));
         metrics.record(new ServicingOutcome(ServicingOutcome.Kind.NOT_SERVICED, Optional.empty(), 0, 0, false));
@@ -96,11 +99,12 @@ class BnplServicingScheduleTest {
         assertThat(billing(registry, "BNPL_PAY_IN_4", "billed")).isEqualTo(3.0);
         assertThat(billing(registry, "BNPL_PAY_IN_4", "credit_applied")).isEqualTo(1.0);
         assertThat(billing(registry, "BNPL_PAY_IN_N", "billed")).isZero();
-        assertThat(servicing(registry, "service", "serviced")).isEqualTo(1.0);
+        assertThat(servicing(registry, "service", "serviced")).isEqualTo(2.0);
         assertThat(servicing(registry, "service", "behind_accrual")).isEqualTo(1.0);
         assertThat(servicing(registry, "service", "not_serviced")).isEqualTo(1.0);
         assertThat(servicing(registry, "service", "failed")).isEqualTo(1.0);
         assertThat(servicing(registry, "catch_up", "applied")).isEqualTo(1.0);
+        assertThat(servicing(registry, "closure", "closed")).as("one closure, P12-TSK-018").isEqualTo(1.0);
     }
 
     private static BnplServicingSchedule schedule(BnplServicing servicing, BnplAccruals accruals,

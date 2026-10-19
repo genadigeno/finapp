@@ -500,6 +500,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // terms the customer was shown). No secret; closed: the evidence is the session's, never the body's,
                         // and the body carries no amount, merchant, wallet or party.
                         "BnplAcceptanceBody",
+                        // P12-TSK-018: the customer's BNPL repayment - an amount and its currency. No secret; closed: the
+                        // source is the customer's own wallet, never the body's to name, and it carries no party or key.
+                        "BnplRepaymentBody",
                         // P11-TSK-012: the customer's acceptance - the offer's terms hash (a public SHA-256 of terms the
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.

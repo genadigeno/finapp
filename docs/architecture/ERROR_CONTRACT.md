@@ -1255,7 +1255,8 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.TermsChanged` | 409 | The terms accepted are not the BNPL offer's. |
 | `bnpl.SessionNotPayable` | 409 | The checkout session can no longer be paid by this BNPL offer. |
 | `bnpl.CapitalUnavailable` | 422 | The BNPL purchase cannot be funded now. |
-| `bnpl.InsufficientFunds` | 422 | The wallet cannot fund the first instalment. |
+| `bnpl.InsufficientFunds` | 422 | The wallet cannot fund the payment. |
+| `bnpl.ObligationClosed` | 409 | The BNPL agreement is closed. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its
@@ -1271,6 +1272,18 @@ purchase, beyond what the customer's wallet can spend (or no wallet in the curre
 before it expires (B6); credit's `409 credit.ApplicantNotEligible` a customer no longer in good standing. Every refusal
 commits nothing - no consumption, no capital, no purchase, no order - and rolls the key back. A card or wallet
 confirmation that loses the session to an acceptance keeps checkout's `409 checkout.NotConfirmable`.
+
+The repayment doors (`P12-TSK-018`; `POST /v1/me/bnpl-agreements/{id}/repayments` (`201`), keyed
+`bnpl.repayment:CUSTOMER:<id>` under the platform's conditional step-up, and `GET /v1/me/bnpl-agreements/{id}/repayments`):
+`ObligationClosed` a repayment on an agreement already `CLOSED` - judged under B4, nothing posted (`INV-LIFE-04`);
+`InsufficientFunds` - the code's title widened from the first instalment to any wallet payment - the customer's existing
+wallet absent in the currency, not `ACTIVE`, or its available balance under its row lock short of the amount (the Phase 11
+precedent folds the absent and the unpostable wallet in); the platform's `409 api.Conflict` the key reused for another
+amount (the arbiter behind a lapsed claim), `422 api.ValidationFailed` an amount not positive or not at the agreement's
+currency and minor units, `403 identity.AssuranceRequired` an MFA-enrolled customer on a password session; `NotFound`
+another party's agreement exactly as an unknown or malformed id. No standing check - a suspended customer may still
+repay. Every refusal posts nothing and rolls the key back; a refused conservation (the rows not explaining the ledger) is
+the platform's `500`, counted `finapp.bnpl.allocation.anomaly`.
 
 The merchant's purchase read (`P12-TSK-014`; `GET /v1/merchant/bnpl-purchases/{id}`, the merchant's own key): `NotFound`
 answers another merchant's purchase exactly as an unknown or malformed id - one body, never `403`, so existence is not

@@ -62,7 +62,8 @@ public interface BnplBook {
      * value date, ordered by value date - read in ONE statement, so an entry moving value between two of them (a billing
      * from not-due to due) is wholly in or wholly out ({@code PurposeBalances#datedLinesOn}; `P12-TSK-017`): the accrual
      * base at the end of a date is the fold of the principal accounts' lines dated on or before it - journal lines, never
-     * the projection ({@code INV-BAL-05}).
+     * the projection ({@code INV-BAL-05}). The closure's accrual test reads it too, through {@code BnplAccruals.caughtUp}
+     * (`P12-TSK-018`).
      */
     List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork, Set<LedgerAccountId> accounts,
             LocalDate valueDateThrough);

@@ -108,10 +108,18 @@ public enum BnplErrorCode implements ErrorCode {
     CAPITAL_UNAVAILABLE("bnpl.CapitalUnavailable", 422, "The BNPL purchase cannot be funded now."),
 
     /**
-     * The wallet cannot fund pay-in-4's first instalment, collected at purchase (`P12-TSK-013`; B6) - nothing committed;
-     * the customer may top up and accept the same offer again before it expires.
+     * The wallet cannot fund the payment (B6, the wallet the only source): pay-in-4's first instalment, collected at purchase
+     * (`P12-TSK-013`) - nothing committed, the customer may top up and accept the same offer again before it expires - or a
+     * repayment (`P12-TSK-018`) - nothing posted. An absent wallet, or one not {@code ACTIVE}, is folded in (the Phase 11
+     * precedent).
      */
-    INSUFFICIENT_FUNDS("bnpl.InsufficientFunds", 422, "The wallet cannot fund the first instalment.");
+    INSUFFICIENT_FUNDS("bnpl.InsufficientFunds", 422, "The wallet cannot fund the payment."),
+
+    /**
+     * The BNPL agreement is {@code CLOSED} (`P12-TSK-018`; {@code INV-LIFE-04}): a repayment - later a collection, a payoff
+     * or a fee - on it is refused, nothing posted.
+     */
+    OBLIGATION_CLOSED("bnpl.ObligationClosed", 409, "The BNPL agreement is closed.");
 
     private final String code;
     private final int status;

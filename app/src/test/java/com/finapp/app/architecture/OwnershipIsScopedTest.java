@@ -1006,6 +1006,34 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-015. The servicing step's permit, for the obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4); conditional on ACTIVE, bnpl V008's edge function admitting the permit's move alone; no door reaches it.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/bnpl-agreements/{id}/repayments - T-rep's B4: the agreement id from the path, and o.party_id = ? in the locking statement is the session's own party; another party's agreement is never locked and is the same empty answer as an absent one, the 404 (P12-TSK-018).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRepaymentStore.findByKey",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                                    "P12-TSK-018. The obligation id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; the key is the caller's own idempotency key, UNIQUE (obligation_id, kind, request_key) beneath it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRepaymentStore.ofObligation",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P12-TSK-018. GET /v1/me/bnpl-agreements/{id}/repayments - the obligation id comes from agreementOwnedBy (the owner's read, party_id = ?); never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRepaymentStore.closureOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                                    "P12-TSK-018. A replayed repayment's closure: the obligation id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRepaymentStore.close",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-018. The edge ACTIVE -> CLOSED of the obligation the closing act holds FOR UPDATE (B4) - lockOwnedBy's or the servicing sweep's claim - conditional on ACTIVE, bnpl V010's edge function admitting it only beside the closure born in this transaction; no door names it.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -3713,6 +3741,9 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
                             "com.finapp.app.bnpl.BnplMerchantReadDatabaseTest.anotherMerchantsPurchaseIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                            "com.finapp.app.bnpl.BnplRepaymentApiTest.anotherPartysAgreementIsNotFound"),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
                             "com.finapp.app.lending.LoanApplicationDatabaseTest.anotherPartysApplicationIsNotFound"),
