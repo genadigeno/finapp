@@ -136,7 +136,7 @@ class BnplRepaymentReversalsTest {
         assertThat(fakes.audited.get(0).reason()).contains("applied to the wrong agreement");
         assertThat(fakes.audited.get(1).actor()).isEqualTo(world.bob);
         assertThat(fakes.audited.get(1).changeSummary().orElseThrow()).contains("reverses=" + repaid.first().entry().value())
-                .doesNotContain("15000").doesNotContain("150.00");
+                .doesNotContainPattern("\\b(15000|150\\.00)\\b");
     }
 
     // ------------------------------------------------------------------ four eyes, idempotency, one live proposal

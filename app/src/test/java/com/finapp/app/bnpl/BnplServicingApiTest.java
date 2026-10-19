@@ -78,7 +78,7 @@ class BnplServicingApiTest {
     }
 
     /** A pay-in-4 purchase: its agreement, the instalment 1 repayment collected at purchase, and the customer's party. */
-    record Bought(String agreement, String repayment, String obligation, UUID party) {}
+    record Bought(String agreement, String repayment, String obligation, UUID party, String token) {}
 
     private Bought bought() throws Exception {
         CreditFixtures.Customer owner = world.customers.consentingCustomer();
@@ -92,7 +92,7 @@ class BnplServicingApiTest {
                 + " ?::uuid", agreement);
         String repayment = BnplApplicationClient.scalar("SELECT id::text FROM bnpl.bnpl_repayment WHERE obligation_id ="
                 + " ?::uuid AND kind = 'AT_PURCHASE'", obligation);
-        return new Bought(agreement, repayment, obligation, owner.party());
+        return new Bought(agreement, repayment, obligation, owner.party(), owner.token());
     }
 
     @Test
@@ -157,6 +157,11 @@ class BnplServicingApiTest {
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_repayment_allocation_reversal n"
                 + " JOIN bnpl.bnpl_repayment_allocation a ON a.id = n.allocation_id WHERE a.repayment_id = ?::uuid",
                 bought.repayment())).isEqualTo(1);
+        // The customer's history reads the repayment REVERSED - derived from the approved reversal, never a column.
+        HttpResponse<String> history = world.client.get("/v1/me/bnpl-agreements/" + bought.agreement() + "/repayments",
+                bought.token());
+        assertThat(history.statusCode()).isEqualTo(200);
+        assertThat(history.body()).contains("\"status\":\"REVERSED\"");
         HttpResponse<String> replayed = world.client.post(reversal + "/approval", decision, approver, key);
         assertThat(replayed.statusCode()).isEqualTo(200);
         assertThat(BnplApplicationClient.field(replayed.body(), "journalEntryId")).isEqualTo(entry);

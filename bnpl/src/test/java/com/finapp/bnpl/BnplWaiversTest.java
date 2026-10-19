@@ -90,7 +90,8 @@ class BnplWaiversTest {
         assertThat(fakes.audited).singleElement().satisfies(record -> {
             assertThat(record.operation()).isEqualTo(BnplAuditAction.WAIVER_APPROVED);
             assertThat(record.reason()).contains("complaint upheld");
-            assertThat(record.changeSummary().orElseThrow()).doesNotContain("200");
+            // An amount never - matched as a whole token, so a UUIDv7's hex digits never trip it.
+            assertThat(record.changeSummary().orElseThrow()).doesNotContainPattern("\\b(200|2\\.00)\\b");
         });
         // The rows explain the ledger after it.
         new BnplReceivables(fakes.purchases, fakes.book).dueState(BnplApplicationFakes.UOW, p4.obligation(),
