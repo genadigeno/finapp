@@ -118,9 +118,13 @@ public final class BnplCollections {
             return Collected.NOTHING;
         }
         Map<UUID, LocalDate> latest = store.latestAttempts(unitOfWork, obligation.id());
-        // Every billed instalment due by today, oldest first (the billings' value-date order).
+        // Every billed instalment due by today, oldest first (the billings' value-date order) - but those the dispute hold
+        // covers today (`P12-TSK-023`, ADR-0106 decision 3): a held instalment is never collected automatically, and,
+        // being among the latest (the hold walks latest first), it blocks nothing younger.
+        BnplDisputeHold hold = purchases.disputeHold(unitOfWork, obligation.id());
         List<BnplPurchaseStore.BilledItem> billed = purchases.billedItems(unitOfWork, obligation.id()).stream()
                 .filter(item -> !item.dueDate().isAfter(today))
+                .filter(item -> !hold.heldOn(item.dueDate(), today))
                 .sorted(java.util.Comparator.comparing(BnplPurchaseStore.BilledItem::dueDate))
                 .toList();
         if (billed.stream().noneMatch(item -> candidate(item, latest, today, pinned.collectionRetryDays()))) {

@@ -228,6 +228,76 @@ public final class BnplRefunds {
                 correlation);
     }
 
+    // ------------------------------------------------------------------ the dispute's two uses (`P12-TSK-023`)
+
+    /**
+     * The hold a dispute of {@code amount} places at its opening (ADR-0106 decision 3): the instalments a refund of it would
+     * cancel now - this body's position and allocator run as a dry run under the caller's B5 and B4, nothing written - each
+     * with the principal it would cancel. A {@code CLOSED} obligation owes no principal: nothing is held.
+     *
+     * @throws RefundExceedsPurchase {@code amount > G - refundedBefore}
+     * @throws AllocationAnomaly the rows do not compose a position
+     */
+    List<BnplDispute.Held> heldBy(Connection unitOfWork, BnplRefundStore.LockedPurchase locked,
+            BnplServicingStore.Locked obligationLocked, Money amount, Money refundedBefore) {
+        BnplObligation obligation = obligationLocked.obligation();
+        if (obligation.status() != BnplObligationStatus.ACTIVE) {
+            return List.of();
+        }
+        Money gross = locked.gross();
+        Kind kind = amount.equals(gross.minus(refundedBefore)) ? Kind.FULL : Kind.PARTIAL;
+        BnplReceivables receivables = new BnplReceivables(purchases, book);
+        BnplLedgerAccounts accounts = receivables.accounts(unitOfWork, obligation.id());
+        receivables.dueState(unitOfWork, obligation.id(), accounts); // refuses rows that do not explain the ledger
+        BnplPurchaseStore.StoredSchedule first = purchases.schedule(unitOfWork, obligation.id(), 1)
+                .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1"));
+        BnplPurchaseStore.StoredSchedule latest = servicing.latestSchedule(unitOfWork, obligation.id())
+                .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1"));
+        List<BnplPurchaseStore.BilledItem> billed = purchases.billedItems(unitOfWork, obligation.id());
+        Money principalNotDue = receivables.principalNotDue(unitOfWork, accounts);
+        Derivation derived = derive(first, latest, billed, store.adjustmentsOf(unitOfWork, obligation.id()),
+                principalNotDue, gross, locked.fee(), refundedBefore);
+        BnplPurchaseId purchase = locked.purchase().id();
+        RefundAllocationOutcome outcome = RefundAllocationEngineV1.allocate(derived.position(), amount,
+                (before, refunded) -> merchants.returnedFee(unitOfWork, purchase, before, refunded));
+        if (outcome instanceof RefundAllocationOutcome.Refused refused) {
+            if (refused.reason() == RefundAllocationRefusal.REFUND_EXCEEDS_PURCHASE) {
+                throw new RefundExceedsPurchase(kind);
+            }
+            throw new AmountInvalid();
+        }
+        RefundAllocation allocation = ((RefundAllocationOutcome.Allocated) outcome).allocation();
+        List<BnplDispute.Held> held = new ArrayList<>();
+        for (RefundAllocation.Cancellation cancellation : allocation.cancellations()) {
+            Slot slot = derived.slots().get(cancellation.sequence() - 1);
+            UUID instalment = cancellation.kind() == RefundAllocation.Cancellation.Kind.UNBILLED
+                    ? slot.unbilled().orElseThrow(() -> new AllocationAnomaly("an unbilled hold is of a scheduled"
+                            + " instalment (INV-BNPL-06)")).id()
+                    : slot.billed().orElseThrow(() -> new AllocationAnomaly("a billed hold is of a billed instalment"
+                            + " (INV-BNPL-06)")).instalment();
+            held.add(new BnplDispute.Held(ids.next(), slot.sequence(), instalment, slot.dueDate(), cancellation.kind(),
+                    cancellation.amount()));
+        }
+        return List.copyOf(held);
+    }
+
+    /**
+     * The dispute's refund outcome (ADR-0106 decision 6; {@code INV-BNPL-08}): this body, door {@code DISPUTE}, requested by
+     * {@code DISPUTE:<dispute>} under the dispute's id as its key, for exactly its claim - under the B5 and B4 the caller
+     * (T-dsp) holds already, judged by the same bound as every refund. The reason is the act's own fixed text, never the
+     * customer's.
+     */
+    Refunded forDispute(Connection unitOfWork, BnplRefundStore.LockedPurchase locked, BnplDispute dispute, String reason,
+            Actor actor, CorrelationId correlation) {
+        if (!locked.purchase().id().equals(dispute.purchase())) {
+            throw new IllegalStateException("a dispute's refund refunds its own purchase");
+        }
+        String key = dispute.id().value().toString();
+        return refund(unitOfWork, locked, BnplRefund.Door.DISPUTE, BnplRefund.DISPUTE_REQUESTER + key,
+                new Request(key, dispute.amount(), reason, Optional.empty()), BnplReasons.reasoned(reason), actor,
+                correlation);
+    }
+
     // ------------------------------------------------------------------ T-ref's body
 
     private Refunded refund(Connection unitOfWork, BnplRefundStore.LockedPurchase locked, BnplRefund.Door door,
@@ -251,6 +321,11 @@ public final class BnplRefunds {
         }
         Money amount = request.amount();
         Money gross = locked.gross();
+        // ADR-0106 decision 7 (`P12-TSK-023`): no merchant or operator refund while a dispute is open, judged under B5 -
+        // the merchant settles a disputed purchase by accepting the dispute, whose refund is this body's DISPUTE door.
+        if (door != BnplRefund.Door.DISPUTE && store.disputeOpen(unitOfWork, purchase.id())) {
+            throw new DisputeOpen(amount.equals(gross) ? Kind.FULL : Kind.PARTIAL);
+        }
         if (!amount.isPositive() || !amount.currency().equals(gross.currency()) || amount.scale() != gross.scale()) {
             throw new AmountInvalid();
         }
@@ -949,6 +1024,18 @@ public final class BnplRefunds {
 
         RefundExceedsPurchase(Kind kind) {
             super(kind, "the refund exceeds what remains of the BNPL purchase; nothing was written");
+        }
+    }
+
+    /**
+     * The purchase has an open dispute (`P12-TSK-023`; ADR-0106 decision 7) - a merchant's or an operator's refund waits
+     * for its resolution; nothing was written.
+     */
+    public static final class DisputeOpen extends Refused {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        DisputeOpen(Kind kind) {
+            super(kind, "the BNPL purchase has an open dispute; nothing was written");
         }
     }
 

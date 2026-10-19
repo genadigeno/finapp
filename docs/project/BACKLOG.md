@@ -21440,7 +21440,7 @@ after everything.
   repayment closes its obligation and is not reversible (F4 vacuous here); **for `-025`**: the replay proof checks every
   payoff fact against `bnpl_payoff_execution.value_date`.
 
-**P12-TSK-023 — BNPL disputes** — `READY` (marked by `P12-TSK-020`'s completion gate, 2026-10-19: its dependencies `-021` and `-020` `COMPLETE`)
+**P12-TSK-023 — BNPL disputes** — `IN_PROGRESS` (started 2026-10-19, Phase 12 wave F beside `P12-TSK-024`, branch `P12-TSK-023`, bnpl `V015`; marked `READY` by `P12-TSK-020`'s completion gate, 2026-10-19: its dependencies `-021` and `-020` `COMPLETE`; marks no task `READY` - the wave's board rule 11 gives that to `-024`)
 - **Objective**: a customer contests a BNPL purchase with the platform (there is no card network on it); the
   disputed amount is held — no late fee, no DPD, no collection on it — until the merchant accepts, the
   deadline passes, the customer withdraws or an operator resolves; a refund outcome *is* a refund under the

@@ -47,6 +47,12 @@ public interface BnplRefundStore {
     Instant insertRefund(Connection unitOfWork, BnplRefund refund);
 
     /**
+     * Whether the purchase has an {@code OPEN} or {@code MERCHANT_RESPONDED} dispute (`P12-TSK-023`, ADR-0106 decision 7) -
+     * read under the caller's B5, so a dispute opened or resolved concurrently is ordered before or after it.
+     */
+    boolean disputeOpen(Connection unitOfWork, BnplPurchaseId purchase);
+
+    /**
      * {@code FINANCED -> FULLY_REFUNDED}, conditional on {@code FINANCED} - whether it moved; {@code bnpl V012}'s edge
      * function admits it only when the purchase's refunds total its gross.
      */

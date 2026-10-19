@@ -102,14 +102,15 @@ class BnplMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021), V013 the condition history and the late fee (P12-TSK-020), V014 the payoff quote and execution (P12-TSK-022)")
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021), V013 the condition history and the late fee (P12-TSK-020), V014 the payoff quote and execution (P12-TSK-022), V015 the dispute, its claim, hold, proposal and history (P12-TSK-023)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
         // P12-TSK-004's (the terms version); each later task rewrites this list with its own.
         assertThat(tablesIn(SCHEMA)).containsExactlyInAnyOrder("bnpl_acceptance", "bnpl_agreement", "bnpl_application",
                 "bnpl_application_event", "bnpl_billing", "bnpl_collection_attempt", "bnpl_condition_event", "bnpl_credit_balance_allocation",
-                "bnpl_credit_balance_application", "bnpl_fee_assessment",
+                "bnpl_credit_balance_application", "bnpl_dispute", "bnpl_dispute_claim", "bnpl_dispute_event",
+                "bnpl_dispute_hold", "bnpl_dispute_proposal", "bnpl_fee_assessment",
                 "bnpl_instalment", "bnpl_interest_accrual", "bnpl_obligation", "bnpl_obligation_closure",
                 "bnpl_obligation_event",
                 "bnpl_offer", "bnpl_offer_event", "bnpl_offer_terms", "bnpl_payoff_execution", "bnpl_payoff_quote",
@@ -150,7 +151,13 @@ class BnplMigrationTest {
                 "delinquency_bucket",
                 // V014 (P12-TSK-022).
                 "bnpl_payoff_execution_closes_its_obligation", "bnpl_payoff_execution_is_born_once",
-                "bnpl_payoff_quote_is_born_once");
+                "bnpl_payoff_quote_is_born_once",
+                // V015 (P12-TSK-023) - days_past_due replaced, listed above.
+                "bnpl_collection_attempt_respects_the_dispute_hold", "bnpl_dispute_claim_is_born_once",
+                "bnpl_dispute_event_is_append_only", "bnpl_dispute_hold_is_born_once", "bnpl_dispute_is_whole",
+                "bnpl_dispute_permits_only_machine_edges", "bnpl_dispute_proposal_permits_only_machine_edges",
+                "bnpl_fee_assessment_respects_the_dispute_hold", "bnpl_refund_is_not_beside_an_open_dispute",
+                "dispute_clock_start", "dispute_holds");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))
