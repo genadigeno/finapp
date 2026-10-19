@@ -102,6 +102,32 @@ class BnplDisputesTest {
     }
 
     @Test
+    @DisplayName("a held older instalment never captures a younger one's collection: pay-in-N, instalment 2's principal"
+            + " cancelled by a refund and its interest still due, instalment 1 held - the collection on 2 is allocated to"
+            + " 2 alone (the held one taken out of the due state), never refused as an anomaly")
+    void aHeldOlderInstalmentNeverCapturesAYoungerOnesCollection() {
+        world.activate(BnplTermsFixtures.payInN("0.1999").autoCollection(true).build());
+        BnplConditionWorld.Agreement pn = world.payIn12();
+        world.availableTo(0);
+        LocalDate due1 = world.instalment(pn, 1).dueDate();
+        LocalDate due2 = world.instalment(pn, 2).dueDate();
+        world.serviceAccruedOn(due1, pn);
+        world.serviceAccruedOn(due2, pn);
+        BnplPurchaseStore.BilledItem second = world.fakes.purchases.billedItems(BnplApplicationFakes.UOW,
+                pn.obligation()).stream().filter(item -> item.dueDate().equals(due2)).findFirst().orElseThrow();
+        long notDue = world.balance(world.accounts(pn).principal()).minorUnits();
+        world.refundOn(due2, pn, "refund-1", notDue + second.billedPrincipal().minorUnits());
+        BnplDispute dispute = openAt(due2.atTime(13, 0).toInstant(ZoneOffset.UTC).toString(), pn, "open-1", 1_00)
+                .dispute();
+        assertThat(dispute.holds()).extracting(held -> held.sequence() + " " + held.kind())
+                .containsExactly("1 BILLED_UNPAID");
+        world.availableTo(1_000_00);
+        world.serviceAccruedOn(due2.plusDays(1), pn);
+        assertThat(world.fakes.collections.rows.stream().filter(row -> row.attemptDate().equals(due2.plusDays(1))))
+                .extracting(BnplCollectionAttempt::outcome).containsExactly(CollectionOutcome.COLLECTED);
+    }
+
+    @Test
     @DisplayName("the hold suspends collection, DPD and fees: with 450 disputed, instalment 2 is billed on its date but"
             + " never collected, never past due and never charged late - the domain alone, the database's ranks dropped")
     void theHoldSuspendsCollectionDpdAndFees() {
@@ -561,6 +587,22 @@ class BnplDisputesTest {
                 .orElseThrow().refund();
         assertThat(refund.excess()).isEqualTo(eur(600_00));
         assertThat(refund.excessTo()).isEqualTo(BnplRefund.ExcessTo.WALLET);
+    }
+
+    @Test
+    @DisplayName("the bound is judged by the opening itself, not only by the dry run: on a CLOSED obligation (nothing held) a"
+            + " merchant refund of 100 leaves 500 to dispute - 500.01 refused, 500 admitted")
+    void theBoundOnAClosedObligation() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        for (LocalDate due : List.of(DUE_2, DUE_3, BnplConditionWorld.DUE_4)) {
+            world.serviceOn(due, p4);
+            world.repayOn(due, p4, "pay-" + due, 150_00);
+        }
+        world.refundOn(LocalDate.of(2026, 11, 29), p4, "refund-1", 100_00);
+        assertThatThrownBy(() -> openAt("2026-11-30T12:00:00Z", p4, "open-1", 500_01))
+                .isInstanceOf(BnplRefunds.RefundExceedsPurchase.class);
+        assertThat(openAt("2026-11-30T12:00:00Z", p4, "open-2", 500_00).dispute().refundedBefore())
+                .isEqualTo(eur(100_00));
     }
 
     @Test

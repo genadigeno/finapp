@@ -144,8 +144,13 @@ public final class BnplCollections {
             }
             // The due state re-derived under B4 for every attempt, explained by the ledger (INV-BNPL-01, INV-BAL-05).
             BnplReceivables.Derived derived = receivables.dueState(unitOfWork, obligation.id(), accounts);
+            // The held instalments taken out of the due state the collection allocates over (`P12-TSK-023`): the pinned
+            // order pays the oldest due first, and a held older instalment - one whose principal a dispute holds while a
+            // younger one still owes interest - would otherwise capture the younger one's collection.
+            DueState dueState = new DueState(derived.dueState().items().stream()
+                    .filter(due -> !hold.heldOn(due.dueDate(), today)).toList(), derived.dueState().notDuePrincipal());
             Money zero = Money.ofPersisted(0, item.billedPrincipal().currency(), item.billedPrincipal().scale());
-            Money owed = derived.dueState().items().stream().filter(due -> due.id().value().equals(instalment))
+            Money owed = dueState.items().stream().filter(due -> due.id().value().equals(instalment))
                     .findFirst().map(DueState.DueItem::total).orElse(zero);
             if (owed.isZero()) {
                 record(unitOfWork, locked, instalment, today, CollectionOutcome.NOTHING_DUE, owed, zero,
@@ -170,7 +175,7 @@ public final class BnplCollections {
                         Optional.empty(), correlation, counts);
                 continue;
             }
-            List<AllocationLine> lines = BnplRepayments.allocate(amount, derived.dueState(), rules);
+            List<AllocationLine> lines = BnplRepayments.allocate(amount, dueState, rules);
             for (AllocationLine line : lines) {
                 if (line.target() != AllocationLine.Target.DUE_ITEM
                         || !line.item().orElseThrow().value().equals(instalment)) {
@@ -180,7 +185,7 @@ public final class BnplCollections {
             }
             BnplPurchaseStore.Repayment repayment = repayments.receive(unitOfWork, locked,
                     BnplPurchaseStore.Repayment.AUTO_COLLECTION, BnplCollectionAttempt.requestKey(instalment, today),
-                    amount, lines, derived.dueState(), accounts, wallet.get().get(), today, correlation);
+                    amount, lines, dueState, accounts, wallet.get().get(), today, correlation);
             CollectionOutcome outcome = amount.equals(owed) ? CollectionOutcome.COLLECTED : CollectionOutcome.PARTIAL;
             blocked |= outcome == CollectionOutcome.PARTIAL;
             record(unitOfWork, locked, instalment, today, outcome, owed, amount, Optional.of(repayment.id()), correlation,
