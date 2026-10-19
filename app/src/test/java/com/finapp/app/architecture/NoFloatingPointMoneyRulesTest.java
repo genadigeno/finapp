@@ -328,6 +328,13 @@ class NoFloatingPointMoneyRulesTest {
                     // Counter.increment() once each.
                     "com.finapp.app.bnpl.BnplAccrualMetrics",
                     "com.finapp.app.bnpl.BnplAccrualMetrics$Cached",
+                    // P12-TSK-020. The SAME case as LoanConditionMetrics, for bnpl: ACTIVE obligation COUNTS per product
+                    // and recorded past-due bucket, and defaulted obligation COUNTS per product, through the
+                    // ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - counts, never an amount or an
+                    // obligation's DPD (ADR-0072).
+                    "com.finapp.app.bnpl.BnplConditionMetrics",
+                    "com.finapp.app.bnpl.BnplConditionMetrics$Cached",
+                    "com.finapp.app.bnpl.BnplConditionMetrics$Counts",
                     // P11-TSK-014. The SAME case as the review case's wait: the oldest PENDING disbursement's wait in
                     // SECONDS through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - a duration,
                     // never an amount (the principal is the agreement's and the ledger's, ADR-0072).

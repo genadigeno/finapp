@@ -77,6 +77,7 @@ final class BnplApplicationFakes {
     final Refunds refunds = new Refunds();
     final Collections collections = new Collections();
     final Payoffs payoffs = new Payoffs();
+    final Conditions conditions = new Conditions();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -126,6 +127,7 @@ final class BnplApplicationFakes {
         Refunds.State refundState = refunds.state();
         List<BnplCollectionAttempt> attemptState = collections.state();
         Payoffs.State payoffState = payoffs.state();
+        Conditions.State conditionState = conditions.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -167,6 +169,7 @@ final class BnplApplicationFakes {
             refunds.restore(refundState);
             collections.restore(attemptState);
             payoffs.restore(payoffState);
+            conditions.restore(conditionState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1127,11 +1130,7 @@ final class BnplApplicationFakes {
                 }
                 BnplBilling billing = billings.get(line.instalment().orElseThrow());
                 Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
-                Money billed = switch (line.component().orElseThrow()) {
-                    case "INTEREST" -> billing.interest();
-                    case "PRINCIPAL" -> billing.principal();
-                    default -> zero;
-                };
+                Money billed = billed(billing, line.component().orElseThrow(), zero);
                 if (paid(billing, line.component().orElseThrow(), zero).compareTo(billed) > 0) {
                     repayments.remove(repayment.id());
                     throw new BnplStorageException("no billed component is ever paid beyond what it billed: P0001");
@@ -1168,11 +1167,31 @@ final class BnplApplicationFakes {
             for (BnplBilling billing : billings.values().stream().filter(row -> row.obligation().equals(obligation))
                     .sorted(java.util.Comparator.comparing(BnplBilling::dueDate)).toList()) {
                 Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
-                items.add(new BilledItem(billing.id(), billing.instalment(), billing.dueDate(), zero, billing.interest(),
-                        billing.principal(), paid(billing, "FEES", zero), paid(billing, "INTEREST", zero),
+                items.add(new BilledItem(billing.id(), billing.instalment(), billing.dueDate(), billedFees(billing, zero),
+                        billing.interest(), billing.principal(), paid(billing, "FEES", zero), paid(billing, "INTEREST", zero),
                         paid(billing, "PRINCIPAL", zero)));
             }
             return items;
+        }
+
+        /** {@code bnpl V013}'s {@code billing_component_billed(.., 'FEES')}: the instalment's assessed late fees. */
+        Money billedFees(BnplBilling billing, Money zero) {
+            Money fees = zero;
+            for (BnplFeeAssessment assessment : conditions.assessments) {
+                if (assessment.instalment().equals(billing.instalment())) {
+                    fees = fees.plus(assessment.amount());
+                }
+            }
+            return fees;
+        }
+
+        /** What {@code billing} billed of {@code component} - {@code bnpl.billing_component_billed}. */
+        Money billed(BnplBilling billing, String component, Money zero) {
+            return switch (component) {
+                case "INTEREST" -> billing.interest();
+                case "PRINCIPAL" -> billing.principal();
+                default -> billedFees(billing, zero);
+            };
         }
 
         /** {@code bnpl.billing_component_paid}: every application line on the billing, every repayment line on its instalment. */
@@ -1201,7 +1220,8 @@ final class BnplApplicationFakes {
                         paid = paid.plus(switch (component) {
                             case "PRINCIPAL" -> adjustment.principalCancelled();
                             case "INTEREST" -> adjustment.interestReleased();
-                            default -> zero;
+                            // bnpl V013: a refund's release of the late fees on an instalment it cancelled whole (OQ-14).
+                            default -> adjustment.lateFeeReleased();
                         });
                     }
                 }
@@ -1574,11 +1594,7 @@ final class BnplApplicationFakes {
                                 new BnplStorageException("a credit-balance allocation pays a billing of its own"
                                         + " obligation: P0001"));
                 Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
-                Money billed = switch (line.component()) {
-                    case FEES -> zero;
-                    case INTEREST -> billing.interest();
-                    case PRINCIPAL -> billing.principal();
-                };
+                Money billed = purchases.billed(billing, line.component().name(), zero);
                 if (purchases.paid(billing, line.component().name(), zero).compareTo(billed) > 0) {
                     applications.remove(application.id());
                     throw new BnplStorageException("no billed component is ever paid beyond what it billed: P0001");
@@ -1692,7 +1708,7 @@ final class BnplApplicationFakes {
                 Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
                 if (!purchases.paid(billing, "INTEREST", zero).equals(billing.interest())
                         || !purchases.paid(billing, "PRINCIPAL", zero).equals(billing.principal())
-                        || !purchases.paid(billing, "FEES", zero).isZero()) {
+                        || !purchases.paid(billing, "FEES", zero).equals(purchases.billedFees(billing, zero))) {
                     throw new BnplStorageException("a BNPL obligation closes only once every billed item is paid in"
                             + " full: P0001");
                 }
@@ -1807,7 +1823,7 @@ final class BnplApplicationFakes {
             Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
             Money stillDue = billing.interest().minus(purchases.paid(billing, "INTEREST", zero))
                     .plus(billing.principal().minus(purchases.paid(billing, "PRINCIPAL", zero)))
-                    .minus(purchases.paid(billing, "FEES", zero));
+                    .plus(purchases.billedFees(billing, zero).minus(purchases.paid(billing, "FEES", zero)));
             if (!attempt.due().minus(attempt.collected()).equals(stillDue)) {
                 throw new BnplStorageException("a BNPL collection attempt records what its instalment had due and what"
                         + " it collected: P0001");
@@ -2138,9 +2154,17 @@ final class BnplApplicationFakes {
                 }
                 Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
                 if (purchases.paid(billing, "PRINCIPAL", zero).compareTo(billing.principal()) > 0
-                        || purchases.paid(billing, "INTEREST", zero).compareTo(billing.interest()) > 0) {
+                        || purchases.paid(billing, "INTEREST", zero).compareTo(billing.interest()) > 0
+                        || purchases.paid(billing, "FEES", zero).compareTo(purchases.billedFees(billing, zero)) > 0) {
                     rows.remove(refund.id());
                     throw new BnplStorageException("no billed component is ever settled beyond what it billed: P0001");
+                }
+                // bnpl V013 (OQ-14): an instalment cancelled whole owes no late fee after the refund.
+                if (adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID && adjustment.whole()
+                        && !purchases.paid(billing, "FEES", zero).equals(purchases.billedFees(billing, zero))) {
+                    rows.remove(refund.id());
+                    throw new BnplStorageException("a BNPL refund that cancels a billed instalment whole releases every"
+                            + " late fee still due on it: P0001");
                 }
             }
             return now;
@@ -2323,6 +2347,208 @@ final class BnplApplicationFakes {
             com.finapp.sharedkernel.id.IdGenerator ids) {
         return new BnplPayoffs(repayments, payoffs, servicing, purchases, terms.store(), accruals, wallets, book,
                 servicingStep, posting, closures, ids);
+    }
+
+    /**
+     * {@code bnpl V013}'s condition history and fee assessments, in memory (`P12-TSK-020`): {@code UNIQUE (obligation_id,
+     * business_date, kind)} and {@code UNIQUE (instalment_id, kind)} (each droppable for a probe), and the triggers' ranks -
+     * an {@code ACTIVE} obligation under its agreement version in force, dated the database clock's business date, never
+     * dated before a recorded change; DPD the date difference to the oldest billed instalment still owing anything, the
+     * bucket its bucket under the pinned bounds, the flag set at the threshold and cleared at cure, a change only; a fee on
+     * a billed instalment of its own obligation aged at least the pinned day, at most the pinned fee, the agreement's fees
+     * within the cap, the instalment still owing interest or principal. Computed here from the fakes' rows - the database's
+     * own derivation, never the domain's.
+     */
+    final class Conditions implements BnplConditionStore {
+
+        final List<BnplConditionEvent> events = new ArrayList<>();
+        final List<BnplFeeAssessment> assessments = new ArrayList<>();
+        /** Drop {@code UNIQUE (obligation_id, business_date, kind)} - for a probe only. */
+        boolean onceADayUniqueDropped;
+        /** Drop {@code UNIQUE (instalment_id, kind)} - for a probe only. */
+        boolean feeUniqueDropped;
+
+        record State(List<BnplConditionEvent> events, List<BnplFeeAssessment> assessments) {}
+
+        State state() {
+            return new State(new ArrayList<>(events), new ArrayList<>(assessments));
+        }
+
+        void restore(State state) {
+            events.clear();
+            events.addAll(state.events());
+            assessments.clear();
+            assessments.addAll(state.assessments());
+        }
+
+        List<BnplConditionEvent> of(BnplObligationId obligation) {
+            return events.stream().filter(row -> row.obligation().equals(obligation)).toList();
+        }
+
+        List<BnplFeeAssessment> feesOf(BnplObligationId obligation) {
+            return assessments.stream().filter(row -> row.obligation().equals(obligation)).toList();
+        }
+
+        @Override
+        public Instant databaseNow(Connection unitOfWork) {
+            return now;
+        }
+
+        @Override
+        public Optional<BnplConditionEvent> latest(Connection unitOfWork, BnplObligationId obligation,
+                BnplConditionKind kind) {
+            log.add("condition read");
+            return of(obligation).stream().filter(row -> row.kind() == kind)
+                    .max(java.util.Comparator.comparing(BnplConditionEvent::businessDate));
+        }
+
+        /** {@code bnpl.days_past_due}: the date less the oldest billed due date still owing anything, or 0. */
+        int daysPastDue(BnplObligationId obligation, java.time.LocalDate on) {
+            java.time.LocalDate oldest = null;
+            for (BnplBilling billing : purchases.billings.values()) {
+                if (!billing.obligation().equals(obligation) || !billing.dueDate().isBefore(on)) {
+                    continue;
+                }
+                Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                Money owing = zero;
+                for (String component : List.of("FEES", "INTEREST", "PRINCIPAL")) {
+                    owing = owing.plus(purchases.billed(billing, component, zero))
+                            .minus(purchases.paid(billing, component, zero));
+                }
+                if (owing.isPositive() && (oldest == null || billing.dueDate().isBefore(oldest))) {
+                    oldest = billing.dueDate();
+                }
+            }
+            return oldest == null ? 0 : (int) java.time.temporal.ChronoUnit.DAYS.between(oldest, on);
+        }
+
+        @Override
+        public void insertCondition(Connection unitOfWork, BnplConditionEvent event) {
+            step("condition insert");
+            if (!onceADayUniqueDropped && events.stream().anyMatch(row -> row.obligation().equals(event.obligation())
+                    && row.businessDate().equals(event.businessDate()) && row.kind() == event.kind())) {
+                throw new BnplStorageException("bnpl_condition_event_once_a_day: SQLSTATE 23505");
+            }
+            BnplObligation obligation = purchases.obligations.get(event.obligation().value());
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE) {
+                throw new BnplStorageException("a BNPL condition is recorded only for an ACTIVE obligation: P0001");
+            }
+            BnplAgreement agreement = purchases.agreements.get(obligation.agreement().value());
+            if (event.agreementVersion() != agreement.version()) {
+                throw new BnplStorageException("a BNPL condition names its agreement version in force: P0001");
+            }
+            if (!event.businessDate().equals(java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC))) {
+                throw new BnplStorageException("a BNPL condition is dated the business date of the database clock: P0001");
+            }
+            if (of(event.obligation()).stream().anyMatch(row -> row.businessDate().isAfter(event.businessDate()))) {
+                throw new BnplStorageException("a BNPL condition is never dated before a change already recorded: P0001");
+            }
+            BnplTerms pinned = terms.versions.get(agreement.termsVersionId()).terms();
+            int derived = daysPastDue(event.obligation(), event.businessDate());
+            if (event.state().daysPastDue() != derived
+                    || !event.state().bucket().equals(BnplDelinquencyBucket.of(derived, pinned.delinquencyBounds()))) {
+                throw new BnplStorageException("a BNPL condition's days past due and bucket are derived from its billed"
+                        + " and settled rows: P0001");
+            }
+            Optional<BnplDelinquencyBucket> wasBucket = latest(unitOfWork, event.obligation(),
+                    BnplConditionKind.DELINQUENCY).flatMap(row -> row.state().bucket());
+            boolean wasDefaulted = latest(unitOfWork, event.obligation(), BnplConditionKind.DEFAULT)
+                    .map(row -> row.state().defaulted()).orElse(false);
+            if (event.state().defaulted() != (derived >= pinned.defaultThresholdDays() || (wasDefaulted && derived > 0))) {
+                throw new BnplStorageException("a BNPL condition's default flag is set at the threshold and cleared at"
+                        + " cure: P0001");
+            }
+            if ((event.kind() == BnplConditionKind.DELINQUENCY && (!event.previousBucket().equals(wasBucket)
+                    || event.state().bucket().equals(wasBucket)))
+                    || (event.kind() == BnplConditionKind.DEFAULT && event.state().defaulted() == wasDefaulted)) {
+                throw new BnplStorageException("a BNPL condition is recorded only on a change: P0001");
+            }
+            events.add(event);
+        }
+
+        @Override
+        public List<BnplFeeAssessment> assessments(Connection unitOfWork, BnplObligationId obligation) {
+            log.add("assessments read");
+            return feesOf(obligation);
+        }
+
+        @Override
+        public void insertAssessment(Connection unitOfWork, BnplFeeAssessment assessment) {
+            step("fee insert");
+            if (!feeUniqueDropped && assessments.stream().anyMatch(row -> row.instalment().equals(assessment.instalment())
+                    && row.kind() == assessment.kind())) {
+                throw new BnplStorageException("bnpl_fee_assessment_once_per_instalment: SQLSTATE 23505");
+            }
+            BnplObligation obligation = purchases.obligations.get(assessment.obligation().value());
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE) {
+                throw new BnplStorageException("a BNPL fee is assessed only on an ACTIVE obligation: P0001");
+            }
+            BnplBilling billing = purchases.billings.get(assessment.instalment());
+            if (billing == null || !billing.obligation().equals(assessment.obligation())) {
+                throw new BnplStorageException("a BNPL fee is assessed on a billed instalment of its own obligation: P0001");
+            }
+            BnplAgreement agreement = purchases.agreements.get(obligation.agreement().value());
+            if (assessment.agreementVersion() != agreement.version()) {
+                throw new BnplStorageException("a BNPL fee names its agreement version in force: P0001");
+            }
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            if (!assessment.businessDate().equals(today)) {
+                throw new BnplStorageException("a BNPL fee is dated the business date of the database clock: P0001");
+            }
+            BnplTerms pinned = terms.versions.get(agreement.termsVersionId()).terms();
+            if (java.time.temporal.ChronoUnit.DAYS.between(billing.dueDate(), today) < pinned.lateFeeDay()) {
+                throw new BnplStorageException("a BNPL late fee is assessed only once its instalment's age has reached the"
+                        + " pinned late-fee day: P0001");
+            }
+            Money assessed = Money.ofPersisted(0, assessment.amount().currency(), assessment.amount().scale());
+            for (BnplFeeAssessment row : feesOf(assessment.obligation())) {
+                assessed = assessed.plus(row.amount());
+            }
+            if (assessment.amount().compareTo(pinned.lateFee()) > 0
+                    || assessed.plus(assessment.amount()).compareTo(pinned.lateFeeCap()) > 0) {
+                throw new BnplStorageException("a BNPL late fee is at most the pinned fee, and an agreement's fees at most"
+                        + " the pinned cap: P0001");
+            }
+            Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+            Money owing = billing.interest().minus(purchases.paid(billing, "INTEREST", zero))
+                    .plus(billing.principal().minus(purchases.paid(billing, "PRINCIPAL", zero)));
+            if (!owing.isPositive()) {
+                throw new BnplStorageException("a BNPL late fee is assessed only on an instalment still owing interest or"
+                        + " principal: P0001");
+            }
+            assessments.add(assessment);
+        }
+
+        @Override
+        public Map<BnplProduct, Map<BnplDelinquencyBucket, Long>> pastDueByProductAndBucket(Connection unitOfWork) {
+            Map<BnplProduct, Map<BnplDelinquencyBucket, Long>> counts = new EnumMap<>(BnplProduct.class);
+            for (BnplObligation obligation : purchases.obligations.values()) {
+                if (obligation.status() != BnplObligationStatus.ACTIVE) {
+                    continue;
+                }
+                latest(unitOfWork, obligation.id(), BnplConditionKind.DELINQUENCY).flatMap(row -> row.state().bucket())
+                        .ifPresent(bucket -> counts.computeIfAbsent(obligation.product(),
+                                any -> new EnumMap<>(BnplDelinquencyBucket.class)).merge(bucket, 1L, Long::sum));
+            }
+            return counts;
+        }
+
+        @Override
+        public Map<BnplProduct, Long> defaultedByProduct(Connection unitOfWork) {
+            Map<BnplProduct, Long> counts = new EnumMap<>(BnplProduct.class);
+            for (BnplObligation obligation : purchases.obligations.values()) {
+                if (obligation.status() == BnplObligationStatus.ACTIVE && latest(unitOfWork, obligation.id(),
+                        BnplConditionKind.DEFAULT).map(row -> row.state().defaulted()).orElse(false)) {
+                    counts.merge(obligation.product(), 1L, Long::sum);
+                }
+            }
+            return counts;
+        }
+    }
+
+    /** T-svc's condition and late-fee slot over these fakes (`P12-TSK-020`). */
+    BnplConditions conditionsOver(com.finapp.sharedkernel.id.IdGenerator ids, java.time.Clock clock) {
+        return new BnplConditions(conditions, purchases, terms.store(), book, outbox, ids, clock);
     }
 
     private static <K, V> void reset(Map<K, V> into, Map<K, V> from) {

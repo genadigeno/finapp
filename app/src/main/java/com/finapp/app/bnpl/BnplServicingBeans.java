@@ -6,6 +6,8 @@ import com.finapp.bnpl.BnplBook;
 import com.finapp.bnpl.BnplClosures;
 import com.finapp.bnpl.BnplCollectionStore;
 import com.finapp.bnpl.BnplCollections;
+import com.finapp.bnpl.BnplConditionStore;
+import com.finapp.bnpl.BnplConditions;
 import com.finapp.bnpl.BnplPurchaseStore;
 import com.finapp.bnpl.BnplRepayments;
 import com.finapp.bnpl.BnplServicing;
@@ -14,6 +16,7 @@ import com.finapp.bnpl.BnplTermsStore;
 import com.finapp.bnpl.BnplWallets;
 import com.finapp.bnpl.JdbcBnplAccrualStore;
 import com.finapp.bnpl.JdbcBnplCollectionStore;
+import com.finapp.bnpl.JdbcBnplConditionStore;
 import com.finapp.bnpl.JdbcBnplServicingStore;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -43,7 +46,7 @@ public class BnplServicingBeans {
 
     /**
      * T-svc - one obligation's servicing step: the accrual gate, billing, the applications, the collection, the closure, the
-     * permit.
+     * condition and the late fee (`P12-TSK-020`), the permit.
      */
     @Bean
     BnplServicing bnplServicing(
@@ -53,11 +56,42 @@ public class BnplServicingBeans {
             BnplBook bnplBook,
             BnplClosures bnplClosures,
             BnplCollections bnplCollections,
+            BnplConditions bnplConditions,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock) {
         return new BnplServicing(bnplServicingStore, bnplPurchaseStore, bnplTermsStore, bnplBook, bnplClosures,
-                bnplCollections, outboxWriter, idGenerator, clock);
+                bnplCollections, bnplConditions, outboxWriter, idGenerator, clock);
+    }
+
+    /** The condition history's and the late fees' store (`P12-TSK-020`, {@code bnpl V013}). */
+    @Bean
+    BnplConditionStore bnplConditionStore() {
+        return new JdbcBnplConditionStore();
+    }
+
+    /**
+     * T-svc's condition and late-fee slot (`P12-TSK-020`) and the customer read's condition: DPD derived, changes recorded
+     * once, the pinned late fee once per instalment, capped.
+     */
+    @Bean
+    BnplConditions bnplConditions(
+            BnplConditionStore bnplConditionStore,
+            BnplPurchaseStore bnplPurchaseStore,
+            BnplTermsStore bnplTermsStore,
+            BnplBook bnplBook,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new BnplConditions(bnplConditionStore, bnplPurchaseStore, bnplTermsStore, bnplBook, outboxWriter,
+                idGenerator, clock);
+    }
+
+    /** {@code finapp.bnpl.delinquency{product, bucket}} and {@code finapp.bnpl.default{product}} (`P12-TSK-020`). */
+    @Bean
+    BnplConditionMetrics bnplConditionMetrics(BnplConditionStore bnplConditionStore, DataSource dataSource, Clock clock,
+            MeterRegistry meterRegistry) {
+        return new BnplConditionMetrics(bnplConditionStore, dataSource::getConnection, clock, meterRegistry);
     }
 
     /** The collection attempts' store (`P12-TSK-019`, {@code bnpl V011}). */

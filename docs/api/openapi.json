@@ -10106,6 +10106,9 @@
           "balances": {
             "$ref": "#/components/schemas/BnplBalancesView"
           },
+          "condition": {
+            "$ref": "#/components/schemas/BnplConditionView"
+          },
           "currency": {
             "type": "string"
           },
@@ -10222,6 +10225,24 @@
             "type": "string"
           },
           "principalOutstanding": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplConditionView": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "daysPastDue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaulted": {
+            "type": "boolean"
+          },
+          "delinquency": {
             "type": "string"
           }
         },
@@ -10915,6 +10936,9 @@
           },
           "billed": {
             "type": "boolean"
+          },
+          "billedFees": {
+            "type": "string"
           },
           "billedInterest": {
             "type": "string"

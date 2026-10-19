@@ -76,6 +76,9 @@ import lombok.RequiredArgsConstructor;
  *       ({@link BnplMerchants#returnedFee}, the purchase's pinned version);
  *   <li>pay-in-N's releases (A11): a refund leaving no principal unpaid releases the accrued and the billed-unpaid
  *       interest; one leaving nothing more to bill releases the accrued interest no billing could make due;
+ *   <li>the late fees' release (OQ-14, `P12-TSK-020`): the fees still due on every billed instalment cancelled whole (on
+ *       every billed one when no principal is left unpaid) - {@code DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE} in the same
+ *       entry, the currency's fee income row at L8 inside the one sorted call;
  *   <li>schedule and agreement version n+1 when an unbilled instalment is cancelled or shortened ({@code INV-HIST-04}):
  *       every billed instalment kept as its billing billed it; the unbilled tail pay-in-4 shortened from the end, pay-in-N
  *       re-amortised at the same instalment by {@code ScheduleEngineV1.recalculateAtInstalment} (the least term);
@@ -324,7 +327,17 @@ public final class BnplRefunds {
                 }
             }
         }
-        List<BnplRefund.Adjustment> adjustments = adjustments(derived, allocation, dueInterestReleased, zero, ids);
+        // OQ-14 (`P12-TSK-020`): the unpaid late fees of every billed instalment the refund cancels whole - and of every
+        // billed one when it leaves no principal unpaid - released in the same entry (F5a): a fee on an instalment that no
+        // longer exists is not owed. Read from the rows under B4 - what is due now, every earlier release and payment
+        // counted - so no fee is released twice, nor released beside a waiver of the same money (`-024`).
+        Map<Integer, Money> lateFeeReleased = active ? lateFeesReleased(derived, allocation) : new TreeMap<>();
+        List<BnplRefund.Adjustment> adjustments = adjustments(derived, allocation, dueInterestReleased, lateFeeReleased,
+                zero, ids);
+        Money feesReleased = zero;
+        for (Money released : lateFeeReleased.values()) {
+            feesReleased = feesReleased.plus(released);
+        }
         Money dueReleased = zero;
         for (Money released : dueInterestReleased.values()) {
             dueReleased = dueReleased.plus(released);
@@ -364,9 +377,11 @@ public final class BnplRefunds {
         // (L8) Every projection row the entry and a closure may post to, in the ledger's one order.
         LedgerAccountId feeIncome = book.operational(unitOfWork, AccountPurpose.BNPL_MERCHANT_FEE_INCOME, currency);
         LedgerAccountId interestIncome = book.operational(unitOfWork, AccountPurpose.BNPL_INTEREST_INCOME, currency);
+        Optional<LedgerAccountId> lateFeeIncome = feesReleased.isPositive()
+                ? Optional.of(book.operational(unitOfWork, AccountPurpose.BNPL_FEE_INCOME, currency)) : Optional.empty();
         List<JournalLine> lines = entryLines(allocation, payable, feeIncome, accounts,
                 excessTo == BnplRefund.ExcessTo.WALLET ? walletHeld : Optional.of(accounts.creditBalance().id()),
-                accruedReleased, dueReleased, interestIncome);
+                accruedReleased, dueReleased, interestIncome, feesReleased, lateFeeIncome);
         Set<LedgerAccountId> touched = new LinkedHashSet<>();
         lines.forEach(line -> touched.add(line.account()));
         if (active) {
@@ -564,6 +579,37 @@ public final class BnplRefunds {
      */
     static List<BnplRefund.Adjustment> adjustments(Derivation derived, RefundAllocation allocation,
             Map<Integer, Money> dueInterestReleased, Money zero, IdGenerator ids) {
+        return adjustments(derived, allocation, dueInterestReleased, Map.of(), zero, ids);
+    }
+
+    /**
+     * The late fees a refund releases (OQ-14, `P12-TSK-020`), by slot sequence: the fees still due on every billed
+     * instalment whose whole unpaid principal it cancels - and, when it leaves no principal unpaid at all, on every billed
+     * instalment - each exactly what is due of its {@code FEES} now (billed less every payer's and every earlier release).
+     */
+    static Map<Integer, Money> lateFeesReleased(Derivation derived, RefundAllocation allocation) {
+        Set<Integer> wholeBilled = new java.util.HashSet<>();
+        for (RefundAllocation.Cancellation cancellation : allocation.cancellations()) {
+            if (cancellation.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID && cancellation.whole()) {
+                wholeBilled.add(derived.slots().get(cancellation.sequence() - 1).sequence());
+            }
+        }
+        Map<Integer, Money> released = new TreeMap<>();
+        for (Slot slot : derived.slots()) {
+            if (slot.billed().isEmpty()) {
+                continue;
+            }
+            Money fees = slot.billed().get().due(AllocationComponent.FEES);
+            if (fees.isPositive() && (wholeBilled.contains(slot.sequence()) || allocation.leavesNoPrincipalUnpaid())) {
+                released.put(slot.sequence(), fees);
+            }
+        }
+        return released;
+    }
+
+    /** The refund's adjustment rows, the late fees released beside the cancellations and the interest (OQ-14). */
+    static List<BnplRefund.Adjustment> adjustments(Derivation derived, RefundAllocation allocation,
+            Map<Integer, Money> dueInterestReleased, Map<Integer, Money> lateFeeReleased, Money zero, IdGenerator ids) {
         Map<Integer, RefundAllocation.Cancellation> bySequence = new TreeMap<>();
         for (RefundAllocation.Cancellation cancellation : allocation.cancellations()) {
             bySequence.put(derived.slots().get(cancellation.sequence() - 1).sequence(), cancellation);
@@ -571,6 +617,7 @@ public final class BnplRefunds {
         Set<Integer> touched = new java.util.TreeSet<>(java.util.Comparator.reverseOrder());
         touched.addAll(bySequence.keySet());
         touched.addAll(dueInterestReleased.keySet());
+        touched.addAll(lateFeeReleased.keySet());
         Map<Integer, Slot> slotOf = new HashMap<>();
         for (Slot slot : derived.slots()) {
             slotOf.put(slot.sequence(), slot);
@@ -589,7 +636,8 @@ public final class BnplRefunds {
                     : slot.billed().orElseThrow(() -> new AllocationAnomaly("a billed cancellation is of a billed"
                             + " instalment (INV-BNPL-06)")).instalment();
             boolean whole = cancellation == null || cancellation.whole();
-            rows.add(new BnplRefund.Adjustment(ids.next(), sequence, instalment, kind, cancelled, released, whole));
+            rows.add(new BnplRefund.Adjustment(ids.next(), sequence, instalment, kind, cancelled, released, whole,
+                    lateFeeReleased.getOrDefault(sequence, zero)));
         }
         return List.copyOf(rows);
     }
@@ -729,6 +777,18 @@ public final class BnplRefunds {
     static List<JournalLine> entryLines(RefundAllocation allocation, LedgerAccountId payable, LedgerAccountId feeIncome,
             BnplLedgerAccounts accounts, Optional<LedgerAccountId> excessTo, Money accruedReleased, Money dueReleased,
             LedgerAccountId interestIncome) {
+        return entryLines(allocation, payable, feeIncome, accounts, excessTo, accruedReleased, dueReleased,
+                interestIncome, dueReleased.minus(dueReleased), Optional.empty());
+    }
+
+    /**
+     * F5 with F5a's releases, the late fees released on cancelled instalments among them (OQ-14, `P12-TSK-020`):
+     * {@code DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE} for {@code lateFeesReleased}, the currency's shared fee income row
+     * {@code lateFeeIncome} - taken at L8 inside the refund's one sorted call, after (P).
+     */
+    static List<JournalLine> entryLines(RefundAllocation allocation, LedgerAccountId payable, LedgerAccountId feeIncome,
+            BnplLedgerAccounts accounts, Optional<LedgerAccountId> excessTo, Money accruedReleased, Money dueReleased,
+            LedgerAccountId interestIncome, Money lateFeesReleased, Optional<LedgerAccountId> lateFeeIncome) {
         List<JournalLine> lines = new ArrayList<>();
         lines.add(new JournalLine(payable, Direction.DEBIT, allocation.refund()));
         if (allocation.feeReturned().isPositive()) {
@@ -757,6 +817,10 @@ public final class BnplRefunds {
             if (dueReleased.isPositive()) {
                 lines.add(new JournalLine(accounts.interestDue().id(), Direction.CREDIT, dueReleased));
             }
+        }
+        if (lateFeesReleased.isPositive()) {
+            lines.add(new JournalLine(lateFeeIncome.orElseThrow(), Direction.DEBIT, lateFeesReleased));
+            lines.add(new JournalLine(accounts.feesDue().id(), Direction.CREDIT, lateFeesReleased));
         }
         return List.copyOf(lines);
     }
@@ -789,6 +853,7 @@ public final class BnplRefunds {
                 .with("excessMinor", Long.toString(refund.excess().minorUnits()))
                 .with("excessTo", refund.excessTo().name())
                 .with("interestReleasedMinor", Long.toString(refund.interestReleased().minorUnits()))
+                .with("lateFeeReleasedMinor", Long.toString(refund.lateFeeReleased().minorUnits()))
                 .with("agreementVersion", Integer.toString(refund.agreementVersion()))
                 .with("allocationEngine", allocation.engine().name())
                 .with("journalEntryId", refund.entry().value().toString());

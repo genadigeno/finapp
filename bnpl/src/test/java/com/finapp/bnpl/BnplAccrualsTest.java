@@ -78,7 +78,8 @@ class BnplAccrualsTest {
         BnplClosures closures = new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets,
                 world.book, world.outbox, IDS, CLOCK);
         servicing = new BnplServicing(world.servicing, world.purchases, world.terms.store(), world.book, closures,
-                world.collectionsOver(closures, IDS, CLOCK), world.outbox, IDS, CLOCK);
+                world.collectionsOver(closures, IDS, CLOCK), world.conditionsOver(IDS, CLOCK), world.outbox, IDS,
+                CLOCK);
         accruals = new BnplAccruals(world.servicing, world.accruals, world.purchases, world.terms.store(), world.book,
                 IDS);
         party = UUID.randomUUID();

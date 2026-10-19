@@ -152,6 +152,18 @@ public record BnplRefund(
         return interestAccruedReleased.plus(interestDueReleased);
     }
 
+    /**
+     * Σ the late fees it released ({@code DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE}, F5a; OQ-14, `P12-TSK-020`) - the unpaid
+     * fees of the billed instalments it cancelled whole - derived from its adjustments, the one record of them.
+     */
+    public Money lateFeeReleased() {
+        Money released = Money.ofPersisted(0, amount.currency(), amount.scale());
+        for (Adjustment adjustment : adjustments) {
+            released = released.plus(adjustment.lateFeeReleased());
+        }
+        return released;
+    }
+
     /** The same refund, with the database's instant. */
     public BnplRefund stampedAt(Instant at) {
         return new BnplRefund(id, purchase, obligation, merchant, door, requestedBy, refundKey, amount, refundedBefore,
@@ -172,9 +184,11 @@ public record BnplRefund(
      * interest it released, and whether the instalment owes no principal after it.
      *
      * @param instalment the latest schedule's instalment (unbilled) or the billing's own (billed-unpaid)
+     * @param lateFeeReleased the unpaid late fees of a billed instalment cancelled whole, released (OQ-14,
+     *     `P12-TSK-020`) - zero otherwise
      */
     public record Adjustment(UUID id, int sequence, UUID instalment, RefundAllocation.Cancellation.Kind kind,
-            Money principalCancelled, Money interestReleased, boolean whole) {
+            Money principalCancelled, Money interestReleased, boolean whole, Money lateFeeReleased) {
 
         public Adjustment {
             Objects.requireNonNull(id, "id must not be null");
@@ -182,13 +196,26 @@ public record BnplRefund(
             Objects.requireNonNull(kind, "kind must not be null");
             Objects.requireNonNull(principalCancelled, "principalCancelled must not be null");
             Objects.requireNonNull(interestReleased, "interestReleased must not be null");
+            Objects.requireNonNull(lateFeeReleased, "lateFeeReleased must not be null");
             if (sequence < 1 || principalCancelled.isNegative() || interestReleased.isNegative()
-                    || !principalCancelled.plus(interestReleased).isPositive()) {
+                    || lateFeeReleased.isNegative()
+                    || !principalCancelled.plus(interestReleased).plus(lateFeeReleased).isPositive()) {
                 throw new IllegalArgumentException("an adjustment cancels or releases something positive");
             }
             if (kind == RefundAllocation.Cancellation.Kind.UNBILLED && !interestReleased.isZero()) {
                 throw new IllegalArgumentException("an unbilled instalment has no billed interest to release");
             }
+            if (lateFeeReleased.isPositive() && (kind != RefundAllocation.Cancellation.Kind.BILLED_UNPAID || !whole)) {
+                throw new IllegalArgumentException("a late fee is released only on a billed instalment cancelled whole"
+                        + " (OQ-14)");
+            }
+        }
+
+        /** An adjustment that releases no late fee - `P12-TSK-021`'s shape. */
+        public Adjustment(UUID id, int sequence, UUID instalment, RefundAllocation.Cancellation.Kind kind,
+                Money principalCancelled, Money interestReleased, boolean whole) {
+            this(id, sequence, instalment, kind, principalCancelled, interestReleased, whole,
+                    Money.ofPersisted(0, principalCancelled.currency(), principalCancelled.scale()));
         }
 
         /** The sequence and kind only. */

@@ -240,6 +240,44 @@ class BnplCollectionLedgerDatabaseTest {
                 .as("the repayment held whole").isEqualTo(-150_00);
     }
 
+    @Test
+    @DisplayName("P12-TSK-020's proof on the real ledger: on the late fee's day a step waiting at (P) on the wallet - its"
+            + " collection's - holds no BNPL_FEE_INCOME projection row (the fee's L8 comes after the wallet, the A2-F1"
+            + " rule), though it holds its own obligation's rows; released, it records the failed collection, the"
+            + " condition and the one late fee")
+    void theFeeIncomeRowIsTakenAfterTheWallet() throws Exception {
+        Bought bought = purchase(BnplApplicationClient::payIn4, 150_00);
+        toAge(bought, 2, 5);
+        UUID income = transactions.inTransaction(uow -> ledgerAccountStore
+                .findOperational(uow, AccountPurpose.BNPL_FEE_INCOME, BnplPurchaseWorld.EUR).orElseThrow().id()
+                .value());
+        UUID principal = UUID.fromString(BnplApplicationClient.scalar("SELECT id::text FROM ledger.ledger_account WHERE"
+                + " owner_ref = ?::uuid AND purpose = 'BNPL_PRINCIPAL'", bought.obligationText()));
+        Connection holder = BnplPurchaseWorld.held();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            lockRow(holder, "SELECT 1 FROM ledger.ledger_account WHERE id = ?::uuid FOR UPDATE", bought.wallet().value());
+            Future<ServicingOutcome> step = pool.submit(() -> serviceStep(bought.obligation()));
+            awaitWaiters(1);
+            assertThat(freeOrAbsent("ledger.account_balance", "ledger_account_id", income))
+                    .as("no fee income row held across the wallet wait").isTrue();
+            assertThat(freeNow("ledger.account_balance", "ledger_account_id", principal))
+                    .as("the control: the step holds its own obligation's projection rows").isFalse();
+            holder.rollback();
+            ServicingOutcome serviced = step.get(60, TimeUnit.SECONDS);
+            assertThat(serviced.collected(CollectionOutcome.INSUFFICIENT_FUNDS)).isEqualTo(1);
+            assertThat(serviced.conditionChanges()).isEqualTo(1);
+            assertThat(serviced.fees()).isEqualTo(1);
+        } finally {
+            BnplPurchaseWorld.closeQuietly(holder);
+            pool.shutdownNow();
+        }
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_fee_assessment WHERE obligation_id ="
+                + " ?::uuid AND amount_minor = 500", bought.obligationText())).isEqualTo(1);
+        assertThat(BnplPurchaseWorld.obligationBalance(bought.obligationText(), AccountPurpose.BNPL_FEES_DUE))
+                .isEqualTo(500);
+    }
+
     // ------------------------------------------------------------------ the world
 
     /** An accepted purchase: its obligation, agreement, party and the party's wallet. */
@@ -273,8 +311,13 @@ class BnplCollectionLedgerDatabaseTest {
      * obligation's journal entries moved back together, so the record reads as if bought that many days ago.
      */
     private static void toDueDate(Bought bought, int sequence) throws Exception {
+        toAge(bought, sequence, 0);
+    }
+
+    /** The date shift to instalment {@code sequence} being {@code age} days past its due date today (`P12-TSK-020`). */
+    private static void toAge(Bought bought, int sequence, int age) throws Exception {
         String obligation = bought.obligationText();
-        long days = BnplApplicationClient.count("SELECT i.due_date - (now() AT TIME ZONE 'UTC')::date FROM bnpl.bnpl_instalment i WHERE"
+        long days = age + BnplApplicationClient.count("SELECT i.due_date - (now() AT TIME ZONE 'UTC')::date FROM bnpl.bnpl_instalment i WHERE"
                 + " i.obligation_id = ?::uuid AND i.sequence = ?", obligation, sequence);
         String o = "'" + obligation + "'";
         try (Connection owner = DatabaseRoles.bootstrap()) {
@@ -372,6 +415,15 @@ class BnplCollectionLedgerDatabaseTest {
                 probe.rollback();
             }
         }
+    }
+
+    /** {@link #freeNow}, or true when no such row exists yet - an income row never posted to cannot be held. */
+    private static boolean freeOrAbsent(String table, String column, UUID id) throws Exception {
+        if (BnplApplicationClient.count("SELECT count(*) FROM " + table + " WHERE " + column + " = ?::uuid",
+                id.toString()) == 0) {
+            return true;
+        }
+        return freeNow(table, column, id);
     }
 
     private double collections(String outcome) {

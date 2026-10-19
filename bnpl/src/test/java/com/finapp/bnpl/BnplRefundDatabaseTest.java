@@ -443,6 +443,8 @@ class BnplRefundDatabaseTest {
         final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book, closures,
                 new BnplCollections(new JdbcBnplCollectionStore(), repayments, PURCHASES, ports, book,
                         new JdbcOutboxWriter(), IDS, CLOCK),
+                new BnplConditions(new JdbcBnplConditionStore(), PURCHASES, TERMS_STORE, book, new JdbcOutboxWriter(),
+                        IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
                 closures, (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);

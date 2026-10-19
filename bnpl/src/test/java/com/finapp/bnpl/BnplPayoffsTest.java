@@ -82,7 +82,8 @@ class BnplPayoffsTest {
         BnplClosures closures = new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets,
                 world.book, world.outbox, IDS, CLOCK);
         servicing = new BnplServicing(world.servicing, world.purchases, world.terms.store(), world.book, closures,
-                world.collectionsOver(closures, IDS, CLOCK), world.outbox, IDS, CLOCK);
+                world.collectionsOver(closures, IDS, CLOCK), world.conditionsOver(IDS, CLOCK), world.outbox, IDS,
+                CLOCK);
         repayments = new BnplRepayments(world.repayments, world.servicing, world.purchases, world.terms.store(),
                 world.wallets, world.book, closures, world.outbox, IDS, CLOCK);
         refunds = new BnplRefunds(world.refunds, world.servicing, world.purchases, world.terms.store(), world.merchants,
@@ -183,6 +184,33 @@ class BnplPayoffsTest {
         assertEveryAccountZero(p4);
         assertThat(world.book.availableUnderLock(BnplApplicationFakes.UOW, wallet))
                 .isEqualTo(eur(1_000_00 - 150_00 - 40_00 - 150_00 - 260_00));
+    }
+
+    @Test
+    @DisplayName("an assessed late fee is in the quote and paid by the payoff (P12-TSK-020's hand-off, board rule 4): EUR"
+            + " 5.00 on instalment 2 at its age 5 - BNPL_FEES_DUE counted from the ledger, 300 + 150 + 5 = 455.00, the"
+            + " PAYOFF repayment paying FEES first, every account zero, and no fee or condition after CLOSED")
+    void anAssessedLateFeeIsPaidOff() {
+        world.terms.activate(BnplTermsFixtures.payIn4().lateFee(eur(5_00)).build(), 5);
+        Agreement p4 = payIn4();
+        ServicingOutcome fee = serviceAt("2026-11-05T09:00:00Z", p4);
+        assertThat(fee.fees()).isEqualTo(1);
+        assertThat(balance(accounts(p4).feesDue())).isEqualTo(eur(5_00));
+        BnplPayoffQuote quote = quoteAt("2026-11-05T10:00:00Z", p4, "q", Optional.empty()).quote();
+        assertThat(quote.feesDue()).isEqualTo(eur(5_00));
+        assertThat(quote.principalDue()).isEqualTo(eur(150_00));
+        assertThat(quote.principal()).isEqualTo(eur(300_00));
+        assertThat(quote.amount()).isEqualTo(eur(455_00));
+        BnplPayoffs.Executed executed = executeAt("2026-11-05T10:01:00Z", p4, "x", quote.id());
+        assertThat(executed.repayment().orElseThrow().allocations()).extracting(line -> line.component().orElse("-")
+                + " " + line.amount().minorUnits()).containsExactly("FEES 500", "PRINCIPAL 15000", "PRINCIPAL 15000",
+                "PRINCIPAL 15000");
+        assertEveryAccountZero(p4);
+        int fees = world.conditions.feesOf(p4.obligation()).size();
+        int conditions = world.conditions.of(p4.obligation()).size();
+        assertThat(serviceAt("2026-11-20T09:00:00Z", p4).kind()).isEqualTo(ServicingOutcome.Kind.NOT_SERVICED);
+        assertThat(world.conditions.feesOf(p4.obligation())).hasSize(fees);
+        assertThat(world.conditions.of(p4.obligation())).hasSize(conditions);
     }
 
     @Test
