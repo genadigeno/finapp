@@ -435,6 +435,13 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " under the obligation's own correlation, a scheduled process whose rows and entries are its"
                         + " trail. The customer's own acts on an agreement are theirs."),
                     Map.entry(
+                            "com.finapp.app.bnpl.BnplDisputeSchedule.sweepOnce",
+                    "The BNPL dispute deadline sweep (P12-TSK-023, ADR-0106 decision 4, OQ-10: the merchant's silence is"
+                        + " acceptance): nobody commands a lapsed dispute's refund - its response deadline came on the"
+                        + " database clock without the merchant's answer; the platform resolves it RESOLVED_REFUND as the"
+                        + " system, recorded bnpl.DisputeResolved with actor SYSTEM, its refund under the purchase's one"
+                        + " bound. The customer's, the merchant's and the operator's acts on a dispute are theirs."),
+                    Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
                         + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"

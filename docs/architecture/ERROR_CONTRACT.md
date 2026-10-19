@@ -1263,6 +1263,8 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.RefundScopeRequired` | 403 | This API key may not refund BNPL purchases; a key with the refund scope may. |
 | `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted now; nothing was written. |
 | `bnpl.SelfDealingRefused` | 403 | An employee never refunds a BNPL purchase of their own party; nothing was done. |
+| `bnpl.DisputeOpen` | 409 | The BNPL purchase has an open dispute. |
+| `bnpl.DisputeNotActionable` | 409 | The BNPL dispute is not open to this act. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its

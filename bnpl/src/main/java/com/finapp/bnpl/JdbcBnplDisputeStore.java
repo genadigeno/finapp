@@ -48,6 +48,24 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
     }
 
     @Override
+    public Optional<BnplDispute> findOfParty(Connection unitOfWork, BnplDisputeId id, UUID party) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(party, "party");
+        // The owner is in the statement: another party's dispute is the same empty answer as an absent one.
+        return first(disputes(unitOfWork, "SELECT " + COLUMNS + FROM + " WHERE d.id = ? AND d.party_id = ?",
+                List.of(id.value(), party), "reading a customer's BNPL dispute"));
+    }
+
+    @Override
+    public Optional<BnplDispute> findAtMerchant(Connection unitOfWork, BnplDisputeId id, UUID merchant) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(merchant, "merchant");
+        // The tenant is in the statement (INV-MER-01).
+        return first(disputes(unitOfWork, "SELECT " + COLUMNS + FROM + " WHERE d.id = ? AND d.merchant_id = ?",
+                List.of(id.value(), merchant), "reading a merchant's BNPL dispute"));
+    }
+
+    @Override
     public Optional<BnplDispute> lock(Connection unitOfWork, BnplDisputeId id) {
         Objects.requireNonNull(id, "id");
         return first(disputes(unitOfWork, "SELECT " + COLUMNS + FROM + " WHERE d.id = ? FOR UPDATE OF d",

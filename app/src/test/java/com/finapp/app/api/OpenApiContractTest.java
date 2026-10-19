@@ -402,6 +402,18 @@ class OpenApiContractTest {
                         // the operator's door beside it (PAYMENT_REFUND, keyed, reasoned, audited).
                         ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-purchases/{id}/refunds",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-purchases/{id}/refunds",
+                        // P12-TSK-023: the dispute doors - the customer's opening (keyed, 201) and withdrawal, the
+                        // merchant's list of its open disputes and its response over its own key (another merchant's the
+                        // uniform 404), the operator's audited read and the resolution with its four-eyes approval and
+                        // rejection (BNPL_DISPUTE_RESOLVE, keyed, reasoned).
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/disputes",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-disputes/{id}/withdrawal",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-disputes",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-disputes/{id}/response",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

@@ -309,7 +309,16 @@ class RoutePermissionRegisterTest {
                     // The operator's BNPL refund beside the merchant's (P12-TSK-021, ADR-0105 decision 9): the payments
                     // refund's one permission, the money-operating population - the ADR's default.
                     entry("POST /v1/operator/bnpl-purchases/{id}/refunds", PermissionName.PAYMENT_REFUND),
-                    entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER)));
+                    entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER),
+                    // The operator's BNPL dispute doors (P12-TSK-023, ADR-0106 decision 5): BNPL_DISPUTE_RESOLVE (held by
+                    // BNPL_SERVICING_AGENT) - four-eyes is inside the permission, two distinct holders, never between
+                    // roles; the read audited. The negatives are BnplDisputeDeskTest's.
+                    entry("GET /v1/operator/bnpl-disputes/{id}", PermissionName.BNPL_DISPUTE_RESOLVE),
+                    entry("POST /v1/operator/bnpl-disputes/{id}/resolution", PermissionName.BNPL_DISPUTE_RESOLVE),
+                    entry("POST /v1/operator/bnpl-disputes/{id}/resolution/approval",
+                            PermissionName.BNPL_DISPUTE_RESOLVE),
+                    entry("POST /v1/operator/bnpl-disputes/{id}/resolution/rejection",
+                            PermissionName.BNPL_DISPUTE_RESOLVE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

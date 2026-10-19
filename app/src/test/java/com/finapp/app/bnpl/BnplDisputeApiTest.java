@@ -1,0 +1,221 @@
+package com.finapp.app.bnpl;
+
+import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.finapp.app.credit.CreditFixtures;
+import com.finapp.bnpl.BnplOrigination;
+import com.finapp.bnpl.BnplTermsAdministration;
+import com.finapp.identity.Authorization;
+import com.finapp.identity.RoleName;
+import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.ledger.PostingService;
+import com.finapp.lending.LendingCapitalHeadroom;
+import com.finapp.lending.LoanWallets;
+import com.finapp.merchant.BnplEnablements;
+import com.finapp.merchant.BnplPricing;
+import com.finapp.merchant.FeeSchedules;
+import java.net.http.HttpResponse;
+import java.sql.Connection;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+
+/**
+ * The dispute doors' contract over HTTP (`P12-TSK-023`; ADR-0106, {@code PHASE_12_PLAN.md} section 9; ADR-0031,
+ * {@code INV-MER-01}, {@code INV-AUD-03}): the customer opens a dispute of their own agreement (201) - another party's
+ * agreement and another party's dispute are one 404; the merchant lists and answers only its own disputes - another
+ * merchant's is the 404 and its list shows none; the operator's doors refuse a session without {@code BNPL_DISPUTE_RESOLVE}
+ * (403) and admit one with it; a merchant refund while the dispute is open is {@code 409 bnpl.DisputeOpen}; the merchant's
+ * acceptance is a refund of door {@code DISPUTE}.
+ *
+ * <p><strong>A database of its own</strong> ({@code own-container}): it brings credit's BNPL policies and terms into force.
+ * Written by `P12-TSK-023` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
+ */
+@Tag("database")
+@Tag("own-container")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@DisplayName("the BNPL dispute doors' contract (P12-TSK-023)")
+class BnplDisputeApiTest {
+
+    private static final long GROSS = 600_00L;
+    private static final String BODY =
+            "{\"amount\":\"300.00\",\"currency\":\"EUR\",\"category\":\"NOT_RECEIVED\",\"reason\":\"it never came\"}";
+    private static final String CONTEST = "{\"decision\":\"CONTEST\",\"statement\":\"we shipped it\"}";
+    private static final String ACCEPT = "{\"decision\":\"ACCEPT\",\"statement\":\"refund it\"}";
+
+    @LocalServerPort private int port;
+    @Autowired private Authorization authorization;
+    @Autowired private BnplEnablements enablements;
+    @Autowired private BnplPricing pricing;
+    @Autowired private FeeSchedules feeSchedules;
+    @Autowired private BnplTermsAdministration terms;
+    @Autowired private BnplTransactions transactions;
+    @Autowired private BnplOrigination origination;
+    @Autowired private PostingService postingService;
+    @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
+    @Autowired private LendingCapitalHeadroom headroom;
+    @Autowired private LoanWallets loanWallets;
+
+    private BnplPurchaseWorld world;
+
+    @BeforeEach
+    void world() throws Exception {
+        world = new BnplPurchaseWorld(port, authorization, enablements, pricing, feeSchedules, terms, transactions,
+                origination, postingService, ledgerAccountStore, headroom, loanWallets).ready();
+        world.headroomAtLeast(eur(100_000_00L));
+    }
+
+    @Test
+    @DisplayName("the customer opens a dispute of their own agreement (201, the hold placed); another party's agreement is"
+            + " the uniform 404 and opens nothing (ADR-0031's negative)")
+    void anotherPartysAgreementIsNotFound() throws Exception {
+        Bought bought = bought();
+        CreditFixtures.Customer stranger = world.customers.consentingCustomer();
+        HttpResponse<String> refused = world.client.post("/v1/me/bnpl-agreements/" + bought.agreement() + "/disputes",
+                BODY, stranger.token(), BnplApplicationClient.key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(404);
+        assertThat(refused.body()).contains("bnpl.NotFound");
+        assertThat(disputes(bought.purchase())).isZero();
+        HttpResponse<String> opened = open(bought);
+        assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);
+        assertThat(opened.body()).contains("\"status\":\"OPEN\"", "\"heldInstalments\":2").doesNotContain("never came");
+        assertThat(disputes(bought.purchase())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("another party's dispute is the uniform 404 at the withdrawal - nothing moves; the owner withdraws it")
+    void anotherPartysDisputeIsNotFound() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        CreditFixtures.Customer stranger = world.customers.consentingCustomer();
+        for (String id : List.of(dispute, UUID.randomUUID().toString(), "not-a-uuid")) {
+            HttpResponse<String> refused = world.client.post("/v1/me/bnpl-disputes/" + id + "/withdrawal", null,
+                    stranger.token(), BnplApplicationClient.key());
+            assertThat(refused.statusCode()).as(id + ": " + refused.body()).isEqualTo(404);
+        }
+        assertThat(BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_dispute WHERE id = ?::uuid", dispute))
+                .isEqualTo("OPEN");
+        HttpResponse<String> withdrawn = world.client.post("/v1/me/bnpl-disputes/" + dispute + "/withdrawal", null,
+                bought.owner().token(), BnplApplicationClient.key());
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
+        assertThat(withdrawn.body()).contains("\"status\":\"WITHDRAWN\"");
+    }
+
+    @Test
+    @DisplayName("another merchant's dispute - and an unknown or malformed id - is one 404 at the response, nothing moved;"
+            + " a merchant refund while it is open is 409 bnpl.DisputeOpen; the owner's acceptance is a refund of door"
+            + " DISPUTE")
+    void anotherMerchantsDisputeIsNotFound() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        BnplApplicationClient.Merchant stranger = world.merchant();
+        for (String id : List.of(dispute, UUID.randomUUID().toString(), "not-a-uuid")) {
+            HttpResponse<String> refused = world.client.post("/v1/merchant/bnpl-disputes/" + id + "/response", ACCEPT,
+                    stranger.apiKey(), BnplApplicationClient.key());
+            assertThat(refused.statusCode()).as(id + ": " + refused.body()).isEqualTo(404);
+        }
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+        HttpResponse<String> accepted = world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response",
+                ACCEPT, bought.merchant().apiKey(), BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
+        assertThat(accepted.body()).contains("\"status\":\"RESOLVED_REFUND\"").doesNotContain("heldInstalments");
+        assertThat(BnplApplicationClient.scalar("SELECT door || '|' || amount_minor FROM bnpl.bnpl_refund"
+                + " WHERE dispute_id = ?::uuid", dispute)).isEqualTo("DISPUTE|30000");
+    }
+
+    @Test
+    @DisplayName("another merchant sees none of the disputes; the owner's list shows its open one - never the customer's"
+            + " reason")
+    void anotherMerchantSeesNoneOfTheDisputes() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        BnplApplicationClient.Merchant stranger = world.merchant();
+        HttpResponse<String> theirs = world.client.get("/v1/merchant/bnpl-disputes", stranger.apiKey());
+        assertThat(theirs.statusCode()).as(theirs.body()).isEqualTo(200);
+        assertThat(theirs.body()).doesNotContain(dispute);
+        HttpResponse<String> mine = world.client.get("/v1/merchant/bnpl-disputes", bought.merchant().apiKey());
+        assertThat(mine.body()).contains(dispute, "NOT_RECEIVED").doesNotContain("never came");
+    }
+
+    @Test
+    @DisplayName("the operator's doors: without BNPL_DISPUTE_RESOLVE 403 on the read and the resolution; with it the read is"
+            + " audited and the resolution of an answered dispute at or below the threshold resolves")
+    void theOperatorsDoorsRequireThePermission() throws Exception {
+        Bought bought = bought();
+        String opening = "{\"amount\":\"200.00\",\"currency\":\"EUR\",\"category\":\"NOT_AS_DESCRIBED\","
+                + "\"reason\":\"not as shown\"}";
+        String dispute = BnplApplicationClient.field(world.client.post("/v1/me/bnpl-agreements/" + bought.agreement()
+                + "/disputes", opening, bought.owner().token(), BnplApplicationClient.key()).body(), "disputeId");
+        assertThat(world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", CONTEST,
+                bought.merchant().apiKey(), BnplApplicationClient.key()).statusCode()).isEqualTo(200);
+        String outsider = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
+        assertThat(world.client.get("/v1/operator/bnpl-disputes/" + dispute, outsider).statusCode()).isEqualTo(403);
+        String resolution = "{\"outcome\":\"UPHOLD\",\"reason\":\"the evidence holds\"}";
+        assertThat(world.client.post("/v1/operator/bnpl-disputes/" + dispute + "/resolution", resolution, outsider,
+                BnplApplicationClient.key()).statusCode()).isEqualTo(403);
+        String agent = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> read = world.client.get("/v1/operator/bnpl-disputes/" + dispute, agent);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(read.body()).contains("not as shown", "we shipped it");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.DisputeRead' AND target_id = ?", dispute)).isEqualTo(1);
+        HttpResponse<String> upheld = world.client.post("/v1/operator/bnpl-disputes/" + dispute + "/resolution",
+                resolution, agent, BnplApplicationClient.key());
+        assertThat(upheld.statusCode()).as(upheld.body()).isEqualTo(200);
+        assertThat(upheld.body()).contains("\"status\":\"RESOLVED_UPHELD\"");
+    }
+
+    @Test
+    @DisplayName("a merchant refund while a dispute is open is 409 bnpl.DisputeOpen, nothing written")
+    void aRefundWhileADisputeIsOpenIsRefused() throws Exception {
+        Bought bought = bought();
+        open(bought);
+        String operator = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
+        HttpResponse<String> issued = world.client.post("/v1/operator/merchants/" + bought.merchant().id()
+                + "/api-keys?scope=BNPL_REFUND", null, operator, BnplApplicationClient.key());
+        String scoped = BnplApplicationClient.field(issued.body(), "keyId") + "." + BnplApplicationClient.field(
+                issued.body(), "secret");
+        HttpResponse<String> refused = world.client.post("/v1/merchant/bnpl-purchases/" + bought.purchase() + "/refunds",
+                "{\"amount\":\"100.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", scoped,
+                BnplApplicationClient.key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("bnpl.DisputeOpen");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+    }
+
+    // ------------------------------------------------------------------ plumbing
+
+    /** A pay-in-4 purchase accepted by a fresh customer at a fresh merchant. */
+    record Bought(String purchase, String agreement, BnplApplicationClient.Merchant merchant,
+            CreditFixtures.Customer owner) {}
+
+    private Bought bought() throws Exception {
+        CreditFixtures.Customer owner = world.customers.consentingCustomer();
+        world.topUpWallet(owner.party(), eur(1_000_00));
+        BnplApplicationClient.Merchant merchant = world.merchant();
+        BnplPurchaseWorld.Offer offer = world.offered(owner, merchant, GROSS, BnplApplicationClient::payIn4);
+        HttpResponse<String> accepted = world.accept(owner.token(), offer, BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        return new Bought(BnplApplicationClient.field(accepted.body(), "purchaseId"),
+                BnplApplicationClient.field(accepted.body(), "agreementId"), merchant, owner);
+    }
+
+    private HttpResponse<String> open(Bought bought) throws Exception {
+        return world.client.post("/v1/me/bnpl-agreements/" + bought.agreement() + "/disputes", BODY,
+                bought.owner().token(), BnplApplicationClient.key());
+    }
+
+    private static long disputes(String purchase) throws Exception {
+        return BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_dispute WHERE purchase_id = ?::uuid",
+                purchase);
+    }
+}

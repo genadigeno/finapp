@@ -2691,6 +2691,18 @@ final class BnplApplicationFakes {
         }
 
         @Override
+        public Optional<BnplDispute> findOfParty(Connection unitOfWork, BnplDisputeId id, UUID party) {
+            log.add("dispute find");
+            return Optional.ofNullable(rows.get(id.value())).filter(row -> row.party().equals(party));
+        }
+
+        @Override
+        public Optional<BnplDispute> findAtMerchant(Connection unitOfWork, BnplDisputeId id, UUID merchant) {
+            log.add("dispute find");
+            return Optional.ofNullable(rows.get(id.value())).filter(row -> row.merchant().equals(merchant));
+        }
+
+        @Override
         public Optional<BnplDispute> lock(Connection unitOfWork, BnplDisputeId id) {
             step("B6");
             locked.add(id.value());

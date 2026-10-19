@@ -157,7 +157,7 @@ public enum BnplAuditAction implements AuditableAction {
     /** A merchant answered a BNPL dispute - with evidence, or accepting it (`P12-TSK-023`). */
     DISPUTE_RESPONDED(
             "bnpl.DisputeResponded",
-            "A merchant answered a dispute of its BNPL purchase over its API key carrying the BNPL refund scope (POST"
+            "A merchant answered a dispute of its BNPL purchase over its own API key, tenant-scoped (POST"
                     + " /v1/merchant/bnpl-disputes/{id}/response, keyed bnpl.dispute-response:MERCHANT:<merchant>) before"
                     + " the response deadline on the database clock, with a statement: contesting it (MERCHANT_RESPONDED,"
                     + " an operator resolves) or accepting it (resolved as a refund at once, bnpl.DisputeResolved beside it)."

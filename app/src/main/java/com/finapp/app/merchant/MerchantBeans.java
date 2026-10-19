@@ -100,7 +100,8 @@ public class MerchantBeans {
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             com.finapp.ledger.BalanceDerivation<Connection> balanceDerivation,
             com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore,
-            com.finapp.payments.DisputeStore<Connection> disputeStore) {
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.bnpl.BnplDisputeStore bnplDisputeStore) {
         return new MerchantAdministration(
                 new JdbcMerchantStore(),
                 ledgerAccountStore,
@@ -113,9 +114,17 @@ public class MerchantBeans {
                 // the customer account's close has since P7-TSK-013: a chargeback whose share
                 // was posted to the payable and that the network may still RETURN would credit
                 // a closed merchant's payable on a win, a liability no payout can reach.
+                //
+                // And since P12-TSK-023 (ADR-0106 decision 11), over the merchant's open BNPL disputes: a dispute that
+                // resolves as a refund debits the payable, so a merchant with one open is not settled - the payable's
+                // owner read under the lock the close already holds (re-taking it is free).
                 (unitOfWork, payable) ->
                         paymentIntentStore.anyInFlightCrediting(unitOfWork, payable)
-                                || disputeStore.anyRestorableTo(unitOfWork, payable),
+                                || disputeStore.anyRestorableTo(unitOfWork, payable)
+                                || ledgerAccountStore.lockForUpdate(unitOfWork, payable)
+                                        .flatMap(com.finapp.ledger.LedgerAccount::ownerRef)
+                                        .map(merchant -> bnplDisputeStore.anyOpenAtMerchant(unitOfWork, merchant))
+                                        .orElse(false),
                 auditWriter,
                 ids,
                 clock);

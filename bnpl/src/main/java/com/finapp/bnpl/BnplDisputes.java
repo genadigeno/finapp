@@ -235,8 +235,7 @@ public final class BnplDisputes {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(party, "party");
-        BnplDispute found = store.find(unitOfWork, id).filter(dispute -> dispute.party().equals(party))
-                .orElseThrow(DisputeNotFound::new);
+        BnplDispute found = store.findOfParty(unitOfWork, id, party).orElseThrow(DisputeNotFound::new);
         BnplRefundStore.LockedPurchase locked = lockAll(unitOfWork, found, Optional.empty());
         BnplDispute dispute = lockDispute(unitOfWork, id);
         if (dispute.status() == BnplDisputeStatus.WITHDRAWN) {
@@ -272,8 +271,7 @@ public final class BnplDisputes {
         Objects.requireNonNull(merchant, "merchant");
         Objects.requireNonNull(response, "response");
         String statement = BnplReasons.reasoned(response.statement());
-        BnplDispute found = store.find(unitOfWork, id).filter(dispute -> dispute.merchant().equals(merchant))
-                .orElseThrow(DisputeNotFound::new);
+        BnplDispute found = store.findAtMerchant(unitOfWork, id, merchant).orElseThrow(DisputeNotFound::new);
         BnplRefundStore.LockedPurchase locked = lockAll(unitOfWork, found, Optional.of(merchant));
         BnplDispute dispute = lockDispute(unitOfWork, id);
         String by = "MERCHANT:" + merchant;

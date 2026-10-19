@@ -1124,6 +1124,79 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "GET /v1/merchant/transactions - the BNPL_REFUND identifier's second rank: merchant_id = ? in the statement is the authenticated key's merchant; another merchant's refund is the same empty answer as an absent one (P12-TSK-021, -016's carry).")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.findOfParty",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/bnpl-disputes/{id}/withdrawal - the identifier from the path, and d.party_id = ? in the statement is the session's own party; another party's dispute is the same empty answer as an absent one, the 404 (P12-TSK-023).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.findAtMerchant",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/merchant/bnpl-disputes/{id}/response - the identifier from the path, and d.merchant_id = ? in the statement is the authenticated key's merchant (INV-MER-01, ADR-0052); another merchant's dispute is the same empty answer as an absent one, the 404 (P12-TSK-023).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.openAtMerchant",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/bnpl-disputes - d.merchant_id = ? in the statement is the authenticated key's merchant; another merchant's disputes are never read (P12-TSK-023).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-023. GET /v1/operator/bnpl-disputes/{id} and the resolution doors - the operator names the dispute from the path by permission: BNPL_DISPUTE_RESOLVE at the boundary, and the not-self rule in the domain (BnplDisputes through BnplActingParty - an operator of the dispute's own party is refused bnpl.SelfDealingRefused, recorded FAILED) stands in for the predicate; and the deadline sweep's step, whose id its claim returned. The customer's and the merchant's doors read findOfParty and findAtMerchant instead.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.lock",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplDisputeStore.findAtMerchant",
+                                    "P12-TSK-023. (B6) the dispute whose id an owner-scoped read (findOfParty, findAtMerchant) or the operator's permission-scoped find returned in this transaction, after B5 and B4 on its purchase and obligation; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.findByKey",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P12-TSK-023. POST /v1/me/bnpl-agreements/{id}/disputes - the party is the one the agreement read was scoped by (agreementOwnedBy, party_id = ?) and re-checked under B5; the key is the caller's own idempotency key, UNIQUE (party_id, request_key) beneath it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.openOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-023. The purchase id is the one this transaction holds FOR UPDATE (B5) - its open dispute, read under it; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.holds",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplDisputeStore.findAtMerchant",
+                                    "P12-TSK-023. The held instalments of the dispute row the same read just returned - never a request value.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.liveProposal",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplDisputeStore.findAtMerchant",
+                                    "P12-TSK-023. The live proposal of the dispute this transaction holds FOR UPDATE (B6) or the operator's audited read returned; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.lockProposal",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplDisputeStore.findAtMerchant",
+                                    "P12-TSK-023. The proposal id is the body's, but the statement binds dispute_id = ? of the dispute this transaction holds FOR UPDATE (B6): another dispute's proposal is the same empty answer as none, the 404.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.anyOpenAtMerchant",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-023 (ADR-0106 decision 11). The merchant close's question, asked by MerchantAdministration under MERCHANT_ADMINISTER for the payable it holds FOR UPDATE - the merchant its owner; no merchant door names it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.disputeHold",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P12-TSK-023. The obligation id comes from agreementOwnedBy (the owner's read, party_id = ?) for the customer's condition read, or is the one the servicing step holds FOR UPDATE (B4, JdbcBnplServicingStore.lock) for the collection, condition and late-fee steps; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.disputeOpen",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-023. Whether the purchase this transaction holds FOR UPDATE (B5) has an open dispute (ADR-0106 decision 7); never a request value unscoped.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.purchaseStatus",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -3842,6 +3915,15 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplRefundStore.purchaseOfRefundAtMerchant",
                             "com.finapp.app.bnpl.BnplRefundApiTest.anotherMerchantsReportNamesNoRefund"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.findOfParty",
+                            "com.finapp.app.bnpl.BnplDisputeApiTest.anotherPartysDisputeIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.findAtMerchant",
+                            "com.finapp.app.bnpl.BnplDisputeApiTest.anotherMerchantsDisputeIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.openAtMerchant",
+                            "com.finapp.app.bnpl.BnplDisputeApiTest.anotherMerchantSeesNoneOfTheDisputes"),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
                             "com.finapp.app.bnpl.BnplMerchantReadDatabaseTest.anotherMerchantsPurchaseIsNotFound"),

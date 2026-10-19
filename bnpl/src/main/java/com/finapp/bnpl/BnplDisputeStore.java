@@ -18,6 +18,12 @@ public interface BnplDisputeStore {
     /** The dispute {@code id}, unlocked - a door's first read, to find the purchase it locks (its ids are frozen). */
     Optional<BnplDispute> find(Connection unitOfWork, BnplDisputeId id);
 
+    /** The dispute {@code id} if it is {@code party}'s - {@code party_id = ?} in the statement; another's is empty. */
+    Optional<BnplDispute> findOfParty(Connection unitOfWork, BnplDisputeId id, UUID party);
+
+    /** The dispute {@code id} if it is of {@code merchant}'s purchase - {@code merchant_id = ?} in the statement. */
+    Optional<BnplDispute> findAtMerchant(Connection unitOfWork, BnplDisputeId id, UUID merchant);
+
     /** (B6) the dispute {@code id} {@code FOR UPDATE} - after the caller's B5 and B4. */
     Optional<BnplDispute> lock(Connection unitOfWork, BnplDisputeId id);
 
