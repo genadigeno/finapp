@@ -996,6 +996,11 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "Phase 11 gate R2, P12-TSK-015. The latest catch-up application's number of an obligation this transaction holds FOR UPDATE (B4) - claimed by the servicing sweep - read after the lock so the next number is this plus one; bnpl V008's trigger re-takes B4 and re-judges the number.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplAccrualStore.latest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-017. T-acc's predecessor read: the latest accrual of an obligation the servicing sweep claimed (claimDue) and this transaction holds FOR UPDATE (B4, JdbcBnplServicingStore.lock), read after the lock; never a request value, no door reaches it - accrual is the system's act (PHASE_12_PLAN.md section 7.1 T-acc).")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplServicingStore.restamp",
                             new Entry(
                                     Scope.ADMINISTERED,

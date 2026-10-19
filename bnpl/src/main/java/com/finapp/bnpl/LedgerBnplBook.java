@@ -30,9 +30,9 @@ import lombok.RequiredArgsConstructor;
  * {@link BnplBook} over the ledger's published API (`P12-TSK-013`; {@code INV-LED-04}): the posting command
  * ({@code PostingService} - validate, claim the key, record the entry, its lines, audit, outbox and projections, all on
  * the caller's transaction), the account store's row locks, the available balance under the caller's lock, the balance
- * derivation over journal lines and the dated lines by value date (`P12-TSK-018`) - never {@code account_balance},
- * {@code INV-BAL-05} - the chart and the obligation's opener ({@link BnplAccounts}). No state of its own; code on
- * every instance.
+ * derivation over journal lines (never {@code account_balance}, {@code INV-BAL-05}), the dated principal lines the accrual
+ * base folds ({@code PurposeBalances}, `P12-TSK-017`), the chart and the obligation's
+ * opener ({@link BnplAccounts}). No state of its own; code on every instance.
  */
 @RequiredArgsConstructor
 public final class LedgerBnplBook implements BnplBook {
@@ -43,7 +43,7 @@ public final class LedgerBnplBook implements BnplBook {
     @NonNull private final AvailableBalance<Connection> available;
     @NonNull private final BalanceDerivation<Connection> balances;
     @NonNull private final PostingService postings;
-    @NonNull private final PurposeBalances<Connection> datedLines;
+    @NonNull private final PurposeBalances<Connection> purposeBalances;
 
     @Override
     public BnplLedgerAccounts openAccounts(Connection unitOfWork, BnplObligationId obligation, CurrencyCode currency) {
@@ -93,6 +93,6 @@ public final class LedgerBnplBook implements BnplBook {
     @Override
     public List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork, Set<LedgerAccountId> accounts,
             LocalDate valueDateThrough) {
-        return datedLines.datedLinesOn(unitOfWork, accounts, valueDateThrough);
+        return purposeBalances.datedLinesOn(unitOfWork, accounts, valueDateThrough);
     }
 }

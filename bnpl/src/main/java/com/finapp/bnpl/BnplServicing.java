@@ -45,9 +45,11 @@ import lombok.RequiredArgsConstructor;
  *       obligation not {@code ACTIVE} is not serviced. No L0 (exposure does not move: billing reclassifies), no L6, no (P);
  *   <li>the database clock, read after the lock, and its business date in the pinned servicing zone - never an instance
  *       clock;
- *   <li><strong>the accrual gate</strong>: for pay-in-N every elapsed date - from the purchase's business date through the
- *       business date's eve - already accrued, else nothing is written and the step answers {@code BEHIND_ACCRUAL}: T-acc
- *       (`P12-TSK-017`) runs first in its own transaction, so the shared {@code BNPL_INTEREST_INCOME} row is never held here;
+ *   <li><strong>the accrual gate</strong>: for pay-in-N every elapsed date of the accrual span - from the purchase's
+ *       business date through the business date's eve, never past the final due date - with principal outstanding already
+ *       accrued ({@link BnplAccruals#caughtUp}, `P12-TSK-017`), else nothing is written and the step answers
+ *       {@code BEHIND_ACCRUAL}: T-acc runs first in its own transaction, so the shared {@code BNPL_INTEREST_INCOME} row is
+ *       never held here;
  *   <li><strong>bill</strong> (F2): every unbilled instalment of the latest schedule version whose due date has come, oldest
  *       first - the interest exactly the period's posted accruals (pay-in-N; never the projection), the principal
  *       {@code least(not yet due, max(0, amount - interest))} and the last instalment all of it - dated its due date (a
@@ -113,8 +115,10 @@ public final class BnplServicing {
         // The database clock, read after the lock, in the pinned zone.
         Instant now = store.databaseNow(unitOfWork);
         LocalDate today = LocalDate.ofInstant(now, ZoneId.of(locked.servicingZone()));
-        // The accrual gate: pay-in-N bills only on a record accrued through the business date's eve.
-        if (locked.accrualEngine().isPresent() && !accruedThroughTheEve(unitOfWork, obligation, today)) {
+        // The accrual gate: pay-in-N is serviced only on a record caught up - every elapsed date of its accrual span with
+        // principal outstanding accrued (BnplAccruals, P12-TSK-017). T-svc never accrues: T-acc runs first, in its own
+        // transaction, so the shared BNPL_INTEREST_INCOME row is never held here.
+        if (!BnplAccruals.caughtUp(unitOfWork, store, purchases, book, locked, today)) {
             return ServicingOutcome.behindAccrual(obligation.product());
         }
         BnplTerms pinned = terms.version(unitOfWork, locked.termsVersionId())
@@ -178,19 +182,6 @@ public final class BnplServicing {
         }
         return new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(obligation.product()), billed,
                 appliedAtBilling, caughtUp);
-    }
-
-    /**
-     * Whether every elapsed date of the obligation - from its purchase's business date through {@code today}'s eve - is
-     * accrued: nothing has elapsed on the purchase's own day, and afterwards the latest accrual is the eve or later.
-     * `P12-TSK-017`'s T-acc writes the record; it owns this check's refinement.
-     */
-    private boolean accruedThroughTheEve(Connection unitOfWork, BnplObligation obligation, LocalDate today) {
-        if (!today.isAfter(obligation.purchaseDate())) {
-            return true;
-        }
-        LocalDate eve = today.minusDays(1);
-        return store.latestAccrualDate(unitOfWork, obligation.id()).filter(latest -> !latest.isBefore(eve)).isPresent();
     }
 
     /** The unbilled instalments of {@code schedule} due by {@code today}, oldest first - none after the first not due. */

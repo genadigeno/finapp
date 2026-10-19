@@ -1750,6 +1750,8 @@ instalment loans - a line's zero-principal days write no row, so its arm waits f
 date accrue it once (`PayoffDatabaseTest#theSweepAndThePayoffAccrueTheSameDateOnce`); the quote's projection for
 `[today, G - 1]` is exactly what the payoff's accrual then posts (`#aQuoteIsExecutableOnlyOnItsDate`).)*
 
+*(As built for BNPL by `P12-TSK-017`, 2026-10-19 - by analogy, pay-in-N: `BnplAccruals` (T-acc) over `bnpl V009`'s writer of `bnpl_interest_accrual`: B4 (the obligation `FOR UPDATE`) with the database clock read after it, every elapsed date of the accrual span - the latest schedule version's instalment periods from the purchase's business date, nothing at or after the final due date - with principal outstanding accrued oldest first in its own transaction, at most 92 a call; `UNIQUE (obligation_id, accrual_date)`, the trigger's oldest-first, never-early, instalment-period, agreement-in-force and engine ranks re-judged under B4 for every writer, and the key `bnpl.accrual:<obligation>:<date>` (a replay the book refuses). Every other act checks `BnplAccruals.caughtUp` under its own B4 and never accrues. Verified hermetically by `BnplAccrualsTest#accruesOncePerDate`, `#skewNeverAccruesEarlyOrTwice`, `#threeMissedDaysAreCaughtUpOldestFirst`, `#aLongOutageIsCaughtUpInBoundedCalls`, `#nothingAccruesAfterTheFinalDueDate`; across instances by `BnplAccrualDatabaseTest` - written, owed a first run.)*
+
 ### INV-LND-03 — A schedule conserves principal exactly
 **Statement:** Every repayment schedule version's principal portions sum to its principal exactly,
 and its instalment amounts to that principal plus the sum of its period interest, every rounding at a

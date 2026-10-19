@@ -52,7 +52,7 @@ import org.junit.jupiter.api.Test;
  * {@code -04} by analogy, {@code INV-IDEM-02}): {@link BnplServicing} over bnpl's own JDBC stores, on a database clock moved
  * to each due date by {@link BnplClockFrame}, bills each instalment once at its due date - ten sweepers or one - and
  * {@code bnpl V008}'s ranks hold for every writer: dated its due date and never early, oldest first, the interest exactly
- * the period's accruals (the owner-role accrual fixture), the principal rule and the remainder, the application's floor and
+ * the period's accruals (T-acc's real accruals from P12-TSK-017, which replaced V008's owner-role fixture), the principal rule and the remainder, the application's floor and
  * its next number, the permit-only edge, the step waiting on the obligation's lock (B4). The ledger is the in-memory book
  * of {@link BnplApplicationFakes} - the real postings, keys and balances are {@code app}'s; credit, checkout, merchant,
  * capital and the wallet scripted as {@link BnplAcceptanceDatabaseTest}'s.
@@ -182,18 +182,26 @@ class BnplBillingDatabaseTest {
     }
 
     @Test
-    @DisplayName("pay-in-N bills the interest the period actually accrued - Σ the owner-role accrual fixture, never the"
-            + " projection - and a raw billing of the projection is refused")
+    @DisplayName("pay-in-N bills the interest the period actually accrued - Σ T-acc's real accruals (P12-TSK-017), never"
+            + " the projection: period 1 on the on-time path is the schedule's to the minor unit, period 2 with instalment"
+            + " 1 unpaid is more")
     void pnBillsTheAccruedInterestNotTheProjection() throws SQLException {
         World world = new World();
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_N, BnplPlan.PAY_IN_3_MONTHS);
         BnplPurchaseStore.StoredInstalment first = bought.schedule().instalments().get(0);
-        world.accrueThrough(bought, first.dueDate().minusDays(1), 30);
-        long accrued = 30 * (first.dueDate().toEpochDay() - bought.purchaseDate().toEpochDay());
-        assertThat(accrued).isNotEqualTo(first.interest().minorUnits());
+        BnplPurchaseStore.StoredInstalment second = bought.schedule().instalments().get(1);
+        assertThat(world.accrueOn(first.dueDate(), bought.obligation()).caughtUp()).isTrue();
         assertThat(world.serviceOn(first.dueDate(), bought.obligation()).billed()).isEqualTo(1);
+        long period1 = Long.parseLong(world.postedIn(bought, bought.purchaseDate(), first.dueDate()));
+        assertThat(period1).as("the on-time path: the schedule's interest").isEqualTo(first.interest().minorUnits());
         assertThat(scalar("SELECT interest_minor || '|' || principal_minor FROM bnpl.bnpl_billing WHERE instalment_id = '"
-                + first.id() + "'")).isEqualTo(accrued + "|" + (first.amount().minorUnits() - accrued));
+                + first.id() + "'")).isEqualTo(period1 + "|" + (first.amount().minorUnits() - period1));
+        assertThat(world.accrueOn(second.dueDate(), bought.obligation()).caughtUp()).isTrue();
+        assertThat(world.serviceOn(second.dueDate(), bought.obligation()).billed()).isEqualTo(1);
+        long period2 = Long.parseLong(world.postedIn(bought, first.dueDate(), second.dueDate()));
+        assertThat(period2).as("instalment 1 unpaid: never the projection").isNotEqualTo(second.interest().minorUnits());
+        assertThat(scalar("SELECT interest_minor::text FROM bnpl.bnpl_billing WHERE instalment_id = '" + second.id()
+                + "'")).isEqualTo(Long.toString(period2));
     }
 
     @Test
@@ -203,7 +211,8 @@ class BnplBillingDatabaseTest {
         World world = new World();
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_N, BnplPlan.PAY_IN_3_MONTHS);
         BnplPurchaseStore.StoredInstalment first = bought.schedule().instalments().get(0);
-        world.accrueThrough(bought, first.dueDate().minusDays(2), 30);
+        // T-acc the day before: every date through the due date's eve but one accrued.
+        world.accrueOn(first.dueDate().minusDays(1), bought.obligation());
         assertThat(world.serviceOn(first.dueDate(), bought.obligation()).kind())
                 .isEqualTo(ServicingOutcome.Kind.BEHIND_ACCRUAL);
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_billing WHERE obligation_id = '" + bought.id() + "'")).isZero();
@@ -385,7 +394,9 @@ class BnplBillingDatabaseTest {
             refused(application, "UPDATE bnpl.bnpl_obligation SET plan = plan" + where, "42501");
             refused(migrator, "UPDATE bnpl.bnpl_obligation SET status = 'CLOSED', closed_at = clock_timestamp(),"
                     + " closure_reason = 'REPAID'" + where, "P0001");
-            refused(application, "INSERT INTO bnpl.bnpl_interest_accrual (id) VALUES (gen_random_uuid())", "42501");
+            // P12-TSK-017's V009 grants the writer INSERT - never UPDATE or DELETE.
+            refused(application, "DELETE FROM bnpl.bnpl_interest_accrual", "42501");
+            refused(application, "UPDATE bnpl.bnpl_interest_accrual SET posted_minor = posted_minor", "42501");
         }
     }
 
@@ -401,7 +412,7 @@ class BnplBillingDatabaseTest {
     }
 
     /** The suite's world: the scripted ports, the in-memory book behind one lock, T-pur and T-svc over the JDBC stores. */
-    private static final class World {
+    static final class World {
 
         final BnplAcceptanceDatabaseTest.Scripted ports = new BnplAcceptanceDatabaseTest.Scripted();
         final BnplApplicationFakes fakes = new BnplApplicationFakes();
@@ -410,7 +421,9 @@ class BnplBillingDatabaseTest {
                 new BnplClosures(new JdbcBnplRepaymentStore(), SERVICING, PURCHASES, ports, book, new JdbcOutboxWriter(),
                         IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
-        private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
+        final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE,
+                book, IDS);
+        final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
                 (uow, party) -> true, ports, ports, ports, ports, book, new JdbcOutboxWriter(), new JdbcAuditWriter(),
                 IDS, CLOCK);
 
@@ -448,28 +461,16 @@ class BnplBillingDatabaseTest {
             return BnplClockFrame.inOneTransaction(frame, uow -> servicing.service(uow, id));
         }
 
-        /** The owner-role accrual fixture: {@code perDayMinor} on every date from the purchase's through {@code last}. */
-        void accrueThrough(Purchased bought, LocalDate last, long perDayMinor) throws SQLException {
-            BnplPurchaseStore.StoredInstalment first = bought.schedule().instalments().get(0);
-            try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(), frameOn(last.plusDays(1)));
-                    Statement insert = migrator.createStatement()) {
-                long cumulative = 0;
-                for (LocalDate day = bought.purchaseDate(); !day.isAfter(last); day = day.plusDays(1)) {
-                    LocalDate start = day.isBefore(first.dueDate()) ? bought.purchaseDate() : first.dueDate();
-                    LocalDate end = day.isBefore(first.dueDate()) ? first.dueDate()
-                            : bought.schedule().instalments().get(1).dueDate();
-                    cumulative = day.equals(start) ? perDayMinor : cumulative + perDayMinor;
-                    insert.execute("INSERT INTO bnpl.bnpl_interest_accrual (id, obligation_id, accrual_date, period_start,"
-                            + " period_end, currency, scale, base_minor, cumulative_exact, posted_minor, agreement_id,"
-                            + " agreement_version, accrual_engine, journal_entry_id, created_at, correlation_id) VALUES"
-                            + " (gen_random_uuid(), '" + bought.id() + "', DATE '" + day + "', DATE '" + start + "', DATE '"
-                            + end + "', 'EUR', 2, 60000, " + cumulative + ", " + perDayMinor + ", '"
-                            + bought.agreement().value() + "', 1, 'ACCRUAL_ENGINE_V1', gen_random_uuid(),"
-                            + " clock_timestamp(), 'owner-role fixture')");
-                    fakes.servicing.accrue(bought.obligation(), day, Money.ofMinorUnits(perDayMinor, EUR));
-                }
-                migrator.commit();
-            }
+        /** T-acc (P12-TSK-017) in one transaction at noon of {@code date} - the real accruals replace V008's owner fixture. */
+        BnplAccruals.Outcome accrueOn(LocalDate date, BnplObligationId id) {
+            return BnplClockFrame.inOneTransaction(frameOn(date), uow -> accruals.accrue(uow, id));
+        }
+
+        /** Σ posted_minor of the obligation's accruals dated in {@code [from, toExclusive)}. */
+        String postedIn(Purchased bought, LocalDate from, LocalDate toExclusive) throws SQLException {
+            return scalar("SELECT coalesce(sum(posted_minor), 0)::text FROM bnpl.bnpl_interest_accrual WHERE obligation_id"
+                    + " = '" + bought.id() + "' AND accrual_date >= DATE '" + from + "' AND accrual_date < DATE '"
+                    + toExclusive + "'");
         }
 
         /** The owner-role credit fixture: {@code amount} held for the customer on the book. */
@@ -503,7 +504,7 @@ class BnplBillingDatabaseTest {
     }
 
     /** The in-memory book behind one lock - the suite's sweepers run on threads of their own. */
-    private static final class SharedBook implements BnplBook {
+    static final class SharedBook implements BnplBook {
 
         private final BnplApplicationFakes.Book delegate;
 

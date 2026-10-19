@@ -6,7 +6,6 @@ import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.PostingCommand;
-import com.finapp.ledger.PurposeBalances;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
@@ -47,7 +46,8 @@ import lombok.RequiredArgsConstructor;
  *       paid in full);
  *   <li><strong>and, pay-in-N, no elapsed date left unaccrued with principal outstanding at its end</strong>: a date that
  *       ended with a positive base ({@code BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE} over the journal lines valued on or before
- *       it) has earned interest the ledger does not hold yet - T-acc (`-017`) accrues it - so closing would forgo it. The
+ *       it) inside the accrual span - which ends at the final due date - has earned interest the ledger does not hold yet,
+ *       so closing would forgo it: T-acc's own {@link BnplAccruals#caughtUp} (`P12-TSK-017`), one rule for every act. The
  *       next servicing step (T-acc first) closes the obligation once that interest is billed and paid.
  * </ol>
  *
@@ -117,14 +117,13 @@ public final class BnplClosures {
         }
         BnplReceivables receivables = new BnplReceivables(purchases, book);
         Money refund = receivables.creditHeld(unitOfWork, closing.accounts());
-        Money zero = Money.ofPersisted(0, refund.currency(), refund.scale());
         BnplPurchaseStore.StoredSchedule schedule = servicing.latestSchedule(unitOfWork, obligation.id())
                 .orElseThrow(() -> new IllegalStateException("an obligation commits with schedule version 1"));
         if (!receivables.everyReceivableZero(unitOfWork, closing.accounts())
                 || !everyInstalmentBilled(unitOfWork, obligation.id(), schedule)
-                || (closing.locked().accrualEngine().isPresent()
-                        && !accruedThroughTheEve(unitOfWork, obligation, schedule, closing.accounts(), closing.today(),
-                                zero))) {
+                // Pay-in-N: T-acc's own "caught up" (`P12-TSK-017`) - no elapsed date of the accrual span, which ends at
+                // the final due date, left unaccrued with principal outstanding at its end. One rule for every act.
+                || !BnplAccruals.caughtUp(unitOfWork, servicing, purchases, book, closing.locked(), closing.today())) {
             return Optional.empty();
         }
         if (refund.isNegative()) {
@@ -163,42 +162,6 @@ public final class BnplClosures {
         return schedule.instalments().stream().allMatch(instalment -> billed.contains(instalment.id()));
     }
 
-    /**
-     * Whether every elapsed date of a pay-in-N obligation that T-acc accrues - through {@code today}'s eve, and never at or
-     * after the latest schedule version's final due date (`P12-TSK-017`: the accrual span is the instalment periods
-     * {@code [start, D1) ... [D(n-1), Dn)}; no post-maturity interest, section 12.3) - is accrued, or ended with no principal
-     * outstanding: the base {@code BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE} over the journal lines valued on or before each
-     * date after the latest accrual, read in ONE statement (lending's {@code accruedThroughYesterday}; T-acc's own rule: a
-     * date accrues while principal is outstanding at its end). `-017`'s {@code BnplAccruals.caughtUp} is the same rule;
-     * on their merge the closure calls it.
-     */
-    boolean accruedThroughTheEve(Connection unitOfWork, BnplObligation obligation,
-            BnplPurchaseStore.StoredSchedule schedule, BnplLedgerAccounts accounts, LocalDate today, Money zero) {
-        LocalDate start = obligation.purchaseDate();
-        LocalDate finalDue = schedule.instalments().get(schedule.instalments().size() - 1).dueDate();
-        LocalDate eve = today.isAfter(finalDue) ? finalDue.minusDays(1) : today.minusDays(1);
-        LocalDate from = servicing.latestAccrualDate(unitOfWork, obligation.id())
-                .map(latest -> latest.plusDays(1))
-                .filter(next -> next.isAfter(start))
-                .orElse(start);
-        if (from.isAfter(eve)) {
-            return true;
-        }
-        List<PurposeBalances.DatedLine> lines = book.datedLinesOn(unitOfWork,
-                Set.of(accounts.principal().id(), accounts.principalDue().id()), eve);
-        Money base = zero;
-        int next = 0;
-        for (LocalDate date = from; !date.isAfter(eve); date = date.plusDays(1)) {
-            while (next < lines.size() && !lines.get(next).valueDate().isAfter(date)) {
-                PurposeBalances.DatedLine line = lines.get(next++);
-                base = line.direction() == Direction.DEBIT ? base.plus(line.amount()) : base.minus(line.amount());
-            }
-            if (base.isPositive()) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     /**
      * (P) The customer's existing wallet, its row {@code FOR UPDATE} after B4 - empty when there is none or it is not

@@ -328,28 +328,37 @@ class BnplRepaymentsTest {
     }
 
     @Test
-    @DisplayName("a pay-in-N obligation is not closed over an unaccrued day: a date inside the accrual span that ended with"
-            + " principal outstanding and is not yet accrued keeps the closure's accrual test false; accrued, it holds")
+    @DisplayName("a pay-in-N obligation is not closed over an unaccrued day: every receivable zero and every instalment"
+            + " billed, but the accrual record planted behind (dates of the span that ended with principal outstanding"
+            + " unaccrued) - the repayment does not close it; with the record caught up the step does")
     void anObligationIsNotClosedOverAnUnaccruedDay() {
         Agreement pn = payInN();
         BnplPurchaseStore.StoredSchedule schedule = world.purchases.schedules.get(pn.obligation().value());
-        BnplObligation obligation = world.purchases.obligations.get(pn.obligation().value());
-        BnplLedgerAccounts accounts = accounts(pn);
-        BnplClosures closures = new BnplClosures(world.repayments, world.servicing, world.purchases, world.wallets,
-                world.book, world.outbox, IDS, CLOCK);
-        LocalDate today = PURCHASE_DATE.plusDays(5);
-        world.servicing.accrue(pn.obligation(), PURCHASE_DATE, eur(10));
-        world.servicing.accrue(pn.obligation(), PURCHASE_DATE.plusDays(1), eur(10));
-        assertThat(closures.accruedThroughTheEve(BnplApplicationFakes.UOW, obligation, schedule, accounts, today,
-                eur(0))).as("days 2-4 ended with the whole principal outstanding and are unaccrued").isFalse();
-        for (int day = 2; day <= 4; day++) {
-            world.servicing.accrue(pn.obligation(), PURCHASE_DATE.plusDays(day), eur(10));
+        LocalDate last = schedule.instalments().get(schedule.instalments().size() - 1).dueDate();
+        for (LocalDate day = PURCHASE_DATE; day.isBefore(last); day = day.plusDays(1)) {
+            world.servicing.accrue(pn.obligation(), day, eur(10));
         }
-        assertThat(closures.accruedThroughTheEve(BnplApplicationFakes.UOW, obligation, schedule, accounts, today,
-                eur(0))).isTrue();
-        // A date that ended with no principal outstanding needs no row (T-acc writes none for it).
-        assertThat(closures.accruedThroughTheEve(BnplApplicationFakes.UOW, obligation, schedule, accounts,
-                PURCHASE_DATE, eur(0))).as("nothing has elapsed on the purchase's day").isTrue();
+        serviceAt(last.atTime(9, 0).toInstant(ZoneOffset.UTC).toString(), pn);
+        BnplLedgerAccounts accounts = accounts(pn);
+        Money owed = balance(accounts.principalDue()).plus(balance(accounts.interestDue()));
+        world.book.funds.put(wallet, eur(10_000_00));
+        // The planted record: the span's last ten dates' rows gone - their interest was billed, but the record says they
+        // never accrued (a state no writer reaches - T-acc is oldest first and the billing waits on it - planted to
+        // prove the closure asks the record and not only the ledger).
+        List<BnplApplicationFakes.Servicing.Accrual> removed = world.servicing.accruals.stream()
+                .filter(row -> row.obligation().equals(pn.obligation()) && !row.date().isBefore(last.minusDays(10)))
+                .toList();
+        world.servicing.accruals.removeAll(removed);
+        BnplRepayments.Repaid repaid = repayAt(last.atTime(18, 0).toInstant(ZoneOffset.UTC).toString(), pn, "all", owed);
+        assertThat(repaid.closure()).as("ten dates of the span ended with principal outstanding, unaccrued").isEmpty();
+        assertThat(balance(accounts.principalDue()).plus(balance(accounts.interestDue()))).isEqualTo(eur(0));
+        assertThat(world.purchases.obligations.get(pn.obligation().value()).status())
+                .isEqualTo(BnplObligationStatus.ACTIVE);
+        world.servicing.accruals.addAll(removed);
+        try (SecurityContext.Scope scope = SecurityContext.enter(SYSTEM)) {
+            assertThat(serviceAt(last.plusDays(1).atTime(9, 0).toInstant(ZoneOffset.UTC).toString(), pn).closed())
+                    .isTrue();
+        }
     }
 
     @Test

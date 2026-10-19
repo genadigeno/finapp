@@ -58,10 +58,12 @@ public interface BnplBook {
     Money balanceOf(Connection unitOfWork, LedgerAccount account);
 
     /**
-     * Every line of {@code accounts} whose entry's value date is on or before {@code valueDateThrough}, ordered by value date
-     * then entry, read in ONE statement (`P12-TSK-018`; the ledger's {@code PurposeBalances.datedLinesOn}) - so a balance "at
-     * the end of a date" is the fold of the lines dated on or before it: the closure's "no unaccrued date with principal
-     * outstanding at its end", derived from journal lines and never from the projection ({@code INV-BAL-05}).
+     * Every line of {@code accounts} whose entry is valued on or before {@code valueDateThrough}, with its account and that
+     * value date, ordered by value date - read in ONE statement, so an entry moving value between two of them (a billing
+     * from not-due to due) is wholly in or wholly out ({@code PurposeBalances#datedLinesOn}; `P12-TSK-017`): the accrual
+     * base at the end of a date is the fold of the principal accounts' lines dated on or before it - journal lines, never
+     * the projection ({@code INV-BAL-05}). The closure's accrual test reads it too, through {@code BnplAccruals.caughtUp}
+     * (`P12-TSK-018`).
      */
     List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork, Set<LedgerAccountId> accounts,
             LocalDate valueDateThrough);

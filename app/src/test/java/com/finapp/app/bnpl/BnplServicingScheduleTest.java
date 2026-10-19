@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.bnpl.BnplProduct;
+import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplServicing;
 import com.finapp.bnpl.ServicingOutcome;
 import io.micrometer.core.instrument.Gauge;
@@ -32,7 +33,8 @@ class BnplServicingScheduleTest {
             + " test properties turn it off")
     void offInTestContexts() throws NoSuchMethodException, IOException {
         Method bean = BnplServicingBeans.class.getDeclaredMethod("bnplServicingSchedule", BnplServicing.class,
-                BnplTransactions.class, BnplServicingMetrics.class, Duration.class, int.class, Duration.class);
+                BnplAccruals.class, BnplTransactions.class, BnplServicingMetrics.class, BnplAccrualMetrics.class,
+                Duration.class, int.class, Duration.class);
         ConditionalOnProperty condition = bean.getAnnotation(ConditionalOnProperty.class);
         assertThat(condition.name()).containsExactly("finapp.bnpl.servicing.sweeper.enabled");
         assertThat(condition.havingValue()).isEqualTo("true");
@@ -59,15 +61,21 @@ class BnplServicingScheduleTest {
         // No servicing or transactions handed: the configuration is judged before anything else (and no DataSource is
         // named, so the suite stays in the unit tier - TestTaxonomyTest).
         BnplServicing servicing = null;
+        BnplAccruals accruals = null;
         BnplTransactions transactions = null;
+        BnplAccrualMetrics accrualMetrics = BnplAccrualMetricsTest.metrics(new SimpleMeterRegistry());
         Duration second = Duration.ofSeconds(1);
-        assertThatThrownBy(() -> new BnplServicingSchedule(servicing, transactions, metrics, Duration.ZERO, 20, second))
+        assertThatThrownBy(() -> schedule(servicing, accruals, transactions, metrics, accrualMetrics,
+                Duration.ZERO, 20, second))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new BnplServicingSchedule(servicing, transactions, metrics, second, 20, Duration.ZERO))
+        assertThatThrownBy(() -> schedule(servicing, accruals, transactions, metrics, accrualMetrics,
+                second, 20, Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new BnplServicingSchedule(servicing, transactions, metrics, second, 0, second))
+        assertThatThrownBy(() -> schedule(servicing, accruals, transactions, metrics, accrualMetrics,
+                second, 0, second))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new BnplServicingSchedule(servicing, transactions, metrics, second, 20, second))
+        assertThatThrownBy(() -> schedule(servicing, accruals, transactions, metrics, accrualMetrics,
+                second, 20, second))
                 .as("a valid configuration still needs its collaborators").isInstanceOf(NullPointerException.class);
     }
 
@@ -97,6 +105,12 @@ class BnplServicingScheduleTest {
         assertThat(servicing(registry, "service", "failed")).isEqualTo(1.0);
         assertThat(servicing(registry, "catch_up", "applied")).isEqualTo(1.0);
         assertThat(servicing(registry, "closure", "closed")).as("one closure, P12-TSK-018").isEqualTo(1.0);
+    }
+
+    private static BnplServicingSchedule schedule(BnplServicing servicing, BnplAccruals accruals,
+            BnplTransactions transactions, BnplServicingMetrics metrics, BnplAccrualMetrics accrualMetrics, Duration poll,
+            int batch, Duration retry) {
+        return new BnplServicingSchedule(servicing, accruals, transactions, metrics, accrualMetrics, poll, batch, retry);
     }
 
     private static double billing(SimpleMeterRegistry registry, String product, String outcome) {
