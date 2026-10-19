@@ -316,7 +316,7 @@ public final class BnplPayoffDesk {
     }
 
     /** A payoff's assurance (A18): a {@code MULTI_FACTOR} session, always - enrolled or not. */
-    private static void requireMultiFactor(Session current) {
+    static void requireMultiFactor(Session current) {
         if (!current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
             throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED, "A payoff requires a MULTI_FACTOR session");
         }

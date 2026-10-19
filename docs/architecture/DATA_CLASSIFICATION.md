@@ -3686,6 +3686,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_billing` | `period_start` | `INTERNAL` | The start of the period the billing closes |
 | `bnpl_billing` | `business_date` | `INTERNAL` | The business date it was made on, stamped by the trigger |
 | `bnpl_billing` | `correlation_id` | `INTERNAL` | The obligation's correlation |
+| `bnpl_billing` | `payoff_execution_id` | `INTERNAL` | The payoff execution beside which it was billed before its due date (`P12-TSK-022`) - stamped by the trigger; none otherwise |
 | `bnpl_repayment` | `id` | `INTERNAL` | Generated |
 | `bnpl_repayment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
 | `bnpl_repayment` | `kind` | `INTERNAL` | A closed kind (`AT_PURCHASE`; `CUSTOMER` from `P12-TSK-018`, `AUTO_COLLECTION` and `PAYOFF` admitted by `-019` and `-022`) |

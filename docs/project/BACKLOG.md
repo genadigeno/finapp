@@ -21243,6 +21243,69 @@ after everything.
   a stale quote never posts; no payoff fact is dated before its floor.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 vacuous — a closing repayment is not
   reversible (`-024`); F5 vacuous — internal; F8: the subledger proof), `DOD-API`. **Risk**: High. **Cx**: M.
+- **As built** (2026-10-19): `bnpl V014` (`V014__early_payoff_quote_execution_and_closure.sql`) - `bnpl_payoff_quote`
+  (immutable with its inputs: business date, `G`, the five receivables and the credit balance read from the ledger, the
+  projection's base, `projected_days` and its interest, the agreement version and the three engines; `UNIQUE
+  (obligation_id, request_key)`; `amount_minor` `CHECK`ed to be `P + PD + IA + ID + FD - CB + projected`; interest-free
+  without an accrual engine; its trigger: B4 re-taken, `ACTIVE`, the agreement version in force, made on the database
+  clock's business date, `G` at most the pinned horizon after it, `created_at := clock_timestamp()`) and
+  `bnpl_payoff_execution` (`UNIQUE (quote_id)`, `UNIQUE (obligation_id)`, `(quote_id, obligation_id)` referencing its own
+  obligation's quote; its trigger: `ACTIVE`, the quote's agreement version still in force, on the quote's `G` which is the
+  database clock's date, `value_date = max(G, bnpl.principal_value_floor)` read at its birth - before the payoff writes
+  anything; a deferred check tying it to `CLOSED (PAID_OFF_EARLY)` beside its closure). Replaced, each its predecessor's
+  body plus the payoff's arm: `bnpl_billing_is_born_once` (V012 - early only beside the obligation's execution; an early
+  billing waits for the accruals through `G - 1` only; its `business_date` the payoff's, never the future due date),
+  `principal_value_floor` (V008 - a billing beside an execution counted at most at the execution's value date),
+  `bnpl_repayment_is_born_once` (V011 - `PAYOFF` admitted only beside the execution, keyed by the quote, dated its value
+  date), `bnpl_obligation_closure_is_born_once` (V012 - `PAID_OFF_EARLY` beside the execution, every other reason never
+  beside one, a payoff's closure naming its `PAYOFF` repayment). `BnplPayoffs` (the quote and T-pay), `BnplPayoffQuote`,
+  `BnplPayoffExecution`, `BnplPayoffStore`/`JdbcBnplPayoffStore`; `BnplServicing#billForPayoff` (one billing rule with
+  T-svc's `bill`, an entry value-date parameter added); `BnplClosures.Closing.payoff` (reason `PAID_OFF_EARLY`);
+  `BnplAccruals.accrualTerms` shared by T-acc and the projection; `BnplErrorCode.PAYOFF_QUOTE_STALE`. `app`:
+  `BnplPayoffController` (`POST /v1/me/bnpl-agreements/{id}/payoff-quotes`, conditional step-up, and `/payoff`,
+  `MULTI_FACTOR`, each `201`), `BnplPayoffDesk` (claims `bnpl.payoff-quote:CUSTOMER:<id>` and `bnpl.payoff:CUSTOMER:<id>`;
+  pay-in-N behind its accrual → T-acc in its own transaction, up to eight rounds, then the act again), `BnplPayoffMetrics`
+  (`finapp.bnpl.payoff{product, outcome}`: `quoted`, `paid_off`, `stale`, `insufficient_funds`, `obligation_closed`,
+  eager; a moved payoff also `finapp.bnpl.repayment{kind=payoff, outcome=closed}`), `BnplPayoffBeans`. Registers:
+  `openapi.json`, `ERROR_CONTRACT.md` (`bnpl.PayoffQuoteStale` and the doors' paragraph), `DATA_CLASSIFICATION.md`,
+  `OpenApiContractTest`, `CredentialReachesNoEmittedSinkTest` (`BnplPayoffQuoteBody`, `BnplPayoffBody`),
+  `OwnershipIsScopedTest` (`JdbcBnplPayoffStore.findQuoteByKey`, `findQuote`, `findExecution` - `AUTHORITATIVE_ID` from
+  `JdbcBnplRepaymentStore.lockOwnedBy`; `findQuote` binds the locked obligation, so another agreement's quote is the uniform
+  404), `BnplMigrationTest`'s lists, `app/build.gradle.kts` `ownContainerSuites` (`BnplPayoffApiTest`).
+  **Worked, pay-in-4** (`G` = 600.00, four of 150.00 every 14 days, instalment 1 paid at purchase on 10-17): quoted on 10-20
+  - `P` 450.00, nothing else - amount 450.00; executed on 10-20: instalments 2, 3, 4 billed early (`DR BNPL_PRINCIPAL_DUE
+  150 / CR BNPL_PRINCIPAL 150` each under `bnpl.billing:<instalment>`, rows dated 10-31, 11-14, 11-28, entries valued
+  10-20), one `PAYOFF` repayment `DR CUSTOMER_WALLET 450.00 / CR BNPL_PRINCIPAL_DUE 450.00` under
+  `bnpl.repayment:<repayment>` valued 10-20, `CLOSED (PAID_OFF_EARLY)`, refund 0.00; every BNPL account zero; with a held
+  40.00 the quote is 410.00 and the wallet is debited 410.00 (the application at billing or the catch-up) - never 450.00
+  with 40.00 refunded. **Worked, pay-in-N** (600.00, three months, 19.99% ACT/365F `HALF_EVEN` cumulative per period,
+  purchase 10-17): quoted on 10-27 good through 11-01 - ten dates accrued (10-17..10-26) `IA` 3.29, five projected
+  (10-27..10-31) on the base 600.00, 1.64, amount 604.93; on 11-01 T-acc posts exactly 1.64 for those five dates (its own
+  transaction, before), the execution bills instalment 1's period early with its 4.93 accrued (`DR BNPL_INTEREST_DUE 4.93
+  / CR BNPL_INTEREST_ACCRUED 4.93`, the principal `amount - 4.93`) and instalments 2 and 3 with no interest (their periods
+  not begun), then one `PAYOFF` repayment of 604.93 (`INTEREST 4.93` and three principal lines), `CLOSED
+  (PAID_OFF_EARLY)`; `BNPL_INTEREST_INCOME` holds exactly the 4.93 accrued - no rebate line exists.
+- **Refinements of the backlog, with reasons**: (1) **the quote is read plainly, not under (B6)** - it is INSERT-only
+  (an `UPDATE`-less role cannot take `FOR UPDATE` on it, and nothing could change under the lock); the execution's
+  `UNIQUE (quote_id)` and `UNIQUE (obligation_id)` beneath B4 arbitrate, lending's `P11-TSK-026` shape. (2) **The payoff's
+  value date `V = max(G, floor)` is fixed once, on the execution row, from the floor read before any write**, and
+  `principal_value_floor` counts a payoff's billings at most at `V`: an early billing keeps its row dated its due date
+  (so "billed" stays judged by due date, `-021`'s rule, and the closure's and the billing trigger's ranks hold unchanged)
+  while its entry is valued `V` - so the floor can never climb to a future due date inside the payoff, and every
+  application, the repayment and the early entries land on `V`, never before the floor (RG-M1) and never in the future.
+  (3) **An instalment already due but not yet billed** (the servicing step not yet run today) is billed in the payoff
+  exactly as T-svc bills it, its entry valued its due date - one billing rule, base-neutral either way. (4) **A payoff
+  makes no schedule or agreement version** (the plan's §5.4; lending's shape) - the backlog was silent. (5) **The quote
+  is refused, not computed, on a record behind its accrual**: the backlog said "after T-acc's catch-up"; the desk runs
+  T-acc in its own transaction and asks again, as `-021`'s refund door does, so neither act holds the currency's income
+  row (A2-F1). (6) **The projection stops at the accrual span's end** (`projected_days` may be fewer than `G - today`):
+  T-acc accrues nothing at or after the final due date (`-017`). (7) **Fees**: `BNPL_FEES_DUE` is counted from the ledger
+  generically, and the `PAYOFF` repayment allocates it through `BnplReceivables`' due state - whatever model `-020` gives
+  a late fee must keep that due state explaining the account, as every repayment already requires. (8) **The execution
+  also refuses a moved agreement version or engine** before recomputing (`AMOUNT_CHANGED`), and a held credit beside a
+  receivable after the applications is an `AllocationAnomaly`, never a gross debit with a refund beside it.
+  (9) **Lending's RG-M1 is not remediated here** (board rule 10): bnpl floors its own payoff; the recommendation that
+  lending's payoff applications be floored alike stays open.
 
 **P12-TSK-023 — BNPL disputes** — `PLANNED`
 - **Objective**: a customer contests a BNPL purchase with the platform (there is no card network on it); the

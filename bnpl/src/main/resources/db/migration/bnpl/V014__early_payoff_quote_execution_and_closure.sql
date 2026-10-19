@@ -268,6 +268,28 @@ CREATE CONSTRAINT TRIGGER bnpl_payoff_execution_closes_its_obligation
     EXECUTE FUNCTION bnpl.bnpl_payoff_execution_closes_its_obligation();
 
 -- ---------------------------------------------------------------------------------------------
+-- The billing, extended: an early billing names the payoff execution beside which it was born (stamped by its trigger,
+-- never granted), and only such a billing is made on a business date before its due date - V008's coherence CHECK held
+-- every billing to business_date >= value_date, which a payoff's early billing (made on G, dated its future due date)
+-- cannot meet. Every other part of the CHECK unchanged.
+-- ---------------------------------------------------------------------------------------------
+ALTER TABLE bnpl.bnpl_billing ADD COLUMN payoff_execution_id uuid;
+ALTER TABLE bnpl.bnpl_billing ADD CONSTRAINT bnpl_billing_payoff_execution_fk
+    FOREIGN KEY (payoff_execution_id) REFERENCES bnpl.bnpl_payoff_execution (id);
+ALTER TABLE bnpl.bnpl_billing DROP CONSTRAINT bnpl_billing_versions_coherent;
+ALTER TABLE bnpl.bnpl_billing ADD CONSTRAINT bnpl_billing_versions_coherent CHECK (
+    (schedule_id IS NULL AND schedule_version IS NULL AND schedule_engine IS NULL AND agreement_id IS NULL
+        AND agreement_version IS NULL AND accrual_engine IS NULL AND period_start IS NULL AND business_date IS NULL
+        AND correlation_id IS NULL AND payoff_execution_id IS NULL)
+    OR (schedule_id IS NOT NULL AND schedule_version >= 1 AND schedule_engine IS NOT NULL AND agreement_id IS NOT NULL
+        AND agreement_version >= 1 AND period_start IS NOT NULL AND period_start <= value_date
+        AND (business_date >= value_date OR payoff_execution_id IS NOT NULL)
+        AND char_length(correlation_id) BETWEEN 1 AND 200));
+
+COMMENT ON COLUMN bnpl.bnpl_billing.payoff_execution_id IS
+    'The payoff execution beside which this billing was born before its due date (P12-TSK-022) - stamped by bnpl_billing_is_born_once, never by a writer; NULL for every billing on or after its due date. Its business date is the payoff''s, its entry valued the payoff''s value date.';
+
+-- ---------------------------------------------------------------------------------------------
 -- The principal value floor, replaced: V008's, a billing beside a payoff counted at most at the payoff's value date.
 -- ---------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION bnpl.principal_value_floor(obligation uuid)
@@ -399,10 +421,14 @@ BEGIN
         RAISE EXCEPTION 'a BNPL billing bills least(remaining, amount - interest) of principal, the last instalment the remainder (P12-TSK-015, INV-BNPL-05)';
     END IF;
     -- The business date it was made on and its instant - the database's, after the lock; a payoff's early billing is
-    -- made on the payoff's date, never its future due date.
-    NEW.business_date := GREATEST(bnpl.business_date_latest(obligation.servicing_zone),
-                                  CASE WHEN payoff.id IS NULL THEN NEW.value_date
-                                       ELSE LEAST(NEW.value_date, payoff.value_date) END);
+    -- made on the payoff's date, never its future due date, and names the execution beside which it was born.
+    IF payoff.id IS NOT NULL AND instalment.due_date > payoff.business_date THEN
+        NEW.payoff_execution_id := payoff.id;
+        NEW.business_date := GREATEST(bnpl.business_date_latest(obligation.servicing_zone), payoff.business_date);
+    ELSE
+        NEW.payoff_execution_id := NULL;
+        NEW.business_date := GREATEST(bnpl.business_date_latest(obligation.servicing_zone), NEW.value_date);
+    END IF;
     NEW.billed_at := clock_timestamp();
     RETURN NEW;
 END;

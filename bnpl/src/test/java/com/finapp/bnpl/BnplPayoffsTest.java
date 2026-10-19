@@ -280,6 +280,27 @@ class BnplPayoffsTest {
     }
 
     @Test
+    @DisplayName("pay-in-N after a partial refund (schedule and agreement version 2, recalculated at the instalment, still"
+            + " from the purchase date): the quote reads the latest version and the payoff bills its every instalment and"
+            + " closes, every account zero")
+    void aPnPayoffAfterAPartialRefundPaysTheLatestVersion() {
+        Agreement pn = payInN();
+        catchUpAt("2026-10-27T00:30:00Z", pn);
+        refundAt("2026-10-27T09:00:00Z", pn, "r-pn", eur(200_00));
+        assertThat(world.purchases.agreements.get(pn.agreement().value()).version()).isEqualTo(2);
+        catchUpAt("2026-11-03T00:30:00Z", pn);
+        BnplPayoffQuote quote = quoteAt("2026-11-03T09:00:00Z", pn, "q", Optional.empty()).quote();
+        assertThat(quote.agreementVersion()).isEqualTo(2);
+        assertThat(quote.principal()).isEqualTo(eur(400_00));
+        executeAt("2026-11-03T09:01:00Z", pn, "x", quote.id());
+        assertEveryAccountZero(pn);
+        for (BnplPurchaseStore.StoredInstalment instalment : world.purchases.schedules.get(pn.obligation().value())
+                .instalments()) {
+            assertThat(world.purchases.billedOn(pn.obligation(), instalment.dueDate())).isTrue();
+        }
+    }
+
+    @Test
     @DisplayName("no rebate arithmetic exists: a pay-in-N payoff pays the principal and exactly the interest accrued to its"
             + " eve - interest income is only ever credited (no debit, no reversal, no rebate line), and nothing of a"
             + " later period is billed")
@@ -420,6 +441,13 @@ class BnplPayoffsTest {
         refundAt("2026-10-20T09:10:00Z", versioned, "r-versioned", eur(150_00));
         assertThatThrownBy(() -> executeAt("2026-10-20T09:20:00Z", versioned, "x", before.id()))
                 .isInstanceOf(BnplPayoffs.PayoffQuoteStale.class);
+        // A new quote on schedule version 2 (instalment 4 cancelled) pays off what is left - 300.00 - and closes.
+        BnplPayoffQuote onVersion2 = quoteAt("2026-10-20T09:30:00Z", versioned, "q2", Optional.empty()).quote();
+        assertThat(onVersion2.agreementVersion()).isEqualTo(2);
+        assertThat(onVersion2.amount()).isEqualTo(eur(300_00));
+        executeAt("2026-10-20T09:31:00Z", versioned, "x2", onVersion2.id());
+        assertEveryAccountZero(versioned);
+        assertThat(obligation(versioned).closureReason()).contains(BnplClosureReason.PAID_OFF_EARLY);
 
         // Payoff first: the refund waits on B5 -> B4, finds CLOSED, and pays the customer only (OQ-15).
         Agreement paid = payIn4();

@@ -12,12 +12,19 @@ import com.finapp.bnpl.BnplPayoffQuote;
 import com.finapp.bnpl.BnplPayoffs;
 import com.finapp.bnpl.BnplProduct;
 import com.finapp.bnpl.BnplPurchaseStore;
+import com.finapp.identity.AssuranceLevel;
+import com.finapp.identity.IdentityErrorCode;
+import com.finapp.identity.IdentityId;
+import com.finapp.identity.Session;
+import com.finapp.identity.SessionId;
+import com.finapp.identity.SessionStatus;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.platform.api.ApiException;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -109,6 +116,25 @@ class BnplPayoffDeskTest {
                 .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode().status()).isEqualTo(422));
         assertThatThrownBy(() -> BnplPayoffDesk.quoteId(new BnplPayoffController.BnplPayoffBody("not-a-uuid")))
                 .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode().status()).isEqualTo(404));
+    }
+
+    @Test
+    @DisplayName("the payoff requires a MULTI_FACTOR session always - a password session is 403"
+            + " identity.AssuranceRequired, enrolled or not (A18's negative); MULTI_FACTOR and STRONG pass")
+    void thePayoffIsMultiFactorAlways() {
+        assertThatThrownBy(() -> BnplPayoffDesk.requireMultiFactor(session(AssuranceLevel.PASSWORD)))
+                .isInstanceOfSatisfying(ApiException.class, refused -> {
+                    assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED);
+                    assertThat(refused.errorCode().status()).isEqualTo(403);
+                });
+        BnplPayoffDesk.requireMultiFactor(session(AssuranceLevel.MULTI_FACTOR));
+        BnplPayoffDesk.requireMultiFactor(session(AssuranceLevel.STRONG));
+    }
+
+    private static Session session(AssuranceLevel assurance) {
+        Instant now = Instant.now();
+        return Session.rehydrate(SessionId.next(IDS), IdentityId.next(IDS), Sensitive.of("hash"), assurance,
+                SessionStatus.ACTIVE, now, now.plusSeconds(600), now.plusSeconds(3600), "test", null);
     }
 
     @Test
