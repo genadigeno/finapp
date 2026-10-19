@@ -21168,7 +21168,7 @@ after everything.
   (private; `-023` calls it through a door of its own); a payoff after a partial refund reads the latest schedule version
   and the position from `BnplRefunds.derive`'s rows.
 
-**P12-TSK-022 — Early payoff (both products)** — `PLANNED`
+**P12-TSK-022 — Early payoff (both products)** — `IN_PROGRESS` (2026-10-19, Phase 12 wave E beside `P12-TSK-020`, branch `P12-TSK-022`, bnpl `V014`)
 - **Objective**: the customer can know, and pay, exactly what ends the obligation on a given day — P4 its
   unpaid instalments, PN Phase 11's quote shape — never a wrong payoff whatever races it, no fee (A21, L8),
   and **every application and every principal fact floored from its first line** (the Phase 11 gate's

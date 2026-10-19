@@ -507,6 +507,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // for card and account numbers). No secret; closed: the merchant is the key's, and the body
                         // carries no instalment, customer, wallet or key.
                         "BnplRefundBody",
+                        // P12-TSK-022: a BNPL payoff quote - the good-through date alone - and its execution - the quote
+                        // it executes, an opaque id. No secret; closed: the figure is the domain's to compute and the
+                        // quote's to name, and neither body carries an amount, party, wallet or key.
+                        "BnplPayoffQuoteBody",
+                        "BnplPayoffBody",
                         // P11-TSK-012: the customer's acceptance - the offer's terms hash (a public SHA-256 of terms the
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.

@@ -1305,6 +1305,21 @@ deferred). No prepayment fee, and no rebate arithmetic: daily accrual makes an e
 rebate zero by construction.
 **Owned by:** `lending`
 
+### BNPL Payoff
+**Is:** settling everything a BNPL obligation owes, early, in one act, with no fee (A21, L8) — the Payoff's shape for
+both BNPL products: an immutable **BNPL Payoff Quote** (`bnpl_payoff_quote`; good-through date `G` today up to the pinned
+horizon; amount `P + PD + IA + ID + FD - CB` from the obligation's ledger accounts under B4 plus, pay-in-N, the interest
+`ACCRUAL_ENGINE_V1` projects for `[today, G - 1]` of the accrual span - pay-in-4's is its unpaid instalments plus fees due
+less the credit balance) and its born-once **BNPL Payoff Execution** (`bnpl_payoff_execution`, `UNIQUE (quote_id)`,
+`UNIQUE (obligation_id)`) on `G`, which under B4 bills every unbilled instalment early (each row still dated its due date,
+its entry the payoff's value date), applies the held credit, recomputes - stale (`409 bnpl.PayoffQuoteStale`) when the
+figure moved - posts one `PAYOFF` repayment to every component, refunds any credit balance and closes the obligation
+`PAID_OFF_EARLY`; every fact of it dated `max(G, floor)`, the floor read before it writes. Built by `P12-TSK-022`
+(`bnpl V014`, `BnplPayoffs`, `POST /v1/me/bnpl-agreements/{id}/payoff-quotes` and `…/payoff`).
+**Not:** the lending Payoff (`lending V022`, a loan or a line), and not a refund (the merchant's act, latest instalments
+first); a payoff makes no schedule or agreement version. No rebate arithmetic: daily accrual makes it zero by construction.
+**Owned by:** `bnpl`
+
 ### Disbursement
 **Is:** lending's act of making an instalment loan's principal the borrower's — born `PENDING` once
 per loan at acceptance, `POSTED` in the one transaction that credits the borrower's wallet, debits

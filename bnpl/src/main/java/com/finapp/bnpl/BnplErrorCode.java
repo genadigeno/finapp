@@ -122,6 +122,14 @@ public enum BnplErrorCode implements ErrorCode {
     OBLIGATION_CLOSED("bnpl.ObligationClosed", 409, "The BNPL agreement is closed."),
 
     /**
+     * The payoff quote no longer ends the agreement (`P12-TSK-022`; T-pay, scenario 11): executed on a date other than its
+     * good-through date, or what the agreement owes moved since it was quoted (a refund, a repayment, a collection, a fee or
+     * a new agreement version committed first) - recomputed under the obligation's lock and refused rather than adjusted;
+     * nothing was posted. A new quote answers the new figure.
+     */
+    PAYOFF_QUOTE_STALE("bnpl.PayoffQuoteStale", 409, "The payoff quote is stale."),
+
+    /**
      * The refund exceeds what remains of the purchase - {@code R > G - refunded} (`P12-TSK-021`; {@code INV-BNPL-07}),
      * judged under the purchase's row lock; nothing was written. The detail never names the remainder.
      */

@@ -1039,6 +1039,24 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-018. The edge ACTIVE -> CLOSED of the obligation the closing act holds FOR UPDATE (B4) - lockOwnedBy's or the servicing sweep's claim - conditional on ACTIVE, bnpl V010's edge function admitting it only beside the closure born in this transaction; no door names it.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPayoffStore.findQuoteByKey",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                                    "P12-TSK-022. POST /v1/me/bnpl-agreements/{id}/payoff-quotes - the obligation id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; the key is the caller's own idempotency key, UNIQUE (obligation_id, request_key) beneath it. Another party's agreement never reaches it - BnplPayoffApiTest.anotherPartysAgreementIsNotFound.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPayoffStore.findQuote",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                                    "P12-TSK-022. POST /v1/me/bnpl-agreements/{id}/payoff - the quote id is the body's, but the statement binds the obligation id lockOwnedBy holds FOR UPDATE under party_id = ? (obligation_id = ?): another agreement's quote is the same empty answer as none, the uniform 404 - BnplPayoffApiTest.anotherPartysAgreementIsNotFound.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPayoffStore.findExecution",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
+                                    "P12-TSK-022. A payoff already executed: the obligation id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; UNIQUE (obligation_id) beneath it.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
                             new Entry(
                                     Scope.OWNER_SCOPED,

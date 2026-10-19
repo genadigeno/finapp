@@ -76,6 +76,7 @@ final class BnplApplicationFakes {
     final Accruals accruals = new Accruals();
     final Refunds refunds = new Refunds();
     final Collections collections = new Collections();
+    final Payoffs payoffs = new Payoffs();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -124,6 +125,7 @@ final class BnplApplicationFakes {
         List<BnplInterestAccrual> accrualState = accruals.state();
         Refunds.State refundState = refunds.state();
         List<BnplCollectionAttempt> attemptState = collections.state();
+        Payoffs.State payoffState = payoffs.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -131,6 +133,8 @@ final class BnplApplicationFakes {
             T result = work.get();
             // At commit (bnpl V011's deferred trigger): every AUTO_COLLECTION repayment is named by its attempt.
             collections.atCommit();
+            // At commit (bnpl V014's deferred trigger): every payoff execution's obligation is CLOSED PAID_OFF_EARLY.
+            payoffs.atCommit();
             return result;
         } catch (RuntimeException refused) {
             store.rows.clear();
@@ -162,6 +166,7 @@ final class BnplApplicationFakes {
             accruals.restore(accrualState);
             refunds.restore(refundState);
             collections.restore(attemptState);
+            payoffs.restore(payoffState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1021,8 +1026,11 @@ final class BnplApplicationFakes {
             StoredInstalment instalment = schedule.instalments().stream()
                     .filter(candidate -> candidate.id().equals(billing.instalment())).findFirst().orElseThrow();
             java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
-            // bnpl V008's trigger: dated its due date, once it has come; oldest first; the period it closes.
-            if (!billing.dueDate().equals(instalment.dueDate()) || instalment.dueDate().isAfter(today)
+            // bnpl V008's trigger: dated its due date, once it has come - early only beside the obligation's payoff
+            // execution (bnpl V014); oldest first; the period it closes.
+            Optional<BnplPayoffExecution> payoff = payoffs.executionOf(billing.obligation());
+            if (!billing.dueDate().equals(instalment.dueDate())
+                    || (instalment.dueDate().isAfter(today) && payoff.isEmpty())
                     || billing.dueDate().isBefore(obligation.purchaseDate())) {
                 throw new BnplStorageException("a BNPL billing is dated its instalment's due date, once that date has"
                         + " come: P0001");
@@ -1042,8 +1050,11 @@ final class BnplApplicationFakes {
             if (schedule.engine().equals("SCHEDULE_ENGINE_V1")) {
                 accrued = servicing.periodInterest(UOW, billing.obligation(), billing.periodStart(), billing.dueDate(),
                         zero);
-                if (servicing.latestAccrualDate(UOW, billing.obligation())
-                        .filter(latest -> !latest.isBefore(billing.dueDate().minusDays(1))).isEmpty()) {
+                // The reach: the due date, or for a payoff's billing the earlier of it and the payoff's date (V014).
+                java.time.LocalDate reach = payoff.map(BnplPayoffExecution::businessDate)
+                        .filter(date -> date.isBefore(billing.dueDate())).orElse(billing.dueDate());
+                if (reach.isAfter(billing.periodStart()) && servicing.latestAccrualDate(UOW, billing.obligation())
+                        .filter(latest -> !latest.isBefore(reach.minusDays(1))).isEmpty()) {
                     throw new BnplStorageException("a pay-in-N billing waits for every accrual of its period: P0001");
                 }
             }
@@ -1083,6 +1094,13 @@ final class BnplApplicationFakes {
             BnplObligation obligation = obligations.get(repayment.obligation().value());
             if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE) {
                 throw new BnplStorageException("a BNPL repayment repays its ACTIVE obligation: P0001");
+            }
+            // bnpl V014: PAYOFF only beside its obligation's execution, keyed by its quote, dated its value date.
+            if (repayment.kind().equals(Repayment.PAYOFF) && payoffs.executionOf(repayment.obligation())
+                    .filter(execution -> execution.quote().toString().equals(repayment.requestKey())
+                            && execution.valueDate().equals(repayment.valueDate())).isEmpty()) {
+                throw new BnplStorageException("a PAYOFF repayment is born only beside its obligation's payoff"
+                        + " execution: P0001");
             }
             if (!repayment.kind().equals(Repayment.AT_PURCHASE)) {
                 java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, repayment.obligation());
@@ -1480,9 +1498,16 @@ final class BnplApplicationFakes {
         @Override
         public java.time.LocalDate principalValueFloor(Connection unitOfWork, BnplObligationId obligation) {
             java.time.LocalDate floor = purchases.obligations.get(obligation.value()).purchaseDate();
+            // bnpl V014: a billing beside a payoff execution counts at most at the execution's value date.
+            Optional<java.time.LocalDate> payoffDate = payoffs.executionOf(obligation).map(BnplPayoffExecution::valueDate);
             for (BnplBilling billing : purchases.billings.values()) {
-                if (billing.obligation().equals(obligation) && billing.dueDate().isAfter(floor)) {
-                    floor = billing.dueDate();
+                if (!billing.obligation().equals(obligation)) {
+                    continue;
+                }
+                java.time.LocalDate counted = payoffDate.filter(date -> date.isBefore(billing.dueDate()))
+                        .orElse(billing.dueDate());
+                if (counted.isAfter(floor)) {
+                    floor = counted;
                 }
             }
             Optional<java.time.LocalDate> accrued = latestAccrualDate(unitOfWork, obligation);
@@ -1639,13 +1664,17 @@ final class BnplApplicationFakes {
             BnplObligation obligation = purchases.obligations.get(closure.obligation().value());
             BnplPurchaseStatus purchase = obligation == null ? null
                     : purchases.rows.get(obligation.purchase().value()).status();
-            // bnpl V012: REPAID, REFUNDED (the purchase fully refunded) or REFUNDED_PARTIALLY_REPAID (beside a refund).
+            // bnpl V012: REPAID, REFUNDED (the purchase fully refunded) or REFUNDED_PARTIALLY_REPAID (beside a refund);
+            // bnpl V014: PAID_OFF_EARLY beside the obligation's payoff execution, and nothing else beside one.
+            boolean paidOff = payoffs.executionOf(closure.obligation()).isPresent();
             boolean admitted = switch (closure.reason()) {
-                case REPAID -> purchase != BnplPurchaseStatus.FULLY_REFUNDED;
-                case REFUNDED -> purchase == BnplPurchaseStatus.FULLY_REFUNDED;
-                case REFUNDED_PARTIALLY_REPAID -> purchase == BnplPurchaseStatus.FINANCED
+                case REPAID -> !paidOff && purchase != BnplPurchaseStatus.FULLY_REFUNDED;
+                case REFUNDED -> !paidOff && purchase == BnplPurchaseStatus.FULLY_REFUNDED;
+                case REFUNDED_PARTIALLY_REPAID -> !paidOff && purchase == BnplPurchaseStatus.FINANCED
                         && closure.closingRefund().isPresent();
-                case PAID_OFF_EARLY -> false;
+                case PAID_OFF_EARLY -> paidOff && closure.closingRefund().isEmpty() && closure.repayment()
+                        .map(id -> purchases.repayments.get(id)).filter(row -> row == null
+                                || !row.kind().equals(BnplPurchaseStore.Repayment.PAYOFF)).isEmpty();
             };
             if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE || !admitted) {
                 throw new BnplStorageException("an ACTIVE BNPL obligation closes REPAID, REFUNDED or"
@@ -2153,6 +2182,111 @@ final class BnplApplicationFakes {
     }
 
     /** Lending capital: the recognised capital less the book's BNPL principal, judged under L6. */
+    /**
+     * {@code bnpl V014}'s payoff world, in memory (`P12-TSK-022`): the quote - {@code UNIQUE (obligation_id, request_key)},
+     * its trigger's ranks (an {@code ACTIVE} obligation under its agreement version in force, made on the database clock's
+     * date) and its {@code CHECK} that the amount is its parts (the record's own) - and the execution -
+     * {@code UNIQUE (quote_id)}, {@code UNIQUE (obligation_id)}, its own obligation's quote on an {@code ACTIVE} obligation,
+     * on the quote's good-through date which is today, valued {@code max(today, floor)} with the floor read at its birth -
+     * and at commit every execution's obligation {@code CLOSED (PAID_OFF_EARLY)}.
+     */
+    final class Payoffs implements BnplPayoffStore {
+
+        final Map<UUID, BnplPayoffQuote> quotes = new LinkedHashMap<>();
+        final Map<UUID, BnplPayoffExecution> executions = new LinkedHashMap<>();
+
+        /** Everything, for the unit of work's rollback. */
+        record State(Map<UUID, BnplPayoffQuote> quotes, Map<UUID, BnplPayoffExecution> executions) {}
+
+        State state() {
+            return new State(new LinkedHashMap<>(quotes), new LinkedHashMap<>(executions));
+        }
+
+        void restore(State state) {
+            reset(quotes, state.quotes());
+            reset(executions, state.executions());
+        }
+
+        Optional<BnplPayoffExecution> executionOf(BnplObligationId obligation) {
+            return executions.values().stream().filter(row -> row.obligation().equals(obligation)).findFirst();
+        }
+
+        void atCommit() {
+            for (BnplPayoffExecution execution : executions.values()) {
+                BnplObligation obligation = purchases.obligations.get(execution.obligation().value());
+                if (obligation.status() != BnplObligationStatus.CLOSED
+                        || obligation.closureReason().filter(BnplClosureReason.PAID_OFF_EARLY::equals).isEmpty()) {
+                    throw new BnplStorageException("a BNPL payoff execution committed without its obligation CLOSED"
+                            + " PAID_OFF_EARLY: P0001");
+                }
+            }
+        }
+
+        @Override
+        public Optional<BnplPayoffQuote> findQuoteByKey(Connection unitOfWork, BnplObligationId obligation,
+                String requestKey) {
+            return quotes.values().stream().filter(row -> row.obligation().equals(obligation)
+                    && row.requestKey().equals(requestKey)).findFirst();
+        }
+
+        @Override
+        public Optional<BnplPayoffQuote> findQuote(Connection unitOfWork, BnplObligationId obligation, UUID quote) {
+            return Optional.ofNullable(quotes.get(quote)).filter(row -> row.obligation().equals(obligation));
+        }
+
+        @Override
+        public Instant insertQuote(Connection unitOfWork, BnplPayoffQuote quote) {
+            step("quote insert");
+            if (findQuoteByKey(unitOfWork, quote.obligation(), quote.requestKey()).isPresent()) {
+                throw new BnplStorageException("bnpl_payoff_quote_key_unique: SQLSTATE 23505");
+            }
+            BnplObligation obligation = purchases.obligations.get(quote.obligation().value());
+            BnplAgreement agreement = obligation == null ? null : purchases.agreements.get(obligation.agreement().value());
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE
+                    || agreement.version() != quote.agreementVersion() || !quote.businessDate().equals(today)) {
+                throw new BnplStorageException("a BNPL payoff is quoted only for an ACTIVE obligation under its agreement"
+                        + " in force, on the database clock's date: P0001");
+            }
+            quotes.put(quote.id(), quote);
+            return now;
+        }
+
+        @Override
+        public Optional<BnplPayoffExecution> findExecution(Connection unitOfWork, BnplObligationId obligation) {
+            return executionOf(obligation);
+        }
+
+        @Override
+        public Instant insertExecution(Connection unitOfWork, BnplPayoffExecution execution) {
+            step("execution insert");
+            if (executions.values().stream().anyMatch(row -> row.quote().equals(execution.quote()))) {
+                throw new BnplStorageException("bnpl_payoff_execution_quote_unique: SQLSTATE 23505");
+            }
+            if (executionOf(execution.obligation()).isPresent()) {
+                throw new BnplStorageException("bnpl_payoff_execution_obligation_unique: SQLSTATE 23505");
+            }
+            BnplPayoffQuote quote = quotes.get(execution.quote());
+            BnplObligation obligation = purchases.obligations.get(execution.obligation().value());
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            if (quote == null || !quote.obligation().equals(execution.obligation()) || obligation == null
+                    || obligation.status() != BnplObligationStatus.ACTIVE
+                    || purchases.agreements.get(obligation.agreement().value()).version() != quote.agreementVersion()) {
+                throw new BnplStorageException("a BNPL payoff executes its own obligation's quote, on an ACTIVE"
+                        + " obligation: P0001");
+            }
+            if (!execution.businessDate().equals(quote.goodThrough()) || !execution.businessDate().equals(today)) {
+                throw new BnplStorageException("a BNPL payoff quote is executed only on its good-through date: P0001");
+            }
+            java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, execution.obligation());
+            if (!execution.valueDate().equals(floor.isAfter(today) ? floor : today)) {
+                throw new BnplStorageException("a BNPL payoff is value-dated max(its date, the floor): P0001");
+            }
+            executions.put(execution.id(), execution);
+            return now;
+        }
+    }
+
     final class Capital implements BnplCapital {
 
         Money recognised = Money.ofMinorUnits(1_000_000_00L, BnplTermsFixtures.EUR);
@@ -2182,6 +2316,13 @@ final class BnplApplicationFakes {
         BnplRepayments posting = new BnplRepayments(repayments, servicing, purchases, terms.store(), wallets, book,
                 closures, outbox, ids, clock);
         return new BnplCollections(collections, posting, purchases, wallets, book, outbox, ids, clock);
+    }
+
+    /** T-pay over these fakes (`P12-TSK-022`): the quote and the execution, through the step's billing and T-rep's half. */
+    BnplPayoffs payoffsOver(BnplServicing servicingStep, BnplRepayments posting, BnplClosures closures,
+            com.finapp.sharedkernel.id.IdGenerator ids) {
+        return new BnplPayoffs(repayments, payoffs, servicing, purchases, terms.store(), accruals, wallets, book,
+                servicingStep, posting, closures, ids);
     }
 
     private static <K, V> void reset(Map<K, V> into, Map<K, V> from) {

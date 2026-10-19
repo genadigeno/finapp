@@ -388,6 +388,11 @@ class OpenApiContractTest {
                         // P12-TSK-018: the customer's repayment from the wallet (keyed, the conditional step-up, 201 with
                         // the repayment and any closure) and the owner's repayments.
                         ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/repayments",
+                        // P12-TSK-022: the customer's early payoff - the quote (keyed, the conditional step-up, 201 with
+                        // the figure and its inputs) and its execution on the good-through date (keyed, MULTI_FACTOR, 201
+                        // with the repayment and the PAID_OFF_EARLY closure).
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/payoff-quotes",
+                        ApiVersion.CURRENT_PREFIX + "/me/bnpl-agreements/{id}/payoff",
                         // P12-TSK-014: the merchant's BNPL purchase, over its own key - the gross, the fee and its pinned
                         // version, the net and the financing entry; nothing of the customer's credit; another merchant's
                         // purchase the uniform 404.

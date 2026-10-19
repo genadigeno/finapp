@@ -3809,6 +3809,38 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_refund_adjustment` | `principal_cancelled_minor` | `RESTRICTED-FINANCIAL` | Principal cancelled on the instalment |
 | `bnpl_refund_adjustment` | `interest_released_minor` | `RESTRICTED-FINANCIAL` | Billed interest released on it |
 | `bnpl_refund_adjustment` | `whole` | `INTERNAL` | Whether the instalment owes no principal after it |
+| `bnpl_payoff_quote` | `id` | `INTERNAL` | Generated (`P12-TSK-022`) |
+| `bnpl_payoff_quote` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_payoff_quote` | `agreement_id` | `CONFIDENTIAL` | The agreement quoted |
+| `bnpl_payoff_quote` | `agreement_version` | `INTERNAL` | The version in force when quoted - the execution's first stale check |
+| `bnpl_payoff_quote` | `request_key` | `INTERNAL` | The requester's idempotency key - never logged or answered |
+| `bnpl_payoff_quote` | `business_date` | `INTERNAL` | The database clock's business date it was made on |
+| `bnpl_payoff_quote` | `good_through` | `INTERNAL` | `G`: the date it ends the obligation on |
+| `bnpl_payoff_quote` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_payoff_quote` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_payoff_quote` | `principal_minor` | `RESTRICTED-FINANCIAL` | `BNPL_PRINCIPAL` read under B4 |
+| `bnpl_payoff_quote` | `principal_due_minor` | `RESTRICTED-FINANCIAL` | `BNPL_PRINCIPAL_DUE` read under B4 |
+| `bnpl_payoff_quote` | `interest_accrued_minor` | `RESTRICTED-FINANCIAL` | `BNPL_INTEREST_ACCRUED` read under B4 |
+| `bnpl_payoff_quote` | `interest_due_minor` | `RESTRICTED-FINANCIAL` | `BNPL_INTEREST_DUE` read under B4 |
+| `bnpl_payoff_quote` | `fees_due_minor` | `RESTRICTED-FINANCIAL` | `BNPL_FEES_DUE` read under B4 - whatever assessed it |
+| `bnpl_payoff_quote` | `credit_balance_minor` | `RESTRICTED-FINANCIAL` | `BNPL_CREDIT_BALANCE` read under B4 |
+| `bnpl_payoff_quote` | `projection_base_minor` | `RESTRICTED-FINANCIAL` | The base projected on (`P + PD`) |
+| `bnpl_payoff_quote` | `projected_days` | `INTERNAL` | The dates projected, `[business date, G - 1]` of the accrual span |
+| `bnpl_payoff_quote` | `projected_interest_minor` | `RESTRICTED-FINANCIAL` | The interest those dates post (pay-in-N) |
+| `bnpl_payoff_quote` | `amount_minor` | `RESTRICTED-FINANCIAL` | The figure - its parts by `CHECK`; negative when the credit balance exceeds everything owed |
+| `bnpl_payoff_quote` | `schedule_engine` | `INTERNAL` | The pinned schedule engine |
+| `bnpl_payoff_quote` | `accrual_engine` | `INTERNAL` | The pinned accrual engine - none for pay-in-4 |
+| `bnpl_payoff_quote` | `allocation_engine` | `INTERNAL` | The pinned allocation engine |
+| `bnpl_payoff_quote` | `created_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
+| `bnpl_payoff_quote` | `correlation_id` | `INTERNAL` | The request's correlation |
+| `bnpl_payoff_execution` | `id` | `INTERNAL` | Generated (`P12-TSK-022`) |
+| `bnpl_payoff_execution` | `quote_id` | `CONFIDENTIAL` | The quote executed - once |
+| `bnpl_payoff_execution` | `obligation_id` | `CONFIDENTIAL` | Its obligation - paid off once |
+| `bnpl_payoff_execution` | `request_key` | `INTERNAL` | The executing requester's idempotency key - never logged or answered |
+| `bnpl_payoff_execution` | `business_date` | `INTERNAL` | The quote's good-through date, the database clock's |
+| `bnpl_payoff_execution` | `value_date` | `INTERNAL` | `max(business date, floor)` - the date every fact of the payoff takes |
+| `bnpl_payoff_execution` | `executed_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
+| `bnpl_payoff_execution` | `correlation_id` | `INTERNAL` | The request's correlation |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

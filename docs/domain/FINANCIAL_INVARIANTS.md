@@ -2661,6 +2661,16 @@ bnpl.RefundNotPostable` when the wallet cannot take it. Hermetic: `BnplRefundsTe
 
 *(The closure mechanism built by `P12-TSK-018` for the `REPAID` reason, which `-021` extends with its two: `BnplClosures` - called by every zeroing transaction under B4 - closes only when the five receivables are zero, every instalment of the latest schedule is billed and (pay-in-N) no elapsed date with principal outstanding is unaccrued, refunds the credit balance to the wallet under `bnpl.closure-refund:<obligation>` in the same transaction, and `bnpl V010`'s every-writer edge function admits `ACTIVE -> CLOSED` only beside a `bnpl_obligation_closure` row for the same reason and nothing out of `CLOSED`; a repayment on a closed obligation answers `409 bnpl.ObligationClosed`. Hermetic: `BnplRepaymentsTest#theLastRepaymentClosesAndRefunds`, `#aClosedObligationRefuses`.)*
 
+*(Extended by `P12-TSK-022`: the payoff closes `PAID_OFF_EARLY` through the same `BnplClosures`, in its own transaction -
+every unbilled instalment billed beside its execution, the held credit applied before the wallet is debited (A4-M1), the
+amount recomputed under B4 and refused stale rather than adjusted, one `PAYOFF` repayment to every component, the credit
+balance refunded - so after it every BNPL account of the obligation is zero and nothing is owed either way; `bnpl V014`
+admits the reason only beside the obligation's payoff execution and ties the execution to it at commit. Every payoff fact
+is dated `max(G, floor)`, the floor read before it writes (the Phase 11 gate's RG-M1 not repeated). Hermetic:
+`BnplPayoffsTest#p4PayoffIsTheUnpaidInstalments`, `#payoffZeroesEveryBalance`, `#heldCreditIsAppliedBeforeTheWalletIsDebited`,
+`#aCreditBeyondEverythingIsRefunded`, `#everyPayoffApplicationIsFloored`, `#payoffBesideARefundIsStaleOrClosedNeverWrong`;
+database: `BnplPayoffDatabaseTest` (owed a first run).)*
+
 ### INV-BNPL-10 — BNPL principal counts in capital headroom and credit exposure from the purchase's commit
 **Statement:** From the commit of the purchase that creates it, BNPL principal outstanding
 (`BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE` of every obligation not `CLOSED`) is counted (a) in its

@@ -546,6 +546,26 @@ repayment allocated to every component, the credit balance refunded, the obligat
 RG-M1 not repeated). No fee (L8). A refund racing it waits on B5 → B4 and finds the obligation `CLOSED`: the
 refund is excess to the customer only (scenario 11).
 
+*(As built by `P12-TSK-022`, `BnplPayoffs` and `bnpl V014`: the quote under B4 owner-scoped, `UNIQUE (obligation_id,
+request_key)` the key's arbiter (the same key answers the same quote; another good-through date under it `409
+api.Conflict`); `ACTIVE`, else `409 bnpl.ObligationClosed`; `G` from the database clock, today up to the pinned horizon
+(30 in the fixtures), else `422`; pay-in-N caught up, else nothing written and the desk runs T-acc in its own transaction
+and asks again (never inside - the A2-F1 rule); the amount `P + PD + IA + ID + FD - CB + projected`, every balance folded
+from journal lines under B4 (`BNPL_FEES_DUE` generically), the projection `ACCRUAL_ENGINE_V1.project` on `P + PD` for the
+dates `[today, G - 1]` of the accrual span (none at or after the final due date), its `CHECK` the amount its parts. The
+execution: B4; an execution present converges (its quote) or is `409 bnpl.ObligationClosed` (another quote); the quote
+read plainly (immutable - the execution's uniques are its arbiter beneath B4, no `FOR UPDATE` on an INSERT-only row);
+today must be `G`, the agreement version and engines the quote's, else `409 bnpl.PayoffQuoteStale`; pay-in-N caught up;
+the floor read under B4 **before anything is written** and `V = max(today, floor)` on the execution row, born first;
+every unbilled instalment billed (one already due as T-svc bills it, one not yet due early - its row dated its due date,
+billed judged by due date as `-021` built it, its entry valued `V`), each with its application; the catch-up application
+(A4-M1); the amount recomputed - different, stale, everything rolled back; (P) the wallet; one `PAYOFF` repayment keyed by
+the quote, valued `V`; `BnplClosures` with the reason `PAID_OFF_EARLY`. A payoff makes no schedule or agreement version (the
+plan's §5.4). `bnpl V014`'s triggers hold the rest for every writer: a billing before its due date, a `PAYOFF` repayment
+and a `PAID_OFF_EARLY` closure only beside the obligation's execution, the execution on its quote's `G` and valued `max(G,
+floor)`, a deferred check tying it to `CLOSED (PAID_OFF_EARLY)`, and the floor counting a payoff's billings at most at
+`V`.)*
+
 ### 4.13 Repayment (`bnpl.bnpl_repayment`) and collection attempt — `P12-TSK-018`, `-019`
 
 Born `ALLOCATED` — a repayment row exists only once its money moved, with its allocations

@@ -1257,6 +1257,7 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.CapitalUnavailable` | 422 | The BNPL purchase cannot be funded now. |
 | `bnpl.InsufficientFunds` | 422 | The wallet cannot fund the payment. |
 | `bnpl.ObligationClosed` | 409 | The BNPL agreement is closed. |
+| `bnpl.PayoffQuoteStale` | 409 | The payoff quote is stale. |
 | `bnpl.RefundExceedsPurchase` | 422 | The refund exceeds what remains of the BNPL purchase. |
 | `bnpl.PurchaseFullyRefunded` | 409 | The BNPL purchase is already fully refunded. |
 | `bnpl.RefundScopeRequired` | 403 | This API key may not refund BNPL purchases; a key with the refund scope may. |
@@ -1289,6 +1290,22 @@ currency and minor units, `403 identity.AssuranceRequired` an MFA-enrolled custo
 another party's agreement exactly as an unknown or malformed id. No standing check - a suspended customer may still
 repay. Every refusal posts nothing and rolls the key back; a refused conservation (the rows not explaining the ledger) is
 the platform's `500`, counted `finapp.bnpl.allocation.anomaly`.
+
+The payoff doors (`P12-TSK-022`; `POST /v1/me/bnpl-agreements/{id}/payoff-quotes` (`201`), keyed
+`bnpl.payoff-quote:CUSTOMER:<id>` under the platform's conditional step-up, and `POST /v1/me/bnpl-agreements/{id}/payoff`
+(`201`), keyed `bnpl.payoff:CUSTOMER:<id>`, `MULTI_FACTOR` always): a retried quote key answers the quote born under it
+(another good-through date under it is `api.Conflict`); a second key executing the same quote converges on the one
+payoff (`bnpl_payoff_execution UNIQUE (quote_id)` and `UNIQUE (obligation_id)` beneath the obligation's row lock).
+`NotFound` answers another party's agreement exactly as an unknown or malformed id, and a quote that is not the
+agreement's or is malformed. `PayoffQuoteStale` (new) refuses an execution on a date other than the quote's good-through
+date, or one whose recomputed amount - everything unbilled billed and the held credit applied, under the obligation's row
+lock - differs from the quote's, or whose agreement version moved: a refund, a repayment, a collection or a fee committed
+first (scenario 11). The amount is never adjusted; everything the execution wrote rolls back with its claim - request a
+new quote. `ObligationClosed` (reused) refuses a quote or an execution on an agreement already `CLOSED` - paid off by
+another quote included. `InsufficientFunds` (reused) refuses an execution whose wallet cannot fund the amount, or cannot
+be posted to (absent or not `ACTIVE`); nothing is posted. A good-through date before today or past the pinned payoff
+horizon is `api.ValidationFailed` (`422`), as is a malformed one; a pay-in-N agreement whose interest is still being
+accrued after the desk's catch-up rounds is `409 api.Conflict` - retry under the same key. No fee (L8).
 
 The refund doors (`P12-TSK-021`, ADR-0105 decision 9; `POST /v1/merchant/bnpl-purchases/{id}/refunds` over the
 merchant's own API key carrying the `BNPL_REFUND` scope, keyed `bnpl.refund:MERCHANT:<merchant>`, and the operator's door
