@@ -72,6 +72,7 @@ final class BnplApplicationFakes {
     final Capital capital = new Capital();
     final Wallets wallets = new Wallets();
     final Servicing servicing = new Servicing();
+    final Accruals accruals = new Accruals();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -116,6 +117,7 @@ final class BnplApplicationFakes {
         Purchases.State purchaseState = purchases.state();
         Book.State bookState = book.state();
         Servicing.State servicingState = servicing.state();
+        List<BnplInterestAccrual> accrualState = accruals.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -147,6 +149,7 @@ final class BnplApplicationFakes {
             purchases.restore(purchaseState);
             book.restore(bookState);
             servicing.restore(servicingState);
+            accruals.restore(accrualState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1257,6 +1260,20 @@ final class BnplApplicationFakes {
             return balance(account.id(), account.normalBalance() == com.finapp.ledger.NormalBalance.DEBIT);
         }
 
+        /** {@code JdbcPurposeBalances.datedLinesOn}: the accounts' lines valued on or before the date, by value date. */
+        @Override
+        public List<com.finapp.ledger.PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
+                java.util.Set<com.finapp.ledger.LedgerAccountId> rows, java.time.LocalDate valueDateThrough) {
+            log.add("dated lines");
+            return lines.stream()
+                    .filter(line -> rows.contains(line.account()) && !line.valueDate().isAfter(valueDateThrough))
+                    .sorted(java.util.Comparator.comparing(Line::valueDate))
+                    .map(line -> new com.finapp.ledger.PurposeBalances.DatedLine(
+                            com.finapp.ledger.JournalEntryId.of(IDS.next()),
+                            line.account(), line.valueDate(), line.direction(), line.amount()))
+                    .toList();
+        }
+
         /** DR - CR of {@code account}'s lines (debit-normal), or CR - DR; zero in EUR when it has none. */
         Money balance(com.finapp.ledger.LedgerAccountId account, boolean debitNormal) {
             Money balance = Money.ofMinorUnits(0, BnplTermsFixtures.EUR);
@@ -1464,6 +1481,102 @@ final class BnplApplicationFakes {
             }
             permits.put(obligation.value(), openDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant());
             return true;
+        }
+    }
+
+    /**
+     * {@code bnpl V009}'s accrual writer, in memory (`P12-TSK-017`): the rows T-acc births - each also on
+     * {@link Servicing#accruals}, the record the billing reads - and the trigger's ranks: {@code UNIQUE (obligation_id,
+     * accrual_date)}, oldest first, never early on the database clock, never before the purchase's business date, an
+     * {@code ACTIVE} pay-in-N obligation under its agreement version in force and the engine it pins, an instalment period
+     * of the latest schedule version (nothing at or after the final due date), never into a billed period. B4 is the
+     * servicing fake's, logged.
+     */
+    final class Accruals implements BnplAccrualStore {
+
+        final List<BnplInterestAccrual> rows = new ArrayList<>();
+
+        List<BnplInterestAccrual> state() {
+            return new ArrayList<>(rows);
+        }
+
+        void restore(List<BnplInterestAccrual> state) {
+            rows.clear();
+            rows.addAll(state);
+        }
+
+        /** The obligation's rows, oldest first. */
+        List<BnplInterestAccrual> of(BnplObligationId obligation) {
+            return rows.stream().filter(row -> row.obligation().equals(obligation))
+                    .sorted(java.util.Comparator.comparing(row -> row.accrual().date())).toList();
+        }
+
+        @Override
+        public Optional<BnplInterestAccrual> latest(Connection unitOfWork, BnplObligationId obligation) {
+            List<BnplInterestAccrual> mine = of(obligation);
+            return mine.isEmpty() ? Optional.empty() : Optional.of(mine.get(mine.size() - 1));
+        }
+
+        @Override
+        public void insert(Connection unitOfWork, BnplInterestAccrual row) {
+            step("accrual insert");
+            BnplObligation obligation = purchases.obligations.get(row.obligation().value());
+            java.time.LocalDate date = row.accrual().date();
+            if (rows.stream().anyMatch(other -> other.obligation().equals(row.obligation())
+                    && other.accrual().date().equals(date))) {
+                throw new BnplStorageException("bnpl_interest_accrual_date_unique: SQLSTATE 23505");
+            }
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE
+                    || obligation.product() != BnplProduct.BNPL_PAY_IN_N) {
+                throw new BnplStorageException("interest accrues only on an ACTIVE pay-in-N obligation: P0001");
+            }
+            BnplAgreement agreement = purchases.agreements.get(obligation.agreement().value());
+            if (!agreement.id().equals(row.agreement()) || agreement.version() != row.agreementVersion()
+                    || !agreement.accrualEngine().equals(Optional.of(row.accrual().engine().name()))) {
+                throw new BnplStorageException("an accrual names its agreement version in force and its engine: P0001");
+            }
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            if (!date.isBefore(today) || date.isBefore(obligation.purchaseDate())) {
+                throw new BnplStorageException("a date accrues only once it has ended on the database clock: P0001");
+            }
+            BnplPurchaseStore.StoredSchedule schedule = purchases.schedules.get(obligation.id().value());
+            if (!BnplAccruals.periodsOf(schedule).contains(row.accrual().period())) {
+                throw new BnplStorageException("an accrual lies in an instalment period of the latest schedule: P0001");
+            }
+            if (latest(unitOfWork, row.obligation()).filter(prior -> !prior.accrual().date().isBefore(date)).isPresent()) {
+                throw new BnplStorageException("an obligation's dates accrue oldest first, each once: P0001");
+            }
+            if (purchases.billings.values().stream().anyMatch(billing -> billing.obligation().equals(row.obligation())
+                    && billing.dueDate().isAfter(date))) {
+                throw new BnplStorageException("a date inside a period already billed never accrues: P0001");
+            }
+            rows.add(row);
+            servicing.accruals.add(new Servicing.Accrual(row.obligation(), date, row.accrual().posted()));
+        }
+
+        @Override
+        public Optional<java.time.Duration> oldestLag(Connection unitOfWork) {
+            java.time.Duration oldest = null;
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            for (BnplObligation obligation : purchases.obligations.values()) {
+                if (obligation.status() != BnplObligationStatus.ACTIVE
+                        || obligation.product() != BnplProduct.BNPL_PAY_IN_N) {
+                    continue;
+                }
+                java.time.LocalDate next = latest(unitOfWork, obligation.id())
+                        .map(row -> row.accrual().date().plusDays(1)).orElse(obligation.purchaseDate());
+                List<com.finapp.creditmath.AccrualPeriod> periods =
+                        BnplAccruals.periodsOf(purchases.schedules.get(obligation.id().value()));
+                java.time.LocalDate spanEnd = periods.get(periods.size() - 1).endExclusive();
+                if (next.isBefore(today) && next.isBefore(spanEnd)) {
+                    java.time.Duration lag = java.time.Duration.between(
+                            next.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant(), now);
+                    if (oldest == null || lag.compareTo(oldest) > 0) {
+                        oldest = lag;
+                    }
+                }
+            }
+            return Optional.ofNullable(oldest);
         }
     }
 
