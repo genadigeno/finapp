@@ -78,6 +78,7 @@ final class BnplApplicationFakes {
     final Collections collections = new Collections();
     final Payoffs payoffs = new Payoffs();
     final Conditions conditions = new Conditions();
+    final Corrections corrections = new Corrections();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -128,6 +129,7 @@ final class BnplApplicationFakes {
         List<BnplCollectionAttempt> attemptState = collections.state();
         Payoffs.State payoffState = payoffs.state();
         Conditions.State conditionState = conditions.state();
+        Corrections.State correctionState = corrections.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -137,6 +139,8 @@ final class BnplApplicationFakes {
             collections.atCommit();
             // At commit (bnpl V014's deferred trigger): every payoff execution's obligation is CLOSED PAID_OFF_EARLY.
             payoffs.atCommit();
+            // At commit (bnpl V016's deferred triggers): every APPROVED reversal negates every allocation of its repayment.
+            corrections.atCommit();
             return result;
         } catch (RuntimeException refused) {
             store.rows.clear();
@@ -170,6 +174,7 @@ final class BnplApplicationFakes {
             collections.restore(attemptState);
             payoffs.restore(payoffState);
             conditions.restore(conditionState);
+            corrections.restore(correctionState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1174,12 +1179,23 @@ final class BnplApplicationFakes {
             return items;
         }
 
-        /** {@code bnpl V013}'s {@code billing_component_billed(.., 'FEES')}: the instalment's assessed late fees. */
+        /**
+         * {@code bnpl V016}'s {@code billing_component_billed(.., 'FEES')}: the instalment's assessed late fees (V013) less
+         * their approved waivers (`P12-TSK-024`; {@link Corrections#waiverTermDropped} drops the second term - a probe only).
+         */
         Money billedFees(BnplBilling billing, Money zero) {
             Money fees = zero;
             for (BnplFeeAssessment assessment : conditions.assessments) {
                 if (assessment.instalment().equals(billing.instalment())) {
                     fees = fees.plus(assessment.amount());
+                }
+            }
+            if (!corrections.waiverTermDropped) {
+                for (BnplWaiver waiver : corrections.waivers()) {
+                    if (waiver.status() == BnplCorrectionStatus.APPROVED
+                            && waiver.instalment().equals(billing.instalment())) {
+                        fees = fees.minus(waiver.amount());
+                    }
                 }
             }
             return fees;
@@ -1209,6 +1225,10 @@ final class BnplApplicationFakes {
                     if (line.target().equals("DUE_ITEM") && line.instalment().filter(billing.instalment()::equals)
                             .isPresent() && line.component().filter(component::equals).isPresent()) {
                         paid = paid.plus(line.amount());
+                        // bnpl V016: less what an approved reversal's negating row un-paid (`P12-TSK-024`).
+                        if (corrections.negated(line.id())) {
+                            paid = paid.minus(line.amount());
+                        }
                     }
                 }
             }
@@ -1268,15 +1288,21 @@ final class BnplApplicationFakes {
                 new EnumMap<>(com.finapp.ledger.AccountPurpose.class);
         final List<Line> lines = new ArrayList<>();
         final List<String> keys = new ArrayList<>();
+        /** Every entry's lines by its id - the journal ({@code JournalEntryStore.findById}, `P12-TSK-024`). */
+        final Map<com.finapp.ledger.JournalEntryId, List<com.finapp.ledger.JournalLine>> entries = new LinkedHashMap<>();
+        /** Every reversal's original, by the reversal's id - the ledger's {@code reverses_entry_id}. */
+        final Map<com.finapp.ledger.JournalEntryId, com.finapp.ledger.JournalEntryId> reversalOf = new LinkedHashMap<>();
         /** The projection rows of every L8 call, in order. */
         final List<java.util.Set<com.finapp.ledger.LedgerAccountId>> projections = new ArrayList<>();
 
         /** Everything, for the unit of work's rollback. */
         record State(Map<com.finapp.ledger.LedgerAccountId, com.finapp.ledger.LedgerAccount> accounts, List<Line> lines,
-                List<String> keys) {}
+                List<String> keys, Map<com.finapp.ledger.JournalEntryId, List<com.finapp.ledger.JournalLine>> entries,
+                Map<com.finapp.ledger.JournalEntryId, com.finapp.ledger.JournalEntryId> reversalOf) {}
 
         State state() {
-            return new State(new LinkedHashMap<>(accounts), new ArrayList<>(lines), new ArrayList<>(keys));
+            return new State(new LinkedHashMap<>(accounts), new ArrayList<>(lines), new ArrayList<>(keys),
+                    new LinkedHashMap<>(entries), new LinkedHashMap<>(reversalOf));
         }
 
         void restore(State state) {
@@ -1285,6 +1311,8 @@ final class BnplApplicationFakes {
             lines.addAll(state.lines());
             keys.clear();
             keys.addAll(state.keys());
+            reset(entries, state.entries());
+            reset(reversalOf, state.reversalOf());
         }
 
         /** An account outside the obligation - a payable or a wallet - known by {@code label} in the log. */
@@ -1378,7 +1406,77 @@ final class BnplApplicationFakes {
                 lines.add(new Line(key, line.account(), line.direction(), line.amount(), command.valueDate(),
                         command.postingDate()));
             }
-            return com.finapp.ledger.JournalEntryId.of(IDS.next());
+            com.finapp.ledger.JournalEntryId id = com.finapp.ledger.JournalEntryId.of(IDS.next());
+            entries.put(id, List.copyOf(command.lines()));
+            return id;
+        }
+
+        /**
+         * The ledger's {@code ReversalService}, in memory (`P12-TSK-024`): balanced, once per key in the
+         * {@code ledger.reverse} scope, never of a reversal, and bounded - every line mirrors one of the original's on the
+         * same account in the opposite direction, and with every earlier reversal of it never more than the original
+         * ({@code INV-REV-02}; the ledger's {@code OverReversalException}).
+         */
+        @Override
+        public com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork, com.finapp.ledger.ReversalCommand command) {
+            String key = "ledger.reverse:" + command.idempotencyKey();
+            step("reverse " + command.idempotencyKey().substring(0, command.idempotencyKey().indexOf(':') + 1));
+            if (keys.contains(key)) {
+                throw new IllegalStateException("a BNPL reversal exists for an id decided in this transaction (INV-IDEM-01)");
+            }
+            List<com.finapp.ledger.JournalLine> original = entries.get(command.original());
+            if (original == null || reversalOf.containsKey(command.original())) {
+                throw new IllegalArgumentException("no reversible journal entry " + command.original());
+            }
+            Money debits = null;
+            Money credits = null;
+            for (com.finapp.ledger.JournalLine line : command.lines()) {
+                if (line.direction() == com.finapp.ledger.Direction.DEBIT) {
+                    debits = debits == null ? line.amount() : debits.plus(line.amount());
+                } else {
+                    credits = credits == null ? line.amount() : credits.plus(line.amount());
+                }
+            }
+            if (debits == null || !debits.equals(credits)) {
+                throw new IllegalStateException("an entry balances (INV-LED-01)");
+            }
+            Map<String, Money> room = new LinkedHashMap<>();
+            for (com.finapp.ledger.JournalLine line : original) {
+                room.merge(line.account().value() + ":" + line.direction().opposite(), line.amount(), Money::plus);
+            }
+            for (Map.Entry<com.finapp.ledger.JournalEntryId, com.finapp.ledger.JournalEntryId> earlier
+                    : reversalOf.entrySet()) {
+                if (earlier.getValue().equals(command.original())) {
+                    for (com.finapp.ledger.JournalLine line : entries.get(earlier.getKey())) {
+                        room.merge(line.account().value() + ":" + line.direction(), line.amount(), Money::minus);
+                    }
+                }
+            }
+            Map<String, Money> asked = new LinkedHashMap<>();
+            for (com.finapp.ledger.JournalLine line : command.lines()) {
+                asked.merge(line.account().value() + ":" + line.direction(), line.amount(), Money::plus);
+            }
+            for (Map.Entry<String, Money> line : asked.entrySet()) {
+                Money left = room.get(line.getKey());
+                if (left == null || line.getValue().compareTo(left) > 0) {
+                    throw new IllegalStateException("over-reversal of " + command.original() + " (INV-REV-02)");
+                }
+            }
+            keys.add(key);
+            for (com.finapp.ledger.JournalLine line : command.lines()) {
+                lines.add(new Line(key, line.account(), line.direction(), line.amount(), command.valueDate(),
+                        command.postingDate()));
+            }
+            com.finapp.ledger.JournalEntryId id = com.finapp.ledger.JournalEntryId.of(IDS.next());
+            entries.put(id, List.copyOf(command.lines()));
+            reversalOf.put(id, command.original());
+            return id;
+        }
+
+        @Override
+        public List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
+                com.finapp.ledger.JournalEntryId entry) {
+            return entries.getOrDefault(entry, List.of());
         }
 
         @Override
@@ -2550,6 +2648,324 @@ final class BnplApplicationFakes {
     BnplConditions conditionsOver(com.finapp.sharedkernel.id.IdGenerator ids, java.time.Clock clock) {
         return new BnplConditions(conditions, purchases, terms.store(), book, outbox, ids, clock);
     }
+
+    /**
+     * {@code bnpl V016}'s servicing corrections, in memory (`P12-TSK-024`): the reversal's machine - born {@code PROPOSED}
+     * on an {@code ACTIVE} obligation for its own repayment under that repayment's agreement version, never a payoff's;
+     * one live proposal per repayment (the partial unique); {@code PROPOSED -> APPROVED | REJECTED} only; the four-eyes
+     * {@code CHECK}; an approval only while {@code ACTIVE} and valued between the floor and the later of today and it -
+     * the negating rows (mirroring, once per allocation, only for an {@code APPROVED} reversal, whole at commit); and the
+     * waiver - born on an {@code ACTIVE} obligation under its agreement version in force, within
+     * {@code bnpl.fee_waiver_room}, one undecided per assessment - and its decision, born once, four eyes, an approval only
+     * while {@code ACTIVE} and within the room. Each arbiter droppable for a probe. Computed here from the fakes' rows - the
+     * database's own rules, never the domain's.
+     */
+    final class Corrections implements BnplCorrectionStore {
+
+        final Map<UUID, BnplRepaymentReversal> reversals = new LinkedHashMap<>();
+        /** Negating rows: allocation id to reversal id. */
+        final Map<UUID, UUID> negations = new LinkedHashMap<>();
+        final Map<UUID, BnplWaiver> waiverRows = new LinkedHashMap<>();
+        /** The proposer's copy each decision carries, by waiver - the four-eyes CHECK's input. */
+        final Map<UUID, String> decisionProposers = new LinkedHashMap<>();
+        /** Drop the reversal's and the decision's four-eyes {@code CHECK}s - for a probe only. */
+        boolean fourEyesCheckDropped;
+        /** Drop the partial {@code UNIQUE (repayment_id)} over live reversals - for a probe only. */
+        boolean oneLiveUniqueDropped;
+        /** Drop the approved-waiver term of {@code billing_component_billed('FEES')} - for a probe only. */
+        boolean waiverTermDropped;
+        /** Drop the waiver triggers' bound - for a probe only. */
+        boolean waiverRoomDropped;
+
+        record State(Map<UUID, BnplRepaymentReversal> reversals, Map<UUID, UUID> negations,
+                Map<UUID, BnplWaiver> waiverRows, Map<UUID, String> decisionProposers) {}
+
+        State state() {
+            return new State(new LinkedHashMap<>(reversals), new LinkedHashMap<>(negations),
+                    new LinkedHashMap<>(waiverRows), new LinkedHashMap<>(decisionProposers));
+        }
+
+        void restore(State state) {
+            reset(reversals, state.reversals());
+            reset(negations, state.negations());
+            reset(waiverRows, state.waiverRows());
+            reset(decisionProposers, state.decisionProposers());
+        }
+
+        /** Whether an approved reversal's negating row undid allocation {@code allocation}. */
+        boolean negated(UUID allocation) {
+            return negations.containsKey(allocation);
+        }
+
+        List<BnplWaiver> waivers() {
+            return List.copyOf(waiverRows.values());
+        }
+
+        /** At commit: every APPROVED reversal negates every allocation row of its repayment. */
+        void atCommit() {
+            for (BnplRepaymentReversal reversal : reversals.values()) {
+                if (reversal.status() != BnplCorrectionStatus.APPROVED) {
+                    continue;
+                }
+                for (BnplPurchaseStore.Allocation line : purchases.repayments.get(reversal.repayment()).allocations()) {
+                    if (!reversal.id().equals(negations.get(line.id()))) {
+                        throw new BnplStorageException("an approved BNPL repayment reversal negates every allocation row"
+                                + " of its repayment: P0001");
+                    }
+                }
+            }
+        }
+
+        private java.time.LocalDate today() {
+            return java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+        }
+
+        private boolean active(BnplObligationId obligation) {
+            BnplObligation row = purchases.obligations.get(obligation.value());
+            return row != null && row.status() == BnplObligationStatus.ACTIVE;
+        }
+
+        @Override
+        public Optional<Addressed> addressed(Connection unitOfWork, BnplAgreementId agreement) {
+            log.add("addressed");
+            return purchases.obligations.values().stream().filter(row -> row.agreement().equals(agreement)).findFirst()
+                    .map(row -> new Addressed(row.id(), row.party()));
+        }
+
+        @Override
+        public Optional<BnplPurchaseStore.Repayment> repayment(Connection unitOfWork, BnplObligationId obligation, UUID repayment) {
+            return Optional.ofNullable(purchases.repayments.get(repayment))
+                    .filter(row -> row.obligation().equals(obligation));
+        }
+
+        @Override
+        public Optional<BnplRepaymentReversal> liveReversal(Connection unitOfWork, UUID repayment) {
+            return reversals.values().stream().filter(row -> row.repayment().equals(repayment)
+                    && row.status() != BnplCorrectionStatus.REJECTED).findFirst();
+        }
+
+        @Override
+        public Optional<Instant> insertReversal(Connection unitOfWork, NewReversal reversal) {
+            step("reversal insert");
+            if (!oneLiveUniqueDropped && liveReversal(unitOfWork, reversal.repayment()).isPresent()) {
+                return Optional.empty();
+            }
+            BnplPurchaseStore.Repayment repayment = purchases.repayments.get(reversal.repayment());
+            if (!active(reversal.obligation())) {
+                throw new BnplStorageException("a repayment of a BNPL obligation not ACTIVE is never reversed: P0001");
+            }
+            if (repayment == null || !repayment.obligation().equals(reversal.obligation())
+                    || !repayment.agreement().equals(reversal.agreement())
+                    || repayment.agreementVersion() != reversal.agreementVersion()) {
+                throw new BnplStorageException("a BNPL repayment reversal names a repayment of its own obligation, under"
+                        + " its agreement version: P0001");
+            }
+            if (repayment.kind().equals(BnplPurchaseStore.Repayment.PAYOFF)) {
+                throw new BnplStorageException("a PAYOFF repayment closed its obligation and is never reversed: P0001");
+            }
+            reversals.put(reversal.id(), new BnplRepaymentReversal(reversal.id(), reversal.obligation(),
+                    reversal.repayment(), reversal.agreement(), reversal.agreementVersion(), BnplCorrectionStatus.PROPOSED,
+                    reversal.proposer().id(), now, reversal.reason(), Optional.empty(), Optional.empty(),
+                    Optional.empty(), Optional.empty(), Optional.empty()));
+            return Optional.of(now);
+        }
+
+        @Override
+        public Optional<BnplRepaymentReversal> lockReversal(Connection unitOfWork, UUID reversal) {
+            step("B6");
+            return Optional.ofNullable(reversals.get(reversal));
+        }
+
+        @Override
+        public Optional<BnplRepaymentReversal> reversal(Connection unitOfWork, UUID reversal) {
+            return Optional.ofNullable(reversals.get(reversal));
+        }
+
+        @Override
+        public boolean decideReversal(Connection unitOfWork, ReversalDecision decision) {
+            step("reversal " + decision.outcome());
+            BnplRepaymentReversal row = reversals.get(decision.reversal());
+            if (row == null || row.status() != BnplCorrectionStatus.PROPOSED) {
+                return false;
+            }
+            if (!fourEyesCheckDropped && decision.outcome() == BnplCorrectionStatus.APPROVED
+                    && decision.decider().id().equals(row.proposedBy())) {
+                throw new BnplStorageException("bnpl_repayment_reversal_four_eyes: SQLSTATE 23514");
+            }
+            if (decision.outcome() == BnplCorrectionStatus.APPROVED) {
+                if (!active(row.obligation())) {
+                    throw new BnplStorageException("a repayment of a BNPL obligation not ACTIVE is never reversed: P0001");
+                }
+                java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, row.obligation());
+                java.time.LocalDate value = decision.valueDate().orElseThrow();
+                java.time.LocalDate ceiling = today().isAfter(floor) ? today() : floor;
+                if (value.isBefore(floor) || value.isAfter(ceiling)) {
+                    throw new BnplStorageException("a BNPL repayment reversal is valued on or after its obligation's"
+                            + " floor and never after today: P0001");
+                }
+            }
+            reversals.put(row.id(), new BnplRepaymentReversal(row.id(), row.obligation(), row.repayment(),
+                    row.agreement(), row.agreementVersion(), decision.outcome(), row.proposedBy(), row.proposedAt(),
+                    row.proposalReason(), Optional.of(decision.decider().id()), Optional.of(now),
+                    Optional.of(decision.reason()), decision.entry(), decision.valueDate()));
+            return true;
+        }
+
+        @Override
+        public void insertNegations(Connection unitOfWork, UUID reversal, List<BnplPurchaseStore.Allocation> allocations,
+                java.util.function.Supplier<UUID> ids) {
+            step("negations insert");
+            BnplRepaymentReversal row = reversals.get(reversal);
+            if (row == null || row.status() != BnplCorrectionStatus.APPROVED) {
+                throw new BnplStorageException("only an APPROVED BNPL repayment reversal negates allocations: P0001");
+            }
+            BnplPurchaseStore.Repayment repayment = purchases.repayments.get(row.repayment());
+            for (BnplPurchaseStore.Allocation line : allocations) {
+                if (repayment.allocations().stream().noneMatch(own -> own.id().equals(line.id())
+                        && own.amount().equals(line.amount()))) {
+                    throw new BnplStorageException("a negating row mirrors an allocation row of the reversed repayment"
+                            + " exactly: P0001");
+                }
+                if (negations.containsKey(line.id())) {
+                    throw new BnplStorageException("bnpl_repayment_allocation_reversal_allocation_unique: SQLSTATE 23505");
+                }
+                ids.get();
+                negations.put(line.id(), reversal);
+            }
+        }
+
+        @Override
+        public List<BnplRepaymentReversal> reversalsOf(Connection unitOfWork, BnplObligationId obligation, int limit) {
+            List<BnplRepaymentReversal> rows = new ArrayList<>(reversals.values().stream()
+                    .filter(row -> row.obligation().equals(obligation)).toList());
+            java.util.Collections.reverse(rows);
+            return rows.stream().limit(limit).toList();
+        }
+
+        @Override
+        public Set<UUID> reversedAmong(Connection unitOfWork, java.util.Collection<UUID> repayments) {
+            return reversals.values().stream().filter(row -> row.status() == BnplCorrectionStatus.APPROVED
+                    && repayments.contains(row.repayment())).map(BnplRepaymentReversal::repayment)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+
+        @Override
+        public Optional<BnplFeeAssessment> assessment(Connection unitOfWork, BnplObligationId obligation,
+                UUID assessment) {
+            return conditions.assessments.stream()
+                    .filter(row -> row.id().equals(assessment) && row.obligation().equals(obligation)).findFirst();
+        }
+
+        @Override
+        public List<BnplWaiver> waiversOf(Connection unitOfWork, UUID assessment) {
+            return waiverRows.values().stream().filter(row -> row.assessment().equals(assessment)).toList();
+        }
+
+        @Override
+        public Money releasedOn(Connection unitOfWork, UUID instalment, Money zero) {
+            Money released = zero;
+            for (BnplRefund refund : refunds.rows.values()) {
+                for (BnplRefund.Adjustment adjustment : refund.adjustments()) {
+                    if (adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID
+                            && adjustment.instalment().equals(instalment)) {
+                        released = released.plus(adjustment.lateFeeReleased());
+                    }
+                }
+            }
+            return released;
+        }
+
+        /** {@code bnpl.fee_waiver_room}: least(FEES billed less settled, assessed less approved waivers less released). */
+        Money room(BnplFeeAssessment assessment) {
+            BnplBilling billing = purchases.billings.get(assessment.instalment());
+            Money zero = Money.ofPersisted(0, assessment.amount().currency(), assessment.amount().scale());
+            Money unpaid = purchases.billedFees(billing, zero).minus(purchases.paid(billing, "FEES", zero));
+            Money waived = zero;
+            for (BnplWaiver waiver : waiversOf(UOW, assessment.id())) {
+                if (waiver.status() == BnplCorrectionStatus.APPROVED) {
+                    waived = waived.plus(waiver.amount());
+                }
+            }
+            Money never = assessment.amount().minus(waived).minus(releasedOn(UOW, assessment.instalment(), zero));
+            return unpaid.compareTo(never) <= 0 ? unpaid : never;
+        }
+
+        @Override
+        public Instant insertWaiver(Connection unitOfWork, NewWaiver waiver) {
+            step("waiver insert");
+            BnplObligation obligation = purchases.obligations.get(waiver.obligation().value());
+            if (!active(waiver.obligation())) {
+                throw new BnplStorageException("a BNPL waiver is proposed only on an ACTIVE obligation: P0001");
+            }
+            BnplAgreement inForce = purchases.agreements.get(obligation.agreement().value());
+            if (!waiver.agreement().equals(inForce.id()) || waiver.agreementVersion() != inForce.version()) {
+                throw new BnplStorageException("a BNPL waiver names its obligation's agreement version in force: P0001");
+            }
+            BnplFeeAssessment assessment = assessment(unitOfWork, waiver.obligation(), waiver.assessment())
+                    .filter(row -> row.instalment().equals(waiver.instalment()))
+                    .orElseThrow(() -> new BnplStorageException("bnpl_waiver_assessment_fk: SQLSTATE 23503"));
+            if (!waiverRoomDropped && waiver.amount().compareTo(room(assessment)) > 0) {
+                throw new BnplStorageException("a BNPL waiver is bounded by what its fee still has due and was never"
+                        + " forgiven: P0001");
+            }
+            if (waiversOf(unitOfWork, waiver.assessment()).stream()
+                    .anyMatch(row -> row.status() == BnplCorrectionStatus.PROPOSED)) {
+                throw new BnplStorageException("a BNPL waiver of this fee already awaits a decision: P0001");
+            }
+            waiverRows.put(waiver.id(), new BnplWaiver(waiver.id(), waiver.obligation(), waiver.kind(),
+                    waiver.assessment(), waiver.instalment(), waiver.amount(), waiver.agreement(),
+                    waiver.agreementVersion(), BnplCorrectionStatus.PROPOSED, waiver.proposer().id(), now, waiver.reason(),
+                    Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+            return now;
+        }
+
+        @Override
+        public Optional<BnplWaiver> waiver(Connection unitOfWork, BnplObligationId obligation, UUID waiver) {
+            log.add("waiver read");
+            return Optional.ofNullable(waiverRows.get(waiver)).filter(row -> row.obligation().equals(obligation));
+        }
+
+        @Override
+        public boolean decideWaiver(Connection unitOfWork, WaiverDecision decision) {
+            step("waiver " + decision.outcome());
+            BnplWaiver row = waiverRows.get(decision.waiver());
+            if (row == null || !row.proposedBy().equals(decision.proposedBy())) {
+                throw new BnplStorageException("bnpl_waiver_decision_waiver_fk: SQLSTATE 23503");
+            }
+            if (row.status() != BnplCorrectionStatus.PROPOSED) {
+                return false;
+            }
+            if (!fourEyesCheckDropped && decision.outcome() == BnplCorrectionStatus.APPROVED
+                    && decision.decider().id().equals(decision.proposedBy())) {
+                throw new BnplStorageException("bnpl_waiver_decision_four_eyes: SQLSTATE 23514");
+            }
+            if (decision.outcome() == BnplCorrectionStatus.APPROVED) {
+                if (!active(row.obligation())) {
+                    throw new BnplStorageException("a BNPL waiver is approved only on an ACTIVE obligation: P0001");
+                }
+                BnplFeeAssessment assessment = assessment(unitOfWork, row.obligation(), row.assessment()).orElseThrow();
+                if (!waiverRoomDropped && row.amount().compareTo(room(assessment)) > 0) {
+                    throw new BnplStorageException("a BNPL waiver is bounded by what its fee still has due and was never"
+                            + " forgiven: P0001");
+                }
+            }
+            decisionProposers.put(row.id(), decision.proposedBy());
+            waiverRows.put(row.id(), new BnplWaiver(row.id(), row.obligation(), row.kind(), row.assessment(),
+                    row.instalment(), row.amount(), row.agreement(), row.agreementVersion(), decision.outcome(),
+                    row.proposedBy(), row.proposedAt(), row.proposalReason(), Optional.of(decision.decider().id()),
+                    Optional.of(now), Optional.of(decision.reason()), decision.entry()));
+            return true;
+        }
+
+        @Override
+        public List<BnplWaiver> waiversOfObligation(Connection unitOfWork, BnplObligationId obligation, int limit) {
+            List<BnplWaiver> rows = new ArrayList<>(waiverRows.values().stream()
+                    .filter(row -> row.obligation().equals(obligation)).toList());
+            java.util.Collections.reverse(rows);
+            return rows.stream().limit(limit).toList();
+        }
+    }
+
 
     private static <K, V> void reset(Map<K, V> into, Map<K, V> from) {
         into.clear();

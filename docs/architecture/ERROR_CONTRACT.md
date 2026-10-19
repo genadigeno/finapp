@@ -1262,7 +1262,11 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.PurchaseFullyRefunded` | 409 | The BNPL purchase is already fully refunded. |
 | `bnpl.RefundScopeRequired` | 403 | This API key may not refund BNPL purchases; a key with the refund scope may. |
 | `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted now; nothing was written. |
-| `bnpl.SelfDealingRefused` | 403 | An employee never refunds a BNPL purchase of their own party; nothing was done. |
+| `bnpl.SelfDealingRefused` | 403 | An employee never acts on a BNPL purchase or agreement of their own party; nothing was done. |
+| `bnpl.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
+| `bnpl.RepaymentNotReversible` | 409 | The BNPL repayment cannot be reversed. |
+| `bnpl.WaiverExceedsDue` | 422 | The waiver exceeds what is due of the fee. |
+| `bnpl.WalletUnavailable` | 409 | The customer's wallet cannot be credited now; nothing was posted. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its
@@ -1326,6 +1330,26 @@ purchase's financed net (B7, `INV-MER-07` as amended). Every refusal writes noth
 conservation is the platform's `500`, counted `finapp.bnpl.allocation.anomaly`. The operator's API-key issuance
 (`POST /v1/operator/merchants/{id}/api-keys`) takes the optional `scope` query parameter (`BNPL_REFUND`); an unknown scope
 is `422 api.ValidationFailed`.
+
+The servicing correction doors (`P12-TSK-024`; `POST /v1/operator/bnpl-agreements/{id}/repayments/{rid}/reversal`
+(`201`) and `/reversal/approval`, `/reversal/rejection`; `POST /v1/operator/bnpl-agreements/{id}/waivers` (`201`) and
+`/waivers/{wid}/approval`, `/rejection`; proposing and rejecting under `BNPL_SERVICE`, approving under
+`BNPL_SERVICE_APPROVE`; each keyed `bnpl.servicing:<actor type>:<id>` - CUSTOMER-typed for an operator session today):
+`SelfApprovalRefused` the proposer approving their own proposal (domain and four-eyes `CHECK`), recorded `FAILED` in a
+transaction of its own (the Phase 11 gate's R4); `SelfDealingRefused` an operator of the agreement's own party - or one
+the platform cannot place in a party (fail closed) - before any lock, recorded `FAILED`; `ReasonRequired` a reason missing,
+past 1,000 characters or holding a card or account number; `ProposalPending` a second proposal while one awaits a decision
+(one live reversal per repayment, one undecided waiver per fee); `ProposalNotPending` (new) a decision of a proposal already
+decided - by somebody else, or differently (the same approver's retry converges); `ObligationClosed` a reversal or waiver on
+a `CLOSED` agreement - the closing repayment included (a closed agreement is terminal) - though a standing proposal may still
+be rejected; `RepaymentNotReversible` (new) a repayment already reversed, a `PAYOFF` (which closed its agreement) or one
+whose held credit has since been applied; `CapitalUnavailable` a reversal re-instating principal beyond the currency's
+capital headroom, judged under the capital row (L6); `WalletUnavailable` (new) the wallet the reversed repayment debited
+cannot be credited now; `WaiverExceedsDue` (new) a waiver beyond what may still be forgiven of the fee - its unpaid
+remainder, never what was paid, released by a refund or already waived (the Phase 11 gate's R3) - judged at the proposal
+and again at the approval; `NotFound` an unknown or malformed agreement, a repayment, fee or proposal not of that agreement;
+`422 api.ValidationFailed` a waiver amount not positive or not at the fee's currency and minor units. Every refusal writes
+nothing and rolls the key back; the proposal of a refused approval stays `PROPOSED`.
 
 The merchant's purchase read (`P12-TSK-014`; `GET /v1/merchant/bnpl-purchases/{id}`, the merchant's own key): `NotFound`
 answers another merchant's purchase exactly as an unknown or malformed id - one body, never `403`, so existence is not

@@ -309,7 +309,21 @@ class RoutePermissionRegisterTest {
                     // The operator's BNPL refund beside the merchant's (P12-TSK-021, ADR-0105 decision 9): the payments
                     // refund's one permission, the money-operating population - the ADR's default.
                     entry("POST /v1/operator/bnpl-purchases/{id}/refunds", PermissionName.PAYMENT_REFUND),
-                    entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER)));
+                    entry("GET /v1/operator/bnpl/terms/{versionId}", PermissionName.BNPL_ADMINISTER),
+                    // The BNPL servicing corrections under four eyes (P12-TSK-024): a BNPL_SERVICE holder proposes and
+                    // rejects (the proposer's withdrawal included), a different BNPL_SERVICE_APPROVE holder approves - never
+                    // one's own (the domain and bnpl V016's CHECKs); the negatives are BnplServicingApiTest's.
+                    entry("POST /v1/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal",
+                            PermissionName.BNPL_SERVICE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal/approval",
+                            PermissionName.BNPL_SERVICE_APPROVE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal/rejection",
+                            PermissionName.BNPL_SERVICE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/waivers", PermissionName.BNPL_SERVICE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/waivers/{waiverId}/approval",
+                            PermissionName.BNPL_SERVICE_APPROVE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/waivers/{waiverId}/rejection",
+                            PermissionName.BNPL_SERVICE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

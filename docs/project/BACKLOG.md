@@ -21527,7 +21527,7 @@ after everything.
   compensation, an upheld dispute posts nothing; F5 vacuous — no external event (no network); F8: the
   three-way proof), `DOD-SEC`, `DOD-API`. **Risk**: High. **Cx**: L.
 
-**P12-TSK-024 — Repayment reversal and fee waiver (four-eyes)** — `PLANNED`
+**P12-TSK-024 — Repayment reversal and fee waiver (four-eyes)** — `IN_PROGRESS` (Phase 12 wave F beside `-023`; its one dependency `-020` `COMPLETE`, freed by `-020`'s gate; started 2026-10-19)
 - **Objective**: an operator's mistake in applying a customer's money is undone by an exact reversal, and a
   late fee is forgone only by a bounded waiver — each reasoned, four-eyes and posted, never an edit
   (ADR-0099's shape applied to bnpl).

@@ -309,6 +309,7 @@ extra["ownContainerSuites"] =
         "com.finapp.app.bnpl.BnplPurchaseDatabaseTest",
         "com.finapp.app.bnpl.BnplRefundApiTest",
         "com.finapp.app.bnpl.BnplRepaymentApiTest",
+        "com.finapp.app.bnpl.BnplServicingApiTest",
         "com.finapp.app.checkout.CheckoutFinancingDatabaseTest",
         "com.finapp.app.credit.BnplProductDecisionDatabaseTest",
         "com.finapp.app.credit.BureauSelectionDatabaseTest",

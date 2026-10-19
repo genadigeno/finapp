@@ -6,6 +6,8 @@ import com.finapp.ledger.AvailableBalance;
 import com.finapp.ledger.BalanceDerivation;
 import com.finapp.ledger.ChartOfAccounts;
 import com.finapp.ledger.JournalEntryId;
+import com.finapp.ledger.JournalEntryStore;
+import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
@@ -14,6 +16,8 @@ import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.ledger.PurposeBalances;
+import com.finapp.ledger.ReversalCommand;
+import com.finapp.ledger.ReversalService;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
@@ -31,7 +35,7 @@ import lombok.RequiredArgsConstructor;
  * ({@code PostingService} - validate, claim the key, record the entry, its lines, audit, outbox and projections, all on
  * the caller's transaction), the account store's row locks, the available balance under the caller's lock, the balance
  * derivation over journal lines (never {@code account_balance}, {@code INV-BAL-05}), the dated principal lines the accrual
- * base folds ({@code PurposeBalances}, `P12-TSK-017`), the chart and the obligation's
+ * base folds ({@code PurposeBalances}, `P12-TSK-017`), the chart, the reversal command and the journal's entry read (`P12-TSK-024`) and the obligation's
  * opener ({@link BnplAccounts}). No state of its own; code on every instance.
  */
 @RequiredArgsConstructor
@@ -44,6 +48,8 @@ public final class LedgerBnplBook implements BnplBook {
     @NonNull private final BalanceDerivation<Connection> balances;
     @NonNull private final PostingService postings;
     @NonNull private final PurposeBalances<Connection> purposeBalances;
+    @NonNull private final ReversalService reversals;
+    @NonNull private final JournalEntryStore<Connection> journal;
 
     @Override
     public BnplLedgerAccounts openAccounts(Connection unitOfWork, BnplObligationId obligation, CurrencyCode currency) {
@@ -83,6 +89,21 @@ public final class LedgerBnplBook implements BnplBook {
             throw new IllegalStateException("a BNPL entry exists for an id minted in this transaction (INV-IDEM-01)");
         }
         return result.entryId();
+    }
+
+    @Override
+    public JournalEntryId reverse(Connection unitOfWork, ReversalCommand command) {
+        PostingResult result = reversals.reverse(unitOfWork, command);
+        if (result.replayed()) {
+            throw new IllegalStateException("a BNPL reversal exists for an id decided in this transaction (INV-IDEM-01)");
+        }
+        return result.entryId();
+    }
+
+    @Override
+    public List<JournalLine> entryLines(Connection unitOfWork, JournalEntryId entry) {
+        Objects.requireNonNull(entry, "entry");
+        return journal.findById(unitOfWork, entry).map(posted -> posted.entry().lines()).orElse(List.of());
     }
 
     @Override

@@ -402,6 +402,17 @@ class OpenApiContractTest {
                         // the operator's door beside it (PAYMENT_REFUND, keyed, reasoned, audited).
                         ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-purchases/{id}/refunds",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-purchases/{id}/refunds",
+                        // P12-TSK-024: the servicing corrections under four eyes - the repayment reversal and the fee
+                        // waiver, each proposed (201), approved by another (naming the proposal) and rejected; keyed,
+                        // reasoned, audited.
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

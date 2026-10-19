@@ -435,5 +435,17 @@ class BnplAccrualDatabaseTest {
                 LocalDate valueDateThrough) {
             return delegate.datedLinesOn(unitOfWork, accounts, valueDateThrough);
         }
+
+        @Override
+        public com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork,
+                com.finapp.ledger.ReversalCommand command) {
+            return delegate.reverse(unitOfWork, command);
+        }
+
+        @Override
+        public List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
+                com.finapp.ledger.JournalEntryId entry) {
+            return delegate.entryLines(unitOfWork, entry);
+        }
     }
 }

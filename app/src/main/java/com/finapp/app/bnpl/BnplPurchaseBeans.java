@@ -61,18 +61,23 @@ public class BnplPurchaseBeans {
         return new AccountsBnplWallets(partyStore, customerAccountStore, ledgerAccountStore);
     }
 
-    /** The ledger as bnpl's money-moving acts command and read it - the obligation's opener, the chart, the posting. */
+    /**
+     * The ledger as bnpl's money-moving acts command and read it - the obligation's opener, the chart, the posting, and
+     * (`P12-TSK-024`) the reversal command and the journal's entry read.
+     */
     @Bean
     BnplBook bnplBook(
             LedgerAccountStore<Connection> ledgerAccountStore,
             BalanceDerivation<Connection> balanceDerivation,
             PostingService postingService,
+            com.finapp.ledger.ReversalService reversalService,
+            com.finapp.ledger.JournalEntryStore<Connection> journalEntryStore,
             IdGenerator idGenerator,
             Clock clock) {
         return new LedgerBnplBook(new BnplAccounts(ledgerAccountStore, idGenerator, clock), ledgerAccountStore,
                 new ChartOfAccounts<>(ledgerAccountStore),
                 new AvailableBalance<>(balanceDerivation, new JdbcHoldStore()), balanceDerivation, postingService,
-                new JdbcPurposeBalances());
+                new JdbcPurposeBalances(), reversalService, journalEntryStore);
     }
 
     /** T-pur - the customer's acceptance, the purchase, the merchant financing and the obligation in one transaction. */

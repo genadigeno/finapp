@@ -2,11 +2,13 @@ package com.finapp.bnpl;
 
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.JournalEntryId;
+import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PurposeBalances;
+import com.finapp.ledger.ReversalCommand;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
@@ -67,4 +69,18 @@ public interface BnplBook {
      */
     List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork, Set<LedgerAccountId> accounts,
             LocalDate valueDateThrough);
+
+    /**
+     * Reverses {@code command}'s original under its key - once, through the ledger's {@code ReversalService} (`P12-TSK-024`:
+     * F7, F8; {@code INV-REV-01}, {@code INV-REV-02}): a NEW entry referencing the original, its lines bounded by the
+     * original's (the ledger's pre-check and {@code ledger V009}'s trigger), the original byte-identical afterwards.
+     *
+     * @throws IllegalStateException the key had already reversed: every bnpl reversal key names an id decided in this
+     *     transaction, so a replay is a defect, never a second reversal ({@code INV-IDEM-01})
+     * @throws com.finapp.ledger.OverReversalException the reversal exceeds what the original still has unreversed
+     */
+    JournalEntryId reverse(Connection unitOfWork, ReversalCommand command);
+
+    /** The committed lines of entry {@code entry}, in order - empty when no such entry ({@code JournalEntryStore}). */
+    List<JournalLine> entryLines(Connection unitOfWork, JournalEntryId entry);
 }

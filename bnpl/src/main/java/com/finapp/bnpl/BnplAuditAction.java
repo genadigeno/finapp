@@ -40,7 +40,9 @@ public enum BnplAuditAction implements AuditableAction {
     /** A proposer tried to approve their own proposal and was refused. */
     SELF_APPROVAL_REFUSED(
             "bnpl.SelfApprovalRefused",
-            "A proposer tried to approve their own BNPL proposal - a terms version's activation (act=terms:activate) -"
+            "A proposer tried to approve their own BNPL proposal - a terms version's activation (act=terms:activate),"
+                    + " a repayment reversal's or a waiver's approval (act=repayment-reversal:approve, act=waiver:approve;"
+                    + " P12-TSK-024) -"
                     + " and was refused before anything was written (INV-AUD-04; also held by the table's four-eyes"
                     + " CHECK). Recorded FAILED in a transaction of its own after the act rolled back, so the attempt"
                     + " survives (the Phase 11 completion gate's R4, applied from bnpl's first door). Its target the"
@@ -133,14 +135,76 @@ public enum BnplAuditAction implements AuditableAction {
                     + " confirmed to be the merchant's - nothing was read); the summary names the key id.",
             false),
 
-    /** An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`). */
+    /** An operator tried to act on a BNPL purchase or agreement of their own party (`P12-TSK-021`, `-024`). */
     SELF_DEALING_REFUSED(
             "bnpl.SelfDealingRefused",
             "An operator tried to refund, at the operator's BNPL refund door, a purchase whose customer is the operator's"
-                    + " own party, and was refused 403 bnpl.SelfDealingRefused with nothing written; recorded FAILED in a"
-                    + " transaction of its own after the act rolled back. Its target the purchase; the summary names it"
-                    + " and the act - never an amount.",
-            false);
+                    + " own party - or (P12-TSK-024) to propose, approve or reject a repayment reversal or a waiver on an"
+                    + " agreement of their own party, or as an operator the platform cannot place in a party (fail"
+                    + " closed) - and was refused 403 bnpl.SelfDealingRefused with nothing written; recorded FAILED in a"
+                    + " transaction of its own after the act rolled back. Its target the purchase or the agreement; the"
+                    + " summary names it and the act - never an amount.",
+            false),
+
+    /** A BNPL servicing agent proposed the reversal of a repayment (`P12-TSK-024`). */
+    REPAYMENT_REVERSAL_PROPOSED(
+            "bnpl.RepaymentReversalProposed",
+            "A holder of BNPL_SERVICE proposed, with a reason, the exact reversal of one repayment of an ACTIVE BNPL"
+                    + " agreement (POST /v1/operator/bnpl-agreements/{id}/repayments/{rid}/reversal, keyed"
+                    + " bnpl.servicing:<actor type>:<id>) - under the obligation's lock, one live proposal per repayment,"
+                    + " never a payoff's, the credit it held still held; nothing posted, awaiting a DIFFERENT holder of"
+                    + " BNPL_SERVICE_APPROVE (INV-AUD-04). Its target the reversal; the summary names the agreement and"
+                    + " the repayment - never an amount.",
+            true),
+
+    /** A different BNPL servicing agent approved a repayment reversal, posting F8 (`P12-TSK-024`). */
+    REPAYMENT_REVERSAL_APPROVED(
+            "bnpl.RepaymentReversalApproved",
+            "A holder of BNPL_SERVICE_APPROVE other than its proposer approved a BNPL repayment reversal (INV-AUD-04, also"
+                    + " held by bnpl V016's four-eyes CHECK), naming the proposal: under the party's credit profile"
+                    + " (L0), the obligation (B4), the proposal (B6), the capital row when principal is re-instated (L6)"
+                    + " and the wallet (P), F8 - the ledger's ReversalService swapping the repayment's F3 entry exactly"
+                    + " under bnpl.repayment-reversal:<reversal>, valued max(today, floor) - the allocation negated, the"
+                    + " amount due again, the wallet credited back, in one transaction with bnpl.BnplRepaymentReversed."
+                    + " Its target the reversal; the summary names the agreement, the repayment and both entries - never"
+                    + " an amount.",
+            true),
+
+    /** A repayment reversal was rejected, or withdrawn by its proposer (`P12-TSK-024`). */
+    REPAYMENT_REVERSAL_REJECTED(
+            "bnpl.RepaymentReversalRejected",
+            "A proposed BNPL repayment reversal was rejected by a holder of BNPL_SERVICE - or withdrawn by its proposer;"
+                    + " nothing was posted and the repayment may be proposed for reversal again.",
+            true),
+
+    /** A BNPL servicing agent proposed waiving an amount of a late fee (`P12-TSK-024`). */
+    WAIVER_PROPOSED(
+            "bnpl.WaiverProposed",
+            "A holder of BNPL_SERVICE proposed, with a reason, waiving an amount of one late fee of an ACTIVE BNPL"
+                    + " agreement (POST /v1/operator/bnpl-agreements/{id}/waivers, keyed bnpl.servicing:<actor type>:<id>)"
+                    + " - within what may still be forgiven (its unpaid remainder, never what was paid, released or"
+                    + " waived: the Phase 11 gate's R3), one proposal per fee at a time; nothing posted, awaiting a"
+                    + " DIFFERENT holder of BNPL_SERVICE_APPROVE. Its target the waiver; the summary names the agreement"
+                    + " and the assessment - never an amount.",
+            true),
+
+    /** A different BNPL servicing agent approved a fee waiver, posting F7 (`P12-TSK-024`). */
+    WAIVER_APPROVED(
+            "bnpl.WaiverApproved",
+            "A holder of BNPL_SERVICE_APPROVE other than its proposer approved a BNPL fee waiver (INV-AUD-04, also held by"
+                    + " bnpl V016's four-eyes CHECK): the bound re-judged under the obligation's lock (B4), F7 - the"
+                    + " ledger's ReversalService of the assessment's F4 entry for the amount (DR BNPL_FEE_INCOME / CR"
+                    + " BNPL_FEES_DUE, bnpl.waiver:<waiver>) - and the closure when it zeroed the last receivable, in one"
+                    + " transaction with bnpl.BnplFeeWaived. Its target the waiver; the summary names the agreement, the"
+                    + " assessment and the entry - never an amount.",
+            true),
+
+    /** A fee waiver was rejected, or withdrawn by its proposer (`P12-TSK-024`). */
+    WAIVER_REJECTED(
+            "bnpl.WaiverRejected",
+            "A proposed BNPL fee waiver was rejected by a holder of BNPL_SERVICE - or withdrawn by its proposer; nothing"
+                    + " was posted and the fee may be proposed for waiver again.",
+            true);
 
     private final String code;
     private final String description;

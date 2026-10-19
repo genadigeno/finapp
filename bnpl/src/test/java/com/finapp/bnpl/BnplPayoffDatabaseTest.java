@@ -644,5 +644,17 @@ class BnplPayoffDatabaseTest {
                 Set<LedgerAccountId> accounts, LocalDate valueDateThrough) {
             return delegate.datedLinesOn(unitOfWork, accounts, valueDateThrough);
         }
+
+        @Override
+        public synchronized com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork,
+                com.finapp.ledger.ReversalCommand command) {
+            return delegate.reverse(unitOfWork, command);
+        }
+
+        @Override
+        public synchronized List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
+                com.finapp.ledger.JournalEntryId entry) {
+            return delegate.entryLines(unitOfWork, entry);
+        }
     }
 }

@@ -79,8 +79,9 @@ public class BnplRepaymentBeans {
             MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             IdempotentExecutor idempotentExecutor,
             BnplTransactions bnplTransactions,
-            BnplRepaymentMetrics bnplRepaymentMetrics) {
+            BnplRepaymentMetrics bnplRepaymentMetrics,
+            com.finapp.bnpl.BnplRepaymentReversals bnplRepaymentReversals) {
         return new BnplRepaymentDesk(bnplRepayments, identityStore, mfaEnrolmentStore, idempotentExecutor,
-                bnplTransactions, bnplRepaymentMetrics);
+                bnplTransactions, bnplRepaymentMetrics, bnplRepaymentReversals);
     }
 }
