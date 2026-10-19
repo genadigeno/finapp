@@ -3769,6 +3769,31 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_collection_attempt` | `repayment_id` | `CONFIDENTIAL` | The `AUTO_COLLECTION` repayment that moved it - null when nothing moved |
 | `bnpl_collection_attempt` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_collection_attempt` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the obligation's own flow) |
+| `bnpl_condition_event` | `id` | `INTERNAL` | Generated (`P12-TSK-020`) |
+| `bnpl_condition_event` | `obligation_id` | `CONFIDENTIAL` | The obligation whose condition changed |
+| `bnpl_condition_event` | `business_date` | `INTERNAL` | The business date of the database clock in the pinned zone |
+| `bnpl_condition_event` | `kind` | `INTERNAL` | `DELINQUENCY` or `DEFAULT` |
+| `bnpl_condition_event` | `days_past_due` | `RESTRICTED-FINANCIAL` | Derived from the billed and settled rows - never in a log line, tag or span, never shown to a merchant |
+| `bnpl_condition_event` | `bucket` | `RESTRICTED-FINANCIAL` | `CURRENT` or the pinned bucket after the change |
+| `bnpl_condition_event` | `previous_bucket` | `RESTRICTED-FINANCIAL` | The bucket before a `DELINQUENCY` change; null for `DEFAULT` |
+| `bnpl_condition_event` | `defaulted` | `RESTRICTED-FINANCIAL` | The default flag after the change (A14) |
+| `bnpl_condition_event` | `agreement_id` | `CONFIDENTIAL` | The agreement whose pinned terms judged it |
+| `bnpl_condition_event` | `agreement_version` | `INTERNAL` | The agreement version in force |
+| `bnpl_condition_event` | `created_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
+| `bnpl_condition_event` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the obligation's own flow) |
+| `bnpl_fee_assessment` | `id` | `INTERNAL` | Generated (`P12-TSK-020`) |
+| `bnpl_fee_assessment` | `obligation_id` | `CONFIDENTIAL` | The obligation charged |
+| `bnpl_fee_assessment` | `instalment_id` | `CONFIDENTIAL` | The billed instalment - once per kind |
+| `bnpl_fee_assessment` | `kind` | `INTERNAL` | `LATE` |
+| `bnpl_fee_assessment` | `business_date` | `INTERNAL` | The business date of the assessing transaction |
+| `bnpl_fee_assessment` | `currency` | `INTERNAL` | The obligation's currency |
+| `bnpl_fee_assessment` | `scale` | `INTERNAL` | The amount's persisted scale |
+| `bnpl_fee_assessment` | `amount_minor` | `RESTRICTED-FINANCIAL` | The fee - the pinned fee or what the cap admitted |
+| `bnpl_fee_assessment` | `agreement_id` | `CONFIDENTIAL` | The agreement whose pinned terms decided it |
+| `bnpl_fee_assessment` | `agreement_version` | `INTERNAL` | The agreement version in force |
+| `bnpl_fee_assessment` | `journal_entry_id` | `INTERNAL` | F4's entry (`bnpl.fee:<instalment>:LATE`), by value |
+| `bnpl_fee_assessment` | `created_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
+| `bnpl_fee_assessment` | `correlation_id` | `INTERNAL` | The servicing step's correlation |
 | `bnpl_obligation_closure` | `refund_id` | `INTERNAL` | The BNPL refund whose transaction closed it, if any (`P12-TSK-021`) |
 | `bnpl_refund` | `id` | `INTERNAL` | Generated (`P12-TSK-021`) |
 | `bnpl_refund` | `purchase_id` | `CONFIDENTIAL` | Its purchase - the bound's subject |
@@ -3789,6 +3814,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_refund` | `excess_to` | `INTERNAL` | `NONE`, `WALLET` or `CREDIT_BALANCE` |
 | `bnpl_refund` | `interest_accrued_released_minor` | `RESTRICTED-FINANCIAL` | Pay-in-N accrued interest released (A11) |
 | `bnpl_refund` | `interest_due_released_minor` | `RESTRICTED-FINANCIAL` | Pay-in-N billed interest released (A11) |
+| `bnpl_refund` | `late_fee_released_minor` | `RESTRICTED-FINANCIAL` | Late fees released on instalments cancelled whole - OQ-14, added by `P12-TSK-020` |
 | `bnpl_refund` | `allocation_engine` | `INTERNAL` | `REFUND_ALLOCATION_ENGINE_V1` |
 | `bnpl_refund` | `agreement_id` | `CONFIDENTIAL` | Its agreement |
 | `bnpl_refund` | `agreement_version` | `INTERNAL` | The agreement version in force after it |
@@ -3809,6 +3835,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_refund_adjustment` | `principal_cancelled_minor` | `RESTRICTED-FINANCIAL` | Principal cancelled on the instalment |
 | `bnpl_refund_adjustment` | `interest_released_minor` | `RESTRICTED-FINANCIAL` | Billed interest released on it |
 | `bnpl_refund_adjustment` | `whole` | `INTERNAL` | Whether the instalment owes no principal after it |
+| `bnpl_refund_adjustment` | `late_fee_released_minor` | `RESTRICTED-FINANCIAL` | The unpaid late fees of a billed instalment cancelled whole, released (OQ-14) - added by `P12-TSK-020` |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

@@ -47,7 +47,7 @@ import lombok.RequiredArgsConstructor;
  * customer to an agreement and pays the merchant. The evidence it records is the session's own - the identity, the
  * session, its assurance, the socket's address and the request's agent - never the body's. <strong>What the reads
  * show</strong>: the agreement's state, product and plan, the version and its hash, the financed gross, the schedule and
- * the six balances derived from journal lines. Never a score, a reason, a decision's internals, the merchant or the party.
+ * the six balances derived from journal lines, and (`P12-TSK-020`) the condition derived live. Never a score, a reason, a decision's internals, the merchant or the party.
  * Another party's agreement is the same {@code 404} as an unknown or malformed id. The meter is counted after the
  * transaction - a replay counts nothing.
  */
@@ -58,6 +58,7 @@ public final class BnplAgreementDesk {
 
     @NonNull private final BnplAcceptances acceptances;
     @NonNull private final BnplObligations obligations;
+    @NonNull private final com.finapp.bnpl.BnplConditions conditions;
     @NonNull private final IdentityStore<Connection> identities;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final BnplTransactions transactions;
@@ -102,7 +103,22 @@ public final class BnplAgreementDesk {
             String purchaseDate,
             String openedAt,
             String termsSha256,
-            BnplBalancesView balances) {}
+            BnplBalancesView balances,
+            BnplConditionView condition) {}
+
+    /**
+     * The agreement's condition now (`P12-TSK-020`; {@code PHASE_12_PLAN.md} section 12.8) - derived in the read's snapshot
+     * from the billed instalments on the database clock's business date, never stored: {@code delinquency}
+     * {@code CURRENT} or {@code PAST_DUE}; {@code daysPastDue} from the oldest instalment unpaid at the end of its due date
+     * (0 when none is); {@code bucket} its band ({@code B1_1_29}, {@code B2_30_59}, {@code B3_60_89}, {@code B4_90_PLUS}),
+     * null when current; {@code defaulted} set at the pinned threshold (90 days) and cleared at cure. Null for a closed
+     * agreement. A condition, never a state: {@code status} is unchanged by it. The customer's own - never a merchant's.
+     */
+    public record BnplConditionView(
+            String delinquency,
+            int daysPastDue,
+            String bucket,
+            boolean defaulted) {}
 
     /** The obligation's balances, derived from journal lines. */
     public record BnplBalancesView(
@@ -204,7 +220,7 @@ public final class BnplAgreementDesk {
     public BnplAgreementView read(Session current, String rawId) {
         BnplAgreementId id = agreementId(rawId);
         return transactions.inSnapshot(unitOfWork -> obligations.read(unitOfWork, id, partyOf(unitOfWork, current))
-                        .map(BnplAgreementDesk::view))
+                        .map(read -> view(read, conditions.read(unitOfWork, read.owned()))))
                 .orElseThrow(() -> notFound("BNPL agreement"));
     }
 
@@ -225,6 +241,11 @@ public final class BnplAgreementDesk {
     }
 
     static BnplAgreementView view(BnplObligations.Read read) {
+        return view(read, java.util.Optional.empty());
+    }
+
+    static BnplAgreementView view(BnplObligations.Read read,
+            java.util.Optional<com.finapp.bnpl.BnplDelinquencyState> condition) {
         BnplPurchaseStore.Owned owned = read.owned();
         BnplObligations.Balances balances = read.balances();
         return new BnplAgreementView(
@@ -242,7 +263,9 @@ public final class BnplAgreementDesk {
                 owned.agreement().termsSha256Hex(),
                 new BnplBalancesView(decimal(balances.principalOutstanding()), decimal(balances.principal()),
                         decimal(balances.principalDue()), decimal(balances.interestAccrued()),
-                        decimal(balances.interestDue()), decimal(balances.feesDue()), decimal(balances.creditBalance())));
+                        decimal(balances.interestDue()), decimal(balances.feesDue()), decimal(balances.creditBalance())),
+                condition.map(state -> new BnplConditionView(state.pastDue() ? "PAST_DUE" : "CURRENT",
+                        state.daysPastDue(), state.bucket().map(Enum::name).orElse(null), state.defaulted())).orElse(null));
     }
 
     static BnplScheduleView schedule(BnplObligations.Schedule read) {

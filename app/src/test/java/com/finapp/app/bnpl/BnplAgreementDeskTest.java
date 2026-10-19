@@ -89,6 +89,23 @@ class BnplAgreementDeskTest {
     }
 
     @Test
+    @DisplayName("the agreement shows its condition, derived (P12-TSK-020): PAST_DUE with DPD, bucket and the default flag;"
+            + " CURRENT with no bucket; none for a closed agreement")
+    void theAgreementShowsItsCondition() {
+        BnplPurchaseStore.Owned owned = new BnplPurchaseStore.Owned(obligation(), purchase(IDS.next()), agreement(),
+                eur(600_00));
+        BnplObligations.Read read = new BnplObligations.Read(owned, new BnplObligations.Balances(eur(300_00),
+                eur(150_00), eur(0), eur(0), eur(5_00), eur(0)));
+        BnplAgreementDesk.BnplConditionView late = BnplAgreementDesk.view(read, java.util.Optional.of(
+                new com.finapp.bnpl.BnplDelinquencyState(91, java.util.Optional.of(
+                        com.finapp.bnpl.BnplDelinquencyBucket.B4_90_PLUS), true))).condition();
+        assertThat(late).isEqualTo(new BnplAgreementDesk.BnplConditionView("PAST_DUE", 91, "B4_90_PLUS", true));
+        assertThat(BnplAgreementDesk.view(read, java.util.Optional.of(com.finapp.bnpl.BnplDelinquencyState.CURRENT))
+                .condition()).isEqualTo(new BnplAgreementDesk.BnplConditionView("CURRENT", 0, null, false));
+        assertThat(BnplAgreementDesk.view(read).condition()).isNull();
+    }
+
+    @Test
     @DisplayName("a schedule lists every instalment with its billed mark and - billed - what it billed, what was paid and"
             + " what is still due (P12-TSK-015)")
     void theScheduleView() {

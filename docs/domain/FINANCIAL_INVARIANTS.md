@@ -288,6 +288,12 @@ attempt's repayment born under the key `<item>:<date>` (`repayment UNIQUE (loan_
 (scenario 2's sweeper half: two and ten racing steps - one attempt, one repayment, one entry, one event) and
 `#aCrashMidStepLeavesNothing`. The probe drops the unique - `MUTATION_TESTING.md` section 2.)*
 
+*(As built by `P12-TSK-020`, 2026-10-19 - BNPL's condition and late fee, per (obligation, business date, kind) and per
+(instalment, kind): `bnpl_condition_event UNIQUE (obligation_id, business_date, kind)` and `bnpl_fee_assessment UNIQUE
+(instalment_id, kind)` beneath B4, the fee's ledger key `bnpl.fee:<instalment>:LATE` a second arbiter.
+`BnplConditionsTest#tenStepsOneConditionChange`, `BnplLateFeesTest#tenStepsAssessOnce` (hermetic, run),
+`BnplConditionDatabaseTest#tenSweepersOneConditionChange` and `BnplLateFeeDatabaseTest#tenSweepersAssessOnce` (owed).)*
+
 *(As built by `P12-TSK-019`, 2026-10-19 - BNPL's auto-collection, the same shape: per billed instalment and business date,
 `bnpl.bnpl_collection_attempt UNIQUE (instalment_id, attempt_date)` beneath the obligation's row lock (B4), the attempt's
 repayment born under `<instalment>:<date>` (`bnpl_repayment UNIQUE (obligation_id, kind, request_key)`), never back-filled
@@ -2298,6 +2304,14 @@ change; every decision derives the condition live. Verified by `DelinquencyDatab
 `#currentToEachBucketAndCure`, `#defaultAtNinetyClearedAtCure`, `#reRunningADayWritesNothing`,
 `#aMissedDayComputesFromTheDates`, `#theHistoryIsAppendOnlyForEveryRole`) and `DelinquencyStateTest`; probes in
 `MUTATION_TESTING.md` section 2.)*
+
+*(As built by `P12-TSK-020`, 2026-10-19 - BNPL's conditions by analogy, the same shape: `bnpl V013`'s `bnpl_condition_event`,
+`UNIQUE (obligation_id, business_date, kind)`, `SELECT, INSERT` only, its trigger re-taking B4 and holding every row to the
+derivation - `days_past_due = bnpl.days_past_due(obligation, business_date)` over every component (an unpaid late fee keeps
+its instalment past due), the bucket under the pinned bounds, the flag's rule, a change from the latest row of its kind,
+never dated before a recorded change, never on a closed obligation. Verified hermetically by `BnplConditionsTest` and
+`BnplDelinquencyStateTest` (run) and by `BnplConditionDatabaseTest` (owed a first run); probes in `MUTATION_TESTING.md`
+section 2.)*
 
 ### INV-LND-13 — Lending capital is recognised only from bank evidence and never over-deployed
 **Statement:** The `LENDING_CAPITAL` account of a currency is credited only by bank recognition of a

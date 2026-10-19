@@ -528,6 +528,8 @@ class BnplRepaymentDatabaseTest {
         final BnplServicing servicing = new BnplServicing(SERVICING, PURCHASES, TERMS_STORE, book, closures,
                 new BnplCollections(new JdbcBnplCollectionStore(), repayments, PURCHASES, ports, book,
                         new JdbcOutboxWriter(), IDS, CLOCK),
+                new BnplConditions(new JdbcBnplConditionStore(), PURCHASES, TERMS_STORE, book, new JdbcOutboxWriter(),
+                        IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
                 (uow, party) -> standing, ports, ports, ports, ports, book, new JdbcOutboxWriter(), new JdbcAuditWriter(),

@@ -13,9 +13,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The BNPL terms the tests propose (`P12-TSK-004`) - the plan's defaults (A4-A7, A13, A14, A17, A22, OQ-10): a late fee
- * of EUR 5.00 on day 5 past due after 3 days' grace, capped at EUR 15.00 per agreement (tests configure one, production
- * none - A13); buckets from 1 to the default at 90; fees, interest, principal, the excess held as credit; daily partial
+ * The BNPL terms the tests propose (`P12-TSK-004`) - the plan's defaults (A4-A7, A13, A14, A17, A22, OQ-10): no late fee
+ * unless a suite pins one (`P12-TSK-020`; the condition and late-fee suites pin EUR 5.00), on day 5 past due after 3 days'
+ * grace, capped at EUR 15.00 per agreement (tests configure one, production none - A13); buckets from 1 to the default at 90; fees, interest, principal, the excess held as credit; daily partial
  * auto-collection; UTC; a 30-minute offer cap; a 14-day dispute window and a EUR 250.00 dispute four-eyes threshold; a
  * 30-day payoff horizon. And credit's bounds as {@code CreditProduct} declares them ({@code CreditBnplProductBoundsTest}
  * holds them equal): pay-in-4 EUR 50.00 to 1,000.00, pay-in-N EUR 200.00 to 5,000.00 over 3, 6 or 12 months.
@@ -67,7 +67,9 @@ final class BnplTermsFixtures {
     private static BnplTerms.BnplTermsBuilder common(BnplProduct product) {
         return BnplTerms.builder()
                 .product(product)
-                .lateFee(euros(5_00))
+                // No late fee unless a suite asks (P12-TSK-020): the auto-collection precedent - every suite written before
+                // the late-fee step services exactly as it did; the condition and late-fee suites pin lateFee(5.00).
+                .lateFee(euros(0))
                 .lateFeeDay(5)
                 .lateFeeCap(euros(15_00))
                 .graceDays(3)

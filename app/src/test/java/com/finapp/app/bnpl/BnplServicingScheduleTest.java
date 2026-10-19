@@ -88,7 +88,7 @@ class BnplServicingScheduleTest {
         BnplServicingMetrics metrics = new BnplServicingMetrics(registry, new BnplRepaymentMetrics(registry));
         assertThat(registry.find(BnplServicingMetrics.BILLING).counters()).hasSize(2 * 2);
         assertThat(registry.find(BnplServicingMetrics.SERVICING).counters())
-                .as("P12-TSK-018 adds closure/closed").hasSize(6);
+                .as("P12-TSK-018 adds closure/closed, P12-TSK-020 condition/recorded").hasSize(7);
         metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 3, 1,
                 true));
         metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 0, 0,
@@ -140,6 +140,27 @@ class BnplServicingScheduleTest {
         assertThat(repayment(registry, "insufficient_funds")).isEqualTo(2.0);
         assertThat(registry.get(BnplRepaymentMetrics.REPAYMENT).tags("kind", "customer", "outcome", "closed").counter()
                 .count()).as("the customer's door untouched").isZero();
+    }
+
+    @Test
+    @DisplayName("finapp.bnpl.fee{outcome} is registered at zero for assessed and capped; a committed step counts each"
+            + " fee once by its outcome and each condition change as servicing{condition, recorded} - never an amount or"
+            + " a DPD (P12-TSK-020)")
+    void theConditionAndFeeMeters() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplServicingMetrics metrics = new BnplServicingMetrics(registry, new BnplRepaymentMetrics(registry));
+        assertThat(registry.find(BnplServicingMetrics.FEE).counters()).hasSize(2)
+                .allSatisfy(counter -> assertThat(counter.count()).isZero());
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 0, 0,
+                false, false, java.util.Map.of(), 2, 3, 1));
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_N), 0, 0,
+                false, false, java.util.Map.of(), 1, 1, 0));
+        assertThat(registry.get(BnplServicingMetrics.FEE).tags("outcome", "assessed").counter().count()).isEqualTo(3.0);
+        assertThat(registry.get(BnplServicingMetrics.FEE).tags("outcome", "capped").counter().count()).isEqualTo(1.0);
+        assertThat(servicing(registry, "condition", "recorded")).isEqualTo(3.0);
+        assertThat(registry.find(BnplServicingMetrics.FEE).counters()).allSatisfy(counter ->
+                assertThat(counter.getId().getTags()).extracting(io.micrometer.core.instrument.Tag::getKey)
+                        .containsExactly("outcome"));
     }
 
     @Test

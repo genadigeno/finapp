@@ -423,6 +423,8 @@ class BnplBillingDatabaseTest {
                 new BnplCollections(new JdbcBnplCollectionStore(), new BnplRepayments(new JdbcBnplRepaymentStore(),
                         SERVICING, PURCHASES, TERMS_STORE, ports, book, closures, new JdbcOutboxWriter(), IDS, CLOCK),
                         PURCHASES, ports, book, new JdbcOutboxWriter(), IDS, CLOCK),
+                new BnplConditions(new JdbcBnplConditionStore(), PURCHASES, TERMS_STORE, book, new JdbcOutboxWriter(),
+                        IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE,
                 book, IDS);
