@@ -1267,6 +1267,8 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.RepaymentNotReversible` | 409 | The BNPL repayment cannot be reversed. |
 | `bnpl.WaiverExceedsDue` | 422 | The waiver exceeds what is due of the fee. |
 | `bnpl.WalletUnavailable` | 409 | The customer's wallet cannot be credited now; nothing was posted. |
+| `bnpl.DisputeOpen` | 409 | The BNPL purchase has an open dispute. |
+| `bnpl.DisputeNotActionable` | 409 | The BNPL dispute is not open to this act. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its

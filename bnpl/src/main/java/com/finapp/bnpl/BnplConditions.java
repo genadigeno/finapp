@@ -114,7 +114,7 @@ public final class BnplConditions {
         boolean previouslyDefaulted = store.latest(unitOfWork, obligation, BnplConditionKind.DEFAULT)
                 .map(event -> event.state().defaulted()).orElse(false);
         return BnplDelinquencyState.derive(purchases.billedItems(unitOfWork, obligation), today, pinned,
-                previouslyDefaulted);
+                previouslyDefaulted, purchases.disputeHold(unitOfWork, obligation));
     }
 
     // ------------------------------------------------------------------ the condition step
@@ -148,8 +148,9 @@ public final class BnplConditions {
         }
         Optional<BnplDelinquencyBucket> recordedBucket = latestBucket.flatMap(event -> event.state().bucket());
         boolean recordedDefault = latestDefault.map(event -> event.state().defaulted()).orElse(false);
+        // The dispute hold (`P12-TSK-023`): a held instalment is not past due; a lifted one counts from its lift.
         BnplDelinquencyState state = BnplDelinquencyState.derive(purchases.billedItems(unitOfWork, obligation.id()),
-                today, pinned, recordedDefault);
+                today, pinned, recordedDefault, purchases.disputeHold(unitOfWork, obligation.id()));
         int appended = 0;
         if (!state.bucket().equals(recordedBucket)) {
             BnplConditionEvent change = new BnplConditionEvent(ids.next(), obligation.id(), today,
@@ -209,9 +210,15 @@ public final class BnplConditions {
         int capped = 0;
         List<BnplPurchaseStore.BilledItem> items = purchases.billedItems(unitOfWork, obligation.id()).stream()
                 .sorted(java.util.Comparator.comparing(BnplPurchaseStore.BilledItem::dueDate)).toList();
+        BnplDisputeHold hold = purchases.disputeHold(unitOfWork, obligation.id());
         for (BnplPurchaseStore.BilledItem item : items) {
-            if (ChronoUnit.DAYS.between(item.dueDate(), today) < pinned.lateFeeDay()) {
-                break; // Oldest first: every later instalment is younger.
+            if (hold.heldOn(item.dueDate(), today)) {
+                continue; // The dispute hold (`P12-TSK-023`): no late fee on a held instalment.
+            }
+            if (ChronoUnit.DAYS.between(hold.clockFrom(item.dueDate(), today), today) < pinned.lateFeeDay()) {
+                // Its own age, counted from a lift's business date when a dispute held it (ADR-0106 decision 3) - so a
+                // later instalment may be older than this one: each is judged, none skipped by order.
+                continue;
             }
             if (charged.contains(item.instalment())
                     || !item.due(AllocationComponent.INTEREST).plus(item.due(AllocationComponent.PRINCIPAL)).isPositive()) {

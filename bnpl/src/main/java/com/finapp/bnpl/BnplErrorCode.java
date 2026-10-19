@@ -188,7 +188,21 @@ public enum BnplErrorCode implements ErrorCode {
      * The wallet the reversed repayment debited cannot be credited now - absent or not {@code ACTIVE} (`P12-TSK-024`;
      * lending's {@code WalletUnavailable}). Nothing was posted; the proposal is still {@code PROPOSED}.
      */
-    WALLET_UNAVAILABLE("bnpl.WalletUnavailable", 409, "The customer's wallet cannot be credited now; nothing was posted.");
+    WALLET_UNAVAILABLE("bnpl.WalletUnavailable", 409, "The customer's wallet cannot be credited now; nothing was posted."),
+
+    /**
+     * The purchase already has an open dispute (`P12-TSK-023`; ADR-0106 decisions 1 and 7): a second dispute is refused, and
+     * so is a merchant's or an operator's refund - the merchant settles a disputed purchase by accepting the dispute.
+     * Judged under the purchase's row lock; nothing was written.
+     */
+    DISPUTE_OPEN("bnpl.DisputeOpen", 409, "The BNPL purchase has an open dispute."),
+
+    /**
+     * The dispute is not in the act's from-state (`P12-TSK-023`; ADR-0106 decision 2): already answered, resolved or
+     * withdrawn, or - for the merchant's response - its response deadline has passed on the database clock (the deadline
+     * resolves it as a refund); nothing was written.
+     */
+    DISPUTE_NOT_ACTIONABLE("bnpl.DisputeNotActionable", 409, "The BNPL dispute is not open to this act.");
 
     private final String code;
     private final int status;

@@ -197,5 +197,14 @@ Financial impact: none new — a dispute's only money is a refund's.
   merchant's read of its BNPL purchases gains the dispute's state and deadline.
 - `P12-TST-001` and `P12-TST-002` — disputes racing refunds, collections and payoffs; random dispute sequences in the
   battery, Σ refunds ≤ G per purchase at every round.
+- **As built by `P12-TSK-023`** (2026-10-19, `bnpl V015`): decisions 1-9, 11 and 12 as written, with these readings - the
+  hold's record is the dispute's own `bnpl_dispute_hold` rows by due date, not `bnpl_condition_event` kinds (that table's
+  `UNIQUE (obligation_id, business_date, kind)` and its derivation trigger are delinquency's); an instalment touched by the
+  dry run is held whole (collection, DPD, fee), its clock after any lift restarting at the lift's business date; the
+  proposal is `bnpl_dispute_proposal`, its four-eyes a `CHECK`; the machine row is money-free (the claim INSERT-only); the
+  merchant close's rule is the opening taking the payable at (P) and the close's settled-payable port asking
+  `BnplDisputeStore.anyOpenAtMerchant`; the merchant's response needs its key, not the refund scope. Payoff and voluntary
+  repayment are not paused by a dispute (the customer's own acts; what they pay on held instalments returns as excess on a
+  refund outcome). `bnpl.days_past_due` replaced; the fee, collection and refund ranks are new triggers beside the old.
 - **Acceptance.** `Proposed` at the Phase 11 → 12 transition (2026-10-16); read against the code and accepted by the
   Phase 12 exit review (`P12-DOC-001`).

@@ -209,6 +209,11 @@ public final class BnplRefundDesk {
                 metrics.record(exceeds.kind(), BnplRefundMetrics.Outcome.EXCEEDS_PURCHASE);
                 throw new ApiException(BnplErrorCode.REFUND_EXCEEDS_PURCHASE, "The refund exceeds the BNPL purchase",
                         "the refund exceeds what remains of the purchase; nothing was written.");
+            } catch (BnplRefunds.DisputeOpen disputed) {
+                // ADR-0106 decision 7 (`P12-TSK-023`): the merchant settles a disputed purchase by accepting the dispute.
+                metrics.record(disputed.kind(), BnplRefundMetrics.Outcome.DISPUTE_OPEN);
+                throw new ApiException(BnplErrorCode.DISPUTE_OPEN, "The BNPL purchase has an open dispute",
+                        "the purchase has an open dispute; refund it by accepting the dispute. Nothing was written.");
             } catch (BnplRefunds.RefundNotPostable notPostable) {
                 metrics.record(notPostable.kind(), BnplRefundMetrics.Outcome.NOT_POSTABLE);
                 throw new ApiException(BnplErrorCode.REFUND_NOT_POSTABLE, "The BNPL refund cannot be posted now",

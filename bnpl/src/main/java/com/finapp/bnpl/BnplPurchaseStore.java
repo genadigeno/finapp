@@ -83,6 +83,13 @@ public interface BnplPurchaseStore {
     List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation);
 
     /**
+     * The servicing hold the obligation's disputes place (`P12-TSK-023`; ADR-0106 decision 3): every held instalment of every
+     * dispute, with the business dates it was placed and lifted - read by the condition, the late-fee and the collection
+     * steps under the caller's B4 (a dispute opens and resolves under B5 then B4, so a step holding B4 reads it settled).
+     */
+    BnplDisputeHold disputeHold(Connection unitOfWork, BnplObligationId obligation);
+
+    /**
      * The purchase's status, unlocked (`P12-TSK-021`): read by the closure under its caller's B4 to name a refund's
      * reason - the purchase moves {@code FULLY_REFUNDED} only under B5 then B4, so a transaction holding B4 reads it settled.
      */

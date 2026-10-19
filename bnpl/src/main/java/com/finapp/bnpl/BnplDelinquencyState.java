@@ -53,12 +53,25 @@ public record BnplDelinquencyState(int daysPastDue, Optional<BnplDelinquencyBuck
      */
     public static BnplDelinquencyState derive(List<BnplPurchaseStore.BilledItem> items, LocalDate today, BnplTerms terms,
             boolean previouslyDefaulted) {
+        return derive(items, today, terms, previouslyDefaulted, BnplDisputeHold.NONE);
+    }
+
+    /**
+     * The condition under the obligation's dispute {@code hold} (`P12-TSK-023`; ADR-0106 decision 3): an instalment the hold
+     * covers on {@code today} is not past due, and every instalment counts from its {@link BnplDisputeHold#clockFrom clock
+     * start} - its due date when no dispute ever held it, so with no hold this is {@code P12-TSK-020}'s rule exactly
+     * ({@code bnpl V015}'s {@code bnpl.days_past_due}).
+     */
+    public static BnplDelinquencyState derive(List<BnplPurchaseStore.BilledItem> items, LocalDate today, BnplTerms terms,
+            boolean previouslyDefaulted, BnplDisputeHold hold) {
         Objects.requireNonNull(items, "items");
         Objects.requireNonNull(today, "today");
         Objects.requireNonNull(terms, "terms");
+        Objects.requireNonNull(hold, "hold");
         Optional<LocalDate> oldest = items.stream()
-                .filter(item -> item.dueDate().isBefore(today) && item.dueTotal().isPositive())
-                .map(BnplPurchaseStore.BilledItem::dueDate)
+                .filter(item -> item.dueTotal().isPositive() && !hold.heldOn(item.dueDate(), today))
+                .map(item -> hold.clockFrom(item.dueDate(), today))
+                .filter(from -> from.isBefore(today))
                 .min(LocalDate::compareTo);
         int dpd = oldest.map(due -> Math.toIntExact(ChronoUnit.DAYS.between(due, today))).orElse(0);
         boolean defaulted = dpd >= terms.defaultThresholdDays() || (previouslyDefaulted && dpd > 0);

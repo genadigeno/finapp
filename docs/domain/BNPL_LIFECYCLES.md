@@ -501,6 +501,20 @@ obligation's refund needs a postable wallet, else it is refused.)*
 | `MERCHANT_RESPONDED → RESOLVED_REFUND \| RESOLVED_UPHELD` ★ above the threshold | P, `BNPL_DISPUTE_RESOLVE`, `POST /v1/operator/bnpl-disputes/{id}/resolution`, key `bnpl.servicing:EMPLOYEE:<id>`, reasoned | B5, B4, B6 conditional `MERCHANT_RESPONDED`; `RESOLVED_REFUND` runs §4.9's body; `RESOLVED_UPHELD` lifts the hold and re-bills nothing (nothing was cancelled) | `403 bnpl.SelfApprovalRefused`, `403 bnpl.SelfDealingRefused` (both audited `FAILED`), `422 bnpl.ReasonRequired` | `BnplDisputeResolved` (+ `BnplRefundApplied`) | `bnpl.DisputeResolved` |
 | `OPEN \| MERCHANT_RESPONDED → WITHDRAWN` | C, the dispute's withdrawal (route `-023`'s) | B5, B4, B6 conditional; the hold lifted | — | `BnplDisputeResolved` (`WITHDRAWN`) | — *(no audit act in the plan's §11 — `-023` decides)* |
 
+*(As built by `P12-TSK-023`, `bnpl V015` and `BnplDisputes`: (a) acceptance resolves at once - the merchant's door takes
+`CONTEST` (with a statement) or `ACCEPT`; (b) ★ is the proposal shape: above the pinned `dispute_four_eyes_threshold` (`D >`
+it) the operator's `…/resolution` makes a `bnpl_dispute_proposal` (`PROPOSED`), another `BNPL_DISPUTE_RESOLVE` holder approves
+(`…/resolution/approval`, executing the outcome) or any rejects (`…/resolution/rejection`, the proposer's withdrawal
+included); the proposal's four-eyes `CHECK` and the dispute edge's rank beneath; (c) a refund while a dispute is open is
+refused (`409 bnpl.DisputeOpen`, ADR-0106 decision 7), so `G - refunded` cannot shrink between the opening and the
+resolution - the refund outcome refunds exactly `D` and `RESOLVED_REFUND` always names its refund (`bnpl_refund.dispute_id`,
+door `DISPUTE`); (d) confirmed - the hold is the dispute's own rows (`bnpl_dispute_hold`, by due date), never a condition
+row; (e) confirmed, and the opening also takes the merchant's payable `FOR UPDATE` at (P), refusing a closed one
+(`409 bnpl.RefundNotPostable`) - the merchant close asks the same row whether a dispute is open (decision 11); (f) the
+withdrawal's door is `POST /v1/me/bnpl-disputes/{id}/withdrawal` and it is audited (`bnpl.DisputeWithdrawn`); no event
+announces the merchant's contest. The machine row carries no money - the amount is `bnpl_dispute_claim`'s, INSERT-only
+(`BnplSchemaHasNoMutableMoneyTest`).)*
+
 **One bound, two paths** (`INV-BNPL-08`, ADR-0106): a dispute's refund outcome *is* a `BnplRefund`, under
 the same B5 lock and the same `INV-BNPL-07` bound as a merchant refund, so at most the gross ever returns to
 the customer's side — whichever of a merchant refund and a dispute resolution commits first, the other

@@ -3800,7 +3800,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_refund` | `purchase_id` | `CONFIDENTIAL` | Its purchase - the bound's subject |
 | `bnpl_refund` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation |
 | `bnpl_refund` | `merchant_id` | `INTERNAL` | The merchant by value - the tenant of every merchant read |
-| `bnpl_refund` | `door` | `INTERNAL` | `MERCHANT` or `OPERATOR` |
+| `bnpl_refund` | `door` | `INTERNAL` | `MERCHANT`, `OPERATOR` or - a dispute's refund outcome, `P12-TSK-023` - `DISPUTE` |
 | `bnpl_refund` | `requested_by` | `RESTRICTED-PII` | Who asked - the merchant, or the operator's identity (`audit_record.actor_id`'s reasoning) |
 | `bnpl_refund` | `refund_key` | `CONFIDENTIAL` | The requester's idempotency key |
 | `bnpl_refund` | `currency` | `INTERNAL` | Its currency |
@@ -3917,6 +3917,64 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_waiver_decision` | `decision_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
 | `bnpl_waiver_decision` | `journal_entry_id` | `INTERNAL` | F7's entry (`bnpl.waiver:<id>` in the ledger's reversal scope), by value - exactly when `APPROVED` |
 | `bnpl_waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
+| `bnpl_refund` | `dispute_id` | `CONFIDENTIAL` | The dispute a refund of door `DISPUTE` resolves (`P12-TSK-023`); NULL for the merchant's and the operator's doors |
+| `bnpl_dispute` | `id` | `INTERNAL` | Generated (`P12-TSK-023`) |
+| `bnpl_dispute` | `purchase_id` | `CONFIDENTIAL` | The purchase contested |
+| `bnpl_dispute` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation - the hold's subject |
+| `bnpl_dispute` | `merchant_id` | `INTERNAL` | The merchant by value - the tenant of every merchant read |
+| `bnpl_dispute` | `party_id` | `CONFIDENTIAL` | The customer - the owner of every customer read |
+| `bnpl_dispute` | `agreement_id` | `CONFIDENTIAL` | The agreement whose pinned terms set the window and the threshold |
+| `bnpl_dispute` | `terms_version_id` | `INTERNAL` | The pinned terms version |
+| `bnpl_dispute` | `status` | `INTERNAL` | `BnplDisputeStatus` |
+| `bnpl_dispute` | `reason_category` | `INTERNAL` | `BnplDisputeReason` - the only reason the merchant sees |
+| `bnpl_dispute` | `reason` | `RESTRICTED-PII` | The customer's own words, screened for card and account numbers; the operator's audited read alone shows them |
+| `bnpl_dispute` | `request_key` | `CONFIDENTIAL` | The customer's idempotency key - never logged or answered |
+| `bnpl_dispute` | `opened_at` | `INTERNAL` | System time, stamped by the trigger after B5 and B4 |
+| `bnpl_dispute` | `opened_business_date` | `INTERNAL` | The opening's business date in the pinned zone - where the hold starts |
+| `bnpl_dispute` | `response_deadline_at` | `INTERNAL` | The opening plus the pinned window (OQ-10) |
+| `bnpl_dispute` | `next_sweep_at` | `INTERNAL` | The deadline sweep's permit |
+| `bnpl_dispute` | `merchant_statement` | `RESTRICTED-PII` | The merchant's evidence or acceptance note - may name the customer; the operator's audited read alone shows it |
+| `bnpl_dispute` | `merchant_responded_at` | `INTERNAL` | System time of the merchant's answer |
+| `bnpl_dispute` | `resolved_by` | `RESTRICTED-PII` | Who resolved it - `SYSTEM`, the merchant, the customer or the operator's identity (`audit_record.actor_id`'s reasoning) |
+| `bnpl_dispute` | `resolution_reason` | `RESTRICTED-PII` | The operator's reason, screened |
+| `bnpl_dispute` | `resolved_at` | `INTERNAL` | System time of the resolution |
+| `bnpl_dispute` | `resolved_business_date` | `INTERNAL` | The lift's business date - where a held instalment's clock restarts |
+| `bnpl_dispute` | `refund_id` | `CONFIDENTIAL` | The refund a refund outcome executed |
+| `bnpl_dispute` | `proposal_id` | `INTERNAL` | The approved four-eyes proposal |
+| `bnpl_dispute` | `correlation_id` | `INTERNAL` | The opening's correlation |
+| `bnpl_dispute_claim` | `dispute_id` | `INTERNAL` | Its dispute |
+| `bnpl_dispute_claim` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_dispute_claim` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_dispute_claim` | `amount_minor` | `RESTRICTED-FINANCIAL` | D - the amount disputed |
+| `bnpl_dispute_claim` | `refunded_before_minor` | `RESTRICTED-FINANCIAL` | The purchase's refunds at the opening |
+| `bnpl_dispute_hold` | `id` | `INTERNAL` | Generated |
+| `bnpl_dispute_hold` | `dispute_id` | `INTERNAL` | Its dispute |
+| `bnpl_dispute_hold` | `obligation_id` | `CONFIDENTIAL` | The obligation held |
+| `bnpl_dispute_hold` | `sequence` | `INTERNAL` | The instalment's sequence |
+| `bnpl_dispute_hold` | `instalment_id` | `INTERNAL` | The instalment of the version in force |
+| `bnpl_dispute_hold` | `due_date` | `INTERNAL` | The instalment's due date - the hold's key, stable across versions |
+| `bnpl_dispute_hold` | `kind` | `INTERNAL` | `UNBILLED` or `BILLED_UNPAID` at the opening |
+| `bnpl_dispute_hold` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_dispute_hold` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_dispute_hold` | `held_principal_minor` | `RESTRICTED-FINANCIAL` | The principal a refund of D would cancel on it |
+| `bnpl_dispute_proposal` | `id` | `INTERNAL` | Generated |
+| `bnpl_dispute_proposal` | `dispute_id` | `INTERNAL` | Its dispute |
+| `bnpl_dispute_proposal` | `outcome` | `INTERNAL` | `RESOLVED_REFUND` or `RESOLVED_UPHELD` |
+| `bnpl_dispute_proposal` | `status` | `INTERNAL` | `PROPOSED`, `APPROVED`, `REJECTED` |
+| `bnpl_dispute_proposal` | `proposed_by` | `RESTRICTED-PII` | The proposing operator's identity |
+| `bnpl_dispute_proposal` | `proposal_reason` | `RESTRICTED-PII` | The proposer's reason, screened |
+| `bnpl_dispute_proposal` | `proposed_at` | `INTERNAL` | System time |
+| `bnpl_dispute_proposal` | `decided_by` | `RESTRICTED-PII` | The deciding operator's identity - never the proposer's on an approval |
+| `bnpl_dispute_proposal` | `decision_reason` | `RESTRICTED-PII` | The decider's reason, screened |
+| `bnpl_dispute_proposal` | `decided_at` | `INTERNAL` | System time |
+| `bnpl_dispute_proposal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_dispute_event` | `id` | `INTERNAL` | Generated |
+| `bnpl_dispute_event` | `dispute_id` | `INTERNAL` | Its dispute |
+| `bnpl_dispute_event` | `from_status` | `INTERNAL` | The state it left (none at birth) |
+| `bnpl_dispute_event` | `to_status` | `INTERNAL` | The state it entered |
+| `bnpl_dispute_event` | `actor` | `RESTRICTED-PII` | Who moved it - as `resolved_by` |
+| `bnpl_dispute_event` | `occurred_at` | `INTERNAL` | System time |
+| `bnpl_dispute_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

@@ -10,7 +10,7 @@ import java.util.Objects;
  * {@code finapp.bnpl.refund{kind, outcome}} (`P12-TSK-021`; {@code PHASE_12_PLAN.md} section 15 - the refund rate). A
  * refund is counted once, after its transaction committed or its refusal rolled back: {@code applied}, {@code closed}
  * (applied, and it closed the obligation), or the refund's own refusal under the purchase's lock
- * ({@code exceeds_purchase}, {@code fully_refunded}, {@code not_postable}, {@code self_dealing_refused}) - {@code kind}
+ * ({@code exceeds_purchase}, {@code fully_refunded}, {@code not_postable}, {@code self_dealing_refused}, {@code dispute_open}) - {@code kind}
  * {@code full} when it asked for all that remained of the purchase, else {@code partial}. A replayed key, an unknown
  * purchase, a malformed amount, a missing reason or a key without the refund scope count nothing here (the scope's refusal
  * is its audit record). A refused conservation counts {@code finapp.bnpl.allocation.anomaly} - the one counter of the
@@ -29,7 +29,9 @@ public final class BnplRefundMetrics {
         EXCEEDS_PURCHASE,
         FULLY_REFUNDED,
         NOT_POSTABLE,
-        SELF_DEALING_REFUSED;
+        SELF_DEALING_REFUSED,
+        /** Refused while the purchase has an open dispute (`P12-TSK-023`, ADR-0106 decision 7). */
+        DISPUTE_OPEN;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);

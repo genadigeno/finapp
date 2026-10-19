@@ -2638,7 +2638,8 @@ body in the same transaction) + `DB-CONSTRAINT` (`bnpl_dispute` partial `UNIQUE 
 open states; the refund bound's trigger shared by both paths). If card-funded instalments are ever
 admitted (excluded by owner decision B6), `INV-DSP-01` must be extended to this bound first.
 **Verify:** Scenario 10 — `BnplDisputeDatabaseTest#disputeRefundAndMerchantRefundShareOneBound`
-(`P12-TSK-023`); the probe skipping the purchase lock in a refund turning scenario 10 red
+(`P12-TSK-023`, written and owed a first run), hermetically `BnplDisputesTest#aRefundThenADisputeShareOneBound` and
+`#aDisputeThenARefundShareOneBound`; the probe skipping the purchase lock in a refund turning scenario 10 red
 (`MUTATION_TESTING.md` §2); disputes and refunds racing on shared purchases in the storm, Σ refunds ≤
 gross at every round (`P12-TST-001`).
 **Phase:** 12

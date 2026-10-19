@@ -520,6 +520,16 @@ class CredentialReachesNoEmittedSinkTest {
                         // quote's to name, and neither body carries an amount, party, wallet or key.
                         "BnplPayoffQuoteBody",
                         "BnplPayoffBody",
+                        // P12-TSK-023: the dispute doors. No secret in any. The customer's opening carries an amount and
+                        // its currency, a category CODE and the reason (RESTRICTED-PII, screened for card and account
+                        // numbers at the domain and by bnpl V015's CHECKs); the merchant's response a decision CODE and
+                        // its statement (screened the same); the operator's resolution an outcome CODE and a reason, and a
+                        // decision on a proposal the proposal's opaque id and a reason. Closed: the merchant is the key's,
+                        // the party the session's, and no body carries an instalment, a wallet or a key.
+                        "BnplDisputeOpeningBody",
+                        "BnplDisputeResponseBody",
+                        "BnplDisputeResolutionBody",
+                        "BnplDisputeDecisionBody",
                         // P11-TSK-012: the customer's acceptance - the offer's terms hash (a public SHA-256 of terms the
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.

@@ -70,7 +70,22 @@ public record BnplRefund(
         MERCHANT,
 
         /** An operator, beside the merchant's door (ADR-0105 decision 9; {@code PAYMENT_REFUND}). */
-        OPERATOR
+        OPERATOR,
+
+        /**
+         * A dispute resolved as a refund (`P12-TSK-023`, ADR-0106 decision 6) - requested by {@code DISPUTE:<dispute>} under
+         * the dispute's id as its key, so one dispute refunds at most once ({@code bnpl_refund UNIQUE (dispute_id)}).
+         */
+        DISPUTE
+    }
+
+    /** The prefix of a dispute's refund's requester: {@code DISPUTE:<dispute>} (`P12-TSK-023`). */
+    public static final String DISPUTE_REQUESTER = "DISPUTE:";
+
+    /** The dispute a {@link Door#DISPUTE} refund resolves - read from its requester (`P12-TSK-023`). */
+    public Optional<UUID> dispute() {
+        return door == Door.DISPUTE ? Optional.of(UUID.fromString(requestedBy.substring(DISPUTE_REQUESTER.length())))
+                : Optional.empty();
     }
 
     /** Where the excess owed to the customer went. */
@@ -114,6 +129,10 @@ public record BnplRefund(
         adjustments = List.copyOf(Objects.requireNonNull(adjustments, "adjustments must not be null"));
         if (!amount.isPositive()) {
             throw new IllegalArgumentException("a refund is positive");
+        }
+        if (door == Door.DISPUTE && !(requestedBy.startsWith(DISPUTE_REQUESTER)
+                && requestedBy.substring(DISPUTE_REQUESTER.length()).equals(refundKey))) {
+            throw new IllegalArgumentException("a dispute's refund is requested by DISPUTE:<dispute> under the dispute's id");
         }
         if (!feeReturned.plus(payableDebit).equals(amount)) {
             throw new IllegalArgumentException("a refund is the fee returned plus the payable's debit");

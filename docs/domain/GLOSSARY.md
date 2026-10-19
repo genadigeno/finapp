@@ -1697,7 +1697,12 @@ RESOLVED_REFUND | RESOLVED_UPHELD`, `OPEN → RESOLVED_REFUND` when the merchant
 past its 14-day window (OQ-10), `→ WITHDRAWN` by the customer — at most one open per purchase, holding
 the disputed amount from late fees, Days Past Due and auto-collection while open. A refund outcome
 executes a BNPL Refund under the same lock and the same bound, so refund and dispute never
-double-credit (`INV-BNPL-08`). Planned (`P12-TSK-023`).
+double-credit (`INV-BNPL-08`). Built by `P12-TSK-023` (`bnpl V015`): the money-free machine row beside
+its INSERT-only claim and hold; above the pinned four-eyes threshold an operator's resolution is a proposal
+another holder of `BNPL_DISPUTE_RESOLVE` approves. **The dispute hold** - a condition, never a state - is
+read from the dispute rows: a held instalment (by its due date) takes no auto-collection, no Days Past Due
+and no late fee while the dispute is open, and after the lift counts both from the later of its due date
+and the lift's business date.
 **Not:** payments' Dispute or a Chargeback: no card network stands behind a BNPL purchase, so the
 financed amount has no chargeback; one can arise only on a card-funded wallet top-up, which is
 payments' and unrelated to the agreement (`INV-DSP-01`). Nor Delinquency.
