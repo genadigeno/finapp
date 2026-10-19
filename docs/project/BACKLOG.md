@@ -21061,7 +21061,7 @@ after everything.
   rank); the key issuance's `?scope=` parameter and the key list's `scopes`. **The B7 amendment is in force** from this
   task's merge (`INV-MER-07`).
 - **Refinements of the backlog, with reasons**: (1) **the refund's unique is `(merchant_id, requested_by, refund_key)`**,
-  not `(merchant_id, refund_key)` - the operator's door keys per operator (`EMPLOYEE:<id>`), and two operators, or an
+  not `(merchant_id, refund_key)` - the operator's door keys per operator (`OPERATOR:<identity>`), and two operators, or an
   operator and the merchant, are distinct requesters; at the merchant's door it is the same rule. (2) **Schedule version
   n+1 is a whole schedule** (the billed instalments carried as new rows, their billed principal and interest; the
   unbilled tail as the refund left it), so `V009`'s periods and the billing's period and principal rules hold unchanged;
@@ -21081,7 +21081,7 @@ after everything.
   also when a later servicing step refunds a credit balance the refund held (OQ-13); `REFUNDED_PARTIALLY_REPAID` only in
   a partial refund's own transaction; `REPAID` otherwise (`BNPL_LIFECYCLES.md` §4.7, read with OQ-13). (7) **The operator
   door** - the plan named none (OQ-9): `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, the ADR's
-  default (the payments refund's one permission, held by `LEDGER_OPERATOR`), keyed `bnpl.refund:EMPLOYEE:<id>`, the
+  default (the payments refund's one permission, held by `LEDGER_OPERATOR`), keyed per operator (`bnpl.refund:<actor type>:<id>` - `CUSTOMER`-typed for an operator session today, the platform's known debt), the
   reason audited, an operator of the purchase's own party refused `403 bnpl.SelfDealingRefused` and recorded `FAILED`.
   (8) **The 403 is `bnpl.RefundScopeRequired`** (the backlog's "`403` for a key without the scope", the ADR's "merchant's
   key-scope refusals"): judged at bnpl's door, recorded `FAILED` (`bnpl.RefundScopeRefused`). (9) **The scope is issued

@@ -473,7 +473,7 @@ machine's rows and entry are `-021`'s.)*
 *(As built by `P12-TSK-021`, `bnpl V012` and `BnplRefunds` - T-ref, one body for both doors: the merchant's (`POST
 /v1/merchant/bnpl-purchases/{id}/refunds`, a key issued with the `BNPL_REFUND` scope, keyed `bnpl.refund:MERCHANT:<merchant>`;
 a key without it `403 bnpl.RefundScopeRequired`, recorded `FAILED`) and the operator's beside it (`POST
-/v1/operator/bnpl-purchases/{id}/refunds`, `PAYMENT_REFUND`, keyed `bnpl.refund:EMPLOYEE:<id>`; self-dealing refused, recorded
+/v1/operator/bnpl-purchases/{id}/refunds`, `PAYMENT_REFUND`, keyed `bnpl.refund:<actor type>:<id> (CUSTOMER-typed for an operator session today)`; self-dealing refused, recorded
 `FAILED`). The reason screened; B5 merchant-scoped; the key's refund converges (`UNIQUE (merchant_id, requested_by,
 refund_key)`); the bound; B4; pay-in-N caught up (the door runs T-acc in its own transaction first); the position from the
 rows; the split; schedule and agreement v n+1 - pay-in-4 shortened from the end, pay-in-N `recalculateAtInstalment`, every

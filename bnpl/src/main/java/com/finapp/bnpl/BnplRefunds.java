@@ -213,12 +213,15 @@ public final class BnplRefunds {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        if (actor.type() != ActorType.EMPLOYEE) {
-            throw new IllegalStateException("the operator's refund door is an employee's");
+        // A person's session - an operator session's actor is CUSTOMER-typed today (the platform issues no EMPLOYEE
+        // actors to sessions yet, CURRENT_STATE.md's Known Architectural Debt), so the door admits either; never the
+        // system's or a merchant's.
+        if (actor.type() != ActorType.EMPLOYEE && actor.type() != ActorType.CUSTOMER) {
+            throw new IllegalStateException("the operator's refund door is a person's");
         }
         String reason = BnplReasons.reasoned(request.reason());
         BnplRefundStore.LockedPurchase locked = store.lock(unitOfWork, purchase).orElseThrow(PurchaseNotFound::new);
-        return refund(unitOfWork, locked, BnplRefund.Door.OPERATOR, "EMPLOYEE:" + actor.id(), request, reason, actor,
+        return refund(unitOfWork, locked, BnplRefund.Door.OPERATOR, "OPERATOR:" + actor.id(), request, reason, actor,
                 correlation);
     }
 

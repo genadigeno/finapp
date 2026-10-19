@@ -23,8 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
  * merchant's behalf - for a merchant that cannot act over its key (suspended, or instructing out of band). Its own route,
  * because the authentication populations are disjoint (ADR-0052; {@code OperatorMerchantPayoutController}'s precedent).
  * {@code PAYMENT_REFUND} - the payments refund's one permission, the money-operating population (the ADR's default);
- * keyed per operator ({@code bnpl.refund:EMPLOYEE:<id>}), a reason required and audited with actor, target, reason,
- * correlation and outcome; an operator's refund of their own party's purchase is {@code 403 bnpl.SelfDealingRefused},
+ * keyed per operator ({@code bnpl.refund:<actor type>:<id>} - {@code CUSTOMER}-typed for an operator session today), a
+ * reason required and audited with actor, target, reason, correlation and outcome; an operator's refund of their own party's purchase is {@code 403 bnpl.SelfDealingRefused},
  * recorded {@code FAILED}. The same T-ref body as the merchant's door: no four-eyes and no threshold review (OQ-9).
  */
 @RestController

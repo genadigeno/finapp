@@ -39,7 +39,8 @@ import org.springframework.transaction.TransactionSystemException;
  * {@code POST /v1/merchant/bnpl-purchases/{id}/refunds} over the merchant's API key carrying the {@code BNPL_REFUND}
  * scope, keyed per merchant ({@code bnpl.refund:MERCHANT:<merchant>}), and the operator's door beside it,
  * {@code POST /v1/operator/bnpl-purchases/{id}/refunds} under {@code PAYMENT_REFUND}, keyed per operator
- * ({@code bnpl.refund:EMPLOYEE:<id>}). Each runs T-ref in one transaction under the {@link IdempotentExecutor} claim: a
+ * ({@code bnpl.refund:<actor type>:<id>} - {@code CUSTOMER}-typed for an operator session today). Each runs T-ref in
+ * one transaction under the {@link IdempotentExecutor} claim: a
  * retried key replays the recorded receipt ({@code INV-IDEM-01}: the database committed and the response was lost - the
  * retry answers the same refund), and a refusal, which writes nothing, rolls the claim back with it.
  *
@@ -110,9 +111,10 @@ public final class BnplRefundDesk {
         CorrelationId correlation = correlation();
         if (!merchant.holds(MerchantApiKeyScope.BNPL_REFUND)) {
             // Recorded FAILED in a transaction of its own - nothing else is read or written (fails closed).
+            // The target only when the path names a purchase identifier - never a caller's free text in the record.
+            String target = parsedOrMalformed(rawPurchaseId);
             transactions.inTransaction(uow -> {
-                refunds.recordScopeRefusal(uow, String.valueOf(rawPurchaseId), merchant.keyId().value().toString(),
-                        actor, correlation);
+                refunds.recordScopeRefusal(uow, target, merchant.keyId().value().toString(), actor, correlation);
                 return null;
             });
             throw new ApiException(BnplErrorCode.REFUND_SCOPE_REQUIRED, "The API key may not refund BNPL purchases",
@@ -314,6 +316,15 @@ public final class BnplRefundDesk {
             return Money.of(DecimalText.parse(body.amount()), currency);
         } catch (RuntimeException malformed) {
             throw invalid("the amount must be an exact decimal at the currency's minor units.");
+        }
+    }
+
+    /** The path's purchase identifier as a canonical UUID string, or {@code malformed} - for a refusal's audit target. */
+    static String parsedOrMalformed(String raw) {
+        try {
+            return UUID.fromString(raw).toString();
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            return "malformed";
         }
     }
 

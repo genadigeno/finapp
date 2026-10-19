@@ -91,7 +91,7 @@ CREATE TABLE bnpl.bnpl_refund (
     correlation_id                  text        NOT NULL,
     CONSTRAINT bnpl_refund_pk PRIMARY KEY (id),
     -- One refund per requester's key at a merchant (INV-IDEM-01): beneath the door's claim, the arbiter behind a lapsed
-    -- one - the merchant's own key (requested_by MERCHANT:<merchant>) or an operator's (EMPLOYEE:<id>).
+    -- one - the merchant's own key (requested_by MERCHANT:<merchant>) or an operator's (OPERATOR:<identity>).
     CONSTRAINT bnpl_refund_request_unique UNIQUE (merchant_id, requested_by, refund_key),
     -- One entry per refund: the ledger key bnpl.refund:<refund> beneath it.
     CONSTRAINT bnpl_refund_journal_entry_unique UNIQUE (journal_entry_id),
@@ -102,7 +102,7 @@ CREATE TABLE bnpl.bnpl_refund (
     CONSTRAINT bnpl_refund_door_is_known CHECK (door IN ('MERCHANT', 'OPERATOR')),
     CONSTRAINT bnpl_refund_requester_shape CHECK (
         (door = 'MERCHANT' AND requested_by = 'MERCHANT:' || merchant_id::text)
-        OR (door = 'OPERATOR' AND requested_by ~ '^EMPLOYEE:.{1,200}$')),
+        OR (door = 'OPERATOR' AND requested_by ~ '^OPERATOR:.{1,200}$')),
     CONSTRAINT bnpl_refund_key_bounded CHECK (char_length(refund_key) BETWEEN 1 AND 200),
     CONSTRAINT bnpl_refund_currency_is_the_products CHECK (currency = 'EUR' AND scale BETWEEN 0 AND 9),
     -- INV-BNPL-06 on the row: R is the fee returned plus the payable's debit, and the principal cancelled plus the excess.

@@ -55,7 +55,8 @@ class BnplRefundsTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final CorrelationId CORRELATION = CorrelationId.of("p12-tsk-021-unit");
     private static final Actor SYSTEM = new Actor("platform", ActorType.SYSTEM);
-    private static final Actor OPERATOR = new Actor("operator-7", ActorType.EMPLOYEE);
+    // An operator's session actor is CUSTOMER-typed today (the platform's known debt) - the door admits it.
+    private static final Actor OPERATOR = new Actor("operator-7", ActorType.CUSTOMER);
     private static final long GROSS = 600_00L;
     private static final LocalDate PURCHASE_DATE = LocalDate.of(2026, 10, 17);
 
@@ -444,7 +445,7 @@ class BnplRefundsTest {
         BnplRefund refund = world.inTransaction(() -> refunds.byOperator(BnplApplicationFakes.UOW, p4.purchase(),
                 request("op", eur(100_00)), OPERATOR, CORRELATION)).refund();
         assertThat(refund.door()).isEqualTo(BnplRefund.Door.OPERATOR);
-        assertThat(refund.requestedBy()).isEqualTo("EMPLOYEE:" + OPERATOR.id());
+        assertThat(refund.requestedBy()).isEqualTo("OPERATOR:" + OPERATOR.id());
         assertThat(world.audited).last().satisfies(record -> {
             assertThat(record.operation()).isEqualTo(BnplAuditAction.REFUND_APPLIED);
             assertThat(record.actor()).isEqualTo(OPERATOR);

@@ -93,6 +93,17 @@ class BnplRefundDeskTest {
     }
 
     @Test
+    @DisplayName("a scope refusal's audit target is the path's purchase identifier, canonical, or 'malformed' - never the"
+            + " caller's free text")
+    void aRefusalsTargetIsNeverFreeText() {
+        UUID purchase = IDS.next();
+        assertThat(BnplRefundDesk.parsedOrMalformed(purchase.toString().toUpperCase(java.util.Locale.ROOT)))
+                .isEqualTo(purchase.toString());
+        assertThat(BnplRefundDesk.parsedOrMalformed("'; DROP TABLE x; --")).isEqualTo("malformed");
+        assertThat(BnplRefundDesk.parsedOrMalformed(null)).isEqualTo("malformed");
+    }
+
+    @Test
     @DisplayName("a conservation refused at commit is recognised by its invariant - INV-BNPL-06 or -07 - and only it")
     void aRefusedConservationIsRecognised() {
         assertThat(BnplRefundDesk.refusedConservation(new IllegalStateException("wrapped", new IllegalStateException(

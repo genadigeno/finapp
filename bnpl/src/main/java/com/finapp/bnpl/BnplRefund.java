@@ -25,7 +25,7 @@ import java.util.UUID;
  * only.
  *
  * @param requestedBy who asked, under which key namespace: {@code MERCHANT:<merchant>} at the merchant's door,
- *     {@code EMPLOYEE:<id>} at the operator's - with {@code merchant} and {@code refundKey} the arbiter behind a lapsed
+ *     {@code OPERATOR:<identity>} at the operator's - with {@code merchant} and {@code refundKey} the arbiter behind a lapsed
  *     claim ({@code UNIQUE (merchant_id, requested_by, refund_key)})
  * @param refundedBefore Σ the purchase's committed refunds read under B5 - what the fee returned is cumulative over
  * @param interestAccruedReleased pay-in-N accrued interest released ({@code CR BNPL_INTEREST_ACCRUED}, A11)

@@ -1292,7 +1292,7 @@ the platform's `500`, counted `finapp.bnpl.allocation.anomaly`.
 
 The refund doors (`P12-TSK-021`, ADR-0105 decision 9; `POST /v1/merchant/bnpl-purchases/{id}/refunds` over the
 merchant's own API key carrying the `BNPL_REFUND` scope, keyed `bnpl.refund:MERCHANT:<merchant>`, and the operator's door
-beside it, `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, keyed `bnpl.refund:EMPLOYEE:<id>`,
+beside it, `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, keyed `bnpl.refund:<actor type>:<id> (CUSTOMER-typed for an operator session today)`,
 each `201`): `RefundExceedsPurchase` a refund above what remains of the purchase (`R > G - Σ refunds`, `INV-BNPL-07`)
 and `PurchaseFullyRefunded` any refund of a `FULLY_REFUNDED` purchase - both judged under the purchase's row lock, nothing
 written; `RefundScopeRequired` a merchant key not issued with the scope (every key issued before `merchant V011` - fails
