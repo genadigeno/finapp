@@ -1320,6 +1320,25 @@ figure moved - posts one `PAYOFF` repayment to every component, refunds any cred
 first); a payoff makes no schedule or agreement version. No rebate arithmetic: daily accrual makes it zero by construction.
 **Owned by:** `bnpl`
 
+### BNPL Repayment Reversal
+**Is:** the four-eyes undoing of one BNPL repayment applied by mistake - a `bnpl_repayment_reversal` proposed with a reason by
+a holder of `BNPL_SERVICE` and approved by a different holder of `BNPL_SERVICE_APPROVE` - posting F8, the ledger's
+`ReversalService` swap of the repayment's F3 entry exactly (the wallet credited back, the due accounts and any held credit
+debited), valued `max(today, floor)`; one negating `bnpl_repayment_allocation_reversal` row per allocation line, so what it
+paid is due again and every later allocation stands. The repayment's `REVERSED` status is derived from the approved row.
+Never a payoff's, never on a `CLOSED` obligation. Built by `P12-TSK-024` (`bnpl V016`, `BnplRepaymentReversals`).
+**Not:** a refund (the merchant's return of value) and not a waiver (income forgone); nothing is edited.
+**Owned by:** `bnpl`
+
+### BNPL Waiver
+**Is:** the four-eyes forgoing of an amount of one BNPL late fee's unpaid remainder - a `bnpl_waiver` and its born-once
+`bnpl_waiver_decision` - posting F7, the ledger's `ReversalService` of the fee's F4 entry for the amount (`DR BNPL_FEE_INCOME /
+CR BNPL_FEES_DUE`), bounded by `bnpl.fee_waiver_room`: never what was paid, released by a refund (OQ-14) or already waived
+(the Phase 11 gate's R3). A waiver of the last receivable closes the obligation `REPAID`. Built by `P12-TSK-024`
+(`bnpl V016`, `BnplWaivers`).
+**Not:** a fee release (a refund's, automatic) and not an interest waiver (none exists in BNPL).
+**Owned by:** `bnpl`
+
 ### Disbursement
 **Is:** lending's act of making an instalment loan's principal the borrower's — born `PENDING` once
 per loan at acceptance, `POSTED` in the one transaction that credits the borrower's wallet, debits
