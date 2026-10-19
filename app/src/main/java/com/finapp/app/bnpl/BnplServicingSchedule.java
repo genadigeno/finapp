@@ -1,5 +1,6 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplObligationId;
 import com.finapp.bnpl.BnplServicing;
 import com.finapp.bnpl.ServicingOutcome;
@@ -25,13 +26,26 @@ import org.springframework.context.SmartLifecycle;
  * step moves its permit to the start of the next business date in the pinned zone. A step that fails rolls back and keeps
  * the claim's cadence; it never holds the page - the next obligation is serviced regardless. Off in test contexts
  * ({@code finapp.bnpl.servicing.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
+ *
+ * <p><strong>T-acc first</strong> (`P12-TSK-017`): before each obligation's step the sweep runs its accrual in a transaction
+ * of its own - {@link BnplAccruals#accrue}, B4 and the database clock, every elapsed date accrued oldest first, at most
+ * {@link BnplAccruals#MAX_ACCRUALS_PER_STEP} dates a call and at most {@link #MAX_ACCRUAL_CALLS} calls - so T-svc, which
+ * never accrues inside its own transaction, finds the record caught up and no transaction holding the currency's
+ * {@code BNPL_INTEREST_INCOME} row ever waits on a wallet. A step that still answers {@code BEHIND_ACCRUAL} (a midnight passed
+ * between the two transactions) has T-acc run once more and is asked once more - never a loop. A T-acc call that fails rolls
+ * back alone: its obligation's step is not taken this tick, the claim's cadence retries it, and the page continues.
  */
 @Slf4j
 public final class BnplServicingSchedule implements SmartLifecycle {
 
+    /** The most T-acc calls before one step: 8 x 92 dates - more than any pay-in-N accrual span. */
+    static final int MAX_ACCRUAL_CALLS = 8;
+
     private final BnplServicing servicing;
+    private final BnplAccruals accruals;
     private final BnplTransactions transactions;
     private final BnplServicingMetrics metrics;
+    private final BnplAccrualMetrics accrualMetrics;
     private final Duration pollInterval;
     private final int batch;
     private final Duration retryCadence;
@@ -39,8 +53,10 @@ public final class BnplServicingSchedule implements SmartLifecycle {
 
     public BnplServicingSchedule(
             BnplServicing servicing,
+            BnplAccruals accruals,
             BnplTransactions transactions,
             BnplServicingMetrics metrics,
+            BnplAccrualMetrics accrualMetrics,
             Duration pollInterval,
             int batch,
             Duration retryCadence) {
@@ -55,6 +71,8 @@ public final class BnplServicingSchedule implements SmartLifecycle {
         }
         this.batch = batch;
         this.servicing = Objects.requireNonNull(servicing, "servicing");
+        this.accruals = Objects.requireNonNull(accruals, "accruals");
+        this.accrualMetrics = Objects.requireNonNull(accrualMetrics, "accrualMetrics");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
     }
@@ -71,7 +89,15 @@ public final class BnplServicingSchedule implements SmartLifecycle {
             List<BnplObligationId> due = transactions.inTransaction(uow -> servicing.claim(uow, batch, retryCadence));
             for (BnplObligationId obligation : due) {
                 try {
+                    // T-acc first, in transactions of its own; a failed accrual leaves the step to the claim's cadence.
+                    if (!accruedFirst(obligation)) {
+                        continue;
+                    }
                     ServicingOutcome step = transactions.inTransaction(uow -> servicing.service(uow, obligation));
+                    if (step.kind() == ServicingOutcome.Kind.BEHIND_ACCRUAL && accruedFirst(obligation)) {
+                        // A midnight passed between T-acc and the step: T-acc once more, the step once more - never a loop.
+                        step = transactions.inTransaction(uow -> servicing.service(uow, obligation));
+                    }
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's cadence stands and a later tick steps again; the class name only - never a party.
@@ -81,6 +107,30 @@ public final class BnplServicingSchedule implements SmartLifecycle {
             }
             return due.size();
         }
+    }
+
+    /**
+     * T-acc for {@code obligation} until its record is caught up - each call its own transaction, its dates counted after
+     * it committed - at most {@link #MAX_ACCRUAL_CALLS} calls; whether no call failed.
+     */
+    private boolean accruedFirst(BnplObligationId obligation) {
+        for (int call = 0; call < MAX_ACCRUAL_CALLS; call++) {
+            BnplAccruals.Outcome accrued;
+            try {
+                accrued = transactions.inTransaction(uow -> accruals.accrue(uow, obligation));
+            } catch (RuntimeException failure) {
+                // Rolled back alone; the claim's cadence retries. The class name only - never a party.
+                accrualMetrics.failed();
+                log.warn("BNPL accrual failed: {}", failure.getClass().getSimpleName());
+                return false;
+            }
+            accrualMetrics.record(accrued);
+            if (accrued.caughtUp()) {
+                return true;
+            }
+        }
+        // Still behind after the bound: the step answers BEHIND_ACCRUAL and the claim's cadence continues the catch-up.
+        return true;
     }
 
     @Override

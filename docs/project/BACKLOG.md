@@ -20498,7 +20498,7 @@ after everything.
   the check), a `BNPL_REFUND`'s `refundId` rests on the first rank alone until `-021`. Five probes caught
   (`MUTATION_TESTING.md` §2), the ledger half and the race's live order owed. Ten-instance answer `PASS`.
 
-**P12-TSK-017 — PN interest accrual** — `READY` (marked by `P12-TSK-015`'s completion gate, 2026-10-18: its one dependency `-015` `COMPLETE`; `-018` depends on `-015` alone and may run beside it)
+**P12-TSK-017 — PN interest accrual** — `IN_PROGRESS` (started 2026-10-19; `READY` marked by `P12-TSK-015`'s completion gate, 2026-10-18: its one dependency `-015` `COMPLETE`; `-018` depends on `-015` alone and may run beside it)
 - **Objective**: a PN obligation earns interest every day, exactly once per obligation and date, on the
   database clock, caught up after any outage — in its own transaction, so the currency's shared
   `BNPL_INTEREST_INCOME` row is never held across a wallet wait (T-acc; the Phase 11 gate's A2-F1 designed
@@ -20580,6 +20580,38 @@ after everything.
   therefore adds the **writer**: the `INSERT` grant, the agreement/engine checks in the trigger it replaces, T-acc and F2a.
   The "caught up" check `-015` calls is `BnplServicing#accruedThroughTheEve` (the latest accrual on or after the eve) - this
   task refines it for dates with no principal outstanding (which write no row) and moves it to `BnplAccruals`.
+
+- **Refined by `P12-TSK-017` itself** (2026-10-19, at its design, each with its reason):
+  1. **The accrual span ends at the final due date.** A date accrues only inside an instalment period of the latest
+     schedule version, `[start, D1) … [D(n-1), Dn)` - nothing at or after `Dn`. No billing exists to make post-maturity
+     interest due (Phase 12 has no lending-style post-maturity billing), `PHASE_12_PLAN.md` §12.3 admits no penalty
+     interest, and `-015`'s gate (`latest accrual >= eve`) would have answered `BEHIND_ACCRUAL` for ever after the final
+     due date - the defect this removes. `bnpl V009`'s trigger holds it for every writer. *(Owner judgement: interest on
+     principal still unpaid after maturity would need a post-maturity billing - a later task's, never an accrual nobody
+     can bill.)*
+  2. **"Caught up"** is `BnplAccruals#caughtUp`: no elapsed date of the span with principal outstanding at its end
+     unaccrued (a date with none writes no row, so "the latest accrual is the eve" was not the rule); `BnplServicing`
+     calls it, `-018`'s T-rep and the later acts will.
+  3. **T-acc is bounded**: at most 92 dates a call (lending's `MAX_ACCRUALS_PER_STEP`); the sweep calls it up to 8 times
+     before the step (more than any span), and a step that still answers `BEHIND_ACCRUAL` (a midnight between the two
+     transactions) has T-acc once more and the step once more - never a loop.
+  4. **F2a is posted on the business date**, value-dated `d` - `-015`'s billing convention (lending posted on `d`), so a
+     caught-up outage shows when it was recorded.
+  5. **The base** is read through a new `BnplBook#datedLinesOn` (ledger's `PurposeBalances#datedLinesOn`, one statement
+     under B4) and folded through `Money` - no new ledger API.
+  6. **The trigger's added ranks** (beside V008's): B4 re-taken for every writer, the agreement version in force and the
+     accrual engine it pins, an instalment period of the latest schedule version, the period's cumulative figure never
+     falling; still no ledger read (the subledger proof, `-025`, holds rows to entries).
+  7. **The tests' shapes.** `BnplAccrualDatabaseTest#theAccrualHoldsNoWalletAndNoIncomeRowIsHeldAcrossAWalletWait` runs
+     over the bnpl suites' in-memory book (the bnpl database suites have no real ledger), so it asserts that a paused
+     T-acc holds no lock outside bnpl's relations and that a step on the obligation waits on B4 alone; the real-ledger
+     `pg_locks` half has no wallet wait to observe until a T-svc step takes a wallet - owed to `-019`'s collection.
+     `#leapDayAccruesOneDay` is hermetic only (`BnplAccrualsTest`): the bnpl database suites purchase on the real date and
+     cannot frame a purchase into a leap year; `#zeroDaysWriteARowAndNoEntry` is hermetic for the arithmetic and raw
+     writers for the entry `CHECK` in the database suite. `-015`'s hermetic owner-role fixture in `BnplServicingTest`
+     stays (billing's reading of whatever the record holds); its database fixture is replaced by real accruals.
+  8. **No new scheduler, no event, no door** (as planned); the correction key is reserved as
+     `BnplAccruals.CORRECTION_KEY_PREFIX`, nothing posts under it.
 
 **P12-TSK-018 — Customer repayment from the wallet and closure** — `PLANNED`
 - **Objective**: the customer repays any amount from their wallet; it is allocated exactly by the pinned

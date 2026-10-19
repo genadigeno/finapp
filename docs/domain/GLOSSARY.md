@@ -1177,6 +1177,18 @@ are four words for four things. Nor an event — no per-day event is published; 
 are the record. Penalty interest and interest on interest are not built.
 **Owned by:** `lending`
 
+### BNPL Interest Accrual
+**Is:** the interest one pay-in-N BNPL Obligation earned on one calendar date of its *accrual span* — the latest
+schedule version's instalment periods from the purchase's business date up to, not including, the final due date —
+on `ACCRUAL_ENGINE_V1` (lending's conventions, ACT/365F, cumulative rounding once per instalment period) over the
+principal outstanding at the date's end (`BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE` from journal lines valued on or before
+it), born once per obligation and date with F2a `DR BNPL_INTEREST_ACCRUED / CR BNPL_INTEREST_INCOME` under
+`bnpl.accrual:<obligation>:<date>` (none for a zero day), in T-acc — its own transaction, holding no wallet or payable.
+Built by `P12-TSK-017` (`bnpl V009`'s writer of `-015`'s `bnpl_interest_accrual`; `BnplAccruals`).
+**Not:** lending's Interest Accrual (a loan's), nor interest due (the billing) or paid. Nothing accrues after the final
+due date and pay-in-4 never accrues. Every other BNPL act checks the record *caught up* and never accrues itself.
+**Owned by:** `bnpl`
+
 ### Repayment
 **Is:** money received against one Loan from the borrower's wallet — the customer's repayment, a
 scheduled auto-collection or a payoff — born `ALLOCATED`, with its Repayment Allocation and its one
