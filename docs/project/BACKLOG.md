@@ -20934,7 +20934,7 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4 by `-024` (the waiver) and `-021` (the
   release), recorded; F5 vacuous — no external event; F8: the subledger proof). **Risk**: Medium. **Cx**: M.
 
-**P12-TSK-021 — Merchant refunds, latest instalments first** — `IN_PROGRESS`
+**P12-TSK-021 — Merchant refunds, latest instalments first** — `COMPLETE` (2026-10-19, Phase 12 wave D beside `-019`, master `9aca4d2c` (`-019`) merged in; marks no task `READY` - the wave's board rule 9 gives that to `-019`; leaves `P12-TSK-022` dependency-free once merged (its other dependency `-017` `COMPLETE`)) *(read "`IN_PROGRESS`" from its start until its gate)*
 - **Objective**: a merchant refunds all or part of a BNPL purchase over its own key at any point in the
   instalment lifecycle; the refund cancels unpaid instalments from the last backwards, returns any excess to
   the customer's wallet, takes the merchant fee back pro rata by the cumulative method, and preserves value
@@ -21140,6 +21140,33 @@ after everything.
   `BnplLateFeeDatabaseTest`'s release half to `-020` (above); `409 bnpl.DisputeOpen` to `-023` (no dispute table yet);
   ADR-0105's open question on `AccountClosing`'s pending-credits port - not built: a closed wallet makes the excess held
   (or, after closure, the refund refused), which is safe - recorded for the owner.
+- **Gate** (2026-10-19): IMPORTANT (fixed in-task) - the operator door admitted only an `EMPLOYEE` actor, and an operator
+  session's actor is `CUSTOMER`-typed today (`CURRENT_STATE.md`'s Known Architectural Debt), so OQ-9's door refused
+  every operator; it now admits a person's session (`EMPLOYEE` or `CUSTOMER`), never the system's or a merchant's,
+  keyed and recorded `OPERATOR:<identity>` (`bnpl V012`'s `requested_by` rank `^OPERATOR:.{1,200}$`). MINOR (fixed) - a
+  scope refusal's audit target was the caller's raw path segment; it is now the canonical purchase id or `malformed`
+  (`BnplRefundDesk.parsedOrMalformed`). MINOR (fixed) - four hermetic gaps found by probes that survived their first
+  runs: the fee's cumulative rounding (split 0.10, 0.10, 599.80), the value floor on a stepped-back clock
+  (`#theRefundIsFloored`, new), the bound judged under B5 before B4, `partiallyRefunded` false before any refund. MINOR
+  (fixed, found in passing) - `app`'s `BnplAgreementDeskTest` asserted a receipt never contains `"600"`, which a UUIDv7
+  identifier can (a red run on this merge); it now asserts the amount's forms. **Merge-in** (`-019`): the collection
+  wired into the test worlds; scenario 7 now on collecting terms (hermetic and database), and
+  `BnplRefundsTest#aCollectionAfterARefundCollectsOnlyWhatIsLeft` (new) proves a collection after a refund that cancelled
+  part of a billed instalment collects exactly the rest; the Phase 12 lock-order row, which this task's edit had split
+  across lines, rejoined with `-019`'s collection on one line. Twenty probes performed - sixteen caught on their first
+  run, four after the tests above; restores sha256-verified (`MUTATION_TESTING.md` §2). Ten-instance `PASS`: B5 orders
+  every refund of a purchase and judges the bound and the key's arbiter under it; B4 orders a refund against servicing,
+  collection, repayment and accrual, none of which waits on B5; (P) is one element in `UUID.compareTo` order shared with
+  T-pur; the database clock is read after the locks; `bnpl V012`'s trigger re-takes B5 then B4 and re-judges the bound and
+  B7 for every writer; nothing rests on local memory or a scheduler. Owed a first run: `BnplRefundDatabaseTest` (fourteen
+  cases) and `app`'s own-container `BnplRefundApiTest` (six) - the live halves listed in `MUTATION_TESTING.md` §2.
+  Verified on the merge, fresh results: bnpl 346 (`BnplRefundsTest` 28,
+  `BnplRefundMigrationTest` 8), bnpl architecture 3, merchant `MerchantApiKeyTest` 3 + `MerchantApiKeyMigrationTest` 8,
+  `app` `com.finapp.app.bnpl.*` and the guard suites by name 220 (`BnplRefundDeskTest` 6), `app` architecture 171 -
+  every one 0 failures; `build`, `databaseTest` and `kafkaTest` not run (the owner's instruction, a criterion-7
+  deviation). **For `-022` and `-023`**: T-ref's body is `BnplRefunds.refund`
+  (private; `-023` calls it through a door of its own); a payoff after a partial refund reads the latest schedule version
+  and the position from `BnplRefunds.derive`'s rows.
 
 **P12-TSK-022 — Early payoff (both products)** — `PLANNED`
 - **Objective**: the customer can know, and pay, exactly what ends the obligation on a given day — P4 its

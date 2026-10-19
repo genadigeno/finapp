@@ -59,7 +59,9 @@ class BnplAgreementDeskTest {
                 order, JournalEntryId.of(IDS.next()), accepted);
         byte[] stored = BnplAgreementDesk.stored(acceptance).body();
         String text = new String(stored, StandardCharsets.UTF_8);
-        assertThat(text).doesNotContain("600").doesNotContain(acceptance.purchase().party().toString())
+        // The gross as an amount, never "600" alone - a UUIDv7 identifier can carry those three digits.
+        assertThat(text).doesNotContain("600.00").doesNotContain("60000")
+                .doesNotContain(acceptance.purchase().party().toString())
                 .doesNotContain(acceptance.purchase().merchant().toString());
         BnplAgreementDesk.BnplAcceptedView view = BnplAgreementDesk.replayed(stored);
         assertThat(view).isEqualTo(new BnplAgreementDesk.BnplAcceptedView(

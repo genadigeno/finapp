@@ -203,18 +203,25 @@ class BnplRefundDatabaseTest {
     // ------------------------------------------------------------------ scenarios 7 and 8, and the fee
 
     @Test
-    @DisplayName("scenario 7: a refund racing a repayment of the billed instalment conserves in both orders - B5 then B4"
-            + " against B4: Σ cancelled + excess = R, nothing over-allocated, the customer whole")
+    @DisplayName("scenario 7: a refund racing the instalment's auto-collection (P12-TSK-019, collecting terms) and a"
+            + " customer's repayment of it conserves in both orders - B5 then B4 against B4: Σ cancelled + excess = R,"
+            + " nothing over-allocated, every BNPL account zero, the customer whole")
     void aRefundRacingACollectionConservesInBothOrders() throws Exception {
-        for (int round = 0; round < 4; round++) {
+        for (int round = 0; round < 6; round++) {
+            boolean collection = round % 2 == 0;
             World world = new World();
-            Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+            Purchased bought = collection ? world.collectingPurchase() : world.purchase(BnplProduct.BNPL_PAY_IN_4,
+                    BnplPlan.PAY_IN_4);
             LocalDate due = bought.purchaseDate().plusDays(14);
-            world.serviceOn(due, bought);
+            if (!collection) {
+                world.serviceOn(due, bought);
+            }
             List<Object> outcomes = world.concurrently(2, index -> {
                 try {
-                    return index == 0 ? world.refundOn(due, bought, "race", 600_00)
-                            : world.repayOn(due, bought, "collect", 150_00);
+                    if (index == 0) {
+                        return world.refundOn(due, bought, "race", 600_00);
+                    }
+                    return collection ? world.serviceOn(due, bought) : world.repayOn(due, bought, "collect", 150_00);
                 } catch (BnplRepayments.ObligationClosed closed) {
                     return closed;
                 }
@@ -224,6 +231,11 @@ class BnplRefundDatabaseTest {
                     + " bnpl.bnpl_refund WHERE purchase_id = '" + bought.purchase().value() + "'")).isEqualTo("60000");
             for (com.finapp.ledger.AccountPurpose purpose : BnplAccounts.purposes()) {
                 assertThat(world.balance(bought, purpose)).as(purpose.name()).isEqualTo(Money.zero(EUR));
+            }
+            if (collection) {
+                assertThat(count("SELECT count(*) FROM bnpl.bnpl_collection_attempt WHERE obligation_id = '"
+                        + bought.obligation().value() + "' AND collected_minor > 0")).as("collected at most once")
+                        .isLessThanOrEqualTo(1);
             }
         }
     }
@@ -442,6 +454,24 @@ class BnplRefundDatabaseTest {
             fakes.book.external("payable", ports.payable.value());
             fakes.book.external("wallet", ports.wallet.value());
             fakes.book.funds.put(ports.wallet, Money.ofMinorUnits(1_000_000_00L, EUR));
+        }
+
+        /** A pay-in-4 purchase under terms that collect automatically (P12-TSK-019); the suite's default restored after. */
+        Purchased collectingPurchase() {
+            activate(BnplTermsFixtures.payIn4().autoCollection(true).build());
+            try {
+                return purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+            } finally {
+                activate(BnplTermsFixtures.payIn4().build());
+            }
+        }
+
+        private static void activate(BnplTerms wanted) {
+            BnplTermsAdministration terms = new BnplTermsAdministration(TERMS_STORE, new JdbcAuditWriter(),
+                    new JdbcOutboxWriter(), IDS, CLOCK, BnplTermsFixtures.BOUNDS);
+            BnplTermsAdministration.Proposed proposed = inOneTransaction(uow -> terms.propose(uow, wanted,
+                    "the refund suite's collecting terms", employee(), correlation()));
+            inOneTransaction(uow -> terms.approve(uow, proposed.id(), employee(), "in force", correlation()));
         }
 
         Purchased purchase(BnplProduct product, BnplPlan plan) {
