@@ -732,6 +732,23 @@ public final class BnplRefunds {
             BnplPurchaseStore.StoredSchedule first, BnplPurchaseStore.StoredSchedule latest,
             List<BnplPurchaseStore.BilledItem> billed, Derivation derived, RefundAllocation allocation,
             Money principalLeft) {
+        return nextSchedule(ids::next, locked.obligation().id(), locked.obligation().purchaseDate(),
+                () -> terms.version(unitOfWork, locked.termsVersionId())
+                        .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never"
+                                + " deleted"))
+                        .terms(),
+                first, latest, billed, derived, allocation, principalLeft);
+    }
+
+    /**
+     * {@link #nextSchedule(Connection, BnplServicingStore.Locked, BnplPurchaseStore.StoredSchedule,
+     * BnplPurchaseStore.StoredSchedule, List, Derivation, RefundAllocation, Money)}'s rule, pure - the one the refund writes
+     * by and the replay proof re-derives by (`P12-TSK-025`): {@code pinned} read only for pay-in-N's re-amortisation.
+     */
+    static BnplPurchaseStore.StoredSchedule nextSchedule(java.util.function.Supplier<UUID> ids, BnplObligationId obligation,
+            LocalDate purchaseDate, java.util.function.Supplier<BnplTerms> pinned, BnplPurchaseStore.StoredSchedule first,
+            BnplPurchaseStore.StoredSchedule latest, List<BnplPurchaseStore.BilledItem> billed, Derivation derived,
+            RefundAllocation allocation, Money principalLeft) {
         Map<LocalDate, BnplPurchaseStore.BilledItem> billedOn = new HashMap<>();
         for (BnplPurchaseStore.BilledItem item : billed) {
             billedOn.put(item.dueDate(), item);
@@ -748,11 +765,11 @@ public final class BnplRefunds {
         }
         List<BnplPurchaseStore.StoredInstalment> rows = new ArrayList<>();
         List<BnplPurchaseStore.StoredInstalment> unbilledRows = new ArrayList<>();
-        LocalDate lastBilled = locked.obligation().purchaseDate();
+        LocalDate lastBilled = purchaseDate;
         for (BnplPurchaseStore.StoredInstalment row : latest.instalments()) {
             BnplPurchaseStore.BilledItem item = billedOn.get(row.dueDate());
             if (item != null) {
-                rows.add(new BnplPurchaseStore.StoredInstalment(ids.next(), row.sequence(), row.dueDate(),
+                rows.add(new BnplPurchaseStore.StoredInstalment(ids.get(), row.sequence(), row.dueDate(),
                         item.billedPrincipal(), item.billedInterest(), item.billedPrincipal().plus(item.billedInterest())));
                 lastBilled = row.dueDate();
             } else {
@@ -776,11 +793,11 @@ public final class BnplRefunds {
                 if (ended) {
                     throw new AllocationAnomaly("a pay-in-4 refund cancels from the last instalment backwards (B3)");
                 }
-                rows.add(new BnplPurchaseStore.StoredInstalment(ids.next(), row.sequence(), row.dueDate(), left,
+                rows.add(new BnplPurchaseStore.StoredInstalment(ids.get(), row.sequence(), row.dueDate(), left,
                         row.interest(), left.plus(row.interest())));
             }
         } else if (principalLeft.isPositive()) {
-            rows.addAll(reamortised(unitOfWork, locked, first, unbilledRows, principalLeft, lastBilled));
+            rows.addAll(reamortised(pinned.get(), purchaseDate, ids, first, unbilledRows, principalLeft, lastBilled));
         }
         Money principal = latest.principal().minus(allocation.cancelled(RefundAllocation.Cancellation.Kind.UNBILLED));
         Money scheduled = principal.minus(principal);
@@ -791,7 +808,7 @@ public final class BnplRefunds {
             throw new AllocationAnomaly("a refund's schedule version schedules its predecessor's principal less exactly"
                     + " the unbilled principal cancelled (INV-BNPL-05, INV-BNPL-06)");
         }
-        return new BnplPurchaseStore.StoredSchedule(ids.next(), locked.obligation().id(), latest.version() + 1,
+        return new BnplPurchaseStore.StoredSchedule(ids.get(), obligation, latest.version() + 1,
                 latest.engine(), principal, latest.start(), rows);
     }
 
@@ -801,18 +818,15 @@ public final class BnplRefunds {
      * the intended day the purchase's (A6), the period from the last billed due date to the first unbilled one - the same
      * due dates, fewer of them, removed from the end.
      */
-    private List<BnplPurchaseStore.StoredInstalment> reamortised(Connection unitOfWork, BnplServicingStore.Locked locked,
-            BnplPurchaseStore.StoredSchedule first, List<BnplPurchaseStore.StoredInstalment> unbilledRows,
-            Money principalLeft, LocalDate lastBilled) {
+    private static List<BnplPurchaseStore.StoredInstalment> reamortised(BnplTerms pinned, LocalDate purchaseDate,
+            java.util.function.Supplier<UUID> ids, BnplPurchaseStore.StoredSchedule first,
+            List<BnplPurchaseStore.StoredInstalment> unbilledRows, Money principalLeft, LocalDate lastBilled) {
         if (unbilledRows.isEmpty()) {
             throw new AllocationAnomaly("principal left to bill has an unbilled instalment to bill it (INV-BNPL-05)");
         }
-        BnplTerms pinned = terms.version(unitOfWork, locked.termsVersionId())
-                .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
-                .terms();
         Money level = first.instalments().get(0).amount();
         ScheduleOutcome outcome = ScheduleEngineV1.recalculateAtInstalment(pinned.scheduleTerms().orElseThrow(),
-                principalLeft, level, unbilledRows.size(), locked.obligation().purchaseDate().getDayOfMonth(), lastBilled,
+                principalLeft, level, unbilledRows.size(), purchaseDate.getDayOfMonth(), lastBilled,
                 unbilledRows.get(0).dueDate());
         if (!(outcome instanceof ScheduleOutcome.Projected projected)) {
             throw new AllocationAnomaly("the pinned schedule engine refused a refund's recalculation (INV-BNPL-05): "
@@ -825,7 +839,7 @@ public final class BnplRefunds {
             if (!kept.dueDate().equals(period.dueDate())) {
                 throw new AllocationAnomaly("a recalculation keeps the agreement's due dates (INV-HIST-04)");
             }
-            rows.add(new BnplPurchaseStore.StoredInstalment(ids.next(), kept.sequence(), period.dueDate(),
+            rows.add(new BnplPurchaseStore.StoredInstalment(ids.get(), kept.sequence(), period.dueDate(),
                     period.principal(), period.interest(), period.amount()));
         }
         return rows;

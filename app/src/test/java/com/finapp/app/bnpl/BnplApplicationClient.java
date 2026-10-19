@@ -177,6 +177,25 @@ final class BnplApplicationClient {
 
     // ------------------------------------------------------------------ plumbing
 
+    /**
+     * A session of the EXISTING identity {@code login} - a customer's - after {@code role} is assigned to it
+     * (`P12-TSK-025`): an operator who is also the customer, for the self-dealing negatives.
+     */
+    String sessionWithRole(Authorization authorization, String login, RoleName role) throws Exception {
+        UUID identity = UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?",
+                login));
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
+            app.commit();
+        }
+        return field(post("/v1/authentications",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, null).body(),
+                "sessionToken");
+    }
+
     String operatorSession(Authorization authorization, RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","

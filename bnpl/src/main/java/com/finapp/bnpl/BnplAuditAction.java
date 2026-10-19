@@ -273,7 +273,34 @@ public enum BnplAuditAction implements AuditableAction {
             "An operator holding BNPL_DISPUTE_RESOLVE read a BNPL dispute (GET /v1/operator/bnpl-disputes/{id}): the"
                     + " customer's reason and the merchant's statement (RESTRICTED-PII), the amount, the hold and any"
                     + " proposal - every access recorded (INV-DSP-03 by analogy). Its target the dispute.",
-            false);
+            false),
+
+    /** An investigator read a BNPL agreement (`P12-TSK-025`). */
+    AGREEMENT_READ(
+            "bnpl.AgreementRead",
+            "An investigator holding BNPL_INVESTIGATE read a BNPL agreement (GET /v1/operator/bnpl-agreements/{id}): its"
+                    + " latest version, its obligation's status and the purchase - never the investigator's own party's"
+                    + " (bnpl.SelfDealingRefused, recorded FAILED). Its target the agreement; the summary names versions and"
+                    + " counts, never an amount.",
+            false),
+
+    /** An investigator read a BNPL agreement's explanation from its rows alone (`P12-TSK-025`). */
+    EXPLANATION_READ(
+            "bnpl.ExplanationRead",
+            "An investigator holding BNPL_INVESTIGATE read a BNPL agreement's explanation (GET"
+                    + " /v1/operator/bnpl-agreements/{id}/explanation): every agreement and schedule version, accrual,"
+                    + " billing, application, repayment, collection, refund, dispute, condition, fee, waiver, reversal,"
+                    + " the payoff and every journal entry, and its subledger proof - amounts served, never logged"
+                    + " (INV-AUD-02). Recorded in the read's own transaction. Its target the agreement.",
+            false),
+
+    /** An investigator replayed a BNPL agreement by its pinned engines (`P12-TSK-025`). */
+    REPLAYED(
+            "bnpl.Replayed",
+            "An investigator holding BNPL_INVESTIGATE replayed a BNPL agreement by its pinned engines and terms (POST"
+                    + " /v1/operator/bnpl-agreements/{id}/replay), with a reason: IDENTICAL or DIVERGED and the kinds that"
+                    + " diverged, never a figure. Its target the agreement.",
+            true);
 
     private final String code;
     private final String description;

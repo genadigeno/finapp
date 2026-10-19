@@ -10275,6 +10275,66 @@
         },
         "type": "object"
       },
+      "BnplAgreementReadView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "gross": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "net": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "purchaseDate": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subledgerVerdict": {
+            "type": "string"
+          },
+          "termsSha256": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplAgreementSummaryView": {
         "properties": {
           "agreementId": {
@@ -10588,6 +10648,17 @@
         },
         "type": "object"
       },
+      "BnplDivergenceView": {
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplEnablementActRequest": {
         "properties": {
           "reason": {
@@ -10611,6 +10682,792 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedAccrualView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "base": {
+            "type": "string"
+          },
+          "cumulativeExact": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedAdjustmentView": {
+        "properties": {
+          "instalmentId": {
+            "type": "string"
+          },
+          "interestReleased": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lateFeeReleased": {
+            "type": "string"
+          },
+          "principalCancelled": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "whole": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedAgreementView": {
+        "properties": {
+          "accrualEngine": {
+            "type": "string"
+          },
+          "allocationEngine": {
+            "type": "string"
+          },
+          "canonicalFormat": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "documentSha256": {
+            "type": "string"
+          },
+          "feeScheduleVersionId": {
+            "type": "string"
+          },
+          "refundAllocationEngine": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "scheduleEngine": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "template": {
+            "type": "string"
+          },
+          "templateVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "termsSha256": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedAllocationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedApplicationView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "applicationId": {
+            "type": "string"
+          },
+          "billingId": {
+            "type": "string"
+          },
+          "catchUp": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedAllocationView"
+            },
+            "type": "array"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedBalanceView": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "explained": {
+            "type": "boolean"
+          },
+          "ledger": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedBillingView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "billingId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "instalmentId": {
+            "type": "string"
+          },
+          "interest": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "payoffExecutionId": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedClosureView": {
+        "properties": {
+          "closureReason": {
+            "type": "string"
+          },
+          "refund": {
+            "type": "string"
+          },
+          "refundJournalEntryId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedCollectionView": {
+        "properties": {
+          "attemptDate": {
+            "type": "string"
+          },
+          "attemptId": {
+            "type": "string"
+          },
+          "collected": {
+            "type": "string"
+          },
+          "due": {
+            "type": "string"
+          },
+          "instalmentId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedConditionView": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "daysPastDue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaulted": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedDisputeView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "heldDueDates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "openedOn": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "resolvedOn": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedEntryView": {
+        "properties": {
+          "explainedBy": {
+            "type": "string"
+          },
+          "explainedById": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedLineView"
+            },
+            "type": "array"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedFeeView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "instalmentId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedFinancingView": {
+        "properties": {
+          "fee": {
+            "type": "string"
+          },
+          "feeScheduleVersionId": {
+            "type": "string"
+          },
+          "financedAt": {
+            "type": "string"
+          },
+          "gross": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "net": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedInstalmentView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string"
+          },
+          "instalmentId": {
+            "type": "string"
+          },
+          "interest": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedLineView": {
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedPayoffExecutionView": {
+        "properties": {
+          "businessDate": {
+            "type": "string"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "quoteId": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedPayoffView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "goodThrough": {
+            "type": "string"
+          },
+          "quoteId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedRefundView": {
+        "properties": {
+          "adjustments": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedAdjustmentView"
+            },
+            "type": "array"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "cancelledBilled": {
+            "type": "string"
+          },
+          "cancelledUnbilled": {
+            "type": "string"
+          },
+          "door": {
+            "type": "string"
+          },
+          "excess": {
+            "type": "string"
+          },
+          "excessTo": {
+            "type": "string"
+          },
+          "feeReturned": {
+            "type": "string"
+          },
+          "interestAccruedReleased": {
+            "type": "string"
+          },
+          "interestDueReleased": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "payableDebit": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "refundedBefore": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedRepaymentView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "allocationEngine": {
+            "type": "string"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedAllocationView"
+            },
+            "type": "array"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "reversed": {
+            "type": "boolean"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedReversalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "reversalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedScheduleView": {
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "instalments": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedInstalmentView"
+            },
+            "type": "array"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplainedWaiverView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "waiverId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplExplanationView": {
+        "properties": {
+          "accruals": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedAccrualView"
+            },
+            "type": "array"
+          },
+          "agreementId": {
+            "type": "string"
+          },
+          "agreements": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedAgreementView"
+            },
+            "type": "array"
+          },
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedBalanceView"
+            },
+            "type": "array"
+          },
+          "billings": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedBillingView"
+            },
+            "type": "array"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "closure": {
+            "$ref": "#/components/schemas/BnplExplainedClosureView"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "collectionAttempts": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedCollectionView"
+            },
+            "type": "array"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedConditionView"
+            },
+            "type": "array"
+          },
+          "creditApplications": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedApplicationView"
+            },
+            "type": "array"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedDisputeView"
+            },
+            "type": "array"
+          },
+          "fees": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedFeeView"
+            },
+            "type": "array"
+          },
+          "financing": {
+            "$ref": "#/components/schemas/BnplExplainedFinancingView"
+          },
+          "journalEntries": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedEntryView"
+            },
+            "type": "array"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "payoffExecution": {
+            "$ref": "#/components/schemas/BnplExplainedPayoffExecutionView"
+          },
+          "payoffQuotes": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedPayoffView"
+            },
+            "type": "array"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "purchaseDate": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "refunds": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedRefundView"
+            },
+            "type": "array"
+          },
+          "repayments": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedRepaymentView"
+            },
+            "type": "array"
+          },
+          "reversals": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedReversalView"
+            },
+            "type": "array"
+          },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedScheduleView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subledgerFailures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "subledgerVerdict": {
+            "type": "string"
+          },
+          "waivers": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedWaiverView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -11301,6 +12158,40 @@
             "type": "string"
           },
           "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplReplayRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplReplayView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/BnplDivergenceView"
+            },
+            "type": "array"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "replayed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
             "type": "string"
           }
         },
@@ -25630,6 +26521,60 @@
         }
       }
     },
+    "/v1/operator/bnpl-agreements/{id}": {
+      "get": {
+        "operationId": "investigateBnplAgreement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplAgreementReadView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-agreements/{id}/explanation": {
+      "get": {
+        "operationId": "explainBnplAgreement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplExplanationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-agreements/{id}/repayments/{repaymentId}/reversal": {
       "post": {
         "operationId": "proposeBnplRepaymentReversal",
@@ -25781,6 +26726,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BnplReversalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-agreements/{id}/replay": {
+      "post": {
+        "operationId": "replayBnplAgreement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplReplayView"
                 }
               }
             },

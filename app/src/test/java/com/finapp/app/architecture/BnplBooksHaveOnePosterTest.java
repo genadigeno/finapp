@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Read from the code with comments stripped and from the string literals; planted posters prove the rule
  * bites. The every-writer half - a raw SQL poster no Java scan can see - is bnpl's subledger and three-way
- * proofs' (`P12-TSK-025`).
+ * proofs' (`P12-TSK-025`, live): {@link #theProofsSeeEveryWriter} holds them to the whole book, non-vacuously.
  */
 @DisplayName("the BNPL book has one poster (P12-TSK-003, INV-BNPL-01)")
 class BnplBooksHaveOnePosterTest {
@@ -62,7 +62,12 @@ class BnplBooksHaveOnePosterTest {
                     "LendingCapitalHeadroom.java",
                     "READER (P12-TSK-005): sums BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE by ledger purpose beside the loan"
                             + " principal, in one statement under the capital lock (L6) - one pool, one proof; it posts"
-                            + " nothing and learns no bnpl type");
+                            + " nothing and learns no bnpl type",
+                    "MerchantPayable.java",
+                    "READER (P12-TSK-016, permitted by P12-TSK-025): the payable's drill-down names BNPL_PRINCIPAL,"
+                            + " BNPL_PRINCIPAL_DUE and BNPL_MERCHANT_FEE_INCOME as descriptive counterparties of F1 and F5"
+                            + " (its BNPL lines are classified by their posting-key namespace first); it reads the"
+                            + " ledger's position breakdown and posts nothing");
 
     /** Every BNPL_* purpose, derived from the declaration. */
     static final List<String> BNPL_BOOK =
@@ -125,6 +130,34 @@ class BnplBooksHaveOnePosterTest {
                         .doesNotContain("PostingService").doesNotContain("ReversalService").doesNotContain("JournalLine");
             }
         });
+    }
+
+    @Test
+    @DisplayName("the every-writer half is live: bnpl's subledger proof reads every one of the six per-obligation purposes"
+            + " and names every entry or fails, and the three-way proof reads the merchant fee income - never a poster")
+    void theProofsSeeEveryWriter() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        for (Path source : mainSources()) {
+            sources.put(normalised(source), read(source));
+        }
+        String subledger = sources.entrySet().stream()
+                .filter(source -> source.getKey().endsWith(BNPL_MAIN + "com/finapp/bnpl/BnplSubledgerProof.java"))
+                .map(Map.Entry::getValue).findFirst().orElseThrow(() -> new AssertionError("the subledger proof exists"));
+        java.util.Set<String> named = new java.util.TreeSet<>();
+        java.util.regex.Matcher token = BNPL_TOKEN.matcher(scan(subledger, false));
+        while (token.find()) {
+            named.add(token.group(1));
+        }
+        assertThat(named).as("not vacuous: the proof folds each of the six per-obligation accounts")
+                .contains("BNPL_PRINCIPAL", "BNPL_PRINCIPAL_DUE", "BNPL_INTEREST_ACCRUED", "BNPL_INTEREST_DUE",
+                        "BNPL_FEES_DUE", "BNPL_CREDIT_BALANCE");
+        assertThat(scan(subledger, false)).as("a proof reads; it never posts")
+                .doesNotContain("PostingService").doesNotContain("ReversalService").doesNotContain(".post(");
+        assertThat(sources.entrySet().stream()
+                        .filter(source -> source.getKey().endsWith("/BnplThreeWayProof.java"))
+                        .anyMatch(source -> scan(source.getValue(), false).contains("merchantFeeIncome")))
+                .as("the three-way proof judges the purchase's merchant fee income lines")
+                .isTrue();
     }
 
     @Test
