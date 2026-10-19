@@ -2409,8 +2409,8 @@ final class BnplApplicationFakes {
     /** T-dsp over these fakes (`P12-TSK-023`): the dispute's acts through T-ref's body. */
     BnplDisputes disputesOver(BnplRefunds refundBody, BnplActingParty actingParties,
             com.finapp.sharedkernel.id.IdGenerator ids, java.time.Clock clock) {
-        return new BnplDisputes(disputes, refunds, servicing, purchases, terms.store(), refundBody, actingParties, outbox,
-                audit, ids, clock);
+        return new BnplDisputes(disputes, refunds, servicing, purchases, terms.store(), refundBody, merchants, book,
+                actingParties, outbox, audit, ids, clock);
     }
 
     /** T-pay over these fakes (`P12-TSK-022`): the quote and the execution, through the step's billing and T-rep's half. */

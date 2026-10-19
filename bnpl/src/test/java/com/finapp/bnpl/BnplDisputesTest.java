@@ -526,6 +526,24 @@ class BnplDisputesTest {
     }
 
     @Test
+    @DisplayName("the opening takes the merchant's payable after B5 and B4 (P), and a merchant whose payable can no longer be"
+            + " debited - closed - takes no dispute: refused with nothing written (ADR-0106 decision 11)")
+    void theOpeningTakesThePayable() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        world.fakes.log.clear();
+        openAt("2026-10-20T12:00:00Z", p4, "open-1", 100_00);
+        List<String> locks = world.fakes.log.stream().filter(step -> step.equals("B5") || step.equals("B4")
+                || step.equals("lock payable") || step.equals("dispute insert")).toList();
+        assertThat(locks).containsExactly("B5", "B4", "lock payable", "dispute insert");
+
+        BnplConditionWorld.Agreement closed = world.payIn4();
+        world.fakes.book.statuses.put(world.payable, com.finapp.ledger.LedgerAccountStatus.CLOSED);
+        assertThatThrownBy(() -> openAt("2026-10-21T12:00:00Z", closed, "open-2", 100_00))
+                .isInstanceOf(BnplRefunds.RefundNotPostable.class);
+        assertThat(world.fakes.disputes.rows.values()).noneMatch(row -> row.purchase().equals(closed.purchase()));
+    }
+
+    @Test
     @DisplayName("a dispute on a CLOSED obligation holds nothing; its refund outcome pays the customer's wallet only")
     void aDisputeOnAClosedObligation() {
         BnplConditionWorld.Agreement p4 = world.payIn4();

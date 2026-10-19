@@ -48,13 +48,16 @@ public class BnplDisputeBeans {
             BnplPurchaseStore bnplPurchaseStore,
             BnplTermsStore bnplTermsStore,
             BnplRefunds bnplRefunds,
+            com.finapp.bnpl.BnplMerchants bnplMerchants,
+            com.finapp.bnpl.BnplBook bnplBook,
             IdentityStore<Connection> identityStore,
             OutboxWriter<Connection> outboxWriter,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock) {
         return new BnplDisputes(bnplDisputeStore, bnplRefundStore, bnplServicingStore, bnplPurchaseStore, bnplTermsStore,
-                bnplRefunds, new com.finapp.app.credit.IdentityActingParty(identityStore), outboxWriter, auditWriter,
+                bnplRefunds, bnplMerchants, bnplBook, new com.finapp.app.credit.IdentityActingParty(identityStore),
+                outboxWriter, auditWriter,
                 idGenerator, clock);
     }
 

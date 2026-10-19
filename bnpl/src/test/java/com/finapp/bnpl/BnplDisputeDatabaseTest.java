@@ -59,7 +59,8 @@ class BnplDisputeDatabaseTest {
     private final BnplConditionDatabaseWorld world = new BnplConditionDatabaseWorld();
     private final Map<String, UUID> operatorParties = new ConcurrentHashMap<>();
     private final BnplDisputes disputes = new BnplDisputes(DISPUTES, REFUNDS, SERVICING, PURCHASES, TERMS_STORE,
-            world.refunds, (uow, actor) -> Optional.ofNullable(operatorParties.get(actor.id())), new JdbcOutboxWriter(),
+            world.refunds, world.ports, world.book,
+            (uow, actor) -> Optional.ofNullable(operatorParties.get(actor.id())), new JdbcOutboxWriter(),
             new JdbcAuditWriter(), IDS, CLOCK);
 
     // ------------------------------------------------------------------ scenario 10

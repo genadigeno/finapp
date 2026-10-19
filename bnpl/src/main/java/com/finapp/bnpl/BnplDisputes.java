@@ -1,5 +1,7 @@
 package com.finapp.bnpl;
 
+import com.finapp.ledger.LedgerAccountId;
+import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
@@ -44,6 +46,8 @@ import lombok.RequiredArgsConstructor;
  *       arbiter every refund takes first;
  *   <li><strong>(B4)</strong> the obligation {@code FOR UPDATE} - so a collection, a condition step or a repayment either
  *       committed before the hold or sees it;
+ *   <li>at the opening, <strong>(P)</strong> the merchant's payable alone {@code FOR UPDATE}, refused when it cannot be
+ *       debited (a closed merchant) - the merchant close takes the same row and asks whether a dispute is open;
  *   <li><strong>(B6)</strong> the dispute {@code FOR UPDATE}, the act judged against its from-state and - for the merchant
  *       and the sweep - its deadline on the database clock read after the lock (complementary: exactly one wins);
  *   <li>on {@code RESOLVED_REFUND}: T-ref's body ({@link BnplRefunds#forDispute}) in the same transaction, door
@@ -81,6 +85,8 @@ public final class BnplDisputes {
     @NonNull private final BnplPurchaseStore purchases;
     @NonNull private final BnplTermsStore terms;
     @NonNull private final BnplRefunds refunds;
+    @NonNull private final BnplMerchants merchants;
+    @NonNull private final BnplBook book;
     @NonNull private final BnplActingParty actingParties;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final AuditWriter<Connection> audit;
@@ -208,6 +214,14 @@ public final class BnplDisputes {
         BnplServicingStore.Locked obligation = servicing.lock(unitOfWork, locked.obligation())
                 .orElseThrow(() -> new IllegalStateException("a financed purchase has its obligation (INV-BNPL-02)"));
         List<BnplDispute.Held> held = refunds.heldBy(unitOfWork, locked, obligation, amount, refundedBefore);
+        // (P) the merchant's payable alone, FOR UPDATE (ADR-0106 decision 11): a dispute is opened only against a
+        // merchant whose payable can still be debited by its refund outcome - and the merchant's close, which takes the
+        // same row FOR UPDATE and asks whether a dispute is open, is ordered before or after this opening, never beside it.
+        LedgerAccountId payable = merchants.payableAccount(unitOfWork, locked.purchase().merchant(), gross.currency())
+                .orElseThrow(() -> new BnplRefunds.RefundNotPostable(kind));
+        if (book.lockForUpdate(unitOfWork, payable).filter(LedgerAccountStatus.ACTIVE::equals).isEmpty()) {
+            throw new BnplRefunds.RefundNotPostable(kind);
+        }
         BnplDispute dispute = new BnplDispute(BnplDisputeId.next(ids), purchaseId, obligation.obligation().id(),
                 locked.purchase().merchant(), party, obligation.agreement(), obligation.termsVersionId(),
                 BnplDisputeStatus.OPEN, request.category(), reason, request.requestKey(), amount, refundedBefore,
