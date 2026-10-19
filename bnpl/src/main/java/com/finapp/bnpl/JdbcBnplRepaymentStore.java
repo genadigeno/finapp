@@ -111,8 +111,8 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
     public Optional<BnplClosure> closureOf(Connection unitOfWork, BnplObligationId obligation) {
         Objects.requireNonNull(obligation, "obligation");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT id, reason, currency, scale, refund_minor, refund_journal_entry_id, repayment_id, correlation_id"
-                        + " FROM bnpl.bnpl_obligation_closure WHERE obligation_id = ?")) {
+                "SELECT id, reason, currency, scale, refund_minor, refund_journal_entry_id, repayment_id, refund_id,"
+                        + " correlation_id FROM bnpl.bnpl_obligation_closure WHERE obligation_id = ?")) {
             select.setObject(1, obligation.value());
             try (ResultSet row = select.executeQuery()) {
                 if (!row.next()) {
@@ -120,12 +120,13 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
                 }
                 UUID entry = row.getObject("refund_journal_entry_id", UUID.class);
                 UUID repayment = row.getObject("repayment_id", UUID.class);
+                UUID closingRefund = row.getObject("refund_id", UUID.class);
                 return Optional.of(new BnplClosure(row.getObject("id", UUID.class), obligation,
                         BnplClosureReason.valueOf(row.getString("reason")),
                         Money.ofPersisted(row.getLong("refund_minor"), CurrencyCode.of(row.getString("currency").strip()),
                                 row.getInt("scale")),
                         Optional.ofNullable(entry).map(JournalEntryId::of), Optional.ofNullable(repayment),
-                        CorrelationId.of(row.getString("correlation_id"))));
+                        Optional.ofNullable(closingRefund), CorrelationId.of(row.getString("correlation_id"))));
             }
         } catch (SQLException failure) {
             throw failed("reading a BNPL obligation's closure", failure);
@@ -138,8 +139,8 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 // created_at is the trigger's.
                 "INSERT INTO bnpl.bnpl_obligation_closure (id, obligation_id, reason, currency, scale, refund_minor,"
-                        + " refund_journal_entry_id, repayment_id, created_at, correlation_id)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp(), ?)")) {
+                        + " refund_journal_entry_id, repayment_id, created_at, correlation_id, refund_id)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp(), ?, ?)")) {
             insert.setObject(1, closure.id());
             insert.setObject(2, closure.obligation().value());
             insert.setString(3, closure.reason().name());
@@ -157,6 +158,12 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
                 insert.setNull(8, Types.OTHER);
             }
             insert.setString(9, closure.correlation().value());
+            // The BNPL refund whose transaction closed it (P12-TSK-021), if one did.
+            if (closure.closingRefund().isPresent()) {
+                insert.setObject(10, closure.closingRefund().get());
+            } else {
+                insert.setNull(10, Types.OTHER);
+            }
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw failed("inserting a BNPL obligation's closure", failure);

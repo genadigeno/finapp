@@ -1034,6 +1034,67 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-018. The edge ACTIVE -> CLOSED of the obligation the closing act holds FOR UPDATE (B4) - lockOwnedBy's or the servicing sweep's claim - conditional on ACTIVE, bnpl V010's edge function admitting it only beside the closure born in this transaction; no door names it.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/merchant/bnpl-purchases/{id}/refunds - T-ref's B5: the identifier from the path, and p.merchant_id = ? (the financing's too) in the locking statement is the authenticated key's merchant (INV-MER-01, ADR-0052); another merchant's purchase is never locked and is the same empty answer as an absent one, the 404 (P12-TSK-021).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "POST /v1/operator/bnpl-purchases/{id}/refunds - the operator names the purchase from the path by permission: PAYMENT_REFUND at the boundary, and the not-self rule in the domain (BnplRefunds.byOperator through BnplActingParty - an operator of the purchase's own party is refused bnpl.SelfDealingRefused, recorded FAILED) stands in for the predicate (P12-TSK-021, ADR-0105 decision 9).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.findByKey",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-021. The merchant is the purchase's own, read under its B5 lock (lockAtMerchant at the merchant's door, lock at the operator's); the requester the door's principal and the key the caller's own - UNIQUE (merchant_id, requested_by, refund_key) beneath it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.ofPurchase",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-021. The purchase id is the one this transaction holds FOR UPDATE (B5) - the bound's committed refunds, read under it; never a request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.adjustmentsOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-021. The obligation is the locked purchase's own (B5 then B4) - its earlier refunds' cancellations, the position's rows.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.insertScheduleVersion",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-021. Schedule version n+1 of the obligation the refund holds under B5 then B4; bnpl V012's trigger re-judges it for every writer.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.insertAgreementVersion",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-021. Agreement version n+1 of the obligation the refund holds under B5 then B4 - a copy of version n, which bnpl V012's trigger holds.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.fullyRefunded",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "P12-TSK-021. The terminal edge of the purchase this transaction holds FOR UPDATE (B5), conditional on FINANCED; bnpl V012's edge function admits it only when the refunds total the gross.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.atMerchant",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/bnpl-purchases/{id} - the purchase's refunds: r.merchant_id = ? in the statement is the authenticated key's merchant; another merchant's refunds are never read (P12-TSK-021, -014's carry).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.purchaseOfRefundAtMerchant",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/transactions - the BNPL_REFUND identifier's second rank: merchant_id = ? in the statement is the authenticated key's merchant; another merchant's refund is the same empty answer as an absent one (P12-TSK-021, -016's carry).")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplPurchaseStore.purchaseStatus",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-021. The status of the purchase of the obligation the closing act holds FOR UPDATE (B4) - the repayment's lockOwnedBy, the servicing sweep's claim or T-ref's B5 and B4 - read to name the closure's reason; no door names it.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -3738,6 +3799,15 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
                             "com.finapp.app.bnpl.BnplAcceptanceApiTest.anotherPartysAgreementIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                            "com.finapp.app.bnpl.BnplRefundApiTest.anotherMerchantsPurchaseIsNotFound"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.atMerchant",
+                            "com.finapp.app.bnpl.BnplRefundApiTest.anotherMerchantReadsNoneOfTheRefunds"),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundStore.purchaseOfRefundAtMerchant",
+                            "com.finapp.app.bnpl.BnplRefundApiTest.anotherMerchantsReportNamesNoRefund"),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.atMerchant",
                             "com.finapp.app.bnpl.BnplMerchantReadDatabaseTest.anotherMerchantsPurchaseIsNotFound"),

@@ -1077,9 +1077,18 @@ final class BnplPayoutWorld implements AutoCloseable {
     com.finapp.app.merchant.MerchantTransactionReport transactionReport(
             com.finapp.payments.PaymentAttemptStore<Connection> attempts, com.finapp.payments.RefundStore<Connection> refunds,
             com.finapp.checkout.CheckoutSessionStore<Connection> sessions, com.finapp.checkout.OrderStore<Connection> orders) {
+        // Every BNPL refund the world posted is the merchant's own (the second rank confirms it).
+        return transactionReport(attempts, refunds, sessions, orders, (uow, merchant, refund) -> Optional.of(refund));
+    }
+
+    /** The report with the BNPL refund's second rank as the test supplies it (`P12-TSK-021`). */
+    com.finapp.app.merchant.MerchantTransactionReport transactionReport(
+            com.finapp.payments.PaymentAttemptStore<Connection> attempts, com.finapp.payments.RefundStore<Connection> refunds,
+            com.finapp.checkout.CheckoutSessionStore<Connection> sessions, com.finapp.checkout.OrderStore<Connection> orders,
+            com.finapp.app.merchant.MerchantTransactionReport.BnplRefundOwnership bnplRefunds) {
         return new com.finapp.app.merchant.MerchantTransactionReport(statements, attempts, refunds, sessions, orders,
                 new org.springframework.transaction.support.TransactionTemplate(new NoTransactions()),
-                new OneConnection(connection));
+                new OneConnection(connection), bnplRefunds);
     }
 
 

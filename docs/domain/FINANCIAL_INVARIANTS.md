@@ -2562,7 +2562,15 @@ allocator's half is `RefundAllocationEngineV1Test` - the plan's worked check, `#
 partly paid instalment, a refund after completion all excess - and `RefundAllocationEngineV1PropertiesTest` over
 generated refund sequences in three currencies and every rounding policy, two JVMs; the fee is merchant's
 `FeeCalculation.returnedFee` bound in as a parameter, its hermetic reference proven equal by `app`'s
-`BnplFeeArithmeticAgreesWithMerchantTest`; eleven probes, `MUTATION_TESTING.md` §2.)*
+`BnplFeeArithmeticAgreesWithMerchantTest`; eleven probes, `MUTATION_TESTING.md` §2.)* *(As built by `P12-TSK-021`: T-ref
+composes the allocator over the position it derives under B5 then B4 from the rows - the schedule's instalments, the billed
+items billed less settled (every payer's and every earlier refund's), the adjustments and `BNPL_PRINCIPAL` - and posts the
+split in one entry F5 + F5a under `bnpl.refund:<refund>`; `bnpl V012` holds R = r_f + payable debit = cancelled + excess on
+the row and Σ adjustments = the cancellations at commit; pay-in-N's version identity `principal(v n+1) = principal(v n) -
+unbilled cancelled` at the schedule's commit. Hermetic: `BnplRefundsTest#aFullRefundClosesWithNothingStranded`,
+`#refundBeforeDuringAfter`, `#refundCancelsLatestFirst`, `#aRefundRacingACollectionConservesInBothOrders`,
+`#theFeeTelescopesToExactlyFOverSplitRefunds`; database, owed: `BnplRefundDatabaseTest`. The late fee's release (OQ-14) is
+`-020`'s, carried.)*
 **Phase:** 12
 
 ### INV-BNPL-07 — Refunds never exceed the purchase
@@ -2585,6 +2593,12 @@ instances, a lapsed claim) (`P12-TSK-021`); a refund above the remainder refused
 and refunds racing on one purchase counted (`P12-TSK-021`); the probe skipping the purchase lock in a
 refund, caught by scenario 10 (`MUTATION_TESTING.md` §2); Σ refunds ≤ gross for every purchase at
 every storm round (`P12-TST-001`).
+*(As built by `P12-TSK-021`: the purchase `FOR UPDATE` first (B5) - merchant-scoped at the merchant's door - the bound
+judged over the committed refunds under it, `422 bnpl.RefundExceedsPurchase` / `409 bnpl.PurchaseFullyRefunded`; `bnpl
+V012`'s refund trigger re-takes B5 and refuses Σ refunds above the gross for every writer, the purchase's edge `FINANCED ->
+FULLY_REFUNDED` only at the gross and nothing out of it. Hermetic: `BnplRefundsTest#refundsNeverExceedTheGross`,
+`#theSameRefundTwiceRefundsOnce`; database, owed: `BnplRefundDatabaseTest#twoRefundsOnTwoInstancesNeverExceedTheGross`,
+`#theSameRefundTwiceRefundsOnce`.)*
 **Phase:** 12
 
 ### INV-BNPL-08 — Refund and dispute never double-credit
@@ -2628,6 +2642,14 @@ accrued) + `DB-CONSTRAINT` (the obligation's every-writer edge trigger admitting
 proof's `CLOSED` arm all zero (`P12-TSK-025`); the battery's full refunds each leaving exactly zero
 (`P12-TST-002`); every closed obligation zero at every storm round (`P12-TST-001`).
 **Phase:** 12
+
+*(Extended by `P12-TSK-021`: a refund that leaves nothing owed closes in its own transaction - `REFUNDED` when the
+purchase is `FULLY_REFUNDED` (also when a later servicing step refunds a credit balance the refund held, OQ-13),
+`REFUNDED_PARTIALLY_REPAID` otherwise - pay-in-N's accrued and billed-unpaid interest released in its entry (A11), an empty
+schedule version when nothing was ever billed; a refund after closure is all excess to the wallet, refused `409
+bnpl.RefundNotPostable` when the wallet cannot take it. Hermetic: `BnplRefundsTest#aFullRefundClosesWithNothingStranded`,
+`#aFullPnRefundReleasesUnpaidInterest`, `#anUnpostableWalletHoldsTheExcessAsCredit`, `#aRepaymentAfterAFullRefundIsRefused`,
+`#aRefundAfterClosurePaysTheCustomerOnly`.)*
 
 *(The closure mechanism built by `P12-TSK-018` for the `REPAID` reason, which `-021` extends with its two: `BnplClosures` - called by every zeroing transaction under B4 - closes only when the five receivables are zero, every instalment of the latest schedule is billed and (pay-in-N) no elapsed date with principal outstanding is unaccrued, refunds the credit balance to the wallet under `bnpl.closure-refund:<obligation>` in the same transaction, and `bnpl V010`'s every-writer edge function admits `ACTIVE -> CLOSED` only beside a `bnpl_obligation_closure` row for the same reason and nothing out of `CLOSED`; a repayment on a closed obligation answers `409 bnpl.ObligationClosed`. Hermetic: `BnplRepaymentsTest#theLastRepaymentClosesAndRefunds`, `#aClosedObligationRefuses`.)*
 
@@ -3239,7 +3261,8 @@ zero is counted by `finapp.ledger.negative.positions` and named `chargedBack` in
 drill-down.*
 
 *Amended by ADR-0105 (`Proposed`, the Phase 11 → 12 transition, 2026-10-16, owner decision B7),
-**proposed — in force when `P12-TSK-021` lands**: a BNPL refund after a payout is the third, bounded
+**in force since `P12-TSK-021` (2026-10-19; read "proposed - in force when `P12-TSK-021` lands" until its gate)**: a
+BNPL refund after a payout is the third, bounded
 source of merchant debt. It may leave the payable below zero by at most that purchase's own net — what
 its financing credited the payable (G − f) less what its earlier refunds' debits took back — and the
 debt is recovered from later captures and BNPL financings before any payout (`INV-MER-05`).
@@ -3250,7 +3273,13 @@ dispatch and no reservation — so the platform's worst case on one purchase is 
 the merchant has since been paid. A payable below zero is counted by `finapp.ledger.negative.positions`
 and named in the merchant's drill-down (the `BNPL_REFUND` kind, `P12-TSK-016`). The statement above is
 unchanged; read with this note, its "never by money the platform paid out" admits, for a BNPL purchase
-only, that purchase's own financed net already paid out.*
+only, that purchase's own financed net already paid out.* *(As built by `P12-TSK-021`: `BnplRefunds` debits the payable the
+refund's net, `R - r_f`, never refused for a short payable; the bound holds by the fee's arithmetic and is re-judged as a
+second rank by `bnpl V012`'s refund trigger for every writer - Σ the purchase's payable debits ≤ its financed net, Σ fees
+returned ≤ its fee; `finapp.ledger.negative.positions{purpose=MERCHANT_PAYABLE}` counts a payable below zero whatever the
+source. Hermetic: `BnplRefundsTest#aRefundAfterPayoutIsBoundedByThePurchasesNet` (the payable at exactly -(G - f) after
+the payout and two refunds), `#theB7BoundHoldsForEverySplit`; database, owed:
+`BnplRefundDatabaseTest#aRefundAfterPayoutIsBoundedByThePurchasesNet`.)*
 
 ---
 

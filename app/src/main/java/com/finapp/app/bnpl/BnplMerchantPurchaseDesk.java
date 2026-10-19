@@ -62,7 +62,24 @@ public final class BnplMerchantPurchaseDesk {
             String net,
             String feeScheduleVersionId,
             String entryId,
-            String financedAt) {}
+            String financedAt,
+            String refunded,
+            java.util.List<BnplMerchantPurchaseRefundView> refunds) {}
+
+    /**
+     * One refund of the purchase as its merchant reads it (`P12-TSK-021`, `-014`'s carry) - bnpl's closed
+     * {@link com.finapp.bnpl.MerchantBnplRefundView}: the amount, the fee returned and the payable's debit in exact decimal
+     * strings, the instant, the door, and the merchant's own reason (null for an operator's refund). Never an instalment,
+     * the customer's excess or where it went.
+     */
+    public record BnplMerchantPurchaseRefundView(
+            String refundId,
+            String amount,
+            String feeReturned,
+            String payableDebit,
+            String appliedAt,
+            String door,
+            String reason) {}
 
     /** {@code merchant}'s BNPL purchase {@code rawId}; another merchant's is the same {@code 404} as an unknown one. */
     public BnplMerchantPurchaseView read(AuthenticatedMerchant merchant, String rawId) {
@@ -74,19 +91,27 @@ public final class BnplMerchantPurchaseDesk {
     }
 
     static BnplMerchantPurchaseView view(MerchantBnplPurchaseView purchase) {
+        java.util.List<BnplMerchantPurchaseRefundView> refunds = purchase.refunds().stream()
+                .map(refund -> new BnplMerchantPurchaseRefundView(refund.refund().toString(), decimal(refund.amount()),
+                        decimal(refund.feeReturned()), decimal(refund.payableDebit()), refund.appliedAt().toString(),
+                        refund.door().name(), refund.reason().orElse(null)))
+                .toList();
         return new BnplMerchantPurchaseView(
                 purchase.purchase().value().toString(),
                 purchase.checkoutSession().toString(),
                 purchase.order().toString(),
                 purchase.product().name(),
-                purchase.status().name(),
+                // "Partially refunded" is derived, never a state (PHASE_12_PLAN.md section 5.3) - the -014 carry.
+                purchase.partiallyRefunded() ? "PARTIALLY_REFUNDED" : purchase.status().name(),
                 purchase.gross().currency().code(),
                 decimal(purchase.gross()),
                 decimal(purchase.fee()),
                 decimal(purchase.net()),
                 purchase.feeScheduleVersion().toString(),
                 purchase.financingEntry().value().toString(),
-                purchase.financedAt().toString());
+                purchase.financedAt().toString(),
+                decimal(purchase.refunded()),
+                refunds);
     }
 
     private static String decimal(Money amount) {

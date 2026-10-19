@@ -46,19 +46,28 @@ public class MerchantApiKeyOperations {
     }
 
     /** A key as the operator lists it: metadata only — no secret, and no hash. */
-    public record KeyView(String keyId, String status, String issuedAt, String revokedAt) {}
+    public record KeyView(String keyId, String status, String issuedAt, String revokedAt, List<String> scopes) {}
 
     @NonNull private final MerchantApiKeys keys;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
 
-    /** Issues a key, or converges on the one a retried request already minted. */
+    /** Issues a key with no scope, or converges on the one a retried request already minted. */
     public IssuedKeyView issue(String rawMerchantId, String idempotencyKey) {
+        return issue(rawMerchantId, idempotencyKey, List.of());
+    }
+
+    /**
+     * Issues a key carrying the named scopes (`P12-TSK-021`) - an unknown name is {@code 422} before anything - or
+     * converges on the one a retried request already minted.
+     */
+    public IssuedKeyView issue(String rawMerchantId, String idempotencyKey, List<String> rawScopes) {
         MerchantId merchant = parsedMerchantOrAbsent(rawMerchantId);
+        java.util.Set<com.finapp.merchant.MerchantApiKeyScope> scopes = scopes(rawScopes);
         try {
             MerchantApiKeys.IssuedKey issued =
                     inOneTransaction(
-                            unitOfWork -> keys.issue(unitOfWork, merchant, idempotencyKey));
+                            unitOfWork -> keys.issue(unitOfWork, merchant, idempotencyKey, scopes));
             return new IssuedKeyView(
                     issued.keyId().value().toString(),
                     // The one unwrap on this path, at the boundary that must transmit it.
@@ -105,7 +114,27 @@ public class MerchantApiKeyOperations {
                 key.id().value().toString(),
                 key.status().name(),
                 key.issuedAt().toString(),
-                key.revokedAt().map(Object::toString).orElse(null));
+                key.revokedAt().map(Object::toString).orElse(null),
+                key.scopes().stream().map(Enum::name).sorted().toList());
+    }
+
+    /** The named scopes - each one this platform knows, else {@code 422}; none named is none. */
+    static java.util.Set<com.finapp.merchant.MerchantApiKeyScope> scopes(List<String> raw) {
+        java.util.Set<com.finapp.merchant.MerchantApiKeyScope> scopes =
+                java.util.EnumSet.noneOf(com.finapp.merchant.MerchantApiKeyScope.class);
+        for (String name : raw == null ? List.<String>of() : raw) {
+            try {
+                scopes.add(com.finapp.merchant.MerchantApiKeyScope.valueOf(name));
+            } catch (IllegalArgumentException | NullPointerException unknown) {
+                throw new ApiException(
+                        com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                        "An API key scope was not recognised",
+                        "a scope must be one of "
+                                + java.util.Arrays.toString(com.finapp.merchant.MerchantApiKeyScope.values())
+                                + ".");
+            }
+        }
+        return scopes;
     }
 
     private static MerchantId parsedMerchantOrAbsent(String raw) {

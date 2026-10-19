@@ -74,6 +74,7 @@ final class BnplApplicationFakes {
     final Servicing servicing = new Servicing();
     final Repayments repayments = new Repayments();
     final Accruals accruals = new Accruals();
+    final Refunds refunds = new Refunds();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -120,6 +121,7 @@ final class BnplApplicationFakes {
         Servicing.State servicingState = servicing.state();
         Map<UUID, BnplClosure> closureState = repayments.state();
         List<BnplInterestAccrual> accrualState = accruals.state();
+        Refunds.State refundState = refunds.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -153,6 +155,7 @@ final class BnplApplicationFakes {
             servicing.restore(servicingState);
             repayments.restore(closureState);
             accruals.restore(accrualState);
+            refunds.restore(refundState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -631,10 +634,17 @@ final class BnplApplicationFakes {
             return split;
         }
 
+        /** The merchant fee a refund returns: the reference arithmetic over the purchase's pin (P12-TSK-021). */
         @Override
         public Money returnedFee(Connection unitOfWork, BnplPurchaseId purchaseId, Money refundedBefore,
                 Money refunded) {
-            throw new UnsupportedOperationException("the refund's (P12-TSK-021)");
+            log.add("returned fee");
+            MerchantFeeSplit pinned = pins.get(purchaseId.value());
+            if (pinned == null) {
+                throw new NotPinned();
+            }
+            return com.finapp.bnpl.testing.ReferenceMerchantFeeReturn.halfEven(pinned.gross(), pinned.fee())
+                    .returnedFee(refundedBefore, refunded);
         }
     }
 
@@ -832,6 +842,8 @@ final class BnplApplicationFakes {
         final Map<UUID, BnplAgreement> agreements = new LinkedHashMap<>();
         final Map<UUID, BnplAcceptanceEvidence> acceptances = new LinkedHashMap<>();
         final Map<UUID, StoredSchedule> schedules = new LinkedHashMap<>();
+        /** Every schedule version, by obligation and version ({@code schedules} holds each obligation's latest). */
+        final Map<String, StoredSchedule> versions = new LinkedHashMap<>();
         final Map<UUID, BnplBilling> billings = new LinkedHashMap<>();
         final Map<UUID, Repayment> repayments = new LinkedHashMap<>();
         final List<String> history = new ArrayList<>();
@@ -840,12 +852,14 @@ final class BnplApplicationFakes {
         record State(Map<UUID, BnplPurchase> rows, Map<UUID, MerchantFinancing> financings,
                 Map<UUID, BnplObligation> obligations, Map<UUID, BnplAgreement> agreements,
                 Map<UUID, BnplAcceptanceEvidence> acceptances, Map<UUID, StoredSchedule> schedules,
-                Map<UUID, BnplBilling> billings, Map<UUID, Repayment> repayments, List<String> history) {}
+                Map<UUID, BnplBilling> billings, Map<UUID, Repayment> repayments, List<String> history,
+                Map<String, StoredSchedule> versions) {}
 
         State state() {
             return new State(new LinkedHashMap<>(rows), new LinkedHashMap<>(financings), new LinkedHashMap<>(obligations),
                     new LinkedHashMap<>(agreements), new LinkedHashMap<>(acceptances), new LinkedHashMap<>(schedules),
-                    new LinkedHashMap<>(billings), new LinkedHashMap<>(repayments), new ArrayList<>(history));
+                    new LinkedHashMap<>(billings), new LinkedHashMap<>(repayments), new ArrayList<>(history),
+                    new LinkedHashMap<>(versions));
         }
 
         void restore(State state) {
@@ -859,6 +873,7 @@ final class BnplApplicationFakes {
             reset(repayments, state.repayments());
             history.clear();
             history.addAll(state.history());
+            reset(versions, state.versions());
         }
 
         @Override
@@ -975,6 +990,13 @@ final class BnplApplicationFakes {
                 throw new BnplStorageException("a BNPL schedule conserves (INV-BNPL-05): P0001");
             }
             schedules.put(schedule.obligation().value(), schedule);
+            versions.put(schedule.obligation().value() + ":" + schedule.version(), schedule);
+        }
+
+        /** Whether the obligation has a billing dated {@code dueDate} - one per due date (bnpl V008, V012's rank). */
+        boolean billedOn(BnplObligationId obligation, java.time.LocalDate dueDate) {
+            return billings.values().stream()
+                    .anyMatch(row -> row.obligation().equals(obligation) && row.dueDate().equals(dueDate));
         }
 
         @Override
@@ -1002,7 +1024,7 @@ final class BnplApplicationFakes {
             if (billings.values().stream().anyMatch(row -> row.obligation().equals(billing.obligation())
                     && !row.dueDate().isBefore(billing.dueDate()))
                     || schedule.instalments().stream().anyMatch(earlier -> earlier.sequence() < instalment.sequence()
-                            && !billings.containsKey(earlier.id()))) {
+                            && !billedOn(billing.obligation(), earlier.dueDate()))) {
                 throw new BnplStorageException("an obligation's instalments are billed oldest first: P0001");
             }
             if (!billing.periodStart().equals(BnplServicing.periodStart(schedule, instalment))) {
@@ -1108,7 +1130,12 @@ final class BnplApplicationFakes {
 
         @Override
         public Optional<StoredSchedule> schedule(Connection unitOfWork, BnplObligationId obligation, int version) {
-            return Optional.ofNullable(schedules.get(obligation.value())).filter(found -> found.version() == version);
+            return Optional.ofNullable(versions.get(obligation.value() + ":" + version));
+        }
+
+        @Override
+        public Optional<BnplPurchaseStatus> purchaseStatus(Connection unitOfWork, BnplPurchaseId purchase) {
+            return Optional.ofNullable(rows.get(purchase.value())).map(BnplPurchase::status);
         }
 
         @Override
@@ -1139,6 +1166,19 @@ final class BnplApplicationFakes {
                     if (line.target().equals("DUE_ITEM") && line.instalment().filter(billing.instalment()::equals)
                             .isPresent() && line.component().filter(component::equals).isPresent()) {
                         paid = paid.plus(line.amount());
+                    }
+                }
+            }
+            // bnpl V012: every refund's cancellation of the billed principal and release of the billed interest.
+            for (BnplRefund refund : refunds.rows.values()) {
+                for (BnplRefund.Adjustment adjustment : refund.adjustments()) {
+                    if (adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID
+                            && adjustment.instalment().equals(billing.instalment())) {
+                        paid = paid.plus(switch (component) {
+                            case "PRINCIPAL" -> adjustment.principalCancelled();
+                            case "INTEREST" -> adjustment.interestReleased();
+                            default -> zero;
+                        });
                     }
                 }
             }
@@ -1591,12 +1631,23 @@ final class BnplApplicationFakes {
                 throw new BnplStorageException("bnpl_obligation_closure_obligation_unique: SQLSTATE 23505");
             }
             BnplObligation obligation = purchases.obligations.get(closure.obligation().value());
-            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE
-                    || closure.reason() != BnplClosureReason.REPAID) {
-                throw new BnplStorageException("an ACTIVE BNPL obligation closes REPAID here: P0001");
+            BnplPurchaseStatus purchase = obligation == null ? null
+                    : purchases.rows.get(obligation.purchase().value()).status();
+            // bnpl V012: REPAID, REFUNDED (the purchase fully refunded) or REFUNDED_PARTIALLY_REPAID (beside a refund).
+            boolean admitted = switch (closure.reason()) {
+                case REPAID -> purchase != BnplPurchaseStatus.FULLY_REFUNDED;
+                case REFUNDED -> purchase == BnplPurchaseStatus.FULLY_REFUNDED;
+                case REFUNDED_PARTIALLY_REPAID -> purchase == BnplPurchaseStatus.FINANCED
+                        && closure.closingRefund().isPresent();
+                case PAID_OFF_EARLY -> false;
+            };
+            if (obligation == null || obligation.status() != BnplObligationStatus.ACTIVE || !admitted) {
+                throw new BnplStorageException("an ACTIVE BNPL obligation closes REPAID, REFUNDED or"
+                        + " REFUNDED_PARTIALLY_REPAID here: P0001");
             }
             BnplPurchaseStore.StoredSchedule schedule = purchases.schedules.get(closure.obligation().value());
-            if (schedule.instalments().stream().anyMatch(instalment -> !purchases.billings.containsKey(instalment.id()))) {
+            if (schedule.instalments().stream()
+                    .anyMatch(instalment -> !purchases.billedOn(closure.obligation(), instalment.dueDate()))) {
                 throw new BnplStorageException("a BNPL obligation closes only once every instalment is billed: P0001");
             }
             for (BnplBilling billing : purchases.billings.values()) {
@@ -1725,6 +1776,262 @@ final class BnplApplicationFakes {
                 }
             }
             return Optional.ofNullable(oldest);
+        }
+    }
+
+    /**
+     * {@code bnpl V012}'s refund world, in memory (`P12-TSK-021`): the purchase's row lock B5 (logged; merchant-scoped in
+     * the statement at the merchant's door), the key's arbiter {@code UNIQUE (merchant_id, requested_by, refund_key)}, the
+     * refund trigger's ranks - a {@code FINANCED} purchase of its merchant, Σ refunds never above the gross
+     * ({@code INV-BNPL-07}), Σ payable debits never above the financed net (B7), the versions in force, the floor, a
+     * {@code CLOSED} obligation's refund all excess to the wallet - the adjustments summing to the refund, the schedule and
+     * agreement versions n+1 (the next version, principal falling by exactly the unbilled cancellation, every billing kept
+     * as billed), and the purchase's terminal edge only when the refunds total the gross.
+     */
+    final class Refunds implements BnplRefundStore {
+
+        final Map<UUID, BnplRefund> rows = new LinkedHashMap<>();
+        /** Every agreement version a refund made, by agreement and version. */
+        final Map<String, BnplAgreement> agreementVersions = new LinkedHashMap<>();
+        /** The purchases locked under B5, in order. */
+        final List<UUID> locked = new ArrayList<>();
+
+        record State(Map<UUID, BnplRefund> rows, Map<String, BnplAgreement> agreementVersions) {}
+
+        State state() {
+            return new State(new LinkedHashMap<>(rows), new LinkedHashMap<>(agreementVersions));
+        }
+
+        void restore(State state) {
+            reset(rows, state.rows());
+            reset(agreementVersions, state.agreementVersions());
+        }
+
+        @Override
+        public Optional<LockedPurchase> lockAtMerchant(Connection unitOfWork, BnplPurchaseId id, UUID merchant) {
+            step("B5");
+            return lockedPurchase(id).filter(found -> found.purchase().merchant().equals(merchant));
+        }
+
+        @Override
+        public Optional<LockedPurchase> lock(Connection unitOfWork, BnplPurchaseId id) {
+            step("B5");
+            return lockedPurchase(id);
+        }
+
+        private Optional<LockedPurchase> lockedPurchase(BnplPurchaseId id) {
+            BnplPurchase purchase = purchases.rows.get(id.value());
+            MerchantFinancing financing = purchases.financings.get(id.value());
+            if (purchase == null || financing == null) {
+                return Optional.empty();
+            }
+            BnplObligation obligation = purchases.obligations.values().stream()
+                    .filter(row -> row.purchase().equals(id)).findFirst().orElseThrow();
+            locked.add(id.value());
+            MerchantFeeSplit split = financing.split();
+            return Optional.of(new LockedPurchase(purchase, split.gross(), split.fee(), split.net(), obligation.id()));
+        }
+
+        @Override
+        public Optional<BnplRefund> findByKey(Connection unitOfWork, UUID merchant, String requestedBy,
+                String refundKey) {
+            return rows.values().stream().filter(row -> row.merchant().equals(merchant)
+                    && row.requestedBy().equals(requestedBy) && row.refundKey().equals(refundKey)).findFirst();
+        }
+
+        @Override
+        public List<BnplRefund> ofPurchase(Connection unitOfWork, BnplPurchaseId purchase) {
+            return rows.values().stream().filter(row -> row.purchase().equals(purchase)).toList();
+        }
+
+        @Override
+        public List<BnplRefund.Adjustment> adjustmentsOf(Connection unitOfWork, BnplObligationId obligation) {
+            List<BnplRefund.Adjustment> adjustments = new ArrayList<>();
+            for (BnplRefund refund : rows.values()) {
+                if (refund.obligation().equals(obligation)) {
+                    adjustments.addAll(refund.adjustments());
+                }
+            }
+            return adjustments;
+        }
+
+        @Override
+        public void insertScheduleVersion(Connection unitOfWork, BnplPurchaseStore.StoredSchedule schedule, UUID refund) {
+            step("schedule version insert");
+            BnplPurchaseStore.StoredSchedule previous = purchases.schedules.get(schedule.obligation().value());
+            BnplObligation obligation = purchases.obligations.get(schedule.obligation().value());
+            if (obligation.status() != BnplObligationStatus.ACTIVE || schedule.version() != previous.version() + 1
+                    || !schedule.start().equals(obligation.purchaseDate())) {
+                throw new BnplStorageException("a BNPL schedule version n+1 is the next version of an ACTIVE obligation,"
+                        + " from its purchase date: P0001");
+            }
+            Money scheduled = Money.ofPersisted(0, schedule.principal().currency(), schedule.principal().scale());
+            for (int index = 0; index < schedule.instalments().size(); index++) {
+                BnplPurchaseStore.StoredInstalment instalment = schedule.instalments().get(index);
+                if (instalment.sequence() != index + 1) {
+                    throw new BnplStorageException("a BNPL schedule's instalments are numbered 1 to n: P0001");
+                }
+                if (!instalment.principal().isPositive()
+                        && !purchases.billedOn(schedule.obligation(), instalment.dueDate())) {
+                    throw new BnplStorageException("a BNPL instalment schedules a positive principal: P0001");
+                }
+                scheduled = scheduled.plus(instalment.principal());
+            }
+            if (!scheduled.equals(schedule.principal())) {
+                throw new BnplStorageException("a BNPL schedule conserves (INV-BNPL-05): P0001");
+            }
+            for (BnplBilling billing : purchases.billings.values()) {
+                if (billing.obligation().equals(schedule.obligation()) && schedule.instalments().stream().noneMatch(row ->
+                        row.dueDate().equals(billing.dueDate()) && row.principal().equals(billing.principal())
+                                && row.interest().equals(billing.interest()))) {
+                    throw new BnplStorageException("a refund's schedule version keeps every billed instalment as it"
+                            + " was billed: P0001");
+                }
+            }
+            pendingVersions.put(refund, previous);
+            purchases.schedules.put(schedule.obligation().value(), schedule);
+            purchases.versions.put(schedule.obligation().value() + ":" + schedule.version(), schedule);
+        }
+
+        /** Each refund's predecessor schedule, for the at-insert half of the version identity (V012's deferred check). */
+        private final Map<UUID, BnplPurchaseStore.StoredSchedule> pendingVersions = new LinkedHashMap<>();
+
+        @Override
+        public Instant insertAgreementVersion(Connection unitOfWork, BnplAgreement agreement, UUID refund,
+                int scheduleVersion) {
+            step("agreement version insert");
+            BnplAgreement previous = purchases.agreements.get(agreement.id().value());
+            if (agreement.version() != previous.version() + 1
+                    || !agreement.canonicalTerms().equals(previous.canonicalTerms())
+                    || !java.util.Arrays.equals(agreement.termsSha256(), previous.termsSha256())
+                    || !agreement.allocationEngine().equals(previous.allocationEngine())
+                    || !agreement.refundAllocationEngine().equals(previous.refundAllocationEngine())
+                    || !agreement.feeScheduleVersion().equals(previous.feeScheduleVersion())
+                    || scheduleVersion != purchases.schedules.get(agreement.obligation().value()).version()) {
+                throw new BnplStorageException("a BNPL agreement version n+1 is a copy of version n governing the next"
+                        + " schedule version: P0001");
+            }
+            purchases.agreements.put(agreement.id().value(), agreement.stampedAt(now));
+            agreementVersions.put(agreement.id().value() + ":" + agreement.version(), agreement.stampedAt(now));
+            return now;
+        }
+
+        @Override
+        public Instant insertRefund(Connection unitOfWork, BnplRefund refund) {
+            step("refund insert");
+            if (rows.values().stream().anyMatch(row -> row.merchant().equals(refund.merchant())
+                    && row.requestedBy().equals(refund.requestedBy()) && row.refundKey().equals(refund.refundKey()))) {
+                throw new BnplStorageException("bnpl_refund_request_unique: SQLSTATE 23505");
+            }
+            BnplPurchase purchase = purchases.rows.get(refund.purchase().value());
+            MerchantFeeSplit split = purchases.financings.get(refund.purchase().value()).split();
+            BnplObligation obligation = purchases.obligations.get(refund.obligation().value());
+            if (purchase.status() != BnplPurchaseStatus.FINANCED || !purchase.merchant().equals(refund.merchant())) {
+                throw new BnplStorageException("a BNPL refund refunds a FINANCED purchase of its merchant: P0001");
+            }
+            Money refunded = Money.ofPersisted(0, refund.amount().currency(), refund.amount().scale());
+            Money debited = refunded;
+            Money returned = refunded;
+            for (BnplRefund row : ofPurchase(unitOfWork, refund.purchase())) {
+                refunded = refunded.plus(row.amount());
+                debited = debited.plus(row.payableDebit());
+                returned = returned.plus(row.feeReturned());
+            }
+            if (!refund.refundedBefore().equals(refunded) || refunded.plus(refund.amount()).compareTo(split.gross()) > 0) {
+                throw new BnplStorageException("a BNPL purchase's refunds never total more than its gross"
+                        + " (INV-BNPL-07): P0001");
+            }
+            if (debited.plus(refund.payableDebit()).compareTo(split.net()) > 0
+                    || returned.plus(refund.feeReturned()).compareTo(split.fee()) > 0) {
+                throw new BnplStorageException("a BNPL purchase's refunds take back at most its financed net (B7): P0001");
+            }
+            BnplAgreement agreement = purchases.agreements.get(obligation.agreement().value());
+            if (refund.agreementVersion() != agreement.version()
+                    || refund.scheduleVersion() != purchases.schedules.get(obligation.id().value()).version()) {
+                throw new BnplStorageException("a BNPL refund names its agreement and schedule versions in force: P0001");
+            }
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            if (obligation.status() == BnplObligationStatus.ACTIVE) {
+                java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, obligation.id());
+                java.time.LocalDate ceiling = today.isAfter(floor) ? today : floor;
+                if (refund.valueDate().isBefore(floor) || refund.valueDate().isAfter(ceiling)) {
+                    throw new BnplStorageException("a BNPL refund is value-dated on or after its obligation's floor"
+                            + " and never after today: P0001");
+                }
+            } else if (refund.cancelled().isPositive() || refund.interestReleased().isPositive()
+                    || refund.excessTo() != BnplRefund.ExcessTo.WALLET) {
+                throw new BnplStorageException("a refund of a CLOSED obligation cancels nothing and pays the wallet"
+                        + " only: P0001");
+            }
+            // The version identity: a refund that cancels unbilled principal made the version, its predecessor's principal
+            // less exactly that cancellation.
+            BnplPurchaseStore.StoredSchedule previous = pendingVersions.remove(refund.id());
+            if (refund.cancelledUnbilled().isPositive() != (previous != null)) {
+                throw new BnplStorageException("a BNPL refund that cancels unbilled principal commits beside the schedule"
+                        + " version it made: P0001");
+            }
+            if (previous != null && !purchases.schedules.get(obligation.id().value()).principal()
+                    .equals(previous.principal().minus(refund.cancelledUnbilled()))) {
+                throw new BnplStorageException("a refund's schedule version schedules its predecessor's principal less"
+                        + " exactly the unbilled cancellation: P0001");
+            }
+            for (BnplRefund.Adjustment adjustment : refund.adjustments()) {
+                boolean billed = purchases.billings.containsKey(adjustment.instalment());
+                if ((adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID) != billed) {
+                    throw new BnplStorageException("a billed-unpaid cancellation names a billed instalment, an unbilled"
+                            + " one an instalment not yet billed: P0001");
+                }
+            }
+            BnplRefund stamped = refund.stampedAt(now);
+            rows.put(refund.id(), stamped);
+            // At commit: no billed component settled beyond what it billed.
+            for (BnplRefund.Adjustment adjustment : refund.adjustments()) {
+                BnplBilling billing = purchases.billings.get(adjustment.instalment());
+                if (billing == null) {
+                    continue;
+                }
+                Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                if (purchases.paid(billing, "PRINCIPAL", zero).compareTo(billing.principal()) > 0
+                        || purchases.paid(billing, "INTEREST", zero).compareTo(billing.interest()) > 0) {
+                    rows.remove(refund.id());
+                    throw new BnplStorageException("no billed component is ever settled beyond what it billed: P0001");
+                }
+            }
+            return now;
+        }
+
+        @Override
+        public boolean fullyRefunded(Connection unitOfWork, BnplPurchaseId purchase) {
+            step("purchase FULLY_REFUNDED");
+            BnplPurchase row = purchases.rows.get(purchase.value());
+            if (row == null || row.status() != BnplPurchaseStatus.FINANCED) {
+                return false;
+            }
+            Money refunded = Money.ofPersisted(0, row.currency(), row.currency().minorUnits());
+            for (BnplRefund refund : ofPurchase(unitOfWork, purchase)) {
+                refunded = refunded.plus(refund.amount());
+            }
+            if (!refunded.equals(purchases.financings.get(purchase.value()).split().gross())) {
+                throw new BnplStorageException("a BNPL purchase is FULLY_REFUNDED only when its refunds total its gross:"
+                        + " P0001");
+            }
+            purchases.rows.put(purchase.value(), new BnplPurchase(row.id(), row.offer(), row.checkoutSession(),
+                    row.party(), row.merchant(), row.product(), row.plan(), row.currency(),
+                    BnplPurchaseStatus.FULLY_REFUNDED, row.businessDate(), row.authorisedAt(), row.financedAt(),
+                    row.order(), row.correlation()));
+            return true;
+        }
+
+        @Override
+        public List<BnplRefund> atMerchant(Connection unitOfWork, BnplPurchaseId purchase, UUID merchant) {
+            return rows.values().stream()
+                    .filter(row -> row.purchase().equals(purchase) && row.merchant().equals(merchant)).toList();
+        }
+
+        @Override
+        public Optional<BnplPurchaseId> purchaseOfRefundAtMerchant(Connection unitOfWork, UUID refund, UUID merchant) {
+            return Optional.ofNullable(rows.get(refund)).filter(row -> row.merchant().equals(merchant))
+                    .map(BnplRefund::purchase);
         }
     }
 

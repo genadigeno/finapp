@@ -26,7 +26,7 @@ public final class JdbcMerchantApiKeyStore implements MerchantApiKeyStore<Connec
 
     private static final String COLUMNS =
             "k.id, k.merchant_id, k.secret_hash, k.algorithm, k.status, k.issued_at,"
-                    + " k.issued_by, k.revoked_at";
+                    + " k.issued_by, k.revoked_at, k.scopes";
 
     @Override
     public void insert(Connection unitOfWork, MerchantApiKey key) {
@@ -34,8 +34,8 @@ public final class JdbcMerchantApiKeyStore implements MerchantApiKeyStore<Connec
                 unitOfWork.prepareStatement(
                         "INSERT INTO merchant.merchant_api_key"
                                 + " (id, merchant_id, secret_hash, algorithm, status, issued_at,"
-                                + " issued_by)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                                + " issued_by, scopes)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, key.id().value());
             insert.setObject(2, key.merchantId().value());
             // The hash, never the secret - there is no column for one.
@@ -44,6 +44,9 @@ public final class JdbcMerchantApiKeyStore implements MerchantApiKeyStore<Connec
             insert.setString(5, key.status().name());
             insert.setTimestamp(6, Timestamp.from(key.issuedAt()));
             insert.setString(7, key.issuedBy());
+            // The scopes the operator issued it with (P12-TSK-021) - frozen by merchant V011's trigger.
+            insert.setArray(8, unitOfWork.createArrayOf("text",
+                    key.scopes().stream().map(Enum::name).sorted().toArray()));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new MerchantStorageException(
@@ -178,7 +181,19 @@ public final class JdbcMerchantApiKeyStore implements MerchantApiKeyStore<Connec
                 MerchantApiKeyStatus.valueOf(row.getString(5)),
                 row.getTimestamp(6).toInstant(),
                 row.getString(7),
-                revoked == null ? null : revoked.toInstant());
+                revoked == null ? null : revoked.toInstant(),
+                scopes(row.getArray(9)));
+    }
+
+    /** The key's scopes as stored - a value the code does not know is a defect, never ignored. */
+    private static java.util.Set<MerchantApiKeyScope> scopes(java.sql.Array stored) throws SQLException {
+        java.util.Set<MerchantApiKeyScope> scopes = java.util.EnumSet.noneOf(MerchantApiKeyScope.class);
+        if (stored != null) {
+            for (Object scope : (Object[]) stored.getArray()) {
+                scopes.add(MerchantApiKeyScope.valueOf((String) scope));
+            }
+        }
+        return scopes;
     }
 
     /**

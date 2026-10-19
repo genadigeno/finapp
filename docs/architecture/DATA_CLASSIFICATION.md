@@ -824,6 +824,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_api_key` | `issued_at` | `CONFIDENTIAL` | Dates a credential's life — correlates with an integration going live |
 | `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
 | `merchant_api_key` | `revoked_at` | `CONFIDENTIAL` | Dates a security judgement |
+| `merchant_api_key` | `scopes` | `CONFIDENTIAL` | What the key may do beyond reads and payouts (`BNPL_REFUND`, `P12-TSK-021`) - an insert-time fact; tells an attacker which credential moves money |
 | `merchant_api_key_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `merchant_api_key_event` | `key_id` | `INTERNAL` | An identifier of a thing |
 | `merchant_api_key_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
@@ -3629,6 +3630,8 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_agreement` | `document_sha256` | `INTERNAL` | The offer document's hash |
 | `bnpl_agreement` | `effective_from` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_agreement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_agreement` | `refund_id` | `INTERNAL` | The refund whose version this is (`P12-TSK-021`) - none for version 1 |
+| `bnpl_agreement` | `schedule_version` | `INTERNAL` | The schedule version this agreement version governs |
 | `bnpl_acceptance` | `id` | `INTERNAL` | Generated |
 | `bnpl_acceptance` | `agreement_id` | `CONFIDENTIAL` | The agreement accepted |
 | `bnpl_acceptance` | `agreement_version` | `INTERNAL` | Its version |
@@ -3653,6 +3656,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_schedule` | `start_date` | `INTERNAL` | The purchase's business date |
 | `bnpl_schedule` | `instalment_count` | `INTERNAL` | Its instalment count |
 | `bnpl_schedule` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_schedule` | `refund_id` | `INTERNAL` | The refund whose version this is (`P12-TSK-021`) - none for version 1 |
 | `bnpl_instalment` | `id` | `INTERNAL` | Generated |
 | `bnpl_instalment` | `schedule_id` | `INTERNAL` | Its schedule |
 | `bnpl_instalment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
@@ -3752,6 +3756,46 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_obligation_closure` | `repayment_id` | `INTERNAL` | The repayment whose transaction closed it, if any |
 | `bnpl_obligation_closure` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_obligation_closure` | `correlation_id` | `INTERNAL` | The closing act's correlation |
+| `bnpl_obligation_closure` | `refund_id` | `INTERNAL` | The BNPL refund whose transaction closed it, if any (`P12-TSK-021`) |
+| `bnpl_refund` | `id` | `INTERNAL` | Generated (`P12-TSK-021`) |
+| `bnpl_refund` | `purchase_id` | `CONFIDENTIAL` | Its purchase - the bound's subject |
+| `bnpl_refund` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation |
+| `bnpl_refund` | `merchant_id` | `INTERNAL` | The merchant by value - the tenant of every merchant read |
+| `bnpl_refund` | `door` | `INTERNAL` | `MERCHANT` or `OPERATOR` |
+| `bnpl_refund` | `requested_by` | `RESTRICTED-PII` | Who asked - the merchant, or the operator's identity (`audit_record.actor_id`'s reasoning) |
+| `bnpl_refund` | `refund_key` | `CONFIDENTIAL` | The requester's idempotency key |
+| `bnpl_refund` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_refund` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_refund` | `amount_minor` | `RESTRICTED-FINANCIAL` | R - the refund |
+| `bnpl_refund` | `refunded_before_minor` | `RESTRICTED-FINANCIAL` | Σ the purchase's earlier refunds, read under its lock |
+| `bnpl_refund` | `fee_returned_minor` | `RESTRICTED-FINANCIAL` | The merchant fee returned, cumulative |
+| `bnpl_refund` | `payable_debit_minor` | `RESTRICTED-FINANCIAL` | The payable's debit, R - fee returned |
+| `bnpl_refund` | `cancelled_unbilled_minor` | `RESTRICTED-FINANCIAL` | Principal not yet due cancelled |
+| `bnpl_refund` | `cancelled_billed_minor` | `RESTRICTED-FINANCIAL` | Billed principal cancelled |
+| `bnpl_refund` | `excess_minor` | `RESTRICTED-FINANCIAL` | What the customer is owed back - never shown to the merchant |
+| `bnpl_refund` | `excess_to` | `INTERNAL` | `NONE`, `WALLET` or `CREDIT_BALANCE` |
+| `bnpl_refund` | `interest_accrued_released_minor` | `RESTRICTED-FINANCIAL` | Pay-in-N accrued interest released (A11) |
+| `bnpl_refund` | `interest_due_released_minor` | `RESTRICTED-FINANCIAL` | Pay-in-N billed interest released (A11) |
+| `bnpl_refund` | `allocation_engine` | `INTERNAL` | `REFUND_ALLOCATION_ENGINE_V1` |
+| `bnpl_refund` | `agreement_id` | `CONFIDENTIAL` | Its agreement |
+| `bnpl_refund` | `agreement_version` | `INTERNAL` | The agreement version in force after it |
+| `bnpl_refund` | `schedule_version` | `INTERNAL` | The schedule version in force after it |
+| `bnpl_refund` | `reason` | `RESTRICTED-PII` | Person-written, screened for card and account numbers; the merchant reads back its own |
+| `bnpl_refund` | `journal_entry_id` | `INTERNAL` | The entry F5/F5a (`bnpl.refund:<refund>`) |
+| `bnpl_refund` | `value_date` | `INTERNAL` | Never before the obligation's floor |
+| `bnpl_refund` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_refund` | `correlation_id` | `INTERNAL` | The request's correlation |
+| `bnpl_refund_adjustment` | `id` | `INTERNAL` | Generated (`P12-TSK-021`) |
+| `bnpl_refund_adjustment` | `refund_id` | `INTERNAL` | Its refund |
+| `bnpl_refund_adjustment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
+| `bnpl_refund_adjustment` | `sequence` | `INTERNAL` | The instalment's sequence |
+| `bnpl_refund_adjustment` | `instalment_id` | `INTERNAL` | The instalment it touched - the billing's or the latest schedule's |
+| `bnpl_refund_adjustment` | `kind` | `INTERNAL` | `UNBILLED` or `BILLED_UNPAID` |
+| `bnpl_refund_adjustment` | `currency` | `INTERNAL` | Its currency |
+| `bnpl_refund_adjustment` | `scale` | `INTERNAL` | Its scale |
+| `bnpl_refund_adjustment` | `principal_cancelled_minor` | `RESTRICTED-FINANCIAL` | Principal cancelled on the instalment |
+| `bnpl_refund_adjustment` | `interest_released_minor` | `RESTRICTED-FINANCIAL` | Billed interest released on it |
+| `bnpl_refund_adjustment` | `whole` | `INTERNAL` | Whether the instalment owes no principal after it |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

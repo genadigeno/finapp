@@ -161,7 +161,7 @@ public final class JdbcBnplServicingStore implements BnplServicingStore {
                 "SELECT s.id, s.schedule_version, s.engine, s.currency, s.scale, s.principal_minor, s.start_date,"
                         + " i.id AS instalment_id, i.sequence, i.due_date, i.principal_minor AS instalment_principal,"
                         + " i.interest_minor, i.amount_minor"
-                        + " FROM bnpl.bnpl_schedule s JOIN bnpl.bnpl_instalment i ON i.schedule_id = s.id"
+                        + " FROM bnpl.bnpl_schedule s LEFT JOIN bnpl.bnpl_instalment i ON i.schedule_id = s.id"
                         + " WHERE s.obligation_id = ? AND s.schedule_version ="
                         + " (SELECT max(x.schedule_version) FROM bnpl.bnpl_schedule x WHERE x.obligation_id = ?)"
                         + " ORDER BY i.sequence")) {
@@ -183,6 +183,9 @@ public final class JdbcBnplServicingStore implements BnplServicingStore {
                         engine = rows.getString("engine");
                         principal = Money.ofPersisted(rows.getLong("principal_minor"), currency, scale);
                         start = rows.getDate("start_date").toLocalDate();
+                    }
+                    if (rows.getObject("instalment_id") == null) {
+                        continue; // An empty refund version (P12-TSK-021): the schedule, no instalment.
                     }
                     instalments.add(new BnplPurchaseStore.StoredInstalment(rows.getObject("instalment_id", UUID.class),
                             rows.getInt("sequence"), rows.getDate("due_date").toLocalDate(),

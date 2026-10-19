@@ -62,7 +62,11 @@ class BnplMerchantPurchaseDeskTest {
                 .map(RecordComponent::getName))
                 .as("a member added to the merchant's answer is a datum sent to a merchant (INV-CRD-04)")
                 .containsExactly("purchaseId", "checkoutId", "orderId", "product", "status", "currency", "gross", "fee",
-                        "net", "feeScheduleVersionId", "entryId", "financedAt");
+                        "net", "feeScheduleVersionId", "entryId", "financedAt", "refunded", "refunds");
+        assertThat(Arrays.stream(BnplMerchantPurchaseDesk.BnplMerchantPurchaseRefundView.class.getRecordComponents())
+                .map(RecordComponent::getName))
+                .as("a refund's members are its own purchase-level figures (P12-TSK-021) - never an instalment or excess")
+                .containsExactly("refundId", "amount", "feeReturned", "payableDebit", "appliedAt", "door", "reason");
     }
 
     @Test
@@ -74,7 +78,26 @@ class BnplMerchantPurchaseDeskTest {
                 purchase.purchase().value().toString(), purchase.checkoutSession().toString(),
                 purchase.order().toString(), "BNPL_PAY_IN_N", "FINANCED", "EUR", "600.00", "24.17", "575.83",
                 purchase.feeScheduleVersion().toString(), purchase.financingEntry().value().toString(),
-                "2026-10-18T09:00:00Z"));
+                "2026-10-18T09:00:00Z", "0.00", java.util.List.of()));
+    }
+
+    @Test
+    @DisplayName("a purchase with a refund reads PARTIALLY_REFUNDED - derived, never stored - with the refund's own figures"
+            + " and the merchant's own reason (P12-TSK-021, -014's carry)")
+    void aRefundedPurchaseReadsPartiallyRefunded() {
+        MerchantBnplPurchaseView purchase = purchase(IDS.next(), 600_00, 24_00, 576_00).withRefunds(java.util.List.of(
+                new com.finapp.bnpl.MerchantBnplRefundView(IDS.next(), Money.ofMinorUnits(180_00, EUR),
+                        Money.ofMinorUnits(7_20, EUR), Money.ofMinorUnits(172_80, EUR),
+                        java.time.Instant.parse("2026-10-20T10:00:00Z"), com.finapp.bnpl.BnplRefund.Door.MERCHANT,
+                        java.util.Optional.of("returned goods"))));
+        BnplMerchantPurchaseDesk.BnplMerchantPurchaseView view = BnplMerchantPurchaseDesk.view(purchase);
+        assertThat(view.status()).isEqualTo("PARTIALLY_REFUNDED");
+        assertThat(view.refunded()).isEqualTo("180.00");
+        assertThat(view.refunds()).singleElement().satisfies(refund -> {
+            assertThat(refund.payableDebit()).isEqualTo("172.80");
+            assertThat(refund.feeReturned()).isEqualTo("7.20");
+            assertThat(refund.reason()).isEqualTo("returned goods");
+        });
     }
 
     @Test
@@ -91,7 +114,7 @@ class BnplMerchantPurchaseDeskTest {
         JsonNode answer = JsonMapper.builder().build().readTree(body);
         List<String> members = new ArrayList<>();
         answer.propertyNames().forEach(members::add);
-        assertThat(members).hasSize(12).allSatisfy(member -> assertThat(CREDIT_WORDS)
+        assertThat(members).hasSize(14).allSatisfy(member -> assertThat(CREDIT_WORDS)
                 .as("member %s names a customer credit datum", member)
                 // The merchant's own fee schedule is the merchant's datum, not the customer's schedule.
                 .noneMatch(word -> member.toLowerCase(Locale.ROOT).replace("feeschedule", "").contains(word)));

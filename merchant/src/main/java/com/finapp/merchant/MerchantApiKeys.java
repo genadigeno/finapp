@@ -97,9 +97,23 @@ public final class MerchantApiKeys {
     @NonNull private final Clock clock;
     @NonNull private final SecureRandom randomness;
 
-    /** Issues a key for the merchant, or replays the recorded outcome for a retried key. */
+    /** Issues a key with no scope for the merchant, or replays the recorded outcome for a retried key. */
     public IssuedKey issue(
             Connection unitOfWork, MerchantId merchantId, String idempotencyKey) {
+        return issue(unitOfWork, merchantId, idempotencyKey, java.util.Set.of());
+    }
+
+    /**
+     * Issues a key carrying {@code scopes} (`P12-TSK-021`; ADR-0052's door extended) - or replays the recorded outcome
+     * for a retried key. The scopes are part of the request's fingerprint, so the same key retried with other scopes is a
+     * reused key, never a second credential or a widened one; a request with none fingerprints exactly as before.
+     */
+    public IssuedKey issue(
+            Connection unitOfWork,
+            MerchantId merchantId,
+            String idempotencyKey,
+            java.util.Set<MerchantApiKeyScope> scopes) {
+        Objects.requireNonNull(scopes, "scopes must not be null");
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(merchantId, "merchantId must not be null");
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
@@ -121,7 +135,7 @@ public final class MerchantApiKeys {
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         (IDEMPOTENCY_SCOPE + "|" + actor.type().name() + "|" + actor.id() + "|"
-                                        + merchantId.value())
+                                        + merchantId.value() + scopesFingerprint(scopes))
                                 .getBytes(StandardCharsets.UTF_8));
 
         // The minted secret leaves the command through this holder rather than through the
@@ -135,7 +149,7 @@ public final class MerchantApiKeys {
                         unitOfWork,
                         key,
                         fingerprint,
-                        uow -> mint(uow, merchantId, actor, correlation, minted));
+                        uow -> mint(uow, merchantId, scopes, actor, correlation, minted));
 
         String recordedKeyId =
                 new String(
@@ -199,14 +213,21 @@ public final class MerchantApiKeys {
                         Optional.of("key=" + keyId + ", merchant=" + tenant)));
     }
 
+    /** The scopes as a fingerprint and summary suffix - nothing for none, so a scopeless issuance reads as before. */
+    static String scopesFingerprint(java.util.Set<MerchantApiKeyScope> scopes) {
+        return scopes.isEmpty() ? "" : ", scopes=" + scopes.stream().map(Enum::name).sorted()
+                .collect(java.util.stream.Collectors.joining("+"));
+    }
+
     private CommandResult mint(
             Connection uow,
             MerchantId merchantId,
+            java.util.Set<MerchantApiKeyScope> scopes,
             Actor actor,
             Correlation correlation,
             AtomicReference<com.finapp.sharedkernel.security.Sensitive<String>> minted) {
         MerchantApiKeySecret secret = MerchantApiKeySecret.issue(randomness);
-        MerchantApiKey key = MerchantApiKey.issue(ids, clock, merchantId, secret, actor.id());
+        MerchantApiKey key = MerchantApiKey.issue(ids, clock, merchantId, secret, actor.id(), scopes);
         keys.insert(uow, key);
 
         audit.append(
@@ -225,7 +246,7 @@ public final class MerchantApiKeys {
                         // later merchant action to this issuance; the secret appears nowhere.
                         Optional.of(
                                 "key=" + key.id() + ", merchant=" + merchantId + ", algorithm="
-                                        + key.algorithm())));
+                                        + key.algorithm() + scopesFingerprint(key.scopes()))));
 
         // THE SECRET GOES TO THE CALLER, NOT TO STORAGE. The recorded response is the key id
         // alone: enough for a replay to converge on the same credential, and nothing a

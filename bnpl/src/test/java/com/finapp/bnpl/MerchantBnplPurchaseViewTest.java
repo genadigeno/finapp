@@ -34,7 +34,21 @@ class MerchantBnplPurchaseViewTest {
                 .as("a component added here is a datum sent to a merchant: INV-CRD-04 forbids a party, a plan, a"
                         + " decision, a reason, a score, an approved amount, a schedule, a repayment or a delinquency")
                 .containsExactly("purchase", "checkoutSession", "order", "product", "status", "gross", "fee", "net",
-                        "feeScheduleVersion", "financingEntry", "financedAt");
+                        "feeScheduleVersion", "financingEntry", "financedAt", "refunds");
+    }
+
+    @Test
+    @DisplayName("a refund the merchant reads is closed too (P12-TSK-021): the refund, its amount, the fee returned, the"
+            + " payable's debit, its instant, the door and the merchant's own reason - never an instalment, the customer's"
+            + " excess or where it went")
+    void theRefundsFieldSetIsClosed() {
+        assertThat(Arrays.stream(MerchantBnplRefundView.class.getRecordComponents()).map(RecordComponent::getName))
+                .as("a component added here is a datum sent to a merchant (INV-CRD-04, the -014 closed view)")
+                .containsExactly("refund", "amount", "feeReturned", "payableDebit", "appliedAt", "door", "reason");
+        assertThatIllegalStateException().isThrownBy(() -> new MerchantBnplRefundView(IDS.next(),
+                Money.ofMinorUnits(30_00, CurrencyCode.of("EUR")), Money.ofMinorUnits(1_20, CurrencyCode.of("EUR")),
+                Money.ofMinorUnits(28_80, CurrencyCode.of("EUR")), java.time.Instant.EPOCH, BnplRefund.Door.OPERATOR,
+                java.util.Optional.of("an operator's own note"))).withMessageContaining("never an operator's");
     }
 
     @Test

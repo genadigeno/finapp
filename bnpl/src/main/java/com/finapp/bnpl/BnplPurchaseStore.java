@@ -82,6 +82,12 @@ public interface BnplPurchaseStore {
      */
     List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation);
 
+    /**
+     * The purchase's status, unlocked (`P12-TSK-021`): read by the closure under its caller's B4 to name a refund's
+     * reason - the purchase moves {@code FULLY_REFUNDED} only under B5 then B4, so a transaction holding B4 reads it settled.
+     */
+    Optional<BnplPurchaseStatus> purchaseStatus(Connection unitOfWork, BnplPurchaseId purchase);
+
     // ------------------------------------------------------------------ the merchant's read
 
     /**

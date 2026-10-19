@@ -115,11 +115,30 @@ class MerchantApiKeyMigrationTest {
         assertThat(migration()).contains("CREATE TABLE merchant.merchant_api_key");
     }
 
+    @Test
+    @DisplayName("V011 (P12-TSK-021): the scopes CHECK is generated from MerchantApiKeyScope, a key issued before carries"
+            + " none, and the trigger freezes the scopes with the identity - no grant lets the application move them")
+    void theScopesAreGeneratedAndFrozen() {
+        String scopes = read(SCOPES);
+        assertThat(scopes)
+                .contains("ADD COLUMN scopes text[] NOT NULL DEFAULT '{}'::text[];")
+                .contains("CHECK (scopes <@ " + MerchantApiKeyScope.sqlArray())
+                .contains("OR NEW.scopes IS DISTINCT FROM OLD.scopes THEN")
+                .doesNotContain("GRANT UPDATE");
+        assertThat(MerchantApiKeyScope.sqlArray()).isEqualTo("ARRAY['BNPL_REFUND']::text[]");
+    }
+
+    private static final String SCOPES = "db/migration/merchant/V011__merchant_api_key_scopes.sql";
+
     private static String migration() {
+        return read(MIGRATION);
+    }
+
+    private static String read(String path) {
         try (InputStream migration =
-                MerchantApiKeyMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+                MerchantApiKeyMigrationTest.class.getClassLoader().getResourceAsStream(path)) {
             if (migration == null) {
-                throw new IllegalStateException("Migration not on the classpath: " + MIGRATION);
+                throw new IllegalStateException("Migration not on the classpath: " + path);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

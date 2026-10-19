@@ -142,6 +142,20 @@ public final class MerchantTransactionReport {
     @NonNull private final OrderStore<Connection> orders;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final BnplRefundOwnership bnplRefunds;
+
+    /**
+     * The second rank behind a {@link Kind#BNPL_REFUND}'s identifier (`P12-TSK-021`, `-016`'s carry): bnpl's own read of the
+     * refund with {@code merchant_id = ?} in its statement - the purchase it is of when it is this merchant's, else empty.
+     * The first rank is the key's namespace on this merchant's own payable line; a refund this read does not confirm is
+     * rendered without its identifier, never with another merchant's.
+     */
+    @FunctionalInterface
+    public interface BnplRefundOwnership {
+
+        /** The purchase {@code merchant}'s BNPL refund {@code refund} is of - empty for another merchant's or none. */
+        Optional<UUID> purchaseOf(Connection unitOfWork, UUID merchant, UUID refund);
+    }
 
     /**
      * The merchant's movements for {@code [from, to]}, one section per currency its payable
@@ -223,6 +237,9 @@ public final class MerchantTransactionReport {
                     reference);
         }
         if (namespace.filter(MerchantPayable.BNPL_REFUND_NAMESPACE::equals).isPresent()) {
+            // The second rank (P12-TSK-021): the refund named only when bnpl's tenant-scoped read confirms it.
+            Optional<UUID> confirmed =
+                    reference.filter(id -> bnplRefunds.purchaseOf(uow, tenant, id).isPresent());
             return new Movement(
                     Kind.BNPL_REFUND,
                     first.entry(),
@@ -233,7 +250,7 @@ public final class MerchantTransactionReport {
                     Optional.empty(),
                     Optional.empty(),
                     Optional.empty(),
-                    reference,
+                    confirmed,
                     Optional.empty());
         }
         Optional<PaymentAttempt> captured =

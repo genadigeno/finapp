@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -58,8 +59,11 @@ public class MerchantApiKeyController {
     @ResponseStatus(HttpStatus.CREATED)
     public MerchantApiKeyOperations.IssuedKeyView issue(
             @PathVariable("id") String merchantId,
-            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return keys.issue(merchantId, idempotencyKey);
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @RequestParam(name = "scope", required = false) List<String> scopes) {
+        // The scopes the key is issued with (P12-TSK-021): BNPL_REFUND lets it refund the merchant's BNPL purchases.
+        // None named is none - a read-and-payout key, as every key issued before.
+        return keys.issue(merchantId, idempotencyKey, scopes == null ? List.of() : scopes);
     }
 
     /**

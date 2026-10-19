@@ -165,6 +165,30 @@ class BnplMerchantDrillDownTest {
         assertThat(nets).isEqualTo(sections.get(0).closing().minus(sections.get(0).opening()));
     }
 
+    @Test
+    @DisplayName("a BNPL_REFUND's identifier rests on two ranks (P12-TSK-021, -016's carry): the key on this merchant's"
+            + " payable line, then bnpl's tenant-scoped read - a refund that read does not confirm is shown without it")
+    void anUnconfirmedBnplRefundIsShownWithoutItsIdentifier() {
+        BnplPayoutWorld.Shop shop = world.shop();
+        world.financed(shop, 600_00L, 24_00L);
+        UUID refund = world.refundedByBnpl(shop, 200_00L, 50_00L, 8_00L);
+        LocalDate today = LocalDate.ofInstant(world.clock.instant(), ZoneOffset.UTC);
+        List<UUID> asked = new java.util.ArrayList<>();
+        List<MerchantTransactionReport.Section> sections = world.transactionReport(absent(PaymentAttemptStore.class),
+                absent(RefundStore.class), absent(CheckoutSessionStore.class), absent(OrderStore.class),
+                (uow, merchant, named) -> {
+                    asked.add(merchant);
+                    return Optional.empty();
+                }).report(new AuthenticatedMerchant(shop.id(), MerchantApiKeyId.next(world.ids)), today, today);
+        MerchantTransactionReport.Movement refunded = sections.get(0).movements().stream()
+                .filter(movement -> movement.kind() == MerchantTransactionReport.Kind.BNPL_REFUND).findFirst()
+                .orElseThrow();
+        assertThat(refunded.refundId()).as("never another merchant's identifier").isEmpty();
+        assertThat(refunded.net()).as("the money is the journal's, whatever the rank says").isEqualTo(eur(-192_00L));
+        assertThat(asked).as("asked with the tenant, the authenticated key's merchant").containsOnly(shop.id().value());
+        assertThat(refund).isNotNull();
+    }
+
     /** The report over the world's statement reading; payments' and checkout's stores know none of these references. */
     private MerchantTransactionReport report() {
         return world.transactionReport(absent(PaymentAttemptStore.class), absent(RefundStore.class),

@@ -401,7 +401,7 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT s.id, s.engine, s.currency, s.scale, s.principal_minor, s.start_date, i.id AS instalment_id,"
                         + " i.sequence, i.due_date, i.principal_minor AS instalment_principal, i.interest_minor,"
-                        + " i.amount_minor FROM bnpl.bnpl_schedule s JOIN bnpl.bnpl_instalment i ON i.schedule_id = s.id"
+                        + " i.amount_minor FROM bnpl.bnpl_schedule s LEFT JOIN bnpl.bnpl_instalment i ON i.schedule_id = s.id"
                         + " WHERE s.obligation_id = ? AND s.schedule_version = ? ORDER BY i.sequence")) {
             select.setObject(1, obligation.value());
             select.setInt(2, version);
@@ -419,6 +419,9 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
                         engine = rows.getString("engine");
                         principal = Money.ofPersisted(rows.getLong("principal_minor"), currency, scale);
                         start = rows.getDate("start_date").toLocalDate();
+                    }
+                    if (rows.getObject("instalment_id") == null) {
+                        continue; // An empty refund version (P12-TSK-021): the schedule, no instalment.
                     }
                     instalments.add(new StoredInstalment(rows.getObject("instalment_id", UUID.class),
                             rows.getInt("sequence"), rows.getDate("due_date").toLocalDate(),
@@ -464,6 +467,19 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
             return items;
         } catch (SQLException failure) {
             throw failed("reading a BNPL obligation's billed items", failure);
+        }
+    }
+
+    @Override
+    public Optional<BnplPurchaseStatus> purchaseStatus(Connection unitOfWork, BnplPurchaseId purchase) {
+        Objects.requireNonNull(purchase, "purchase");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT status FROM bnpl.purchase WHERE id = ?")) {
+            select.setObject(1, purchase.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(BnplPurchaseStatus.valueOf(row.getString(1))) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a BNPL purchase's status", failure);
         }
     }
 

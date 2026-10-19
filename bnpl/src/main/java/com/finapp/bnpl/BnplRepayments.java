@@ -332,9 +332,10 @@ public final class BnplRepayments {
         if (paid.isEmpty()) {
             return;
         }
-        Map<UUID, Integer> sequenceOf = new HashMap<>();
+        // The sequence by due date: a refund's schedule version carries a billed instalment as a new row (`P12-TSK-021`).
+        Map<LocalDate, Integer> sequenceOn = new HashMap<>();
         servicing.latestSchedule(unitOfWork, obligation.id()).ifPresent(schedule -> schedule.instalments()
-                .forEach(instalment -> sequenceOf.put(instalment.id(), instalment.sequence())));
+                .forEach(instalment -> sequenceOn.put(instalment.dueDate(), instalment.sequence())));
         for (DueState.DueItem item : before.items()) {
             UUID instalment = item.id().value();
             Map<AllocationComponent, Money> components = paid.get(instalment);
@@ -351,7 +352,7 @@ public final class BnplRepayments {
             EventPayload payload = EventPayload.of()
                     .with("obligationId", obligation.id().value().toString())
                     .with("instalmentId", instalment.toString())
-                    .with("sequence", Integer.toString(sequenceOf.getOrDefault(instalment, 0)))
+                    .with("sequence", Integer.toString(sequenceOn.getOrDefault(item.dueDate(), 0)))
                     .with("repaymentId", repayment.id().toString())
                     .with("currency", total.currency().code())
                     .with("scale", Integer.toString(total.scale()))

@@ -87,7 +87,7 @@ public final class BnplClosures {
      * holds under (P) (the repayment's), if any.
      */
     public record Closing(BnplServicingStore.Locked locked, BnplLedgerAccounts accounts, LocalDate today,
-            Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld) {
+            Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld, Optional<UUID> refund) {
 
         public Closing {
             Objects.requireNonNull(locked, "locked must not be null");
@@ -95,11 +95,24 @@ public final class BnplClosures {
             Objects.requireNonNull(today, "today must not be null");
             Objects.requireNonNull(repayment, "repayment must not be null");
             Objects.requireNonNull(walletHeld, "walletHeld must not be null");
+            Objects.requireNonNull(refund, "refund must not be null");
+            if (repayment.isPresent() && refund.isPresent()) {
+                throw new IllegalArgumentException("one closing act: a repayment or a refund");
+            }
+        }
+
+        /** A closing transaction that is no refund's - the repayment's or the servicing step's. */
+        public Closing(BnplServicingStore.Locked locked, BnplLedgerAccounts accounts, LocalDate today,
+                Optional<UUID> repayment, Optional<LedgerAccountId> walletHeld) {
+            this(locked, accounts, today, repayment, walletHeld, Optional.empty());
         }
     }
 
     /**
-     * Closes the obligation {@code REPAID} if it is settled, on the caller's unit of work under its B4.
+     * Closes the obligation if it is settled, on the caller's unit of work under its B4 - for the reason its closing act
+     * and its purchase name (`P12-TSK-021`, {@code BNPL_LIFECYCLES.md} section 4.7): {@code REFUNDED} when the purchase is
+     * {@code FULLY_REFUNDED} (refunds settled it, whichever transaction refunds the credit), {@code REFUNDED_PARTIALLY_REPAID}
+     * when a partial refund's own transaction settles it, else {@code REPAID}.
      *
      * @param actor the closing act's actor - asked for only when the obligation closes (the servicing step's is the
      *     scope's system actor)
@@ -139,27 +152,46 @@ public final class BnplClosures {
             refundEntry = Optional.of(refund(unitOfWork, obligation, refund, closing.accounts().creditBalance().id(),
                     wallet.get(), closing.today()));
         }
-        BnplClosure closure = new BnplClosure(ids.next(), obligation.id(), BnplClosureReason.REPAID, refund, refundEntry,
-                closing.repayment(), correlation);
+        BnplClosureReason reason = reasonOf(unitOfWork, obligation, closing);
+        BnplClosure closure = new BnplClosure(ids.next(), obligation.id(), reason, refund, refundEntry,
+                closing.repayment(), closing.refund(), correlation);
         store.insertClosure(unitOfWork, closure);
-        if (!store.close(unitOfWork, obligation.id(), BnplClosureReason.REPAID)) {
+        if (!store.close(unitOfWork, obligation.id(), reason)) {
             throw new IllegalStateException("the locked obligation did not close under its own row lock");
         }
         purchases.appendObligationEvent(unitOfWork, new BnplPurchaseStore.ObligationHistoryRow(ids.next(),
                 obligation.id(), Optional.of(BnplObligationStatus.ACTIVE), BnplObligationStatus.CLOSED,
-                BnplClosureReason.REPAID.name(), actor.get(), correlation));
+                reason.name(), actor.get(), correlation));
         publish(unitOfWork, closing.locked(), closure);
         return Optional.of(closure);
     }
 
-    /** Every instalment of the obligation's latest schedule version billed - the last receivable is never unbilled. */
+    /**
+     * The closure's reason (`P12-TSK-021`): {@code REFUNDED} for a purchase its refunds fully refunded, read on the
+     * caller's unit of work (the refund moves it under B5 and B4, and every transaction that can close holds B4);
+     * {@code REFUNDED_PARTIALLY_REPAID} when a partial refund's own transaction closes it; {@code REPAID} otherwise -
+     * earlier partial refunds notwithstanding, the closing act names it ({@code BNPL_LIFECYCLES.md} section 4.7).
+     */
+    private BnplClosureReason reasonOf(Connection unitOfWork, BnplObligation obligation, Closing closing) {
+        if (purchases.purchaseStatus(unitOfWork, obligation.purchase())
+                .filter(BnplPurchaseStatus.FULLY_REFUNDED::equals).isPresent()) {
+            return BnplClosureReason.REFUNDED;
+        }
+        return closing.refund().isPresent() ? BnplClosureReason.REFUNDED_PARTIALLY_REPAID : BnplClosureReason.REPAID;
+    }
+
+    /**
+     * Every instalment of the obligation's latest schedule version billed - the last receivable is never unbilled. Judged
+     * by due date (`P12-TSK-021`): a billing is dated its instalment's due date, one per date, and a refund's schedule
+     * version carries its billed instalments as new rows beside the billings that name the earlier version's.
+     */
     private boolean everyInstalmentBilled(Connection unitOfWork, BnplObligationId obligation,
             BnplPurchaseStore.StoredSchedule schedule) {
-        Set<UUID> billed = new HashSet<>();
+        Set<LocalDate> billed = new HashSet<>();
         for (BnplPurchaseStore.BilledItem item : purchases.billedItems(unitOfWork, obligation)) {
-            billed.add(item.instalment());
+            billed.add(item.dueDate());
         }
-        return schedule.instalments().stream().allMatch(instalment -> billed.contains(instalment.id()));
+        return schedule.instalments().stream().allMatch(instalment -> billed.contains(instalment.dueDate()));
     }
 
 
