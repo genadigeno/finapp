@@ -357,7 +357,18 @@ class NoSingleInstanceAssumptionRulesTest {
                     // posted under the ledger key bnpl.billing:<instalment>; money held applied under UNIQUE (billing_id)
                     // and UNIQUE (obligation_id, catch_up_sequence). Register row: DISTRIBUTED_EXECUTION.md section 3;
                     // the ten-sweeper race is BnplBillingDatabaseTest's.
-                    "com.finapp.app.bnpl.BnplServicingSchedule");
+                    "com.finapp.app.bnpl.BnplServicingSchedule",
+                    // P12-TSK-023: the same half for the BNPL dispute deadline sweep - the 29th entry (P12-TSK-015's
+                    // BnplServicingSchedule the 28th). No external call is made: each tick claims the OPEN disputes whose
+                    // response deadline and permit have come in ONE statement on the database clock (FOR UPDATE SKIP
+                    // LOCKED, the permit re-stamped to the retry cadence) whose transaction commits at once, holding no
+                    // row; each step then takes B5 (the purchase), B4 (the obligation) and B6 (the dispute) in order,
+                    // re-judges OPEN and the deadline on the database clock read after the lock - the complement of the
+                    // merchant's response, which requires the deadline still ahead - and resolves RESOLVED_REFUND through
+                    // T-ref's body, one refund per dispute by bnpl_refund UNIQUE (dispute_id) and the ledger key
+                    // bnpl.refund:<refund>. Register row: DISTRIBUTED_EXECUTION.md section 3; the race against a late
+                    // acceptance is BnplDisputeDatabaseTest's.
+                    "com.finapp.app.bnpl.BnplDisputeSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

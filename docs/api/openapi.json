@@ -752,6 +752,76 @@
           }
         }
       },
+      "bnpl.DisputeNotActionable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.DisputeNotActionable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.DisputeNotActionable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL dispute is not open to this act.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.DisputeOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.DisputeOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.DisputeOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL purchase has an open dispute.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "bnpl.InsufficientFunds": {
         "content": {
           "application/problem+json": {
@@ -10248,6 +10318,136 @@
         },
         "type": "object"
       },
+      "BnplDisputeDecisionBody": {
+        "properties": {
+          "proposalId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposalId",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "BnplDisputeOpeningBody": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "category": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "category",
+          "currency",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "BnplDisputeResolutionBody": {
+        "properties": {
+          "outcome": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "BnplDisputeResponseBody": {
+        "properties": {
+          "decision": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "statement": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "statement"
+        ],
+        "type": "object"
+      },
+      "BnplDisputeView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "heldInstalments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposalOutcome": {
+            "type": "string"
+          },
+          "proposalStatus": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "responseDeadline": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplEnablementActRequest": {
         "properties": {
           "reason": {
@@ -10369,6 +10569,46 @@
           "sequence": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplMerchantDisputeList": {
+        "properties": {
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/BnplMerchantDisputeView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplMerchantDisputeView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "responseDeadline": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -10552,6 +10792,33 @@
           "termsVersion": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplOperatorDisputeView": {
+        "properties": {
+          "dispute": {
+            "$ref": "#/components/schemas/BnplDisputeView"
+          },
+          "heldSequences": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "merchantStatement": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "type": "string"
+          },
+          "resolvedBy": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -22411,6 +22678,51 @@
         }
       }
     },
+    "/v1/me/bnpl-agreements/{id}/disputes": {
+      "post": {
+        "operationId": "openBnplDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplDisputeOpeningBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDisputeView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/me/bnpl-agreements/{id}/payoff": {
       "post": {
         "operationId": "payOffBnplAgreement",
@@ -22689,6 +23001,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BnplApplicationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/bnpl-disputes/{id}/withdrawal": {
+      "post": {
+        "operationId": "withdrawBnplDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDisputeView"
                 }
               }
             },
@@ -24544,6 +24891,68 @@
         }
       }
     },
+    "/v1/merchant/bnpl-disputes": {
+      "get": {
+        "operationId": "listMerchantBnplDisputes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplMerchantDisputeList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/bnpl-disputes/{id}/response": {
+      "post": {
+        "operationId": "respondToBnplDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplDisputeResponseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplMerchantDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/merchant/bnpl-purchases/{id}": {
       "get": {
         "operationId": "readMerchantBnplPurchase",
@@ -24927,6 +25336,168 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-disputes/{id}": {
+      "get": {
+        "operationId": "readBnplDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplOperatorDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-disputes/{id}/resolution": {
+      "post": {
+        "operationId": "resolveBnplDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplDisputeResolutionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-disputes/{id}/resolution/approval": {
+      "post": {
+        "operationId": "approveBnplDisputeResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplDisputeDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-disputes/{id}/resolution/rejection": {
+      "post": {
+        "operationId": "rejectBnplDisputeResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplDisputeDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDisputeView"
                 }
               }
             },

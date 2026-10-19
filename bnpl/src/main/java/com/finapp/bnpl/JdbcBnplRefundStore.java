@@ -118,6 +118,22 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
     }
 
     @Override
+    public boolean disputeOpen(Connection unitOfWork, BnplPurchaseId purchase) {
+        Objects.requireNonNull(purchase, "purchase");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT EXISTS (SELECT 1 FROM bnpl.bnpl_dispute WHERE purchase_id = ?"
+                        + " AND status IN ('OPEN', 'MERCHANT_RESPONDED'))")) {
+            select.setObject(1, purchase.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading whether a BNPL purchase is disputed", failure);
+        }
+    }
+
+    @Override
     public Optional<BnplPurchaseId> purchaseOfRefundAtMerchant(Connection unitOfWork, UUID refund, UUID merchant) {
         Objects.requireNonNull(refund, "refund");
         Objects.requireNonNull(merchant, "merchant");
@@ -253,9 +269,9 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
                         + " payable_debit_minor, cancelled_unbilled_minor, cancelled_billed_minor, excess_minor, excess_to,"
                         + " interest_accrued_released_minor, interest_due_released_minor, allocation_engine, agreement_id,"
                         + " agreement_version, schedule_version, reason, journal_entry_id, value_date, created_at,"
-                        + " correlation_id, late_fee_released_minor)"
+                        + " correlation_id, late_fee_released_minor, dispute_id)"
                         + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                        + " clock_timestamp(), ?, ?) RETURNING created_at")) {
+                        + " clock_timestamp(), ?, ?, ?) RETURNING created_at")) {
             Money amount = refund.amount();
             insert.setObject(1, refund.id());
             insert.setObject(2, refund.purchase().value());
@@ -285,6 +301,12 @@ public final class JdbcBnplRefundStore implements BnplRefundStore {
             insert.setDate(26, Date.valueOf(refund.valueDate()));
             insert.setString(27, refund.correlation().value());
             insert.setLong(28, refund.lateFeeReleased().minorUnits());
+            // A dispute's refund names its dispute (bnpl V015's requester shape: DISPUTE:<dispute>, keyed by its id).
+            if (refund.dispute().isPresent()) {
+                insert.setObject(29, refund.dispute().get());
+            } else {
+                insert.setNull(29, java.sql.Types.OTHER);
+            }
             try (ResultSet row = insert.executeQuery()) {
                 row.next();
                 created = row.getTimestamp("created_at").toInstant();

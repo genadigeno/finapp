@@ -21440,7 +21440,7 @@ after everything.
   repayment closes its obligation and is not reversible (F4 vacuous here); **for `-025`**: the replay proof checks every
   payoff fact against `bnpl_payoff_execution.value_date`.
 
-**P12-TSK-023 — BNPL disputes** — `READY` (marked by `P12-TSK-020`'s completion gate, 2026-10-19: its dependencies `-021` and `-020` `COMPLETE`)
+**P12-TSK-023 — BNPL disputes** — `COMPLETE` (2026-10-19, Phase 12 wave F beside `P12-TSK-024`, branch `P12-TSK-023`, bnpl `V015`; **M12.7 at 3 of 4**; marks no task `READY` - the wave's board rule 11 gives that to `-024`) *(read "`READY`" - marked by `P12-TSK-020`'s completion gate, its dependencies `-021` and `-020` `COMPLETE` - and "`IN_PROGRESS`" until its gate)*
 - **Objective**: a customer contests a BNPL purchase with the platform (there is no card network on it); the
   disputed amount is held — no late fee, no DPD, no collection on it — until the merchant accepts, the
   deadline passes, the customer withdraws or an operator resolves; a refund outcome *is* a refund under the
@@ -21526,6 +21526,60 @@ after everything.
 - **Definition of done**: `DOD-FIN` (F1, F2, F3, F6, F7 binding; F4: the refund outcome is `-021`'s
   compensation, an upheld dispute posts nothing; F5 vacuous — no external event (no network); F8: the
   three-way proof), `DOD-SEC`, `DOD-API`. **Risk**: High. **Cx**: L.
+- **As built** (2026-10-19): **bnpl `V015`** - `bnpl_dispute` (the machine row, **money-free**: `BnplSchemaHasNoMutableMoneyTest`
+  admits a column-scoped `UPDATE` only on a table carrying no `*_minor`, so the amount lives in the INSERT-only
+  `bnpl_dispute_claim`, whose trigger re-takes B5 then B4 and judges `0 < D <= G - refunded`), `bnpl_dispute_hold` (one row per
+  held instalment by sequence and **due date**, INSERT-only), `bnpl_dispute_proposal` (the four-eyes proposal, its `CHECK`),
+  `bnpl_dispute_event` (one row per state); the edge trigger (born `OPEN` under B5/B4, the deadline `opened_at + ` the pinned
+  `dispute_response_days` and the sweep's permit stamped; the merchant only before the deadline, the system only at or after
+  it, both on `clock_timestamp()` under the row lock; an operator's resolution from `MERCHANT_RESPONDED` only, reasoned, above
+  the pinned threshold only beside a proposal another operator approved; the withdrawal its own customer's; terminal is
+  terminal), the shape and resolver `CHECK`s, the partial `UNIQUE (purchase_id)` over open, `UNIQUE (party_id, request_key)`,
+  the deferred `bnpl_dispute_is_whole` (its claim, `Σ held <= D`, a refund outcome beside its refund of exactly `D`);
+  `bnpl_refund.dispute_id` (`UNIQUE`) with the door `DISPUTE` and its requester shape `DISPUTE:<dispute>` keyed by the
+  dispute's id (the two `CHECK`s replaced); new triggers beside the old - `bnpl_refund_is_not_beside_an_open_dispute`,
+  `bnpl_fee_assessment_respects_the_dispute_hold`, `bnpl_collection_attempt_respects_the_dispute_hold`; the derivations
+  `bnpl.dispute_holds` / `bnpl.dispute_clock_start`; **`bnpl.days_past_due` replaced** (the only function replaced - wave F
+  board, rule 3). Code: `BnplDisputes` (T-dsp), `BnplDispute`, `BnplDisputeProposal`, `BnplDisputeHold`, `BnplDisputeReason`,
+  `BnplDisputeStore` / `JdbcBnplDisputeStore`; `BnplRefunds.heldBy` (the allocator as a dry run) and `forDispute` (T-ref's body,
+  door `DISPUTE`), its new `DisputeOpen` refusal; `BnplRefund.Door.DISPUTE`; `BnplPurchaseStore.disputeHold`,
+  `BnplRefundStore.disputeOpen`; `BnplDelinquencyState.derive(..., hold)`, `BnplConditions` and `BnplCollections` reading the hold
+  (constructors unchanged); `BnplErrorCode` +2 (`DisputeOpen`, `DisputeNotActionable`), `BnplAuditAction` +7. `app`:
+  `BnplDisputeController` (`POST /v1/me/bnpl-agreements/{id}/disputes`, `POST /v1/me/bnpl-disputes/{id}/withdrawal`),
+  `BnplMerchantDisputeController` (`GET /v1/merchant/bnpl-disputes`, `POST /v1/merchant/bnpl-disputes/{id}/response`),
+  `BnplOperatorDisputeController` (`GET /v1/operator/bnpl-disputes/{id}`, `POST …/resolution`, `…/resolution/approval`,
+  `…/resolution/rejection`, all `BNPL_DISPUTE_RESOLVE`), `BnplDisputeDesk`, `BnplDisputeMetrics` (`finapp.bnpl.dispute{outcome}`),
+  `BnplDisputeSchedule` (the 29th lease-protected scheduler, `finapp.bnpl.dispute.sweeper.enabled`), `BnplDisputeBeans`;
+  `BnplRefundDesk` answering `409 bnpl.DisputeOpen` (`finapp.bnpl.refund{outcome=dispute_open}`); `MerchantBeans`' close port
+  asking `anyOpenAtMerchant`; `openapi.json` regenerated (571 lines added, none changed). **Refinements, each for its reason:**
+  (1) **the hold is the dispute's own rows by due date**, not `bnpl_condition_event` kinds (ADR-0106 decision 3 read that
+  way; `BNPL_LIFECYCLES.md` §8 (d)): that table's once-per-date unique and derivation trigger are delinquency's; due dates are
+  stable across schedule versions where instalment ids are not; (2) **an instalment touched by the dry run is held whole** -
+  no collection, DPD or fee on it - the backlog's "the instalments … are suspended" (the ADR's "only the undisputed due
+  amounts" would split an instalment the allocation engine pays whole); (3) **every lift restarts the clock** - after any
+  resolution a held instalment's DPD and fee day count from the later of its due date and the lift's business date (the ADR
+  says so for uphold and withdrawal; after a refund outcome only a partly held instalment remains, and it is treated alike);
+  (4) **`RESOLVED_REFUND` refunds exactly `D` and always names its refund**: refunds are refused while a dispute is open
+  (ADR-0106 decision 7), so `G - refunded` cannot shrink between the opening and the resolution - the backlog's
+  `min(disputed, G - refunded)` and "resolved with nothing to refund" are unreachable, and
+  `#aResolutionAfterAFullRefundRefundsNothing` proves the reachable case (a fully refunded purchase takes no dispute); (5)
+  **four-eyes is a proposal row** (`bnpl_dispute_proposal`, `D >` the pinned threshold): the operator's `…/resolution` above
+  it proposes, `…/approval` by another holder of `BNPL_DISPUTE_RESOLVE` executes, `…/rejection` by any (the proposer's
+  withdrawal included) clears it - each decision naming its `proposalId`; (6) **the withdrawal's route** is
+  `POST /v1/me/bnpl-disputes/{id}/withdrawal`, keyed `bnpl.dispute-withdrawal:CUSTOMER:<id>`, and it is audited
+  (`bnpl.DisputeWithdrawn`); (7) **the merchant's response needs its key, not the refund scope** (ADR-0106 decision 4 names
+  the key and tenant isolation only); `CONTEST` or `ACCEPT`, a statement required either way (`RESTRICTED-PII`, screened); (8)
+  **the merchant close (ADR-0106 decision 11) is built**: the opening takes the merchant's payable alone `FOR UPDATE` at (P)
+  and refuses a closed one (`409 bnpl.RefundNotPostable`); the close's settled-payable port asks the open disputes under the
+  same row lock - a close and an opening are ordered, never beside each other; (9) **the merchant reads its open disputes**
+  (`GET /v1/merchant/bnpl-disputes` - amount, category, deadline, status; never the reason) and **the operator's read is
+  audited** (`bnpl.DisputeRead`); (10) **payoff and voluntary repayment are not paused** (the customer's own acts; what they
+  pay on held instalments returns as excess on a refund outcome); a dispute on a `CLOSED` obligation holds nothing and its
+  refund outcome pays the wallet only (OQ-15); (11) the dispute events carry ids, status, category, the deadline as epoch
+  milliseconds (the payload alphabet admits no instant) and the held sequences - never an amount or a text. **Owed a first
+  run** (the owner's instruction): bnpl's `BnplDisputeDatabaseTest` (thirteen cases - the backlog's thirteen), `BnplMigrationTest`'s lists through
+  `V015`, and `app`'s own-container `BnplDisputeApiTest` (six - the ownership negatives `OwnershipIsScopedTest` names).
+- **Gate** (2026-10-19): IMPORTANT (fixed in-task, found by review and proven red first) - a held **older** instalment captured a younger one's auto-collection: the pinned order pays the oldest due first, so a pay-in-N obligation whose instalment 2 owed interest only (a refund had cancelled its principal) while instalment 1 was held made every servicing step an `AllocationAnomaly` - billing, conditions and fees stopped with it; the collection now allocates over the due state with the held instalments taken out (`BnplDisputesTest#aHeldOlderInstalmentNeverCapturesAYoungerOnesCollection`, red before the fix). MINOR (fixed) - a probe survived its first run (the opening's own bound against `G - refunded`: the dry run's allocator refused as a second rank); `#theBoundOnAClosedObligation` (nothing held) now catches it. MINOR (fixed) - `MutationDemonstrationTest` refused a register row whose invariant column read "`INV-LND-11` by analogy". MINOR (recorded) - the merchant's door judges the deadline on the database clock read after B6 and the trigger re-judges it on `clock_timestamp()` microseconds later: an answer landing in that gap is the trigger's refusal (a 500), not `409 bnpl.DisputeNotActionable` - nothing is written either way. **Board rule 12** - every `CHECK`, trigger and unique on the tables written read against the new writes: `bnpl_refund` (its born-once trigger - `FINANCED`, the gross and B7 bounds, the versions in force, the floor, a `CLOSED` obligation's wallet-only arm - met by the `DISPUTE` door unchanged; the door and requester `CHECK`s replaced; `UNIQUE (merchant_id, requested_by, refund_key)` keyed by the dispute's id; the deferred conservation), `bnpl_refund_adjustment`, `bnpl_schedule` / `bnpl_agreement` version n+1 (`refund_id` `UNIQUE`), `purchase`'s `FULLY_REFUNDED` edge, the closure's `REFUNDED` reasons (no door read), `bnpl_collection_attempt` and `bnpl_fee_assessment` (only rows they already admitted are refused), `bnpl_condition_event` (its trigger reads the replaced `days_past_due`, unchanged with no dispute), and the money floor (`BnplSchemaHasNoMutableMoneyTest` - the reason the dispute row is money-free). Twenty-one probes performed - twenty caught on their first run, one after the test above; restores sha256-verified (`MUTATION_TESTING.md` §2). **Ten-instance `PASS`**: B5 orders every dispute act and every refund of a purchase, so the bound, the open-dispute refusal and the one-open rule are judged under it (the partial unique beneath); B4 orders the opening's dry run against collection, servicing, repayment, payoff and accrual - each reads the hold under its own B4; B6 orders the merchant's answer, the deadline sweep, the withdrawal and the operator's acts, the deadline's complementary conditionals on the database clock after the lock and the edge trigger's re-judgement making exactly one win; the proposal's partial unique and its four-eyes `CHECK`; one refund per dispute by `UNIQUE (dispute_id)` and the ledger key; the opening's (P) on the payable orders it against the merchant close; the sweep's claim commits alone and holds no row; nothing rests on JVM state. Verified on the merge (master `81f7cf97`, already merged), fresh results: bnpl 450 tests in 41 suites (`BnplDisputesTest` 28, `BnplDisputeHoldTest` 4, `BnplDisputeMigrationTest` 6), bnpl architecture 3, `app` `com.finapp.app.bnpl.*` and the guard suites by name 258 in 47 suites (`BnplDisputeDeskTest` 4, `BnplDisputeScheduleTest` 3; `MutationDemonstrationTest` 9 re-run after its register row was corrected), `app` architecture 171 at the end of implementation and 171 again after the gate's fix - every one 0 failures; `build`, `databaseTest` and `kafkaTest` not run (the owner's instruction, a criterion-7 deviation). **Owed a first run**: `BnplDisputeDatabaseTest` (thirteen), `BnplMigrationTest`'s lists, `app`'s own-container `BnplDisputeApiTest` (six). **Open for the owner**: a dispute against a merchant closed before it is refused (`409 bnpl.RefundNotPostable`) - the customer's contest then has no platform path (a loss-absorbing outcome is a product decision); payoff and voluntary repayment are not paused by an open dispute (recorded, ADR-0106's as-built note). **For `-024`**: `V015` replaces `bnpl.days_past_due` only - V016's `billing_component_billed`/`_paid` are read by it unchanged; a repayment reversal on a held instalment needs no dispute handling (the hold reads billed less settled). **For `-025`**: a dispute's refund is a `bnpl_refund` of door `DISPUTE` - the three-way proof's refund identities count it with the others.
 
 **P12-TSK-024 — Repayment reversal and fee waiver (four-eyes)** — `PLANNED`
 - **Objective**: an operator's mistake in applying a customer's money is undone by an exact reversal, and a

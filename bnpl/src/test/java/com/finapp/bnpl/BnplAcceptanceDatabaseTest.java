@@ -576,6 +576,11 @@ class BnplAcceptanceDatabaseTest {
         }
 
         @Override
+        public BnplDisputeHold disputeHold(Connection unitOfWork, BnplObligationId obligation) {
+            return delegate.disputeHold(unitOfWork, obligation);
+        }
+
+        @Override
         public Optional<MerchantBnplPurchaseView> atMerchant(Connection unitOfWork, BnplPurchaseId id, UUID merchant) {
             return delegate.atMerchant(unitOfWork, id, merchant);
         }

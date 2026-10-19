@@ -78,6 +78,7 @@ final class BnplApplicationFakes {
     final Collections collections = new Collections();
     final Payoffs payoffs = new Payoffs();
     final Conditions conditions = new Conditions();
+    final Disputes disputes = new Disputes();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -128,6 +129,7 @@ final class BnplApplicationFakes {
         List<BnplCollectionAttempt> attemptState = collections.state();
         Payoffs.State payoffState = payoffs.state();
         Conditions.State conditionState = conditions.state();
+        Disputes.State disputeState = disputes.state();
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -170,6 +172,7 @@ final class BnplApplicationFakes {
             collections.restore(attemptState);
             payoffs.restore(payoffState);
             conditions.restore(conditionState);
+            disputes.restore(disputeState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1162,6 +1165,12 @@ final class BnplApplicationFakes {
         }
 
         @Override
+        public BnplDisputeHold disputeHold(Connection unitOfWork, BnplObligationId obligation) {
+            log.add("hold read");
+            return disputes.holdOf(obligation);
+        }
+
+        @Override
         public List<BilledItem> billedItems(Connection unitOfWork, BnplObligationId obligation) {
             List<BilledItem> items = new ArrayList<>();
             for (BnplBilling billing : billings.values().stream().filter(row -> row.obligation().equals(obligation))
@@ -1782,9 +1791,16 @@ final class BnplApplicationFakes {
             return latest;
         }
 
+        /** {@code bnpl V015}'s hold rank dropped - a test proving the domain alone keeps the hold. */
+        boolean holdRankDropped;
+
         @Override
         public void insertAttempt(Connection unitOfWork, BnplCollectionAttempt attempt) {
             step("attempt insert");
+            if (!holdRankDropped && disputes.holdOf(attempt.obligation()).heldOn(dueDateOf(attempt.instalment()),
+                    attempt.attemptDate())) {
+                throw new BnplStorageException("a held BNPL instalment is never collected automatically: P0001");
+            }
             if (!dateUniqueDropped && rows.stream().anyMatch(row -> row.instalment().equals(attempt.instalment())
                     && row.attemptDate().equals(attempt.attemptDate()))) {
                 throw new BnplStorageException("bnpl_collection_attempt_instalment_date_unique: SQLSTATE 23505");
@@ -2079,8 +2095,33 @@ final class BnplApplicationFakes {
         }
 
         @Override
+        public boolean disputeOpen(Connection unitOfWork, BnplPurchaseId purchase) {
+            log.add("dispute read");
+            return disputes.rows.values().stream().anyMatch(row -> row.purchase().equals(purchase) && row.open());
+        }
+
+        /** {@code bnpl V015}'s refund rank dropped - a test proving the domain alone refuses a refund beside a dispute. */
+        boolean disputeRankDropped;
+
+        @Override
         public Instant insertRefund(Connection unitOfWork, BnplRefund refund) {
             step("refund insert");
+            // bnpl V015: no refund beside an open dispute but its own, of exactly its claim; one refund per dispute.
+            if (!disputeRankDropped && disputes.rows.values().stream().anyMatch(row -> row.purchase()
+                    .equals(refund.purchase()) && row.open() && !refund.dispute().equals(Optional.of(row.id().value())))) {
+                throw new BnplStorageException("a BNPL purchase with an open dispute takes no refund but its dispute's"
+                        + " own: P0001");
+            }
+            if (refund.dispute().isPresent()) {
+                BnplDispute owner = disputes.rows.get(refund.dispute().get());
+                if (owner == null || !owner.open() || !owner.purchase().equals(refund.purchase())
+                        || !owner.amount().equals(refund.amount())) {
+                    throw new BnplStorageException("a dispute's refund refunds exactly its open dispute's claim: P0001");
+                }
+                if (rows.values().stream().anyMatch(row -> row.dispute().equals(refund.dispute()))) {
+                    throw new BnplStorageException("bnpl_refund_dispute_unique: SQLSTATE 23505");
+                }
+            }
             if (rows.values().stream().anyMatch(row -> row.merchant().equals(refund.merchant())
                     && row.requestedBy().equals(refund.requestedBy()) && row.refundKey().equals(refund.refundKey()))) {
                 throw new BnplStorageException("bnpl_refund_request_unique: SQLSTATE 23505");
@@ -2203,6 +2244,29 @@ final class BnplApplicationFakes {
             return Optional.ofNullable(rows.get(refund)).filter(row -> row.merchant().equals(merchant))
                     .map(BnplRefund::purchase);
         }
+    }
+
+    /** The due date of an instalment of any schedule version. */
+    java.time.LocalDate dueDateOf(UUID instalment) {
+        for (BnplPurchaseStore.StoredSchedule schedule : purchases.versions.values()) {
+            for (BnplPurchaseStore.StoredInstalment row : schedule.instalments()) {
+                if (row.id().equals(instalment)) {
+                    return row.dueDate();
+                }
+            }
+        }
+        for (BnplPurchaseStore.StoredSchedule schedule : purchases.schedules.values()) {
+            for (BnplPurchaseStore.StoredInstalment row : schedule.instalments()) {
+                if (row.id().equals(instalment)) {
+                    return row.dueDate();
+                }
+            }
+        }
+        BnplBilling billing = purchases.billings.get(instalment);
+        if (billing != null) {
+            return billing.dueDate();
+        }
+        throw new IllegalStateException("no such instalment");
     }
 
     /** Lending capital: the recognised capital less the book's BNPL principal, judged under L6. */
@@ -2342,6 +2406,13 @@ final class BnplApplicationFakes {
         return new BnplCollections(collections, posting, purchases, wallets, book, outbox, ids, clock);
     }
 
+    /** T-dsp over these fakes (`P12-TSK-023`): the dispute's acts through T-ref's body. */
+    BnplDisputes disputesOver(BnplRefunds refundBody, BnplActingParty actingParties,
+            com.finapp.sharedkernel.id.IdGenerator ids, java.time.Clock clock) {
+        return new BnplDisputes(disputes, refunds, servicing, purchases, terms.store(), refundBody, merchants, book,
+                actingParties, outbox, audit, ids, clock);
+    }
+
     /** T-pay over these fakes (`P12-TSK-022`): the quote and the execution, through the step's billing and T-rep's half. */
     BnplPayoffs payoffsOver(BnplServicing servicingStep, BnplRepayments posting, BnplClosures closures,
             com.finapp.sharedkernel.id.IdGenerator ids) {
@@ -2367,6 +2438,8 @@ final class BnplApplicationFakes {
         boolean onceADayUniqueDropped;
         /** Drop {@code UNIQUE (instalment_id, kind)} - for a probe only. */
         boolean feeUniqueDropped;
+        /** {@code bnpl V015}'s hold rank dropped - a test proving the domain alone keeps the hold. */
+        boolean holdRankDropped;
 
         record State(List<BnplConditionEvent> events, List<BnplFeeAssessment> assessments) {}
 
@@ -2404,9 +2477,12 @@ final class BnplApplicationFakes {
 
         /** {@code bnpl.days_past_due}: the date less the oldest billed due date still owing anything, or 0. */
         int daysPastDue(BnplObligationId obligation, java.time.LocalDate on) {
+            // bnpl V015's bnpl.days_past_due: a held instalment is not past due; each counts from its clock start.
+            BnplDisputeHold hold = disputes.holdOf(obligation);
             java.time.LocalDate oldest = null;
             for (BnplBilling billing : purchases.billings.values()) {
-                if (!billing.obligation().equals(obligation) || !billing.dueDate().isBefore(on)) {
+                java.time.LocalDate from = hold.clockFrom(billing.dueDate(), on);
+                if (!billing.obligation().equals(obligation) || !from.isBefore(on) || hold.heldOn(billing.dueDate(), on)) {
                     continue;
                 }
                 Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
@@ -2415,8 +2491,8 @@ final class BnplApplicationFakes {
                     owing = owing.plus(purchases.billed(billing, component, zero))
                             .minus(purchases.paid(billing, component, zero));
                 }
-                if (owing.isPositive() && (oldest == null || billing.dueDate().isBefore(oldest))) {
-                    oldest = billing.dueDate();
+                if (owing.isPositive() && (oldest == null || from.isBefore(oldest))) {
+                    oldest = from;
                 }
             }
             return oldest == null ? 0 : (int) java.time.temporal.ChronoUnit.DAYS.between(oldest, on);
@@ -2500,6 +2576,13 @@ final class BnplApplicationFakes {
                 throw new BnplStorageException("a BNPL late fee is assessed only once its instalment's age has reached the"
                         + " pinned late-fee day: P0001");
             }
+            // bnpl V015's rank, a trigger of its own after V013's: no fee on a held instalment, its day from the lift.
+            BnplDisputeHold hold = disputes.holdOf(assessment.obligation());
+            if (!holdRankDropped && (hold.heldOn(billing.dueDate(), today) || java.time.temporal.ChronoUnit.DAYS.between(
+                    hold.clockFrom(billing.dueDate(), today), today) < pinned.lateFeeDay())) {
+                throw new BnplStorageException("a BNPL late fee is never assessed on a held instalment, its day counted"
+                        + " from the hold's lift: P0001");
+            }
             Money assessed = Money.ofPersisted(0, assessment.amount().currency(), assessment.amount().scale());
             for (BnplFeeAssessment row : feesOf(assessment.obligation())) {
                 assessed = assessed.plus(row.amount());
@@ -2547,6 +2630,284 @@ final class BnplApplicationFakes {
     }
 
     /** T-svc's condition and late-fee slot over these fakes (`P12-TSK-020`). */
+    /**
+     * {@code bnpl V015}'s dispute world, in memory (`P12-TSK-023`): the dispute and its claim - the partial unique over open
+     * per purchase, the customer's key, born {@code OPEN} on a {@code FINANCED} purchase of its party and merchant within
+     * {@code G - refunded}, the opening, its business date and the deadline stamped on the database clock - its edges
+     * conditional on the from-state with the trigger's ranks (the deadline's complementary conditionals, the four-eyes rule
+     * above the pinned threshold, a refund outcome beside its refund of exactly the claim), the history and the proposals
+     * (one live per dispute, never approved by the proposer); and the hold the purchase store reads.
+     */
+    final class Disputes implements BnplDisputeStore {
+
+        final Map<UUID, BnplDispute> rows = new LinkedHashMap<>();
+        final Map<UUID, Instant> permits = new LinkedHashMap<>();
+        final List<Event> history = new ArrayList<>();
+        final Map<UUID, BnplDisputeProposal> proposals = new LinkedHashMap<>();
+        /** The disputes locked under B6, in order. */
+        final List<UUID> locked = new ArrayList<>();
+        /** The four-eyes CHECK dropped - the probe's database half, which only a live database can show. */
+        boolean fourEyesDropped;
+
+        record State(Map<UUID, BnplDispute> rows, Map<UUID, Instant> permits, List<Event> history,
+                Map<UUID, BnplDisputeProposal> proposals) {}
+
+        State state() {
+            return new State(new LinkedHashMap<>(rows), new LinkedHashMap<>(permits), new ArrayList<>(history),
+                    new LinkedHashMap<>(proposals));
+        }
+
+        void restore(State state) {
+            reset(rows, state.rows());
+            reset(permits, state.permits());
+            history.clear();
+            history.addAll(state.history());
+            reset(proposals, state.proposals());
+        }
+
+        /** bnpl.dispute_holds / bnpl.dispute_clock_start's rows: every held instalment of every dispute of the obligation. */
+        BnplDisputeHold holdOf(BnplObligationId obligation) {
+            List<BnplDisputeHold.Window> windows = new ArrayList<>();
+            for (BnplDispute dispute : rows.values()) {
+                if (!dispute.obligation().equals(obligation)) {
+                    continue;
+                }
+                for (BnplDispute.Held held : dispute.holds()) {
+                    windows.add(new BnplDisputeHold.Window(dispute.id(), held.dueDate(), dispute.openedOn().orElseThrow(),
+                            dispute.resolvedOn()));
+                }
+            }
+            return new BnplDisputeHold(windows);
+        }
+
+        private java.time.LocalDate today() {
+            return java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+        }
+
+        @Override
+        public Optional<BnplDispute> find(Connection unitOfWork, BnplDisputeId id) {
+            log.add("dispute find");
+            return Optional.ofNullable(rows.get(id.value()));
+        }
+
+        @Override
+        public Optional<BnplDispute> findOfParty(Connection unitOfWork, BnplDisputeId id, UUID party) {
+            log.add("dispute find");
+            return Optional.ofNullable(rows.get(id.value())).filter(row -> row.party().equals(party));
+        }
+
+        @Override
+        public Optional<BnplDispute> findAtMerchant(Connection unitOfWork, BnplDisputeId id, UUID merchant) {
+            log.add("dispute find");
+            return Optional.ofNullable(rows.get(id.value())).filter(row -> row.merchant().equals(merchant));
+        }
+
+        @Override
+        public Optional<BnplDispute> lock(Connection unitOfWork, BnplDisputeId id) {
+            step("B6");
+            locked.add(id.value());
+            return Optional.ofNullable(rows.get(id.value()));
+        }
+
+        @Override
+        public Optional<BnplDispute> findByKey(Connection unitOfWork, UUID party, String requestKey) {
+            return rows.values().stream().filter(row -> row.party().equals(party) && row.requestKey().equals(requestKey))
+                    .findFirst();
+        }
+
+        @Override
+        public Optional<BnplDispute> openOf(Connection unitOfWork, BnplPurchaseId purchase) {
+            return rows.values().stream().filter(row -> row.purchase().equals(purchase) && row.open()).findFirst();
+        }
+
+        @Override
+        public BnplDispute insert(Connection unitOfWork, BnplDispute dispute) {
+            step("dispute insert");
+            if (rows.values().stream().anyMatch(row -> row.purchase().equals(dispute.purchase()) && row.open())) {
+                throw new BnplStorageException("bnpl_dispute_one_open_per_purchase: SQLSTATE 23505");
+            }
+            if (findByKey(unitOfWork, dispute.party(), dispute.requestKey()).isPresent()) {
+                throw new BnplStorageException("bnpl_dispute_request_unique: SQLSTATE 23505");
+            }
+            BnplPurchase purchase = purchases.rows.get(dispute.purchase().value());
+            BnplObligation obligation = purchases.obligations.get(dispute.obligation().value());
+            if (purchase == null || purchase.status() != BnplPurchaseStatus.FINANCED
+                    || !purchase.merchant().equals(dispute.merchant()) || !purchase.party().equals(dispute.party())
+                    || obligation == null || !obligation.purchase().equals(dispute.purchase())
+                    || dispute.status() != BnplDisputeStatus.OPEN) {
+                throw new BnplStorageException("a BNPL dispute contests a FINANCED purchase of its own party and"
+                        + " merchant, born OPEN: P0001");
+            }
+            MerchantFeeSplit split = purchases.financings.get(dispute.purchase().value()).split();
+            Money refunded = Money.ofPersisted(0, dispute.amount().currency(), dispute.amount().scale());
+            for (BnplRefund refund : refunds.ofPurchase(unitOfWork, dispute.purchase())) {
+                refunded = refunded.plus(refund.amount());
+            }
+            if (!dispute.refundedBefore().equals(refunded)
+                    || refunded.plus(dispute.amount()).compareTo(split.gross()) > 0) {
+                throw new BnplStorageException("a BNPL dispute claims at most what remains of its purchase: P0001");
+            }
+            BnplAgreement agreement = purchases.agreements.get(obligation.agreement().value());
+            if (!agreement.termsVersionId().equals(dispute.termsVersion())) {
+                throw new BnplStorageException("a BNPL dispute names the terms version its agreement in force pins: P0001");
+            }
+            for (BnplDispute.Held held : dispute.holds()) {
+                if (!dueDateOf(held.instalment()).equals(held.dueDate())
+                        || (held.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID)
+                                != purchases.billedOn(dispute.obligation(), held.dueDate())) {
+                    throw new BnplStorageException("a BNPL dispute hold is of an instalment of its obligation by its own"
+                            + " due date, billed as BILLED_UNPAID: P0001");
+                }
+            }
+            int days = terms.versions.get(dispute.termsVersion()).terms().disputeResponseDays();
+            Instant deadline = now.plus(java.time.Duration.ofDays(days));
+            BnplDispute stamped = new BnplDispute(dispute.id(), dispute.purchase(), dispute.obligation(),
+                    dispute.merchant(), dispute.party(), dispute.agreement(), dispute.termsVersion(), dispute.status(),
+                    dispute.category(), dispute.reason(), dispute.requestKey(), dispute.amount(), dispute.refundedBefore(),
+                    Optional.of(now), Optional.of(today()), Optional.of(deadline), Optional.empty(), Optional.empty(),
+                    Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                    Optional.empty(), dispute.correlation(), dispute.holds());
+            rows.put(dispute.id().value(), stamped);
+            permits.put(dispute.id().value(), deadline);
+            return stamped;
+        }
+
+        @Override
+        public Optional<BnplDispute> move(Connection unitOfWork, BnplDispute moved, BnplDisputeStatus from) {
+            step("dispute " + moved.status());
+            BnplDispute old = rows.get(moved.id().value());
+            if (old == null || old.status() != from) {
+                return Optional.empty();
+            }
+            Instant deadline = old.responseDeadline().orElseThrow();
+            String by = moved.resolvedBy().orElse("");
+            boolean merchantActs = moved.status() == BnplDisputeStatus.MERCHANT_RESPONDED
+                    || by.equals("MERCHANT:" + old.merchant());
+            if (merchantActs && !deadline.isAfter(now)) {
+                throw new BnplStorageException("a merchant answers a BNPL dispute only before the response deadline: P0001");
+            }
+            if (by.equals(BnplDispute.SYSTEM) && deadline.isAfter(now)) {
+                throw new BnplStorageException("a BNPL dispute lapses to a refund only once its deadline has passed: P0001");
+            }
+            if (moved.status() == BnplDisputeStatus.RESOLVED_REFUND) {
+                BnplRefund refund = refunds.rows.get(moved.refund().orElseThrow());
+                if (refund == null || !refund.dispute().equals(Optional.of(old.id().value()))
+                        || !refund.amount().equals(old.amount())) {
+                    throw new BnplStorageException("a BNPL dispute resolved as a refund commits beside its refund of"
+                            + " exactly its claim: P0001");
+                }
+            }
+            if (from == BnplDisputeStatus.MERCHANT_RESPONDED && moved.status() != BnplDisputeStatus.WITHDRAWN) {
+                BnplTerms pinned = terms.versions.get(old.termsVersion()).terms();
+                if (old.amount().compareTo(pinned.disputeFourEyesThreshold()) > 0) {
+                    BnplDisputeProposal approved = moved.proposal().map(proposals::get).orElse(null);
+                    if (approved == null || approved.status() != BnplDisputeProposal.Status.APPROVED
+                            || approved.outcome() != moved.status()
+                            || !approved.decidedBy().equals(moved.resolvedBy())
+                            || (!fourEyesDropped && approved.proposedBy().equals(approved.decidedBy().get()))) {
+                        throw new BnplStorageException("a BNPL dispute above its four-eyes threshold is resolved by a"
+                                + " proposal another operator approved: P0001");
+                    }
+                } else if (moved.proposal().isPresent()) {
+                    throw new BnplStorageException("a BNPL dispute at or below its threshold takes no proposal: P0001");
+                }
+            }
+            boolean terminal = !moved.open();
+            BnplDispute stamped = new BnplDispute(old.id(), old.purchase(), old.obligation(), old.merchant(), old.party(),
+                    old.agreement(), old.termsVersion(), moved.status(), old.category(), old.reason(), old.requestKey(),
+                    old.amount(), old.refundedBefore(), old.openedAt(), old.openedOn(), old.responseDeadline(),
+                    moved.merchantStatement(), from == BnplDisputeStatus.OPEN && moved.merchantStatement().isPresent()
+                            ? Optional.of(now) : old.merchantRespondedAt(),
+                    moved.resolvedBy(), moved.resolutionReason(), terminal ? Optional.of(now) : Optional.empty(),
+                    terminal ? Optional.of(today()) : Optional.empty(), moved.refund(), moved.proposal(),
+                    old.correlation(), old.holds());
+            rows.put(old.id().value(), stamped);
+            return Optional.of(stamped);
+        }
+
+        @Override
+        public void appendEvent(Connection unitOfWork, Event event) {
+            BnplDispute dispute = rows.get(event.dispute().value());
+            if (dispute == null || dispute.status() != event.to() || history.stream().anyMatch(row ->
+                    row.dispute().equals(event.dispute()) && row.to() == event.to())) {
+                throw new BnplStorageException("a BNPL dispute's history records the state its dispute is in, once:"
+                        + " P0001");
+            }
+            history.add(event);
+        }
+
+        @Override
+        public List<BnplDisputeId> claimLapsed(Connection unitOfWork, int limit, java.time.Duration cadence) {
+            step("dispute claim");
+            List<BnplDisputeId> claimed = new ArrayList<>();
+            for (BnplDispute dispute : rows.values()) {
+                if (claimed.size() < limit && dispute.status() == BnplDisputeStatus.OPEN
+                        && !dispute.responseDeadline().orElseThrow().isAfter(now)
+                        && !permits.get(dispute.id().value()).isAfter(now)) {
+                    permits.put(dispute.id().value(), now.plus(cadence));
+                    claimed.add(dispute.id());
+                }
+            }
+            return claimed;
+        }
+
+        @Override
+        public List<BnplDispute> openAtMerchant(Connection unitOfWork, UUID merchant) {
+            return rows.values().stream().filter(row -> row.merchant().equals(merchant) && row.open()).toList();
+        }
+
+        @Override
+        public boolean anyOpenAtMerchant(Connection unitOfWork, UUID merchant) {
+            return !openAtMerchant(unitOfWork, merchant).isEmpty();
+        }
+
+        @Override
+        public Optional<BnplDisputeProposal> liveProposal(Connection unitOfWork, BnplDisputeId dispute) {
+            return proposals.values().stream().filter(row -> row.dispute().equals(dispute)
+                    && row.status() != BnplDisputeProposal.Status.REJECTED).findFirst();
+        }
+
+        @Override
+        public BnplDisputeProposal insertProposal(Connection unitOfWork, BnplDisputeProposal proposal) {
+            step("proposal insert");
+            if (liveProposal(unitOfWork, proposal.dispute()).isPresent()) {
+                throw new BnplStorageException("bnpl_dispute_proposal_one_live: SQLSTATE 23505");
+            }
+            BnplDispute dispute = rows.get(proposal.dispute().value());
+            BnplTerms pinned = terms.versions.get(dispute.termsVersion()).terms();
+            if (dispute.status() != BnplDisputeStatus.MERCHANT_RESPONDED
+                    || dispute.amount().compareTo(pinned.disputeFourEyesThreshold()) <= 0) {
+                throw new BnplStorageException("a BNPL dispute proposal is for an answered dispute above its threshold:"
+                        + " P0001");
+            }
+            BnplDisputeProposal stamped = new BnplDisputeProposal(proposal.id(), proposal.dispute(), proposal.outcome(),
+                    proposal.status(), proposal.proposedBy(), proposal.proposalReason(), Optional.of(now),
+                    Optional.empty(), Optional.empty(), Optional.empty(), proposal.correlation());
+            proposals.put(proposal.id(), stamped);
+            return stamped;
+        }
+
+        @Override
+        public Optional<BnplDisputeProposal> lockProposal(Connection unitOfWork, UUID id, BnplDisputeId dispute) {
+            step("proposal B6");
+            return Optional.ofNullable(proposals.get(id)).filter(row -> row.dispute().equals(dispute));
+        }
+
+        @Override
+        public Optional<BnplDisputeProposal> decide(Connection unitOfWork, BnplDisputeProposal decided) {
+            step("proposal " + decided.status());
+            BnplDisputeProposal old = proposals.get(decided.id());
+            if (old == null || old.status() != BnplDisputeProposal.Status.PROPOSED) {
+                return Optional.empty();
+            }
+            BnplDisputeProposal stamped = new BnplDisputeProposal(old.id(), old.dispute(), old.outcome(),
+                    decided.status(), old.proposedBy(), old.proposalReason(), old.proposedAt(), decided.decidedBy(),
+                    decided.decisionReason(), Optional.of(now), old.correlation());
+            proposals.put(old.id(), stamped);
+            return Optional.of(stamped);
+        }
+    }
+
     BnplConditions conditionsOver(com.finapp.sharedkernel.id.IdGenerator ids, java.time.Clock clock) {
         return new BnplConditions(conditions, purchases, terms.store(), book, outbox, ids, clock);
     }

@@ -133,13 +133,82 @@ public enum BnplAuditAction implements AuditableAction {
                     + " confirmed to be the merchant's - nothing was read); the summary names the key id.",
             false),
 
-    /** An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`). */
+    /** An operator tried to refund a BNPL purchase - or resolve a dispute - of their own party (`P12-TSK-021`, `-023`). */
     SELF_DEALING_REFUSED(
             "bnpl.SelfDealingRefused",
             "An operator tried to refund, at the operator's BNPL refund door, a purchase whose customer is the operator's"
-                    + " own party, and was refused 403 bnpl.SelfDealingRefused with nothing written; recorded FAILED in a"
-                    + " transaction of its own after the act rolled back. Its target the purchase; the summary names it"
-                    + " and the act - never an amount.",
+                    + " own party - or to resolve, propose, approve or reject the resolution of a BNPL dispute of their own"
+                    + " party (P12-TSK-023) - and was refused 403 bnpl.SelfDealingRefused with nothing written; recorded"
+                    + " FAILED in a transaction of its own after the act rolled back. Its target the purchase or the"
+                    + " dispute; the summary names it and the act - never an amount.",
+            false),
+
+    /** A customer opened a dispute of their own BNPL purchase (`P12-TSK-023`). */
+    DISPUTE_OPENED(
+            "bnpl.DisputeOpened",
+            "A customer contested their own BNPL purchase with the platform (POST /v1/me/bnpl-agreements/{id}/disputes,"
+                    + " keyed bnpl.dispute:CUSTOMER:<id>, ADR-0106) with a reason category and a reason: under the"
+                    + " purchase's lock the amount bounded by what remains of it (INV-BNPL-07), under the obligation's the"
+                    + " instalments a refund of it would cancel - latest first - held from collection, days past due and"
+                    + " late fees, and the merchant's response deadline stamped on the database clock (the pinned window,"
+                    + " OQ-10). Its target the dispute; the summary names the purchase and the deadline - never an amount.",
+            true),
+
+    /** A merchant answered a BNPL dispute - with evidence, or accepting it (`P12-TSK-023`). */
+    DISPUTE_RESPONDED(
+            "bnpl.DisputeResponded",
+            "A merchant answered a dispute of its BNPL purchase over its own API key, tenant-scoped (POST"
+                    + " /v1/merchant/bnpl-disputes/{id}/response, keyed bnpl.dispute-response:MERCHANT:<merchant>) before"
+                    + " the response deadline on the database clock, with a statement: contesting it (MERCHANT_RESPONDED,"
+                    + " an operator resolves) or accepting it (resolved as a refund at once, bnpl.DisputeResolved beside it)."
+                    + " Its target the dispute; the summary names the decision and the merchant's key id.",
+            true),
+
+    /** A BNPL dispute was resolved - as a refund or upheld (`P12-TSK-023`). */
+    DISPUTE_RESOLVED(
+            "bnpl.DisputeResolved",
+            "A BNPL dispute was resolved (ADR-0106): as a refund - by the merchant's acceptance, by its silence past the"
+                    + " response deadline (actor SYSTEM, the deadline sweep) or by an operator holding BNPL_DISPUTE_RESOLVE"
+                    + " - executed as a BnplRefund of exactly the disputed amount under the purchase's one bound in the same"
+                    + " transaction (INV-BNPL-08); or upheld by an operator, the hold lifted and nothing re-billed. Above the"
+                    + " pinned four-eyes threshold an operator's resolution is a proposal another operator approved. Its"
+                    + " target the dispute; the summary names the outcome, the resolver's door and any refund - never an"
+                    + " amount.",
+            false),
+
+    /** A customer withdrew their BNPL dispute (`P12-TSK-023`). */
+    DISPUTE_WITHDRAWN(
+            "bnpl.DisputeWithdrawn",
+            "A customer withdrew their own open BNPL dispute (POST /v1/me/bnpl-disputes/{id}/withdrawal, keyed"
+                    + " bnpl.dispute-withdrawal:CUSTOMER:<id>): the hold lifted - each held instalment's days past due and"
+                    + " late-fee day counting from the withdrawal's business date - and nothing posted. Its target the"
+                    + " dispute.",
+            false),
+
+    /** An operator proposed a BNPL dispute's resolution above the four-eyes threshold (`P12-TSK-023`). */
+    DISPUTE_RESOLUTION_PROPOSED(
+            "bnpl.DisputeResolutionProposed",
+            "An operator holding BNPL_DISPUTE_RESOLVE proposed the resolution - a refund or upheld - of a BNPL dispute the"
+                    + " merchant answered whose amount is above its pinned four-eyes threshold (POST"
+                    + " /v1/operator/bnpl-disputes/{id}/resolution, keyed bnpl.servicing:<actor type>:<id>), with a reason;"
+                    + " another operator approves or rejects it. Its target the proposal; the summary names the dispute and"
+                    + " the outcome proposed.",
+            true),
+
+    /** A BNPL dispute's resolution proposal was rejected (`P12-TSK-023`). */
+    DISPUTE_RESOLUTION_REJECTED(
+            "bnpl.DisputeResolutionRejected",
+            "An operator holding BNPL_DISPUTE_RESOLVE rejected - or, its proposer, withdrew - a proposed resolution of a"
+                    + " BNPL dispute (POST /v1/operator/bnpl-disputes/{id}/resolution/rejection), with a reason; the dispute"
+                    + " awaits a new proposal. Its target the proposal; the summary names the dispute.",
+            true),
+
+    /** An operator read a BNPL dispute - the customer's reason and the merchant's statement (`P12-TSK-023`). */
+    DISPUTE_READ(
+            "bnpl.DisputeRead",
+            "An operator holding BNPL_DISPUTE_RESOLVE read a BNPL dispute (GET /v1/operator/bnpl-disputes/{id}): the"
+                    + " customer's reason and the merchant's statement (RESTRICTED-PII), the amount, the hold and any"
+                    + " proposal - every access recorded (INV-DSP-03 by analogy). Its target the dispute.",
             false);
 
     private final String code;
