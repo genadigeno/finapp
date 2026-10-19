@@ -49,8 +49,9 @@ import org.junit.jupiter.api.Test;
  * date posts something, pay-in-4 never. The ledger is {@link BnplBillingDatabaseTest}'s in-memory book behind one lock -
  * the real postings are {@code app}'s - so the lock assertion here is that T-acc's transaction holds no lock outside
  * bnpl's own relations and that a step on the obligation waits on B4 alone; the real-ledger {@code pg_locks} half (the
- * income row never held across a wallet wait) is owed to the first T-svc step that takes a wallet, `P12-TSK-019`'s
- * collection.
+ * income row never held across a wallet wait) was owed to the first T-svc step that takes a wallet, `P12-TSK-019`'s
+ * collection, which wrote it over the real ledger: {@code app}'s
+ * {@code BnplCollectionLedgerDatabaseTest#aCollectionHoldsNoIncomeRowWhileItWaitsOnTheWallet}.
  *
  * <p>Written by `P12-TSK-017` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
  */

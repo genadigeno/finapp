@@ -212,6 +212,28 @@ public final class BnplRepayments {
             throw new InsufficientFunds(obligation.product());
         }
 
+        BnplPurchaseStore.Repayment repayment = receive(unitOfWork, locked, BnplPurchaseStore.Repayment.CUSTOMER,
+                request.requestKey(), amount, lines, derived.dueState(), accounts, wallet, today, correlation);
+
+        // The closure, when this repayment brought the last receivable to zero - in this same transaction.
+        Optional<BnplClosure> closure = closures.closeIfSettled(unitOfWork, new BnplClosures.Closing(locked, accounts,
+                today, Optional.of(repayment.id()), Optional.of(wallet)), () -> actor, correlation);
+        return new Repaid(repayment, closure, false);
+    }
+
+    /**
+     * The repayment's posting half - one implementation for the customer's repayment (above) and the automatic collection
+     * (`P12-TSK-019`, {@link BnplCollections}), on the caller's unit of work under its B4 and with {@code wallet} already
+     * held under (P) and judged able to fund {@code amount}: <strong>(L8)</strong> the projection rows of every account the
+     * entry may post to - the wallet, the due accounts credited, the credit balance - in the ledger's one order; F3 under
+     * {@code bnpl.repayment:<repaymentId>} posted today and value-dated {@code max(today, floor)} (the floor read under B4,
+     * the Phase 11 gate's R1); the repayment row of {@code kind} under {@code requestKey} and its allocation; and
+     * {@code bnpl.InstalmentPaid} for each item of {@code before} it settles. The closure is the caller's.
+     */
+    BnplPurchaseStore.Repayment receive(Connection unitOfWork, BnplServicingStore.Locked locked, String kind,
+            String requestKey, Money amount, List<AllocationLine> lines, DueState before, BnplLedgerAccounts accounts,
+            LedgerAccountId wallet, LocalDate today, CorrelationId correlation) {
+        BnplObligation obligation = locked.obligation();
         // (L8) Every projection row the transaction may post to, in the ledger's one order, before the first entry.
         List<JournalLine> entry = entryLines(amount, lines, accounts, wallet);
         Set<LedgerAccountId> touched = new LinkedHashSet<>();
@@ -230,16 +252,12 @@ public final class BnplRepayments {
             allocations.add(new BnplPurchaseStore.Allocation(ids.next(), allocations.size() + 1, line.target().name(),
                     line.item().map(EntityId::value), line.component().map(Enum::name), line.amount()));
         }
-        BnplPurchaseStore.Repayment repayment = new BnplPurchaseStore.Repayment(repaymentId, obligation.id(),
-                BnplPurchaseStore.Repayment.CUSTOMER, request.requestKey(), amount, locked.agreement(),
-                locked.agreementVersion(), locked.allocationEngine(), journalEntry, valueDate, allocations);
+        BnplPurchaseStore.Repayment repayment = new BnplPurchaseStore.Repayment(repaymentId, obligation.id(), kind,
+                requestKey, amount, locked.agreement(), locked.agreementVersion(), locked.allocationEngine(),
+                journalEntry, valueDate, allocations);
         purchases.insertRepayment(unitOfWork, repayment);
-        publishPaid(unitOfWork, obligation, repayment, derived.dueState(), correlation);
-
-        // The closure, when this repayment brought the last receivable to zero - in this same transaction.
-        Optional<BnplClosure> closure = closures.closeIfSettled(unitOfWork, new BnplClosures.Closing(locked, accounts,
-                today, Optional.of(repaymentId), Optional.of(wallet)), () -> actor, correlation);
-        return new Repaid(repayment, closure, false);
+        publishPaid(unitOfWork, obligation, repayment, before, correlation);
+        return repayment;
     }
 
     /**

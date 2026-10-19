@@ -1,6 +1,7 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.bnpl.BnplProduct;
+import com.finapp.bnpl.CollectionOutcome;
 import com.finapp.bnpl.ServicingOutcome;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -19,7 +20,13 @@ import java.util.Objects;
  *       ({@code serviced}, {@code behind_accrual}, {@code not_serviced}, {@code failed} - rolled back, retried at the
  *       claim's cadence), and each catch-up application ({@code step = catch_up}, {@code outcome = applied}) - the
  *       Phase 11 gate's R2 visible; and each closure the step made ({@code step = closure}, {@code outcome = closed},
- *       `P12-TSK-018`); the steps later tasks add (collection, condition, late fee) join the {@code step} set.
+ *       `P12-TSK-018`); the steps later tasks add (condition, late fee) join the {@code step} set;
+ *   <li>{@code finapp.bnpl.collection{outcome}} (`P12-TSK-019`, {@code PHASE_12_PLAN.md} section 15) - each automatic
+ *       collection attempt of a committed step, by its outcome ({@code collected}, {@code partial},
+ *       {@code insufficient_funds}, {@code wallet_not_postable}, {@code nothing_due}); a collection that moved money is
+ *       also one {@code finapp.bnpl.repayment{kind = auto_collection}} ({@code repaid}, or {@code closed} when the step's
+ *       closure followed it), and one that took nothing from an instalment with something due one
+ *       {@code insufficient_funds} there - {@link BnplRepaymentMetrics}' series, the customer's door's beside it.
  * </ul>
  *
  * <p>Every series registered eagerly. Never an amount, a party, an obligation id or a date in a tag (ADR-0072).
@@ -31,6 +38,9 @@ public final class BnplServicingMetrics {
 
     /** Exported as {@code finapp_bnpl_servicing_total}. */
     public static final String SERVICING = "finapp.bnpl.servicing";
+
+    /** Exported as {@code finapp_bnpl_collection_total} (`P12-TSK-019`), the plan's name. */
+    public static final String COLLECTION = "finapp.bnpl.collection";
 
     /** The billing series' closed set of outcomes. */
     public enum BillingOutcome {
@@ -69,9 +79,14 @@ public final class BnplServicingMetrics {
     }
 
     private final MeterRegistry registry;
+    private final BnplRepaymentMetrics repayments;
 
-    public BnplServicingMetrics(MeterRegistry registry) {
+    public BnplServicingMetrics(MeterRegistry registry, BnplRepaymentMetrics repayments) {
         this.registry = Objects.requireNonNull(registry, "registry");
+        this.repayments = Objects.requireNonNull(repayments, "repayments");
+        for (CollectionOutcome outcome : CollectionOutcome.values()) {
+            collection(outcome);
+        }
         for (BnplProduct product : BnplProduct.values()) {
             for (BillingOutcome outcome : BillingOutcome.values()) {
                 billing(product, outcome);
@@ -110,6 +125,31 @@ public final class BnplServicingMetrics {
         if (step.closed()) {
             servicing(Step.CLOSURE, Outcome.CLOSED).increment();
         }
+        int moved = 0;
+        for (CollectionOutcome outcome : CollectionOutcome.values()) {
+            int attempts = step.collected(outcome);
+            Counter counter = collection(outcome);
+            // One increment per attempt - a count, never a floating-point amount.
+            for (int attempt = 0; attempt < attempts; attempt++) {
+                counter.increment();
+                if (outcome.failed()) {
+                    repayments.record(BnplRepaymentMetrics.Kind.AUTO_COLLECTION,
+                            BnplRepaymentMetrics.Outcome.INSUFFICIENT_FUNDS);
+                }
+            }
+            if (outcome.collected()) {
+                moved += attempts;
+            }
+        }
+        // A collection that closed the obligation is the step's last money: counted closing, the others repaid. When no
+        // collection moved money a closure was the step's own (after an application) and no repayment is counted.
+        int closing = moved > 0 && step.closed() ? 1 : 0;
+        for (int repayment = 0; repayment < moved - closing; repayment++) {
+            repayments.record(BnplRepaymentMetrics.Kind.AUTO_COLLECTION, BnplRepaymentMetrics.Outcome.REPAID);
+        }
+        if (closing == 1) {
+            repayments.record(BnplRepaymentMetrics.Kind.AUTO_COLLECTION, BnplRepaymentMetrics.Outcome.CLOSED);
+        }
     }
 
     /** A step that failed - rolled back; its claim's cadence retries it. */
@@ -122,6 +162,14 @@ public final class BnplServicingMetrics {
                 .description("BNPL instalments billed by the servicing step and credit-balance applications at them,"
                         + " by product")
                 .tags("product", product.name(), "outcome", outcome.tag())
+                .register(registry);
+    }
+
+    private Counter collection(CollectionOutcome outcome) {
+        return Counter.builder(COLLECTION)
+                .description("Automatic BNPL collection attempts from the wallet of committed servicing steps, by"
+                        + " outcome - collected, partial, insufficient funds, wallet not postable, nothing due")
+                .tags("outcome", outcome.name().toLowerCase(Locale.ROOT))
                 .register(registry);
     }
 

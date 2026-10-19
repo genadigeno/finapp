@@ -57,7 +57,8 @@ class BnplServicingScheduleTest {
     @Test
     @DisplayName("a poll, a retry cadence or a batch that is not positive is refused at construction")
     void theConfigurationIsPositive() {
-        BnplServicingMetrics metrics = new BnplServicingMetrics(new SimpleMeterRegistry());
+        SimpleMeterRegistry unused = new SimpleMeterRegistry();
+        BnplServicingMetrics metrics = new BnplServicingMetrics(unused, new BnplRepaymentMetrics(unused));
         // No servicing or transactions handed: the configuration is judged before anything else (and no DataSource is
         // named, so the suite stays in the unit tier - TestTaxonomyTest).
         BnplServicing servicing = null;
@@ -84,7 +85,7 @@ class BnplServicingScheduleTest {
             + " applications at them and its catch-up - never a figure")
     void theMeters() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        BnplServicingMetrics metrics = new BnplServicingMetrics(registry);
+        BnplServicingMetrics metrics = new BnplServicingMetrics(registry, new BnplRepaymentMetrics(registry));
         assertThat(registry.find(BnplServicingMetrics.BILLING).counters()).hasSize(2 * 2);
         assertThat(registry.find(BnplServicingMetrics.SERVICING).counters())
                 .as("P12-TSK-018 adds closure/closed").hasSize(6);
@@ -105,6 +106,49 @@ class BnplServicingScheduleTest {
         assertThat(servicing(registry, "service", "failed")).isEqualTo(1.0);
         assertThat(servicing(registry, "catch_up", "applied")).isEqualTo(1.0);
         assertThat(servicing(registry, "closure", "closed")).as("one closure, P12-TSK-018").isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("finapp.bnpl.collection{outcome} is registered at zero for every outcome; a committed step counts each"
+            + " attempt once, its money as repayment{kind=auto_collection} - repaid, closed for the collection the closure"
+            + " followed, insufficient_funds for each that took nothing - and a closure with no collection counts none"
+            + " (P12-TSK-019)")
+    void theCollectionMeters() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplServicingMetrics metrics = new BnplServicingMetrics(registry, new BnplRepaymentMetrics(registry));
+        assertThat(registry.find(BnplServicingMetrics.COLLECTION).counters())
+                .hasSize(com.finapp.bnpl.CollectionOutcome.values().length)
+                .allSatisfy(counter -> assertThat(counter.count()).isZero());
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 2, 0,
+                false, false, java.util.Map.of(com.finapp.bnpl.CollectionOutcome.COLLECTED, 1,
+                        com.finapp.bnpl.CollectionOutcome.PARTIAL, 1)));
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 1, 0,
+                false, true, java.util.Map.of(com.finapp.bnpl.CollectionOutcome.COLLECTED, 1)));
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_N), 1, 0,
+                false, false, java.util.Map.of(com.finapp.bnpl.CollectionOutcome.INSUFFICIENT_FUNDS, 1,
+                        com.finapp.bnpl.CollectionOutcome.WALLET_NOT_POSTABLE, 1,
+                        com.finapp.bnpl.CollectionOutcome.NOTHING_DUE, 1)));
+        metrics.record(new ServicingOutcome(ServicingOutcome.Kind.SERVICED, Optional.of(BnplProduct.BNPL_PAY_IN_4), 0, 0,
+                true, true));
+        assertThat(collection(registry, "collected")).isEqualTo(2.0);
+        assertThat(collection(registry, "partial")).isEqualTo(1.0);
+        assertThat(collection(registry, "insufficient_funds")).isEqualTo(1.0);
+        assertThat(collection(registry, "wallet_not_postable")).isEqualTo(1.0);
+        assertThat(collection(registry, "nothing_due")).isEqualTo(1.0);
+        assertThat(repayment(registry, "repaid")).isEqualTo(2.0);
+        assertThat(repayment(registry, "closed")).as("only the collection a closure followed").isEqualTo(1.0);
+        assertThat(repayment(registry, "insufficient_funds")).isEqualTo(2.0);
+        assertThat(registry.get(BnplRepaymentMetrics.REPAYMENT).tags("kind", "customer", "outcome", "closed").counter()
+                .count()).as("the customer's door untouched").isZero();
+    }
+
+    private static double collection(SimpleMeterRegistry registry, String outcome) {
+        return registry.get(BnplServicingMetrics.COLLECTION).tags("outcome", outcome).counter().count();
+    }
+
+    private static double repayment(SimpleMeterRegistry registry, String outcome) {
+        return registry.get(BnplRepaymentMetrics.REPAYMENT).tags("kind", "auto_collection", "outcome", outcome).counter()
+                .count();
     }
 
     private static BnplServicingSchedule schedule(BnplServicing servicing, BnplAccruals accruals,

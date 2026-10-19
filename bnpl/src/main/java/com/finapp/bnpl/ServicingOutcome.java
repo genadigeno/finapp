@@ -1,5 +1,6 @@
 package com.finapp.bnpl;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -7,19 +8,21 @@ import java.util.Optional;
  * What one servicing step did (`P12-TSK-015`) - for the meters; never a figure, a date or a party: its kind, the obligation's
  * product, the instalments it {@code billed} (F2), the credit-balance applications born at them ({@code appliedAtBilling},
  * F3a), whether a catch-up application settled what was already due ({@code caughtUp}, the Phase 11 gate's R2) and whether
- * the step's closure closed the obligation ({@code closed}, `P12-TSK-018`). The steps later tasks add (collection,
- * condition, late fee) extend it.
+ * the step's closure closed the obligation ({@code closed}, `P12-TSK-018`) and its collection attempts by outcome
+ * ({@code collections}, `P12-TSK-019`). The steps later tasks add (condition, late fee) extend it.
  */
 public record ServicingOutcome(Kind kind, Optional<BnplProduct> product, int billed, int appliedAtBilling,
-        boolean caughtUp, boolean closed) {
+        boolean caughtUp, boolean closed, Map<CollectionOutcome, Integer> collections) {
 
     public ServicingOutcome {
         Objects.requireNonNull(kind, "kind must not be null");
         Objects.requireNonNull(product, "product must not be null");
-        if (billed < 0 || appliedAtBilling < 0 || appliedAtBilling > billed) {
+        collections = Map.copyOf(Objects.requireNonNull(collections, "collections must not be null"));
+        if (billed < 0 || appliedAtBilling < 0 || appliedAtBilling > billed
+                || collections.values().stream().anyMatch(count -> count < 0)) {
             throw new IllegalArgumentException("counts are not negative, and at most one application per billing");
         }
-        if (kind != Kind.SERVICED && (billed > 0 || caughtUp || closed)) {
+        if (kind != Kind.SERVICED && (billed > 0 || caughtUp || closed || !collections.isEmpty())) {
             throw new IllegalArgumentException("only a serviced step writes anything");
         }
         if ((kind == Kind.NOT_SERVICED) == product.isPresent()) {
@@ -27,9 +30,20 @@ public record ServicingOutcome(Kind kind, Optional<BnplProduct> product, int bil
         }
     }
 
+    /** A step that collected nothing - `P12-TSK-018`'s shape. */
+    public ServicingOutcome(Kind kind, Optional<BnplProduct> product, int billed, int appliedAtBilling, boolean caughtUp,
+            boolean closed) {
+        this(kind, product, billed, appliedAtBilling, caughtUp, closed, Map.of());
+    }
+
     /** A step that closed nothing - `P12-TSK-015`'s shape. */
     public ServicingOutcome(Kind kind, Optional<BnplProduct> product, int billed, int appliedAtBilling, boolean caughtUp) {
         this(kind, product, billed, appliedAtBilling, caughtUp, false);
+    }
+
+    /** The collection attempts of {@code outcome} the step made (`P12-TSK-019`). */
+    public int collected(CollectionOutcome outcome) {
+        return collections.getOrDefault(outcome, 0);
     }
 
     static ServicingOutcome notServiced() {
