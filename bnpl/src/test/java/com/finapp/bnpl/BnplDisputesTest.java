@@ -212,6 +212,9 @@ class BnplDisputesTest {
         assertThat(world.fakes.refunds.rows).isEmpty();
         assertThat(world.conditions.derive(BnplApplicationFakes.UOW, p4.obligation(), pinned(p4), lift.plusDays(2))
                 .daysPastDue()).isEqualTo(2);
+        assertThatThrownBy(() -> world.fakes.inTransaction(() -> disputes.withdraw(BnplApplicationFakes.UOW,
+                dispute.id(), UUID.randomUUID(), world.customer, CORRELATION)))
+                .as("another party's dispute is the same 404").isInstanceOf(BnplDisputes.DisputeNotFound.class);
         assertThat(withdrawAt(lift.atTime(9, 0).toInstant(ZoneOffset.UTC), dispute).replayed())
                 .as("a retried withdrawal converges").isTrue();
         assertThat(audited(BnplAuditAction.DISPUTE_WITHDRAWN)).hasSize(1);
