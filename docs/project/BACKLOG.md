@@ -20614,7 +20614,7 @@ after everything.
      `BnplAccruals.CORRECTION_KEY_PREFIX`, nothing posts under it.
 - **As built** (2026-10-19, `P12-TSK-017`'s gate): A pay-in-N obligation earns interest every day, exactly once per obligation and date, on the database clock, caught up after any outage, in a transaction of its own that holds no wallet or payable (T-acc). `bnpl V009` adds the writer of `-015`'s `bnpl_interest_accrual` (INSERT granted; the trigger replaced - B4 for every writer, the agreement in force and its engine, an instalment period of the latest schedule version so nothing accrues at or after the final due date, the cumulative chain); `BnplAccruals` accrues every elapsed date of the span with principal outstanding oldest first on `ACCRUAL_ENGINE_V1` over the base `BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE` folded from journal lines (`BnplBook#datedLinesOn`), F2a `DR BNPL_INTEREST_ACCRUED / CR BNPL_INTEREST_INCOME` under `bnpl.accrual:<obligation>:<date>` at L8, at most 92 dates a call; `BnplServicing`'s gate is `BnplAccruals.caughtUp` (the `-015` gate, which held a matured obligation `BEHIND_ACCRUAL` for ever, replaced); the sweep runs T-acc first (up to 8 calls, once more on a step still behind); meters `finapp.bnpl.accrual{outcome}` and `finapp.bnpl.accrual.lag`. Gate: 14 probes performed, all caught (`MUTATION_TESTING.md` §2); the ten-instance question `PASS`; `BnplAccrualDatabaseTest` (eleven cases) and the re-asserted billing case written, owed a first run. Fresh counts: `:bnpl:test` 252/0 (`BnplAccrualsTest` 14, `BnplAccrualMigrationTest` 4 new), `:bnpl:architectureTest` 3/0, `:app:test` over `com.finapp.app.bnpl.*` and the guard suites by name 189/0 (`BnplAccrualMetricsTest` 2 new), `:app:architectureTest` 171/0. **Owed** (the owner's no-`databaseTest` instruction): every `BnplAccrualDatabaseTest` case and `BnplBillingDatabaseTest#pnBillsTheAccruedInterestNotTheProjection` through real accruals; the real-ledger `pg_locks` income-row assertion to `-019`. **Minor, recorded:** pay-in-4 obligations take one extra B4 transaction a sweep (T-acc answers `NOT_ACCRUING`); a date inside the span with no principal outstanding writes no row, so the lag gauge and `-015`'s billing eve-rank would count it unaccrued - unreachable for an `ACTIVE` obligation in Phase 12 (no not-due principal is prepaid, a refund to zero closes); the currency's `BNPL_INTEREST_INCOME` projection row serialises T-acc commits fleet-wide (the plan's design, one short transaction); `bnpl V009` requires the latest schedule version to start at the purchase's business date - `-021`'s version n+1 must keep it.
 
-**P12-TSK-018 — Customer repayment from the wallet and closure** — `IN_PROGRESS` (wave C, beside `-017`; its one dependency `-015` `COMPLETE`)
+**P12-TSK-018 — Customer repayment from the wallet and closure** — `COMPLETE` (2026-10-19, wave C beside `-017`; its gate marks `P12-TSK-019` `READY`) *(read "`IN_PROGRESS`" from its start until its gate)*
 - **Objective**: the customer repays any amount from their wallet; it is allocated exactly by the pinned
   order, once, and the obligation closes exactly when every receivable is zero, every elapsed date accrued
   and any credit balance returned (B6: the wallet is the only source).
@@ -20712,8 +20712,8 @@ after everything.
   - **The closure's accrual test is T-acc's own span**: no date from `max(purchase date, latest accrual + 1)` through
     `min(eve, final due date - 1)` with principal outstanding at its end left unaccrued (`-017`: nothing accrues at or
     after the latest schedule version's final due date). With every instalment billed this is implied for pay-in-N (the
-    last billing waits on every accrual of its period) - kept as the closure's own defence; on `-017`'s merge it becomes
-    `BnplAccruals.caughtUp`. `#anObligationIsNotClosedOverAnUnaccruedDay` therefore proves the predicate hermetically; the
+    last billing waits on every accrual of its period) - kept as the closure's own defence; since `-017`'s merge it is
+    `BnplAccruals.caughtUp`. `#anObligationIsNotClosedOverAnUnaccruedDay` therefore plants the record behind (hermetic); the
     database suite proves a pay-in-N obligation repaid after maturity closes at once (`#aPnRepaidAfterItsFinalDueDateCloses`).
   - **`bnpl.billing_component_paid` is not replaced**: `bnpl V008` already counts the repayments' due-item lines beside
     the applications'; V010 adds the repayment side's own deferred "no component over-paid" check over that definition.
@@ -20735,8 +20735,24 @@ after everything.
   - **Events**: `InstalmentPaid` per item a repayment settles (amount and fees/interest/principal paid by it) - not per
     partly-paid item; `BnplAgreementClosed` on the obligation aggregate. No repayment-received event (none planned).
   - **The repayment's view carries no `receivedAt`** (the receipt is the replay; the history is newest-first by it).
+- **As built** (2026-10-19, `P12-TSK-018`'s gate): `bnpl V010` (the repayment's kinds and every-writer B4, the allocation's
+  `HOLD_AS_CREDIT` target, billed-only rank, per-component uniques and deferred conservation, `bnpl_obligation_closure`
+  and the edge beside it); `BnplRepayments` (T-rep), `BnplClosures` (called by T-rep and by `BnplServicing`'s closure step
+  after the catch-up), `BnplRepaymentStore`/`JdbcBnplRepaymentStore`, `BnplClosure`, `AllocationAnomaly`;
+  `BnplRepaymentController`/`BnplRepaymentDesk`/`BnplRepaymentMetrics`/`BnplRepaymentBeans` in `app`. **Gate**: IMPORTANT
+  (fixed in-task) - the closure's first accrual rule (lending's fold through the eve) would have held a pay-in-N obligation
+  repaid after its final due date open for ever, `-017`'s span ending there; the closure now asks `BnplAccruals.caughtUp`,
+  one rule for every act. MINOR (fixed) - a private row record's default `toString` carried the key and the amount;
+  `BnplMigrationTest`'s table and function lists, stale since `-015`'s V008, brought to V010. Thirteen probes performed and
+  caught on hermetic suites (`MUTATION_TESTING.md` §2); the wallet-before-obligation `40P01` is `-019`'s to observe (no
+  collection races a repayment until then). Ten-instance `PASS`. Owed a first run: `BnplRepaymentDatabaseTest` (twenty
+  cases) and `app`'s own-container `BnplRepaymentApiTest` (three, the step-up and the ownership negative).
+  **For `-019`**: collect through `BnplRepayments`' posting shape and close through `BnplClosures.closeIfSettled` with the
+  wallet you hold under (P) as `walletHeld` (your step's lock), the collection before the closure in T-svc; replace
+  `bnpl_repayment_is_born_once` to admit `AUTO_COLLECTION` beside its attempt; add `auto_collection` outcomes to
+  `BnplRepaymentMetrics` (its series are eager already).
 
-**P12-TSK-019 — Auto-collection** — `PLANNED`
+**P12-TSK-019 — Auto-collection** — `READY` (marked by `P12-TSK-018`'s completion gate, 2026-10-19: its one dependency `-018` `COMPLETE`)
 - **Objective**: what is due is collected from the customer's wallet on the due date — once per instalment
   per day, partially when the pinned terms allow, retried daily while due (A7; B6 — the wallet only, no card
   charge).

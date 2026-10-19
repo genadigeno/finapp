@@ -216,7 +216,14 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
 
     private record RowsOf(UUID id, BnplObligationId obligation, String kind, String requestKey, Money amount,
             BnplAgreementId agreement, int agreementVersion, String allocationEngine, JournalEntryId entry,
-            java.time.LocalDate valueDate, List<BnplPurchaseStore.Allocation> lines) {}
+            java.time.LocalDate valueDate, List<BnplPurchaseStore.Allocation> lines) {
+
+        /** Never the key or the amount (`INV-AUD-02`). */
+        @Override
+        public String toString() {
+            return "RowsOf[" + id + "]";
+        }
+    }
 
     private static BnplStorageException failed(String operation, SQLException failure) {
         Objects.requireNonNull(failure, "failure");

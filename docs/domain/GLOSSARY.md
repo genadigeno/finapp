@@ -1587,7 +1587,11 @@ plan, status and permits only, **no money column** (`INV-BNPL-01`) — born `ACT
 and `CLOSED` (reason `REPAID`, `PAID_OFF_EARLY`, `REFUNDED` or `REFUNDED_PARTIALLY_REPAID`) by the
 transaction that zeroes its last receivable; every figure a balance of its six per-obligation ledger
 accounts (`OwnerKind.BNPL_OBLIGATION`), and its row the serialisation point of every servicing act on
-it. Delinquency, default and a dispute hold are conditions beside it. Planned (`P12-TSK-013`).
+it. Delinquency, default and a dispute hold are conditions beside it. Planned (`P12-TSK-013`). Its closure
+(`REPAID`) built by `P12-TSK-018`: `bnpl_obligation_closure`, one per obligation, born by the customer's repayment or
+the servicing step that zeroes the last receivable, refunding its BNPL credit balance - money held beyond every receivable,
+`BNPL_CREDIT_BALANCE`, applied at the next billing and never to principal not yet due - to the wallet under
+`bnpl.closure-refund:<obligation>`.
 **Not:** a Loan — not born by a disbursement, reducible by a merchant's refund, never `CANCELLED`, and
 never a lending row (ADR-0101). Nor the Merchant Financing, the other flow of the same event, and not
 the customer's Exposure, credit's per-party figure, which counts its outstanding principal from version 3.
