@@ -1101,7 +1101,17 @@ class OwnershipIsScopedTest {
                             "com.finapp.bnpl.JdbcBnplCorrectionStore.addressed",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "POST /v1/operator/bnpl-agreements/{id}/repayments/{rid}/reversal (+ approval, rejection) and /waivers (+ approval, rejection) - the operator names the agreement from the path by permission: BNPL_SERVICE or BNPL_SERVICE_APPROVE at the boundary, and the not-self rule in the domain (BnplRepaymentReversals.judgeSelfDealing through BnplActingParty - an operator of the agreement's own party, or one the platform cannot place in a party, is refused bnpl.SelfDealingRefused, recorded FAILED) stands in for the predicate; unknown is the uniform 404 (P12-TSK-024).")),
+                                    "POST /v1/operator/bnpl-agreements/{id}/repayments/{rid}/reversal (+ approval, rejection) and /waivers (+ approval, rejection) - the operator names the agreement from the path by permission: BNPL_SERVICE or BNPL_SERVICE_APPROVE at the boundary, and the not-self rule in the domain (BnplRepaymentReversals.judgeSelfDealing through BnplActingParty - an operator of the agreement's own party, or one the platform cannot place in a party, is refused bnpl.SelfDealingRefused, recorded FAILED) stands in for the predicate; unknown is the uniform 404 (P12-TSK-024). Widened by P12-TSK-025: GET /v1/operator/bnpl-agreements/{id} (+ /explanation) and POST .../replay - BNPL_INVESTIGATE at the boundary, the same not-self rule through BnplExplanations (act investigation:<read|explanation|replay>); BnplExplanationsTest#selfDealingIsRefusedAndRecorded and #anUnknownAgreementIsNotFound the negatives.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRecordStore.read",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-025. An obligation's whole record: for the investigator's doors the obligation is the one JdbcBnplCorrectionStore.addressed answered for the agreement the path names - BNPL_INVESTIGATE at the boundary and the not-self rule in the domain (BnplExplanations, refused bnpl.SelfDealingRefused, recorded FAILED) stand in for the predicate, the negatives BnplExplanationsTest#selfDealingIsRefusedAndRecorded and #anUnknownAgreementIsNotFound; for the proofs' reading (BnplProofs) every obligation id comes from obligationIds, the population itself - no request names one; read-only, on one REPEATABLE READ snapshot.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRecordStore.query",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TSK-025. The record reader's one statement helper, called by JdbcBnplRecordStore.read alone: every obligation id it binds is the one read was given - the investigator's, addressed by the agreement the path names under BNPL_INVESTIGATE and the not-self rule (BnplExplanations), or the proofs' population from obligationIds - each statement scoped to it by obligation_id = ?; read-only.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplCorrectionStore.repayment",
                             new Entry(

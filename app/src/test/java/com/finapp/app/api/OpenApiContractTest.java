@@ -413,6 +413,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/rejection",
+                        // P12-TSK-025: the BNPL investigator's doors - the agreement read, its explanation from its rows
+                        // alone and its replay with a reason (BNPL_INVESTIGATE, each audited, never one's own party's).
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/explanation",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/replay",
                         // P12-TSK-023: the dispute doors - the customer's opening (keyed, 201) and withdrawal, the
                         // merchant's list of its open disputes and its response over its own key (another merchant's the
                         // uniform 404), the operator's audited read and the resolution with its four-eyes approval and

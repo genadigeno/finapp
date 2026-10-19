@@ -369,6 +369,11 @@ class NoFloatingPointMoneyRulesTest {
                     // for, how many replay IDENTICAL and DIVERGED - through the ToDoubleFunction a Gauge imposes, NaN the
                     // sentinel for unreadable. The proofs compare Money with Money; no figure is ever published (ADR-0072).
                     "com.finapp.app.lending.LendingProofMetrics",
+                    // P12-TSK-025. The SAME case as LendingProofMetrics, for bnpl: currency COUNTS the three-way proof
+                    // HOLDS and FAILS in, obligation COUNTS its subledger proof HOLDS and FAILS for and that replay
+                    // IDENTICAL and DIVERGED - through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
+                    // unreadable. The proofs compare Money with Money; no figure is ever published (ADR-0072).
+                    "com.finapp.app.bnpl.BnplProofMetrics",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

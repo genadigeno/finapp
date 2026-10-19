@@ -530,6 +530,11 @@ class CredentialReachesNoEmittedSinkTest {
                         "BnplDisputeResponseBody",
                         "BnplDisputeResolutionBody",
                         "BnplDisputeDecisionBody",
+                        // P12-TSK-025: the BNPL investigator's replay - a REASON only (screened for card and account
+                        // numbers at the domain, BnplReasons). No secret; closed: the agreement is the path's, the
+                        // investigator the session's. The read, the explanation and the replay answer views of amounts,
+                        // ids, dates and verdict codes - never a credential (never logged, never evented).
+                        "BnplReplayRequest",
                         // P11-TSK-012: the customer's acceptance - the offer's terms hash (a public SHA-256 of terms the
                         // customer was shown) and an optional payment method IDENTIFIER (an opaque registry id, never an
                         // account detail, INV-RAIL-03). No secret; closed: the evidence is the session's, never the body's.

@@ -61,6 +61,21 @@ final class BnplApplicationFakes {
     /** Every port call, in order. */
     final List<String> log = new ArrayList<>();
 
+    /**
+     * The order every fact was written in, across every fake (`P12-TSK-025`): the database instant each row's trigger stamps
+     * under B4, as one counter - the fakes' clock is fixed per act, so the order of writes is what the proofs' "lock order"
+     * reads. A rolled-back write's number stays, naming an id no row carries.
+     */
+    final Map<Object, Long> written = new LinkedHashMap<>();
+    /** The database clock each fact was written on - its business date's source. */
+    final Map<Object, Instant> writtenOn = new LinkedHashMap<>();
+    private long writes;
+
+    void wrote(Object key) {
+        written.put(key, ++writes);
+        writtenOn.put(key, now);
+    }
+
     final Store store = new Store();
     final Credit credit = new Credit();
     final Sessions sessions = new Sessions();
@@ -866,6 +881,8 @@ final class BnplApplicationFakes {
         final Map<UUID, StoredSchedule> schedules = new LinkedHashMap<>();
         /** Every schedule version, by obligation and version ({@code schedules} holds each obligation's latest). */
         final Map<String, StoredSchedule> versions = new LinkedHashMap<>();
+        /** Every agreement version, by agreement and version ({@code agreements} holds each agreement's latest). */
+        final Map<String, BnplAgreement> everyAgreement = new LinkedHashMap<>();
         final Map<UUID, BnplBilling> billings = new LinkedHashMap<>();
         final Map<UUID, Repayment> repayments = new LinkedHashMap<>();
         final List<String> history = new ArrayList<>();
@@ -875,13 +892,13 @@ final class BnplApplicationFakes {
                 Map<UUID, BnplObligation> obligations, Map<UUID, BnplAgreement> agreements,
                 Map<UUID, BnplAcceptanceEvidence> acceptances, Map<UUID, StoredSchedule> schedules,
                 Map<UUID, BnplBilling> billings, Map<UUID, Repayment> repayments, List<String> history,
-                Map<String, StoredSchedule> versions) {}
+                Map<String, StoredSchedule> versions, Map<String, BnplAgreement> everyAgreement) {}
 
         State state() {
             return new State(new LinkedHashMap<>(rows), new LinkedHashMap<>(financings), new LinkedHashMap<>(obligations),
                     new LinkedHashMap<>(agreements), new LinkedHashMap<>(acceptances), new LinkedHashMap<>(schedules),
                     new LinkedHashMap<>(billings), new LinkedHashMap<>(repayments), new ArrayList<>(history),
-                    new LinkedHashMap<>(versions));
+                    new LinkedHashMap<>(versions), new LinkedHashMap<>(everyAgreement));
         }
 
         void restore(State state) {
@@ -896,6 +913,7 @@ final class BnplApplicationFakes {
             history.clear();
             history.addAll(state.history());
             reset(versions, state.versions());
+            reset(everyAgreement, state.everyAgreement());
         }
 
         @Override
@@ -942,6 +960,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertFinancing(Connection unitOfWork, MerchantFinancing financing) {
+            wrote("financing:" + financing.purchase().value());
             step("financing insert");
             if (financings.containsKey(financing.purchase().value())) {
                 throw new BnplStorageException("merchant_financing_pk: SQLSTATE 23505");
@@ -974,6 +993,7 @@ final class BnplApplicationFakes {
 
         @Override
         public Instant insertAgreement(Connection unitOfWork, BnplAgreement agreement) {
+            wrote("agreement:" + agreement.id().value() + ":" + agreement.version());
             step("agreement insert");
             // bnpl V006: version 1 an exact copy of the OFFERED offer's terms.
             BnplOfferStore.StoredTerms stored = offers.terms.get(agreement.offer().value());
@@ -987,6 +1007,7 @@ final class BnplApplicationFakes {
                 throw new BnplStorageException("bnpl_agreement_pk: SQLSTATE 23505");
             }
             agreements.put(agreement.id().value(), agreement.stampedAt(now));
+            everyAgreement.put(agreement.id().value() + ":" + agreement.version(), agreement.stampedAt(now));
             return now;
         }
 
@@ -1003,6 +1024,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertSchedule(Connection unitOfWork, StoredSchedule schedule) {
+            wrote(schedule.id());
             step("schedule insert");
             Money scheduled = Money.ofPersisted(0, schedule.principal().currency(), schedule.principal().scale());
             for (StoredInstalment instalment : schedule.instalments()) {
@@ -1023,6 +1045,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertBilling(Connection unitOfWork, BnplBilling billing) {
+            wrote(billing.id());
             step("billing insert");
             // bnpl V006/V008: UNIQUE (instalment_id), UNIQUE (obligation_id, value_date).
             if (billings.containsKey(billing.instalment())) {
@@ -1096,6 +1119,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertRepayment(Connection unitOfWork, Repayment repayment) {
+            wrote(repayment.id());
             step("repayment insert");
             if (repayments.values().stream().anyMatch(row -> row.obligation().equals(repayment.obligation())
                     && row.kind().equals(repayment.kind()) && row.requestKey().equals(repayment.requestKey()))) {
@@ -1285,7 +1309,20 @@ final class BnplApplicationFakes {
 
         /** One posted line. */
         record Line(String key, com.finapp.ledger.LedgerAccountId account, com.finapp.ledger.Direction direction,
-                Money amount, java.time.LocalDate valueDate, java.time.LocalDate postingDate) {}
+                Money amount, java.time.LocalDate valueDate, java.time.LocalDate postingDate,
+                com.finapp.ledger.JournalEntryId entry) {
+
+            /** A fixture's line: its entry one per key (`P12-TSK-025` - every line carries its entry). */
+            Line(String key, com.finapp.ledger.LedgerAccountId account, com.finapp.ledger.Direction direction, Money amount,
+                    java.time.LocalDate valueDate, java.time.LocalDate postingDate) {
+                this(key, account, direction, amount, valueDate, postingDate, FIXTURE_ENTRIES.computeIfAbsent(key,
+                        any -> com.finapp.ledger.JournalEntryId.of(IDS.next())));
+            }
+        }
+
+        /** The entry of each fixture key - one entry per key, as the ledger's idempotency key holds one. */
+        static final Map<String, com.finapp.ledger.JournalEntryId> FIXTURE_ENTRIES =
+                new java.util.concurrent.ConcurrentHashMap<>();
 
         final Map<com.finapp.ledger.LedgerAccountId, com.finapp.ledger.LedgerAccount> accounts = new LinkedHashMap<>();
         final Map<com.finapp.ledger.LedgerAccountId, String> labels = new LinkedHashMap<>();
@@ -1411,11 +1448,11 @@ final class BnplApplicationFakes {
                 throw new IllegalStateException("an entry balances (INV-LED-01)");
             }
             keys.add(key);
+            com.finapp.ledger.JournalEntryId id = com.finapp.ledger.JournalEntryId.of(IDS.next());
             for (com.finapp.ledger.JournalLine line : command.lines()) {
                 lines.add(new Line(key, line.account(), line.direction(), line.amount(), command.valueDate(),
-                        command.postingDate()));
+                        command.postingDate(), id));
             }
-            com.finapp.ledger.JournalEntryId id = com.finapp.ledger.JournalEntryId.of(IDS.next());
             entries.put(id, List.copyOf(command.lines()));
             return id;
         }
@@ -1472,11 +1509,11 @@ final class BnplApplicationFakes {
                 }
             }
             keys.add(key);
+            com.finapp.ledger.JournalEntryId id = com.finapp.ledger.JournalEntryId.of(IDS.next());
             for (com.finapp.ledger.JournalLine line : command.lines()) {
                 lines.add(new Line(key, line.account(), line.direction(), line.amount(), command.valueDate(),
-                        command.postingDate()));
+                        command.postingDate(), id));
             }
-            com.finapp.ledger.JournalEntryId id = com.finapp.ledger.JournalEntryId.of(IDS.next());
             entries.put(id, List.copyOf(command.lines()));
             reversalOf.put(id, command.original());
             return id;
@@ -1501,8 +1538,7 @@ final class BnplApplicationFakes {
             return lines.stream()
                     .filter(line -> rows.contains(line.account()) && !line.valueDate().isAfter(valueDateThrough))
                     .sorted(java.util.Comparator.comparing(Line::valueDate))
-                    .map(line -> new com.finapp.ledger.PurposeBalances.DatedLine(
-                            com.finapp.ledger.JournalEntryId.of(IDS.next()),
+                    .map(line -> new com.finapp.ledger.PurposeBalances.DatedLine(line.entry(),
                             line.account(), line.valueDate(), line.direction(), line.amount()))
                     .toList();
         }
@@ -1676,6 +1712,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertApplication(Connection unitOfWork, BnplCreditBalanceApplication application) {
+            wrote(application.id());
             step("application insert");
             BnplObligationId obligation = application.obligation();
             if (application.billing().isPresent() && applications.values().stream()
@@ -1780,6 +1817,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertClosure(Connection unitOfWork, BnplClosure closure) {
+            wrote(closure.id());
             step("closure insert");
             if (closures.containsKey(closure.obligation().value())) {
                 throw new BnplStorageException("bnpl_obligation_closure_obligation_unique: SQLSTATE 23505");
@@ -1894,6 +1932,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertAttempt(Connection unitOfWork, BnplCollectionAttempt attempt) {
+            wrote(attempt.id());
             step("attempt insert");
             if (!holdRankDropped && disputes.holdOf(attempt.obligation()).heldOn(dueDateOf(attempt.instalment()),
                     attempt.attemptDate())) {
@@ -1994,6 +2033,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insert(Connection unitOfWork, BnplInterestAccrual row) {
+            wrote(row.id());
             step("accrual insert");
             BnplObligation obligation = purchases.obligations.get(row.obligation().value());
             java.time.LocalDate date = row.accrual().date();
@@ -2133,6 +2173,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertScheduleVersion(Connection unitOfWork, BnplPurchaseStore.StoredSchedule schedule, UUID refund) {
+            wrote(schedule.id());
             step("schedule version insert");
             BnplPurchaseStore.StoredSchedule previous = purchases.schedules.get(schedule.obligation().value());
             BnplObligation obligation = purchases.obligations.get(schedule.obligation().value());
@@ -2175,6 +2216,7 @@ final class BnplApplicationFakes {
         @Override
         public Instant insertAgreementVersion(Connection unitOfWork, BnplAgreement agreement, UUID refund,
                 int scheduleVersion) {
+            wrote("agreement:" + agreement.id().value() + ":" + agreement.version());
             step("agreement version insert");
             BnplAgreement previous = purchases.agreements.get(agreement.id().value());
             if (agreement.version() != previous.version() + 1
@@ -2188,6 +2230,7 @@ final class BnplApplicationFakes {
                         + " schedule version: P0001");
             }
             purchases.agreements.put(agreement.id().value(), agreement.stampedAt(now));
+            purchases.everyAgreement.put(agreement.id().value() + ":" + agreement.version(), agreement.stampedAt(now));
             agreementVersions.put(agreement.id().value() + ":" + agreement.version(), agreement.stampedAt(now));
             return now;
         }
@@ -2203,6 +2246,7 @@ final class BnplApplicationFakes {
 
         @Override
         public Instant insertRefund(Connection unitOfWork, BnplRefund refund) {
+            wrote(refund.id());
             step("refund insert");
             // bnpl V015: no refund beside an open dispute but its own, of exactly its claim; one refund per dispute.
             if (!disputeRankDropped && disputes.rows.values().stream().anyMatch(row -> row.purchase()
@@ -2422,6 +2466,7 @@ final class BnplApplicationFakes {
 
         @Override
         public Instant insertQuote(Connection unitOfWork, BnplPayoffQuote quote) {
+            wrote(quote.id());
             step("quote insert");
             if (findQuoteByKey(unitOfWork, quote.obligation(), quote.requestKey()).isPresent()) {
                 throw new BnplStorageException("bnpl_payoff_quote_key_unique: SQLSTATE 23505");
@@ -2445,6 +2490,7 @@ final class BnplApplicationFakes {
 
         @Override
         public Instant insertExecution(Connection unitOfWork, BnplPayoffExecution execution) {
+            wrote(execution.id());
             step("execution insert");
             if (executions.values().stream().anyMatch(row -> row.quote().equals(execution.quote()))) {
                 throw new BnplStorageException("bnpl_payoff_execution_quote_unique: SQLSTATE 23505");
@@ -2598,6 +2644,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertCondition(Connection unitOfWork, BnplConditionEvent event) {
+            wrote(event.id());
             step("condition insert");
             if (!onceADayUniqueDropped && events.stream().anyMatch(row -> row.obligation().equals(event.obligation())
                     && row.businessDate().equals(event.businessDate()) && row.kind() == event.kind())) {
@@ -2648,6 +2695,7 @@ final class BnplApplicationFakes {
 
         @Override
         public void insertAssessment(Connection unitOfWork, BnplFeeAssessment assessment) {
+            wrote(assessment.id());
             step("fee insert");
             if (!feeUniqueDropped && assessments.stream().anyMatch(row -> row.instalment().equals(assessment.instalment())
                     && row.kind() == assessment.kind())) {
@@ -3144,6 +3192,7 @@ final class BnplApplicationFakes {
 
         @Override
         public boolean decideReversal(Connection unitOfWork, ReversalDecision decision) {
+            wrote("decided:" + decision.reversal());
             step("reversal " + decision.outcome());
             BnplRepaymentReversal row = reversals.get(decision.reversal());
             if (row == null || row.status() != BnplCorrectionStatus.PROPOSED) {
@@ -3288,6 +3337,7 @@ final class BnplApplicationFakes {
 
         @Override
         public boolean decideWaiver(Connection unitOfWork, WaiverDecision decision) {
+            wrote("decided:" + decision.waiver());
             step("waiver " + decision.outcome());
             BnplWaiver row = waiverRows.get(decision.waiver());
             if (row == null || !row.proposedBy().equals(decision.proposedBy())) {
