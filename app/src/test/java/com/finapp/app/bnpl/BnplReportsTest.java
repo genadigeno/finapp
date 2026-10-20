@@ -262,6 +262,39 @@ class BnplReportsTest {
         assertThat(audited).isEmpty();
     }
 
+    @Test
+    @DisplayName("ten instances at one instant: every read a report makes is inside its ONE snapshot - none before, none"
+            + " beside - so a report is a function of one state, and two instances over the same state serve one report")
+    void everyReadIsInsideOneSnapshotAndInstancesAgree() {
+        plantBook();
+        reads.financing.add(new BnplReportReads.Financing("EUR", 2, 1, new BigDecimal(600_00), new BigDecimal(18_00),
+                new BigDecimal(582_00), 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        reads.payables.add(new BnplReportReads.Balance("", "EUR", 2, "MERCHANT_PAYABLE", new BigDecimal(582_00)));
+        reads.inside = units.inside;
+        List<BnplReports> instances = new ArrayList<>();
+        for (int instance = 0; instance < 10; instance++) {
+            instances.add(new BnplReports(units, reads, snapshot -> reading,
+                    (AuditWriter<Connection>) (unitOfWork, record) -> audited.add(record), IDS, Clock.systemUTC()));
+        }
+        List<Object> served = new ArrayList<>();
+        for (BnplReports instance : instances) {
+            units.calls.clear();
+            served.add(served(() -> instance.portfolio(DAY)));
+            served.add(served(() -> instance.merchantFinancing(DAY)));
+            served.add(served(() -> instance.refunds(DAY)));
+            served.add(served(() -> instance.delinquency(DAY)));
+            assertThat(units.calls).as("one snapshot and one audit transaction per report")
+                    .containsExactly("snapshot", "transaction", "snapshot", "transaction", "snapshot", "transaction",
+                            "snapshot", "transaction");
+        }
+        assertThat(reads.outside).as("no read outside the report's snapshot").isEmpty();
+        for (int instance = 1; instance < 10; instance++) {
+            assertThat(served.subList(instance * 4, instance * 4 + 4)).as("instance %d serves instance 0's reports",
+                    instance).isEqualTo(served.subList(0, 4));
+        }
+        assertThat(audited).hasSize(40);
+    }
+
     // ------------------------------------------------------------------ the world
 
     /** Runs {@code report} as an investigator inside a request's correlation. */
@@ -306,11 +339,18 @@ class BnplReportsTest {
     /** The two units, recording their order - the connection is never touched by these reads. */
     private static final class Units implements BnplReports.Units {
         final List<String> calls = new ArrayList<>();
+        /** Whether a snapshot is open now. */
+        final boolean[] inside = new boolean[1];
 
         @Override
         public <R> R inSnapshot(Function<Connection, R> work) {
             calls.add("snapshot");
-            return work.apply(null);
+            inside[0] = true;
+            try {
+                return work.apply(null);
+            } finally {
+                inside[0] = false;
+            }
         }
 
         @Override
@@ -335,9 +375,15 @@ class BnplReportsTest {
         final List<DelinquencyCount> delinquency = new ArrayList<>();
         final List<Balance> dues = new ArrayList<>();
         final Map<UUID, UUID> agreements = new HashMap<>();
+        /** When set, the snapshot flag every read is judged against; the reads made outside one. */
+        boolean[] inside;
+        final List<String> outside = new ArrayList<>();
 
         private <T> T ask(String read, T answer) {
             asked.add(read);
+            if (inside != null && !inside[0]) {
+                outside.add(read);
+            }
             if (read.equals(failAt)) {
                 throw new IllegalStateException("a BNPL report could not be read: 08006");
             }
