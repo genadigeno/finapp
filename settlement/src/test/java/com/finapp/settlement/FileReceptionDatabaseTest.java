@@ -154,7 +154,10 @@ class FileReceptionDatabaseTest {
                                 // A position of its own: one declared source per position
                                 // (INV-SET-05); this register alone composes it.
                                 Optional.of(AccountPurpose.INSTANT_CLEARING),
-                                Optional.of("PSP-REM-[0-9]{4,12}"))));
+                                // And a remittance shape of its own: the register refuses two
+                                // sources sharing one, since a bank line carrying it could be
+                                // attributed to neither (P9-TSK-026, INV-SET-05; X-TSK-018).
+                                Optional.of("RTD-REM-[0-9]{4,12}"))));
     }
 
     /** The throwaway source, seeded as the migrator and retired at once (T-5's doors). */
