@@ -1202,6 +1202,8 @@ Resolved during initiation:
 
 ## Next Task
 
+**`P12-TST-001` — The BNPL storm** — `READY` (marked by the Phase 12 database pass's coordinator, 2026-10-20, once `X-TSK-018`, `P12-TSK-027` and `P12-TSK-028` were merged: every dependency met). The storm runs its own database suites under the owner's 2026-10-20 decision "Run a DB pass now".
+
 `P12-TSK-028` `COMPLETE` (2026-10-20) marks none: all three items of the Phase 12 database pass are now complete, and its coordinator marks **`P12-TST-001` — The BNPL storm** once `P12-TSK-028` is merged.
 
 `P12-TSK-027` `COMPLETE` (2026-10-20) marks none: the Phase 12 database pass's coordinator marks **`P12-TST-001` — The BNPL storm** once `P12-TSK-027`, `-028` and `X-TSK-018` are merged.
