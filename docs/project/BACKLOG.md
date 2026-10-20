@@ -21810,8 +21810,9 @@ after everything.
   rows measured, not only proven.
 - **Bounded context**: all of the phase, with checkout, merchant, payments, settlement, credit and lending as
   they meet it.
-- **Dependencies**: every task `P12-TSK-001`…`-026`; **and** the cross-cutting `X-TSK` (not yet numbered)
-  that repairs the three settlement suites red since `P9-TSK-026` — `BatchAcceptanceDatabaseTest`,
+- **Dependencies**: every task `P12-TSK-001`…`-026`; **and** the cross-cutting **`X-TSK-018`** (`COMPLETE`
+  2026-10-20; read "the cross-cutting `X-TSK` (not yet numbered)" until numbered) that repairs the three
+  settlement suites red since `P9-TSK-026` — `BatchAcceptanceDatabaseTest`,
   `FileReceptionDatabaseTest`, `ReadmissionDatabaseTest` (owner decision B8, OQ-20: fixed before this storm,
   whose scenario 5 runs through merchant payouts and settlement).
 - **Scope**: `PHASE_12_PLAN.md` §13.3. **First, the test-hardening debt** recorded by the Phase 11 → 12
@@ -22780,6 +22781,96 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   - **Verified**: credit hermetic 109 across 17 suites; credit database 68 across 8; the app credit own-container set with V014 84 across 9, from a fresh run under a concurrent full run; all 0 failures. The fleet hermetic and architecture tiers (the document guards included) were started and stopped by the owner before finishing, so they are **not run** for this task.
 - **Risk**: Low. Two trigger stamps, the same answer on a clock that is not behind. **Cx**: S.
   **DoD**: `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`
+
+**X-TSK-018 — The three settlement database suites, red since `P9-TSK-026`** — `COMPLETE`
+*(2026-10-20, at its completion gate - the gate's record below; branch `X-TSK-018` from master `2a6a3b93`; owner
+decision **B8** accepting `PHASE_12_PLAN.md` **OQ-20**'s default - "fix first (an `X-TSK`)" before `P12-TST-001`, whose
+scenario 5 runs through merchant payouts and settlement; run in the owner-authorised Phase 12 database pass beside
+`P12-TSK-027` and `-028`; cross-cutting, no milestone, marks no task `READY` - the pass's coordinator marks
+`P12-TST-001` once all three are merged)* *(named "the cross-cutting `X-TSK` (not yet numbered)" in `P12-TST-001`'s
+entry, the plan and `CURRENT_STATE.md` until numbered here)*
+- **Context**: `settlement`'s database tier. Pays the debt row *Three settlement database suites red at class
+  initialisation since `P9-TSK-026`* (found by `P11-TSK-004`, not caused; recorded, not fixed, by `P11-DOC-001`,
+  finding 2). `INV-SET-05`; ADR-0065 §3 (hop 2's attribution), ADR-0078 §6, ADR-0080/0082 (`P9-TSK-026`).
+- **The failures** (the pass's first run on `2a6a3b93`): every case of each suite at `initializationError`,
+  `IllegalStateException: sources simulated-psp.settlement and <second> declare one remittance shape: a bank line could
+  not be attributed to either (INV-SET-05)` - `<second>` `cp-accept.trade-report` (`BatchAcceptanceDatabaseTest`),
+  `retired-door-psp.settlement` (`FileReceptionDatabaseTest`), `retiring-readmit-psp.settlement`
+  (`ReadmissionDatabaseTest`).
+- **The cause**: `P9-TSK-026` (`57c7c576`, 2026-10-06) found that both FX and both corridor counterparties would remit
+  in one shape (`FXA-`, `XBA-`). The bank's hop-2 line would then match two sources, and `SettlementSources.attribute`
+  answers empty for zero or two matches, so the line is left unattributed: a's hop 2 lost with b's. It gave each
+  counterparty its own shape (`FXB-`, `XBB-`) and made the register's constructor refuse two sources declaring one
+  shape. The three suites each compose a register with a second `SIM_PSP_CSV` source whose descriptor was copied from
+  the simulated PSP's, `PSP-REM-[0-9]{4,12}` included. `BatchAcceptanceDatabaseTest` has two of them
+  (`retiring-psp.settlement` and the counterparty source `cp-accept.trade-report`); the message names whichever
+  `Map.copyOf`'s order meets second. Each suite builds its register in static setup, so all 31 cases failed before
+  running. `P9-TSK-026` ran only its own database suites (the owner's standing instruction), so the three went dark
+  for three phases.
+- **Classification** (the pass's board rule 3; one row per failure):
+  - `BatchAcceptanceDatabaseTest` (9 cases) - **(b) TEST DEFECT**: `retiring-psp.settlement` and
+    `cp-accept.trade-report` declared the simulated PSP's shape. Fix: `RET-REM-[0-9]{4,12}` and `CPA-REM-[0-9]{4,12}`.
+  - `FileReceptionDatabaseTest` (9) - **(b) TEST DEFECT**: `retired-door-psp.settlement` declared it. Fix:
+    `RTD-REM-[0-9]{4,12}`.
+  - `ReadmissionDatabaseTest` (13) - **(b) TEST DEFECT**: `retiring-readmit-psp.settlement` declared it. Fix:
+    `RDM-REM-[0-9]{4,12}`.
+  - **The check is right, so none is (a).** Two sources sharing one shape make every bank line carrying it match both.
+    The register then attributes the line to neither and parks it, and both positions' hop 2 is lost. Refusing that
+    at composition is `INV-SET-05`'s static rank, the same rank that refuses two sources on one position.
+- **Design** (2026-10-20; 23 points, terse): (1) **Objective** - the three suites run again, green, with the register
+  rule they broke unchanged. (2) **Domain** - a bank line is attributed to the one source whose remittance shape it
+  matches, so every source needs its own shape, test registers included. (3) **Context** - `settlement`, tests only.
+  (4)-(8) **Model, lifecycle, invariants, data, constraints** - unchanged; `INV-SET-05` protected, not amended.
+  (9)-(14) **Transactions, consistency, APIs, events, idempotency, concurrency** - unchanged; the suites' own
+  ten-instance races (reception, readmission, the accept leg) run again. (15) **Multi-instance** - the register is
+  compiled data, identical on every instance; nothing new runs. (16) **Failure** - a shared shape still refuses
+  composition. (17)-(20) **Security, audit, reconciliation, observability** - unchanged. (21) **Tests** - the three
+  suites, then the whole `:settlement:databaseTest`, `:settlement:test` and `:settlement:architectureTest`, fresh.
+  (22) **Acceptance** - below. (23) **Out of scope** - checking a report's trailer against its own source's shape at
+  parse (`P9-TSK-026`'s recorded debt), overlap detection in the register (below), every other module's database
+  tier. **Financial chain**: `N/A` - no money path changes. **Rejected**: (a) relaxing the check to allow a shared
+  shape when the formats differ: a bank line carries a shape, not a format, so it would still be ambiguous;
+  (b) dropping the second sources: the suites' retirement, door and counterparty cases are about them.
+- **As built** (2026-10-20): the three fixtures only, each second source given its own shape with a comment naming the
+  rule. No main code and no migration: `git diff master -- '*/src/main/*'` is empty. Nothing the suites assert
+  depends on the shape. No case in them parses a bank statement, so nothing reaches `attribute`. The reports they
+  deliver still carry `PSP-REM-` trailers, because `SIM_PSP_CSV` fixes the shape at parse (`P9-TSK-026`'s recorded
+  debt: a report naming another counterparty's shape surfaces at hop 2, not at parse). Only the register reads the
+  declared shape.
+- **Why `INV-SET-05` is not weakened**: `SettlementSources` is unchanged. Its refusal is still held by
+  `EverySettlingPositionHasASourceTest#eachCounterpartyRemitsInItsOwnShape` and its two `P9-TSK-026` probe rows in
+  `MUTATION_TESTING.md` §2. The fixtures now satisfy the rule; they do not get around it.
+- **Demonstrated** (no `MUTATION_TESTING.md` row: no invariant code changed, and board rule 7 asks rows for
+  production-defect probes): `ReadmissionDatabaseTest`'s shape was put back to `PSP-REM-[0-9]{4,12}`. The suite went
+  red at `initializationError` (`IllegalStateException` at the register, line 172). The file was then restored
+  byte-identical (sha256).
+- **Found, not fixed - owner judgements**: (1) the register compares shapes as *strings*. Two distinct strings that
+  overlap (say `PSP-REM-[0-9]{4,12}` and `PSP-REM-[0-9]{6}`) compose, and their common lines are parked unattributed
+  at runtime. That is safe (`INV-SET-05`'s zero-or-two rule, `SettlementSourcesTest#anAmbiguousReferenceIsUnattributed`),
+  but it is found at hop 2, not at composition. A composition-time overlap check over the declared shapes would close
+  it. Today's production shapes (`PSP-REM-`, `SCH-REM-`, `PAY-REM-`, `FXA-`/`FXB-`, `XBA-`/`XBB-`) are prefix-disjoint,
+  so nothing is exposed. Recommendation: record as debt, review later. (2) The cause class: skipping the module
+  database tiers fleet-wide (B4's continuation) hid a suite red at initialisation for three phases. The skip is the
+  owner's standing instruction, to be asked again at the 12 → 13 transition.
+- **Verified** (fresh, 2026-10-20, read from the JUnit XML): the three suites 31 across 3 (9 + 9 + 13); the whole
+  `:settlement:databaseTest` 89 across 14 (`ownContainerDatabaseTest` `NO-SOURCE` - settlement lists none);
+  `:settlement:test` 231 across 40; `:settlement:architectureTest` 2 across 1 - ALL 0 FAILURES. No app code changed,
+  so no app test applies. No `build`, no `kafkaTest`.
+- **Risk**: Low - three test fixtures. **Cx**: S. **DoD**: `DOD-TEST`.
+- **Gate** (2026-10-20, `COMPLETE`): **Functional** - each criterion below holds. **Domain** - no ownership or rule
+  moved. **Multi-instance** - **PASS**: production is unchanged; the register is compiled data, identical on every
+  instance; the suites' ten-instance cases run again and are green (ten deliveries of one file: one row, one `NEW`
+  receipt, nine `DUPLICATE`; ten readmissions of one original: one readmission, nine refusals; ten acceptors on one file: one acceptance, and ten
+  files of one source: ten gapless sequences).
+  **Atomicity, idempotency, financial, security, audit** - unchanged, and proven again by the 31 cases. **Invariant
+  demonstrations** - `INV-SET-05`'s refusal keeps its `P9-TSK-026` rows; the fixture's red was demonstrated above.
+  **Architecture** - no drift. CRITICAL none · IMPORTANT none · MINOR the overlap note (1), recorded for the owner ·
+  FIXES PERFORMED the three fixtures.
+- **Accept**:
+  - each failure classified, its cause named with the commit that introduced it;
+  - the fix at its cause: no production check changed or loosened, no test disabled, no assertion weakened;
+  - the three suites and the whole `:settlement:databaseTest` green from a fresh run, read from the JUnit XML, with
+    `:settlement:test` and `:settlement:architectureTest`.
 
 ---
 
