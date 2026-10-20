@@ -401,8 +401,11 @@ class BnplMerchantPayoutDatabaseTest {
         HttpResponse<String> listed = world.client.get("/v1/merchant/transactions?from=" + today + "&to=" + today,
                 shop.merchant().apiKey());
         assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);
+        // The fixture is a raw posting under bnpl.refund:<id> with no bnpl refund row behind it, so P12-TSK-021's second
+        // rank - the refund named only when bnpl's merchant-scoped read confirms it - renders it BNPL_REFUND WITHOUT its
+        // identifier (P12-TSK-028; the confirmed id through a real refund is BnplRefundApiTest#anotherMerchantsReport...).
         assertThat(listed.body()).contains("\"kind\":\"BNPL_FINANCING\"", "\"purchaseId\":\"" + purchase + "\"",
-                "\"kind\":\"BNPL_REFUND\"", "\"refundId\":\"" + refund + "\"").doesNotContain("\"kind\":\"REFUND\"");
+                "\"kind\":\"BNPL_REFUND\"").doesNotContain(refund.toString()).doesNotContain("\"kind\":\"REFUND\"");
 
         Shop other = shop();
         HttpResponse<String> theirs = world.client.get("/v1/merchant/transactions?from=" + today + "&to=" + today,

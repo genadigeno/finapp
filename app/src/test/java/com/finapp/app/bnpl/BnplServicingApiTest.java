@@ -104,6 +104,9 @@ class BnplServicingApiTest {
         String reversal = AGREEMENTS + bought.agreement() + "/repayments/" + bought.repayment() + "/reversal";
         String waivers = AGREEMENTS + bought.agreement() + "/waivers";
         String decision = "{\"reversalId\":\"" + UUID.randomUUID() + "\",\"reason\":\"r\"}";
+        // Counted before and after, never against zero: the suite's database is shared by its cases, and a case that
+        // ran before this one leaves its reversal (P12-TSK-028).
+        long before = corrections();
         for (String[] door : List.of(
                 new String[] {reversal, "{\"reason\":\"r\"}"},
                 new String[] {reversal + "/approval", decision},
@@ -115,8 +118,13 @@ class BnplServicingApiTest {
             HttpResponse<String> refused = world.client.post(door[0], door[1], unprivileged, BnplApplicationClient.key());
             assertThat(refused.statusCode()).as(door[0] + " " + refused.body()).isEqualTo(403);
         }
-        assertThat(BnplApplicationClient.count("SELECT (SELECT count(*) FROM bnpl.bnpl_repayment_reversal)"
-                + " + (SELECT count(*) FROM bnpl.bnpl_waiver) WHERE true")).isZero();
+        assertThat(corrections()).as("nothing written by a refused door").isEqualTo(before);
+    }
+
+    /** Every reversal and waiver row in the database. */
+    private static long corrections() throws Exception {
+        return BnplApplicationClient.count("SELECT (SELECT count(*) FROM bnpl.bnpl_repayment_reversal)"
+                + " + (SELECT count(*) FROM bnpl.bnpl_waiver) WHERE true");
     }
 
     @Test

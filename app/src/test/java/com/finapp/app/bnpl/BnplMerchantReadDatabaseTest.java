@@ -124,7 +124,7 @@ class BnplMerchantReadDatabaseTest {
         HttpResponse<String> malformed = read(stranger.apiKey(), "not-a-uuid");
         for (HttpResponse<String> refused : List.of(foreign, unknown, malformed)) {
             assertThat(refused.statusCode()).as(refused.body()).isEqualTo(404);
-            assertThat(refused.body()).contains("bnpl.NotFound").doesNotContain("600.00", purchased.purchase(),
+            assertThat(beyondThePath(refused)).contains("bnpl.NotFound").doesNotContain("600.00", purchased.purchase(),
                     owner.id());
         }
         assertThat(normalised(foreign.body())).isEqualTo(normalised(unknown.body()));
@@ -141,7 +141,7 @@ class BnplMerchantReadDatabaseTest {
                 "{\"reason\":\"risk review\"}", operator).statusCode()).isEqualTo(200);
         HttpResponse<String> refused = read(merchant.apiKey(), purchased.purchase());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(401);
-        assertThat(refused.body()).doesNotContain("600.00", purchased.purchase());
+        assertThat(beyondThePath(refused)).doesNotContain("600.00", purchased.purchase());
         assertThat(world.client.call("POST", "/v1/operator/merchants/" + merchant.id() + "/reinstatement",
                 "{\"reason\":\"review closed\"}", operator).statusCode()).isEqualTo(200);
         assertThat(read(merchant.apiKey(), purchased.purchase()).statusCode()).isEqualTo(200);
@@ -158,7 +158,7 @@ class BnplMerchantReadDatabaseTest {
                 "{\"reason\":\"the key was rotated\"}", operator).statusCode()).isEqualTo(204);
         HttpResponse<String> refused = read(merchant.apiKey(), purchased.purchase());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(401);
-        assertThat(refused.body()).doesNotContain("600.00", purchased.purchase());
+        assertThat(beyondThePath(refused)).doesNotContain("600.00", purchased.purchase());
     }
 
     @Test
@@ -307,6 +307,22 @@ class BnplMerchantReadDatabaseTest {
         assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
         return new Purchased(BnplApplicationClient.field(accepted.body(), "purchaseId"), offer.session(),
                 BnplApplicationClient.field(accepted.body(), "orderId"), customer.party());
+    }
+
+    /**
+     * The refusal's body beyond the caller's own request path: the problem's {@code instance} is the request path
+     * (ERROR_CONTRACT.md section 1), so it echoes the identifier the caller sent and nothing the caller did not know -
+     * held here to be exactly that path, then removed, so the no-leak assertions judge everything else the body says
+     * (P12-TSK-028).
+     */
+    private static String beyondThePath(HttpResponse<String> refused) {
+        String body = refused.body();
+        java.util.regex.Matcher instance = java.util.regex.Pattern.compile("\"instance\":\"([^\"]*)\"").matcher(body);
+        if (instance.find()) {
+            assertThat(instance.group(1)).as("the instance is the request's own path").isEqualTo(refused.uri().getPath());
+            return body.substring(0, instance.start()) + body.substring(instance.end());
+        }
+        return body;
     }
 
     private HttpResponse<String> read(String key, String purchase) throws Exception {

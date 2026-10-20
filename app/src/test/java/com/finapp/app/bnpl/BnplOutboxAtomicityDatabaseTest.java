@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.bnpl.BnplAcceptances;
+import com.finapp.bnpl.BnplApplications;
 import com.finapp.bnpl.BnplOrigination;
 import com.finapp.bnpl.BnplTermsAdministration;
 import com.finapp.identity.Authorization;
@@ -76,11 +77,24 @@ class BnplOutboxAtomicityDatabaseTest {
         BnplApplicationClient.Merchant merchant = world.merchant();
         BnplPurchaseWorld.Offer offer = world.offered(customer, merchant, GROSS, BnplApplicationClient::payIn4);
 
-        // Refused at (P): the wallet holds nothing - the whole act rolls back, its events with it.
+        // Refused at (P): the wallet holds nothing - the whole act rolls back, its events with it. The origination
+        // before it committed its own events naming the session (the application, its eligibility and the offer), so
+        // the refusal is judged by what it adds: no row of any type, and none of the acceptance's (P12-TSK-028).
+        long before = outboxRows();
+        long naming = sessionEvents(offer);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type LIKE 'bnpl.%'"
+                + " AND event_type NOT IN (?, ?, ?) AND convert_from(payload, 'UTF8') LIKE ?",
+                BnplApplications.SUBMITTED_EVENT, BnplOrigination.ELIGIBILITY_EVENT, BnplOrigination.OFFERED_EVENT,
+                "%" + offer.session() + "%")).as("before the acceptance, only the origination's events name the session")
+                .isZero();
         HttpResponse<String> refused = world.accept(customer.token(), offer, BnplApplicationClient.key());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
-        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type LIKE"
-                + " 'bnpl.%' AND convert_from(payload, 'UTF8') LIKE ?", "%" + offer.session() + "%")).isZero();
+        assertThat(outboxRows()).as("a refused acceptance leaves no outbox row of its own").isEqualTo(before);
+        assertThat(sessionEvents(offer)).as("no event naming the session beyond the origination's").isEqualTo(naming);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type IN (?, ?, ?,"
+                + " ?) AND convert_from(payload, 'UTF8') LIKE ?", BnplAcceptances.AGREEMENT_CREATED_EVENT,
+                BnplAcceptances.MERCHANT_FINANCED_EVENT, BnplAcceptances.INSTALMENT_DUE_EVENT,
+                BnplAcceptances.INSTALMENT_PAID_EVENT, "%" + offer.session() + "%")).isZero();
 
         world.topUpWallet(customer.party(), eur(1_000_00));
         HttpResponse<String> accepted = world.accept(customer.token(), offer, BnplApplicationClient.key());
@@ -98,5 +112,14 @@ class BnplOutboxAtomicityDatabaseTest {
                 BnplAcceptances.INSTALMENT_PAID_EVENT, obligation)).isEqualTo(2);
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                 + " 'checkout.OrderPaid' AND convert_from(payload, 'UTF8') LIKE ?", "%FINANCED%")).isPositive();
+    }
+
+    private static long outboxRows() throws Exception {
+        return BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event");
+    }
+
+    private static long sessionEvents(BnplPurchaseWorld.Offer offer) throws Exception {
+        return BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type LIKE 'bnpl.%' AND"
+                + " convert_from(payload, 'UTF8') LIKE ?", "%" + offer.session() + "%");
     }
 }

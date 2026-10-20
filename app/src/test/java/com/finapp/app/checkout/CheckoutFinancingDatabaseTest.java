@@ -388,7 +388,7 @@ class CheckoutFinancingDatabaseTest {
 
             CheckoutSession other = insertOpen(Duration.ofMinutes(30));
             assertThatThrownBy(() -> execute(migrator,
-                    "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = now(),"
+                    "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                             + " financed_by_ref = ? WHERE id = ?", purchase, other.id().value()))
                     .as("one purchase finances one session")
                     .isInstanceOfSatisfying(SQLException.class,
@@ -398,7 +398,7 @@ class CheckoutFinancingDatabaseTest {
             CheckoutSession pending = insertOpen(Duration.ofMinutes(30));
             transition(pending, pending.confirm(CLOCK, IDS.next()));
             assertThatThrownBy(() -> execute(migrator,
-                    "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = now(),"
+                    "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                             + " financed_by_ref = ? WHERE id = ?", IDS.next(), pending.id().value()))
                     .as("PAYMENT_PENDING -> COMPLETED is a capture's, never a financing's")
                     .isInstanceOf(SQLException.class)
@@ -414,14 +414,14 @@ class CheckoutFinancingDatabaseTest {
             try (Connection writer = "application".equals(role) ? DatabaseRoles.application() : DatabaseRoles.migrator()) {
                 CheckoutSession bare = insertOpen(Duration.ofMinutes(30));
                 assertThatThrownBy(() -> execute(writer,
-                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = now()"
+                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at)"
                                 + " WHERE id = ?", bare.id().value()))
                         .as("%s: OPEN -> COMPLETED without a financing reference", role)
                         .isInstanceOf(SQLException.class).hasMessageContaining("by financing only");
 
                 CheckoutSession withIntent = insertOpen(Duration.ofMinutes(30));
                 assertThatThrownBy(() -> execute(writer,
-                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = now(),"
+                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                                 + " payment_intent_ref = ?, financed_by_ref = ? WHERE id = ?",
                         IDS.next(), IDS.next(), withIntent.id().value()))
                         .as("%s: a financing beside an intent", role)
@@ -430,14 +430,14 @@ class CheckoutFinancingDatabaseTest {
                 CheckoutSession dead = insertOpen(Duration.ofMillis(200));
                 Thread.sleep(400);
                 assertThatThrownBy(() -> execute(writer,
-                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = now(),"
+                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                                 + " financed_by_ref = ? WHERE id = ?", IDS.next(), dead.id().value()))
                         .as("%s: a financing after the deadline", role)
                         .isInstanceOf(SQLException.class).hasMessageContaining("closes at the deadline");
 
                 CheckoutSession orderless = insertOpen(Duration.ofMinutes(30));
                 assertThatThrownBy(() -> execute(writer,
-                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = now(),"
+                        "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                                 + " financed_by_ref = ? WHERE id = ?", IDS.next(), orderless.id().value()))
                         .as("%s: completed by financing without its order, refused at commit", role)
                         .isInstanceOf(SQLException.class).hasMessageContaining("without its order");
@@ -488,12 +488,12 @@ class CheckoutFinancingDatabaseTest {
                 .isEqualTo(new BnplCheckoutSessions.NotPayable(BnplCheckoutSessions.Reason.NOT_OPEN));
         try (Connection migrator = DatabaseRoles.migrator()) {
             assertThatThrownBy(() -> execute(migrator,
-                    "UPDATE checkout.checkout_session SET status = 'COMPLETED_LATE', status_changed_at = now()"
+                    "UPDATE checkout.checkout_session SET status = 'COMPLETED_LATE', status_changed_at = GREATEST(now(), created_at)"
                             + " WHERE id = ?", financed.id().value()))
                     .as("a financed session is terminal").isInstanceOf(SQLException.class)
                     .hasMessageContaining("machine");
             assertThatThrownBy(() -> execute(migrator,
-                    "UPDATE checkout.checkout_session SET status = 'COMPLETED_LATE', status_changed_at = now(),"
+                    "UPDATE checkout.checkout_session SET status = 'COMPLETED_LATE', status_changed_at = GREATEST(now(), created_at),"
                             + " financed_by_ref = ? WHERE id = ?", IDS.next(), expired.id().value()))
                     .as("EXPIRED -> COMPLETED_LATE stays a capture's").isInstanceOf(SQLException.class)
                     .hasMessageContaining("only by the financing edge");
@@ -582,6 +582,13 @@ class CheckoutFinancingDatabaseTest {
     // ================================================================== sessions by value
 
     /** An OPEN session with arbitrary outward references - they travel by value (ADR-0029). */
+    /**
+     * An OPEN session born on this JVM's clock. The raw edges below stamp {@code status_changed_at} as
+     * {@code GREATEST(now(), created_at)} - production's own clamp ({@code CheckoutSession.completeByFinancing}): a raw
+     * {@code now()} read the database clock a few milliseconds behind the JVM's that stamped {@code created_at}, and
+     * {@code checkout_session_status_change_is_not_before_creation} refused the row before the rule under test (the Phase 12
+     * database pass, `P12-TSK-028`).
+     */
     private CheckoutSession insertOpen(Duration window) throws Exception {
         CheckoutSession session = CheckoutSession.open(IDS, CLOCK, IDS.next(),
                 Money.ofMinorUnits(AMOUNT_MINOR, CurrencyCode.of("EUR")), "A bicycle", IDS.next(),

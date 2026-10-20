@@ -21,6 +21,10 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.settlement.BatchAcceptance;
+import com.finapp.settlement.FileParsing;
+import com.finapp.settlement.FileReception;
+import com.finapp.settlement.TransactionRunner;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -87,6 +91,10 @@ class BnplReportsDatabaseTest {
     @Autowired private BnplProofs bnplProofs;
     @Autowired private AuditWriter<Connection> auditWriter;
     @Autowired private IdGenerator idGenerator;
+    @Autowired private FileReception<Connection> reception;
+    @Autowired private FileParsing parsing;
+    @Autowired private BatchAcceptance acceptance;
+    @Autowired private TransactionRunner settlementTransactionRunner;
 
     private BnplPurchaseWorld world;
 
@@ -94,7 +102,10 @@ class BnplReportsDatabaseTest {
     void world() throws Exception {
         world = new BnplPurchaseWorld(port, authorization, enablements, pricing, feeSchedules, terms, transactions,
                 origination, postingService, ledgerAccountStore, headroom, loanWallets).ready();
-        world.headroomAtLeast(eur(100_000_00L));
+        // Recognised capital: the book report states the three-way proof, whose capital arm fails a raw plant
+        // (P12-TSK-028).
+        new BnplRecognisedCapital(world.client, authorization, headroom, transactions, reception, parsing, acceptance,
+                settlementTransactionRunner).headroomAtLeast(eur(100_000_00L));
     }
 
     @Test

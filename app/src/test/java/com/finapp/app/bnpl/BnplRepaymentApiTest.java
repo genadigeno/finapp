@@ -69,7 +69,10 @@ class BnplRepaymentApiTest {
     @Test
     @DisplayName("no session is 401; no key, an open body and a malformed amount are refused before anything")
     void theSessionTheKeyAndTheBody() throws Exception {
-        String repayments = BnplPurchaseWorld.AGREEMENTS + "/" + UUID.randomUUID() + "/repayments";
+        // A well-formed agreement id (UUIDv7, as every BNPL id is) that names nothing: a random v4 id is MALFORMED -
+        // the uniform 404 before the body is read - so it could never show the body judged first (P12-TSK-028).
+        String repayments = BnplPurchaseWorld.AGREEMENTS + "/" + new com.finapp.sharedkernel.id.IdGenerator(
+                java.time.Clock.systemUTC(), new java.security.SecureRandom()).next() + "/repayments";
         String body = "{\"amount\":\"10.00\",\"currency\":\"EUR\"}";
         assertThat(world.client.post(repayments, body, null, BnplApplicationClient.key()).statusCode()).isEqualTo(401);
         assertThat(world.client.get(repayments, null).statusCode()).isEqualTo(401);

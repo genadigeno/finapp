@@ -433,12 +433,39 @@ class MerchantOnboardingDatabaseTest {
     }
 
     /**
-     * The single column on the platform whose name says "balance" and is not a figure: an
-     * account's NORMAL balance is its side (DEBIT or CREDIT), a classification fixed when the
-     * account is opened. Named, with its reason, so that widening this set is a visible act.
+     * Every column on the platform whose name says "balance", "payable" or "owed" and is not a
+     * position, each with its reason - so that widening this set is a visible act. The ledger's
+     * NORMAL balance is an account's side (DEBIT or CREDIT), fixed when the account is opened.
+     *
+     * <p>Widened by the Phase 12 database pass (`P12-TSK-028`), the first run of this sweep since
+     * Phase 11 added lending's and Phase 12 bnpl's tables: two columns the sweep's {@code %owed%}
+     * matches inside "all<em>owed</em>", and five money figures frozen at their row's birth - a
+     * disclosure, a movement, a quote - none of them a figure that moves. What makes a position
+     * is that it is kept up to date; so each of these is held, below, to a column no application
+     * write can change ({@link #noPositionIsStoredInAnySchema}): the day one becomes updatable it
+     * is a position whatever its name, and the sweep fails.
      */
-    private static final java.util.Set<String> PERMITTED_BALANCE_NAMED_COLUMNS =
-            java.util.Set.of("ledger.ledger_account.normal_balance");
+    private static final java.util.Map<String, String> PERMITTED_BALANCE_NAMED_COLUMNS =
+            java.util.Map.of(
+                    "ledger.ledger_account.normal_balance",
+                    "the account's side, DEBIT or CREDIT - a classification, not a figure",
+                    "lending.loan_terms.allowed_days",
+                    "allowed, not owed - the terms version's admitted day counts",
+                    "bnpl.bnpl_terms.allowed_terms",
+                    "allowed, not owed - the terms version's admitted plan lengths",
+                    "lending.loan_offer_terms.total_payable_minor",
+                    "the consumer-credit disclosure's 'total amount payable', frozen in the offer"
+                            + " the customer accepts (INSERT-only)",
+                    "bnpl.bnpl_offer_terms.total_payable_minor",
+                    "the same disclosure for a BNPL offer, frozen in the offer (INSERT-only)",
+                    "bnpl.bnpl_refund.payable_debit_minor",
+                    "one refund's movement on the merchant payable (R - r_f), the refund's own"
+                            + " immutable row; the position is the ledger's lines (INSERT-only)",
+                    "lending.payoff_quote.credit_balance_minor",
+                    "the held credit a payoff quote nets, as at the quote - a quoted figure, never"
+                            + " kept up to date (INSERT-only)",
+                    "bnpl.bnpl_payoff_quote.credit_balance_minor",
+                    "the same quoted figure for a BNPL payoff quote (INSERT-only)");
 
     @Test
     @DisplayName("P6-TSK-010: no column in ANY schema stores what the platform owes - the payable"
@@ -465,10 +492,35 @@ class MerchantOnboardingDatabaseTest {
         }
         assertThat(found)
                 .as("a column named for a position, anywhere on the platform, must be named in"
-                        + " PERMITTED_BALANCE_NAMED_COLUMNS with its reason - and %payable% and"
-                        + " %owed% can never be, because there is no reading of those words that"
-                        + " is not a figure somebody is owed")
-                .isSubsetOf(PERMITTED_BALANCE_NAMED_COLUMNS);
+                        + " PERMITTED_BALANCE_NAMED_COLUMNS with its reason - and only as a figure"
+                        + " frozen at its row's birth: a %payable% or %owed% figure kept up to date"
+                        + " can never be, because there is no reading of it that is not a position")
+                .isSubsetOf(PERMITTED_BALANCE_NAMED_COLUMNS.keySet());
+
+        // A name is permitted only as a figure nobody keeps up to date: no permitted column is one
+        // the application role can UPDATE. (Each table's own trigger refuses even the owner's
+        // edit; the grant is what this sweep can read for every schema at once.)
+        java.util.List<String> updatable = new java.util.ArrayList<>();
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT has_column_privilege(current_user, ?, ?, 'UPDATE')")) {
+            for (String column : PERMITTED_BALANCE_NAMED_COLUMNS.keySet()) {
+                int dot = column.lastIndexOf('.');
+                read.setString(1, column.substring(0, dot));
+                read.setString(2, column.substring(dot + 1));
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    if (row.getBoolean(1)) {
+                        updatable.add(column);
+                    }
+                }
+            }
+        }
+        assertThat(updatable)
+                .as("a permitted position-named column the application can UPDATE is a position"
+                        + " kept up to date, whatever its reason says")
+                .isEmpty();
     }
 
     // -----------------------------------------------------------------
