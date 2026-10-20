@@ -172,7 +172,11 @@ class BnplLateFeeDatabaseTest {
             refused(migrator, "UPDATE bnpl.bnpl_fee_assessment SET amount_minor = 1 WHERE obligation_id = '"
                     + owing.id() + "'", "P0001");
             refused(migrator, "DELETE FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + owing.id() + "'", "P0001");
-            refused(migrator, "TRUNCATE bnpl.bnpl_fee_assessment", "P0001");
+            // Since bnpl V016 (P12-TSK-024) bnpl_waiver references the assessment, so a plain TRUNCATE meets that
+            // foreign key first (0A000); a CASCADE reaches the truncate triggers, and the trigger still refuses it - the
+            // credit V007 / lending V016 convention (P12-TSK-027).
+            refused(migrator, "TRUNCATE bnpl.bnpl_fee_assessment", "0A000");
+            refused(migrator, "TRUNCATE bnpl.bnpl_fee_assessment CASCADE", "P0001");
         }
     }
 
