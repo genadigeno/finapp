@@ -157,6 +157,8 @@ class BnplMigrationTest {
                 "bnpl_repayment_allocation_reversal_is_born_once", "bnpl_repayment_reversal_is_whole_at_commit",
                 "bnpl_repayment_reversal_permits_only_machine_edges", "bnpl_waiver_decision_is_born_once",
                 "bnpl_waiver_is_born_once", "fee_waiver_room",
+                // V017 (P12-TST-001): the reversal's decision ordered.
+                "bnpl_repayment_reversal_stamps_its_decided_order",
                 // V015 (P12-TSK-023) - days_past_due replaced, listed above.
                 "bnpl_collection_attempt_respects_the_dispute_hold", "bnpl_dispute_claim_is_born_once",
                 "bnpl_dispute_event_is_append_only", "bnpl_dispute_hold_is_born_once", "bnpl_dispute_is_whole",

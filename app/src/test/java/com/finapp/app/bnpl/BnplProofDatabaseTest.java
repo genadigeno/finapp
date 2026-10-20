@@ -4,6 +4,7 @@ import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplObligationId;
@@ -81,6 +82,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p><strong>A database of its own</strong> ({@code own-container}): it brings credit's BNPL policies and terms into force.
  * Written by `P12-TSK-025` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -218,6 +220,33 @@ class BnplProofDatabaseTest {
         BnplProofs.Reading reading = transactions.inSnapshot(proofs::prove);
         assertThat(reading.currencies().get(0).failures()).contains("MERCHANT_LEG");
         assertThat(reading.failing()).as("the customer leg cannot see a payable posting").isZero();
+    }
+
+    @Test
+    @DisplayName("a database clock stepped back replays IDENTICAL - the record's order, never the clock (P12-TST-001's"
+            + " finding, bnpl V017): a repayment stamped a second before the purchase that made its obligation, and"
+            + " instalment 1's billing stamped before its own schedule in the purchase's one transaction")
+    void aClockSteppedBackReplaysInTheRecordsOrder() throws Exception {
+        Bought bought = bought();
+        repay(bought, "held", 40_00); // nothing is due yet: held as credit
+        assertThat(proven(bought).replay().verdict()).isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
+        String o = bought.o();
+        // The stamps a database clock stepped back would have written - the facts, their rows and their record order
+        // untouched: the customer's repayment a second before the purchase's billing, then that billing 600 ms before the
+        // schedule version 1 its own transaction wrote first. The storm's first load round met both shapes.
+        asOwner("UPDATE bnpl.bnpl_repayment SET received_at = (SELECT min(b.billed_at) FROM bnpl.bnpl_billing b WHERE"
+                + " b.obligation_id = " + o + ") - interval '1 second' WHERE obligation_id = " + o + " AND kind = 'CUSTOMER';"
+                + " UPDATE bnpl.bnpl_billing SET billed_at = (SELECT s.created_at FROM bnpl.bnpl_schedule s WHERE"
+                + " s.obligation_id = " + o + " AND s.schedule_version = 1) - interval '600 milliseconds' WHERE"
+                + " obligation_id = " + o);
+        assertThat(scalar("SELECT (r.received_at < b.billed_at AND b.billed_at < s.created_at)::text FROM"
+                + " bnpl.bnpl_repayment r, bnpl.bnpl_billing b, bnpl.bnpl_schedule s WHERE r.obligation_id = " + o
+                + " AND r.kind = 'CUSTOMER' AND b.obligation_id = " + o + " AND s.obligation_id = " + o))
+                .as("the stamps now disagree with the order the facts were written in").isEqualTo("true");
+        BnplProofs.Proven proven = proven(bought);
+        assertThat(proven.replay().verdict()).as("the replay walks the record's order: %s", proven.replay())
+                .isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
+        assertThat(proven.subledger().holds()).isTrue();
     }
 
     @Test

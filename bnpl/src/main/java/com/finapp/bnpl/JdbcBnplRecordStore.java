@@ -97,11 +97,14 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
         }
         Head head = heads.get(0);
         BnplObligation obligation = head.obligation();
+        // Every fact re-stamped in the record's order (V017's recorded_order): the proofs compare stamps, and a database
+        // clock stepped back would otherwise put a later fact before an earlier one (P12-TST-001's finding).
+        Map<String, Instant> at = restamped(c, id);
         CurrencyCode currency = obligation.currency();
         CorrelationId flow = obligation.correlation();
 
         List<BnplRecord.Agreement> agreements = query(c, "SELECT * FROM bnpl.bnpl_agreement WHERE obligation_id = ?"
-                + " ORDER BY version", id, row -> agreement(row, obligation));
+                + " ORDER BY version", id, row -> agreement(row, obligation, at));
         Map<BnplTermsVersionId, Optional<BnplTermsVersion>> versions = new LinkedHashMap<>();
         for (BnplRecord.Agreement agreement : agreements) {
             versions.computeIfAbsent(agreement.row().termsVersionId(), version -> {
@@ -127,14 +130,16 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 + " WHERE obligation_id = ? ORDER BY schedule_version", id, row -> new ScheduleMeta(
                         row.getInt("schedule_version"), uuid(row, "refund_id"), instant(row, "created_at")))) {
             purchases.schedule(c, obligationId, meta.version()).ifPresent(found ->
-                    schedules.add(new BnplRecord.Schedule(found, meta.refund(), meta.at())));
+                    schedules.add(new BnplRecord.Schedule(found, meta.refund(),
+                            at.getOrDefault("schedule:" + meta.version(), meta.at()))));
         }
 
         List<BnplRecord.Billing> billings = query(c, "SELECT b.*, i.sequence FROM bnpl.bnpl_billing b"
                 + " JOIN bnpl.bnpl_instalment i ON i.id = b.instalment_id WHERE b.obligation_id = ?"
-                + " ORDER BY b.billed_at, b.id", id, row -> billing(row, obligation));
+                + " ORDER BY b.billed_at, b.id", id, row -> billing(row, obligation, at));
+        billings.sort(java.util.Comparator.comparing(BnplRecord.Billing::at));
         List<BnplRecord.Stamped<BnplInterestAccrual>> accruals = query(c, "SELECT * FROM bnpl.bnpl_interest_accrual"
-                + " WHERE obligation_id = ? ORDER BY accrual_date", id, row -> accrual(row, obligationId, flow));
+                + " WHERE obligation_id = ? ORDER BY accrual_date", id, row -> accrual(row, obligationId, flow, at));
 
         Map<UUID, List<BnplCreditBalanceApplication.Line>> lines = new HashMap<>();
         query(c, "SELECT l.* FROM bnpl.bnpl_credit_balance_allocation l JOIN bnpl.bnpl_credit_balance_application a"
@@ -153,14 +158,16 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                         row.getString("allocation_engine"), row.getObject("value_date", LocalDate.class),
                         lines.getOrDefault(row.getObject("id", UUID.class), List.of()),
                         JournalEntryId.of(row.getObject("journal_entry_id", UUID.class)),
-                        correlation(row, flow)), instant(row, "created_at")));
+                        correlation(row, flow)), stamp(at, row, "created_at")));
+        applications.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
 
         Map<UUID, Instant> received = new HashMap<>();
         query(c, "SELECT id, received_at FROM bnpl.bnpl_repayment WHERE obligation_id = ?", id, row ->
                 received.put(row.getObject("id", UUID.class), instant(row, "received_at")));
         List<BnplRecord.Stamped<BnplPurchaseStore.Repayment>> repaid = new ArrayList<>();
         for (BnplPurchaseStore.Repayment repayment : repayments.ofObligation(c, obligationId, EVERY_ROW)) {
-            repaid.add(new BnplRecord.Stamped<>(repayment, received.getOrDefault(repayment.id(), Instant.EPOCH)));
+            repaid.add(new BnplRecord.Stamped<>(repayment, at.getOrDefault(repayment.id().toString(),
+                    received.getOrDefault(repayment.id(), Instant.EPOCH))));
         }
         repaid.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
 
@@ -170,11 +177,13 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                                 row.getObject("instalment_id", UUID.class), row.getObject("attempt_date", LocalDate.class),
                                 CollectionOutcome.valueOf(row.getString("outcome")), money(row, "due_minor"),
                                 money(row, "collected_minor"), row.getInt("agreement_version"), uuid(row, "repayment_id"),
-                                correlation(row, flow)), instant(row, "created_at")));
+                                correlation(row, flow)), stamp(at, row, "created_at")));
+        attempts.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
 
         List<BnplRecord.Stamped<BnplRefund>> refunded = new ArrayList<>();
         for (BnplRefund refund : refunds.ofPurchase(c, head.purchase().id())) {
-            refunded.add(new BnplRecord.Stamped<>(refund, refund.createdAt().orElse(Instant.EPOCH)));
+            refunded.add(new BnplRecord.Stamped<>(refund, at.getOrDefault(refund.id().toString(),
+                    refund.createdAt().orElse(Instant.EPOCH))));
         }
         refunded.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
 
@@ -183,7 +192,8 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 assessedAt.put(row.getObject("id", UUID.class), instant(row, "created_at")));
         List<BnplRecord.Stamped<BnplFeeAssessment>> fees = new ArrayList<>();
         for (BnplFeeAssessment fee : conditions.assessments(c, obligationId)) {
-            fees.add(new BnplRecord.Stamped<>(fee, assessedAt.getOrDefault(fee.id(), Instant.EPOCH)));
+            fees.add(new BnplRecord.Stamped<>(fee, at.getOrDefault(fee.id().toString(),
+                    assessedAt.getOrDefault(fee.id(), Instant.EPOCH))));
         }
         fees.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
 
@@ -198,21 +208,25 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                                 Optional.ofNullable(row.getString("previous_bucket"))
                                         .flatMap(BnplDelinquencyBucket::fromRecorded),
                                 BnplAgreementId.of(row.getObject("agreement_id", UUID.class)),
-                                row.getInt("agreement_version"), correlation(row, flow)), instant(row, "created_at")));
+                                row.getInt("agreement_version"), correlation(row, flow)), stamp(at, row, "created_at")));
+        changes.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
 
         List<BnplRecord.Stamped<BnplPayoffQuote>> quotes = new ArrayList<>();
         for (UUID quote : query(c, "SELECT id FROM bnpl.bnpl_payoff_quote WHERE obligation_id = ?"
                 + " ORDER BY created_at, id", id, row -> row.getObject("id", UUID.class))) {
             payoffs.findQuote(c, obligationId, quote).ifPresent(found ->
-                    quotes.add(new BnplRecord.Stamped<>(found, found.createdAt())));
+                    quotes.add(new BnplRecord.Stamped<>(found, at.getOrDefault(found.id().toString(),
+                            found.createdAt()))));
         }
+        quotes.sort(java.util.Comparator.comparing(BnplRecord.Stamped::at));
         Optional<BnplRecord.Stamped<BnplPayoffExecution>> execution = payoffs.findExecution(c, obligationId)
-                .map(found -> new BnplRecord.Stamped<>(found, found.executedAt()));
+                .map(found -> new BnplRecord.Stamped<>(found, at.getOrDefault(found.id().toString(),
+                        found.executedAt())));
 
         List<BnplDispute> disputed = new ArrayList<>();
         for (UUID dispute : query(c, "SELECT id FROM bnpl.bnpl_dispute WHERE obligation_id = ? ORDER BY opened_at, id",
                 id, row -> row.getObject("id", UUID.class))) {
-            disputes.find(c, BnplDisputeId.of(dispute)).ifPresent(disputed::add);
+            disputes.find(c, BnplDisputeId.of(dispute)).map(found -> restamped(found, at)).ifPresent(disputed::add);
         }
 
         Map<UUID, List<BnplRecord.Negation>> negations = new HashMap<>();
@@ -226,13 +240,16 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 });
         List<BnplRecord.Reversal> reversals = new ArrayList<>();
         for (BnplRepaymentReversal reversal : corrections.reversalsOf(c, obligationId, EVERY_ROW)) {
-            reversals.add(new BnplRecord.Reversal(reversal, negations.getOrDefault(reversal.id(), List.of())));
+            reversals.add(new BnplRecord.Reversal(restamped(reversal, at), negations.getOrDefault(reversal.id(),
+                    List.of())));
         }
-        List<BnplWaiver> waivers = corrections.waiversOfObligation(c, obligationId, EVERY_ROW);
+        List<BnplWaiver> waivers = corrections.waiversOfObligation(c, obligationId, EVERY_ROW).stream()
+                .map(waiver -> restamped(waiver, at)).toList();
 
         Optional<BnplRecord.Stamped<BnplClosure>> closure = repayments.closureOf(c, obligationId).map(found ->
-                new BnplRecord.Stamped<>(found, first(query(c, "SELECT created_at FROM bnpl.bnpl_obligation_closure"
-                        + " WHERE obligation_id = ?", id, row -> instant(row, "created_at"))).orElse(Instant.EPOCH)));
+                new BnplRecord.Stamped<>(found, at.getOrDefault("closure", first(query(c, "SELECT created_at FROM"
+                        + " bnpl.bnpl_obligation_closure WHERE obligation_id = ?", id, row -> instant(row, "created_at")))
+                        .orElse(Instant.EPOCH))));
 
         // The ledger: the obligation's accounts and every line on them in ONE statement; the shared entries' lines.
         List<BnplRecord.LedgerAccountRow> owned = new ArrayList<>();
@@ -256,8 +273,9 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
             feeIncome = Optional.empty();
         }
 
-        return Optional.of(new BnplRecord(obligation, head.closedAt(), head.purchase(), head.financing(),
-                head.financedAt(), offer, offerTerms, agreements, versions, schedules, billings, accruals, applications,
+        Optional<Instant> closedAt = closure.isPresent() ? closure.map(BnplRecord.Stamped::at) : head.closedAt();
+        return Optional.of(new BnplRecord(obligation, closedAt, head.purchase(), head.financing(),
+                at.getOrDefault("financing", head.financedAt()), offer, offerTerms, agreements, versions, schedules, billings, accruals, applications,
                 repaid, attempts, refunded, fees, changes, quotes, execution, disputed, reversals, waivers, closure, owned,
                 journal, shared, payable, feeIncome));
     }
@@ -300,7 +318,8 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
         return new Head(obligation, optionalInstant(row, "closed_at"), purchase, financing, instant(row, "financing_at"));
     }
 
-    private static BnplRecord.Agreement agreement(ResultSet row, BnplObligation obligation) throws SQLException {
+    private static BnplRecord.Agreement agreement(ResultSet row, BnplObligation obligation, Map<String, Instant> at)
+            throws SQLException {
         BnplAgreementTemplate template = BnplAgreementTemplate.of(row.getString("agreement_template_id"),
                         row.getInt("agreement_template_version"))
                 .orElseThrow(() -> new IllegalStateException("an agreement names a registered template"));
@@ -313,11 +332,13 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 row.getString("allocation_engine"), row.getString("refund_allocation_engine"),
                 row.getObject("fee_schedule_version_id", UUID.class), template, row.getInt("canonical_format"),
                 row.getString("canonical_terms"), row.getBytes("terms_sha256"), row.getBytes("document_sha256"),
-                instant(row, "created_at"));
+                at.getOrDefault("agreement:" + row.getObject("agreement_id", UUID.class) + ":" + row.getInt("version"),
+                        instant(row, "created_at")));
         return new BnplRecord.Agreement(agreement, uuid(row, "refund_id"), row.getInt("schedule_version"));
     }
 
-    private static BnplRecord.Billing billing(ResultSet row, BnplObligation obligation) throws SQLException {
+    private static BnplRecord.Billing billing(ResultSet row, BnplObligation obligation, Map<String, Instant> at)
+            throws SQLException {
         UUID absent = new UUID(0, 0);
         BnplBilling billing = new BnplBilling(row.getObject("id", UUID.class), row.getObject("instalment_id", UUID.class),
                 row.getInt("sequence"), obligation.id(), uuid(row, "schedule_id").orElse(absent),
@@ -331,11 +352,12 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 uuid(row, "journal_entry_id").map(JournalEntryId::of), correlation(row, obligation.correlation()));
         LocalDate businessDate = Optional.ofNullable(row.getObject("business_date", LocalDate.class))
                 .orElse(billing.dueDate());
-        return new BnplRecord.Billing(billing, businessDate, uuid(row, "payoff_execution_id"), instant(row, "billed_at"));
+        return new BnplRecord.Billing(billing, businessDate, uuid(row, "payoff_execution_id"),
+                stamp(at, row, "billed_at"));
     }
 
     private static BnplRecord.Stamped<BnplInterestAccrual> accrual(ResultSet row, BnplObligationId obligation,
-            CorrelationId flow) throws SQLException {
+            CorrelationId flow, Map<String, Instant> at) throws SQLException {
         InterestAccrual accrual = new InterestAccrual(row.getObject("accrual_date", LocalDate.class),
                 new AccrualPeriod(row.getObject("period_start", LocalDate.class),
                         row.getObject("period_end", LocalDate.class)),
@@ -343,7 +365,115 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 money(row, "posted_minor"), EngineVersion.valueOf(row.getString("accrual_engine")));
         return new BnplRecord.Stamped<>(new BnplInterestAccrual(row.getObject("id", UUID.class), obligation, accrual,
                 BnplAgreementId.of(row.getObject("agreement_id", UUID.class)), row.getInt("agreement_version"),
-                uuid(row, "journal_entry_id").map(JournalEntryId::of), correlation(row, flow)), instant(row, "created_at"));
+                uuid(row, "journal_entry_id").map(JournalEntryId::of), correlation(row, flow)), stamp(at, row, "created_at"));
+    }
+
+    // ------------------------------------------------------------------ the record's order (V017)
+
+    /**
+     * Every fact of the obligation with its place in the record's order - V017's {@code recorded_order}, drawn under B4 -
+     * and its stamp, re-stamped MONOTONICALLY in that order: each fact at the later of its own stamp and one microsecond
+     * after the fact before it. A re-stamped instant is never earlier than the stamp its fact was written with, and equals
+     * it unless the database clock stepped back under it; every comparison the proofs make then reads the obligation lock's
+     * order, never a clock (lending V025's rule, `P11-TSK-029`; `P12-TST-001`'s finding). Facts written before V017 carry
+     * no order and come first, by their stamps. Keyed by the fact's id - or {@code agreement:<id>:<version>},
+     * {@code schedule:<version>}, {@code financing}, {@code closure}, and a proposal's and a decision's own keys.
+     */
+    static Map<String, Instant> restamped(Connection c, UUID obligation) {
+        String sql = "SELECT k, o, at FROM ("
+                + "SELECT 'financing' AS k, f.recorded_order AS o, f.financed_at AS at FROM bnpl.merchant_financing f"
+                + " JOIN bnpl.bnpl_obligation x ON x.purchase_id = f.purchase_id WHERE x.id = ?"
+                + " UNION ALL SELECT 'agreement:' || agreement_id || ':' || version, recorded_order, created_at FROM"
+                + " bnpl.bnpl_agreement WHERE obligation_id = ?"
+                + " UNION ALL SELECT 'schedule:' || schedule_version, recorded_order, created_at FROM bnpl.bnpl_schedule"
+                + " WHERE obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, billed_at FROM bnpl.bnpl_billing WHERE obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_interest_accrual WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_credit_balance_application WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, received_at FROM bnpl.bnpl_repayment WHERE obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_collection_attempt WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_refund WHERE obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_condition_event WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_fee_assessment WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, created_at FROM bnpl.bnpl_payoff_quote WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT id::text, recorded_order, executed_at FROM bnpl.bnpl_payoff_execution WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT 'closure', recorded_order, created_at FROM bnpl.bnpl_obligation_closure WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT 'reversal:' || id, recorded_order, proposed_at FROM bnpl.bnpl_repayment_reversal"
+                + " WHERE obligation_id = ?"
+                + " UNION ALL SELECT 'reversal-decided:' || id, decided_order, decided_at FROM"
+                + " bnpl.bnpl_repayment_reversal WHERE obligation_id = ? AND decided_at IS NOT NULL"
+                + " UNION ALL SELECT 'waiver:' || id, recorded_order, proposed_at FROM bnpl.bnpl_waiver WHERE"
+                + " obligation_id = ?"
+                + " UNION ALL SELECT 'waiver-decided:' || d.waiver_id, d.recorded_order, d.decided_at FROM"
+                + " bnpl.bnpl_waiver_decision d JOIN bnpl.bnpl_waiver w ON w.id = d.waiver_id WHERE w.obligation_id = ?"
+                + " UNION ALL SELECT 'dispute:' || id, recorded_order, opened_at FROM bnpl.bnpl_dispute WHERE"
+                + " obligation_id = ? AND opened_at IS NOT NULL"
+                + " UNION ALL SELECT 'dispute-resolved:' || d.id, (SELECT max(e.recorded_order) FROM"
+                + " bnpl.bnpl_dispute_event e WHERE e.dispute_id = d.id AND e.to_status IN ('RESOLVED_REFUND',"
+                + " 'RESOLVED_UPHELD', 'WITHDRAWN')), d.resolved_at FROM bnpl.bnpl_dispute d WHERE d.obligation_id = ?"
+                + " AND d.resolved_at IS NOT NULL"
+                + ") facts ORDER BY o NULLS FIRST, at, k";
+        try (PreparedStatement select = c.prepareStatement(sql)) {
+            int parameters = sql.length() - sql.replace("?", "").length();
+            for (int i = 1; i <= parameters; i++) {
+                select.setObject(i, obligation);
+            }
+            Map<String, Instant> ordered = new HashMap<>();
+            Instant previous = null;
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    Instant stamp = rows.getTimestamp("at").toInstant();
+                    Instant restamped = previous == null || stamp.isAfter(previous) ? stamp : previous.plusNanos(1_000);
+                    ordered.put(rows.getString("k"), restamped);
+                    previous = restamped;
+                }
+            }
+            return ordered;
+        } catch (SQLException failure) {
+            throw failed("reading a BNPL obligation's record order", failure);
+        }
+    }
+
+    /** The row's re-stamped instant - by its id - else its own stamp. */
+    private static Instant stamp(Map<String, Instant> at, ResultSet row, String column) throws SQLException {
+        Instant own = instant(row, column);
+        return at.getOrDefault(row.getObject("id", UUID.class).toString(), own);
+    }
+
+    private static BnplDispute restamped(BnplDispute dispute, Map<String, Instant> at) {
+        String key = dispute.id().value().toString();
+        return new BnplDispute(dispute.id(), dispute.purchase(), dispute.obligation(), dispute.merchant(), dispute.party(),
+                dispute.agreement(), dispute.termsVersion(), dispute.status(), dispute.category(), dispute.reason(),
+                dispute.requestKey(), dispute.amount(), dispute.refundedBefore(),
+                dispute.openedAt().map(own -> at.getOrDefault("dispute:" + key, own)), dispute.openedOn(),
+                dispute.responseDeadline(), dispute.merchantStatement(), dispute.merchantRespondedAt(),
+                dispute.resolvedBy(), dispute.resolutionReason(),
+                dispute.resolvedAt().map(own -> at.getOrDefault("dispute-resolved:" + key, own)), dispute.resolvedOn(),
+                dispute.refund(), dispute.proposal(), dispute.correlation(), dispute.holds());
+    }
+
+    private static BnplRepaymentReversal restamped(BnplRepaymentReversal reversal, Map<String, Instant> at) {
+        return new BnplRepaymentReversal(reversal.id(), reversal.obligation(), reversal.repayment(), reversal.agreement(),
+                reversal.agreementVersion(), reversal.status(), reversal.proposedBy(),
+                at.getOrDefault("reversal:" + reversal.id(), reversal.proposedAt()), reversal.proposalReason(),
+                reversal.decidedBy(), reversal.decidedAt().map(own -> at.getOrDefault("reversal-decided:"
+                        + reversal.id(), own)), reversal.decisionReason(), reversal.entry(), reversal.valueDate());
+    }
+
+    private static BnplWaiver restamped(BnplWaiver waiver, Map<String, Instant> at) {
+        return new BnplWaiver(waiver.id(), waiver.obligation(), waiver.kind(), waiver.assessment(), waiver.instalment(),
+                waiver.amount(), waiver.agreement(), waiver.agreementVersion(), waiver.status(), waiver.proposedBy(),
+                at.getOrDefault("waiver:" + waiver.id(), waiver.proposedAt()), waiver.proposalReason(),
+                waiver.decidedBy(), waiver.decidedAt().map(own -> at.getOrDefault("waiver-decided:" + waiver.id(), own)),
+                waiver.decisionReason(), waiver.entry());
     }
 
     // ------------------------------------------------------------------ plumbing
