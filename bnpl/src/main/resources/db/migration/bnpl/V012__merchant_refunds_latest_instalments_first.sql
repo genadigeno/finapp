@@ -106,7 +106,7 @@ CREATE TABLE bnpl.bnpl_refund (
     CONSTRAINT bnpl_refund_key_bounded CHECK (char_length(refund_key) BETWEEN 1 AND 200),
     CONSTRAINT bnpl_refund_currency_is_the_products CHECK (currency = 'EUR' AND scale BETWEEN 0 AND 9),
     -- INV-BNPL-06 on the row: R is the fee returned plus the payable's debit, and the principal cancelled plus the excess.
-    CONSTRAINT bnpl_refund_conserves CHECK (
+    CONSTRAINT bnpl_refund_row_conserves CHECK (
         amount_minor > 0 AND refunded_before_minor >= 0 AND fee_returned_minor >= 0 AND payable_debit_minor >= 0
         AND cancelled_unbilled_minor >= 0 AND cancelled_billed_minor >= 0 AND excess_minor >= 0
         AND interest_accrued_released_minor >= 0 AND interest_due_released_minor >= 0
