@@ -2896,14 +2896,14 @@ log, tag or span.
 
 | Table | Column | Level | Note |
 |---|---|---|---|
-| `party_principal_exposure` | `loan_id` | `CONFIDENTIAL` | The loan account (`loan.id`) |
-| `party_principal_exposure` | `party_id` | `CONFIDENTIAL` | The borrower (`loan.party_id`) |
-| `party_principal_exposure` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value (`loan.decision_id`) |
-| `party_principal_exposure` | `kind` | `INTERNAL` | A closed account kind (`loan.kind`) |
-| `party_principal_exposure` | `status` | `INTERNAL` | The machine's state (`loan.status`) |
-| `party_principal_exposure` | `currency` | `INTERNAL` | Its currency (`loan.currency`) |
-| `party_principal_exposure` | `agreement_scale` | `INTERNAL` | The latest agreement version's scale |
-| `party_principal_exposure` | `agreement_amount_minor` | `RESTRICTED-FINANCIAL` | The latest agreement version's principal (a loan) or limit (a line) |
+| `lending.party_principal_exposure` | `loan_id` | `CONFIDENTIAL` | The loan account (`loan.id`) |
+| `lending.party_principal_exposure` | `party_id` | `CONFIDENTIAL` | The borrower (`loan.party_id`) |
+| `lending.party_principal_exposure` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value (`loan.decision_id`) |
+| `lending.party_principal_exposure` | `kind` | `INTERNAL` | A closed account kind (`loan.kind`) |
+| `lending.party_principal_exposure` | `status` | `INTERNAL` | The machine's state (`loan.status`) |
+| `lending.party_principal_exposure` | `currency` | `INTERNAL` | Its currency (`loan.currency`) |
+| `lending.party_principal_exposure` | `agreement_scale` | `INTERNAL` | The latest agreement version's scale |
+| `lending.party_principal_exposure` | `agreement_amount_minor` | `RESTRICTED-FINANCIAL` | The latest agreement version's principal (a loan) or limit (a line) |
 
 ### `lending` - the disbursement, the accrual start and the schedule - *added by `P11-TSK-014`*
 
@@ -3984,12 +3984,12 @@ and the exposure census.
 
 | Table | Column | Level | Note |
 |---|---|---|---|
-| `party_principal_exposure` | `obligation_id` | `CONFIDENTIAL` | The obligation (`bnpl_obligation.id`) |
-| `party_principal_exposure` | `party_id` | `CONFIDENTIAL` | The customer (`bnpl_obligation.party_id`) |
-| `party_principal_exposure` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
-| `party_principal_exposure` | `product` | `INTERNAL` | A closed product code |
-| `party_principal_exposure` | `status` | `INTERNAL` | The machine's state |
-| `party_principal_exposure` | `currency` | `INTERNAL` | Its currency |
+| `bnpl.party_principal_exposure` | `obligation_id` | `CONFIDENTIAL` | The obligation (`bnpl_obligation.id`) |
+| `bnpl.party_principal_exposure` | `party_id` | `CONFIDENTIAL` | The customer (`bnpl_obligation.party_id`) |
+| `bnpl.party_principal_exposure` | `decision_id` | `CONFIDENTIAL` | Credit's consumed decision, by value |
+| `bnpl.party_principal_exposure` | `product` | `INTERNAL` | A closed product code |
+| `bnpl.party_principal_exposure` | `status` | `INTERNAL` | The machine's state |
+| `bnpl.party_principal_exposure` | `currency` | `INTERNAL` | Its currency |
 
 ### `reconciliation` - the capital recognition - *added by `P11-TSK-004`*
 

@@ -213,7 +213,7 @@ class BnplPurchaseDatabaseTest {
                 BnplApplicationClient.key());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
         assertThat(refused.body()).contains("bnpl.SessionNotPayable");
-        assertNothing(cardFirst);
+        assertNothing(cardFirst, 1);
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM checkout.checkout_order WHERE session_ref ="
                 + " ?::uuid", cardFirst.offer().session().toString())).isEqualTo(1);
 
@@ -236,7 +236,7 @@ class BnplPurchaseDatabaseTest {
         HttpResponse<String> refused = world.accept(walletFirst.customer().token(), walletFirst.offer(),
                 BnplApplicationClient.key());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
-        assertNothing(walletFirst);
+        assertNothing(walletFirst, 1);
 
         Bought bnplFirst = payIn4();
         HttpResponse<String> lost = rivalBehindTheAcceptance(bnplFirst,
@@ -272,7 +272,7 @@ class BnplPurchaseDatabaseTest {
         } finally {
             BnplPurchaseWorld.closeQuietly(capital);
         }
-        assertNothing(bought);
+        assertNothing(bought, 1);
     }
 
     @Test
@@ -439,7 +439,7 @@ class BnplPurchaseDatabaseTest {
         assertThat(BnplApplicationClient.scalar("SELECT gross_minor || '|' || fee_minor || '|' || net_minor FROM"
                 + " bnpl.merchant_financing WHERE purchase_id = ?::uuid", purchase)).isEqualTo("60000|2400|57600");
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM ledger.journal_line l JOIN ledger.journal_entry e"
-                + " ON e.id = l.journal_entry_id JOIN bnpl.merchant_financing f ON f.journal_entry_id = e.id"
+                + " ON e.id = l.entry_id JOIN bnpl.merchant_financing f ON f.journal_entry_id = e.id"
                 + " WHERE f.purchase_id = ?::uuid", purchase)).isEqualTo(4);
         assertThat(BnplPurchaseWorld.creditBalanceOf(payable) - before).as("the payable credited exactly G - f")
                 .isEqualTo(576_00);
@@ -738,6 +738,15 @@ class BnplPurchaseDatabaseTest {
 
     /** Nothing of the offer's purchase: no consumption, purchase, pin, financing entry or order; offer and session open. */
     private static void assertNothing(Bought bought) throws Exception {
+        assertNothing(bought, 0);
+    }
+
+    /**
+     * Nothing of the offer's purchase beside the {@code otherOrders} orders another instrument completed the session with
+     * (a card's or a wallet payment's - the one order its session holds, `P12-TSK-028`): no consumption, purchase, pin or
+     * financing entry, no order carrying a BNPL financing entry; the offer open.
+     */
+    private static void assertNothing(Bought bought, int otherOrders) throws Exception {
         String session = bought.offer().session().toString();
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.purchase WHERE checkout_session_id = ?::uuid",
                 session)).isZero();
@@ -745,7 +754,10 @@ class BnplPurchaseDatabaseTest {
                 + " bnpl.bnpl_offer o ON o.decision_id = c.decision_id WHERE o.id = ?::uuid", bought.offer().id()))
                 .isZero();
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM checkout.checkout_order WHERE session_ref ="
-                + " ?::uuid", session)).isZero();
+                + " ?::uuid", session)).as("only the other instrument's order").isEqualTo(otherOrders);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM checkout.checkout_order o WHERE o.session_ref ="
+                + " ?::uuid AND EXISTS (SELECT 1 FROM bnpl.merchant_financing f WHERE f.journal_entry_id ="
+                + " o.captured_entry_ref)", session)).as("no order carries a BNPL financing").isZero();
         assertThat(BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_offer WHERE id = ?::uuid",
                 bought.offer().id())).isEqualTo("OFFERED");
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM merchant.bnpl_fee_pin p WHERE NOT EXISTS (SELECT 1"

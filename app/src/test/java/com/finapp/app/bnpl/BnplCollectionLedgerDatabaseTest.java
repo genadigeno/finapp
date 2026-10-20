@@ -193,7 +193,7 @@ class BnplCollectionLedgerDatabaseTest {
         try {
             lockRow(holder, "SELECT 1 FROM ledger.ledger_account WHERE id = ?::uuid FOR UPDATE", bought.wallet().value());
             Future<ServicingOutcome> step = pool.submit(() -> serviceStep(bought.obligation()));
-            awaitWaiters(1);
+            awaitWaiters(holder, 1);
             assertThat(freeNow("ledger.account_balance", "ledger_account_id", income))
                     .as("no income row held across the wallet wait (the A2-F1 rule)").isTrue();
             assertThat(freeNow("ledger.account_balance", "ledger_account_id", principal))
@@ -221,9 +221,9 @@ class BnplCollectionLedgerDatabaseTest {
             // The collection queues first at B4, then the repayment: released, the collection holds B4 and goes for the
             // wallet - which a repayment that took the wallet before B4 would hold: the cycle the order forbids.
             Future<ServicingOutcome> step = pool.submit(() -> serviceStep(bought.obligation()));
-            awaitWaiters(1);
+            awaitWaiters(holder, 1);
             Future<BnplRepayments.Repaid> repaid = pool.submit(() -> repay(bought, "racing", 150_00));
-            awaitWaiters(2);
+            awaitWaiters(holder, 2, step, repaid);
             holder.rollback();
             assertThat(step.get(60, TimeUnit.SECONDS).collected(CollectionOutcome.COLLECTED)).isEqualTo(1);
             assertThat(repaid.get(60, TimeUnit.SECONDS).repayment().allocations())
@@ -258,7 +258,7 @@ class BnplCollectionLedgerDatabaseTest {
         try {
             lockRow(holder, "SELECT 1 FROM ledger.ledger_account WHERE id = ?::uuid FOR UPDATE", bought.wallet().value());
             Future<ServicingOutcome> step = pool.submit(() -> serviceStep(bought.obligation()));
-            awaitWaiters(1);
+            awaitWaiters(holder, 1);
             assertThat(freeOrAbsent("ledger.account_balance", "ledger_account_id", income))
                     .as("no fee income row held across the wallet wait").isTrue();
             assertThat(freeNow("ledger.account_balance", "ledger_account_id", principal))
@@ -382,17 +382,55 @@ class BnplCollectionLedgerDatabaseTest {
         }
     }
 
-    /** At least {@code waiters} sessions of this database waiting on a lock - awaited 30 s. */
-    private static void awaitWaiters(int waiters) throws Exception {
+    /**
+     * At least {@code waiters} sessions blocked behind {@code holder}, each active and waiting on a lock - awaited 30 s.
+     *
+     * <p>Observed as the application role, the role the waiters connect as: PostgreSQL shows another role's session's
+     * wait event to no one but a superuser or {@code pg_read_all_stats}, so the migrator this read used to run as saw
+     * every waiter's {@code wait_event_type} as NULL and timed out though the step was waiting (the Phase 12 database
+     * pass, `P12-TSK-028`). The row itself must show the session active and waiting on a {@code Lock} (the `P11-TSK-035`
+     * filter, never a stale snapshot), and blocked by the holder or by a session queued behind it - a repayment queued
+     * behind the collection the holder blocks counts, as the case means.
+     */
+    private static void awaitWaiters(Connection holder, int waiters, Future<?>... racers) throws Exception {
+        int blocker = pid(holder);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline) {
-            if (BnplApplicationClient.count("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
-                    + " AND wait_event_type = 'Lock'") >= waiters) {
-                return;
+            for (Future<?> racer : racers) {
+                if (racer.isDone()) {
+                    // A racer that finished never waited: say how, rather than time out on a wait that cannot come.
+                    try {
+                        throw new AssertionError("a racer finished while the holder held its lock: " + racer.get());
+                    } catch (java.util.concurrent.ExecutionException failed) {
+                        throw new AssertionError("a racer failed while the holder held its lock", failed.getCause());
+                    }
+                }
+            }
+            try (Connection observer = DatabaseRoles.application();
+                    PreparedStatement select = observer.prepareStatement("WITH RECURSIVE queued (pid) AS (SELECT ?"
+                            + " UNION SELECT a.pid FROM pg_stat_activity a JOIN queued q ON q.pid = ANY"
+                            + " (pg_blocking_pids(a.pid)) WHERE a.state = 'active' AND a.wait_event_type = 'Lock')"
+                            + " SELECT count(*) - 1 FROM queued")) {
+                select.setInt(1, blocker);
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= waiters) {
+                        return;
+                    }
+                }
             }
             Thread.sleep(20);
         }
-        throw new AssertionError("no " + waiters + " session(s) waiting on a lock within 30 s");
+        throw new AssertionError("no " + waiters + " session(s) waiting on a lock behind session " + blocker
+                + " within 30 s");
+    }
+
+    private static int pid(Connection connection) throws SQLException {
+        try (PreparedStatement select = connection.prepareStatement("SELECT pg_backend_pid()");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            return row.getInt(1);
+        }
     }
 
     /** Whether {@code table}'s row {@code column = id} can be locked at once - false when another transaction holds it. */

@@ -223,6 +223,9 @@ class MerchantTenancyBatteryDatabaseTest {
                 "GET /v1/merchant/disputes",
                 derived("the disputes on payments that credited the key's own payable"
                         + " (P7-TSK-012)"));
+        table.put(
+                "GET /v1/merchant/bnpl-disputes",
+                derived("the open BNPL disputes on the key's own purchases (P12-TSK-023)"));
 
         // THE MERCHANT KEY, A RESOURCE NAMED: the tenant predicate in the statement.
         table.put(
@@ -255,6 +258,24 @@ class MerchantTenancyBatteryDatabaseTest {
                         Kind.ID_ADDRESSED,
                         "com.finapp.app.bnpl.BnplMerchantReadDatabaseTest#anotherMerchantsPurchaseIsNotFound",
                         "bnpl.purchase's merchant_id = ? in the statement (OwnershipIsScopedTest)"));
+        // P12-TSK-021, P12-TSK-023: the merchant's BNPL refund and its answer to a BNPL dispute act on
+        // a purchase this shared world cannot build (as above), so their probes are the own-container
+        // suites' - A's key on B's purchase or dispute the 404 an unknown or malformed id answers,
+        // nothing written; B on its own the act itself. Missing from this table until the Phase 12
+        // database pass (P12-TSK-028): the database tier had not run since they were added.
+        table.put(
+                "POST /v1/merchant/bnpl-purchases/{id}/refunds",
+                delegated(
+                        Kind.ID_ADDRESSED,
+                        "com.finapp.app.bnpl.BnplRefundApiTest#anotherMerchantsPurchaseIsNotFound",
+                        "the purchase locked with merchant_id = ? (BnplRefundDesk)"));
+        table.put(
+                "POST /v1/merchant/bnpl-disputes/{id}/response",
+                delegated(
+                        Kind.ID_ADDRESSED,
+                        "com.finapp.app.bnpl.BnplDisputeApiTest#anotherMerchantsDisputeIsNotFound",
+                        "the dispute found at the key's merchant (BnplDisputeStore.findAtMerchant)"
+                                + " before anything is locked"));
         // P7-TSK-012: the dispute's tenant is the disputed payment's credit account, and the
         // predicate rides the statement - a read, so the fingerprint must not move either way.
         table.put(

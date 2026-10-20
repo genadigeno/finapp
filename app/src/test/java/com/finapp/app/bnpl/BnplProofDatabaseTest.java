@@ -34,6 +34,10 @@ import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.settlement.BatchAcceptance;
+import com.finapp.settlement.FileParsing;
+import com.finapp.settlement.FileReception;
+import com.finapp.settlement.TransactionRunner;
 import java.net.http.HttpResponse;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -49,8 +53,11 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -79,7 +86,15 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @SuppressWarnings("try") // The Scopes are used for their close side effect (the idiom).
 @DisplayName("the BNPL proofs over the real database and ledger (P12-TSK-025)")
+// The suite's cases share one database, and two of them plant a raw posting no row explains - permanent, as every ledger
+// line is - which every later whole-book proof then rightly fails. They run last, the payable's plant before the BNPL
+// account's (whose case alone tolerates the other's); every other case runs before them, in any order (P12-TSK-028).
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class BnplProofDatabaseTest {
+
+    /** The two planting cases' places: after every unannotated case (JUnit's default order is MAX_VALUE / 2). */
+    private static final int PLANTS_THE_PAYABLE = Integer.MAX_VALUE - 1;
+    private static final int PLANTS_A_BNPL_ACCOUNT = Integer.MAX_VALUE;
 
     private static final long GROSS = 600_00L;
 
@@ -101,6 +116,10 @@ class BnplProofDatabaseTest {
     @Autowired private BnplRefunds refunds;
     @Autowired private BnplProofs proofs;
     @Autowired private BnplProofMetrics proofMetrics;
+    @Autowired private FileReception<Connection> reception;
+    @Autowired private FileParsing parsing;
+    @Autowired private BatchAcceptance acceptance;
+    @Autowired private TransactionRunner settlementTransactionRunner;
 
     private BnplPurchaseWorld world;
 
@@ -116,7 +135,10 @@ class BnplProofDatabaseTest {
     void world() throws Exception {
         world = new BnplPurchaseWorld(port, authorization, enablements, pricing, feeSchedules, terms, transactions,
                 origination, postingService, ledgerAccountStore, headroom, loanWallets).ready();
-        world.headroomAtLeast(eur(100_000_00L));
+        // Recognised capital, never the world's raw plant: the proof's capital arm reads every line on LENDING_CAPITAL
+        // against a recognition, and fails a raw posting - correctly (P12-TSK-028).
+        new BnplRecognisedCapital(world.client, authorization, headroom, transactions, reception, parsing, acceptance,
+                settlementTransactionRunner).headroomAtLeast(eur(100_000_00L));
     }
 
     @Test
@@ -151,7 +173,8 @@ class BnplProofDatabaseTest {
                 "UPDATE bnpl.bnpl_billing SET principal_minor = principal_minor - 1 WHERE id = '" + billing + "'",
                 BnplReplayProof.Check.BILLING);
         String allocation = scalar("SELECT a.id::text FROM bnpl.bnpl_repayment_allocation a JOIN bnpl.bnpl_repayment r"
-                + " ON r.id = a.repayment_id WHERE r.obligation_id = " + bought.o() + " AND r.kind = 'CUSTOMER' LIMIT 1");
+                + " ON r.id = a.repayment_id WHERE r.obligation_id = " + bought.o() + " AND r.kind = 'CUSTOMER' AND"
+                + " a.target = 'DUE_ITEM' AND a.component = 'PRINCIPAL' LIMIT 1");
         flipped(bought, "UPDATE bnpl.bnpl_repayment_allocation SET component = 'INTEREST' WHERE id = '" + allocation + "'",
                 "UPDATE bnpl.bnpl_repayment_allocation SET component = 'PRINCIPAL' WHERE id = '" + allocation + "'",
                 BnplReplayProof.Check.ALLOCATION);
@@ -167,6 +190,7 @@ class BnplProofDatabaseTest {
     }
 
     @Test
+    @Order(PLANTS_A_BNPL_ACCOUNT)
     @DisplayName("a raw posting to a BNPL account that no bnpl row names fails the subledger proof (UNEXPLAINED_ENTRIES)"
             + " though the trial balance stays zero")
     void aRawPostingToABnplAccountFailsTheSubledger() throws Exception {
@@ -182,6 +206,7 @@ class BnplProofDatabaseTest {
     }
 
     @Test
+    @Order(PLANTS_THE_PAYABLE)
     @DisplayName("a raw posting to a merchant payable under a bnpl. key without a purchase fails the merchant leg")
     void aRawBnplKeyedPayablePostingFailsTheMerchantLeg() throws Exception {
         Bought bought = bought();
@@ -338,7 +363,10 @@ class BnplProofDatabaseTest {
 
     private Bought bought() throws Exception {
         CreditFixtures.Customer owner = world.customers.consentingCustomer();
-        world.topUpWallet(owner.party(), eur(5_000_00));
+        // Exactly instalment 1, collected at the acceptance: the wallet is then empty, so the servicing step's automatic
+        // collection (P12-TSK-019) takes nothing and each case's own repayments are what pay - the cases' arithmetic
+        // assumed no collection, and a 5,000.00 wallet let the step pay every due instalment first (P12-TSK-028).
+        world.topUpWallet(owner.party(), eur(GROSS / 4));
         BnplApplicationClient.Merchant merchant = world.merchant();
         BnplPurchaseWorld.Offer offer = world.offered(owner, merchant, GROSS, BnplApplicationClient::payIn4);
         HttpResponse<String> accepted = world.accept(owner.token(), offer, BnplApplicationClient.key());
@@ -403,6 +431,7 @@ class BnplProofDatabaseTest {
     }
 
     private BnplRepayments.Repaid repay(Bought bought, String key, long minor) {
+        world.topUpWallet(bought.party(), eur(minor)); // the repayment's own money, paid in just before it
         Actor customer = new Actor(bought.party().toString(), ActorType.CUSTOMER);
         try (SecurityContext.Scope actor = SecurityContext.enter(customer);
                 CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {

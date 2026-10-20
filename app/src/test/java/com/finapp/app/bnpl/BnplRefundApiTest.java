@@ -200,9 +200,9 @@ class BnplRefundApiTest {
             String scoped = scopedKey(bought.merchant());
             UUID payable = ledgerAccount("SELECT a.id FROM ledger.ledger_account a WHERE a.purpose = 'MERCHANT_PAYABLE'"
                     + " AND a.owner_ref = ?::uuid", bought.merchant().id());
-            UUID wallet = ledgerAccount("SELECT a.id FROM ledger.ledger_account a WHERE a.purpose = 'CUSTOMER_WALLET'"
-                    + " AND a.owner_ref = (SELECT w.id FROM accounts.customer_account w WHERE w.customer_id = ?::uuid"
-                    + " LIMIT 1)", bought.party().toString());
+            // The customer's wallet through accounts' own door: customer_account.customer_id is the customer's id,
+            // never the party's - a lookup by party found no row (P12-TSK-028).
+            UUID wallet = world.walletOf(bought.party()).value();
             orders[payable.compareTo(wallet) < 0 ? 0 : 1]++;
             UUID first = payable.compareTo(wallet) < 0 ? payable : wallet;
             UUID second = first.equals(payable) ? wallet : payable;
@@ -276,7 +276,7 @@ class BnplRefundApiTest {
                 java.sql.PreparedStatement select = migrator.prepareStatement(sql)) {
             select.setString(1, parameter);
             try (java.sql.ResultSet row = select.executeQuery()) {
-                row.next();
+                assertThat(row.next()).as("the ledger account exists: %s", parameter).isTrue();
                 return row.getObject(1, UUID.class);
             }
         }
