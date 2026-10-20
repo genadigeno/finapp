@@ -157,13 +157,17 @@ class BnplApplicationStoreDatabaseTest {
     @Test
     @DisplayName("born only on its product's ACTIVE terms version with a plan that version offers")
     void bornOnTheActiveTermsWithAnOfferedPlan() {
+        // The trigger refuses the insert itself (P0001), inside the store - which carries the operation and the SQLSTATE,
+        // never the driver's exception (INV-AUD-02, BnplStorageException; P12-TSK-027).
+        String refusal = "bnpl storage failed inserting a BNPL application: SQLSTATE P0001";
         assertThatThrownBy(() -> born(UUID.randomUUID(), UUID.randomUUID(), BnplProduct.BNPL_PAY_IN_N,
                 BnplPlan.PAY_IN_12_MONTHS, payInN)).as("the version offers 3 and 6 months")
-                .hasRootCauseInstanceOf(SQLException.class);
+                .isInstanceOf(BnplStorageException.class).hasMessage(refusal).hasNoCause();
         BnplTermsVersionId retired = payIn4;
         payIn4 = activate(BnplTermsFixtures.payIn4().build());
         assertThatThrownBy(() -> born(UUID.randomUUID(), UUID.randomUUID(), BnplProduct.BNPL_PAY_IN_4,
-                BnplPlan.PAY_IN_4, retired)).as("a retired version").hasRootCauseInstanceOf(SQLException.class);
+                BnplPlan.PAY_IN_4, retired)).as("a retired version").isInstanceOf(BnplStorageException.class)
+                .hasMessage(refusal).hasNoCause();
     }
 
     // ------------------------------------------------------------------ plumbing

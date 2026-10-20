@@ -99,8 +99,9 @@ class BnplBillingDatabaseTest {
         assertThat(world.serviceOn(due, bought.obligation()).billed()).isZero();
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_billing WHERE obligation_id = '" + bought.id() + "'"))
                 .isEqualTo(2);
-        assertThat(scalar("SELECT value_date || '|' || business_date || '|' || principal_minor || '|' || schedule_version"
-                + " FROM bnpl.bnpl_billing b JOIN bnpl.bnpl_instalment i ON i.id = b.instalment_id WHERE i.sequence = 2"
+        assertThat(scalar("SELECT b.value_date || '|' || b.business_date || '|' || b.principal_minor || '|'"
+                + " || b.schedule_version FROM bnpl.bnpl_billing b JOIN bnpl.bnpl_instalment i ON i.id = b.instalment_id"
+                + " WHERE i.sequence = 2"
                 + " AND b.obligation_id = '" + bought.id() + "'")).isEqualTo(due + "|" + due + "|15000|1");
     }
 
@@ -508,77 +509,169 @@ class BnplBillingDatabaseTest {
         }
     }
 
-    /** The in-memory book behind one lock - the suite's sweepers run on threads of their own. */
+    /**
+     * The in-memory book behind one lock - the suite's sweepers run on threads of their own - and, like the ledger it
+     * stands in for, inside its callers' transactions (P12-TSK-027). The ledger's entry, lines and idempotency key are rows
+     * the posting transaction writes, so a rollback takes them with the bnpl rows; the in-memory book outlived it, and an
+     * entry of a rolled-back transaction stayed behind - a key T-acc's restart re-minted read as a replay (INV-IDEM-01),
+     * billings an insufficient-funds payoff never committed counted as posted. So every posting is held against its
+     * transaction's id ({@code txid_current()}), and before every call the book asks PostgreSQL how those transactions
+     * ended ({@code txid_status}): an aborted one's entries are forgotten, a committed one's kept for good.
+     */
     static final class SharedBook implements BnplBook {
 
+        /** A posting whose transaction's outcome the book has not yet learned. */
+        private record Pending(long transaction, String key, JournalEntryId entry) {}
+
+        /** The one session every book reads transaction outcomes on - autocommit, read-only, the suite JVM's. */
+        private static Connection observer;
+
         private final BnplApplicationFakes.Book delegate;
+        private final List<Pending> pending = new ArrayList<>();
 
         SharedBook(BnplApplicationFakes.Book delegate) {
             this.delegate = delegate;
         }
 
         synchronized List<String> keys() {
+            settle();
             return List.copyOf(delegate.keys);
         }
 
         @Override
         public synchronized BnplLedgerAccounts openAccounts(Connection unitOfWork, BnplObligationId obligation,
                 CurrencyCode currency) {
+            settle();
             return delegate.openAccounts(unitOfWork, obligation, currency);
         }
 
         @Override
         public synchronized List<LedgerAccount> accountsOf(Connection unitOfWork, BnplObligationId obligation) {
+            settle();
             return delegate.accountsOf(unitOfWork, obligation);
         }
 
         @Override
         public synchronized LedgerAccountId operational(Connection unitOfWork, com.finapp.ledger.AccountPurpose purpose,
                 CurrencyCode currency) {
+            settle();
             return delegate.operational(unitOfWork, purpose, currency);
         }
 
         @Override
         public synchronized Optional<LedgerAccountStatus> lockForUpdate(Connection unitOfWork, LedgerAccountId account) {
+            settle();
             return delegate.lockForUpdate(unitOfWork, account);
         }
 
         @Override
         public synchronized Money availableUnderLock(Connection unitOfWork, LedgerAccountId account) {
+            settle();
             return delegate.availableUnderLock(unitOfWork, account);
         }
 
         @Override
         public synchronized void lockBalancesInOrder(Connection unitOfWork, Collection<LedgerAccountId> accounts) {
+            settle();
             delegate.lockBalancesInOrder(unitOfWork, accounts);
         }
 
         @Override
         public synchronized JournalEntryId post(Connection unitOfWork, PostingCommand command) {
-            return delegate.post(unitOfWork, command);
+            settle();
+            JournalEntryId entry = delegate.post(unitOfWork, command);
+            held(unitOfWork, command.idempotencyKey(), entry);
+            return entry;
         }
 
         @Override
         public synchronized Money balanceOf(Connection unitOfWork, LedgerAccount account) {
+            settle();
             return delegate.balanceOf(unitOfWork, account);
         }
 
         @Override
         public synchronized List<com.finapp.ledger.PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
                 java.util.Set<LedgerAccountId> accounts, LocalDate valueDateThrough) {
+            settle();
             return delegate.datedLinesOn(unitOfWork, accounts, valueDateThrough);
         }
 
         @Override
         public synchronized com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork,
                 com.finapp.ledger.ReversalCommand command) {
-            return delegate.reverse(unitOfWork, command);
+            settle();
+            JournalEntryId entry = delegate.reverse(unitOfWork, command);
+            held(unitOfWork, delegate.keys.get(delegate.keys.size() - 1), entry);
+            return entry;
         }
 
         @Override
         public synchronized List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
                 com.finapp.ledger.JournalEntryId entry) {
+            settle();
             return delegate.entryLines(unitOfWork, entry);
+        }
+
+        /** The entry just posted under {@code key}, held against {@code unitOfWork}'s transaction until it ends. */
+        private void held(Connection unitOfWork, String key, JournalEntryId entry) {
+            try {
+                if (unitOfWork == null || unitOfWork.getAutoCommit()) {
+                    return; // a fixture's own posting, or one committed with its own statement
+                }
+                try (Statement statement = unitOfWork.createStatement();
+                        java.sql.ResultSet row = statement.executeQuery("SELECT txid_current()")) {
+                    row.next();
+                    pending.add(new Pending(row.getLong(1), key, entry));
+                }
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        }
+
+        /** Forgets every entry whose transaction rolled back, and stops watching every one that committed. */
+        private void settle() {
+            if (pending.isEmpty()) {
+                return;
+            }
+            java.util.Map<Long, String> outcomes = outcomes(pending.stream().map(Pending::transaction).distinct()
+                    .toArray(Long[]::new));
+            for (java.util.Iterator<Pending> each = pending.iterator(); each.hasNext();) {
+                Pending held = each.next();
+                String outcome = outcomes.get(held.transaction());
+                if ("aborted".equals(outcome)) {
+                    delegate.keys.remove(held.key());
+                    delegate.lines.removeIf(line -> line.entry().equals(held.entry()));
+                    delegate.entries.remove(held.entry());
+                    delegate.reversalOf.remove(held.entry());
+                    each.remove();
+                } else if ("committed".equals(outcome)) {
+                    each.remove();
+                }
+            }
+        }
+
+        private static java.util.Map<Long, String> outcomes(Long[] transactions) {
+            synchronized (SharedBook.class) {
+                try {
+                    if (observer == null || observer.isClosed()) {
+                        observer = DatabaseRoles.application();
+                    }
+                    java.util.Map<Long, String> outcomes = new java.util.HashMap<>();
+                    try (java.sql.PreparedStatement query = observer.prepareStatement(
+                            "SELECT x, txid_status(x) FROM unnest(?::bigint[]) AS t (x)")) {
+                        query.setArray(1, observer.createArrayOf("bigint", transactions));
+                        try (java.sql.ResultSet rows = query.executeQuery()) {
+                            while (rows.next()) {
+                                outcomes.put(rows.getLong(1), rows.getString(2));
+                            }
+                        }
+                    }
+                    return outcomes;
+                } catch (SQLException failure) {
+                    throw new IllegalStateException(failure);
+                }
+            }
         }
     }
 }

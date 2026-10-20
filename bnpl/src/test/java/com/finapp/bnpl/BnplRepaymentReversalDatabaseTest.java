@@ -166,9 +166,19 @@ class BnplRepaymentReversalDatabaseTest {
                 + " AND outcome = 'FAILED' AND target_id = '" + proposed.id() + "'")).isEqualTo(1);
         try (Connection migrator = DatabaseRoles.migrator()) {
             migrator.setAutoCommit(false);
-            refused(migrator, "UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED', decided_by = proposed_by,"
+            // Valued at the obligation's floor - inside the edge trigger's [floor, max(today, floor)] - so the row reaches
+            // the CHECK: the suite's clock stands on instalment 3's due date, so the real current_date lies below the
+            // floor and the trigger refused first (P0001; P12-TSK-027).
+            String selfApproved = "UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED', decided_by = proposed_by,"
                     + " decided_by_type = proposed_by_type, decision_reason = 'mine', journal_entry_id = gen_random_uuid(),"
-                    + " value_date = current_date WHERE id = '" + proposed.id() + "'", "23514");
+                    + " value_date = bnpl.principal_value_floor(obligation_id) WHERE id = '" + proposed.id() + "'";
+            assertThatThrownBy(() -> {
+                        try (Statement statement = migrator.createStatement()) {
+                            statement.execute(selfApproved);
+                        }
+                    }).isInstanceOf(SQLException.class)
+                    .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).isEqualTo("23514"))
+                    .hasMessageContaining("bnpl_repayment_reversal_four_eyes");
             migrator.rollback();
         }
     }

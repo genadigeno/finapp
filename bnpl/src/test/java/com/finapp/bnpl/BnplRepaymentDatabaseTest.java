@@ -241,7 +241,7 @@ class BnplRepaymentDatabaseTest {
                 + " bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'")).isEqualTo("CLOSED|REPAID|true");
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_obligation_event WHERE obligation_id = '" + bought.id()
                 + "' AND to_status = 'CLOSED' AND reason = 'REPAID'")).isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM platform.outbox WHERE aggregate_id = '" + bought.id()
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = '" + bought.id()
                 + "' AND event_type = 'bnpl.BnplAgreementClosed'")).isEqualTo(1);
         assertThat(world.book.keys()).contains(BnplClosures.REFUND_KEY_PREFIX + bought.id());
     }
@@ -519,7 +519,8 @@ class BnplRepaymentDatabaseTest {
 
         final BnplAcceptanceDatabaseTest.Scripted ports = new BnplAcceptanceDatabaseTest.Scripted();
         final BnplApplicationFakes fakes = new BnplApplicationFakes();
-        final SharedBook book = new SharedBook(fakes.book);
+        /** The billing suite's book, inside its callers' transactions - a rolled-back attempt leaves nothing (P12-TSK-027). */
+        final BnplBillingDatabaseTest.SharedBook book = new BnplBillingDatabaseTest.SharedBook(fakes.book);
         volatile boolean standing = true;
         final BnplClosures closures = new BnplClosures(REPAYMENTS, SERVICING, PURCHASES, ports, book,
                 new JdbcOutboxWriter(), IDS, CLOCK);
@@ -637,80 +638,6 @@ class BnplRepaymentDatabaseTest {
                 }
                 migrator.commit();
             }
-        }
-    }
-
-    /** The in-memory book behind one lock - the suite's racers run on threads of their own. */
-    private static final class SharedBook implements BnplBook {
-
-        private final BnplApplicationFakes.Book delegate;
-
-        SharedBook(BnplApplicationFakes.Book delegate) {
-            this.delegate = delegate;
-        }
-
-        synchronized List<String> keys() {
-            return List.copyOf(delegate.keys);
-        }
-
-        @Override
-        public synchronized BnplLedgerAccounts openAccounts(Connection unitOfWork, BnplObligationId obligation,
-                CurrencyCode currency) {
-            return delegate.openAccounts(unitOfWork, obligation, currency);
-        }
-
-        @Override
-        public synchronized List<LedgerAccount> accountsOf(Connection unitOfWork, BnplObligationId obligation) {
-            return delegate.accountsOf(unitOfWork, obligation);
-        }
-
-        @Override
-        public synchronized LedgerAccountId operational(Connection unitOfWork, com.finapp.ledger.AccountPurpose purpose,
-                CurrencyCode currency) {
-            return delegate.operational(unitOfWork, purpose, currency);
-        }
-
-        @Override
-        public synchronized Optional<LedgerAccountStatus> lockForUpdate(Connection unitOfWork, LedgerAccountId account) {
-            return delegate.lockForUpdate(unitOfWork, account);
-        }
-
-        @Override
-        public synchronized Money availableUnderLock(Connection unitOfWork, LedgerAccountId account) {
-            return delegate.availableUnderLock(unitOfWork, account);
-        }
-
-        @Override
-        public synchronized void lockBalancesInOrder(Connection unitOfWork, Collection<LedgerAccountId> accounts) {
-            delegate.lockBalancesInOrder(unitOfWork, accounts);
-        }
-
-        @Override
-        public synchronized JournalEntryId post(Connection unitOfWork, PostingCommand command) {
-            return delegate.post(unitOfWork, command);
-        }
-
-        @Override
-        public synchronized Money balanceOf(Connection unitOfWork, LedgerAccount account) {
-            return delegate.balanceOf(unitOfWork, account);
-        }
-
-        @Override
-        public synchronized List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
-                Set<LedgerAccountId> accounts, LocalDate valueDateThrough) {
-            return delegate.datedLinesOn(unitOfWork, accounts, valueDateThrough);
-        }
-
-        @Override
-        public synchronized com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork,
-                com.finapp.ledger.ReversalCommand command) {
-            return delegate.reverse(unitOfWork, command);
-        }
-
-        @Override
-        public synchronized List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
-                com.finapp.ledger.JournalEntryId entry) {
-            return delegate.entryLines(unitOfWork, entry);
         }
     }
 }

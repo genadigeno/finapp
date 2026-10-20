@@ -161,7 +161,7 @@ class BnplRefundDatabaseTest {
         World world = new World();
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
         world.refundOn(bought.purchaseDate().plusDays(1), bought, "partial", 180_00);
-        assertThat(scalar("SELECT string_agg(sequence || ':' || principal_minor, ',' ORDER BY sequence) FROM"
+        assertThat(scalar("SELECT string_agg(i.sequence || ':' || i.principal_minor, ',' ORDER BY i.sequence) FROM"
                 + " bnpl.bnpl_instalment i JOIN bnpl.bnpl_schedule s ON s.id = i.schedule_id WHERE s.obligation_id = '"
                 + bought.id() + "' AND s.schedule_version = 2")).isEqualTo("1:15000,2:15000,3:12000");
         assertThat(scalar("SELECT principal_minor::text FROM bnpl.bnpl_schedule WHERE obligation_id = '" + bought.id()
@@ -282,7 +282,7 @@ class BnplRefundDatabaseTest {
         for (long minor : new long[] {100_00, 133_33, 366_67}) {
             world.refundOn(bought.purchaseDate().plusDays(1), bought, "split-" + minor, minor);
         }
-        assertThat(scalar("SELECT string_agg(fee_returned_minor::text, ',' ORDER BY created_at) FROM bnpl.bnpl_refund"
+        assertThat(scalar("SELECT string_agg(fee_returned_minor::text, ',' ORDER BY refunded_before_minor) FROM bnpl.bnpl_refund"
                 + " WHERE purchase_id = '" + bought.purchase().value() + "'")).isEqualTo("400,533,1467");
     }
 
@@ -388,10 +388,15 @@ class BnplRefundDatabaseTest {
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(),
                 world.frameOn(bought.purchaseDate().plusDays(1)))) {
             migrator.setAutoCommit(false);
+            // A refund claiming 10.00 of unbilled principal cancelled, with no adjustment row naming it: Sigma
+            // adjustments (0) + excess (0) <> R. (The row first written here routed the 10.00 to the wallet as excess - a
+            // row whose adjustments sum, vacuously, to its cancellations, so the deferred trigger rightly admitted it;
+            // P12-TSK-027.)
             try (Statement insert = migrator.createStatement()) {
-                insert.execute(rawRefund(bought, 1000, 18000, 40, 960, 0, 0, "WALLET", 1000));
+                insert.execute(rawRefund(bought, 1000, 18000, 40, 960, 1000, 0, "NONE", 0));
             }
-            assertThatThrownBy(migrator::commit).isInstanceOf(SQLException.class);
+            assertThatThrownBy(migrator::commit).isInstanceOf(SQLException.class)
+                    .hasMessageContaining("adjustments sum to its cancellations");
         }
     }
 
@@ -435,7 +440,8 @@ class BnplRefundDatabaseTest {
 
         final BnplAcceptanceDatabaseTest.Scripted ports = new BnplAcceptanceDatabaseTest.Scripted();
         final BnplApplicationFakes fakes = new BnplApplicationFakes();
-        final SharedBook book = new SharedBook(fakes.book);
+        /** The billing suite's book, inside its callers' transactions - a rolled-back attempt leaves nothing (P12-TSK-027). */
+        final BnplBillingDatabaseTest.SharedBook book = new BnplBillingDatabaseTest.SharedBook(fakes.book);
         final BnplClosures closures = new BnplClosures(REPAYMENTS, SERVICING, PURCHASES, ports, book,
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRepayments repayments = new BnplRepayments(REPAYMENTS, SERVICING, PURCHASES, TERMS_STORE, ports, book,
@@ -575,80 +581,6 @@ class BnplRefundDatabaseTest {
                 }
                 migrator.commit();
             }
-        }
-    }
-
-    /** The in-memory book behind one lock - the suite's racers run on threads of their own. */
-    private static final class SharedBook implements BnplBook {
-
-        private final BnplApplicationFakes.Book delegate;
-
-        SharedBook(BnplApplicationFakes.Book delegate) {
-            this.delegate = delegate;
-        }
-
-        synchronized List<String> keys() {
-            return List.copyOf(delegate.keys);
-        }
-
-        @Override
-        public synchronized BnplLedgerAccounts openAccounts(Connection unitOfWork, BnplObligationId obligation,
-                CurrencyCode currency) {
-            return delegate.openAccounts(unitOfWork, obligation, currency);
-        }
-
-        @Override
-        public synchronized List<LedgerAccount> accountsOf(Connection unitOfWork, BnplObligationId obligation) {
-            return delegate.accountsOf(unitOfWork, obligation);
-        }
-
-        @Override
-        public synchronized LedgerAccountId operational(Connection unitOfWork, com.finapp.ledger.AccountPurpose purpose,
-                CurrencyCode currency) {
-            return delegate.operational(unitOfWork, purpose, currency);
-        }
-
-        @Override
-        public synchronized Optional<LedgerAccountStatus> lockForUpdate(Connection unitOfWork, LedgerAccountId account) {
-            return delegate.lockForUpdate(unitOfWork, account);
-        }
-
-        @Override
-        public synchronized Money availableUnderLock(Connection unitOfWork, LedgerAccountId account) {
-            return delegate.availableUnderLock(unitOfWork, account);
-        }
-
-        @Override
-        public synchronized void lockBalancesInOrder(Connection unitOfWork, Collection<LedgerAccountId> accounts) {
-            delegate.lockBalancesInOrder(unitOfWork, accounts);
-        }
-
-        @Override
-        public synchronized JournalEntryId post(Connection unitOfWork, PostingCommand command) {
-            return delegate.post(unitOfWork, command);
-        }
-
-        @Override
-        public synchronized Money balanceOf(Connection unitOfWork, LedgerAccount account) {
-            return delegate.balanceOf(unitOfWork, account);
-        }
-
-        @Override
-        public synchronized List<PurposeBalances.DatedLine> datedLinesOn(Connection unitOfWork,
-                Set<LedgerAccountId> accounts, LocalDate valueDateThrough) {
-            return delegate.datedLinesOn(unitOfWork, accounts, valueDateThrough);
-        }
-
-        @Override
-        public synchronized com.finapp.ledger.JournalEntryId reverse(Connection unitOfWork,
-                com.finapp.ledger.ReversalCommand command) {
-            return delegate.reverse(unitOfWork, command);
-        }
-
-        @Override
-        public synchronized List<com.finapp.ledger.JournalLine> entryLines(Connection unitOfWork,
-                com.finapp.ledger.JournalEntryId entry) {
-            return delegate.entryLines(unitOfWork, entry);
         }
     }
 }

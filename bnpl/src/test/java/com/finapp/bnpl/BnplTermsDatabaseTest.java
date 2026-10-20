@@ -218,8 +218,13 @@ class BnplTermsDatabaseTest {
             refused(owner, "INSERT INTO bnpl.bnpl_terms SELECT * FROM bnpl.bnpl_terms WHERE terms_version_id = '"
                     + id.value() + "'", "P0001");
         }
+        // Unchanged: the fixture's own late fee, never the 1 the refused UPDATE wrote. (The fixture's default late fee
+        // became 0 at P12-TSK-020 - "no late fee unless a suite asks" - and this literal 500 was left behind;
+        // P12-TSK-027.)
+        long fixture = BnplTermsFixtures.payInN("0.1999").build().lateFee().minorUnits();
+        assertThat(fixture).isNotEqualTo(1);
         assertThat(count("SELECT late_fee_minor FROM bnpl.bnpl_terms WHERE terms_version_id = '" + id.value() + "'"))
-                .isEqualTo(5_00);
+                .isEqualTo(fixture);
     }
 
     @Test

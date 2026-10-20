@@ -187,18 +187,24 @@ class BnplAcceptanceDatabaseTest {
     @DisplayName("a principal fact before the floor is refused: a billing value-dated the day before the purchase")
     void aPrincipalFactBeforeTheFloorIsRefused() throws SQLException {
         Offered offered = offered();
+        List<SQLException> refusals = new java.util.concurrent.CopyOnWriteArrayList<>();
         BnplPurchaseStore early = new Delegating(PURCHASES) {
             @Override
             public void insertBilling(Connection unitOfWork, BnplBilling billing) {
-                super.insertBilling(unitOfWork, new BnplBilling(billing.id(), billing.instalment(), billing.sequence(),
-                        billing.obligation(), billing.scheduleId(), billing.scheduleVersion(), billing.scheduleEngine(),
-                        billing.agreement(), billing.agreementVersion(), billing.accrualEngine(),
-                        billing.periodStart().minusDays(1), billing.dueDate().minusDays(1), billing.principal(),
-                        billing.interest(), billing.entry(), billing.correlation()));
+                super.insertBilling(capturing(unitOfWork, refusals), new BnplBilling(billing.id(), billing.instalment(),
+                        billing.sequence(), billing.obligation(), billing.scheduleId(), billing.scheduleVersion(),
+                        billing.scheduleEngine(), billing.agreement(), billing.agreementVersion(),
+                        billing.accrualEngine(), billing.periodStart().minusDays(1), billing.dueDate().minusDays(1),
+                        billing.principal(), billing.interest(), billing.entry(), billing.correlation()));
             }
         };
-        // bnpl V008: a billing is dated its due date - the purchase's own, the floor - never the day before.
-        assertThatThrownBy(() -> accept(new Scripted(), early, offered)).rootCause().hasMessageContaining("due date");
+        // bnpl V008: a billing is dated its due date - the purchase's own, the floor - never the day before. The store
+        // carries the operation and the SQLSTATE only, never the driver's exception (INV-AUD-02: a driver message can
+        // carry an amount - P12-TSK-027); the trigger's own reason is read beneath it, from the statement it prepared.
+        assertThatThrownBy(() -> accept(new Scripted(), early, offered)).isInstanceOf(BnplStorageException.class)
+                .hasMessage("bnpl storage failed inserting a BNPL billing: SQLSTATE P0001").hasNoCause();
+        assertThat(refusals).singleElement().satisfies(refusal -> assertThat(refusal.getMessage())
+                .contains("due date"));
         assertThat(count("SELECT count(*) FROM bnpl.purchase WHERE offer_id = '" + offered.offer().value() + "'"))
                 .isZero();
     }
@@ -676,6 +682,38 @@ class BnplAcceptanceDatabaseTest {
             Thread.sleep(25);
         }
         throw new AssertionError("nothing ever waited behind session " + blocker);
+    }
+
+    /**
+     * {@code connection}, every {@link SQLException} a statement prepared or created on it raises recorded in
+     * {@code refusals} before it propagates - the driver's own refusal, beneath a store whose exception carries only the
+     * operation and the SQLSTATE (INV-AUD-02, {@link BnplStorageException}; P12-TSK-027).
+     */
+    static Connection capturing(Connection connection, List<SQLException> refusals) {
+        return (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, args) -> {
+                    Object result = invoked(connection, method, args, refusals);
+                    if (result instanceof Statement statement) {
+                        Class<?> shape = statement instanceof java.sql.PreparedStatement
+                                ? java.sql.PreparedStatement.class : Statement.class;
+                        return java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                                new Class<?>[] {shape}, (inner, call, values) -> invoked(statement, call, values,
+                                        refusals));
+                    }
+                    return result;
+                });
+    }
+
+    private static Object invoked(Object target, java.lang.reflect.Method method, Object[] args,
+            List<SQLException> refusals) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException thrown) {
+            if (thrown.getCause() instanceof SQLException refusal) {
+                refusals.add(refusal);
+            }
+            throw thrown.getCause();
+        }
     }
 
     static void refused(Connection connection, String sql, String sqlState) {
