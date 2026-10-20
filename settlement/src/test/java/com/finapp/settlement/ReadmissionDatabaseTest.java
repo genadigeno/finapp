@@ -188,7 +188,11 @@ class ReadmissionDatabaseTest {
                                         // A position of its own: one declared source per
                                         // position (INV-SET-05); only this register holds it.
                                         Optional.of(AccountPurpose.INSTANT_CLEARING),
-                                        Optional.of("PSP-REM-[0-9]{4,12}"))));
+                                        // And a remittance shape of its own: the register
+                                        // refuses two sources sharing one, since a bank line
+                                        // carrying it could be attributed to neither
+                                        // (P9-TSK-026, INV-SET-05; X-TSK-018).
+                                        Optional.of("RDM-REM-[0-9]{4,12}"))));
         store = new JdbcSettlementFileStore(new SettlementFileCipher(KEY, 1, new SecureRandom()));
         batches = new JdbcSettlementBatchStore(IDS);
         AuditWriter<Connection> audit = new JdbcAuditWriter();

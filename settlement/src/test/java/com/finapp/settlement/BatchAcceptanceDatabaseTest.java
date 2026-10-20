@@ -183,7 +183,10 @@ class BatchAcceptanceDatabaseTest {
                                 // A position of its own: one declared source per position
                                 // (INV-SET-05), and this register composes only these two.
                                 Optional.of(AccountPurpose.INSTANT_CLEARING),
-                                Optional.of("PSP-REM-[0-9]{4,12}")),
+                                // And a remittance shape of its own: the register refuses two
+                                // sources sharing one, since a bank line carrying it could be
+                                // attributed to neither (P9-TSK-026, INV-SET-05; X-TSK-018).
+                                Optional.of("RET-REM-[0-9]{4,12}")),
                         new SettlementSourceDescriptor(
                                 COUNTERPARTY_SOURCE,
                                 SourceKind.PSP_SETTLEMENT_REPORT,
@@ -191,7 +194,8 @@ class BatchAcceptanceDatabaseTest {
                                 1,
                                 Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                                 Optional.of(AccountPurpose.FX_PROVIDER_CLEARING),
-                                Optional.of("PSP-REM-[0-9]{4,12}"),
+                                // The counterparty remits in its own shape (P9-TSK-026's rule).
+                                Optional.of("CPA-REM-[0-9]{4,12}"),
                                 Optional.of(COUNTERPARTY),
                                 Set.of(com.finapp.sharedkernel.money.CurrencyCode.of("EUR")))));
     }
