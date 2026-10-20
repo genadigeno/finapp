@@ -113,3 +113,11 @@ dependencies {
 tasks.named<Test>("databaseTest") {
     systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
 }
+
+// The battery's probe-only size knob (P12-TST-002, BnplBatteryTest; the FINAPP_LENDING_BATTERY_LOANS precedent) is read
+// from the environment, which Gradle does not see: declared as an input of every test task, so a shrunk probe run is never
+// answered UP-TO-DATE from a full-size green run (or the other way round) - the Phase 11 battery gate's finding.
+tasks.withType<Test>().configureEach {
+    inputs.property("finapp.bnpl.battery.purchases",
+        providers.environmentVariable("FINAPP_BNPL_BATTERY_PURCHASES").orElse("full size"))
+}

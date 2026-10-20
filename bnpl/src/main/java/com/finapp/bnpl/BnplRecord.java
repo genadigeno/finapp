@@ -193,16 +193,31 @@ public record BnplRecord(
                 .map(EntryLines::lines).orElse(List.of());
     }
 
-    /** The dispute hold the record's disputes place - the rows' rule ({@link BnplDisputeHold}). */
-    public BnplDisputeHold disputeHold() {
+    /**
+     * The dispute hold the record's disputes placed as a fact written at {@code at} met it - the rows' rule
+     * ({@link BnplDisputeHold}) over the disputes opened before {@code at}, each lifted only if it was resolved before
+     * {@code at}. A dispute opened later on the same business date held nothing the servicing step had already done that
+     * morning, and one resolved later that day still held what the step skipped: judged by business date alone, a fee or a
+     * collection the step rightly wrote before the dispute existed replayed {@code DIVERGED} (`P12-TST-002`'s finding).
+     */
+    public BnplDisputeHold disputeHoldAt(Instant at) {
+        Objects.requireNonNull(at, "at");
         List<BnplDisputeHold.Window> windows = new ArrayList<>();
         for (BnplDispute dispute : disputes) {
             if (dispute.openedOn().isEmpty()) {
                 continue;
             }
+            if (dispute.openedAt().isEmpty()) {
+                // A dispute dated but not stamped would otherwise hold nothing and hide a fee on a held instalment.
+                throw new IllegalStateException("a dispute opened on a business date carries its opening instant");
+            }
+            if (!dispute.openedAt().get().isBefore(at)) {
+                continue;
+            }
+            Optional<java.time.LocalDate> lifted = dispute.resolvedAt().filter(resolved -> resolved.isBefore(at))
+                    .flatMap(resolved -> dispute.resolvedOn());
             for (BnplDispute.Held held : dispute.holds()) {
-                windows.add(new BnplDisputeHold.Window(dispute.id(), held.dueDate(), dispute.openedOn().get(),
-                        dispute.resolvedOn()));
+                windows.add(new BnplDisputeHold.Window(dispute.id(), held.dueDate(), dispute.openedOn().get(), lifted));
             }
         }
         return new BnplDisputeHold(windows);

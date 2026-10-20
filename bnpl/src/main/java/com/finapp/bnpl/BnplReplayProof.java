@@ -955,7 +955,8 @@ public final class BnplReplayProof {
                     diverged(Check.FEE, fee.id());
                 } else {
                     BnplTerms terms = pinned.get();
-                    BnplDisputeHold hold = record.disputeHold();
+                    // The hold as the step met it - the disputes opened, and lifted, before the fee (P12-TST-002).
+                    BnplDisputeHold hold = record.disputeHoldAt(at);
                     Money room = terms.lateFeeCap().minus(feesAssessed);
                     Money expected = terms.lateFee().compareTo(room) <= 0 ? terms.lateFee() : room;
                     Item due = item.get();
@@ -1138,9 +1139,12 @@ public final class BnplReplayProof {
                     .map(BnplTermsVersion::terms);
         }
 
-        /** The due state just before {@code at}: each item's billed less settled, without those held on {@code heldOn}. */
+        /**
+         * The due state just before {@code at}: each item's billed less settled, without those held on {@code heldOn} by the
+         * disputes opened (and not yet lifted) before {@code at} - the hold the collection met (P12-TST-002).
+         */
         private DueState dueState(Instant at, Optional<LocalDate> heldOn) {
-            BnplDisputeHold hold = record.disputeHold();
+            BnplDisputeHold hold = record.disputeHoldAt(at);
             List<DueState.DueItem> due = new ArrayList<>();
             items.values().stream().sorted(Comparator.comparing(item -> item.dueDate)).forEach(item -> {
                 if (!item.total().isZero() && heldOn.filter(day -> hold.heldOn(item.dueDate, day)).isEmpty()) {
