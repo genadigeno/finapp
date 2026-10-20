@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplMerchants;
 import com.finapp.bnpl.BnplProduct;
 import com.finapp.bnpl.BnplPurchaseId;
@@ -62,6 +63,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * nothing; the pin is never updated, deleted or truncated by any role. Each act in a transaction of its own, on the
  * application role, as the doors run them.
  */
+@DateShifted
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest

@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.credit.BnplCreditExposure;
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -81,6 +82,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * {@code CASH_AT_BANK} - the fixture's, never a path the platform has (bank recognition is the one poster, proven by
  * {@link LendingCapitalDatabaseTest}) - so the capital proof would not hold here, and nothing here asks it to.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

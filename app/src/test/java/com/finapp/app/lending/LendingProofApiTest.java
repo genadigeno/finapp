@@ -5,6 +5,7 @@ import static com.finapp.app.lending.LoanApplicationClient.key;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -40,6 +41,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * records are {@link LoanAccountDatabaseTest}'s, in a database of its own; the proofs themselves are {@code lending}'s
  * {@code LendingProofDatabaseTest}'s.
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the lending investigator's doors' contract (P11-TSK-029)")

@@ -3,6 +3,7 @@ package com.finapp.app.lending;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplAccounts;
 import com.finapp.bnpl.BnplLedgerAccounts;
 import com.finapp.bnpl.BnplObligationId;
@@ -110,6 +111,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * bank's EUR statement chain must start at sequence 1 and every step here extends it in order - the methods are
  * ordered, and the chain's position is this class's state.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

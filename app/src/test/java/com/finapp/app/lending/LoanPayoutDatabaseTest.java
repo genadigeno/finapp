@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.HoldId;
@@ -81,6 +82,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * policies into force, activates the lending terms and plants EUR lending capital by a posting from {@code CASH_AT_BANK}
  * - the fixture's, never a path the platform has.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

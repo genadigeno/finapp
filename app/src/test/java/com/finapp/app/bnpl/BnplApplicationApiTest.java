@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +22,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * its own. Written by `P12-TSK-010` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest}
  * instruction for the task).
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the BNPL application doors' contract (P12-TSK-010)")

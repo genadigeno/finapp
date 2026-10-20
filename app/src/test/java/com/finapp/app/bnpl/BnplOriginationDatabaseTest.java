@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplApplicationId;
 import com.finapp.bnpl.BnplApplicationStore;
 import com.finapp.bnpl.BnplCheckoutSessions;
@@ -69,6 +70,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * product's terms into force and activates successors. Written by `P12-TSK-011` and <strong>owed a first run</strong>
  * (the owner's no-{@code databaseTest} instruction for the task).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SuppressWarnings("try")

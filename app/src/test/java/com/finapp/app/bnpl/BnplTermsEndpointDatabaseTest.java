@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -55,6 +56,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * error contract; and every door closed to a {@code BNPL_SERVICING_AGENT}, to a session holding no role, to no session,
  * and (for the acts) to a missing key - nothing written by a refused caller.
  */
+@DateShifted
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

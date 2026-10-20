@@ -4,6 +4,7 @@ import static com.finapp.app.lending.LoanApplicationClient.key;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.net.http.HttpResponse;
 import java.security.SecureRandom;
@@ -23,6 +24,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * acceptances themselves - which need credit's policies, lending's terms and capital in force - are
  * {@link LoanAccountDatabaseTest}'s, in a database of its own.
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the acceptance and loan doors' contract (P11-TSK-012)")

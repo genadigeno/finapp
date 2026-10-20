@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.bnpl.BnplTransactions;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplCheckoutSessions;
 import com.finapp.bnpl.BnplPurchaseId;
 import com.finapp.checkout.CheckoutExpirySweeper;
@@ -86,6 +87,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * <p><strong>Its own database</strong> ({@code own-container}): the expiry race runs the platform's unscoped sweeper on
  * clocks five seconds either side of the truth, which would expire other suites' offers in a shared one.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

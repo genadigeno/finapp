@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * echoed. The offered, declined and expired paths over credit's real decision are {@link BnplOriginationDatabaseTest}'s.
  * Written by `P12-TSK-011` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the BNPL offer doors' and the options read's contract (P12-TSK-011)")

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplApplication;
 import com.finapp.bnpl.BnplApplicationStore;
 import com.finapp.bnpl.BnplApplications;
@@ -69,6 +70,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * product's terms into force, which the shared container's suites expect to find as they left them. Written by
  * `P12-TSK-010` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction for the task).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SuppressWarnings("try")

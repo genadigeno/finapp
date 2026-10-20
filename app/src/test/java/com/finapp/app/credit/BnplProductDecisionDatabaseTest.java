@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.database.DateShifted;
 import com.finapp.credit.CreditDataCollection;
 import com.finapp.credit.CreditProduct;
 import com.finapp.credit.DecisionMaking;
@@ -64,6 +65,7 @@ import org.junit.jupiter.api.Test;
  * <p><strong>A database of its own</strong> ({@code own-container}): the suite brings a BNPL policy per product into force
  * - proposed by one person, activated by another (no migration does) - which no shared suite may meet.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SuppressWarnings("try")
