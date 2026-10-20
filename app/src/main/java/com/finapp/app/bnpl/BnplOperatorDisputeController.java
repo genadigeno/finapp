@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplOperatorDisputeController {
 
     @NonNull private final BnplDisputeDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /** The dispute, with the customer's reason and the merchant's statement - every access recorded. */
     @GetMapping("/{id}")
@@ -48,7 +50,7 @@ public class BnplOperatorDisputeController {
             @PathVariable("id") String id,
             @Valid @RequestBody BnplDisputeResolutionBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return desk.resolve(id, idempotencyKey, body);
+        return flow.doorOnDispute(BnplSpans.DISPUTE_RESOLVE, id, () -> desk.resolve(id, idempotencyKey, body));
     }
 
     /** A second operator approves the proposal named - the resolution it proposed executed now. */
@@ -59,7 +61,7 @@ public class BnplOperatorDisputeController {
             @PathVariable("id") String id,
             @Valid @RequestBody BnplDisputeDecisionBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return desk.approve(id, idempotencyKey, body);
+        return flow.doorOnDispute(BnplSpans.DISPUTE_RESOLVE, id, () -> desk.approve(id, idempotencyKey, body));
     }
 
     /** An operator rejects - or its proposer withdraws - the proposal named. */
@@ -70,7 +72,7 @@ public class BnplOperatorDisputeController {
             @PathVariable("id") String id,
             @Valid @RequestBody BnplDisputeDecisionBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return desk.reject(id, idempotencyKey, body);
+        return flow.doorOnDispute(BnplSpans.DISPUTE_RESOLVE, id, () -> desk.reject(id, idempotencyKey, body));
     }
 
     /** A resolution: {@code REFUND} or {@code UPHOLD}, and the reason, required (RESTRICTED-PII, screened). Closed. */

@@ -1032,14 +1032,69 @@ re-dispatch a payout on `UNKNOWN` → scenario 5 red **by a count of dispatches 
 
 ## 15. Observability
 
-Counters (closed tags, no amounts — ADR-0072): `finapp.bnpl.application{product,outcome}`, `.eligibility{product,outcome}`
-(approval rate), `.offer`, `.purchase{product,plan,outcome}` (plan mix), `.refund{kind=full|partial,outcome}` (refund
-rate), `.dispute{outcome}`, `.repayment{kind,outcome}`, `.collection{outcome}`, `.accrual{outcome}`, `.fee{outcome}`,
-`.payoff`, `.reversal`, `.waiver`, `.allocation.anomaly` (alert > 0), `.accrual.lag` (seconds since the end of the oldest unaccrued elapsed date of an `ACTIVE` pay-in-N obligation's accrual span; alert above one day - the lending precedent; added by `P12-TSK-017`, its rule `-026`'s `bnpl.yml`), `.billing{product,outcome}` (`billed`, `credit_applied`) and `.servicing{step,outcome}` (`step = service`: `serviced`, `behind_accrual`, `not_serviced`, `failed`; `step = catch_up`: `applied` - the Phase 11 gate's R2 visible; added by `P12-TSK-015`, the plan having named no servicing series; the later steps join the `step` set); `P12-TSK-018` adds `step = closure`: `closed`, and `.repayment{kind,outcome}` is `kind` ∈ {`customer`, `auto_collection`, `payoff`} × `outcome` ∈ {`repaid`, `closed`, `obligation_closed`, `insufficient_funds`}. Gauges: `finapp.bnpl.delinquency{product,bucket}`,
-`.default{product}`, `.obligations{product,status}`, `.threeway.proof{verdict}` (alert), `.subledger.proof`, `.replay`
-(alert DIVERGED), `.capital.headroom.low` (shared), `.terms.active{product}`, the three `…sweeper.enabled`. **Amounts**
-— merchant financing exposure, outstanding, refund impact on outstanding — are audited reports, never series.
-Spans per step (`BnplFlowScope`, no attributes). `infra/prometheus/rules/bnpl.yml`; a dashboard row.
+*(Recast as a table by `P12-TSK-026`, one series per row so `BnplMetersTest` counts them exactly - the Phase 11 shape; the
+prose it replaces named the same series. Rows added by later tasks are marked; the shared rows are other contexts' series
+BNPL's alerts and gate read.)*
+
+| Series | Type | Tags | Alert |
+|---|---|---|---|
+| `finapp.bnpl.application` | counter | product, outcome | — |
+| `finapp.bnpl.eligibility` | counter | product, outcome (`eligible`, `not_eligible` - the approval rate) | — |
+| `finapp.bnpl.offer` | counter | product, outcome | — |
+| `finapp.bnpl.origination` *(the Phase 11 gate's A5-03 applied forward; built by `P12-TSK-011`)* | counter | kind (`application`, `offer`), outcome (`failed`) | any sustained increase |
+| `finapp.bnpl.application.awaiting.age` *(A5-03 applied forward; built by `P12-TSK-026`)* | gauge (seconds, oldest `AWAITING_DECISION` since submission) | — | above the longest credit request validity and an hour |
+| `finapp.bnpl.purchase` | counter | product, plan, outcome (the plan mix) | — |
+| `finapp.bnpl.billing` *(added by `P12-TSK-015`)* | counter | product, outcome (`billed`, `credit_applied`) | — |
+| `finapp.bnpl.servicing` *(added by `P12-TSK-015`; `step = closure` by `-018`, `step = condition` by `-020`)* | counter | step (`service`, `catch_up`, `closure`, `condition`), outcome (`serviced`, `behind_accrual`, `not_serviced`, `failed`; `applied`; `closed`; `recorded`) | `step = service, outcome = failed`: any sustained increase |
+| `finapp.bnpl.accrual` | counter | outcome (`posted`, `zero`, `failed`) | `failed`: any sustained increase |
+| `finapp.bnpl.accrual.lag` *(added by `P12-TSK-017`)* | gauge (seconds since the end of the oldest unaccrued elapsed date of an `ACTIVE` pay-in-N obligation's accrual span) | — | above one day (the lending precedent) |
+| `finapp.bnpl.repayment` | counter | kind (`customer`, `auto_collection`, `payoff`), outcome (`repaid`, `closed`, `obligation_closed`, `insufficient_funds`) | — |
+| `finapp.bnpl.collection` | counter | outcome | — |
+| `finapp.bnpl.allocation.anomaly` | counter | — | above 0 |
+| `finapp.bnpl.fee` | counter | outcome (`assessed`, `capped`) | — |
+| `finapp.bnpl.payoff` | counter | product, outcome | — |
+| `finapp.bnpl.refund` | counter | kind (`full`, `partial`), outcome (the refund rate) | — |
+| `finapp.bnpl.dispute` | counter | outcome (`sweep_failed` the deadline sweep's failed step) | `sweep_failed`: any sustained increase |
+| `finapp.bnpl.reversal` | counter | outcome | — |
+| `finapp.bnpl.waiver` | counter | outcome | — |
+| `finapp.bnpl.delinquency` | gauge (obligation counts) | product, bucket | — |
+| `finapp.bnpl.default` | gauge (count) | product | — |
+| `finapp.bnpl.obligations` *(built by `P12-TSK-026`)* | gauge (counts) | product, status | — |
+| `finapp.bnpl.threeway.proof` | gauge (currencies) | verdict | any failure |
+| `finapp.bnpl.subledger.proof` | gauge (obligations) | verdict | any failure |
+| `finapp.bnpl.replay` | gauge (obligations) | verdict | any `DIVERGED` |
+| `finapp.bnpl.terms.active` | gauge (version) | product | none active for an offered product (enabled per environment by the `bnpl_offered` target label - production's expected state until §1.1's gate opens) |
+| `finapp.bnpl.origination.sweeper.enabled` | gauge | — | 0 in a non-test profile |
+| `finapp.bnpl.servicing.sweeper.enabled` | gauge | — | 0 in a non-test profile |
+| `finapp.bnpl.dispute.sweeper.enabled` | gauge | — | 0 in a non-test profile |
+| `finapp.lending.capital.headroom.low` *(shared - lending's; BNPL principal is a term of the headroom, ADR-0104)* | gauge (currencies below the floor) | — | above 0 (`lending.yml`'s) |
+| `finapp.credit.exposure.census` *(shared - credit's; the census v3 counts BNPL principal)* | gauge | verdict | any failure (`lending.yml`'s) |
+| `finapp.ledger.negative.positions` *(shared - the ledger's; a BNPL refund after payout, B7)* | gauge (counterparties below zero) | purpose | a `MERCHANT_PAYABLE` below zero for an hour (`bnpl.yml`'s, a ticket) |
+
+ADR-0072: counts, ages and verdicts only — never an amount, rate, balance, DPD, party, merchant, purchase or agreement id
+in a tag. **Amounts** — outstanding, merchant financing exposure, refund impact on outstanding, delinquency sums — are
+audited reports, never series. Spans per step (`BnplFlowScope`, no attributes). `infra/prometheus/rules/bnpl.yml`; a
+dashboard row. Every series registered eagerly at startup with its closed tags.
+
+*(As built by `P12-TSK-026`:* the reports are `GET /v1/operator/reports/bnpl/{portfolio,merchant-financing,refunds,delinquency}?date=`
+(`BnplReports`, `BnplReportController`, `BNPL_INVESTIGATE`) - one read-only `REPEATABLE READ` snapshot each, every
+obligation on its own business date in its pinned zone, `bnpl.ReportRead` committed in a transaction of its own before
+the answer; the portfolio ties the BNPL book to the ledger's `BNPL_OBLIGATION` accounts and the trial balance per
+currency and carries the three proofs (the failing and diverged agreements named, bounded); the merchant-financing
+report ties Σ (G - f) less the refunds' payable debit to the payables' lines of those entries and counts the failing
+three-way merchant legs; the refunds report (valued on the date) ties each refund row's cancelled principal and
+released interest to its own entry's receivable lines; the delinquency report's due sums are the ledger's. The rules are
+sixteen alerts - each series above with a `bnpl.yml` alert, `MerchantPayableNegative` and `BnplGaugesUnreadable` (NaN,
+never the last value) - their thresholds `BnplObjectives`' (the accrual lag one day, the decision wait the longest credit
+request validity and an hour); `BnplAlertRulesTest` breaks each one's condition and sees it, and only it, fire, and the
+two shared `lending.yml` alerts fire on their BNPL breaks. `BnplFlowScope` records the steps' spans through the platform
+`Spans` port with no attribute at all (`bnpl.application.submit`, `bnpl.application.withdraw`, `bnpl.offer.make`,
+`bnpl.offer.expire`, `bnpl.offer.decline`, `bnpl.offer.accept`, `bnpl.obligation.service`, `bnpl.obligation.repay`,
+`bnpl.obligation.quote`, `bnpl.obligation.payoff`, `bnpl.purchase.refund`, `bnpl.dispute.open`, `bnpl.dispute.withdraw`,
+`bnpl.dispute.respond`, `bnpl.dispute.resolve`, `bnpl.dispute.lapse`, `bnpl.obligation.correct`) - each sweep leg in its
+row's stored correlation (a dispute's deadline leg in its obligation's), each door on an existing row in that row's flow
+caused by the request's, the act itself in the request's scope. An unreadable gauge reads NaN, never its last value - the
+lending precedent, refining the entry's "reports its last value".)*
 
 ---
 

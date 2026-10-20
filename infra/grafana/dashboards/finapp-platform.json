@@ -2136,6 +2136,528 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "BNPL — origination, purchases, servicing, refunds and disputes, the book, proofs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 243
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL applications, eligibility, offers and purchases",
+      "description": "finapp.bnpl.application, .eligibility (the approval rate), .offer and .purchase{product, plan, outcome} (the plan mix), and the origination sweep's failed steps (.origination{outcome=failed}, alerted). Counts only (ADR-0072).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 244
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (product, outcome) (rate(finapp_bnpl_application_total[5m]))",
+          "legendFormat": "application {{product}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (product, outcome) (rate(finapp_bnpl_eligibility_total[5m]))",
+          "legendFormat": "eligibility {{product}} {{outcome}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (product, outcome) (rate(finapp_bnpl_offer_total[5m]))",
+          "legendFormat": "offer {{product}} {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (product, plan, outcome) (rate(finapp_bnpl_purchase_total[5m]))",
+          "legendFormat": "purchase {{plan}} {{outcome}}"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (kind, outcome) (rate(finapp_bnpl_origination_total[5m]))",
+          "legendFormat": "origination {{kind}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL servicing: accrual, billing, collection, fees",
+      "description": "finapp.bnpl.accrual (posted, zero, failed - alerted), .billing, .servicing{step, outcome} (failed alerted), .collection and .fee - counted after each committed step.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 244
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_bnpl_accrual_total[5m]))",
+          "legendFormat": "accrual {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (product, outcome) (rate(finapp_bnpl_billing_total[5m]))",
+          "legendFormat": "billing {{product}} {{outcome}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (step, outcome) (rate(finapp_bnpl_servicing_total[5m]))",
+          "legendFormat": "servicing {{step}} {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (outcome) (rate(finapp_bnpl_collection_total[5m]))",
+          "legendFormat": "collection {{outcome}}"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (outcome) (rate(finapp_bnpl_fee_total[5m]))",
+          "legendFormat": "late fee {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL accrual lag and the decision wait",
+      "description": "finapp.bnpl.accrual.lag - seconds since the end of the oldest unaccrued elapsed date of an ACTIVE pay-in-N obligation (alerted above a day) - and finapp.bnpl.application.awaiting.age, the oldest application AWAITING_DECISION (alerted above the longest credit request validity and an hour). max(), never sum(): every instance reads the same database.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 244
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_bnpl_accrual_lag_seconds)",
+          "legendFormat": "accrual lag"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_bnpl_application_awaiting_age_seconds)",
+          "legendFormat": "oldest awaiting decision"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL repayments, payoffs and allocation anomalies",
+      "description": "finapp.bnpl.repayment{kind, outcome}, .payoff{product, outcome} and .allocation.anomaly (alerted above 0).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 251
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, outcome) (rate(finapp_bnpl_repayment_total[5m]))",
+          "legendFormat": "repayment {{kind}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (product, outcome) (rate(finapp_bnpl_payoff_total[5m]))",
+          "legendFormat": "payoff {{product}} {{outcome}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(finapp_bnpl_allocation_anomaly_total[5m]))",
+          "legendFormat": "allocation anomaly"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL refunds and disputes",
+      "description": "finapp.bnpl.refund{kind, outcome} - the refund rate, full or partial - and .dispute{outcome}, the deadline sweep's failed steps among them (alerted). Refund impact on outstanding is the audited refunds report's, never a series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 251
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, outcome) (rate(finapp_bnpl_refund_total[5m]))",
+          "legendFormat": "refund {{kind}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_bnpl_dispute_total[5m]))",
+          "legendFormat": "dispute {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL operator corrections",
+      "description": "finapp.bnpl.reversal and .waiver - four-eyes proposals, approvals, rejections and refusals by reason.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 251
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(finapp_bnpl_reversal_total[5m]))",
+          "legendFormat": "reversal {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(finapp_bnpl_waiver_total[5m]))",
+          "legendFormat": "waiver {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "The BNPL book: obligations by status and condition",
+      "description": "finapp.bnpl.obligations{product, status}, .delinquency{product, bucket} and .default{product} - obligation counts, never an amount or a DPD. max(): fleet-wide readings.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 258
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (product, status) (finapp_bnpl_obligations)",
+          "legendFormat": "obligations {{product}} {{status}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (product, bucket) (finapp_bnpl_delinquency)",
+          "legendFormat": "past due {{product}} {{bucket}}"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (product) (finapp_bnpl_default)",
+          "legendFormat": "defaulted {{product}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "BNPL proofs and negative merchant payables",
+      "description": "finapp.bnpl.threeway.proof (currencies), .subledger.proof and .replay (obligations) by verdict - FAILS and DIVERGED alerted above 0 - and the merchant payables below zero (finapp.ledger.negative.positions, a refund after payout, B7; ticketed after an hour). The shared capital headroom and exposure census are the lending row's.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 258
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (verdict) (finapp_bnpl_threeway_proof)",
+          "legendFormat": "three-way {{verdict}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (verdict) (finapp_bnpl_subledger_proof)",
+          "legendFormat": "subledger {{verdict}}"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (verdict) (finapp_bnpl_replay)",
+          "legendFormat": "replay {{verdict}}"
+        },
+        {
+          "refId": "D",
+          "expr": "max(finapp_ledger_negative_positions{purpose=\"MERCHANT_PAYABLE\"})",
+          "legendFormat": "negative merchant payables"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active BNPL terms and BNPL sweepers",
+      "description": "finapp.bnpl.terms.active - each product's ACTIVE terms version, 0 for none (production's state until the activation gate opens; alerted where the target offers BNPL) - and the three BNPL sweeper flags, min() showing whether any scraped instance does not run one (alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 258
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (product) (finapp_bnpl_terms_active)",
+          "legendFormat": "active terms {{product}}"
+        },
+        {
+          "refId": "B",
+          "expr": "min(finapp_bnpl_origination_sweeper_enabled)",
+          "legendFormat": "origination sweep (min)"
+        },
+        {
+          "refId": "C",
+          "expr": "min(finapp_bnpl_servicing_sweeper_enabled)",
+          "legendFormat": "servicing sweep (min)"
+        },
+        {
+          "refId": "D",
+          "expr": "min(finapp_bnpl_dispute_sweeper_enabled)",
+          "legendFormat": "dispute deadline sweep (min)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
     }
   ]
 }

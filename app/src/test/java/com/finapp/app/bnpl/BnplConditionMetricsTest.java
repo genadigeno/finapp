@@ -95,6 +95,12 @@ class BnplConditionMetricsTest {
             public Map<BnplProduct, Long> defaultedByProduct(Connection unitOfWork) {
                 return defaulted;
             }
+
+            @Override
+            public Map<BnplProduct, Map<com.finapp.bnpl.BnplObligationStatus, Long>> obligationsByProductAndStatus(
+                    Connection unitOfWork) {
+                throw new UnsupportedOperationException("these gauges read the condition counts only");
+            }
         };
     }
 

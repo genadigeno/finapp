@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor;
 import com.finapp.app.merchant.RequiresMerchantKey;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplRefundController {
 
     @NonNull private final BnplRefundDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /** The authenticated merchant refunds its own BNPL purchase. */
     @PostMapping(path = "/{id}/refunds", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -49,7 +51,7 @@ public class BnplRefundController {
             @Valid @RequestBody BnplRefundBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.refundAsMerchant(MerchantKeyAuthenticationInterceptor.require(request), id, idempotencyKey, body);
+        return flow.doorOnPurchase(BnplSpans.REFUND, id, () -> desk.refundAsMerchant(MerchantKeyAuthenticationInterceptor.require(request), id, idempotencyKey, body));
     }
 
     /**

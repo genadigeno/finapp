@@ -74,6 +74,13 @@ public interface BnplApplicationStore {
      */
     boolean hintSession(Connection unitOfWork, UUID checkoutSession);
 
+    /**
+     * How long the oldest application {@code AWAITING_DECISION} has waited since its submission, on the database clock -
+     * empty when none waits (`P12-TSK-026`; the Phase 11 gate's A5-03 applied forward, lending's
+     * {@code LoanApplicationStore#oldestAwaitingDecisionAge}). An age, never an application or a party.
+     */
+    Optional<Duration> oldestAwaitingDecisionAge(Connection unitOfWork);
+
     // ------------------------------------------------------------------ rows
 
     /** An application at birth - its choices and references, never a figure. */

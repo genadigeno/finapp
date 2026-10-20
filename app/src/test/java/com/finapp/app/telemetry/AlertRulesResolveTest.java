@@ -75,6 +75,11 @@ class AlertRulesResolveTest {
 
     private static final String LENDING_GROUP = "lending";
 
+    /** The BNPL rules (P12-TSK-026), held to the same checks and to the objectives the code declares. */
+    private static final String BNPL_RULES = "infra/prometheus/rules/bnpl.yml";
+
+    private static final String BNPL_GROUP = "bnpl";
+
     /** A PromQL metric selector: an identifier not immediately followed by an opening bracket. */
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
@@ -103,7 +108,9 @@ class AlertRulesResolveTest {
                     // P10-TSK-020: the credit rules' labels - and le, the latency bucket's boundary.
                     "product", "decision_maker", "le", "status", "verdict", "source_kind",
                     // P11-TSK-030: the lending rules read a TARGET label the environment sets (never a metric tag).
-                    "lending_offered");
+                    "lending_offered",
+                    // P12-TSK-026: the BNPL rules select a servicing step, and read their own TARGET label.
+                    "step", "bnpl_offered");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -313,6 +320,53 @@ class AlertRulesResolveTest {
             assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
         });
         Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(LENDING_RULES));
+        assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
+                .anySatisfy(pattern -> assertThat(
+                        FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());
+    }
+
+    @Test
+    @DisplayName("the BNPL rules: every section 15 alert present, every queried series published on a fresh instance with"
+            + " the verdicts and products the rules select, each threshold the objective the code declares, each rule well"
+            + " formed, the file loaded (P12-TSK-026)")
+    void theBnplRulesResolve() {
+        List<Map<String, Object>> bnpl = rules(BNPL_RULES, BNPL_GROUP);
+        Map<String, String> expressions = new TreeMap<>();
+        bnpl.forEach(rule -> expressions.put(String.valueOf(rule.get("alert")), String.valueOf(rule.get("expr")).strip()));
+        // PHASE_12_PLAN.md section 15's alerts, every one (PHASE_GATES.md section 5 Phase 12 names them), and the NaN rule.
+        assertThat(expressions).containsOnlyKeys("BnplAccrualLagging", "BnplAccrualFailing",
+                "BnplApplicationAwaitingTooLong", "BnplOriginationStepFailing", "BnplServicingStepFailing",
+                "BnplDisputeDeadlineStepFailing", "BnplAllocationAnomaly", "BnplThreeWayProofFailing",
+                "BnplSubledgerProofFailing", "BnplReplayDiverged", "MerchantPayableNegative", "BnplTermsNoneActive",
+                "BnplOriginationSweeperOff", "BnplServicingSweeperOff", "BnplDisputeSweeperOff", "BnplGaugesUnreadable");
+        Set<String> queried = bnpl.stream()
+                .map(rule -> String.valueOf(rule.get("expr")))
+                .flatMap(AlertRulesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(queried).containsExactlyInAnyOrder("finapp_bnpl_accrual_lag_seconds", "finapp_bnpl_accrual_total",
+                "finapp_bnpl_application_awaiting_age_seconds", "finapp_bnpl_origination_total",
+                "finapp_bnpl_servicing_total", "finapp_bnpl_dispute_total", "finapp_bnpl_allocation_anomaly_total",
+                "finapp_bnpl_threeway_proof", "finapp_bnpl_subledger_proof", "finapp_bnpl_replay",
+                "finapp_ledger_negative_positions", "finapp_bnpl_terms_active", "finapp_bnpl_origination_sweeper_enabled",
+                "finapp_bnpl_servicing_sweeper_enabled", "finapp_bnpl_dispute_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+
+        assertThat(threshold(expressions.get("BnplAccrualLagging"))).isEqualTo(BnplObjectives.ACCRUAL_LAG.toSeconds());
+        assertThat(threshold(expressions.get("BnplApplicationAwaitingTooLong")))
+                .isEqualTo(BnplObjectives.awaitingDecision().toSeconds());
+        String scrape = scrape();
+        assertThat(scrape).contains("finapp_bnpl_threeway_proof{verdict=\"FAILS\"}",
+                "finapp_bnpl_subledger_proof{verdict=\"FAILS\"}", "finapp_bnpl_replay{verdict=\"DIVERGED\"}",
+                "finapp_bnpl_terms_active{product=\"BNPL_PAY_IN_4\"}", "finapp_bnpl_terms_active{product=\"BNPL_PAY_IN_N\"}",
+                "finapp_ledger_negative_positions{purpose=\"MERCHANT_PAYABLE\"}");
+        assertThat(expressions.get("BnplTermsNoneActive")).contains("bnpl_offered=\"true\"");
+
+        assertThat(bnpl).allSatisfy(rule -> {
+            assertThat(String.valueOf(rule.get("for"))).matches("\\d+[smhd]");
+            assertThat(map(rule.get("labels")).get("severity")).isIn("page", "ticket");
+            assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
+        });
+        Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(BNPL_RULES));
         assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
                 .anySatisfy(pattern -> assertThat(
                         FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());

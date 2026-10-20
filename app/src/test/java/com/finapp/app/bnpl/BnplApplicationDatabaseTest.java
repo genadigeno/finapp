@@ -552,6 +552,11 @@ class BnplApplicationDatabaseTest {
             public boolean hintSession(Connection unitOfWork, UUID checkoutSession) {
                 return applicationStore.hintSession(unitOfWork, checkoutSession);
             }
+
+            @Override
+            public java.util.Optional<java.time.Duration> oldestAwaitingDecisionAge(Connection unitOfWork) {
+                return applicationStore.oldestAwaitingDecisionAge(unitOfWork);
+            }
         };
     }
 

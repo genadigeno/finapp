@@ -319,3 +319,9 @@ balance of its own and every money effect is one journal entry in its own transa
   orders; `P12-TST-001` asserts lock waits on L0, B3, B5, B4, L6 and (P) and measures the shared
   capital and fee-income rows (plan §21).
 - Accepted by the Phase 12 exit review (`P12-DOC-001`), read against the code first.
+- **The activation gate, written (`P12-TSK-026`, 2026-10-20).** `PHASE_12_PLAN.md` §1.1's closed production state and its
+  preconditions are `OPERATIONS_RUNBOOK.md` §8.1, in order, each a person's recorded act: lending's §7.4 preconditions
+  (#13 and #14 answered, a real bureau adapter, a credit policy reading it, lending capital recognised), legal review of
+  the merchant agreement and of the consumer terms, the merchant-fee schedule approved and assigned, a four-eyes BNPL terms
+  activation - and, last, the scrape targets labelled `bnpl_offered="true"`, which arms `BnplTermsNoneActive`
+  (`infra/prometheus/rules/bnpl.yml`).

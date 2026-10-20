@@ -189,6 +189,23 @@ public final class JdbcBnplConditionStore implements BnplConditionStore {
         }
     }
 
+    @Override
+    public Map<BnplProduct, Map<BnplObligationStatus, Long>> obligationsByProductAndStatus(Connection unitOfWork) {
+        Map<BnplProduct, Map<BnplObligationStatus, Long>> counts = new EnumMap<>(BnplProduct.class);
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT product, status, count(*) FROM bnpl.bnpl_obligation GROUP BY product, status");
+                ResultSet rows = select.executeQuery()) {
+            while (rows.next()) {
+                counts.computeIfAbsent(BnplProduct.valueOf(rows.getString(1)),
+                        product -> new EnumMap<>(BnplObligationStatus.class))
+                        .put(BnplObligationStatus.valueOf(rows.getString(2)), rows.getLong(3));
+            }
+            return counts;
+        } catch (SQLException failure) {
+            throw failed("counting BNPL obligations", failure);
+        }
+    }
+
     private static BnplStorageException failed(String operation, SQLException failure) {
         Objects.requireNonNull(failure, "failure");
         return new BnplStorageException("bnpl storage failed " + operation + ": SQLSTATE " + failure.getSQLState());

@@ -56,7 +56,8 @@ class BnplOriginationScheduleTest {
             + " test properties turn it off")
     void offInTestContexts() throws NoSuchMethodException, IOException {
         Method bean = BnplOfferBeans.class.getDeclaredMethod("bnplOriginationSchedule", BnplOrigination.class,
-                BnplTransactions.class, BnplOriginationMetrics.class, Duration.class, int.class, Duration.class);
+                BnplTransactions.class, BnplOriginationMetrics.class, Duration.class, int.class, Duration.class,
+                BnplFlowScope.class);
         ConditionalOnProperty condition = bean.getAnnotation(ConditionalOnProperty.class);
         assertThat(condition.name()).containsExactly("finapp.bnpl.origination.sweeper.enabled");
         assertThat(condition.havingValue()).isEqualTo("true");

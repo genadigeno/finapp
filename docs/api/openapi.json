@@ -10500,6 +10500,41 @@
         },
         "type": "object"
       },
+      "BnplBookTie": {
+        "properties": {
+          "creditBalanceMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "outstandingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "threeWayFailures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "threeWayHolds": {
+            "type": "boolean"
+          },
+          "tiesToProducts": {
+            "type": "boolean"
+          },
+          "trialBalanceZero": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "BnplConditionView": {
         "properties": {
           "bucket": {
@@ -10514,6 +10549,65 @@
           },
           "delinquency": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplDelinquencyReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BnplDelinquencyRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplDelinquencyRow": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "defaulted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feesDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "obligations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -11610,6 +11704,82 @@
         },
         "type": "object"
       },
+      "BnplMerchantFinancingReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BnplMerchantFinancingRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplMerchantFinancingRow": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "exposureMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeReturnedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "grossMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ledgerPayableMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "merchantLegsFailing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "netFinancedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payableDebitMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "purchases": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "refundedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "refunds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tiesToLedger": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "BnplMerchantPurchaseRefundView": {
         "properties": {
           "amount": {
@@ -12023,6 +12193,83 @@
         },
         "type": "object"
       },
+      "BnplPortfolioReport": {
+        "properties": {
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/BnplBookTie"
+            },
+            "type": "array"
+          },
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "proofs": {
+            "$ref": "#/components/schemas/BnplProofCounts"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BnplPortfolioRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplPortfolioRow": {
+        "properties": {
+          "active": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "closed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "creditBalanceMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "feesDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestAccruedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outstandingMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalDueMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "BnplProductOptionView": {
         "properties": {
           "plans": {
@@ -12037,6 +12284,42 @@
           "termsVersion": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplProofCounts": {
+        "properties": {
+          "diverged": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "divergedAgreements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "failingAgreements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "holding": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "identical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -12064,6 +12347,87 @@
           "currency",
           "reason"
         ],
+        "type": "object"
+      },
+      "BnplRefundReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BnplRefundRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplRefundRow": {
+        "properties": {
+          "amountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "door": {
+            "type": "string"
+          },
+          "excessToCreditBalanceMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "excessToWalletMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeReturnedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "interestReleasedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lateFeesReleasedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outstandingReducedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payableDebitMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principalCancelledMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product": {
+            "type": "string"
+          },
+          "refunds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tiesToLedger": {
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "BnplRepaymentAllocationView": {
@@ -31738,6 +32102,114 @@
               }
             },
             "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/bnpl/delinquency": {
+      "get": {
+        "operationId": "readBnplDelinquencyReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDelinquencyReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/bnpl/merchant-financing": {
+      "get": {
+        "operationId": "readBnplMerchantFinancingReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplMerchantFinancingReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/bnpl/portfolio": {
+      "get": {
+        "operationId": "readBnplPortfolioReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplPortfolioReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/bnpl/refunds": {
+      "get": {
+        "operationId": "readBnplRefundReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplRefundReport"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

@@ -330,6 +330,12 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/bnpl-agreements/{id}", PermissionName.BNPL_INVESTIGATE),
                     entry("GET /v1/operator/bnpl-agreements/{id}/explanation", PermissionName.BNPL_INVESTIGATE),
                     entry("POST /v1/operator/bnpl-agreements/{id}/replay", PermissionName.BNPL_INVESTIGATE),
+                    // P12-TSK-026: the four BNPL operations reports - amounts as of a business date in one snapshot, each
+                    // serving recorded bnpl.ReportRead.
+                    entry("GET /v1/operator/reports/bnpl/portfolio", PermissionName.BNPL_INVESTIGATE),
+                    entry("GET /v1/operator/reports/bnpl/merchant-financing", PermissionName.BNPL_INVESTIGATE),
+                    entry("GET /v1/operator/reports/bnpl/refunds", PermissionName.BNPL_INVESTIGATE),
+                    entry("GET /v1/operator/reports/bnpl/delinquency", PermissionName.BNPL_INVESTIGATE),
                     // The operator's BNPL dispute doors (P12-TSK-023, ADR-0106 decision 5): BNPL_DISPUTE_RESOLVE (held by
                     // BNPL_SERVICING_AGENT) - four-eyes is inside the permission, two distinct holders, never between
                     // roles; the read audited. The negatives are BnplDisputeDeskTest's.

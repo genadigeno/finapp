@@ -37,4 +37,10 @@ public interface BnplConditionStore {
 
     /** {@code ACTIVE} obligations whose latest {@code DEFAULT} change set the flag, by product. Counts only. */
     Map<BnplProduct, Long> defaultedByProduct(Connection unitOfWork);
+
+    /**
+     * Every obligation by product and status (`P12-TSK-026`; {@code finapp.bnpl.obligations{product, status}}, lending's
+     * {@code LoanStore#countsByProductAndStatus}) - the gauges' store, beside the condition counts. Counts only.
+     */
+    Map<BnplProduct, Map<BnplObligationStatus, Long>> obligationsByProductAndStatus(Connection unitOfWork);
 }

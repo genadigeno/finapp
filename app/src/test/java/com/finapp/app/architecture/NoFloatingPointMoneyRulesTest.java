@@ -374,6 +374,14 @@ class NoFloatingPointMoneyRulesTest {
                     // IDENTICAL and DIVERGED - through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. The proofs compare Money with Money; no figure is ever published (ADR-0072).
                     "com.finapp.app.bnpl.BnplProofMetrics",
+                    // P12-TSK-026. The SAME cases as LoanCountMetrics and LoanAwaitingDecisionMetrics, for bnpl: obligation
+                    // COUNTS per product and status, and the oldest application awaiting a decision's wait in SECONDS,
+                    // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - counts and a
+                    // duration, never an amount (ADR-0072).
+                    "com.finapp.app.bnpl.BnplObligationMetrics",
+                    "com.finapp.app.bnpl.BnplObligationMetrics$Cached",
+                    "com.finapp.app.bnpl.BnplAwaitingDecisionMetrics",
+                    "com.finapp.app.bnpl.BnplAwaitingDecisionMetrics$Cached",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

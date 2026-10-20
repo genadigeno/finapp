@@ -165,9 +165,10 @@ public class BnplServicingBeans {
             BnplAccrualMetrics bnplAccrualMetrics,
             @Value("${finapp.bnpl.servicing.poll:PT30S}") Duration pollInterval,
             @Value("${finapp.bnpl.servicing.batch:50}") int batch,
-            @Value("${finapp.bnpl.servicing.retry:PT15M}") Duration retryCadence) {
+            @Value("${finapp.bnpl.servicing.retry:PT15M}") Duration retryCadence,
+            BnplFlowScope bnplFlowScope) {
         return new BnplServicingSchedule(bnplServicing, bnplAccruals, bnplTransactions, bnplServicingMetrics,
-                bnplAccrualMetrics, pollInterval, batch, retryCadence);
+                bnplAccrualMetrics, pollInterval, batch, retryCadence, bnplFlowScope);
     }
 
     /** Whether this instance runs the servicing sweep - eager either way (`P1-TSK-029`'s rule). */

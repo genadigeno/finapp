@@ -4,6 +4,7 @@ import com.finapp.bnpl.BnplApplicationId;
 import com.finapp.bnpl.BnplOfferId;
 import com.finapp.bnpl.BnplOrigination;
 import com.finapp.bnpl.BnplProduct;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.platform.security.SecurityContext;
 import java.time.Duration;
 import java.util.List;
@@ -37,6 +38,7 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration permit;
+    private final BnplFlowScope flow;
     private ScheduledExecutorService executor;
 
     public BnplOriginationSchedule(
@@ -46,6 +48,18 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration permit) {
+        this(origination, transactions, metrics, pollInterval, batch, permit, BnplFlowScope.NONE);
+    }
+
+    /** With the steps' spans, each leg in its application's or offer's stored correlation (`P12-TSK-026`). */
+    public BnplOriginationSchedule(
+            BnplOrigination origination,
+            BnplTransactions transactions,
+            BnplOriginationMetrics metrics,
+            Duration pollInterval,
+            int batch,
+            Duration permit,
+            BnplFlowScope flow) {
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         this.permit = Objects.requireNonNull(permit, "permit");
@@ -59,6 +73,7 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
         this.origination = Objects.requireNonNull(origination, "origination");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.flow = Objects.requireNonNull(flow, "flow");
     }
 
     /**
@@ -74,8 +89,8 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
                     transactions.inTransaction(uow -> origination.claimApplications(uow, batch, permit));
             for (BnplApplicationId id : applications) {
                 try {
-                    BnplOrigination.Outcome step = transactions.inTransaction(
-                            uow -> origination.originate(uow, id, SecurityContext.require()));
+                    BnplOrigination.Outcome step = flow.forApplication(BnplSpans.OFFER, id, () -> transactions.inTransaction(
+                            uow -> origination.originate(uow, id, SecurityContext.require())));
                     metrics.record(step);
                 } catch (RuntimeException failure) {
                     // The claim's permit lapses and a later tick steps again; the class name only - never a party.
@@ -86,8 +101,8 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
             List<BnplOfferId> offers = transactions.inTransaction(uow -> origination.claimOffers(uow, batch, permit));
             for (BnplOfferId id : offers) {
                 try {
-                    Optional<BnplProduct> expired = transactions.inTransaction(
-                            uow -> origination.expire(uow, id, SecurityContext.require()));
+                    Optional<BnplProduct> expired = flow.forOffer(BnplSpans.EXPIRE, id, () -> transactions.inTransaction(
+                            uow -> origination.expire(uow, id, SecurityContext.require())));
                     expired.ifPresent(product -> metrics.record(product, BnplOriginationMetrics.Outcome.EXPIRED));
                 } catch (RuntimeException failure) {
                     metrics.failed(BnplOriginationMetrics.Step.OFFER);

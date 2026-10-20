@@ -35,3 +35,6 @@ scrape_configs:
           # "false" until OPERATIONS_RUNBOOK.md section 7.4's activation gate opens; local development offers nothing
           # unless a developer activates terms, and then sets this to "true".
           lending_offered: "false"
+          # Whether this environment OFFERS BNPL (P12-TSK-026): the BnplTermsNoneActive alert reads it, the same way.
+          # Production's expected state is "false" until OPERATIONS_RUNBOOK.md section 8.1's activation gate opens.
+          bnpl_offered: "false"
