@@ -111,9 +111,10 @@ public class BnplOfferBeans {
             BnplOriginationMetrics bnplOriginationMetrics,
             @Value("${finapp.bnpl.origination.poll:PT5S}") Duration pollInterval,
             @Value("${finapp.bnpl.origination.batch:20}") int batch,
-            @Value("${finapp.bnpl.origination.permit:PT30S}") Duration permit) {
+            @Value("${finapp.bnpl.origination.permit:PT30S}") Duration permit,
+            BnplFlowScope bnplFlowScope) {
         return new BnplOriginationSchedule(bnplOrigination, bnplTransactions, bnplOriginationMetrics, pollInterval, batch,
-                permit);
+                permit, bnplFlowScope);
     }
 
     /** Whether this instance runs the origination sweep - eager either way (`P1-TSK-029`'s rule). */

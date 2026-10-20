@@ -34,7 +34,7 @@ class BnplServicingScheduleTest {
     void offInTestContexts() throws NoSuchMethodException, IOException {
         Method bean = BnplServicingBeans.class.getDeclaredMethod("bnplServicingSchedule", BnplServicing.class,
                 BnplAccruals.class, BnplTransactions.class, BnplServicingMetrics.class, BnplAccrualMetrics.class,
-                Duration.class, int.class, Duration.class);
+                Duration.class, int.class, Duration.class, BnplFlowScope.class);
         ConditionalOnProperty condition = bean.getAnnotation(ConditionalOnProperty.class);
         assertThat(condition.name()).containsExactly("finapp.bnpl.servicing.sweeper.enabled");
         assertThat(condition.havingValue()).isEqualTo("true");

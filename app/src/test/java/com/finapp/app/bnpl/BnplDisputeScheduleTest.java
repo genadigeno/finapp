@@ -33,7 +33,7 @@ class BnplDisputeScheduleTest {
     void offInTestContexts() throws NoSuchMethodException, IOException {
         Method bean = BnplDisputeBeans.class.getDeclaredMethod("bnplDisputeSchedule", BnplDisputes.class,
                 BnplAccruals.class, BnplTransactions.class, BnplDisputeMetrics.class, BnplRefundMetrics.class,
-                IdGenerator.class, Duration.class, int.class, Duration.class);
+                IdGenerator.class, Duration.class, int.class, Duration.class, BnplFlowScope.class);
         ConditionalOnProperty condition = bean.getAnnotation(ConditionalOnProperty.class);
         assertThat(condition.name()).containsExactly("finapp.bnpl.dispute.sweeper.enabled");
         assertThat(condition.havingValue()).isEqualTo("true");

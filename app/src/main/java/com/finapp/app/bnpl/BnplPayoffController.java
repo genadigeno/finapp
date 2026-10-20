@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplPayoffController {
 
     @NonNull private final BnplPayoffDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /**
      * Quotes the payoff of the caller's own agreement: what ends it on the good-through date - today when the body names
@@ -47,7 +49,7 @@ public class BnplPayoffController {
             @Valid @RequestBody BnplPayoffQuoteBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.quote(BnplOfferController.current(request), id, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.QUOTE, id, () -> desk.quote(BnplOfferController.current(request), id, idempotencyKey, body));
     }
 
     /**
@@ -65,7 +67,7 @@ public class BnplPayoffController {
             @Valid @RequestBody BnplPayoffBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.execute(BnplOfferController.current(request), id, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.PAYOFF, id, () -> desk.execute(BnplOfferController.current(request), id, idempotencyKey, body));
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplOperatorRefundController {
 
     @NonNull private final BnplRefundDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /** An operator refunds the BNPL purchase on its merchant's behalf. */
     @PostMapping(path = "/{id}/refunds", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -43,6 +45,6 @@ public class BnplOperatorRefundController {
             @PathVariable("id") String id,
             @Valid @RequestBody BnplRefundController.BnplRefundBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return desk.refundAsOperator(id, idempotencyKey, body);
+        return flow.doorOnPurchase(BnplSpans.REFUND, id, () -> desk.refundAsOperator(id, idempotencyKey, body));
     }
 }

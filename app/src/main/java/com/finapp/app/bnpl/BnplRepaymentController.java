@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplRepaymentController {
 
     @NonNull private final BnplRepaymentDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /** Repays the caller's own agreement from their wallet. */
     @PostMapping(path = "/{id}/repayments", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -46,7 +48,7 @@ public class BnplRepaymentController {
             @Valid @RequestBody BnplRepaymentBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.repay(BnplOfferController.current(request), id, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.REPAY, id, () -> desk.repay(BnplOfferController.current(request), id, idempotencyKey, body));
     }
 
     /** The caller's own agreement's repayments and their allocations, newest first. */

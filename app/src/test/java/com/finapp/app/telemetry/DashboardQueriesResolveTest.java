@@ -89,6 +89,8 @@ class DashboardQueriesResolveTest {
                     "product", "policy_version", "decision_maker", "reason_code", "source_kind", "status", "verdict",
                     // P11-TSK-030: the lending row groups by payout path, billed or fee kind and delinquency bucket.
                     "payout", "kind", "bucket",
+                    // P12-TSK-026: the BNPL row groups by plan and servicing step too - labels, not series.
+                    "plan", "step",
                     // P7-TSK-015: the rail and dispute row groups by rail, judged type and
                     // dispute stage - labels, not series.
                     "rail", "type", "stage",
@@ -227,6 +229,42 @@ class DashboardQueriesResolveTest {
                 "finapp_credit_exposure_census", "finapp_lending_capital_headroom_low", "finapp_lending_terms_active",
                 "finapp_lending_origination_sweeper_enabled", "finapp_lending_disbursement_sweeper_enabled",
                 "finapp_lending_payout_sweeper_enabled", "finapp_lending_servicing_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+    }
+
+    @Test
+    @DisplayName("the BNPL row: nine panels reading every BNPL series of PHASE_12_PLAN section 15, each published on a"
+            + " fresh instance (P12-TSK-026)")
+    void theBnplRowResolves() throws Exception {
+        JsonNode panels = JsonMapper.builder().build().readTree(RepositoryPaths.read(DASHBOARD)).path("panels");
+        List<String> rowQueries = new java.util.ArrayList<>();
+        int count = -1;
+        for (JsonNode panel : panels) {
+            boolean row = "row".equals(panel.path("type").asString());
+            if (row && panel.path("title").asString().startsWith("BNPL")) {
+                count = 0;
+            } else if (row && count >= 0) {
+                break;
+            } else if (count >= 0) {
+                count++;
+                panel.path("targets").valueStream().map(target -> target.path("expr").stringValue()).forEach(rowQueries::add);
+            }
+        }
+        assertThat(count).as("the BNPL row's panels").isEqualTo(9);
+        Set<String> queried = rowQueries.stream().flatMap(DashboardQueriesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        // Every BNPL row of PHASE_12_PLAN.md section 15 and the negative merchant payables, in their published form.
+        assertThat(queried).containsExactlyInAnyOrder(
+                "finapp_bnpl_application_total", "finapp_bnpl_eligibility_total", "finapp_bnpl_offer_total",
+                "finapp_bnpl_purchase_total", "finapp_bnpl_origination_total", "finapp_bnpl_accrual_total",
+                "finapp_bnpl_billing_total", "finapp_bnpl_servicing_total", "finapp_bnpl_collection_total",
+                "finapp_bnpl_fee_total", "finapp_bnpl_accrual_lag_seconds", "finapp_bnpl_application_awaiting_age_seconds",
+                "finapp_bnpl_repayment_total", "finapp_bnpl_payoff_total", "finapp_bnpl_allocation_anomaly_total",
+                "finapp_bnpl_refund_total", "finapp_bnpl_dispute_total", "finapp_bnpl_reversal_total",
+                "finapp_bnpl_waiver_total", "finapp_bnpl_obligations", "finapp_bnpl_delinquency", "finapp_bnpl_default",
+                "finapp_bnpl_threeway_proof", "finapp_bnpl_subledger_proof", "finapp_bnpl_replay",
+                "finapp_ledger_negative_positions", "finapp_bnpl_terms_active", "finapp_bnpl_origination_sweeper_enabled",
+                "finapp_bnpl_servicing_sweeper_enabled", "finapp_bnpl_dispute_sweeper_enabled");
         assertThat(publishedSeriesNames()).containsAll(queried);
     }
 

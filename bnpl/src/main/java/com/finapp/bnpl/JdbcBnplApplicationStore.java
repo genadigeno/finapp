@@ -184,6 +184,20 @@ public final class JdbcBnplApplicationStore implements BnplApplicationStore {
         return hint(unitOfWork, "checkout_session_id", Objects.requireNonNull(checkoutSession, "checkoutSession"));
     }
 
+    @Override
+    public Optional<Duration> oldestAwaitingDecisionAge(Connection unitOfWork) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT floor(extract(epoch FROM statement_timestamp() - min(submitted_at)) * 1000)::bigint"
+                        + " FROM bnpl.bnpl_application WHERE status = 'AWAITING_DECISION'");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            long millis = row.getLong(1);
+            return row.wasNull() ? Optional.empty() : Optional.of(Duration.ofMillis(Math.max(0, millis)));
+        } catch (SQLException failure) {
+            throw failed("reading the oldest BNPL application awaiting a decision", failure);
+        }
+    }
+
     /** The permit pulled to now - only forward, only while awaiting; the column name is this class's own constant. */
     private static boolean hint(Connection unitOfWork, String column, UUID value) {
         try (PreparedStatement update = unitOfWork.prepareStatement(

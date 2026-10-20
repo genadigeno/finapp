@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplObligationId;
 import com.finapp.bnpl.BnplServicing;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.bnpl.ServicingOutcome;
 import com.finapp.platform.security.SecurityContext;
 import java.time.Duration;
@@ -49,6 +50,7 @@ public final class BnplServicingSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration retryCadence;
+    private final BnplFlowScope flow;
     private ScheduledExecutorService executor;
 
     public BnplServicingSchedule(
@@ -60,6 +62,21 @@ public final class BnplServicingSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration retryCadence) {
+        this(servicing, accruals, transactions, metrics, accrualMetrics, pollInterval, batch, retryCadence,
+                BnplFlowScope.NONE);
+    }
+
+    /** With the step's span, each leg in its obligation's stored correlation (`P12-TSK-026`). */
+    public BnplServicingSchedule(
+            BnplServicing servicing,
+            BnplAccruals accruals,
+            BnplTransactions transactions,
+            BnplServicingMetrics metrics,
+            BnplAccrualMetrics accrualMetrics,
+            Duration pollInterval,
+            int batch,
+            Duration retryCadence,
+            BnplFlowScope flow) {
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         this.retryCadence = Objects.requireNonNull(retryCadence, "retryCadence");
@@ -75,6 +92,7 @@ public final class BnplServicingSchedule implements SmartLifecycle {
         this.accrualMetrics = Objects.requireNonNull(accrualMetrics, "accrualMetrics");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.flow = Objects.requireNonNull(flow, "flow");
     }
 
     /**
@@ -88,24 +106,32 @@ public final class BnplServicingSchedule implements SmartLifecycle {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
             List<BnplObligationId> due = transactions.inTransaction(uow -> servicing.claim(uow, batch, retryCadence));
             for (BnplObligationId obligation : due) {
-                try {
-                    // T-acc first, in transactions of its own; a failed accrual leaves the step to the claim's cadence.
-                    if (!accruedFirst(obligation)) {
-                        continue;
-                    }
-                    ServicingOutcome step = transactions.inTransaction(uow -> servicing.service(uow, obligation));
-                    if (step.kind() == ServicingOutcome.Kind.BEHIND_ACCRUAL && accruedFirst(obligation)) {
-                        // A midnight passed between T-acc and the step: T-acc once more, the step once more - never a loop.
-                        step = transactions.inTransaction(uow -> servicing.service(uow, obligation));
-                    }
-                    metrics.record(step);
-                } catch (RuntimeException failure) {
-                    // The claim's cadence stands and a later tick steps again; the class name only - never a party.
-                    metrics.failed(failure);
-                    log.warn("BNPL servicing step failed: {}", failure.getClass().getSimpleName());
-                }
+                flow.forObligation(BnplSpans.SERVICE, obligation, () -> {
+                    step(obligation);
+                    return null;
+                });
             }
             return due.size();
+        }
+    }
+
+    /** One obligation's T-acc and T-svc, its meters after each commit; a failure counted and logged, never thrown. */
+    private void step(BnplObligationId obligation) {
+        try {
+            // T-acc first, in transactions of its own; a failed accrual leaves the step to the claim's cadence.
+            if (!accruedFirst(obligation)) {
+                return;
+            }
+            ServicingOutcome step = transactions.inTransaction(uow -> servicing.service(uow, obligation));
+            if (step.kind() == ServicingOutcome.Kind.BEHIND_ACCRUAL && accruedFirst(obligation)) {
+                // A midnight passed between T-acc and the step: T-acc once more, the step once more - never a loop.
+                step = transactions.inTransaction(uow -> servicing.service(uow, obligation));
+            }
+            metrics.record(step);
+        } catch (RuntimeException failure) {
+            // The claim's cadence stands and a later tick steps again; the class name only - never a party.
+            metrics.failed(failure);
+            log.warn("BNPL servicing step failed: {}", failure.getClass().getSimpleName());
         }
     }
 

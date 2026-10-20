@@ -418,6 +418,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/explanation",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/replay",
+                        // P12-TSK-026: the BNPL operations reports (BNPL_INVESTIGATE, recorded per serving).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/bnpl/portfolio",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/bnpl/merchant-financing",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/bnpl/refunds",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/bnpl/delinquency",
                         // P12-TSK-023: the dispute doors - the customer's opening (keyed, 201) and withdrawal, the
                         // merchant's list of its open disputes and its response over its own key (another merchant's the
                         // uniform 404), the operator's audited read and the resolution with its four-eyes approval and

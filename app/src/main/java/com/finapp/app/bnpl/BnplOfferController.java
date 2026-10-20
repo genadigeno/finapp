@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.identity.Session;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -41,6 +42,7 @@ public class BnplOfferController {
 
     @NonNull private final BnplOfferDesk desk;
     @NonNull private final BnplAgreementDesk agreements;
+    @NonNull private final BnplFlowScope flow;
 
     /** The caller's own offer, its terms re-derived and verified against their stored hashes. */
     @GetMapping("/{id}")
@@ -55,7 +57,7 @@ public class BnplOfferController {
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.decline(current(request), id, idempotencyKey);
+        return flow.doorOnOffer(BnplSpans.DECLINE, id, () -> desk.decline(current(request), id, idempotencyKey));
     }
 
     /**
@@ -71,8 +73,8 @@ public class BnplOfferController {
             @Valid @RequestBody BnplAcceptanceBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return agreements.accept(current(request), id, idempotencyKey, body,
-                Optional.ofNullable(request.getRemoteAddr()), Optional.ofNullable(request.getHeader(HttpHeaders.USER_AGENT)));
+        return flow.door(BnplSpans.ACCEPT, () -> agreements.accept(current(request), id, idempotencyKey, body,
+                Optional.ofNullable(request.getRemoteAddr()), Optional.ofNullable(request.getHeader(HttpHeaders.USER_AGENT))));
     }
 
     /**

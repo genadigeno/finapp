@@ -5,6 +5,7 @@ import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplDisputeId;
 import com.finapp.bnpl.BnplDisputes;
 import com.finapp.bnpl.BnplRefunds;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -47,6 +48,7 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration retryCadence;
+    private final BnplFlowScope flow;
     private ScheduledExecutorService executor;
 
     public BnplDisputeSchedule(
@@ -59,6 +61,22 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
             Duration pollInterval,
             int batch,
             Duration retryCadence) {
+        this(disputes, accruals, transactions, metrics, refundMetrics, ids, pollInterval, batch, retryCadence,
+                BnplFlowScope.NONE);
+    }
+
+    /** With the step's span, each leg in its dispute's obligation's stored correlation (`P12-TSK-026`). */
+    public BnplDisputeSchedule(
+            BnplDisputes disputes,
+            BnplAccruals accruals,
+            BnplTransactions transactions,
+            BnplDisputeMetrics metrics,
+            BnplRefundMetrics refundMetrics,
+            IdGenerator ids,
+            Duration pollInterval,
+            int batch,
+            Duration retryCadence,
+            BnplFlowScope flow) {
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         this.retryCadence = Objects.requireNonNull(retryCadence, "retryCadence");
@@ -75,6 +93,7 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.refundMetrics = Objects.requireNonNull(refundMetrics, "refundMetrics");
         this.ids = Objects.requireNonNull(ids, "ids");
+        this.flow = Objects.requireNonNull(flow, "flow");
     }
 
     /**
@@ -91,7 +110,8 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
             for (BnplDisputeId dispute : due) {
                 CorrelationId correlation = CorrelationId.generate(ids);
                 try {
-                    Optional<BnplDisputes.Acted> lapsed = lapsed(dispute, system, correlation);
+                    Optional<BnplDisputes.Acted> lapsed = flow.forDispute(BnplSpans.DISPUTE_LAPSE, dispute,
+                            () -> lapsed(dispute, system, correlation));
                     lapsed.ifPresent(acted -> {
                         metrics.record(BnplDisputeMetrics.Outcome.of(acted.outcome()));
                         acted.refund().ifPresent(refunded -> refundMetrics.record(refunded.kind(),

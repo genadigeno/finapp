@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -35,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplCorrectionController {
 
     @NonNull private final BnplCorrectionDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /** Proposes the exact reversal of one of the agreement's repayments, with a reason; nothing is posted. */
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -46,7 +48,7 @@ public class BnplCorrectionController {
             @PathVariable("id") String id,
             @PathVariable("repaymentId") String repaymentId,
             @Valid @RequestBody BnplReversalProposalBody body) {
-        return desk.proposeReversal(id, repaymentId, idempotencyKey, body.reason());
+        return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.proposeReversal(id, repaymentId, idempotencyKey, body.reason()));
     }
 
     /**
@@ -61,7 +63,7 @@ public class BnplCorrectionController {
             @PathVariable("id") String id,
             @PathVariable("repaymentId") String repaymentId,
             @Valid @RequestBody BnplReversalDecisionBody body) {
-        return desk.approveReversal(id, repaymentId, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.approveReversal(id, repaymentId, idempotencyKey, body));
     }
 
     /** Rejects the named pending reversal - the proposer's withdrawal included; a reason is required. */
@@ -73,7 +75,7 @@ public class BnplCorrectionController {
             @PathVariable("id") String id,
             @PathVariable("repaymentId") String repaymentId,
             @Valid @RequestBody BnplReversalDecisionBody body) {
-        return desk.rejectReversal(id, repaymentId, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.rejectReversal(id, repaymentId, idempotencyKey, body));
     }
 
     /** Proposes waiving an amount of one of the agreement's late fees, with a reason; nothing is posted. */
@@ -85,7 +87,7 @@ public class BnplCorrectionController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody BnplWaiverProposalBody body) {
-        return desk.proposeWaiver(id, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.proposeWaiver(id, idempotencyKey, body));
     }
 
     /**
@@ -100,7 +102,7 @@ public class BnplCorrectionController {
             @PathVariable("id") String id,
             @PathVariable("waiverId") String waiverId,
             @Valid @RequestBody BnplWaiverDecisionBody body) {
-        return desk.approveWaiver(id, waiverId, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.approveWaiver(id, waiverId, idempotencyKey, body));
     }
 
     /** Rejects the named pending waiver - the proposer's withdrawal included; a reason is required. */
@@ -112,7 +114,7 @@ public class BnplCorrectionController {
             @PathVariable("id") String id,
             @PathVariable("waiverId") String waiverId,
             @Valid @RequestBody BnplWaiverDecisionBody body) {
-        return desk.rejectWaiver(id, waiverId, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.rejectWaiver(id, waiverId, idempotencyKey, body));
     }
 
     // -----------------------------------------------------------------

@@ -300,7 +300,19 @@ public enum BnplAuditAction implements AuditableAction {
             "An investigator holding BNPL_INVESTIGATE replayed a BNPL agreement by its pinned engines and terms (POST"
                     + " /v1/operator/bnpl-agreements/{id}/replay), with a reason: IDENTICAL or DIVERGED and the kinds that"
                     + " diverged, never a figure. Its target the agreement.",
-            true);
+            true),
+
+    /** An investigator was served a BNPL operations report (`P12-TSK-026`). */
+    REPORT_READ(
+            "bnpl.ReportRead",
+            "A holder of BNPL_INVESTIGATE was served a BNPL operations report as of a business date (GET"
+                    + " /v1/operator/reports/bnpl/{portfolio,merchant-financing,refunds,delinquency}): outstanding,"
+                    + " merchant financing exposure, refund impact on outstanding and delinquency sums - read in one"
+                    + " read-only REPEATABLE READ snapshot, this record committed in a transaction of its own before the"
+                    + " answer, so no report is served unrecorded. Amounts are an audited report, never a metric"
+                    + " (ADR-0072). Its target the report; the summary names the report, its date, whether the date is"
+                    + " reportable and the row count - never an amount, a party, a merchant or an obligation.",
+            false);
 
     private final String code;
     private final String description;

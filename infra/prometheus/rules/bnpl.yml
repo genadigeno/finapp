@@ -1,0 +1,201 @@
+# BNPL alerts (P12-TSK-026, PHASE_12_PLAN.md section 15; ADR-0101...ADR-0106). Each alert's procedure is
+# OPERATIONS_RUNBOOK.md section 8.
+#
+# Every expression names a series the application publishes - AlertRulesResolveTest#theBnplRulesResolve checks each one
+# against a live scrape and holds each threshold equal to the objective the code declares
+# (com.finapp.app.telemetry.BnplObjectives); BnplAlertRulesTest evaluates every rule over a fresh instance's scrape whose
+# one sample breaks its condition and proves that alert, and only it, fires - and that none fires on a healthy scrape. The
+# expressions keep to the small grammar that test evaluates (RuleEvaluator: a selector, max/min/sum with an optional by,
+# increase over a window, a comparison with a number, x != x and or); a rule outside it fails the test rather than going
+# unchecked.
+#
+# Conventions (lending.yml's):
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with max(), never sum() -
+#   the fleet's alert does not double-fire and does not depend on any one instance. Counters are per instance:
+#   sum(increase(...)). The sweeper flags are per instance's configuration, so they are alerted per series, the instance
+#   label naming which one.
+# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so the threshold
+#   rules cannot see it and BnplGaugesUnreadable can.
+# - Never a figure anywhere: labels and annotations name products, verdicts, steps and states only - no amount, rate,
+#   balance, DPD, party, merchant, purchase or agreement exists in any BNPL series to name (ADR-0072, PHASE_12_PLAN.md
+#   section 11). Amounts are the audited reports' (GET /v1/operator/reports/bnpl/*), agreements the explanation door's.
+# - Shared, not repeated here: lending capital headroom (LendingCapitalHeadroomLow) and the credit exposure census
+#   (CreditExposureCensusFailing) are lending.yml's - BNPL principal is a term of both (ADR-0104, credit's census v3).
+# - bnpl_offered is a TARGET label the environment's scrape configuration sets, never a metric tag: an environment that
+#   offers BNPL labels its application targets bnpl_offered="true" (the last step of the activation gate,
+#   OPERATIONS_RUNBOOK.md section 8.1); production does not until that gate opens - no ACTIVE terms is its expected state.
+# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+
+groups:
+  - name: bnpl
+    rules:
+      - alert: BnplAccrualLagging
+        # An ACTIVE pay-in-N obligation has left an elapsed date of its accrual span unaccrued for more than a day past its
+        # end (P12-TSK-017's hand-off): T-acc runs before every servicing step, so a day's lag is a missed business date.
+        expr: max(finapp_bnpl_accrual_lag_seconds) > 86400
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: "BNPL interest accrual is more than a day behind"
+          description: "The oldest unaccrued elapsed date ended {{ $value | humanizeDuration }} ago. Check finapp_bnpl_servicing_sweeper_enabled and finapp_bnpl_accrual_total by outcome; the sweep catches up born-once (OPERATIONS_RUNBOOK.md section 8.2)."
+
+      - alert: BnplAccrualFailing
+        # T-acc calls failing and rolling back for a quarter hour running: the obligation's step is not taken, its claim's
+        # cadence retries - so a call failing on every tick is otherwise visible only as the lag, a day later.
+        expr: sum(increase(finapp_bnpl_accrual_total{outcome="failed"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "BNPL accrual calls keep failing"
+          description: "T-acc calls failed in each of the last fifteen minutes; their obligations are not serviced until one succeeds. Read the instances' warn lines for the exception's class (OPERATIONS_RUNBOOK.md section 8.2)."
+
+      - alert: BnplApplicationAwaitingTooLong
+        # An application AWAITING_DECISION longer than the longest credit request validity and an hour (7 d 1 h): credit
+        # closes a request at its validity at the latest and the origination step then closes the application undecided,
+        # so one still waiting means the origination sweep is not acting on it (the Phase 11 gate's A5-03).
+        expr: max(finapp_bnpl_application_awaiting_age_seconds) > 608400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A BNPL application has waited past every credit request's validity"
+          description: "The oldest application AWAITING_DECISION was submitted {{ $value | humanizeDuration }} ago. Check finapp_bnpl_origination_sweeper_enabled on every instance and finapp_bnpl_origination_total{outcome=\"failed\"} (OPERATIONS_RUNBOOK.md section 8.6)."
+
+      - alert: BnplOriginationStepFailing
+        # Origination steps or offer expiries failing and rolling back for a quarter hour running: the sweep logs only the
+        # exception's class and lets the permit lapse, so a step failing on every tick is otherwise silent (A5-03).
+        expr: sum(increase(finapp_bnpl_origination_total{outcome="failed"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "BNPL origination steps keep failing"
+          description: "Origination steps or offer expiries failed in each of the last fifteen minutes; the permits lapse and later ticks retry. Read the instances' warn lines for the exception's class (OPERATIONS_RUNBOOK.md section 8.6)."
+
+      - alert: BnplServicingStepFailing
+        # Servicing steps failing and rolling back for a quarter hour running - the claim's cadence retries each one.
+        expr: sum(increase(finapp_bnpl_servicing_total{step="service",outcome="failed"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "BNPL servicing steps keep failing"
+          description: "Servicing steps failed in each of the last fifteen minutes; billing, collection, condition and closure wait for the next success. Read the instances' warn lines for the exception's class (OPERATIONS_RUNBOOK.md section 8.6)."
+
+      - alert: BnplDisputeDeadlineStepFailing
+        # Dispute deadline steps failing and rolling back for a quarter hour running - a lapsed dispute's refund waits.
+        expr: sum(increase(finapp_bnpl_dispute_total{outcome="sweep_failed"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "BNPL dispute deadline steps keep failing"
+          description: "Steps resolving disputes past their merchant response deadline failed in each of the last fifteen minutes; the customer's refund waits. Read the instances' warn lines for the exception's class (OPERATIONS_RUNBOOK.md section 8.6)."
+
+      - alert: BnplAllocationAnomaly
+        # A repayment's, collection's or refund's allocation refused for not conserving its amount - a defect in an engine
+        # or its inputs; the act was refused, nothing posted.
+        expr: sum(increase(finapp_bnpl_allocation_anomaly_total[15m])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A BNPL allocation did not conserve its amount"
+          description: "At least one allocation was refused in fifteen minutes. Nothing posted; read the agreement's explanation and replay it (OPERATIONS_RUNBOOK.md section 8.4)."
+
+      - alert: BnplThreeWayProofFailing
+        # Gate criterion 5: a currency in which the BNPL purchases are not proven three ways - merchant leg, customer leg,
+        # economic identity, trial balance, capital or exposure. Never corrected - investigated.
+        expr: max(finapp_bnpl_threeway_proof{verdict="FAILS"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "The BNPL three-way proof fails"
+          description: "{{ $value }} currencies fail the BNPL three-way proof. The portfolio report names the failing arms (GET /v1/operator/reports/bnpl/portfolio). Never adjust a balance (OPERATIONS_RUNBOOK.md section 8.3)."
+
+      - alert: BnplSubledgerProofFailing
+        # INV-BNPL-01: an obligation whose six ledger balances its rows do not explain.
+        expr: max(finapp_bnpl_subledger_proof{verdict="FAILS"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "BNPL obligations' ledger balances are not explained by their rows"
+          description: "{{ $value }} obligations fail the subledger proof. The portfolio report lists their agreements; explain each through GET /v1/operator/bnpl-agreements/{id}/explanation. Never adjust a balance (OPERATIONS_RUNBOOK.md section 8.3)."
+
+      - alert: BnplReplayDiverged
+        # INV-BNPL-04, -05, -09: an obligation a figure of which no longer re-derives by its pinned engine, or whose
+        # canonical terms no longer re-verify.
+        expr: max(finapp_bnpl_replay{verdict="DIVERGED"}) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "BNPL obligations do not replay from their pinned engines and terms"
+          description: "{{ $value }} obligations replay DIVERGED. The portfolio report lists their agreements; replay each through POST /v1/operator/bnpl-agreements/{id}/replay to see which kinds differ. Never repair a row (OPERATIONS_RUNBOOK.md section 8.3)."
+
+      - alert: MerchantPayableNegative
+        # A merchant payable below zero - a BNPL refund after the payout (B7), within the amended INV-MER-07 bound and
+        # recovered from later captures and financings before any payout (INV-MER-05); legal, never absorbed - a debt to
+        # follow, never a page.
+        expr: max(finapp_ledger_negative_positions{purpose="MERCHANT_PAYABLE"}) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A merchant payable is below zero"
+          description: "{{ $value }} merchant payables stand below zero. Recovery is automatic from later captures and financings; check the merchant-financing report and the merchant's drill-down (OPERATIONS_RUNBOOK.md section 8.5)."
+
+      - alert: BnplTermsNoneActive
+        # A product with no ACTIVE terms version, in an environment that offers BNPL: the application door answers
+        # bnpl.ProductNotOffered. Production's expected state until the activation gate opens - so it is enabled per
+        # environment by the target label, never by default.
+        expr: min by (product) (finapp_bnpl_terms_active{bnpl_offered="true"}) == 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The BNPL product {{ $labels.product }} has no active terms"
+          description: "No {{ $labels.product }} application is accepted until a terms version is activated by a person other than its proposer (OPERATIONS_RUNBOOK.md sections 8.1 and 8.7)."
+
+      - alert: BnplOriginationSweeperOff
+        # Every instance runs the three BNPL sweeps, leaderless; each is off only in test contexts, never scraped.
+        expr: finapp_bnpl_origination_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the BNPL origination sweep"
+          description: "finapp.bnpl.origination.sweeper.enabled is false on a scraped instance. Applications are offered by the others; set it back to true (OPERATIONS_RUNBOOK.md section 8.7)."
+
+      - alert: BnplServicingSweeperOff
+        expr: finapp_bnpl_servicing_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the BNPL servicing sweep"
+          description: "finapp.bnpl.servicing.sweeper.enabled is false on a scraped instance. Obligations are serviced by the others; set it back to true (OPERATIONS_RUNBOOK.md section 8.7)."
+
+      - alert: BnplDisputeSweeperOff
+        expr: finapp_bnpl_dispute_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An instance is not running the BNPL dispute deadline sweep"
+          description: "finapp.bnpl.dispute.sweeper.enabled is false on a scraped instance. Lapsed disputes are resolved by the others; set it back to true (OPERATIONS_RUNBOOK.md section 8.7)."
+
+      - alert: BnplGaugesUnreadable
+        # NaN: a BNPL gauge whose database read failed - an unreadable proof, lag, queue or terms reading must stay visible,
+        # never read as 0 or as its last value.
+        expr: max(finapp_bnpl_threeway_proof != finapp_bnpl_threeway_proof) or max(finapp_bnpl_subledger_proof != finapp_bnpl_subledger_proof) or max(finapp_bnpl_replay != finapp_bnpl_replay) or max(finapp_bnpl_accrual_lag_seconds != finapp_bnpl_accrual_lag_seconds) or max(finapp_bnpl_application_awaiting_age_seconds != finapp_bnpl_application_awaiting_age_seconds) or max(finapp_bnpl_terms_active != finapp_bnpl_terms_active)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A BNPL gauge cannot be read"
+          description: "A BNPL gauge reads NaN - its database read failed. The proofs, the accrual lag, the application queue or the active terms are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 8.8)."

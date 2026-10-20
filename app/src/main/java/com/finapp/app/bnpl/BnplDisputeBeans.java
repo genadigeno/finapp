@@ -93,9 +93,10 @@ public class BnplDisputeBeans {
             IdGenerator idGenerator,
             @Value("${finapp.bnpl.dispute.poll:PT60S}") Duration pollInterval,
             @Value("${finapp.bnpl.dispute.batch:50}") int batch,
-            @Value("${finapp.bnpl.dispute.retry:PT15M}") Duration retryCadence) {
+            @Value("${finapp.bnpl.dispute.retry:PT15M}") Duration retryCadence,
+            BnplFlowScope bnplFlowScope) {
         return new BnplDisputeSchedule(bnplDisputes, bnplAccruals, bnplTransactions, bnplDisputeMetrics, bnplRefundMetrics,
-                idGenerator, pollInterval, batch, retryCadence);
+                idGenerator, pollInterval, batch, retryCadence, bnplFlowScope);
     }
 
     /** Whether this instance runs the dispute deadline sweep - eager either way (`P1-TSK-029`'s rule). */

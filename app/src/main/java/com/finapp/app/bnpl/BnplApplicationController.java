@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.identity.Session;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -42,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplApplicationController {
 
     @NonNull private final BnplApplicationDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /** Applies for a BNPL product at checkout - one act opening credit's decision request in the same commit. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -51,7 +53,7 @@ public class BnplApplicationController {
             @Valid @RequestBody BnplApplicationBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.submit(current(request), idempotencyKey, body);
+        return flow.door(BnplSpans.APPLY, () -> desk.submit(current(request), idempotencyKey, body));
     }
 
     /** The caller's own application: its status, and - once declined - credit's reasons in the customer's words. */
@@ -68,7 +70,7 @@ public class BnplApplicationController {
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.withdraw(current(request), id, idempotencyKey);
+        return flow.doorOnApplication(BnplSpans.WITHDRAW, id, () -> desk.withdraw(current(request), id, idempotencyKey));
     }
 
     /**

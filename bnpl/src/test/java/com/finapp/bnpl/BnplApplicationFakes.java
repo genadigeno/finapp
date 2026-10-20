@@ -343,6 +343,14 @@ final class BnplApplicationFakes {
             return hint(row -> row.checkoutSession().equals(checkoutSession));
         }
 
+        @Override
+        public Optional<java.time.Duration> oldestAwaitingDecisionAge(Connection unitOfWork) {
+            return rows.values().stream().filter(row -> row.status() == BnplApplicationStatus.AWAITING_DECISION)
+                    .map(BnplApplication::submittedAt).min(Instant::compareTo)
+                    .map(oldest -> java.time.Duration.between(oldest, now).isNegative() ? java.time.Duration.ZERO
+                            : java.time.Duration.between(oldest, now));
+        }
+
         private boolean hint(java.util.function.Predicate<BnplApplication> which) {
             boolean hinted = false;
             for (BnplApplication row : rows.values()) {
@@ -2770,6 +2778,16 @@ final class BnplApplicationFakes {
                         BnplConditionKind.DEFAULT).map(row -> row.state().defaulted()).orElse(false)) {
                     counts.merge(obligation.product(), 1L, Long::sum);
                 }
+            }
+            return counts;
+        }
+
+        @Override
+        public Map<BnplProduct, Map<BnplObligationStatus, Long>> obligationsByProductAndStatus(Connection unitOfWork) {
+            Map<BnplProduct, Map<BnplObligationStatus, Long>> counts = new EnumMap<>(BnplProduct.class);
+            for (BnplObligation obligation : purchases.obligations.values()) {
+                counts.computeIfAbsent(obligation.product(), product -> new EnumMap<>(BnplObligationStatus.class))
+                        .merge(obligation.status(), 1L, Long::sum);
             }
             return counts;
         }

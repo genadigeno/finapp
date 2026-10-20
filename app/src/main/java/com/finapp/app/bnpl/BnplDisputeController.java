@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.bnpl.BnplSpans;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplDisputeController {
 
     @NonNull private final BnplDisputeDesk desk;
+    @NonNull private final BnplFlowScope flow;
 
     /**
      * Opens a dispute of the caller's own agreement's purchase: an amount up to what remains of it, a category and a reason
@@ -47,7 +49,7 @@ public class BnplDisputeController {
             @Valid @RequestBody BnplDisputeOpeningBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.open(BnplOfferController.current(request), id, idempotencyKey, body);
+        return flow.doorOnAgreement(BnplSpans.DISPUTE_OPEN, id, () -> desk.open(BnplOfferController.current(request), id, idempotencyKey, body));
     }
 
     /** Withdraws the caller's own open dispute - the hold lifted, nothing posted. Keyed. */
@@ -57,7 +59,7 @@ public class BnplDisputeController {
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.withdraw(BnplOfferController.current(request), id, idempotencyKey);
+        return flow.doorOnDispute(BnplSpans.DISPUTE_WITHDRAW, id, () -> desk.withdraw(BnplOfferController.current(request), id, idempotencyKey));
     }
 
     /**
