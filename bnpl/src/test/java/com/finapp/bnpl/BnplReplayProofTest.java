@@ -311,6 +311,29 @@ class BnplReplayProofTest {
         assertDiverged(record, planted, BnplReplayProof.Check.PAYOFF, quote.id());
     }
 
+    @Test
+    @DisplayName("a dispute opened later on the business date the servicing step charged its instalment a late fee replays"
+            + " IDENTICAL - the hold is judged as of each fact's instant, not its business date (P12-TST-002's finding)")
+    void aDisputeOpenedAfterTheDaysStepHoldsNothingTheStepAlreadyDid() {
+        BnplConditionWorld.Agreement p4 = world.base.payIn4();
+        LocalDate charged = DUE_2.plusDays(5);
+        world.stepThrough(DUE_2, charged, p4);
+        assertThat(world.corrections.fees(p4)).as("instalment 2 charged its late fee at the step of " + charged)
+                .hasSize(1);
+        // The customer contests the whole purchase that afternoon: the hold covers every instalment still owed, the one
+        // the step charged at 09:00 among them - and the step, which ran before the dispute existed, charged it rightly.
+        world.fakes.now = charged.atTime(16, 0).toInstant(java.time.ZoneOffset.UTC);
+        BnplDispute dispute = world.fakes.inTransaction(() -> world.disputes.open(BnplApplicationFakes.UOW,
+                p4.agreement(), world.base.party, new BnplDisputes.OpenRequest("dispute-day", eur(BnplConditionWorld.GROSS),
+                        BnplDisputeReason.NOT_RECEIVED, "not received"), world.base.customer,
+                BnplConditionWorld.CORRELATION)).dispute();
+        assertThat(dispute.holds().stream().map(BnplDispute.Held::dueDate)).as("the charged instalment is held")
+                .contains(DUE_2);
+        BnplReplayProof.Replay replayed = replay.replay(world.record(p4));
+        assertThat(replayed.findings()).as("nothing diverges - the fee came before the hold").isEmpty();
+        assertThat(replayed.verdict()).isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
+    }
+
     // ------------------------------------------------------------------
 
     private BnplRecord payInNServiced() {

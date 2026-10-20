@@ -2549,6 +2549,7 @@ purchases conserving exactly and replayed `IDENTICAL` in two JVMs (`P12-TST-002`
 re-running the pinned engine over every schedule version (`P12-TSK-025`).
 *(As built by `P12-TSK-013`: schedule version 1 stored (`bnpl_schedule`, `bnpl_instalment`) from the pinned engine over the purchase's business date; `bnpl_schedule_conserves`, deferred, holds Σ instalment principal = the schedule's principal = the financed gross and the numbering 1..n; pay-in-4's 14-day dates ranked at insert. Hermetic: `BnplAcceptanceMigrationTest#theScheduleConserves`; database, owed: `BnplAcceptanceDatabaseTest#aScheduleThatDoesNotConserveIsRefused`.)*
 *(As built by `P12-TSK-015`: billing conserves the schedule over the obligation's life - `bnpl V008`'s billing trigger holds every instalment's principal to `least(remaining, max(0, amount - interest))` and the last instalment's to the remainder, so Σ billed principal = the version's principal; pay-in-N's billed interest is exactly the period's posted accruals. Hermetic: `BnplServicingTest#theLastInstalmentBillsTheRemainder`, `#theLastInstalmentBillsTheRemainderWhateverTheInterest`, `#pnBillsTheAccruedInterestNotTheProjection`; database, owed: `BnplBillingDatabaseTest#theLastInstalmentBillsTheRemainder`.)*
+*(As built by `P12-TST-002`: `BnplBatteryTest` over 10,000 generated purchases - every schedule version the battery's own oracle wrote (`BnplBatteryOracles`: `floor(P / 4)` and the remainder first; the pay-in-N annuity and a refund's re-amortisation at the kept level) conserving exactly, re-projected `IDENTICAL` by the pinned engines in two JVMs, `#theSplitsConserve` holding A4 per purchase; probed - the remainder on instalment 4 `DIVERGED` exactly the 3,701 non-divisible pay-in-4 grosses, `MUTATION_TESTING.md` §2.)*
 **Phase:** 12
 
 ### INV-BNPL-06 — A refund preserves value
@@ -2595,6 +2596,7 @@ unbilled cancelled` at the schedule's commit. Hermetic: `BnplRefundsTest#aFullRe
 `#refundBeforeDuringAfter`, `#refundCancelsLatestFirst`, `#aRefundRacingACollectionConservesInBothOrders`,
 `#theFeeTelescopesToExactlyFOverSplitRefunds`; database, owed: `BnplRefundDatabaseTest`. The late fee's release (OQ-14) is
 `-020`'s, carried.)*
+*(As built by `P12-TST-002`: `BnplBatteryTest` - every one of 4,657 generated refunds (before, during and after the instalments, after closure, a dispute's outcome) value-preserving and replayed `IDENTICAL`, and `#everyRefundOrderPreservesValueAndTelescopes` running each refunded purchase's refunds in every order and split - 20,106 sequences - through `REFUND_ALLOCATION_ENGINE_V1` bound to merchant's reference arithmetic: latest first exactly as the oracle's walk, the fee telescoping to exactly f at every full refund; probed - earliest first (value preserved, the latest-first census red on 1,159 purchases) and the running clamp (telescoping red on 918), `MUTATION_TESTING.md` §2.)*
 **Phase:** 12
 
 ### INV-BNPL-07 — Refunds never exceed the purchase
