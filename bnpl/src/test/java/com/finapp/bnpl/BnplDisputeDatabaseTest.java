@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -62,6 +63,13 @@ class BnplDisputeDatabaseTest {
             world.refunds, world.ports, world.book,
             (uow, actor) -> Optional.ofNullable(operatorParties.get(actor.id())), new JdbcOutboxWriter(),
             new JdbcAuditWriter(), IDS, CLOCK);
+
+    // Run alone the suite found no ACTIVE terms and no shadow clock - it leaned on a suite run before it in the same JVM
+    // (found by the Phase 12 exit review running one method alone): the billing suite's terms and clock, as every sibling.
+    @BeforeAll
+    static void termsAndClock() {
+        BnplBillingDatabaseTest.termsAndClock();
+    }
 
     // ------------------------------------------------------------------ scenario 10
 
@@ -101,6 +109,50 @@ class BnplDisputeDatabaseTest {
                 .isEqualTo("FULLY_REFUNDED");
         assertThat(count("SELECT sum(amount_minor) FROM bnpl.bnpl_refund WHERE purchase_id = '"
                 + second.purchase().value() + "'")).isEqualTo(600_00);
+        // Both orders RACED (the review's finding: order two above is serial): a merchant refund of 300 against a dispute
+        // OPENING for 400, on two instances at once, round after round - the first two rounds unstaggered, then the side
+        // that starts late alternates, so both orders occur. B5 orders them, and exactly one of two outcomes is admitted:
+        // the refund first, and the opening's claim of 400 exceeds the 300 left (RefundExceedsPurchase); the opening
+        // first, and the refund is refused beside the open dispute (DisputeOpen) - whose accepted refund of 400 then
+        // leaves 200, so a late merchant refund of 300 is refused by the bound. Σ refunds <= G after every round.
+        int refundFirst = 0;
+        int disputeFirst = 0;
+        for (int round = 0; round < 8; round++) {
+            BnplConditionDatabaseWorld.Purchased contested = world.plain();
+            LocalDate day = contested.purchaseDate().plusDays(1);
+            int which = round;
+            List<Object> outcomes = world.concurrently(2, index -> {
+                if (which >= 2 && index == which % 2) {
+                    Thread.sleep(150);
+                }
+                try {
+                    return index == 0 ? world.refundOn(day, contested, "race-refund-" + which, 300_00)
+                            : openOn(day, contested, "race-open-" + which, 400_00);
+                } catch (BnplRefunds.DisputeOpen | BnplRefunds.RefundExceedsPurchase refused) {
+                    return refused;
+                }
+            });
+            String label = "round " + round + ": " + outcomes;
+            if (outcomes.get(0) instanceof BnplRefunds.Refunded) {
+                assertThat(outcomes.get(1)).as(label).isInstanceOf(BnplRefunds.RefundExceedsPurchase.class);
+                assertThat(count("SELECT count(*) FROM bnpl.bnpl_dispute WHERE purchase_id = '"
+                        + contested.purchase().value() + "'")).as(label).isZero();
+                refundFirst++;
+            } else {
+                assertThat(outcomes.get(0)).as(label).isInstanceOf(BnplRefunds.DisputeOpen.class);
+                BnplDispute opened = ((BnplDisputes.Acted) outcomes.get(1)).dispute();
+                respondOn(day.plusDays(1), opened, contested, BnplDisputes.Decision.ACCEPT);
+                assertThatThrownBy(() -> world.refundOn(day.plusDays(1), contested, "late-" + which, 300_00)).as(label)
+                        .isInstanceOf(BnplRefunds.RefundExceedsPurchase.class);
+                assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE dispute_id = '" + opened.id().value()
+                        + "'")).as(label).isEqualTo(1);
+                disputeFirst++;
+            }
+            assertThat(count("SELECT coalesce(sum(amount_minor), 0) FROM bnpl.bnpl_refund WHERE purchase_id = '"
+                    + contested.purchase().value() + "'")).as("Σ refunds <= G, " + label).isLessThanOrEqualTo(600_00);
+        }
+        assertThat(refundFirst).as("the refund won B5 in some round").isPositive();
+        assertThat(disputeFirst).as("the opening won B5 in some round").isPositive();
     }
 
     @Test
@@ -200,6 +252,82 @@ class BnplDisputeDatabaseTest {
                 .isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a deadline lapse whose instance dies after the dispute's refund, its posting and the resolution is"
+            + " re-driven by another sweeper, once: the dead transaction leaves nothing; the re-drive resolves once - one"
+            + " refund, one refund entry - and a re-drive after a lost response finds nothing to do")
+    void aCrashedLapseIsReDrivenOnceByAnotherInstance() throws SQLException {
+        BnplConditionDatabaseWorld.Purchased bought = world.plain();
+        LocalDate opened = bought.purchaseDate().plusDays(1);
+        BnplDispute dispute = openOn(opened, bought, "open-1", 300_00).dispute();
+        LocalDate past = opened.plusDays(15);
+        long base = refundPostings();
+        long[] seen = BnplInstanceCrash.crashAfter(world.frameOn(past), uow -> disputes.lapse(uow, dispute.id(),
+                new Actor("platform", ActorType.SYSTEM), correlation()).orElseThrow(), uow -> witness(uow, dispute));
+        assertThat(seen).as("the dead instance had refunded, resolved and posted").containsExactly(1, 1, base + 1);
+        assertThat(witness(dispute)).as("nothing of the dead instance stands").containsExactly(0, 0, base);
+        assertThat(scalar("SELECT status FROM bnpl.bnpl_dispute WHERE id = '" + dispute.id().value() + "'"))
+                .isEqualTo("OPEN");
+
+        assertThat(lapseOn(past, dispute)).as("another sweeper").isPresent();
+        assertThat(lapseOn(past, dispute)).as("the sweep again, the response lost").isEmpty();
+        assertThat(witness(dispute)).as("one refund, resolved once, one entry").containsExactly(1, 1, base + 1);
+        assertThat(scalar("SELECT status || '|' || resolved_by FROM bnpl.bnpl_dispute WHERE id = '"
+                + dispute.id().value() + "'")).isEqualTo("RESOLVED_REFUND|SYSTEM");
+    }
+
+    @Test
+    @DisplayName("an operator's resolution whose instance dies after the dispute's refund, its posting and the move is"
+            + " re-driven by another operator, once: the dead transaction leaves nothing; the re-drive resolves once - one"
+            + " refund, one refund entry - and a re-drive after a lost response is refused, nothing doubled")
+    void aCrashedResolutionIsReDrivenOnceByAnotherInstance() throws SQLException {
+        BnplConditionDatabaseWorld.Purchased bought = world.plain();
+        BnplDispute dispute = openOn(bought.purchaseDate().plusDays(1), bought, "open-1", 200_00).dispute();
+        respondOn(bought.purchaseDate().plusDays(2), dispute, bought, BnplDisputes.Decision.CONTEST);
+        LocalDate day = bought.purchaseDate().plusDays(3);
+        long base = refundPostings();
+        long[] seen = BnplInstanceCrash.crashAfter(world.frameOn(day), uow -> disputes.resolve(uow, dispute.id(),
+                BnplDisputeStatus.RESOLVED_REFUND, "on the evidence", new Actor("operator-a", ActorType.CUSTOMER),
+                correlation()), uow -> witness(uow, dispute));
+        assertThat(seen).as("the dead instance had refunded, resolved and posted").containsExactly(1, 1, base + 1);
+        assertThat(witness(dispute)).as("nothing of the dead instance stands").containsExactly(0, 0, base);
+        assertThat(scalar("SELECT status FROM bnpl.bnpl_dispute WHERE id = '" + dispute.id().value() + "'"))
+                .isEqualTo("MERCHANT_RESPONDED");
+
+        Actor operatorB = new Actor("operator-b", ActorType.CUSTOMER);
+        assertThat(resolveOn(day, dispute, operatorB, BnplDisputeStatus.RESOLVED_REFUND).replayed())
+                .as("another instance resolves").isFalse();
+        BnplDisputes.Acted again = resolveOn(day, dispute, operatorB, BnplDisputeStatus.RESOLVED_REFUND);
+        assertThat(again.replayed()).as("the re-drive after a lost response converges on it").isTrue();
+        assertThat(again.refund()).as("and refunds nothing again").isEmpty();
+        assertThatThrownBy(() -> resolveOn(day, dispute, new Actor("operator-c", ActorType.CUSTOMER),
+                BnplDisputeStatus.RESOLVED_REFUND)).as("any other operator finds it resolved")
+                .isInstanceOf(BnplDisputes.DisputeNotActionable.class);
+        assertThat(witness(dispute)).as("one refund, resolved once, one entry").containsExactly(1, 1, base + 1);
+    }
+
+    /** The dispute's refunds, whether it is RESOLVED_REFUND, and the book's refund entries - on {@code uow}. */
+    private long[] witness(Connection uow, BnplDispute dispute) {
+        return new long[] {
+            BnplInstanceCrash.countOn(uow, "SELECT count(*) FROM bnpl.bnpl_refund WHERE dispute_id = '"
+                    + dispute.id().value() + "'"),
+            BnplInstanceCrash.countOn(uow, "SELECT count(*) FROM bnpl.bnpl_dispute WHERE id = '" + dispute.id().value()
+                    + "' AND status = 'RESOLVED_REFUND'"),
+            refundPostings()};
+    }
+
+    /** {@link #witness(Connection, BnplDispute)} on a committed view. */
+    private long[] witness(BnplDispute dispute) throws SQLException {
+        try (Connection reader = DatabaseRoles.application()) {
+            return witness(reader, dispute);
+        }
+    }
+
+    /** The book's refund postings - every refund's entry, as the ledger keys it. */
+    private long refundPostings() {
+        return world.book.keys().stream().filter(key -> key.startsWith(BnplRefunds.POSTING_KEY_PREFIX)).count();
+    }
+
     // ------------------------------------------------------------------ the lift
 
     @Test
@@ -268,9 +396,25 @@ class BnplDisputeDatabaseTest {
         Actor proposer = new Actor("operator-a", ActorType.CUSTOMER);
         UUID proposal = resolveOn(bought.purchaseDate().plusDays(3), dispute, proposer, BnplDisputeStatus.RESOLVED_REFUND)
                 .proposal().orElseThrow().id();
-        assertThatThrownBy(() -> BnplClockFrame.inOneTransaction(world.frameOn(bought.purchaseDate().plusDays(3)),
-                uow -> disputes.approve(uow, dispute.id(), proposal, "mine", proposer, correlation())))
-                .isInstanceOf(BnplDisputes.SelfApprovalRefused.class);
+        BnplDisputes.SelfApprovalRefused self = null;
+        try {
+            BnplClockFrame.inOneTransaction(world.frameOn(bought.purchaseDate().plusDays(3)),
+                    uow -> disputes.approve(uow, dispute.id(), proposal, "mine", proposer, correlation()));
+        } catch (BnplDisputes.SelfApprovalRefused refused) {
+            self = refused;
+        }
+        assertThat(self).as("the domain refuses its proposer").isNotNull();
+        // The desk's record of the refusal (BnplDisputeDesk, the gate's R4): FAILED, in a transaction of its own after the
+        // act rolled back - the act's rows gone, the refusal's row kept.
+        BnplDisputes.SelfApprovalRefused refusal = self;
+        BnplClockFrame.inOneTransaction(world.frameOn(bought.purchaseDate().plusDays(3)), uow -> {
+            disputes.recordSelfApproval(uow, refusal, proposer, correlation());
+            return null;
+        });
+        assertThat(scalar("SELECT string_agg(outcome || '|' || actor_id || '|' || target_id, ',') FROM"
+                + " platform.audit_record WHERE operation = '" + BnplAuditAction.SELF_APPROVAL_REFUSED.code()
+                + "' AND target_id = '" + proposal + "'")).as("one FAILED row naming the proposer and the proposal")
+                .isEqualTo("FAILED|" + proposer.id() + "|" + proposal);
         assertThatThrownBy(() -> asApplication("UPDATE bnpl.bnpl_dispute_proposal SET status = 'APPROVED', decided_by ="
                 + " proposed_by, decision_reason = 'raw', decided_at = clock_timestamp() WHERE id = '" + proposal + "'"))
                 .isInstanceOf(SQLException.class);

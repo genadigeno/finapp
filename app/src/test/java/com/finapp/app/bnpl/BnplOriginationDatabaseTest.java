@@ -219,6 +219,45 @@ class BnplOriginationDatabaseTest {
     }
 
     @Test
+    @Order(3)
+    @DisplayName("a session that EXPIRES on the database clock while credit is evaluating closes the application"
+            + " CLOSED_UNDECIDED (SESSION_CLOSED); credit, past cancellation, decides APPROVED after the closure and the"
+            + " approval lapses unconsumed - no offer, no consumption, however often the step or a hint runs again")
+    void aSessionThatExpiresLetsTheLaterApprovalLapseUnconsumed() throws Exception {
+        BnplApplicationClient.Merchant merchant = enabledMerchant();
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        BnplApplicationClient.Opened session = client.openSession(merchant, GROSS);
+        Applied applied = apply(customer, session);
+        // Credit past cancellation: evaluated, not yet decided - the closure cannot cancel it.
+        assertThat(CreditFixtures.stepUntil(applied.request(), "EVALUATED")).isEqualTo("EVALUATED");
+        sessionDeadlinePassed(session.id());
+        assertThat(BnplApplicationClient.scalar("SELECT (expires_at <= clock_timestamp() AND status = 'OPEN')::text FROM"
+                + " checkout.checkout_session WHERE id = ?", session.id())).as("OPEN by its row, past its deadline")
+                .isEqualTo("true");
+        dueNow(applied.id());
+        sweep();
+        assertThat(BnplApplicationClient.scalar("SELECT status || ':' || closure_reason FROM bnpl.bnpl_application"
+                + " WHERE id = ?", applied.id())).isEqualTo("CLOSED_UNDECIDED:SESSION_CLOSED");
+        assertThat(BnplApplicationClient.scalar("SELECT status FROM credit.decision_request WHERE id = ?",
+                applied.request())).as("past cancellation: credit decides").isEqualTo("EVALUATED");
+
+        assertThat(CreditFixtures.decide(applied.request())).as("the approval arrives after the closure")
+                .isEqualTo("APPROVED");
+        UUID decision = UUID.fromString(BnplApplicationClient.scalar("SELECT id::text FROM credit.credit_decision WHERE"
+                + " decision_request_id = ?", applied.request()));
+        boolean hinted = transactions.inTransaction(uow -> origination.hintDecision(uow, decision));
+        assertThat(hinted).as("the hint moves nothing closed").isFalse();
+        sweep();
+        assertThat(status(applied.id())).isEqualTo("CLOSED_UNDECIDED");
+        assertThat(offerCount(applied.id())).isZero();
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM credit.credit_decision_consumption WHERE"
+                + " decision_id = ?", decision)).as("the approval lapses unconsumed").isZero();
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type = ? AND"
+                + " convert_from(payload, 'UTF8') LIKE ?", BnplOrigination.OFFERED_EVENT, "%" + applied.id() + "%"))
+                .isZero();
+    }
+
+    @Test
     @Order(4)
     @DisplayName("an approval below the purchase is not offered - CLOSED_UNDECIDED (APPROVED_BELOW_PURCHASE), no offer, the"
             + " merchant's one signal NOT_ELIGIBLE")
@@ -438,6 +477,35 @@ class BnplOriginationDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             BnplApplicationClient.execute(app, "UPDATE bnpl.bnpl_application SET next_step_at = clock_timestamp()"
                     + " - interval '1 second' WHERE id = ? AND status = 'AWAITING_DECISION'", application);
+        }
+    }
+
+    /**
+     * The session's deadline moved just past the database clock - the bootstrap superuser, the row's triggers suspended
+     * (the purchase suite's {@code expiresIn} idiom; checkout refuses a moved deadline to every role). Still OPEN by its
+     * row: what a session looks like between its deadline and checkout's expiry sweep.
+     */
+    private static void sessionDeadlinePassed(UUID session) throws SQLException {
+        try (Connection root = DatabaseRoles.bootstrap(); java.sql.Statement statement = root.createStatement()) {
+            statement.execute("SET session_replication_role = replica");
+            statement.execute("UPDATE checkout.checkout_session SET expires_at = GREATEST(created_at + interval '1"
+                    + " millisecond', clock_timestamp() - interval '1 second') WHERE id = '" + session + "'");
+            // checkout stamps created_at from the instance clock, which may run ahead of the database's: wait until the
+            // database clock has passed the deadline (the flake the exit review's fresh run met - P12-DOC-001).
+            long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+            while (true) {
+                try (java.sql.ResultSet passed = statement.executeQuery("SELECT expires_at <= clock_timestamp() FROM"
+                        + " checkout.checkout_session WHERE id = '" + session + "'")) {
+                    passed.next();
+                    if (passed.getBoolean(1) || System.nanoTime() > until) {
+                        break;
+                    }
+                }
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
         }
     }
 

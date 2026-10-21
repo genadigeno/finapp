@@ -406,7 +406,9 @@ new reference and send the money again. A rejected contribution's reference stay
   acceptances start refusing `422 lending.CapitalUnavailable`.
   *(Since `P12-TSK-005`: one pool - the headroom also falls by every unit of BNPL principal outstanding, so a busy BNPL
   book can bring this alert and refuse loans; the capital report's outstanding term is loan, line and BNPL principal
-  together. BNPL purchases will refuse on the same shortfall from `P12-TSK-013`.)*
+  together. BNPL purchases refuse on the same shortfall - `422 bnpl.CapitalUnavailable`, judged under the capital row's
+  lock at the acceptance, built by `P12-TSK-013`.)* *(P12-DOC-001, 2026-10-22: this read "BNPL purchases will refuse on
+  the same shortfall from `P12-TSK-013`" until the exit review.)*
 
 ### 7.3 Loan terms versions
 
@@ -623,10 +625,13 @@ their machines and the four-eyes acts (a repayment reversal, a fee waiver, a dis
 ### 8.1 The production activation gate - before the first BNPL terms version in production
 
 **Production ships closed.** No migration activates a BNPL terms version, so production starts with
-`finapp.bnpl.terms.active{product}` at 0 for both products and every application answers `422 bnpl.ProductNotOffered`
-(`PHASE_12_PLAN.md` §1.1, accepted limitation on the debt row "Lending cannot originate in production (#13, #14)"). That
-is the expected state - not an incident - until **every** condition below is true, in this order, each with its evidence
-recorded:
+`finapp.bnpl.terms.active{product}` at 0 for both products and no application can be submitted: one at a merchant not
+BNPL-enabled and priced for the product answers `422 bnpl.MerchantNotEnabled`, and one at an enabled merchant
+`422 bnpl.ProductNotOffered` (`PHASE_12_PLAN.md` §1.1, accepted limitation on the debt row "Lending cannot originate in
+production (#13, #14)"). *(P12-DOC-001, 2026-10-22: this read "every application answers `422 bnpl.ProductNotOffered`" -
+the application door judges the merchant's standing before the terms (`BnplApplications.submit`), so until step 4 a
+customer meets `bnpl.MerchantNotEnabled` first.)* That is the expected state - not an incident - until **every**
+condition below is true, in this order, each with its evidence recorded:
 
 1. **Lending's §7.4 preconditions, each met** - unresolved #13 and #14 answered; a real bureau adapter contract-tested; a
    credit policy version reading it, four-eyes activated, deciding the BNPL products too (credit's `BNPL_PAY_IN_4` and
@@ -643,10 +648,16 @@ recorded:
    features), the outcome recorded beside the terms version it approves.
 4. **The merchant-fee schedule approved**: the BNPL fee schedule versions (`refund_fee_policy = RETURNED`, the pro-rated
    return of B3) approved by the business and assigned per merchant and product by a `FEE_ADMINISTER` holder
-   (`PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}`); each merchant BNPL-enabled under four eyes
-   by two `MERCHANT_ADMINISTER` holders (`POST /v1/operator/merchants/{merchantId}/bnpl-enablement`, then `…/approval`).
-5. **A four-eyes BNPL terms activation**: one `BNPL_OFFICER` proposes the reviewed version
-   (`POST /v1/operator/bnpl/terms`, `Idempotency-Key`, a reason - judged whole, `422 bnpl.TermsInvalid` or
+   (`PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}`; a schedule with a version that retains its fee
+   is refused `422 merchant.BnplScheduleNotReturning`); each merchant BNPL-enabled under four eyes by two
+   `MERCHANT_ADMINISTER` holders (`POST /v1/operator/merchants/{merchantId}/bnpl-enablement`, then `…/approval`; the
+   proposer's own approval is `409 merchant.SelfApprovalRefused`). *(P12-DOC-001, 2026-10-22: the business's approval of
+   the schedule is this procedure's, not the platform's - a fee schedule and its versions are created by one
+   `FEE_ADMINISTER` holder (`POST /v1/operator/fee-schedules`, `…/{id}/versions`) with no second person in code; the
+   platform enforces the `RETURNED` policy, the four-eyes enablement, and that a product the merchant has no version in
+   force for is not offered - `422 bnpl.MerchantNotEnabled`.)*
+5. **A four-eyes BNPL terms activation**: one `BNPL_OFFICER` (the role holding `BNPL_ADMINISTER`) proposes the reviewed
+   version (`POST /v1/operator/bnpl/terms`, `Idempotency-Key`, a reason - judged whole, `422 bnpl.TermsInvalid` or
    `bnpl.TermsNotAmortising` naming the defect), a **second** activates it (`POST …/{versionId}/approval`, a reason),
    retiring any predecessor in the same transaction; `GET /v1/operator/bnpl/terms?product=` reads it back.
 6. **The alert armed**: the environment's Prometheus scrape configuration labels the application targets
@@ -655,7 +666,8 @@ recorded:
 Nothing here is a switch in code: each step is a person's recorded act. A step out of order is refused by the platform
 where it can be (no offer before 1; no acceptance without capital, `422 bnpl.CapitalUnavailable`; no purchase at a merchant
 not enabled, `422 bnpl.MerchantNotEnabled`; no self-activation, `403 bnpl.SelfApprovalRefused`) and by this procedure
-where it cannot (2, 3, 6).
+where it cannot (2, 3, the business's approval in 4, 6). *(P12-DOC-001, 2026-10-22: read "(2, 3, 6)" until the exit
+review.)*
 
 ### 8.2 Accrual lags or fails - `BnplAccrualLagging`, `BnplAccrualFailing`
 
@@ -663,8 +675,9 @@ where it cannot (2, 3, 6).
 hand-off): an `ACTIVE` pay-in-N obligation has left an elapsed date of its accrual span unaccrued for more than a day past
 its end. `sum(increase(finapp_bnpl_accrual_total{outcome="failed"}[15m])) > 0` for 15 min (ticket): T-acc calls failing
 and rolling back on every tick. **What it means.** The servicing sweep runs T-acc in a transaction of its own before every
-step; a lag is the sweep off everywhere (`BnplServicingSweeperOff`), a call failing (the warn line names only the
-exception's class), or a pinned zone misread. Pay-in-4 accrues nothing - it is never a lag. **What a person does.**
+step; a lag is the sweep off everywhere (`BnplServicingSweeperOff`), a call failing (the warn line
+`BNPL accrual failed` names only the exception's class; a failed call skips its obligation's step until the cadence
+retries it, so it is not also a `BnplServicingStepFailing`), or a pinned zone misread. Pay-in-4 accrues nothing - it is never a lag. **What a person does.**
 Nothing to the rows: accrual is born once per obligation and date (`bnpl_interest_accrual`, ledger key
 `bnpl.accrual:<obligation>:<date>`), so the sweep catches every missed date up by itself once it runs. Restore the sweep
 on at least one instance. To find a stuck obligation, in a read-only session (`START TRANSACTION READ ONLY`):
@@ -715,17 +728,24 @@ report that carries the proofs pays one reading too.
 
 ### 8.4 An allocation anomaly - `BnplAllocationAnomaly`
 
-**Signal.** `sum(increase(finapp_bnpl_allocation_anomaly_total[15m])) > 0` (page): a repayment's, an automatic
+**Signal.** `sum(increase(finapp_bnpl_allocation_anomaly_total[15m])) > 0` for 1 min (page): a repayment's, an automatic
 collection's, a payoff's or a refund's allocation did not conserve its amount (the engine's assertion, or the database's
 deferred conservation at commit) and was refused - nothing posted, the customer's and the merchant's money untouched. A
-servicing step's anomaly is also a failed step (`BnplServicingStepFailing`). **What a person does.** An engine or its
+servicing step's anomaly is also a failed step (`BnplServicingStepFailing`), a dispute deadline step's also
+`BnplDisputeDeadlineStepFailing`. *(P12-DOC-001, 2026-10-22: a dispute's refund - the operator's resolution and the
+deadline sweep's - counts the engine's assertion only; a refusal by the database's deferred conservation at commit there
+is not counted here (the sweep's is a failed step), unlike the refund, repayment and payoff doors and the servicing step.
+Recorded as a finding of the exit review.)* **What a person does.** An engine or its
 inputs are wrong: replay the agreement (§8.3) and open an incident; the act may be retried once it is fixed. Never
 allocate by hand.
 
 ### 8.5 A negative merchant payable from a refund after payout (B7) - `MerchantPayableNegative`
 
 **Signal.** `max(finapp_ledger_negative_positions{purpose="MERCHANT_PAYABLE"}) > 0` for an hour (ticket): a merchant's
-payable stands below zero. **What it means.** A BNPL refund after the merchant was paid out debits the payable the refund's
+payable stands below zero. The gauge counts every merchant payable below zero, whatever drove it there: a card
+chargeback after a payout or a retained refund fee (`INV-MER-07` and its Phase 7 amendment, payments' and merchant's
+procedures) raise this alert as well. *(P12-DOC-001, 2026-10-22: added - the section read as if only a BNPL refund
+could.)* **What it means** for BNPL. A BNPL refund after the merchant was paid out debits the payable the refund's
 net (`R - r_f`) - legal within the amended `INV-MER-07` bound (Σ of its purchases' refund exposure), never absorbed by
 the platform - and the debt is recovered from the merchant's later captures and financings before any payout
 (`INV-MER-05`): the payout refuses while the payable is negative. **What a person does.** Read the amounts in the
@@ -746,24 +766,30 @@ sweep, each `sum(increase(…[15m])) > 0` for 15 min (ticket): origination steps
 (`finapp_bnpl_servicing_total{step="service",outcome="failed"}`), dispute deadline steps
 (`finapp_bnpl_dispute_total{outcome="sweep_failed"}`). Each failure rolls back alone and lets its permit lapse; a later
 tick retries. **What a person does.** Check the sweep's `…sweeper.enabled` on every instance (§8.7) and the warn lines
-(`BNPL origination step failed`, `BNPL servicing step failed`, `BNPL dispute deadline step failed`) for the class; a
-transient refusal (a database clock stepped back) clears within a tick. Nothing to the rows: every edge is a conditional
-the triggers re-judge, so a step that runs again does each act once. A dispute whose deadline step fails leaves the
-customer's refund waiting - resolve it by the operator door (`POST /v1/operator/bnpl-disputes/{id}/resolution`,
-`BNPL_DISPUTE_RESOLVE`, four-eyes above the pinned threshold) only if the failure persists and the incident confirms the
-outcome. Open an incident with the class name if the failures persist.
+(`BNPL origination step failed`, `BNPL offer expiry failed`, `BNPL servicing step failed`, `BNPL dispute deadline step
+failed`) for the class; a transient refusal (a database clock stepped back) clears within a tick. Nothing to the rows:
+every edge is a conditional the triggers re-judge, so a step that runs again does each act once. A dispute whose deadline
+step fails leaves the customer's refund waiting, its held instalments taking no collection, days past due or late fee
+meanwhile; **the deadline step is the only way such a dispute concludes** - the operator door
+(`POST /v1/operator/bnpl-disputes/{id}/resolution`) resolves only a dispute the merchant answered and refuses an `OPEN`
+one `409 bnpl.DisputeNotActionable` - so restore the step. A deadline step whose refund cannot be posted now
+(`finapp_bnpl_dispute_total{outcome="not_postable"}`, the same warn line) is retried by the cadence and is **not** counted
+by `BnplDisputeDeadlineStepFailing`: read that series too when a lapsed dispute's refund is overdue. Open an incident with
+the class name if the failures persist. *(P12-DOC-001, 2026-10-22: this advised resolving a lapsed dispute "by the operator
+door ... if the failure persists" - the door refuses an unanswered dispute (`BnplDisputes.resolve`); and the warn line of a
+failing offer expiry was missing.)*
 
 ### 8.7 Sweepers off, terms missing
 
-**`BnplOriginationSweeperOff`, `BnplServicingSweeperOff`, `BnplDisputeSweeperOff`** (ticket): an instance runs with
-`finapp.bnpl.<sweep>.sweeper.enabled` false. The three sweeps are leaderless - every instance claims with
+**`BnplOriginationSweeperOff`, `BnplServicingSweeperOff`, `BnplDisputeSweeperOff`** (ticket, for 5 min): an instance
+runs with `finapp.bnpl.<sweep>.sweeper.enabled` false (`origination`, `servicing`, `dispute`). The three sweeps are leaderless - every instance claims with
 `FOR UPDATE SKIP LOCKED` on its permit - so the others carry the work; set it back to `true`. **`BnplTermsNoneActive`**
-(ticket; only where the target is labelled `bnpl_offered="true"`): an offered product has no `ACTIVE` terms - activate a
+(ticket, for 15 min; only where the target is labelled `bnpl_offered="true"`): an offered product has no `ACTIVE` terms - activate a
 version under §8.1 step 5. NaN means the read failed, never "none" (§8.8).
 
 ### 8.8 Gauges unreadable, the BNPL reports, and the failure scenarios they answer
 
-**`BnplGaugesUnreadable`** (ticket): a BNPL gauge reads NaN - its database read failed - so the proofs, the accrual lag,
+**`BnplGaugesUnreadable`** (ticket, for 15 min): a BNPL gauge reads NaN - its database read failed - so the proofs, the accrual lag,
 the application queue or the active terms are unwatched until it reads again; NaN is never read as 0 or as the last value
 (the lending precedent - the entry's "reports its last value" refined: a last value would read as healthy). Check the
 instance's database connectivity.

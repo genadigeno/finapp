@@ -249,7 +249,94 @@ class BnplCapitalDatabaseTest {
         assertThat(headroomNow().headroom().minorUnits()).as("INV-LND-13: never over-deployed").isZero();
     }
 
+    @Test
+    @DisplayName("the last capital admits one of BNPL, loan acceptances AND credit-line draws: three BNPL judgements,"
+            + " three loan acceptances and three draws on open lines racing for capital that fits one - exactly one"
+            + " admitted, the other eight refused (the draws 422 lending.CapitalUnavailable), headroom exactly zero")
+    void theLastCapitalAdmitsOneOfBnplLoansAndDraws() throws Exception {
+        Money last = eur(2_500_00);
+        lendingTransactions.inTransaction(uow -> {
+            if (termsStore.active(uow, LoanProduct.CREDIT_LINE).isEmpty()) {
+                var proposed = termsAdministration.propose(uow, LoanApplicationDatabaseTest.terms(LoanProduct.CREDIT_LINE),
+                        "the suite's line terms", employee(), CorrelationId.generate(ids));
+                termsAdministration.approve(uow, proposed.id(), employee(), "reviewed", CorrelationId.generate(ids));
+            }
+            return null;
+        });
+        List<CreditFixtures.Customer> borrowers = new ArrayList<>();
+        List<String> offers = new ArrayList<>();
+        List<String> hashes = new ArrayList<>();
+        List<CreditFixtures.Customer> drawers = new ArrayList<>();
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            CreditFixtures.Customer borrower = customers.consentingCustomer();
+            String offer = offered(borrower, loan("2500.00"));
+            borrowers.add(borrower);
+            offers.add(offer);
+            hashes.add(field(get(OFFERS + "/" + offer, borrower.token()).body(), "termsSha256"));
+            // An open line, accepted before the race: its limit is no committed capital - its draws are.
+            CreditFixtures.Customer drawer = customers.consentingCustomer();
+            String lineOffer = offered(drawer, creditLine("2500.00"));
+            HttpResponse<String> opened = accept(drawer.token(), lineOffer,
+                    field(get(OFFERS + "/" + lineOffer, drawer.token()).body(), "termsSha256"));
+            assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);
+            drawers.add(drawer);
+            lines.add(field(opened.body(), "loanId"));
+        }
+        headroomExactly(last);
+        ExecutorService pool = Executors.newFixedThreadPool(9);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<String>> racers = new ArrayList<>();
+        try {
+            for (int i = 0; i < 3; i++) {
+                int index = i;
+                racers.add(pool.submit(() -> {
+                    start.await();
+                    return judgedAndFinanced(last) ? "BNPL ADMITTED" : "CAPITAL_UNAVAILABLE";
+                }));
+                racers.add(pool.submit(() -> {
+                    start.await();
+                    HttpResponse<String> answer = accept(borrowers.get(index).token(), offers.get(index),
+                            hashes.get(index));
+                    if (answer.statusCode() == 201) {
+                        return "LOAN ADMITTED";
+                    }
+                    assertThat(answer.statusCode()).as(answer.body()).isEqualTo(422);
+                    assertThat(answer.body()).contains("lending.CapitalUnavailable");
+                    return "CAPITAL_UNAVAILABLE";
+                }));
+                racers.add(pool.submit(() -> {
+                    start.await();
+                    HttpResponse<String> answer = post("/v1/me/loans/" + lines.get(index) + "/draws",
+                            "{\"amount\":\"2500.00\",\"currency\":\"EUR\"}", drawers.get(index).token());
+                    if (answer.statusCode() == 201) {
+                        return "DRAW ADMITTED";
+                    }
+                    assertThat(answer.statusCode()).as(answer.body()).isEqualTo(422);
+                    assertThat(answer.body()).contains("lending.CapitalUnavailable");
+                    return "CAPITAL_UNAVAILABLE";
+                }));
+            }
+            start.countDown();
+            List<String> outcomes = new ArrayList<>();
+            for (Future<String> racer : racers) {
+                outcomes.add(racer.get(3, TimeUnit.MINUTES));
+            }
+            assertThat(outcomes).as("exactly one consumer - BNPL, loan or draw - takes the last capital: %s", outcomes)
+                    .filteredOn(outcome -> outcome.endsWith("ADMITTED")).hasSize(1);
+            assertThat(outcomes).filteredOn("CAPITAL_UNAVAILABLE"::equals).hasSize(8);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(headroomNow().headroom().minorUnits()).as("INV-LND-13 / INV-BNPL-10: never over-deployed").isZero();
+    }
+
     // ================================================================== fixtures
+
+    private static String creditLine(String limit) {
+        return "{\"product\":\"CREDIT_LINE\",\"amount\":\"" + limit + "\",\"currency\":\"EUR\",\"repaymentDay\":5,"
+                + "\"repaymentMethod\":\"WALLET\"}";
+    }
 
     /**
      * What a BNPL purchase's capital step will do (`P12-TSK-013`): in one transaction, the headroom judged under L6

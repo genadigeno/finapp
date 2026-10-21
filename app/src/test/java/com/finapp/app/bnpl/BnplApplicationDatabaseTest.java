@@ -446,7 +446,115 @@ class BnplApplicationDatabaseTest {
         assertNothingWritten(customer.party());
     }
 
+    @Test
+    @Order(14)
+    @DisplayName("applying needs a MULTI_FACTOR session - against a REAL open session at an enabled merchant: the same"
+            + " customer's PASSWORD session is 403 identity.AssuranceRequired with no application, no credit request, no"
+            + " outbox row and no idempotency record; the same key then on the MULTI_FACTOR session is 202 - the refusal"
+            + " stored nothing")
+    void aLesserSessionWritesNothingAgainstARealSession() throws Exception {
+        termsInForce();
+        BnplApplicationClient.Merchant merchant = enabledMerchant();
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        BnplApplicationClient.Opened session = client.openSession(merchant, GROSS);
+        String password = customers.login(customer);
+        String key = BnplApplicationClient.key();
+        String outbox = "SELECT count(*) FROM platform.outbox_event WHERE convert_from(payload, 'UTF8') LIKE ? OR"
+                + " convert_from(payload, 'UTF8') LIKE ?";
+        long outboxBefore = BnplApplicationClient.count(outbox, "%" + session.id() + "%", "%" + customer.party() + "%");
+        HttpResponse<String> refused = client.submit(password, BnplApplicationClient.payIn4(session.token()), key);
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired").doesNotContain(session.token());
+        assertNothingWritten(customer.party());
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_application WHERE checkout_session_id = ?",
+                session.id())).isZero();
+        assertThat(BnplApplicationClient.count(outbox, "%" + session.id() + "%", "%" + customer.party() + "%"))
+                .as("no outbox row naming the session or the party").isEqualTo(outboxBefore);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.idempotency_record WHERE idempotency_key = ?",
+                key)).as("no idempotency record").isZero();
+
+        HttpResponse<String> applied = client.submit(customer.token(), BnplApplicationClient.payIn4(session.token()), key);
+        assertThat(applied.statusCode()).as(applied.body()).isEqualTo(202);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_application WHERE party_id = ?",
+                customer.party())).isEqualTo(1);
+    }
+
+    @Test
+    @Order(15)
+    @DisplayName("an amount outside credit's product bounds is 422 bnpl.AmountOutOfRange through the door - pay-in-4 below"
+            + " 50.00 and above 1,000.00, pay-in-N below 200.00 and above 5,000.00 - nothing written")
+    void anAmountOutOfRangeRefusesAndWritesNothing() throws Exception {
+        termsInForce();
+        BnplApplicationClient.Merchant merchant = enabledMerchant();
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        for (String body : List.of(
+                BnplApplicationClient.payIn4(client.openSession(merchant, 49_99).token()),
+                BnplApplicationClient.payIn4(client.openSession(merchant, 1_000_01).token()),
+                BnplApplicationClient.payInN(client.openSession(merchant, 199_99).token(), 3),
+                BnplApplicationClient.payInN(client.openSession(merchant, 5_000_01).token(), 12))) {
+            HttpResponse<String> refused = client.submit(customer.token(), body, BnplApplicationClient.key());
+            assertThat(refused.statusCode()).as(body + " " + refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("bnpl.AmountOutOfRange");
+        }
+        assertNothingWritten(customer.party());
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_application WHERE merchant_id = ?::uuid",
+                merchant.id())).isZero();
+    }
+
+    @Test
+    @Order(16)
+    @DisplayName("a non-EUR session is not eligible - a USD session at a USD merchant answers 422 bnpl.SessionNotEligible"
+            + " through the door, nothing written")
+    void aNonEurSessionIsNotEligible() throws Exception {
+        termsInForce();
+        BnplApplicationClient.Merchant merchant = usdMerchant();
+        HttpResponse<String> created = client.post("/v1/checkout/sessions",
+                "{\"amountMinor\":60000,\"currency\":\"USD\",\"lineSummary\":\"A bicycle\"}", merchant.apiKey(),
+                BnplApplicationClient.key());
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        String token = BnplApplicationClient.field(created.body(), "sessionToken");
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        for (String body : List.of(BnplApplicationClient.payIn4(token), BnplApplicationClient.payInN(token, 3))) {
+            HttpResponse<String> refused = client.submit(customer.token(), body, BnplApplicationClient.key());
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("bnpl.SessionNotEligible").doesNotContain(token);
+        }
+        assertNothingWritten(customer.party());
+    }
+
     // ------------------------------------------------------------------ plumbing
+
+    /** A trading merchant settling in USD, priced for USD cards, with an API key - checkout's own doors. */
+    private BnplApplicationClient.Merchant usdMerchant() throws Exception {
+        String operator = client.operatorSession(authorization, com.finapp.identity.RoleName.MERCHANT_ADMINISTRATOR);
+        UUID party = ids.next();
+        try (Connection app = DatabaseRoles.application()) {
+            BnplApplicationClient.execute(app, "INSERT INTO party.party (id, kind, display_name, registered_at) VALUES"
+                    + " (?, 'ORGANISATION', 'Acme Holdings', now())", party);
+            BnplApplicationClient.execute(app, "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                    + " status_changed_at) VALUES (?, ?, 'ACTIVE', now() - interval '1 hour', now())", ids.next(), party);
+        }
+        HttpResponse<String> onboarded = client.post("/v1/operator/merchants", "{\"partyId\":\"" + party + "\","
+                + "\"legalName\":\"Acme Inc\",\"displayName\":\"Acme\",\"settlementCurrency\":\"USD\"}", operator,
+                BnplApplicationClient.key());
+        assertThat(onboarded.statusCode()).as(onboarded.body()).isEqualTo(201);
+        String merchantId = BnplApplicationClient.field(onboarded.body(), "merchantId");
+        String schedule = BnplApplicationClient.field(client.post("/v1/operator/fee-schedules",
+                "{\"name\":\"Usd " + UUID.randomUUID() + "\",\"currency\":\"USD\"}", operator, null).body(),
+                "feeScheduleId");
+        assertThat(client.post("/v1/operator/fee-schedules/" + schedule + "/versions",
+                "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\","
+                        + "\"refundFeePolicy\":\"RETAINED\",\"reason\":\"initial pricing\"}", operator, null)
+                .statusCode()).isEqualTo(201);
+        HttpResponse<String> assigned = client.call("PUT", "/v1/operator/merchants/" + merchantId + "/fee-schedule",
+                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"standard terms\"}", operator);
+        assertThat(assigned.statusCode()).as(assigned.body()).isEqualTo(200);
+        HttpResponse<String> issued = client.post("/v1/operator/merchants/" + merchantId + "/api-keys", null, operator,
+                BnplApplicationClient.key());
+        assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);
+        return new BnplApplicationClient.Merchant(merchantId, BnplApplicationClient.field(issued.body(), "keyId") + "."
+                + BnplApplicationClient.field(issued.body(), "secret"));
+    }
 
     private BnplApplicationClient.Merchant enabledMerchant() throws Exception {
         BnplApplicationClient.Merchant merchant = client.tradingMerchant(authorization);

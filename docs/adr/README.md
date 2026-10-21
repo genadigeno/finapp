@@ -24,7 +24,9 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   written `Proposed` at the Phase 9 → 10 transition and accepted by the Phase 10 review
   (`P10-DOC-001`, 2026-10-09) in the same way; ADR-0090…0100 were written `Proposed` at the
   Phase 10 → 11 transition (2026-10-10) and accepted by the Phase 11 review (`P11-DOC-001`,
-  2026-10-15) in the same way. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
+  2026-10-15) in the same way; ADR-0101…0106 were written `Proposed` at the Phase 11 → 12
+  transition (2026-10-16) and accepted by the Phase 12 review (`P12-DOC-001`, 2026-10-22) in the
+  same way. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
 
@@ -132,12 +134,12 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0098](ADR-0098-delinquency-default-and-the-collections-boundary.md) | Delinquency, default and the collections boundary: days past due derived from dates, conditions apart from the lifecycle, recorded append-only on change, and nothing legally sensitive built | Accepted | 11 | Lending · Risk · Ledger · Events |
 | [0099](ADR-0099-servicing-corrections.md) | Servicing corrections: waivers, reversals and restructuring as reasoned, four-eyes acts that post, never edits | Accepted | 11 | Lending · Ledger · Identity · Audit · Credit |
 | [0100](ADR-0100-the-revolving-credit-line.md) | The revolving credit line: draws against an available limit derived under the line's lock, monthly statements with a minimum payment, closure through `CLOSING`, and exposure that counts the committed limit | Accepted | 11 | Lending · Credit · Ledger · Accounts |
-| [0101](ADR-0101-the-bnpl-bounded-context.md) | The BNPL bounded context: `bnpl` owns the agreement, purchase, financing and servicing facts and none of the money; lending's pure engines shared through `creditmath`, lending's `loan` not composed | Proposed | 12 | BNPL · Lending · Credit · Merchant · Checkout · Payments · Ledger · Platform |
-| [0102](ADR-0102-bnpl-products-terms-and-the-versioned-agreement.md) | BNPL products, terms and the versioned agreement: pay-in-4 on a BNPL schedule engine, pay-in-N on lending's engines, one decision per purchase | Proposed | 12 | BNPL · Credit · Checkout · Identity · Platform · Audit |
-| [0103](ADR-0103-bnpl-accounting.md) | BNPL accounting: per-obligation accounts, the financing entry, the merchant discount and the posting rules | Proposed | 12 | BNPL · Ledger · Merchant · Lending · Reconciliation |
-| [0104](ADR-0104-bnpl-funding-from-lending-capital.md) | BNPL funding from lending capital: the shared headroom and credit exposure version 3 | Proposed | 12 | BNPL · Lending · Credit · Ledger · Merchant |
-| [0105](ADR-0105-the-bnpl-refund-policy.md) | The BNPL refund policy: latest instalments first, the excess to the customer, the merchant fee pro-rated back, the PN interest rule, and the merchant payable's third bounded negative source | Proposed | 12 | BNPL · Merchant · Ledger · Accounts (wallet) · Identity |
-| [0106](ADR-0106-bnpl-disputes-and-the-single-refund-bound.md) | BNPL disputes and the single refund bound: a customer's contest holds servicing on the disputed amount and resolves only as a refund under the purchase's one bound, so nothing is credited twice | Proposed | 12 | BNPL · Merchant · Payments (Disputes) · Identity · Audit |
+| [0101](ADR-0101-the-bnpl-bounded-context.md) | The BNPL bounded context: `bnpl` owns the agreement, purchase, financing and servicing facts and none of the money; lending's pure engines shared through `creditmath`, lending's `loan` not composed | Accepted | 12 | BNPL · Lending · Credit · Merchant · Checkout · Payments · Ledger · Platform |
+| [0102](ADR-0102-bnpl-products-terms-and-the-versioned-agreement.md) | BNPL products, terms and the versioned agreement: pay-in-4 on a BNPL schedule engine, pay-in-N on lending's engines, one decision per purchase | Accepted | 12 | BNPL · Credit · Checkout · Identity · Platform · Audit |
+| [0103](ADR-0103-bnpl-accounting.md) | BNPL accounting: per-obligation accounts, the financing entry, the merchant discount and the posting rules | Accepted | 12 | BNPL · Ledger · Merchant · Lending · Reconciliation |
+| [0104](ADR-0104-bnpl-funding-from-lending-capital.md) | BNPL funding from lending capital: the shared headroom and credit exposure version 3 | Accepted | 12 | BNPL · Lending · Credit · Ledger · Merchant |
+| [0105](ADR-0105-the-bnpl-refund-policy.md) | The BNPL refund policy: latest instalments first, the excess to the customer, the merchant fee pro-rated back, the PN interest rule, and the merchant payable's third bounded negative source | Accepted | 12 | BNPL · Merchant · Ledger · Accounts (wallet) · Identity |
+| [0106](ADR-0106-bnpl-disputes-and-the-single-refund-bound.md) | BNPL disputes and the single refund bound: a customer's contest holds servicing on the disputed amount and resolves only as a refund under the purchase's one bound, so nothing is credited twice | Accepted | 12 | BNPL · Merchant · Payments (Disputes) · Identity · Audit |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

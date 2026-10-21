@@ -1,6 +1,6 @@
 # ADR-0102 — BNPL products, terms and the versioned agreement: pay-in-4 on a BNPL schedule engine, pay-in-N on lending's engines, one decision per purchase
 
-Status: Proposed
+Status: Accepted (2026-10-22, `P12-DOC-001` — read against the code and corrected first)
 Date: 2026-10-16
 Phase: 12
 Context: BNPL · Credit · Checkout · Identity · Platform · Audit
@@ -53,7 +53,10 @@ ADR-0091 (consumption through credit's port). Rests on `PHASE_12_PLAN.md` §2.2 
 
    EUR only (A2): the purchase's currency is the session's and the product's; a session in another
    currency is not BNPL-eligible (`422 bnpl.SessionNotEligible`). The amount bounds are credit's —
-   one truth, the `LoanProductBounds` precedent — and are configuration, not code.
+   one truth, the `LoanProductBounds` precedent — read through `BnplProductBounds` (`app`'s
+   `CreditBnplProductBounds`). *(Corrected by `P12-DOC-001`, 2026-10-22: this ended "and are
+   configuration, not code"; as built the bounds are code — `CreditProduct`'s enum constants, EUR
+   50.00–1,000.00 and EUR 200.00–5,000.00 — changed by a reviewed release of credit, never by bnpl.)*
 
 2. **Pay-in-4 on `BNPL_SCHEDULE_ENGINE_V1`** (`P12-TSK-008`). Pure, static, no clock, no database:
    `n = 4`; `D1` = the purchase's business date in the servicing zone (`UTC`, A22) on the database
@@ -87,7 +90,9 @@ ADR-0091 (consumption through credit's port). Rests on `PHASE_12_PLAN.md` §2.2 
    `ACTIVE` per product (partial uniques); activation retires the predecessor in the same
    transaction. Proposed by a holder of `BNPL_ADMINISTER`, decided by a different person (domain and
    `CHECK (decided_by <> proposed_by)`), serialised per product on **advisory namespace `12`**
-   (`hashtext(product)`), keyed `bnpl.terms:EMPLOYEE:<id>`, the decision stamped
+   (`hashtext(product)`), keyed `bnpl.terms:EMPLOYEE:<id>` *(as built (`P12-DOC-001`, 2026-10-22):
+   `bnpl.terms:<actor type>:<id>` — `BnplTermsDesk` keys by the session's actor type, which reads
+   `CUSTOMER` until operator sessions carry `EMPLOYEE` actors, lending's A5-04 note)*, the decision stamped
    `clock_timestamp()` after the lock (the Phase 11 gate's A2-F3, lending `V030`); audited
    `bnpl.TermsVersionProposed` / `…Activated` / `…Rejected`; the self-approval refusal audited
    `FAILED`. **Never activated by a migration**: production ships with none (ADR-0101 decision 14).
@@ -105,6 +110,14 @@ ADR-0091 (consumption through credit's port). Rests on `PHASE_12_PLAN.md` §2.2 
    | Disputes | the merchant's response window (14 days, OQ-10) |
    | Engines | P4: `BNPL_SCHEDULE_ENGINE_V1`, `ALLOCATION_ENGINE_V1`; PN: `SCHEDULE_ENGINE_V1`, `ACCRUAL_ENGINE_V1`, `ALLOCATION_ENGINE_V1` |
    | Document | agreement template id and version (code-registered) |
+
+   *(As built (`P12-DOC-001`, 2026-10-22), `bnpl V002`'s `bnpl_terms`: the Engines row also pins
+   `REFUND_ALLOCATION_ENGINE_V1` for both products (ADR-0105), held by `CHECK` on the terms and on every
+   agreement version; the Delinquency row has no cure-rule field — the bucket bounds (four, the last the
+   default threshold, 30–180 days) and `default_threshold_days` only, cure derived from the billed items
+   by `BnplConditions`; the offer validity is a term bounded 1–30 minutes; and, as the Follow-up's
+   `P12-TSK-004` entry records, the term set also holds `collection_retry_days`,
+   `dispute_four_eyes_threshold_minor` and `payoff_horizon_days`.)*
 
    **Not BNPL terms:** the merchant fee is the merchant's (`fee_schedule_version`, `INV-MER-03`),
    pinned per purchase in `bnpl_fee_pin` (ADR-0103); the amount bounds are credit's. **The excluded
@@ -291,4 +304,6 @@ ADR-0087 §2, ADR-0092.
   version n, and the repayment's trigger refused it as a `500`. The lock is now its own statement and the version is read
   by the next (`BnplProofDatabaseTest#aRepaymentBehindARefundReadsTheVersionItCommitted`). Neither changed a figure: the
   first was a false alarm of the proof, the second a refusal of a valid act.
-- Accepted by the Phase 12 exit review (`P12-DOC-001`), read against the code first.
+- **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
+  (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

@@ -481,8 +481,12 @@ class BnplAcceptancesTest {
         BnplOffer offer = offered(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
         accept(offer);
         for (AuditRecord record : world.audited) {
-            assertThat(record.changeSummary().orElseThrow()).doesNotContain("600", "576", "24.00", merchant.toString(),
-                    party.toString());
+            String summary = record.changeSummary().orElseThrow();
+            assertThat(summary).doesNotContain(merchant.toString(), party.toString());
+            // The amounts judged with the summary's ids masked: a time-ordered id's hex may hold "576" or "600" by chance
+            // (a flake the Phase 12 exit review met - P12-DOC-001), which is not a figure leaking.
+            assertThat(summary.replaceAll("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<id>"))
+                    .doesNotContain("600", "576", "24.00");
         }
         String financed = world.payloads.get(types().indexOf(BnplAcceptances.MERCHANT_FINANCED_EVENT));
         assertThat(financed).contains("\"grossMinor\":\"60000\"").contains("\"netMinor\":\"57600\"")

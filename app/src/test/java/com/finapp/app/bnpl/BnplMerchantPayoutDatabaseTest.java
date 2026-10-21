@@ -143,6 +143,7 @@ class BnplMerchantPayoutDatabaseTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private DataSource dataSource;
     @Autowired private Clock clock;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     private BnplPurchaseWorld world;
 
@@ -308,6 +309,96 @@ class BnplMerchantPayoutDatabaseTest {
         assertThat(payoutRows(first)).isEqualTo(1);
         assertThat(payoutRows(second)).isZero();
         assertThat(provider.requestCount(PATH)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a payout racing a BNPL refund on one payable is serialised, both orders, counted: the refund first -"
+            + " the payout queues behind it on the payable and is bounded by what it found (the net less the refund's"
+            + " debit), refused; the payout first - the refund queues behind it, the payout takes the whole net and the"
+            + " refund then leaves the payable below zero by its debit (B7, within the net), counted by"
+            + " finapp.ledger.negative.positions; the position INV-MER-02's terms either way, INV-MER-05 held")
+    void aPayoutRacingABnplRefundIsSerialised() throws Exception {
+        provider.succeedsWith(PATH, 200, PAID);
+        String body = "{\"amount\":\"200.00\",\"currency\":\"EUR\",\"reason\":\"goods returned\"}";
+        long refundDebit = 200_00L - 8_00L; // the refund less the fee returned pro rata (4% of 200.00)
+        int[] counted = new int[2]; // [refund first, payout first]
+
+        // The refund first: held at (P) - the payable row held here - the payout queued behind it.
+        Shop first = shop();
+        String firstPurchase = financed(first);
+        String firstKey = refundScopedKey(first);
+        Connection payable = BnplPurchaseWorld.held();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            lock(payable, "SELECT 1 FROM ledger.ledger_account WHERE id = '" + first.payable().value() + "' FOR UPDATE");
+            Future<HttpResponse<String>> refunding = pool.submit(() -> world.client.post("/v1/merchant/bnpl-purchases/"
+                    + firstPurchase + "/refunds", body, firstKey, BnplApplicationClient.key()));
+            int refund = awaitPidBlockedBy(pid(payable));
+            Future<Object> paying = pool.submit(() -> {
+                try {
+                    return initiate(payouts, first, GROSS - FEE, BnplApplicationClient.key());
+                } catch (MerchantPayoutUnfundedException refused) {
+                    return refused;
+                }
+            });
+            assertThat(awaitStatementBlockedBy(refund)).as("the payout queues behind the refund on the payable")
+                    .contains("ledger_account");
+            payable.rollback();
+            HttpResponse<String> refunded = refunding.get(60, TimeUnit.SECONDS);
+            assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
+            assertThat(paying.get(60, TimeUnit.SECONDS)).as("bounded by what it found: the net less the refund")
+                    .isInstanceOf(MerchantPayoutUnfundedException.class);
+            counted[0]++;
+        } finally {
+            BnplPurchaseWorld.closeQuietly(payable);
+        }
+        assertThat(positionMinor(first)).isEqualTo(GROSS - FEE - refundDebit);
+        assertThat(BnplPurchaseWorld.creditBalanceOf(first.payable().value())).isEqualTo(GROSS - FEE - refundDebit);
+        assertThat(payoutRows(first)).isZero();
+        assertThat(initiate(payouts, first, GROSS - FEE - refundDebit, BnplApplicationClient.key()).status())
+                .as("what it found is paid out exactly").isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(positionMinor(first)).isZero();
+
+        // The payout first: held at its hold - the payable row held here - the refund queued behind it.
+        Shop second = shop();
+        String secondPurchase = financed(second);
+        String secondKey = refundScopedKey(second);
+        long negativeBefore = negativePayables();
+        assertThat(negativePayablesGauge(negativeBefore)).as("the gauge agrees with the SQL before").isEqualTo(
+                (double) negativeBefore);
+        Connection hold = BnplPurchaseWorld.held();
+        try {
+            lock(hold, "SELECT 1 FROM ledger.ledger_account WHERE id = '" + second.payable().value() + "' FOR UPDATE");
+            Future<Object> paying = pool.submit(() -> initiate(payouts, second, GROSS - FEE,
+                    BnplApplicationClient.key()));
+            int payout = awaitPidBlockedBy(pid(hold));
+            Future<HttpResponse<String>> refunding = pool.submit(() -> world.client.post("/v1/merchant/bnpl-purchases/"
+                    + secondPurchase + "/refunds", body, secondKey, BnplApplicationClient.key()));
+            assertThat(awaitStatementBlockedBy(payout)).as("the refund queues behind the payout on the payable")
+                    .contains("ledger_account");
+            hold.rollback();
+            assertThat(((MerchantPayouts.Initiated) paying.get(60, TimeUnit.SECONDS)).status())
+                    .as("it found the whole net").isEqualTo(MerchantPayoutStatus.COMPLETED);
+            HttpResponse<String> refunded = refunding.get(60, TimeUnit.SECONDS);
+            assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
+            counted[1]++;
+        } finally {
+            pool.shutdownNow();
+            BnplPurchaseWorld.closeQuietly(hold);
+        }
+        assertThat(positionMinor(second)).as("INV-MER-02: financed - fee - payout - refund + fee returned")
+                .isEqualTo(GROSS - FEE - (GROSS - FEE) - refundDebit);
+        assertThat(BnplPurchaseWorld.creditBalanceOf(second.payable().value())).isEqualTo(-refundDebit);
+        assertThat(BnplApplicationClient.count("SELECT coalesce(sum(amount_minor), 0) FROM merchant.merchant_payout WHERE"
+                + " merchant_id = ?::uuid AND status = 'COMPLETED'", second.id().value().toString()))
+                .as("INV-MER-05: paid out no more than the payable it found").isEqualTo(GROSS - FEE);
+        assertThatThrownBy(() -> initiate(payouts, second, 1L, BnplApplicationClient.key()))
+                .as("a payable below zero refuses every payout").isInstanceOf(MerchantPayoutUnfundedException.class);
+        assertThat(negativePayables()).as("one more payable below zero, by independent SQL").isEqualTo(negativeBefore + 1);
+        assertThat(negativePayablesGauge(negativeBefore + 1)).as("the gauge counts the payable the refund drove below"
+                + " zero").isEqualTo((double) (negativeBefore + 1));
+        assertThat(counted).as("both orders, counted").containsExactly(1, 1);
+        assertThat(provider.requestCount(PATH)).isEqualTo(2);
     }
 
     // ------------------------------------------------------------------ once
@@ -509,6 +600,43 @@ class BnplMerchantPayoutDatabaseTest {
             });
         }
         return refund;
+    }
+
+    /** A key issued to the shop with the BNPL_REFUND scope, by the operator who administers its keys (the refund idiom). */
+    private String refundScopedKey(Shop shop) throws Exception {
+        String operator = world.client.operatorSession(authorization, com.finapp.identity.RoleName.MERCHANT_ADMINISTRATOR);
+        HttpResponse<String> issued = world.client.post("/v1/operator/merchants/" + shop.merchant().id()
+                + "/api-keys?scope=BNPL_REFUND", null, operator, BnplApplicationClient.key());
+        assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);
+        return BnplApplicationClient.field(issued.body(), "keyId") + "." + BnplApplicationClient.field(issued.body(),
+                "secret");
+    }
+
+    /** MERCHANT_PAYABLE accounts below zero by their journal lines - independent SQL, not the balance projection. */
+    private static long negativePayables() throws Exception {
+        return BnplApplicationClient.count("SELECT count(*) FROM (SELECT a.id FROM ledger.ledger_account a JOIN"
+                + " ledger.journal_line l ON l.ledger_account_id = a.id WHERE a.purpose = 'MERCHANT_PAYABLE' GROUP BY a.id"
+                + " HAVING sum(CASE l.direction WHEN 'CREDIT' THEN l.amount_minor ELSE -l.amount_minor END) < 0) below");
+    }
+
+    /**
+     * {@code finapp.ledger.negative.positions{purpose=MERCHANT_PAYABLE}} as the running instance publishes it - awaited
+     * (20 s) to read {@code expected}, past its 5 s refresh floor; the last reading.
+     */
+    private double negativePayablesGauge(long expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        double reading = Double.NaN;
+        while (System.nanoTime() < deadline) {
+            io.micrometer.core.instrument.Gauge gauge = meterRegistry.find("finapp.ledger.negative.positions")
+                    .tag("purpose", "MERCHANT_PAYABLE").gauge();
+            assertThat(gauge).as("published eagerly by a running instance").isNotNull();
+            reading = gauge.value();
+            if (reading == expected) {
+                return reading;
+            }
+            Thread.sleep(250);
+        }
+        return reading;
     }
 
     /** The bnpl rows a payout must never touch: the agreement's versions, the obligation, the financing, its entry. */

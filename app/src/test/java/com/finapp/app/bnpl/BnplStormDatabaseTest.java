@@ -350,6 +350,8 @@ class BnplStormDatabaseTest {
             assertTheTermsWerePinnedAcrossTheActivation();
             assertTheNamedLockWaitsWereCounted();
             assertEveryScenarioWasExercised();
+            assertThat(census.dpdPastDueSeen.get()).as("C19 met an obligation past due at some reading (P12-DOC-001) -"
+                    + " a census that never saw one proves nothing").isPositive();
         } else {
             summary(began);
         }
@@ -1661,6 +1663,8 @@ class BnplStormDatabaseTest {
                 TimeUnit.NANOSECONDS.toMillis(census.readingNanos.get() / Math.max(1, census.readings.get())),
                 TimeUnit.NANOSECONDS.toMillis(census.slowestReadingNanos.get()), census.obligationsProven,
                 census.merchantsProven);
+        System.out.printf("P12-DOC-001 C19 (days past due, Java rule vs bnpl.days_past_due): %d readings, at most %d"
+                + " obligations past due at one%n", census.dpdReadings.get(), census.dpdPastDueSeen.get());
         System.out.println("P12-TST-001 METERS (the whole run): " + lastMeters);
         System.out.println("P12-TST-001 DISPATCHES: " + lastDispatches);
         System.out.println("P12-TST-001 COVERAGE: " + covered);

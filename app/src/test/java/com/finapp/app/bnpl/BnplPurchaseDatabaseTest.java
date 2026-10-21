@@ -124,6 +124,8 @@ class BnplPurchaseDatabaseTest {
     @Autowired private AuditWriter<Connection> auditWriter;
     @Autowired private IdGenerator ids;
     @Autowired private Clock clock;
+    @Autowired private com.finapp.checkout.CheckoutExpirySweeper checkoutExpiry;
+    @Autowired private com.finapp.bnpl.BnplServicing servicing;
 
     private BnplPurchaseWorld world;
     private static com.finapp.platform.testing.provider.SimulatedProvider provider;
@@ -411,6 +413,7 @@ class BnplPurchaseDatabaseTest {
             Bought bought = payIn4();
             BnplAcceptances failing = acceptances(step);
             BnplOfferId offer = BnplOfferId.of(UUID.fromString(bought.offer().id()));
+            String bnplRowsBefore = bnplRows();
             try {
                 act(bought.customer(), uow -> failing.accept(uow, offer, bought.customer().party(),
                         acceptance(bought.offer().hash()), customer(bought.customer()), BnplPurchaseWorld.flow()));
@@ -418,6 +421,8 @@ class BnplPurchaseDatabaseTest {
             } catch (Injected expected) {
                 // the act rolled back whole
             }
+            assertThat(bnplRows()).as(step + ": no merchant_financing, bnpl_obligation or bnpl-keyed journal entry"
+                    + " anywhere (the sweepers are off in the suite)").isEqualTo(bnplRowsBefore);
             assertNothing(bought);
             HttpResponse<String> accepted = world.accept(bought.customer().token(), bought.offer(),
                     BnplApplicationClient.key());
@@ -471,6 +476,85 @@ class BnplPurchaseDatabaseTest {
                 .isEqualTo("true|1");
     }
 
+    @Test
+    @DisplayName("the acceptance stores its evidence and creates no consent (INV-IDN-04): through the door, bnpl_acceptance"
+            + " holds the caller's identity, session and MULTI_FACTOR assurance, the client address and agent the request"
+            + " came with, the instant on the database clock and the echoed terms hash; the consent tables unchanged; one"
+            + " credit.DecisionConsumed SUCCEEDED naming the BNPL_AGREEMENT")
+    void theAcceptanceStoresItsEvidenceAndNoConsent() throws Exception {
+        Bought bought = payIn4();
+        String agent = "finapp-w2-suite/1.0 (" + UUID.randomUUID() + ")";
+        String consentBefore = consentFingerprint(bought.customer().party());
+        String before = BnplApplicationClient.scalar("SELECT clock_timestamp()::text");
+        HttpResponse<String> accepted = acceptFromLoopback(bought.customer().token(), bought.offer(), agent);
+        String after = BnplApplicationClient.scalar("SELECT clock_timestamp()::text");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String agreement = BnplApplicationClient.field(accepted.body(), "agreementId");
+
+        String session;
+        String identity;
+        String assurance;
+        try (Connection owner = DatabaseRoles.migrator(); java.sql.PreparedStatement read = owner.prepareStatement(
+                "SELECT id::text, identity_id::text, assurance FROM identity.session WHERE token_hash = ?")) {
+            read.setString(1, com.finapp.identity.SessionToken.of(bought.customer().token()).hash().expose());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("the caller's session").isTrue();
+                session = row.getString(1);
+                identity = row.getString(2);
+                assurance = row.getString(3);
+            }
+        }
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_acceptance WHERE offer_id = ?::uuid",
+                bought.offer().id())).isEqualTo(1);
+        assertThat(BnplApplicationClient.scalar("SELECT identity_id || '|' || session_id || '|' || assurance || '|' ||"
+                + " host(client_ip) || '|' || user_agent || '|' || encode(terms_sha256, 'hex') || '|' || channel || '|'"
+                + " || agreement_id || '|' || agreement_version FROM bnpl.bnpl_acceptance WHERE offer_id = ?::uuid",
+                bought.offer().id())).isEqualTo(String.join("|", identity, session, assurance, "127.0.0.1", agent,
+                        bought.offer().hash(), "API", agreement, "1"));
+        assertThat(assurance).isEqualTo("MULTI_FACTOR");
+        assertThat(BnplApplicationClient.scalar("SELECT (accepted_at BETWEEN ?::timestamptz AND ?::timestamptz)::text"
+                + " FROM bnpl.bnpl_acceptance WHERE offer_id = ?::uuid", before, after, bought.offer().id()))
+                .as("accepted_at on the database clock, inside the request").isEqualTo("true");
+        assertThat(BnplApplicationClient.scalar("SELECT (a.terms_sha256 = t.terms_sha256)::text FROM bnpl.bnpl_acceptance a"
+                + " JOIN bnpl.bnpl_offer_terms t ON t.offer_id = a.offer_id WHERE a.offer_id = ?::uuid",
+                bought.offer().id())).as("the hash echoed is the offer's stored one").isEqualTo("true");
+
+        assertThat(consentFingerprint(bought.customer().party())).as("no consent purpose created or changed")
+                .isEqualTo(consentBefore);
+        String decision = BnplApplicationClient.scalar("SELECT decision_id::text FROM bnpl.bnpl_offer WHERE id = ?::uuid",
+                bought.offer().id());
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'credit.DecisionConsumed' AND target_id = ?", decision)).as("audited once").isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'credit.DecisionConsumed' AND outcome = 'SUCCEEDED' AND target_id = ? AND"
+                + " coalesce(change_summary, '') || coalesce(reason, '') LIKE ?", decision,
+                "%BNPL_AGREEMENT " + agreement + "%")).as("SUCCEEDED, naming the BNPL agreement").isEqualTo(1);
+    }
+
+    /** The acceptance from 127.0.0.1 with an explicit User-Agent - the request whose values the evidence must hold. */
+    private HttpResponse<String> acceptFromLoopback(String token, BnplPurchaseWorld.Offer offer, String agent)
+            throws Exception {
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create("http://127.0.0.1:" + port + BnplPurchaseWorld.OFFERS + "/" + offer.id()
+                        + "/acceptance"))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .header("User-Agent", agent)
+                .header(com.finapp.platform.api.IdempotencyKeyHeader.NAME, BnplApplicationClient.key())
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"termsSha256\":\"" + offer.hash() + "\"}"))
+                .build();
+        try (java.net.http.HttpClient http = java.net.http.HttpClient.newHttpClient()) {
+            return http.send(request, HttpResponse.BodyHandlers.ofString());
+        }
+    }
+
+    /** The consent tables' row counts and the party's consent rows, whole - unchanged by an acceptance (INV-IDN-04). */
+    private static String consentFingerprint(UUID party) throws Exception {
+        return BnplApplicationClient.scalar("SELECT (SELECT count(*) FROM consent.consent_text) || '|' || (SELECT count(*)"
+                + " FROM consent.consent_record) || '|' || coalesce((SELECT md5(string_agg(r::text, ',' ORDER BY r::text))"
+                + " FROM consent.consent_record r WHERE r.party_id = ?), '-')", party);
+    }
+
     // ------------------------------------------------------------------ refusals
 
     @Test
@@ -508,6 +592,77 @@ class BnplPurchaseDatabaseTest {
     }
 
     @Test
+    @DisplayName("a merchant suspended with an open BNPL purchase keeps it serviced and refundable (section 14 row 11):"
+            + " the servicing step collects instalment 2 from the wallet unchanged, the operator's door refunds it 201;"
+            + " the merchant's own refund door answers as recorded while suspended; new BNPL refused 422"
+            + " bnpl.MerchantNotEnabled - an acceptance and an application alike, nothing written")
+    void aSuspendedMerchantsOpenPurchaseStaysServicedAndRefundable() throws Exception {
+        Bought bought = payIn4();
+        HttpResponse<String> accepted = world.accept(bought.customer().token(), bought.offer(),
+                BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String purchase = BnplApplicationClient.field(accepted.body(), "purchaseId");
+        String obligation = BnplApplicationClient.scalar("SELECT id::text FROM bnpl.bnpl_obligation WHERE purchase_id ="
+                + " ?::uuid", purchase);
+        // Before the suspension: a refund-scoped key, another customer's offer and an open session at the merchant.
+        String scoped = refundScopedKey(bought.merchant());
+        CreditFixtures.Customer next = world.customers.consentingCustomer();
+        world.topUpWallet(next.party(), eur(1_000_00));
+        BnplPurchaseWorld.Offer later = world.offered(next, bought.merchant(), GROSS, BnplApplicationClient::payIn4);
+        BnplApplicationClient.Opened open = world.client.openSession(bought.merchant(), GROSS);
+        CreditFixtures.Customer applicant = world.customers.consentingCustomer();
+
+        BnplApplicationClient.act(BnplApplicationClient.operator(), uow -> {
+            merchantAdministration.suspend(uow, MerchantId.of(bought.merchant().ref()), "investigation");
+            return null;
+        });
+        assertThat(BnplApplicationClient.scalar("SELECT status FROM merchant.merchant WHERE id = ?::uuid",
+                bought.merchant().id())).isEqualTo("SUSPENDED");
+
+        // Serviced: instalment 2 brought to today and collected by the servicing step, as for any merchant.
+        long walletBefore = BnplPurchaseWorld.creditBalanceOf(world.walletOf(bought.customer().party()).value());
+        toDueDate(obligation, 2);
+        try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
+            transactions.inTransaction(uow -> servicing.service(uow,
+                    com.finapp.bnpl.BnplObligationId.of(UUID.fromString(obligation))));
+        }
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_collection_attempt WHERE obligation_id ="
+                + " ?::uuid AND outcome = 'COLLECTED' AND collected_minor = 15000", obligation))
+                .as("instalment 2 collected while the merchant is suspended").isEqualTo(1);
+        assertThat(BnplPurchaseWorld.creditBalanceOf(world.walletOf(bought.customer().party()).value()))
+                .isEqualTo(walletBefore - 150_00);
+
+        // Refundable: the operator's door.
+        String body = "{\"amount\":\"180.00\",\"currency\":\"EUR\",\"reason\":\"goods returned\"}";
+        String operator = world.client.operatorSession(authorization, com.finapp.identity.RoleName.LEDGER_OPERATOR);
+        HttpResponse<String> refunded = world.client.post("/v1/operator/bnpl-purchases/" + purchase + "/refunds", body,
+                operator, BnplApplicationClient.key());
+        assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                purchase)).isEqualTo(1);
+        // The merchant's own door while suspended: its key no longer authenticates - recorded as observed.
+        HttpResponse<String> merchantDoor = world.client.post("/v1/merchant/bnpl-purchases/" + purchase + "/refunds",
+                body, scoped, BnplApplicationClient.key());
+        assertThat(merchantDoor.statusCode()).as(merchantDoor.body()).isEqualTo(401);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                purchase)).as("the merchant door wrote nothing").isEqualTo(1);
+
+        // New BNPL refused.
+        HttpResponse<String> refusedAcceptance = world.accept(next.token(), later, BnplApplicationClient.key());
+        assertThat(refusedAcceptance.statusCode()).as(refusedAcceptance.body()).isEqualTo(422);
+        assertThat(refusedAcceptance.body()).contains("bnpl.MerchantNotEnabled");
+        // Without the merchant: its payable rightly carries the first purchase's financing.
+        assertNothing(new Bought(next, later));
+        HttpResponse<String> refusedApplication = world.client.submit(applicant.token(),
+                BnplApplicationClient.payIn4(open.token()), BnplApplicationClient.key());
+        assertThat(refusedApplication.statusCode()).as(refusedApplication.body()).isEqualTo(422);
+        assertThat(refusedApplication.body()).contains("bnpl.MerchantNotEnabled");
+        assertThat(BnplApplicationClient.count("SELECT (SELECT count(*) FROM bnpl.bnpl_application WHERE party_id = ?)"
+                + " + (SELECT count(*) FROM credit.decision_request WHERE party_id = ?)", applicant.party(),
+                applicant.party())).as("the application wrote nothing").isZero();
+    }
+
+    @Test
     @DisplayName("standing lost refuses 409 credit.ApplicantNotEligible; nothing consumed")
     void standingLostRefuses() throws Exception {
         Bought bought = payIn4();
@@ -537,23 +692,110 @@ class BnplPurchaseDatabaseTest {
     @DisplayName("acceptance and expiry at the boundary leave exactly one of ACCEPTED and EXPIRED: the offer's expiry"
             + " stamped a moment ahead, the acceptance and the sweep's expiry racing across it")
     void acceptanceAndExpiryLeaveExactlyOne() throws Exception {
-        for (int round = 0; round < ROUNDS; round++) {
+        int[] counted = new int[2]; // [ACCEPTED, EXPIRED]
+        for (int round = 0; round < ROUNDS + 2; round++) {
             Bought bought = payIn4();
-            expiresIn(bought.offer().id(), 400 + round * 50);
-            Thread.sleep(380 + round * 50L);
+            // ROUNDS rounds across the boundary, then the two anchors: the acceptance well inside, then well past.
+            long ahead = round < ROUNDS ? 400 + round * 50L : round == ROUNDS ? 8_000L : 300L;
+            long pause = round < ROUNDS ? ahead - 20 : round == ROUNDS ? 0L : 700L;
+            expiresIn(bought.offer().id(), ahead);
+            Thread.sleep(pause);
             List<Object> outcomes = atOnce(List.of(
                     () -> world.accept(bought.customer().token(), bought.offer(), BnplApplicationClient.key())
                             .statusCode(),
                     () -> transactions.inTransaction(uow -> origination.expire(uow,
                             BnplOfferId.of(UUID.fromString(bought.offer().id())), new Actor("platform",
                                     ActorType.SYSTEM))).isPresent()));
-            String status = BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_offer WHERE id = ?::uuid",
-                    bought.offer().id());
-            long purchases = BnplApplicationClient.count("SELECT count(*) FROM bnpl.purchase WHERE offer_id = ?::uuid",
-                    bought.offer().id());
-            assertThat(status).as(String.valueOf(outcomes)).isIn("ACCEPTED", "EXPIRED", "OFFERED");
-            assertThat(purchases).isEqualTo("ACCEPTED".equals(status) ? 1 : 0);
+            sweptAfterItsExpiry(bought.offer().id());
+            String status = settledExactlyOnce(bought, outcomes.get(0), "round " + round + ": " + outcomes);
+            counted["ACCEPTED".equals(status) ? 0 : 1]++;
         }
+        assertThat(counted[0] > 0 && counted[1] > 0).as("both outcomes occurred: [ACCEPTED, EXPIRED] = %s",
+                java.util.Arrays.toString(counted)).isTrue();
+    }
+
+    @Test
+    @DisplayName("acceptance and SESSION expiry at the boundary leave exactly one of ACCEPTED and EXPIRED: the session's"
+            + " deadline and the offer's (LEAST: the session binds) stamped a moment ahead, the acceptance, the offer's"
+            + " expiry and checkout's expiry sweep racing across it - ACCEPTED with the session COMPLETED and one order, or"
+            + " EXPIRED with no purchase and no order")
+    void acceptanceAndSessionExpiryLeaveExactlyOne() throws Exception {
+        int[] counted = new int[2]; // [ACCEPTED, EXPIRED]
+        for (int round = 0; round < ROUNDS + 2; round++) {
+            Bought bought = payIn4();
+            long ahead = round < ROUNDS ? 400 + round * 50L : round == ROUNDS ? 8_000L : 300L;
+            long pause = round < ROUNDS ? ahead - 20 : round == ROUNDS ? 0L : 700L;
+            sessionAndOfferExpireIn(bought, ahead);
+            Thread.sleep(pause);
+            BnplOfferId offer = BnplOfferId.of(UUID.fromString(bought.offer().id()));
+            List<Object> outcomes = atOnce(List.of(
+                    () -> world.accept(bought.customer().token(), bought.offer(), BnplApplicationClient.key())
+                            .statusCode(),
+                    () -> {
+                        for (int i = 0; i < 40; i++) {
+                            if (transactions.inTransaction(uow -> origination.expire(uow, offer,
+                                    new Actor("platform", ActorType.SYSTEM))).isPresent()) {
+                                return "EXPIRED";
+                            }
+                            Thread.sleep(20);
+                        }
+                        return "not expired";
+                    },
+                    () -> {
+                        int expired = 0;
+                        for (int i = 0; i < 20; i++) {
+                            expired += checkoutExpiry.sweep().expired();
+                            Thread.sleep(30);
+                        }
+                        return "sessions expired: " + expired;
+                    }));
+            sweptAfterItsExpiry(bought.offer().id());
+            checkoutExpiry.sweep();
+            String context = "round " + round + ": " + outcomes;
+            String status = settledExactlyOnce(bought, outcomes.get(0), context);
+            String session = BnplApplicationClient.scalar("SELECT status FROM checkout.checkout_session WHERE id ="
+                    + " ?::uuid", bought.offer().session().toString());
+            long orders = BnplApplicationClient.count("SELECT count(*) FROM checkout.checkout_order WHERE session_ref ="
+                    + " ?::uuid", bought.offer().session().toString());
+            if ("ACCEPTED".equals(status)) {
+                assertThat(session).as(context).isEqualTo("COMPLETED");
+                assertThat(orders).as(context).isEqualTo(1);
+            } else {
+                assertThat(session).as(context).isEqualTo("EXPIRED");
+                assertThat(orders).as(context).isZero();
+            }
+            counted["ACCEPTED".equals(status) ? 0 : 1]++;
+        }
+        assertThat(counted[0] > 0 && counted[1] > 0).as("both outcomes occurred: [ACCEPTED, EXPIRED] = %s",
+                java.util.Arrays.toString(counted)).isTrue();
+    }
+
+    /** The sweep's expiry run once the offer's deadline has passed on the database clock - what the sweep would do. */
+    private void sweptAfterItsExpiry(String offer) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (!"true".equals(BnplApplicationClient.scalar("SELECT (expires_at <= clock_timestamp())::text FROM"
+                + " bnpl.bnpl_offer WHERE id = ?::uuid", offer))) {
+            assertThat(System.nanoTime()).as("the offer's deadline passes").isLessThan(deadline);
+            Thread.sleep(50);
+        }
+        transactions.inTransaction(uow -> origination.expire(uow, BnplOfferId.of(UUID.fromString(offer)),
+                new Actor("platform", ActorType.SYSTEM)));
+    }
+
+    /**
+     * Exactly one of ACCEPTED and EXPIRED, by one edge out of OFFERED: 201 iff ACCEPTED, one purchase iff ACCEPTED, the
+     * refused acceptance a 409. The status.
+     */
+    private static String settledExactlyOnce(Bought bought, Object acceptance, String context) throws Exception {
+        String status = BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_offer WHERE id = ?::uuid",
+                bought.offer().id());
+        assertThat(status).as(context).isIn("ACCEPTED", "EXPIRED");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_offer_event WHERE offer_id = ?::uuid AND"
+                + " from_status = 'OFFERED'", bought.offer().id())).as(context + ": one edge").isEqualTo(1);
+        assertThat(acceptance).as(context + ": 201 iff ACCEPTED").isEqualTo("ACCEPTED".equals(status) ? 201 : 409);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.purchase WHERE offer_id = ?::uuid",
+                bought.offer().id())).as(context).isEqualTo("ACCEPTED".equals(status) ? 1 : 0);
+        return status;
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -647,6 +889,78 @@ class BnplPurchaseDatabaseTest {
         }
     }
 
+    /**
+     * The session's deadline and the offer's moved to ONE instant {@code millis} ahead - the offer's expiry is LEAST(...,
+     * the session's), so the session binds - the bootstrap superuser, the rows' triggers suspended.
+     */
+    private static void sessionAndOfferExpireIn(Bought bought, long millis) throws Exception {
+        try (Connection root = DatabaseRoles.bootstrap(); Statement statement = root.createStatement()) {
+            root.setAutoCommit(false);
+            statement.execute("SET LOCAL session_replication_role = replica");
+            // checkout stamps created_at from the instance's clock, which may run ahead of the database's: the deadline
+            // must stay after it (checkout_session_expires_after_creation), so wait until the database clock has passed it.
+            long patience = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!"true".equals(BnplApplicationClient.scalar("SELECT (clock_timestamp() > created_at + interval '20"
+                    + " milliseconds')::text FROM checkout.checkout_session WHERE id = ?::uuid",
+                    bought.offer().session().toString()))) {
+                if (System.nanoTime() > patience) {
+                    throw new AssertionError("the database clock never passed the session's creation");
+                }
+                Thread.sleep(25);
+            }
+            String at;
+            try (ResultSet now = statement.executeQuery("SELECT (clock_timestamp() + interval '" + millis
+                    + " milliseconds')::text")) {
+                now.next();
+                at = now.getString(1);
+            }
+            statement.execute("UPDATE checkout.checkout_session SET expires_at = '" + at + "'::timestamptz WHERE id = '"
+                    + bought.offer().session() + "'");
+            statement.execute("UPDATE bnpl.bnpl_offer SET expires_at = '" + at + "'::timestamptz, next_step_at = '" + at
+                    + "'::timestamptz WHERE id = '" + bought.offer().id() + "'");
+            root.commit();
+        }
+    }
+
+    /** A key issued to {@code merchant} with the BNPL_REFUND scope, by the operator who administers its keys. */
+    private String refundScopedKey(BnplApplicationClient.Merchant merchant) throws Exception {
+        String operator = world.client.operatorSession(authorization, com.finapp.identity.RoleName.MERCHANT_ADMINISTRATOR);
+        HttpResponse<String> issued = world.client.post("/v1/operator/merchants/" + merchant.id()
+                + "/api-keys?scope=BNPL_REFUND", null, operator, BnplApplicationClient.key());
+        assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);
+        return BnplApplicationClient.field(issued.body(), "keyId") + "." + BnplApplicationClient.field(issued.body(),
+                "secret");
+    }
+
+    /**
+     * {@code BnplCollectionLedgerDatabaseTest}'s owner-role date shift: instalment {@code sequence}'s due date brought to
+     * today, the obligation's whole record moved back together.
+     */
+    private static void toDueDate(String obligation, int sequence) throws Exception {
+        long days = BnplApplicationClient.count("SELECT i.due_date - (now() AT TIME ZONE 'UTC')::date FROM"
+                + " bnpl.bnpl_instalment i WHERE i.obligation_id = ?::uuid AND i.sequence = ?", obligation, sequence);
+        String o = "'" + obligation + "'";
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("UPDATE bnpl.purchase SET business_date = business_date - " + days + " WHERE id ="
+                        + " (SELECT purchase_id FROM bnpl.bnpl_obligation WHERE id = " + o + ");"
+                        + " UPDATE bnpl.bnpl_obligation SET purchase_date = purchase_date - " + days + " WHERE id = " + o
+                        + "; UPDATE bnpl.bnpl_schedule SET start_date = start_date - " + days + " WHERE obligation_id = "
+                        + o + "; UPDATE bnpl.bnpl_instalment SET due_date = due_date - " + days + " WHERE obligation_id = "
+                        + o + "; UPDATE bnpl.bnpl_billing SET value_date = value_date - " + days + ", period_start ="
+                        + " period_start - " + days + ", business_date = business_date - " + days
+                        + " WHERE obligation_id = " + o + "; UPDATE bnpl.bnpl_repayment SET value_date = value_date - "
+                        + days + " WHERE obligation_id = " + o + "; UPDATE ledger.journal_entry SET posting_date ="
+                        + " posting_date - " + days + ", value_date = value_date - " + days + " WHERE id IN (SELECT"
+                        + " l.entry_id FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id ="
+                        + " l.ledger_account_id WHERE a.owner_ref = " + o + "::uuid)");
+            }
+            owner.commit();
+        }
+    }
+
     /** Headroom deployed: a planted BNPL principal on an obligation-less owner (the capital suite's fixture). */
     private void consume(Money amount) {
         if (!amount.isPositive()) {
@@ -722,6 +1036,13 @@ class BnplPurchaseDatabaseTest {
         return BnplApplicationClient.act(customer(customer), work);
     }
 
+    /** merchant_financing, bnpl_obligation and bnpl-keyed journal entries, counted database-wide. */
+    private static String bnplRows() throws Exception {
+        return BnplApplicationClient.scalar("SELECT (SELECT count(*) FROM bnpl.merchant_financing) || '|' || (SELECT"
+                + " count(*) FROM bnpl.bnpl_obligation) || '|' || (SELECT count(*) FROM ledger.journal_entry WHERE"
+                + " idempotency_scope LIKE 'ledger.post:bnpl.%')");
+    }
+
     /** Exactly one purchase, financing, consumption and order for the offer's session; the offer ACCEPTED. */
     private static void assertOnce(Bought bought) throws Exception {
         String session = bought.offer().session().toString();
@@ -750,6 +1071,19 @@ class BnplPurchaseDatabaseTest {
      */
     private static void assertNothing(Bought bought, int otherOrders) throws Exception {
         String session = bought.offer().session().toString();
+        // No financing, no obligation and no bnpl-keyed ledger entry for this purchase (P12-DOC-001: the purchase row's
+        // absence alone proves none of them - each is looked up by what the purchase would have carried).
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_obligation b JOIN bnpl.bnpl_offer o ON"
+                + " o.decision_id = b.decision_id WHERE o.id = ?::uuid", bought.offer().id())).as("no obligation")
+                .isZero();
+        if (bought.merchant() != null) {
+            assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.merchant_financing WHERE merchant_id ="
+                    + " ?::uuid", bought.merchant().id())).as("no merchant financing").isZero();
+            assertThat(BnplApplicationClient.count("SELECT count(DISTINCT e.id) FROM ledger.journal_entry e JOIN"
+                    + " ledger.journal_line l ON l.entry_id = e.id WHERE e.idempotency_scope LIKE 'ledger.post:bnpl.%' AND"
+                    + " l.ledger_account_id = ?", BnplPurchaseWorld.payableOf(bought.merchant())))
+                    .as("no bnpl-keyed journal entry on the merchant's payable").isZero();
+        }
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.purchase WHERE checkout_session_id = ?::uuid",
                 session)).isZero();
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM credit.credit_decision_consumption c JOIN"

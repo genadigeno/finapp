@@ -101,13 +101,21 @@ class BnplPayoffDatabaseTest {
             + " the refund first makes the quote stale (nothing posted), the payoff first leaves the refund to find CLOSED"
             + " and credit the customer only; every BNPL account zero either way, never a wrong payoff")
     void payoffBesideARefundIsStaleOrClosedNeverWrong() throws Exception {
-        for (int round = 0; round < 4; round++) {
+        // Both orders must occur (the review's finding: four unstaggered rounds proved neither was ever taken): the first
+        // two rounds race unstaggered, then the side that starts late alternates - the refund late in even rounds, the
+        // payoff late in odd ones - and each order is counted.
+        int refundFirst = 0;
+        int payoffFirst = 0;
+        for (int round = 0; round < 8; round++) {
             World world = new World();
             Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
             LocalDate day = bought.purchaseDate().plusDays(3);
             int which = round;
             BnplPayoffQuote quote = world.quoteOn(day, bought, "q-" + round, Optional.empty()).quote();
             List<Object> outcomes = world.concurrently(2, index -> {
+                if (which >= 2 && index == (which % 2 == 0 ? 1 : 0)) {
+                    Thread.sleep(150);
+                }
                 try {
                     return index == 0 ? world.executeOn(day, bought, "x-" + which, quote.id())
                             : world.refundOn(day, bought, "r-" + which, 150_00);
@@ -124,7 +132,10 @@ class BnplPayoffDatabaseTest {
                 assertThat(reason).isNull();
                 assertThat(world.book.keys()).noneMatch(key -> key.startsWith(BnplRepayments.POSTING_KEY_PREFIX)
                         && key.contains(quote.id().toString()));
+                assertThat(outcomes.get(1)).isInstanceOf(BnplRefunds.Refunded.class);
+                refundFirst++;
             } else {
+                payoffFirst++;
                 // The payoff committed first: the refund waited on B5 -> B4 and paid the customer only (OQ-15).
                 assertThat(executions).isEqualTo(1);
                 assertThat(reason).isEqualTo("PAID_OFF_EARLY");
@@ -134,6 +145,8 @@ class BnplPayoffDatabaseTest {
                 world.assertEveryAccountZero(bought);
             }
         }
+        assertThat(refundFirst).as("the refund committed first in some round - the quote went stale").isPositive();
+        assertThat(payoffFirst).as("the payoff committed first in some round - the refund found it CLOSED").isPositive();
     }
 
     @Test
@@ -154,6 +167,45 @@ class BnplPayoffDatabaseTest {
         world.executeOn(day, bought, "x2", fresh.id());
         assertThatThrownBy(() -> world.repayOn(day, bought, "late", 10_00))
                 .isInstanceOf(BnplRepayments.ObligationClosed.class);
+        world.assertEveryAccountZero(bought);
+    }
+
+    @Test
+    @DisplayName("a payoff whose instance dies after its execution, PAYOFF repayment, closure and postings is re-driven by"
+            + " another, once: the dead transaction leaves nothing; the re-drive executes once - one execution, one PAYOFF"
+            + " repayment, one closure, one repayment entry - and a re-drive after a lost response converges on it")
+    void aCrashedPayoffIsReDrivenOnceByAnotherInstance() throws Exception {
+        World world = new World();
+        Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate day = bought.purchaseDate().plusDays(5);
+        BnplPayoffQuote quote = world.quoteOn(day, bought, "q", Optional.empty()).quote();
+        String executions = "SELECT count(*) FROM bnpl.bnpl_payoff_execution WHERE obligation_id = '" + bought.id() + "'";
+        String payoffs = "SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id()
+                + "' AND kind = 'PAYOFF'";
+        String closures = "SELECT count(*) FROM bnpl.bnpl_obligation_closure WHERE obligation_id = '" + bought.id() + "'";
+        long base = world.repaymentPostings(); // instalment 1's AT_PURCHASE repayment
+        long[] seen = BnplInstanceCrash.crashAfter(world.frameOn(day), uow -> world.payoffs.execute(uow,
+                bought.agreement(), bought.party(), "crash", quote.id(), customer(bought.party()), correlation()),
+                uow -> new long[] {BnplInstanceCrash.countOn(uow, executions), BnplInstanceCrash.countOn(uow, payoffs),
+                        BnplInstanceCrash.countOn(uow, closures), world.repaymentPostings()});
+        assertThat(seen).as("the dead instance had executed, repaid, closed and posted")
+                .containsExactly(1, 1, 1, base + 1);
+        assertThat(count(executions)).as("nothing of the dead instance stands").isZero();
+        assertThat(count(payoffs)).isZero();
+        assertThat(count(closures)).isZero();
+        assertThat(world.repaymentPostings()).isEqualTo(base);
+        assertThat(scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'"))
+                .isEqualTo("ACTIVE");
+
+        BnplPayoffs.Executed redriven = world.executeOn(day, bought, "crash", quote.id()); // another instance
+        BnplPayoffs.Executed again = world.executeOn(day, bought, "crash", quote.id()); // the response lost
+        assertThat(redriven.replayed()).isFalse();
+        assertThat(again.replayed()).isTrue();
+        assertThat(again.execution().id()).isEqualTo(redriven.execution().id());
+        assertThat(count(executions)).isEqualTo(1);
+        assertThat(count(payoffs)).isEqualTo(1);
+        assertThat(count(closures)).isEqualTo(1);
+        assertThat(world.repaymentPostings()).as("one entry").isEqualTo(base + 1);
         world.assertEveryAccountZero(bought);
     }
 
@@ -423,8 +475,8 @@ class BnplPayoffDatabaseTest {
                     + " principal_due_minor, interest_accrued_minor, interest_due_minor, fees_due_minor,"
                     + " credit_balance_minor, projection_base_minor, projected_days, projected_interest_minor,"
                     + " amount_minor, schedule_engine, accrual_engine, allocation_engine, created_at, correlation_id)"
-                    + " VALUES (gen_random_uuid(), '" + bought.id() + "', '" + agreement + "', 1, 'parts', current_date,"
-                    + " current_date, 'EUR', 2, 45000, 0, 0, 0, 0, 0, 45000, 0, 0, 44999, 'BNPL_SCHEDULE_ENGINE_V1',"
+                    + " VALUES (gen_random_uuid(), '" + bought.id() + "', '" + agreement + "', 1, 'parts',"
+                    + " (clock_timestamp() AT TIME ZONE 'UTC')::date, (clock_timestamp() AT TIME ZONE 'UTC')::date, 'EUR', 2, 45000, 0, 0, 0, 0, 0, 45000, 0, 0, 44999, 'BNPL_SCHEDULE_ENGINE_V1',"
                     + " NULL, 'ALLOCATION_ENGINE_V1', clock_timestamp(), 'rank')", "amount_is_its_parts");
         }
     }
@@ -573,6 +625,11 @@ class BnplPayoffDatabaseTest {
             } finally {
                 pool.shutdownNow();
             }
+        }
+
+        /** The book's repayment postings (a PAYOFF's among them) - the entries, as the ledger keys them. */
+        long repaymentPostings() {
+            return book.keys().stream().filter(key -> key.startsWith(BnplRepayments.POSTING_KEY_PREFIX)).count();
         }
 
         void assertEveryAccountZero(Purchased bought) throws SQLException {

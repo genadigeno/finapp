@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplOrigination;
+import com.finapp.bnpl.BnplServicing;
 import com.finapp.bnpl.BnplTermsAdministration;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.RoleName;
@@ -69,6 +70,7 @@ class BnplServicingApiTest {
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private LendingCapitalHeadroom headroom;
     @Autowired private LoanWallets loanWallets;
+    @Autowired private BnplServicing servicing;
 
     private BnplPurchaseWorld world;
 
@@ -175,6 +177,89 @@ class BnplServicingApiTest {
         HttpResponse<String> replayed = world.client.post(reversal + "/approval", decision, approver, key);
         assertThat(replayed.statusCode()).isEqualTo(200);
         assertThat(BnplApplicationClient.field(replayed.body(), "journalEntryId")).isEqualTo(entry);
+    }
+
+    /** A pay-in-4 agreement owing a real late fee - instalment 2 unpaid five days past due on an empty wallet. */
+    record Owing(String agreement, String fee, CreditFixtures.Customer owner) {
+
+        String waivers() {
+            return AGREEMENTS + agreement + "/waivers";
+        }
+    }
+
+    private Owing owing() throws Exception {
+        CreditFixtures.Customer owner = world.customers.consentingCustomer();
+        world.topUpWallet(owner.party(), eur(150_00));
+        BnplPurchaseWorld.Offer offer = world.offered(owner, world.merchant(), GROSS, BnplApplicationClient::payIn4);
+        HttpResponse<String> accepted = world.accept(owner.token(), offer, BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String agreement = BnplApplicationClient.field(accepted.body(), "agreementId");
+        return new Owing(agreement, BnplLateFee.assessed(transactions, servicing, agreement), owner);
+    }
+
+    private static String waiverOf(Owing owing) {
+        return "{\"assessmentId\":\"" + owing.fee() + "\",\"amount\":\"5.00\",\"currency\":\"EUR\","
+                + "\"reason\":\"goodwill\"}";
+    }
+
+    @Test
+    @DisplayName("a late fee's waiver under four eyes through the API (INV-AUD-04): the proposer's own approval is 403"
+            + " bnpl.SelfApprovalRefused, recorded FAILED once against the waiver, no decision written; another agent's"
+            + " approval decides it")
+    void aWaiverProposersOwnApprovalIs403AndRecordedFailed() throws Exception {
+        Owing owing = owing();
+        String proposer = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> proposed = world.client.post(owing.waivers(), waiverOf(owing), proposer,
+                BnplApplicationClient.key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String waiver = BnplApplicationClient.field(proposed.body(), "waiverId");
+        String approval = owing.waivers() + "/" + waiver + "/approval";
+        HttpResponse<String> own = world.client.post(approval, "{\"reason\":\"mine\"}", proposer,
+                BnplApplicationClient.key());
+        assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
+        assertThat(own.body()).contains("bnpl.SelfApprovalRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfApprovalRefused' AND outcome = 'FAILED' AND target_id = ?", waiver)).isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_waiver_decision WHERE waiver_id ="
+                + " ?::uuid", waiver)).as("no decision written").isZero();
+        String approver = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> approved = world.client.post(approval, "{\"reason\":\"checked\"}", approver,
+                BnplApplicationClient.key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(approved.body()).contains("\"status\":\"APPROVED\"");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_waiver_decision WHERE waiver_id ="
+                + " ?::uuid AND outcome = 'APPROVED'", waiver)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("self-dealing through the API at the waiver doors: an agent whose identity is the agreement's own party is"
+            + " 403 bnpl.SelfDealingRefused proposing and approving - each recorded FAILED against the agreement, no"
+            + " waiver of theirs and no decision written")
+    void anInsidersWaiverIsSelfDealing() throws Exception {
+        Owing owing = owing();
+        String insider = world.client.sessionWithRole(authorization, owing.owner().login(),
+                RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> proposed = world.client.post(owing.waivers(), waiverOf(owing), insider,
+                BnplApplicationClient.key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(403);
+        assertThat(proposed.body()).contains("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_waiver WHERE fee_assessment_id = ?::uuid",
+                owing.fee())).as("the insider proposed nothing").isZero();
+        String agent = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> byAgent = world.client.post(owing.waivers(), waiverOf(owing), agent,
+                BnplApplicationClient.key());
+        assertThat(byAgent.statusCode()).as(byAgent.body()).isEqualTo(201);
+        String waiver = BnplApplicationClient.field(byAgent.body(), "waiverId");
+        HttpResponse<String> approved = world.client.post(owing.waivers() + "/" + waiver + "/approval",
+                "{\"reason\":\"mine\"}", insider, BnplApplicationClient.key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(403);
+        assertThat(approved.body()).contains("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ?", owing.agreement())).isEqualTo(2);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_waiver WHERE fee_assessment_id = ?::uuid",
+                owing.fee())).isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_waiver_decision WHERE waiver_id ="
+                + " ?::uuid", waiver)).isZero();
     }
 
     @Test

@@ -131,7 +131,14 @@ class BnplRefundDatabaseTest {
         World world = new World();
         Purchased during = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
         LocalDate second = during.purchaseDate().plusDays(14);
-        world.refundOn(during.purchaseDate().plusDays(1), during, "before", 180_00);
+        BnplRefunds.Refunded before = world.refundOn(during.purchaseDate().plusDays(1), during, "before", 180_00);
+        assertThat(scalar("SELECT string_agg(sequence || ':' || kind || ':' || principal_cancelled_minor, ','"
+                + " ORDER BY sequence DESC) FROM bnpl.bnpl_refund_adjustment WHERE refund_id = '"
+                + before.refund().id() + "'")).as("before: 4 whole, then 30.00 of 3 - latest first")
+                .isEqualTo("4:UNBILLED:15000,3:UNBILLED:3000");
+        assertThat(before.refund().cancelledBilled()).isEqualTo(Money.zero(EUR));
+        assertThat(before.refund().excess()).isEqualTo(Money.zero(EUR));
+        assertThat(before.closure()).isEmpty();
         world.serviceOn(second, during);
         BnplRefunds.Refunded rest = world.refundOn(second.plusDays(1), during, "during", 420_00);
         assertThat(rest.refund().cancelledBilled()).isEqualTo(Money.ofMinorUnits(150_00, EUR));
@@ -161,6 +168,10 @@ class BnplRefundDatabaseTest {
         World world = new World();
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
         world.refundOn(bought.purchaseDate().plusDays(1), bought, "partial", 180_00);
+        assertThat(scalar("SELECT max(version)::text FROM bnpl.bnpl_agreement WHERE obligation_id = '" + bought.id()
+                + "'")).as("the partial refund's agreement version").isEqualTo("2");
+        assertThat(scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'"))
+                .as("a partial refund leaves the obligation ACTIVE").isEqualTo("ACTIVE");
         assertThat(scalar("SELECT string_agg(i.sequence || ':' || i.principal_minor, ',' ORDER BY i.sequence) FROM"
                 + " bnpl.bnpl_instalment i JOIN bnpl.bnpl_schedule s ON s.id = i.schedule_id WHERE s.obligation_id = '"
                 + bought.id() + "' AND s.schedule_version = 2")).isEqualTo("1:15000,2:15000,3:12000");
@@ -168,6 +179,8 @@ class BnplRefundDatabaseTest {
                 + "' AND schedule_version = 2")).isEqualTo("42000");
         BnplRefunds.Refunded rest = world.refundOn(bought.purchaseDate().plusDays(2), bought, "cancel", 420_00);
         assertThat(rest.refund().excess()).as("instalment 1, paid at purchase").isEqualTo(Money.ofMinorUnits(150_00, EUR));
+        assertThat(rest.refund().excessTo()).as("the excess to the customer's wallet")
+                .isEqualTo(BnplRefund.ExcessTo.WALLET);
         assertThat(rest.closure()).map(BnplClosure::reason).contains(BnplClosureReason.REFUNDED);
     }
 
@@ -193,11 +206,22 @@ class BnplRefundDatabaseTest {
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
         world.refundOn(bought.purchaseDate().plusDays(1), bought, "full", 600_00);
         int keys = world.book.keys().size();
+        String repaymentRows = "SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id() + "'";
+        long repayments = count(repaymentRows);
+        String outboxRows = "SELECT count(*) FROM platform.outbox_event WHERE aggregate_id IN ('" + bought.id() + "', '"
+                + bought.purchase().value() + "')";
+        long outbox = count(outboxRows);
         assertThatThrownBy(() -> world.repayOn(bought.purchaseDate().plusDays(2), bought, "late", 10_00))
                 .isInstanceOf(BnplRepayments.ObligationClosed.class);
         assertThatThrownBy(() -> world.refundOn(bought.purchaseDate().plusDays(2), bought, "again", 1))
                 .isInstanceOf(BnplRefunds.PurchaseFullyRefunded.class);
         assertThat(world.book.keys()).hasSize(keys);
+        assertThat(count(repaymentRows)).as("no repayment row written").isEqualTo(repayments);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id()
+                + "' AND kind = 'CUSTOMER'")).as("no customer repayment at all").isZero();
+        assertThat(count(outboxRows)).as("no event written").isEqualTo(outbox);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + bought.purchase().value()
+                + "'")).as("the one full refund only").isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ scenarios 7 and 8, and the fee
