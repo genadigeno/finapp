@@ -120,7 +120,8 @@ final class BnplStormLocks {
     private static List<Waiter> awaitBlockedBy(int blocker, String table, Future<?> act) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         Map<Integer, Waiter> seen = new LinkedHashMap<>();
-        while (System.nanoTime() < deadline && !act.isDone()) {
+        long settled = Long.MAX_VALUE;
+        while (System.nanoTime() < deadline && !act.isDone() && System.nanoTime() < settled) {
             try (Connection observer = DatabaseRoles.application();
                     PreparedStatement select = observer.prepareStatement("SELECT pid, backend_xid::text, query FROM"
                             + " pg_stat_activity WHERE ? = ANY (pg_blocking_pids(pid)) AND state = 'active'"
@@ -136,8 +137,11 @@ final class BnplStormLocks {
                     }
                 }
             }
-            if (seen.values().stream().anyMatch(waiter -> waiter.xid() != null)) {
-                break;
+            // Not the first waiter with a transaction id: a sweep of either instance may queue on the held row before the
+            // act does (the fixed-pair-order probe's run saw a sweep's step first at B4), so the sightings settle for a
+            // second more - the act, blocked on the held lock, is still waiting - before the act's own backend is judged.
+            if (settled == Long.MAX_VALUE && seen.values().stream().anyMatch(waiter -> waiter.xid() != null)) {
+                settled = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
             }
             Thread.sleep(20);
         }

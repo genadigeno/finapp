@@ -457,8 +457,27 @@ final class BnplStormWorld {
         payoutsPaid();
     }
 
+    /**
+     * The payout provider mints its own reference per payout - letters only (`P8-TSK-018`'s shape): the provider's report
+     * screens its references for a digit run of card length, dashes collapsed, which our {@code pyo-<uuid>} hex holds now
+     * and then - echoed inside the provider's reference, the report would be refused (`PRIMARY_ACCOUNT_NUMBER`).
+     */
     void payoutsPaid() {
-        provider.succeedsWith(PAYOUT_PATH, 200, "{\"status\":\"paid\",\"reference\":\"po-{{request.headers.Idempotency-Key}}\"}");
+        provider.succeedsWith(PAYOUT_PATH, 200, "{\"status\":\"paid\",\"reference\":\"po_{{randomValue length=12"
+                + " type='ALPHABETIC'}}\"}");
+    }
+
+    /** The provider's reference an inquiry answer carries for {@code ourReference}: letters only, never its hex digits. */
+    static String providerReferenceOf(String ourReference) {
+        StringBuilder letters = new StringBuilder("po_q_");
+        for (char c : ourReference.toCharArray()) {
+            if (c >= '0' && c <= '9') {
+                letters.append((char) ('g' + (c - '0')));
+            } else if (Character.isLetter(c)) {
+                letters.append(c);
+            }
+        }
+        return letters.substring(0, Math.min(letters.length(), 40));
     }
 
     // ================================================================== money into a wallet: the card pay-in
@@ -637,6 +656,51 @@ final class BnplStormWorld {
                 .isEqualTo("ACCEPTED:-");
         nextSequence++;
         closingMinor += minor;
+    }
+
+    // ================================================================== payouts against the provider's report
+
+    static final String PAYOUT_SOURCE = "simulated-payout.settlement";
+
+    /**
+     * Phase 8's evidence for the storm's payouts (the entry's reconciliation implication): the payout provider's daily
+     * report (`SIM_PAYOUT_CSV` v1, `P8-TSK-018`'s fixture) naming every COMPLETED payout by the provider's reference and
+     * ours, each at the pinned 0.25 fee, received, parsed and accepted through settlement's own sweeps, then matched by
+     * reconciliation's. Each payout is {provider reference, our reference, amount minor}. The accepted batch's id.
+     */
+    UUID payoutReport(List<String[]> payouts) throws Exception {
+        String today = scalar("SELECT (now() AT TIME ZONE 'UTC')::date::text");
+        com.finapp.app.settlement.SimulatedPayoutReports report = new com.finapp.app.settlement.SimulatedPayoutReports(
+                "BSTORM-PAYDAY-" + UUID.randomUUID().toString().replace("-", "").substring(0, 9).toUpperCase(), EUR,
+                today, "PAY-REM-" + (10_000_000 + RANDOMNESS.nextInt(89_999_999)));
+        for (String[] payout : payouts) {
+            long minor = Long.parseLong(payout[2]);
+            RENDERED_AMOUNTS.add(minor);
+            report.with(com.finapp.app.settlement.SimulatedPayoutReports.Entry.settled(
+                    BigDecimal.valueOf(minor, 2).toPlainString(), "0.25", payout[0], payout[1]));
+        }
+        UUID file;
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope scope = CorrelationContext.enter(flow())) {
+            @SuppressWarnings("unchecked")
+            FileReception<Connection> reception = beans.getBean(FileReception.class);
+            FileReception.Result result = beans.getBean("settlementTransactionRunner", TransactionRunner.class)
+                    .inTransaction(uow -> reception.receive(uow,
+                            new FileReception.Delivery(PAYOUT_SOURCE, DeliveryChannel.PULL, report.render(),
+                                    Optional.empty(), Actor.SYSTEM, SettlementAuditAction.SETTLEMENT_FILE_UPLOADED,
+                                    CorrelationContext.current().orElseThrow())));
+            assertThat(result).isInstanceOf(FileReception.Result.New.class);
+            file = ((FileReception.Result.New) result).fileId();
+        }
+        beans.getBean(FileParsing.class).sweep();
+        beans.getBean(BatchAcceptance.class).sweep();
+        assertThat(scalar("SELECT status || ':' || coalesce(rejection_code, '-') FROM settlement.file WHERE id = ?", file))
+                .as("the payout provider's report accepted").isEqualTo("ACCEPTED:-");
+        com.finapp.reconciliation.Matching matching = beans.getBean(com.finapp.reconciliation.Matching.class);
+        for (int sweep = 0; sweep < 4; sweep++) {
+            matching.sweep();
+        }
+        return UUID.fromString(scalar("SELECT id::text FROM settlement.batch WHERE file_id = ?", file));
     }
 
     private static String bankDecimal(long minor) {

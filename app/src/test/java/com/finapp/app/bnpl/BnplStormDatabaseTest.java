@@ -291,6 +291,11 @@ class BnplStormDatabaseTest {
         PROPERTIES.put("finapp.merchant.payout.sweeper.poll-interval", "PT0.5S");
         PROPERTIES.put("finapp.merchant.payout.sweeper.dispatched-age", "PT1S");
         PROPERTIES.put("finapp.merchant.payout.sweeper.unknown-age", "PT0.3S");
+        // No broker in the database tier (the kafka tier's subject): the instances' own relays could only fail every event
+        // into the production backoff and dead-letter it within minutes (RetryPolicy.DEFAULT, 14 attempts), so the relay
+        // crash point (A6-07) would meet heads it may not touch. Off on both instances; the crash point's relays own
+        // publication, and the outbox census (C14) counts the rows, never a publication.
+        PROPERTIES.put("finapp.outbox.relay.enabled", "false");
         PROPERTIES.forEach((name, value) -> registry.add(name, () -> value));
     }
 
@@ -332,6 +337,8 @@ class BnplStormDatabaseTest {
             scenes.run();
             scenes.crashPoints();
             restAndCensus("drained");
+            assertThePayoutsMatchedByTheProvidersReport();
+            restAndCensus("reconciled");
             hotRows.nextRound("after");
         } finally {
             hotRows.close();
@@ -1062,8 +1069,8 @@ class BnplStormDatabaseTest {
                 + " seconds')::text FROM merchant.merchant_payout WHERE status IN ('DISPATCHED', 'UNKNOWN')")) {
             if (sent.contains(payout[0])) {
                 if (answered.add(payout[0])) {
-                    provider.succeedsWith(PAYOUT_PATH + "/" + payout[0], 200, "{\"status\":\"paid\",\"reference\":\"po-q-"
-                            + payout[0] + "\"}");
+                    provider.succeedsWith(PAYOUT_PATH + "/" + payout[0], 200, "{\"status\":\"paid\",\"reference\":\""
+                            + BnplStormWorld.providerReferenceOf(payout[0]) + "\"}");
                     tally.count("chaos: a payout inquiry answered paid");
                 }
             } else if ("true".equals(payout[1]) && answered.add(payout[0])) {
@@ -1506,6 +1513,34 @@ class BnplStormDatabaseTest {
                 snapshot.rollback();
             }
         }
+    }
+
+    /**
+     * The merchant payouts' expectations matched by Phase 8's evidence for every completed payout (the entry's
+     * reconciliation implication): the payout provider's report naming every COMPLETED payout, accepted and matched -
+     * every MERCHANT_PAYOUT expectation SETTLED by its provider reference, the report's items all matched or checked,
+     * no break.
+     */
+    private void assertThePayoutsMatchedByTheProvidersReport() throws Exception {
+        List<String[]> completed = rows("SELECT provider_reference, provider_idempotency_reference, amount_minor::text"
+                + " FROM merchant.merchant_payout WHERE status = 'COMPLETED' ORDER BY created_at");
+        assertThat(completed).as("the storm completed payouts").isNotEmpty();
+        UUID batch = world.payoutReport(completed);
+        long settled = count("SELECT count(*) FROM reconciliation.expectation e JOIN merchant.merchant_payout p ON"
+                + " e.operation_ref = p.id::text WHERE e.kind = 'MERCHANT_PAYOUT' AND p.status = 'COMPLETED' AND e.status ="
+                + " 'SETTLED' AND EXISTS (SELECT 1 FROM reconciliation.allocation a JOIN reconciliation.match_decision d ON"
+                + " d.id = a.decision_id WHERE a.expectation_id = e.id AND d.matched_key_kind = 'PAYOUT_PROVIDER_REF')");
+        long breaks = count("SELECT count(*) FROM reconciliation.break b JOIN reconciliation.external_item i ON i.id ="
+                + " b.external_item_id JOIN reconciliation.reconciliation_batch r ON r.id = i.run_id WHERE r.batch_id ="
+                + " ?::uuid", batch);
+        long unmatched = count("SELECT count(*) FROM reconciliation.external_item i JOIN reconciliation.reconciliation_batch"
+                + " r ON r.id = i.run_id WHERE r.batch_id = ?::uuid AND i.status NOT IN ('MATCHED', 'CHECKED')", batch);
+        System.out.printf("P12-TST-001 RECONCILED: %d completed payouts, %d expectations settled by the provider's report,"
+                + " %d breaks, %d items unmatched%n", completed.size(), settled, breaks, unmatched);
+        assertThat(settled).as("every completed payout's expectation settled by the provider's report (Phase 8's"
+                + " evidence)").isEqualTo(completed.size());
+        assertThat(breaks).as("the provider's report raised no break").isZero();
+        assertThat(unmatched).as("every item of the provider's report matched or checked").isZero();
     }
 
     /** I11: every pay-in-4 offer made before terms v2 and accepted after it pins the OFFER's version, never v2. */

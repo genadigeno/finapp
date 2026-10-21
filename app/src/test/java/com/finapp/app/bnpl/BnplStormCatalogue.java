@@ -101,6 +101,7 @@ final class BnplStormCatalogue {
         minimum.put("scenario 11 a payoff beside a refund: stale or closed, never wrong", 2);
         minimum.put("scenario 12 a reversal after allocation, a later repayment untouched", 2);
         minimum.put("scenario 13 no condition after closure", 2);
+        minimum.put("A6-03 a fact after a closure, stamped before it, caught by the record's order", 1);
         minimum.put("scenario 14 a failure at a T-pur step leaves nothing, the retry finances once", 5);
         minimum.put("scenario 14 killed between posting and publication: nothing, then once", 1);
         minimum.put("scenario 14 the relay killed after the receive: the unacknowledged re-published", 1);
@@ -396,7 +397,6 @@ final class BnplStormCatalogue {
      */
     private void namedLockWaits() throws Exception {
         String capital = BnplStormDatabaseTest.operational("LENDING_CAPITAL");
-        String feeIncome = BnplStormDatabaseTest.operational("BNPL_MERCHANT_FEE_INCOME");
         for (int round = 0; round < 2; round++) {
             Customer one = freshCustomer();
             Offer l0 = offered(one, merchant(round), 300_00 + round, 3);
@@ -420,10 +420,13 @@ final class BnplStormCatalogue {
                 Offer p = offered(customer, merchant, 400_00 + round, 0);
                 fund(customer, firstInstalment(400_00 + round));
                 String first = payableFirst ? merchant.payable() : customer.wallet();
+                // The later lock is the pair's OTHER element: blocked on the first in UUID order, the act holds nothing
+                // of the pair - an act taking them in a fixed order would hold the second while it waits.
+                String second = payableFirst ? customer.wallet() : merchant.payable();
                 watch(new BnplStormLocks.Watch(payableFirst ? "(P) payable first" : "(P) wallet first",
                         "SELECT 1 FROM ledger.ledger_account WHERE id = ?::uuid FOR UPDATE", UUID.fromString(first),
-                        "ledger_account", "SELECT 1 FROM ledger.account_balance WHERE ledger_account_id = ?::uuid FOR"
-                                + " UPDATE NOWAIT", UUID.fromString(feeIncome), acceptOn(a(), p),
+                        "ledger_account", "SELECT 1 FROM ledger.ledger_account WHERE id = ?::uuid FOR UPDATE NOWAIT",
+                        UUID.fromString(second), acceptOn(a(), p),
                         "SELECT xmin::text FROM bnpl.purchase WHERE offer_id = ?::uuid", UUID.fromString(p.offer())), p);
             }
             Bought refunded = bought(freshCustomer(), merchant(round + 3), 500_00 + round, 3);
@@ -511,9 +514,6 @@ final class BnplStormCatalogue {
         String incomeAccount = BnplStormDatabaseTest.operational(income);
         String principal = scalar("SELECT id::text FROM ledger.ledger_account WHERE owner_ref = ?::uuid AND purpose ="
                 + " 'BNPL_PRINCIPAL'", UUID.fromString(bought.obligation()));
-        if (control) {
-            BnplStormWorld.permit(bought.obligation(), "statement_timestamp()");
-        }
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try (Connection holder = DatabaseRoles.application()) {
             holder.setAutoCommit(false);
@@ -521,6 +521,12 @@ final class BnplStormCatalogue {
                     + " FOR UPDATE")) {
                 lock.setObject(1, UUID.fromString(bought.customer().wallet()));
                 lock.executeQuery().close();
+            }
+            // The permit handed back only once the wallet is held: an instance's own sweep taking the step first then
+            // waits on the wallet too, never completes it before the hold (run 2's flake: the sweep serviced the
+            // obligation in the gap, and the act found nothing left to collect).
+            if (control) {
+                BnplStormWorld.permit(bought.obligation(), "statement_timestamp()");
             }
             Future<Object> acting = pool.submit(act);
             boolean waiting = awaitWaiter(BnplStormLocks.pid(holder), acting);
@@ -1224,9 +1230,45 @@ final class BnplStormCatalogue {
             }
             if ("CLOSED".equals(status(aged.obligation()))) {
                 storm.coverage("scenario 13 no condition after closure", 1);
+                closureCensusBites(aged.obligation());
             }
         }
         censusAfter("scenario 13, no condition after closure");
+    }
+
+    /**
+     * A6-03's positive control, every run: on a CLOSED obligation, a condition planted by the owner (triggers suspended) in
+     * ANOTHER transaction than the closure's, stamped a second BEFORE the closure - so a census judging "after" by the clock
+     * with any tolerance would pass it - and the closure census's own statement, read inside that transaction, counts it by
+     * the record's order (bnpl {@code V017}); rolled back, nothing kept.
+     */
+    private void closureCensusBites(String obligation) throws Exception {
+        String census = BnplStormCensus.safety().get("C12 a condition written after its obligation's closure (another"
+                + " transaction, the record's order)");
+        assertThat(census).as("the closure census for conditions").isNotNull();
+        try (Connection owner = DatabaseRoles.bootstrap()) {
+            owner.setAutoCommit(false);
+            try (Statement statement = owner.createStatement()) {
+                statement.execute("SET LOCAL session_replication_role = replica");
+                long before = BnplStormCensus.one(owner, census);
+                statement.execute("CREATE TEMP TABLE planted ON COMMIT DROP AS SELECT * FROM bnpl.bnpl_condition_event"
+                        + " WHERE obligation_id = '" + obligation + "'::uuid ORDER BY recorded_order DESC LIMIT 1");
+                statement.execute("UPDATE planted SET id = gen_random_uuid(), business_date = business_date + 400,"
+                        + " recorded_order = nextval('bnpl.record_order'), created_at = (SELECT c.created_at FROM"
+                        + " bnpl.bnpl_obligation_closure c WHERE c.obligation_id = '" + obligation + "'::uuid)"
+                        + " - interval '1 second'");
+                int planted = statement.executeUpdate("INSERT INTO bnpl.bnpl_condition_event SELECT * FROM planted");
+                long after = BnplStormCensus.one(owner, census);
+                if (planted == 1 && after == before + 1) {
+                    storm.coverage("A6-03 a fact after a closure, stamped before it, caught by the record's order", 1);
+                } else {
+                    tally.unexplained("A6-03: the closure census did not count a fact planted after the closure: planted "
+                            + planted + ", census " + before + " -> " + after);
+                }
+            } finally {
+                owner.rollback();
+            }
+        }
     }
 
     // ---------------------------------------------------------------- scenario 17

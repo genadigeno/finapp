@@ -473,6 +473,12 @@ final class BnplStormCensus {
         zero.put("C13 a COMPLETED payout without exactly one posting, or a payout posting beside a payout not COMPLETED",
                 "SELECT count(*) FROM merchant.merchant_payout p WHERE (p.status = 'COMPLETED') <> ((SELECT count(*) FROM"
                         + " ledger.journal_entry e WHERE e.idempotency_scope = 'ledger.post:merchant-payout:' || p.id) = 1)");
+        zero.put("C13 a COMPLETED payout without exactly one MERCHANT_PAYOUT expectation on its own posting for its amount"
+                + " (INV-SET-02, ADR-0067), or an expectation beside a payout not COMPLETED",
+                "SELECT count(*) FROM merchant.merchant_payout p WHERE (p.status = 'COMPLETED') <> ((SELECT count(*) FROM"
+                        + " reconciliation.expectation e JOIN ledger.journal_entry j ON j.id = e.journal_entry_id WHERE"
+                        + " e.kind = 'MERCHANT_PAYOUT' AND e.operation_ref = p.id::text AND e.amount_minor = p.amount_minor"
+                        + " AND j.idempotency_scope = 'ledger.post:merchant-payout:' || p.id) = 1)");
         // C14 - every state change's event exactly once (the outbox written in the fact's own transaction).
         zero.put("C14 an (aggregate, event type) whose events are not its facts exactly once", outboxMismatches());
         return zero;
