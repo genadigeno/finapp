@@ -4,6 +4,7 @@ import static com.finapp.app.lending.LoanApplicationClient.key;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.net.http.HttpResponse;
 import java.security.SecureRandom;
@@ -23,6 +24,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * which need terms, a loan accepted and disbursed - are {@link LoanAccountDatabaseTest}'s, in a database of its own, and
  * {@code lending}'s {@code PrepaymentDatabaseTest}'s.
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the prepayment door's contract (P11-TSK-028)")

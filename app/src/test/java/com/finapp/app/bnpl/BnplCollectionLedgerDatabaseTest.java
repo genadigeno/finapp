@@ -4,6 +4,7 @@ import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplObligationId;
@@ -75,6 +76,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p><strong>A database of its own</strong> ({@code own-container}): it brings credit's BNPL policies and terms into force.
  * Written by `P12-TSK-019` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

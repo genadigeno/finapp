@@ -9,6 +9,7 @@ import static com.finapp.app.lending.LoanApplicationClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -93,6 +94,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <p><strong>A database of its own</strong> ({@code own-container}): the reports read every loan in the database, and the
  * suite plants EUR lending capital by a posting from {@code CASH_AT_BANK} (the fixture's, never a path the platform has).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

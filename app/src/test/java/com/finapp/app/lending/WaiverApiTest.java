@@ -5,6 +5,7 @@ import static com.finapp.app.lending.LoanApplicationClient.key;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -38,6 +39,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * {@code 422 lending.ReasonRequired}. The waiver itself - which needs a loan disbursed, billed and charged - is
  * {@link LoanAccountDatabaseTest}'s, in a database of its own, and {@code lending}'s {@code FeeAndWaiverDatabaseTest}'s.
  */
+@DateShifted
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

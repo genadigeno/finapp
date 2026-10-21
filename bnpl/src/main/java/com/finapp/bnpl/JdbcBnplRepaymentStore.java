@@ -36,15 +36,27 @@ public final class JdbcBnplRepaymentStore implements BnplRepaymentStore {
     public Optional<BnplServicingStore.Locked> lockOwnedBy(Connection unitOfWork, BnplAgreementId agreement, UUID party) {
         Objects.requireNonNull(agreement, "agreement");
         Objects.requireNonNull(party, "party");
-        try (PreparedStatement select = unitOfWork.prepareStatement(
+        // The lock in its own statement, then the agreement in force read by a statement begun after it: READ COMMITTED's
+        // re-check of a row it waited for refreshes only the locked row, never a joined one, so one statement would read
+        // the version in force before a racing refund's commit (P12-TST-001's finding).
+        try (PreparedStatement lock = unitOfWork.prepareStatement(
                 // The owner is in the statement: another party's agreement is never locked (INV-AUTHZ, the uniform 404).
+                "SELECT o.id FROM bnpl.bnpl_obligation o WHERE o.agreement_id = ? AND o.party_id = ? FOR UPDATE");
+                PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT o.id, o.purchase_id, o.agreement_id, o.party_id, o.decision_id, o.product, o.plan, o.currency,"
                         + " o.status, o.servicing_zone, o.purchase_date, o.opened_at, o.closure_reason, o.correlation_id,"
                         + " a.version, a.terms_version_id, a.schedule_engine, a.accrual_engine, a.allocation_engine"
                         + " FROM bnpl.bnpl_obligation o"
                         + " JOIN LATERAL (SELECT * FROM bnpl.bnpl_agreement x WHERE x.obligation_id = o.id"
                         + " ORDER BY x.version DESC LIMIT 1) a ON true"
-                        + " WHERE o.agreement_id = ? AND o.party_id = ? FOR UPDATE OF o")) {
+                        + " WHERE o.agreement_id = ? AND o.party_id = ?")) {
+            lock.setObject(1, agreement.value());
+            lock.setObject(2, party);
+            try (ResultSet held = lock.executeQuery()) {
+                if (!held.next()) {
+                    return Optional.empty();
+                }
+            }
             select.setObject(1, agreement.value());
             select.setObject(2, party);
             try (ResultSet row = select.executeQuery()) {

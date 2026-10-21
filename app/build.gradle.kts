@@ -285,6 +285,11 @@ tasks.named<Test>("databaseTest") {
     // fails the tier rather than quietly leaving @Order as decoration.
     systemProperty("junit.jupiter.testclass.order.default", "org.junit.jupiter.api.ClassOrderer\$OrderAnnotation")
 
+    // The date-shifted suites' zone pinned for a diagnosis (P12-TST-001, A6-04): `-Pfinapp.db.zone=<zone id>` reaches
+    // DateShiftedZone (`UTC` turns the shift off); unset, each @DateShifted suite takes lending's P11-TSK-032 rule.
+    // Read here, at configuration, so `ownContainerDatabaseTest` - which copies this task's properties - sees it too.
+    providers.gradleProperty("finapp.db.zone").orNull?.let { systemProperty("finapp.db.zone", it) }
+
     // `outputs.upToDateWhen { false }` is applied by the convention plugin to every tier needing
     // external infrastructure, so it is not repeated here.
 }
@@ -314,6 +319,7 @@ extra["ownContainerSuites"] =
         "com.finapp.app.bnpl.BnplRefundApiTest",
         "com.finapp.app.bnpl.BnplRepaymentApiTest",
         "com.finapp.app.bnpl.BnplServicingApiTest",
+        "com.finapp.app.bnpl.BnplStormDatabaseTest",
         "com.finapp.app.checkout.CheckoutFinancingDatabaseTest",
         "com.finapp.app.credit.BnplProductDecisionDatabaseTest",
         "com.finapp.app.credit.BureauSelectionDatabaseTest",

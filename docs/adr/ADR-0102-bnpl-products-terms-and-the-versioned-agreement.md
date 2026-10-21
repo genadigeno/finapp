@@ -274,4 +274,21 @@ ADR-0087 §2, ADR-0092.
   (`CUSTOMER_DOOR` | `BNPL_APPLICATION`) binds BNPL requests to the BNPL application; four-eyes
   thresholds EUR 500.00 (P4) and EUR 2,500.00 (PN), moot while no BNPL request is referred.
 - **Decision 4 built by `P12-TSK-004` (2026-10-17)**, `bnpl V002`, read one way on six points, each recorded in its backlog entry's as-built: the term set also holds the collection retry cadence (A7), the dispute four-eyes threshold (ADR-0106 decision 5 names it a terms field) and the payoff horizon (`P12-TSK-022`'s reused quote shape) - an immutable term set cannot gain a field later without inventing its value for the versions before it; the jurisdiction is the agreement template's (`BnplAgreementTemplate`, lending's reading), not an Identity field; no rate-type column (fixed is the only kind, OQ-4); the servicing zone `UTC` only; pay-in-N's plans an ascending choice among {3, 6, 12}; the reader the application and the offer pin is `BnplTermsAdministration#pinActive` (`422 bnpl.ProductNotOffered` with none `ACTIVE`). The schedulability judgement at the door: pay-in-N by `SCHEDULE_ENGINE_V1`'s margined `judgeAmortisation` over every purchase day 1-31, credit's smallest amount and the longest plan offered; pay-in-4 by its own check (credit's smallest purchase at least one minor unit per instalment). *(Since `P12-TSK-008`, that check is `BNPL_SCHEDULE_ENGINE_V1`'s own `judgeSchedulable`, the door mapping its `INSTALMENT_OF_NOTHING` to `422 bnpl.TermsNotAmortising` - one statement of the rule.)*
+- **Two corrections found by the BNPL storm (`P12-TST-001`, 2026-10-20), each with its regression case and probe.**
+  (a) **bnpl `V017` - the record carries the lock's order** (lending `V025`'s rule, ADR-0092's follow-up (d)): the
+  sequence `bnpl.record_order` drawn into `recorded_order` on every fact `BnplReplayProof` walks (the financing, agreement
+  and schedule versions, billings, accruals, credit-balance applications, repayments, collection attempts, refunds,
+  conditions, fees, payoff quotes and executions, the closure, reversals, waivers and their decisions, disputes and their
+  events), every writer drawing it after B4, and a reversal's `decided_order` by its trigger at the decision.
+  `JdbcBnplRecordStore` re-stamps an obligation's record in that order before the replay reads it - an instant that
+  disagrees with the order moved a microsecond past its predecessor - because a wall clock is not an order: the storm's
+  first load round found the database clock stepped back between an obligation's facts, and the replay `DIVERGED` on a
+  record that was right (`BnplProofDatabaseTest#aClockSteppedBackReplaysInTheRecordsOrder`). (b) **The agreement
+  version in force is read AFTER B4, never beside it**: `JdbcBnplServicingStore.lock` and
+  `JdbcBnplRepaymentStore.lockOwnedBy` took the obligation `FOR UPDATE OF o` and its latest agreement version through a
+  `LATERAL` join in one statement - and READ COMMITTED's re-check of a row it waited for refreshes only the locked row, so
+  a repayment (or a step, accrual, payoff, waiver or reversal) that waited behind a refund writing version n+1 read
+  version n, and the repayment's trigger refused it as a `500`. The lock is now its own statement and the version is read
+  by the next (`BnplProofDatabaseTest#aRepaymentBehindARefundReadsTheVersionItCommitted`). Neither changed a figure: the
+  first was a false alarm of the proof, the second a refusal of a valid act.
 - Accepted by the Phase 12 exit review (`P12-DOC-001`), read against the code first.

@@ -3584,6 +3584,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `merchant_financing` | `net_minor` | `RESTRICTED-FINANCIAL` | The net credited to the merchant's payable |
 | `merchant_financing` | `fee_schedule_version_id` | `INTERNAL` | The merchant's BNPL fee schedule version pinned, by value |
 | `merchant_financing` | `financed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `merchant_financing` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_obligation` | `id` | `CONFIDENTIAL` | A customer repayment obligation reference - the accounts' owner |
 | `bnpl_obligation` | `purchase_id` | `CONFIDENTIAL` | Its purchase - once |
 | `bnpl_obligation` | `agreement_id` | `CONFIDENTIAL` | Its agreement - once |
@@ -3632,6 +3633,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_agreement` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_agreement` | `refund_id` | `INTERNAL` | The refund whose version this is (`P12-TSK-021`) - none for version 1 |
 | `bnpl_agreement` | `schedule_version` | `INTERNAL` | The schedule version this agreement version governs |
+| `bnpl_agreement` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_acceptance` | `id` | `INTERNAL` | Generated |
 | `bnpl_acceptance` | `agreement_id` | `CONFIDENTIAL` | The agreement accepted |
 | `bnpl_acceptance` | `agreement_version` | `INTERNAL` | Its version |
@@ -3657,6 +3659,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_schedule` | `instalment_count` | `INTERNAL` | Its instalment count |
 | `bnpl_schedule` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_schedule` | `refund_id` | `INTERNAL` | The refund whose version this is (`P12-TSK-021`) - none for version 1 |
+| `bnpl_schedule` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_instalment` | `id` | `INTERNAL` | Generated |
 | `bnpl_instalment` | `schedule_id` | `INTERNAL` | Its schedule |
 | `bnpl_instalment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
@@ -3687,6 +3690,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_billing` | `business_date` | `INTERNAL` | The business date it was made on, stamped by the trigger |
 | `bnpl_billing` | `correlation_id` | `INTERNAL` | The obligation's correlation |
 | `bnpl_billing` | `payoff_execution_id` | `INTERNAL` | The payoff execution beside which it was billed before its due date (`P12-TSK-022`) - stamped by the trigger; none otherwise |
+| `bnpl_billing` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_repayment` | `id` | `INTERNAL` | Generated |
 | `bnpl_repayment` | `obligation_id` | `CONFIDENTIAL` | Its obligation |
 | `bnpl_repayment` | `kind` | `INTERNAL` | A closed kind (`AT_PURCHASE`; `CUSTOMER` from `P12-TSK-018`, `AUTO_COLLECTION` and `PAYOFF` admitted by `-019` and `-022`) |
@@ -3700,6 +3704,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_repayment` | `journal_entry_id` | `INTERNAL` | The repayment entry F3 - once |
 | `bnpl_repayment` | `value_date` | `INTERNAL` | The repayment's value date - never before the floor |
 | `bnpl_repayment` | `received_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_repayment` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_repayment_allocation` | `id` | `INTERNAL` | Generated |
 | `bnpl_repayment_allocation` | `repayment_id` | `INTERNAL` | Its repayment |
 | `bnpl_repayment_allocation` | `sequence` | `INTERNAL` | Its order |
@@ -3723,6 +3728,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_credit_balance_application` | `journal_entry_id` | `INTERNAL` | The application entry F3a - once |
 | `bnpl_credit_balance_application` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_credit_balance_application` | `correlation_id` | `INTERNAL` | The obligation's correlation |
+| `bnpl_credit_balance_application` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_credit_balance_allocation` | `id` | `INTERNAL` | Generated (`P12-TSK-015`) |
 | `bnpl_credit_balance_allocation` | `application_id` | `INTERNAL` | Its application |
 | `bnpl_credit_balance_allocation` | `ordinal` | `INTERNAL` | Its order |
@@ -3747,6 +3753,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_interest_accrual` | `journal_entry_id` | `INTERNAL` | The accrual entry F2a - null for a zero day |
 | `bnpl_interest_accrual` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_interest_accrual` | `correlation_id` | `INTERNAL` | The obligation's correlation |
+| `bnpl_interest_accrual` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_obligation_closure` | `id` | `INTERNAL` | Generated (`P12-TSK-018`) |
 | `bnpl_obligation_closure` | `obligation_id` | `CONFIDENTIAL` | Its obligation - one closure each |
 | `bnpl_obligation_closure` | `reason` | `INTERNAL` | A closed reason code (`REPAID` here) |
@@ -3770,6 +3777,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_collection_attempt` | `repayment_id` | `CONFIDENTIAL` | The `AUTO_COLLECTION` repayment that moved it - null when nothing moved |
 | `bnpl_collection_attempt` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_collection_attempt` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the obligation's own flow) |
+| `bnpl_collection_attempt` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_condition_event` | `id` | `INTERNAL` | Generated (`P12-TSK-020`) |
 | `bnpl_condition_event` | `obligation_id` | `CONFIDENTIAL` | The obligation whose condition changed |
 | `bnpl_condition_event` | `business_date` | `INTERNAL` | The business date of the database clock in the pinned zone |
@@ -3782,6 +3790,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_condition_event` | `agreement_version` | `INTERNAL` | The agreement version in force |
 | `bnpl_condition_event` | `created_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
 | `bnpl_condition_event` | `correlation_id` | `INTERNAL` | The servicing step's correlation (the obligation's own flow) |
+| `bnpl_condition_event` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_fee_assessment` | `id` | `INTERNAL` | Generated (`P12-TSK-020`) |
 | `bnpl_fee_assessment` | `obligation_id` | `CONFIDENTIAL` | The obligation charged |
 | `bnpl_fee_assessment` | `instalment_id` | `CONFIDENTIAL` | The billed instalment - once per kind |
@@ -3795,7 +3804,9 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_fee_assessment` | `journal_entry_id` | `INTERNAL` | F4's entry (`bnpl.fee:<instalment>:LATE`), by value |
 | `bnpl_fee_assessment` | `created_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
 | `bnpl_fee_assessment` | `correlation_id` | `INTERNAL` | The servicing step's correlation |
+| `bnpl_fee_assessment` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_obligation_closure` | `refund_id` | `INTERNAL` | The BNPL refund whose transaction closed it, if any (`P12-TSK-021`) |
+| `bnpl_obligation_closure` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_refund` | `id` | `INTERNAL` | Generated (`P12-TSK-021`) |
 | `bnpl_refund` | `purchase_id` | `CONFIDENTIAL` | Its purchase - the bound's subject |
 | `bnpl_refund` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation |
@@ -3860,6 +3871,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_payoff_quote` | `allocation_engine` | `INTERNAL` | The pinned allocation engine |
 | `bnpl_payoff_quote` | `created_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
 | `bnpl_payoff_quote` | `correlation_id` | `INTERNAL` | The request's correlation |
+| `bnpl_payoff_quote` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_payoff_execution` | `id` | `INTERNAL` | Generated (`P12-TSK-022`) |
 | `bnpl_payoff_execution` | `quote_id` | `CONFIDENTIAL` | The quote executed - once |
 | `bnpl_payoff_execution` | `obligation_id` | `CONFIDENTIAL` | Its obligation - paid off once |
@@ -3868,6 +3880,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_payoff_execution` | `value_date` | `INTERNAL` | `max(business date, floor)` - the date every fact of the payoff takes |
 | `bnpl_payoff_execution` | `executed_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
 | `bnpl_payoff_execution` | `correlation_id` | `INTERNAL` | The request's correlation |
+| `bnpl_payoff_execution` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_refund_adjustment` | `late_fee_released_minor` | `RESTRICTED-FINANCIAL` | The unpaid late fees of a billed instalment cancelled whole, released (OQ-14) - added by `P12-TSK-020` |
 | `bnpl_repayment_reversal` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
 | `bnpl_repayment_reversal` | `obligation_id` | `CONFIDENTIAL` | The obligation whose repayment is reversed |
@@ -3886,6 +3899,8 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_repayment_reversal` | `journal_entry_id` | `INTERNAL` | F8's entry (`bnpl.repayment-reversal:<id>`), by value - exactly when `APPROVED` |
 | `bnpl_repayment_reversal` | `value_date` | `INTERNAL` | F8's value date - `max(today, floor)` |
 | `bnpl_repayment_reversal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_repayment_reversal` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
+| `bnpl_repayment_reversal` | `decided_order` | `INTERNAL` | The decision's place in its obligation's history - `bnpl.record_order` drawn by its trigger as `PROPOSED` moves on (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_repayment_allocation_reversal` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
 | `bnpl_repayment_allocation_reversal` | `reversal_id` | `INTERNAL` | The approved reversal |
 | `bnpl_repayment_allocation_reversal` | `allocation_id` | `INTERNAL` | The allocation line negated - once, ever |
@@ -3907,6 +3922,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_waiver` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger after B4 |
 | `bnpl_waiver` | `proposal_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
 | `bnpl_waiver` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_waiver` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_waiver_decision` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
 | `bnpl_waiver_decision` | `waiver_id` | `INTERNAL` | The waiver decided - once |
 | `bnpl_waiver_decision` | `proposed_by` | `CONFIDENTIAL` | The proposer's copy, pinned by the composite foreign key - the four-eyes `CHECK`'s input |
@@ -3917,7 +3933,9 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_waiver_decision` | `decision_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
 | `bnpl_waiver_decision` | `journal_entry_id` | `INTERNAL` | F7's entry (`bnpl.waiver:<id>` in the ledger's reversal scope), by value - exactly when `APPROVED` |
 | `bnpl_waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
+| `bnpl_waiver_decision` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_refund` | `dispute_id` | `CONFIDENTIAL` | The dispute a refund of door `DISPUTE` resolves (`P12-TSK-023`); NULL for the merchant's and the operator's doors |
+| `bnpl_refund` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_dispute` | `id` | `INTERNAL` | Generated (`P12-TSK-023`) |
 | `bnpl_dispute` | `purchase_id` | `CONFIDENTIAL` | The purchase contested |
 | `bnpl_dispute` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation - the hold's subject |
@@ -3942,6 +3960,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_dispute` | `refund_id` | `CONFIDENTIAL` | The refund a refund outcome executed |
 | `bnpl_dispute` | `proposal_id` | `INTERNAL` | The approved four-eyes proposal |
 | `bnpl_dispute` | `correlation_id` | `INTERNAL` | The opening's correlation |
+| `bnpl_dispute` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_dispute_claim` | `dispute_id` | `INTERNAL` | Its dispute |
 | `bnpl_dispute_claim` | `currency` | `INTERNAL` | Its currency |
 | `bnpl_dispute_claim` | `scale` | `INTERNAL` | Its scale |
@@ -3975,6 +3994,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_dispute_event` | `actor` | `RESTRICTED-PII` | Who moved it - as `resolved_by` |
 | `bnpl_dispute_event` | `occurred_at` | `INTERNAL` | System time |
 | `bnpl_dispute_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `bnpl_dispute_event` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 
 ### `bnpl` - the exposure read's view - *added by `P12-TSK-012`*
 

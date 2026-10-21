@@ -1108,6 +1108,11 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-025. An obligation's whole record: for the investigator's doors the obligation is the one JdbcBnplCorrectionStore.addressed answered for the agreement the path names - BNPL_INVESTIGATE at the boundary and the not-self rule in the domain (BnplExplanations, refused bnpl.SelfDealingRefused, recorded FAILED) stand in for the predicate, the negatives BnplExplanationsTest#selfDealingIsRefusedAndRecorded and #anUnknownAgreementIsNotFound; for the proofs' reading (BnplProofs) every obligation id comes from obligationIds, the population itself - no request names one; read-only, on one REPEATABLE READ snapshot.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRecordStore.restamped",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P12-TST-001 (bnpl V017). The record's order for one obligation, called by JdbcBnplRecordStore.read alone, with the obligation id read was given - the investigator's, addressed by the agreement the path names under BNPL_INVESTIGATE and the not-self rule (BnplExplanations), or the proofs' population from obligationIds - every arm of its one statement scoped by obligation_id = ? (the financing through the obligation's purchase, the waiver decisions through their waiver); read-only.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplRecordStore.query",
                             new Entry(
                                     Scope.ADMINISTERED,

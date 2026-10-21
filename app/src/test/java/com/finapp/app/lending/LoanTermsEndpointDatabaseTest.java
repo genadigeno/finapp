@@ -2,6 +2,7 @@ package com.finapp.app.lending;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -50,6 +51,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * and every door closed to a {@code LENDING_TREASURY_OFFICER}, to a session holding no role, to no session, and (for the
  * acts) to a missing key - nothing written by a refused caller.
  */
+@DateShifted
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

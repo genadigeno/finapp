@@ -4,6 +4,7 @@ import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplObligationId;
@@ -14,6 +15,7 @@ import com.finapp.bnpl.BnplRefunds;
 import com.finapp.bnpl.BnplReplayProof;
 import com.finapp.bnpl.BnplRepayments;
 import com.finapp.bnpl.BnplServicing;
+import com.finapp.bnpl.BnplServicingStore;
 import com.finapp.bnpl.BnplTermsAdministration;
 import com.finapp.bnpl.ServicingOutcome;
 import com.finapp.identity.Authorization;
@@ -47,6 +49,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -81,6 +84,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p><strong>A database of its own</strong> ({@code own-container}): it brings credit's BNPL policies and terms into force.
  * Written by `P12-TSK-025` and <strong>owed a first run</strong> (the owner's no-{@code databaseTest} instruction).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -111,6 +115,7 @@ class BnplProofDatabaseTest {
     @Autowired private LendingCapitalHeadroom headroom;
     @Autowired private LoanWallets loanWallets;
     @Autowired private BnplServicing servicing;
+    @Autowired private BnplServicingStore servicingStore;
     @Autowired private BnplAccruals accruals;
     @Autowired private BnplRepayments repayments;
     @Autowired private BnplRefunds refunds;
@@ -218,6 +223,79 @@ class BnplProofDatabaseTest {
         BnplProofs.Reading reading = transactions.inSnapshot(proofs::prove);
         assertThat(reading.currencies().get(0).failures()).contains("MERCHANT_LEG");
         assertThat(reading.failing()).as("the customer leg cannot see a payable posting").isZero();
+    }
+
+    @Test
+    @DisplayName("a database clock stepped back replays IDENTICAL - the record's order, never the clock (P12-TST-001's"
+            + " finding, bnpl V017): a repayment stamped a second before the purchase that made its obligation, and"
+            + " instalment 1's billing stamped before its own schedule in the purchase's one transaction")
+    void aClockSteppedBackReplaysInTheRecordsOrder() throws Exception {
+        Bought bought = bought();
+        repay(bought, "held", 40_00); // nothing is due yet: held as credit
+        assertThat(proven(bought).replay().verdict()).isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
+        String o = bought.o();
+        // The stamps a database clock stepped back would have written - the facts, their rows and their record order
+        // untouched: the customer's repayment a second before the purchase's billing, then that billing 600 ms before the
+        // schedule version 1 its own transaction wrote first. The storm's first load round met both shapes.
+        asOwner("UPDATE bnpl.bnpl_repayment SET received_at = (SELECT min(b.billed_at) FROM bnpl.bnpl_billing b WHERE"
+                + " b.obligation_id = " + o + ") - interval '1 second' WHERE obligation_id = " + o + " AND kind = 'CUSTOMER';"
+                + " UPDATE bnpl.bnpl_billing SET billed_at = (SELECT s.created_at FROM bnpl.bnpl_schedule s WHERE"
+                + " s.obligation_id = " + o + " AND s.schedule_version = 1) - interval '600 milliseconds' WHERE"
+                + " obligation_id = " + o);
+        assertThat(scalar("SELECT (r.received_at < b.billed_at AND b.billed_at < s.created_at)::text FROM"
+                + " bnpl.bnpl_repayment r, bnpl.bnpl_billing b, bnpl.bnpl_schedule s WHERE r.obligation_id = " + o
+                + " AND r.kind = 'CUSTOMER' AND b.obligation_id = " + o + " AND s.obligation_id = " + o))
+                .as("the stamps now disagree with the order the facts were written in").isEqualTo("true");
+        BnplProofs.Proven proven = proven(bought);
+        assertThat(proven.replay().verdict()).as("the replay walks the record's order: %s", proven.replay())
+                .isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
+        assertThat(proven.subledger().holds()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a repayment that waited on B4 behind a refund re-amortising the agreement is made under the version the"
+            + " refund committed (P12-TST-001's finding): the lock and the agreement in force in two statements - in one,"
+            + " READ COMMITTED's re-check refreshed only the locked row and the repayment met its trigger with version 1")
+    void aRepaymentBehindARefundReadsTheVersionItCommitted() throws Exception {
+        Bought bought = bought();
+        world.topUpWallet(bought.party(), eur(50_00)); // the repayment's own money, paid in before the race
+        CountDownLatch refunded = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        int[] lockedVersion = new int[1];
+        try {
+            // The refund holds B4 with agreement version 2 written, uncommitted, until released.
+            Future<BnplRefunds.Refunded> refund = pool.submit(() -> refund(bought, "while-held", 100_00, () -> {
+                refunded.countDown();
+                await(release);
+            }));
+            assertThat(refunded.await(60, TimeUnit.SECONDS)).as("the refund wrote its versions").isTrue();
+            Future<BnplRepayments.Repaid> repaid = pool.submit(() -> repayFunded(bought, "behind-the-refund", 50_00));
+            // Every other B4 taker - the step, the accrual, a payoff, a waiver, a reversal - through the servicing lock.
+            Future<?> step = pool.submit(() -> transactions.inTransaction(uow -> {
+                lockedVersion[0] = servicingStore.lock(uow, bought.obligation()).orElseThrow().agreementVersion();
+                return null;
+            }));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+            // Seen as the application role - the role whose sessions' statements it may read (P12-TSK-028's lesson).
+            while (waitingOnB4() < 2) {
+                assertThat(System.nanoTime()).as("the repayment waits on B4").isLessThan(deadline);
+                Thread.sleep(50);
+            }
+            release.countDown();
+            refund.get(60, TimeUnit.SECONDS);
+            repaid.get(60, TimeUnit.SECONDS);
+            step.get(60, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(scalar("SELECT max(version)::text FROM bnpl.bnpl_agreement WHERE obligation_id = " + bought.o()))
+                .as("the refund re-amortised").isEqualTo("2");
+        assertThat(scalar("SELECT agreement_version::text FROM bnpl.bnpl_repayment WHERE obligation_id = " + bought.o()
+                + " AND request_key = 'behind-the-refund'")).as("made under the version in force").isEqualTo("2");
+        assertThat(lockedVersion[0]).as("the servicing lock reads the version in force").isEqualTo(2);
+        assertThat(proven(bought).replay().verdict()).isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
     }
 
     @Test
@@ -432,6 +510,11 @@ class BnplProofDatabaseTest {
 
     private BnplRepayments.Repaid repay(Bought bought, String key, long minor) {
         world.topUpWallet(bought.party(), eur(minor)); // the repayment's own money, paid in just before it
+        return repayFunded(bought, key, minor);
+    }
+
+    /** The repayment alone - its money already in the wallet. */
+    private BnplRepayments.Repaid repayFunded(Bought bought, String key, long minor) {
         Actor customer = new Actor(bought.party().toString(), ActorType.CUSTOMER);
         try (SecurityContext.Scope actor = SecurityContext.enter(customer);
                 CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {
@@ -441,12 +524,41 @@ class BnplProofDatabaseTest {
     }
 
     private BnplRefunds.Refunded refund(Bought bought, String key, long minor) {
+        return refund(bought, key, minor, () -> { });
+    }
+
+    /** The refund, {@code beforeCommit} run inside its transaction after its last write - its locks still held. */
+    private BnplRefunds.Refunded refund(Bought bought, String key, long minor, Runnable beforeCommit) {
         Actor merchant = new Actor(bought.merchant().id(), ActorType.MERCHANT);
         try (SecurityContext.Scope actor = SecurityContext.enter(merchant);
                 CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {
-            return transactions.inTransaction(uow -> refunds.atMerchant(uow, bought.purchase(), bought.merchant().ref(),
-                    new BnplRefunds.Request(key, eur(minor), "goods returned", Optional.of("key-under-test")), merchant,
-                    BnplApplicationClient.correlation()));
+            return transactions.inTransaction(uow -> {
+                BnplRefunds.Refunded refunded = refunds.atMerchant(uow, bought.purchase(), bought.merchant().ref(),
+                        new BnplRefunds.Request(key, eur(minor), "goods returned", Optional.of("key-under-test")),
+                        merchant, BnplApplicationClient.correlation());
+                beforeCommit.run();
+                return refunded;
+            });
+        }
+    }
+
+    private static long waitingOnB4() throws SQLException {
+        try (Connection application = DatabaseRoles.application(); Statement statement = application.createStatement();
+                java.sql.ResultSet row = statement.executeQuery("SELECT count(*) FROM pg_stat_activity WHERE"
+                        + " wait_event_type = 'Lock' AND query LIKE '%bnpl.bnpl_obligation%FOR UPDATE%'")) {
+            row.next();
+            return row.getLong(1);
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(120, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("never released");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
         }
     }
 

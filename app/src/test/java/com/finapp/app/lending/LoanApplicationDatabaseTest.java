@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.consent.ConsentPurpose;
 import com.finapp.lending.AgreementTemplate;
 import com.finapp.creditmath.AllocationComponent;
@@ -78,6 +79,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * policies and scorecard into force and activates both products' lending terms, which the shared container's suites
  * expect to find as they left them.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SuppressWarnings("try")

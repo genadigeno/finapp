@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplOrigination;
 import com.finapp.bnpl.BnplTermsAdministration;
 import com.finapp.identity.Authorization;
@@ -103,6 +104,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * credit policies, as the purchase suites do. Written by `P12-TSK-016` and <strong>owed a first run</strong> (the owner's
  * no-{@code databaseTest} instruction for Phase 12).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).

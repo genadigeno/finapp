@@ -6,6 +6,7 @@ import static com.finapp.app.lending.LoanApplicationClient.loan;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.net.http.HttpResponse;
 import java.security.SecureRandom;
@@ -25,6 +26,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * cases that need credit's policies and lending's terms in force are {@link LoanApplicationDatabaseTest}'s, in a
  * database of its own.
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the loan application doors' contract (P11-TSK-010)")

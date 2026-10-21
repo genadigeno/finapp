@@ -6,6 +6,7 @@ import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.credit.ExposureCensus;
 import com.finapp.app.credit.ExposureCensusMetrics;
 import com.finapp.app.credit.BnplCreditExposure;
+import com.finapp.app.database.DateShifted;
 import com.finapp.credit.AttributeProvenance;
 import com.finapp.credit.AttributeValue;
 import com.finapp.credit.CanonicalSnapshot;
@@ -100,6 +101,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * force, activates both products' terms and plants EUR lending capital, as {@code LoanAccountDatabaseTest} does - and
  * then breaks the exposure census on purpose.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

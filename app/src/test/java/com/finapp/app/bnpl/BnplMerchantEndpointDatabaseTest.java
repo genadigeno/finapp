@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -40,6 +41,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * negatives; and every door closed to a role without the permission, to no session and (for the acts) to no key -
  * nothing written by a refused caller.
  */
+@DateShifted
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

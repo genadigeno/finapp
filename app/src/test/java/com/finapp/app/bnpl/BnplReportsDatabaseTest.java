@@ -4,6 +4,7 @@ import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplOrigination;
 import com.finapp.bnpl.BnplProofs;
 import com.finapp.bnpl.BnplTermsAdministration;
@@ -64,6 +65,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p><strong>A database of its own</strong> ({@code own-container}). Written by `P12-TSK-026` and <strong>owed a first
  * run</strong> (the owner's no-{@code databaseTest} instruction).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

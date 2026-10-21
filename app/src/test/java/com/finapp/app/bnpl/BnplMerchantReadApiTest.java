@@ -3,6 +3,7 @@ package com.finapp.app.bnpl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.RoleName;
 import java.net.http.HttpResponse;
@@ -21,6 +22,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * another merchant are {@code BnplMerchantReadDatabaseTest}'s. Written by `P12-TSK-014` and <strong>owed a first
  * run</strong> (the owner's no-{@code databaseTest} instruction).
  */
+@DateShifted
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the merchant BNPL purchase route's negatives (P12-TSK-014)")

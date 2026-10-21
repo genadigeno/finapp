@@ -3,6 +3,7 @@ package com.finapp.app.lending;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.bnpl.BnplAccounts;
 import com.finapp.bnpl.BnplCapital;
 import com.finapp.bnpl.BnplHeadroom;
@@ -91,6 +92,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * why the suite runs in a database of its own ({@code own-container}): its capital lines are no recognition's, so the
  * capital proof is not this suite's to read.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

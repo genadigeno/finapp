@@ -8,6 +8,7 @@ import com.finapp.app.credit.BnplCreditExposure;
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.credit.ExposureCensus;
 import com.finapp.app.credit.ExposureCensusMetrics;
+import com.finapp.app.database.DateShifted;
 import com.finapp.app.lending.LendingTransactions;
 import com.finapp.app.lending.LoanApplicationDatabaseTest;
 import com.finapp.app.lending.LoanOfferMetrics;
@@ -90,6 +91,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <strong>A database of its own</strong> ({@code own-container}). Written by `P12-TSK-012` and <strong>owed a first
  * run</strong> (the owner's no-{@code databaseTest} instruction for the pair).
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SuppressWarnings("try")

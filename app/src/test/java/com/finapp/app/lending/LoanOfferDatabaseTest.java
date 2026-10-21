@@ -9,6 +9,7 @@ import static com.finapp.app.lending.LoanApplicationClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.credit.CreditFixtures;
+import com.finapp.app.database.DateShifted;
 import com.finapp.lending.LoanApplicationStore;
 import com.finapp.lending.LoanCreditDecisions;
 import com.finapp.lending.LoanOfferStore;
@@ -55,6 +56,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * policies and scorecard into force and activates both products' lending terms, as {@link LoanApplicationDatabaseTest}
  * does.
  */
+@DateShifted
 @Tag("database")
 @Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
