@@ -13,8 +13,12 @@ the single refund bound). The machines are in [`BNPL_LIFECYCLES.md`](../domain/B
 the exit criteria are `PHASE_GATES.md` §5 Phase 12, written by this transition; the tasks are `P12-TSK-001`…`026`,
 `P12-TST-001`…`002` and `P12-DOC-001` in [`BACKLOG.md`](BACKLOG.md).
 
-*Nothing in this document is built yet. Each task that builds a part corrects this plan where the code teaches
-otherwise, and the Phase 12 exit review (`P12-DOC-001`) reads the whole of it against the code.* The owner's transition
+*Every task is built — `P12-TSK-001`…`028` (`-027` and `-028` the owner-authorised database pass's remediation items,
+outside the milestones; `X-TSK-018` beside them), `P12-TST-001` and `P12-TST-002` — and the exit review (`P12-DOC-001`,
+2026-10-22) read this plan against the code and made it true: inline where a statement was materially wrong, each marked
+"*P12-DOC-001, 2026-10-22*", and in §25's errata for the rest. (This read "Nothing in this document is built yet. Each
+task that builds a part corrects this plan where the code teaches otherwise, and the Phase 12 exit review
+(`P12-DOC-001`) reads the whole of it against the code" until the exit review.)* The owner's transition
 decisions B1–B8 (§2.2) are folded into the sections below; the recorded assumptions A1–A22 (§2.3) are the product
 defaults the plan builds on, each a field of a versioned terms row; the draft's open questions OQ-1…OQ-20 are settled
 in §24 — two by explicit decision (B5, B6, B7) and the rest by the owner's acceptance of the draft's default (B8),
@@ -203,7 +207,7 @@ approved). Recorded as an accepted limitation, not a deviation, and attached to 
 | Merchant, Fee Schedule, Merchant Payable (purpose), Payout, Payout Destination | `merchant` (payable position: `ledger`) | exists (+ BNPL fee schedule) | BNPL credits the payable; never pays out |
 | Payment Intent / Attempt / Refund / Chargeback / Dispute (card) | `payments` | exists | Unchanged; touched only for a card-paid share (none in Phase 12, A7) |
 | **BNPL Application** | `bnpl` | yes | One per (checkout session, customer) choice of a BNPL product; opens one credit decision request in its transaction; `SUBMITTED → AWAITING_DECISION → OFFERED / DECLINED / CLOSED_UNDECIDED / WITHDRAWN` |
-| **Eligibility Assessment** | `credit` (the decision request + assessment) | exists | BNPL never computes eligibility; it reads the outcome. The merchant sees only `ELIGIBLE / NOT_ELIGIBLE / PENDING` — never a reason, score or amount (`DELIVERY_PLAN.md` §9) |
+| **Eligibility Assessment** | `credit` (the decision request + assessment) | exists | BNPL never computes eligibility; it reads the outcome. The merchant sees only `ELIGIBLE / NOT_ELIGIBLE / PENDING` — never a reason, score or amount (`DELIVERY_PLAN.md` §9) *(P12-DOC-001, 2026-10-22: no `PENDING` signal was built - `BnplOrigination.Eligibility` is `ELIGIBLE`/`NOT_ELIGIBLE` only, carried by `bnpl.BnplEligibilityAssessed`; "pending" is the absence of that event)* |
 | **Credit Decision** | `credit` | exists | Read via `CreditDecisions`; consumed via `consume(BNPL_AGREEMENT, agreementId)` |
 | **BNPL Terms Version** | `bnpl` | yes | Versioned per product: plan shapes, rate (PN), late fee, allocation order, DPD bounds, grace, engines; four-eyes; pinned on the agreement |
 | **BNPL Offer** | `bnpl` | yes | The plan the platform will grant for this purchase: product, plan (P4, or PN 3/6/12), illustrative schedule, total payable, expiry |
@@ -307,13 +311,18 @@ committed-but-undisbursed principal (§12.4), so the formula's committed term ne
 - **Ports declared by `bnpl`, implemented in `app`** (the crossborder/lending precedent):
   - `BnplCreditDecisions` — `open`, `cancel`, `decisionFor`, `consume(uow, decisionId, ConsumerRef(BNPL_AGREEMENT, agreementId))`, `lockExposure(uow, party)` (L0).
   - `BnplPartyStanding` — over `CreditPartyStanding`.
-  - `BnplWallets` — the customer's `CUSTOMER_WALLET` (existing only, for P4's instalment 1 at the acceptance and for collection; resolved or opened for a refund excess).
+  - `BnplWallets` — the customer's `CUSTOMER_WALLET` (existing only, for P4's instalment 1 at the acceptance and for collection; resolved or opened for a refund excess). *(P12-DOC-001, 2026-10-22: never opened - a refund excess goes to an existing wallet only, `BnplWallets.existingWallet`; §25.)*
   - `BnplCheckoutSessions` — read the session (merchant, amount, currency, expiry, status, token) and, in the purchase transaction, lock it `FOR UPDATE` and **complete it by financing** (`app`'s `CheckoutSessions.completedByFinancing`, §12.4).
   - `BnplMerchants` — the merchant's standing (`ACTIVE`, BNPL-enabled; `merchant.merchant` read `FOR SHARE` as `CheckoutSessions.requireTrading` does), its `MERCHANT_PAYABLE` account, the BNPL fee schedule version to pin, the fee split through `FeeCalculation`, and the returned fee through its exact cumulative arithmetic (`FeeCalculation.returnedFee`; *corrected by `P12-TSK-006`: this read "its least-share arithmetic", which is the card refund's dispatch-time reservation - a BNPL refund's `before` is committed, so §12.5's exact share applies*).
   - `BnplCapital` — `underLock(uow, currency)` over lending's `LendingCapitalHeadroom` (L6), extended to the BNPL purposes.
-  - `BnplUnitOfWork`.
+  - `BnplUnitOfWork`. *(P12-DOC-001, 2026-10-22: never built - the seam is a JDBC `Connection`, opened by `app`'s
+    `BnplTransactions` (`inTransaction`, and `inSnapshot` for the `REPEATABLE READ` reads). Built and unlisted:
+    `BnplActingParty` (`app`'s `IdentityActingParty`), `BnplProductBounds` (`CreditBnplProductBounds`) and
+    `BnplProofReads` (`LedgerBnplProofReads`); and two bnpl-side seams - `BnplBook`, bnpl's one seam over the ledger's
+    published API (its implementation `LedgerBnplBook` is bnpl's own, not `app`'s), and `MerchantFeeReturn`, the
+    merchant's fee arithmetic handed to `RefundAllocationEngineV1` as a parameter.)*
 - **Credit** (credit `V022`): `CreditProduct.BNPL_PAY_IN_4` and `BNPL_PAY_IN_N` — the five `product IN (…)` `CHECK`s widened in one migration (`V004`, `V008`, `V010`, `V011`, `V013`'s tables); a **term shape** per product replacing the boolean `revolving() == termMonths.isPresent()` rule (`NONE` for a line, `MONTHS` for a loan and PN with PN's allowed set {3, 6, 12}, `FIXED_PLAN` for P4 — no term sent); BNPL validities (request ≤ 1 h, decision ≤ 1 day; OQ-18, owner accepted default); affordability rule kinds for both; `ConsumerKind.BNPL_AGREEMENT` and the consumption kind `CHECK`; a policy fixture per product for the simulators; and `PlatformCreditExposure` **v3** in `app` (`P12-TSK-012`).
-- **Merchant** (merchant `V010`): BNPL enablement (OQ-8: a four-eyes operator act; a per-merchant schedule), the BNPL fee schedule assignment per (merchant, product), `bnpl_fee_pin` (`-006`); `MerchantPayable`'s drill-down learning the BNPL lines (`BNPL_PRINCIPAL` as a new counterparty purpose; kinds `BNPL_FINANCING`, `BNPL_REFUND`) — **owned by `-016`**, a code change in `merchant` with a migration only if its design needs one; and the **first merchant-key refund door** (`-021`) (merchant refunds are operator-only today — OQ-9: a merchant-key door with a refund scope, an operator door beside it).
+- **Merchant** (merchant `V010`): BNPL enablement (OQ-8: a four-eyes operator act; a per-merchant schedule), the BNPL fee schedule assignment per (merchant, product), `bnpl_fee_pin` (`-006`); `MerchantPayable`'s drill-down learning the BNPL lines (`BNPL_PRINCIPAL` as a new counterparty purpose; kinds `BNPL_FINANCING`, `BNPL_REFUND`) — **owned by `-016`**, a code change in `merchant` with a migration only if its design needs one; and the **first merchant-key refund door** (`-021`) (merchant refunds are operator-only today — OQ-9: a merchant-key door with a refund scope, an operator door beside it). *(P12-DOC-001, 2026-10-22: and merchant `V011` (`-021`) - the API key's scopes, `BNPL_REFUND` the refund door's; `-016` took no merchant migration.)*
 - **Checkout** (checkout `V004`): the edge `OPEN → COMPLETED` by financing (the edge trigger widened; the `payment_intent_ref` left null, a `financed_by_ref` set once), and the `"BNPL"` instrument on `ConfirmSessionRequest` routed to the BNPL application rather than to `PaymentCreation`.
 - **Ledger** `V027`: `OwnerKind.BNPL_OBLIGATION`; the per-obligation purposes and the operational purposes (§12.11).
 - **Lending**: `LendingCapitalHeadroom` and `LendingCapitalProof` sum the BNPL principal purposes too (a ledger-purpose read; `P12-TSK-005`); the engine extraction (`P12-TSK-002`). Nothing else.
@@ -349,7 +358,10 @@ SUBMITTED ──(credit request opened, same tx)──▶ AWAITING_DECISION ─�
                                                └──(customer withdraws / abandons checkout while cancellable)──▶ WITHDRAWN
 ```
 One open application per (party, product) (credit's partial unique) **and** per checkout session (`UNIQUE
-(checkout_session_id)` over open states). A session that expires while awaiting a decision closes the application
+(checkout_session_id)` over open states). *(P12-DOC-001, 2026-10-22: the session's partial unique covers `SUBMITTED`,
+`AWAITING_DECISION` **and `OFFERED`** (bnpl `V003`'s `bnpl_application_one_open_per_session`) - an `OFFERED`
+application holds its session for good, `-011`; the (party, product) backstop covers `SUBMITTED` and
+`AWAITING_DECISION` only.)* A session that expires while awaiting a decision closes the application
 (the credit request cancelled; an approval arriving later is never offered — it lapses unconsumed).
 
 ### 5.2 BNPL Offer
@@ -410,7 +422,11 @@ amended explicitly (effective when `P12-TSK-021` lands) and `INV-BNPL-07` holds 
 `(born) APPLIED` — a refund row exists only once its effects posted (lending's repayment precedent): one
 transaction claims the merchant's key, locks, judges the bound, allocates latest-first, posts, and writes the
 adjustment rows. Refusals write nothing: `422 bnpl.RefundExceedsPurchase`, `409 bnpl.PurchaseFullyRefunded`,
-`403 merchant.*` (not its purchase — `404`). No `PENDING` state: there is no provider.
+`403 merchant.*` (not its purchase — `404`). No `PENDING` state: there is no provider. *(P12-DOC-001, 2026-10-22:
+as built the refusals are `403 bnpl.RefundScopeRequired` (a key without the `BNPL_REFUND` scope) and `404 bnpl.NotFound`
+(not its purchase), not `merchant.*`; and beside them `409 bnpl.RefundNotPostable` (a `CLOSED` obligation whose wallet
+cannot take the refund, or a payable that cannot be debited) and `409 bnpl.DisputeOpen` (a refund beside an open
+dispute) - nothing written.)*
 
 ### 5.8 Dispute (`BnplDispute`)
 ```
@@ -418,13 +434,16 @@ OPEN ──(merchant responds with evidence or accepts)──▶ MERCHANT_RESPON
 OPEN ──(merchant accepts liability)──▶ RESOLVED_REFUND        OPEN|MERCHANT_RESPONDED ──(customer withdraws)──▶ WITHDRAWN
 OPEN ──(response deadline passes)──▶ RESOLVED_REFUND (S; the merchant's silence is acceptance — OQ-10, 14 days, owner accepted default)
 ```
+*(P12-DOC-001, 2026-10-22: the first line's "or accepts" is stale - the merchant's acceptance resolves at once,
+`OPEN → RESOLVED_REFUND` (the second line); only a contest moves `OPEN → MERCHANT_RESPONDED`.)*
 While `OPEN`/`MERCHANT_RESPONDED` the disputed amount is held: no late fee, no DPD on instalments covered by the
 hold, no auto-collection beyond the undisputed part. `RESOLVED_REFUND` executes a `BnplRefund` (the merchant's
 liability); `RESOLVED_UPHELD` lifts the hold and re-bills nothing (the instalments were never cancelled). One open
 dispute per purchase.
 
 ### 5.9 Other machines
-Terms version `PROPOSED → ACTIVE → RETIRED | REJECTED`; waiver, reversal `PROPOSED → APPROVED | REJECTED`; payoff
+Terms version `PROPOSED → ACTIVE → RETIRED; PROPOSED → REJECTED` *(P12-DOC-001, 2026-10-22: read "`PROPOSED → ACTIVE →
+RETIRED | REJECTED`" - `REJECTED` is reached only from `PROPOSED`, bnpl `V002`'s edge trigger)*; waiver, reversal `PROPOSED → APPROVED | REJECTED`; payoff
 quote immutable, its execution born once (`UNIQUE (quote_id)`); repayment born `ALLOCATED`, `REVERSED` derived.
 
 ---
@@ -470,15 +489,15 @@ same-day refund of a P4 purchase is dated the purchase's date), never before the
 | **T-off** offer | origination sweep claim; (B1) application `FOR UPDATE` conditional `AWAITING_DECISION`; decision read; session still open; terms `ACTIVE` `FOR SHARE`, pinned; plan(s) and illustrative schedule from the engines; offer born (`UNIQUE (application_id)`); else `CLOSED_UNDECIDED (reason)`; events |
 | **T-pur** acceptance = purchase authorisation | claim `bnpl.offer-acceptance:CUSTOMER:<id>` (`MULTI_FACTOR`, echoed `terms_sha256`); **(L0)** profile; **(B2)** offer `FOR UPDATE` `OFFERED`, unexpired; **(B3)** the checkout session row `FOR UPDATE` through checkout's port — **judged at once**: not `OPEN` or expired → refused `409 bnpl.SessionNotPayable` with nothing else taken; standing; `consume`; **(L6)** capital row + headroom ≥ principal; agreement v1, evidence, purchase, obligation (`ACTIVE`), schedule v1, the per-obligation accounts opened; **(P)** the merchant's `MERCHANT_PAYABLE` and — for P4 — the customer's `CUSTOMER_WALLET` ledger-account rows `FOR UPDATE` **as one pair in `UUID.compareTo` order** (§7.2), the wallet's available ≥ instalment 1 (P4); **(L8)** `lockBalancesInOrder`; posting F1 (financing) and, for P4, billing of instalment 1 + repayment R1 (collected at purchase); the session completed by financing → checkout's order; events; audit |
 | **T-acc** accrual (PN) | sweep claim, or run first by any act that needs the record caught up; **(B4)** obligation `FOR UPDATE`; DB clock; accrue every elapsed date (F2a) under `bnpl.accrual:<obligation>:<date>`; commit. *Built by `P12-TSK-017`: the accrual span is the latest schedule version's instalment periods from the purchase's business date - nothing accrues at or after the final due date (no billing makes it due; §12.3 admits no penalty interest); at most 92 dates a call, the sweep calling again until caught up.* **Its own transaction, so the currency's `BNPL_INTEREST_INCOME` row is never held across a wallet wait** (the Phase 11 gate's A2-F1 lesson) |
-| **T-svc** servicing step (one obligation, one business date) | sweep claim; **(B4)** obligation `FOR UPDATE`; DB clock; **every elapsed date already accrued, else nothing is written and T-acc runs first**; bill due instalments (F2); the catch-up credit-balance application over past-due items (F3a, the gate's R2); auto-collect (the wallet row (P), F3); closure; condition; late fee (F4) |
+| **T-svc** servicing step (one obligation, one business date) | sweep claim; **(B4)** obligation `FOR UPDATE`; DB clock; **every elapsed date already accrued, else nothing is written and T-acc runs first**; bill due instalments (F2); the catch-up credit-balance application over past-due items (F3a, the gate's R2); auto-collect (the wallet row (P), F3); closure; condition; late fee (F4) *(P12-DOC-001, 2026-10-22: as built the obligation's own six (L8) projection rows are taken - `lockBalancesInOrder` - before the first entry and so before (P), whenever anything is due or a credit balance stands (`BnplServicing`); acyclic, since those per-obligation rows are written only under B4, and never a shared income row - §7.2's exception)* |
 | **T-rep** repayment | claim `bnpl.repayment:CUSTOMER:<id>`; (B4); due state derived; allocate; the wallet row (P); (L8); post (value-dated `max(today, floor)`); maybe close - the closure alone requiring every elapsed date accrued (*refined by `P12-TSK-018`*: the plan read "accrued to date (else T-acc first)" - the floor already keeps every accrued date's base unmoved and an unaccrued date reads a base valued on or before it, so only the closure needs the record caught up, and the next servicing step closes an obligation the repayment settled over an unaccrued day) |
-| **T-ref** merchant refund | claim `bnpl.refund:MERCHANT:<id>` (merchant key); **(B5)** the purchase `FOR UPDATE` (the refund bound's arbiter; disputes take it too); **(B4)** obligation; DB clock; PN accrued to date (else T-acc first); the refund's split (latest-first) over the due state derived under B4; schedule v n+1 + agreement v n+1 when instalments are cancelled; **(P)** merchant payable and — when an excess is credited — the customer wallet, one pair in `UUID.compareTo` order; (L8); posting F5/F5a; refund + adjustment rows; closure if settled; events; audit |
-| **T-dsp** dispute acts | claim; (B5) purchase; (B4) obligation; (B6) the dispute row; condition hold written; on `RESOLVED_REFUND` → T-ref's body in the same transaction |
+| **T-ref** merchant refund | claim `bnpl.refund:MERCHANT:<id>` (merchant key); **(B5)** the purchase `FOR UPDATE` (the refund bound's arbiter; disputes take it too); **(B4)** obligation; DB clock; PN accrued to date (else T-acc first); the refund's split (latest-first) over the due state derived under B4; schedule v n+1 + agreement v n+1 when instalments are cancelled; **(P)** merchant payable and — when an excess is credited — the customer wallet, one pair in `UUID.compareTo` order; (L8); posting F5/F5a; refund + adjustment rows; closure if settled; events; audit *(P12-DOC-001, 2026-10-22: as built the key is `bnpl.refund:<actor type>:<id>` - the merchant's `MERCHANT:<merchant>`, an operator's at `POST /v1/operator/bnpl-purchases/{id}/refunds` (`PAYMENT_REFUND`); "else T-acc first" is the door's - a PN record behind its accrual writes nothing, the door runs T-acc in its own transaction and retries (`BnplRefundDesk`, at most eight rounds); (P) also takes the wallet when the refund refunds a held credit balance at closure, not only for an excess)* |
+| **T-dsp** dispute acts | claim; (B5) purchase; (B4) obligation; (B6) the dispute row; condition hold written; on `RESOLVED_REFUND` → T-ref's body in the same transaction *(P12-DOC-001, 2026-10-22: as built the opening also takes (P) - the merchant's payable alone - and refuses a merchant whose payable cannot be debited `409 bnpl.RefundNotPostable` (`BnplDisputes`); the approval or rejection of a resolution proposal takes the `bnpl_dispute_proposal` as a second (B6) after the dispute; no "condition hold" is written - the hold is the `bnpl_dispute_hold` rows)* |
 | **T-pay** payoff | claim; accrued to date (else T-acc first); (B4); catch-up application; quote recomputed (`409 bnpl.PayoffQuoteStale`); (P) wallet; (L8); repayment; closure (*as built by `P12-TSK-022`*: claim; (B4) owner-scoped; the quote read plainly - immutable and INSERT-only, so the execution's `UNIQUE (quote_id)` and `UNIQUE (obligation_id)` beneath B4 are its arbiters rather than a (B6) row lock, lending's refinement; today = `G`, the versions the quote's; PN caught up (else nothing written, T-acc in its own transaction, again); the floor read before any write and `V = max(today, floor)` on the execution row, born first; (L8) the obligation's own rows; every unbilled instalment billed, each with its application, then the catch-up application; the amount recomputed; (P) the wallet; (L8); one `PAYOFF` repayment valued `V`; `BnplClosures` `PAID_OFF_EARLY`) |
-| **T-rev / T-wvr** corrections | claim `bnpl.servicing:EMPLOYEE:<id>`; (L0) for a repayment reversal (outstanding rises); (B4); (B6) proposal; (L6) if principal re-instated; (P) wallet; (L8) post; audit |
+| **T-rev / T-wvr** corrections | claim `bnpl.servicing:EMPLOYEE:<id>`; (L0) for a repayment reversal (outstanding rises); (B4); (B6) proposal; (L6) if principal re-instated; (P) wallet; (L8) post; audit *(P12-DOC-001, 2026-10-22: as built the key is `bnpl.servicing:<actor type>:<id>` - `CUSTOMER`-typed for an operator session today; the waiver takes no (B6) - its proposal is read plainly under B4, `UNIQUE (waiver_id)` on `bnpl_waiver_decision` its arbiter - and no L0, and takes (P), the wallet, only when a credit balance stands; the reversal's proposal is (B6) `FOR UPDATE`)* |
 | **T-terms** | claim; advisory namespace `12` (`hashtext(product)`); the proposal |
 
-### 7.2 The BNPL lock order (to be registered in `DISTRIBUTED_EXECUTION.md` §3 as "The Phase 12 lock order")
+### 7.2 The BNPL lock order (`DISTRIBUTED_EXECUTION.md` §3's row "The Phase 12 lock order" — *"to be registered in … §3" until `P12-DOC-001`, 2026-10-22*)
 
 One order for every bnpl writer holding more than one of these (the lock positions (B1)…(B6) are named for `bnpl`'s rows
 and are **not** the owner decisions B1–B8 of §2.2; the documents write lock positions in parentheses):
@@ -497,6 +516,17 @@ call. **No shared income row is ever taken before (P)**: the accrual commits alo
 other writer that posts to an income row (a refund releasing interest or fees, a waiver, the late fee) does so at L8,
 after its wallet and payable — so no bnpl transaction holds a currency-wide income row while it waits on a wallet or a
 payable (the Phase 11 gate's A2-F1, designed out rather than inherited). Then only inserts.
+
+*(P12-DOC-001, 2026-10-22 - as built, and registered in `DISTRIBUTED_EXECUTION.md` §3's "The Phase 12 lock order":
+**(B6)** is the dispute (every act after its opening, the deadline sweep's included), plus the `bnpl_dispute_proposal`
+at its approval or rejection, and the repayment-reversal proposal - **not** the payoff quote, which is read plainly (the
+execution's `UNIQUE (quote_id)` and `UNIQUE (obligation_id)` arbitrate, §7.1 T-pay), and not the waiver proposal (read
+under B4; `UNIQUE (waiver_id)` on `bnpl_waiver_decision` arbitrates). **(L8)** has one exception: T-svc and T-pay take
+the obligation's own six projection rows before (P) - acyclic, since those per-obligation rows are written only under
+B4, and never a shared income row, which stays at L8 after (P). **(B4)** is taken in a statement of its own and the
+agreement version in force read by the next statement (`JdbcBnplServicingStore.lock`, `JdbcBnplRepaymentStore`):
+READ COMMITTED's re-check refreshes only the locked row, so one joined statement read the version a racing refund had
+just superseded - `P12-TST-001`'s finding, fixed there.)*
 
 B5 before B4: a refund and a dispute lock the purchase first, then its obligation; servicing takes only B4. No writer
 holding B4 waits on B5.
@@ -573,6 +603,10 @@ row. Advisory namespace **`12`** (the next free) reserved for bnpl's administrat
 
 Schema `bnpl`, `REVOKE ALL FROM PUBLIC`; `SELECT, INSERT` on facts; conditional `UPDATE` only of status/permit
 columns on machine tables; no `DELETE`; every money column `*_minor bigint` + `currency`, on `INSERT`-only tables.
+*(P12-DOC-001, 2026-10-22: as built the column-scoped `UPDATE` grants also cover decision and resolution columns - the
+terms version's decision and effective period (`V002`), the dispute's merchant statement and resolution (`V015`), the
+dispute proposal's decision (`V015`) and the repayment reversal's decision, entry and value date (`V016`) - and
+`purchase.order_id` (`V006`) and the obligation's `closure_reason` (`V010`); still none of a money column.)*
 
 | Table | Task | Key arbiters |
 |---|---|---|
@@ -584,22 +618,29 @@ columns on machine tables; no `DELETE`; every money column `*_minor bigint` + `c
 | `merchant_financing` | `-013` | `UNIQUE (purchase_id)`, `UNIQUE (journal_entry_id)`; gross/fee/net with `gross = fee + net` `CHECK` |
 | `bnpl_obligation` (+ `_event`) | `-013` | `UNIQUE (purchase_id)`; no money column; `next_servicing_at` |
 | `bnpl_schedule`, `bnpl_instalment` | `-013` | `UNIQUE (obligation_id, schedule_version)`, `UNIQUE (schedule_id, sequence)`; deferred conservation |
-| `bnpl_interest_accrual` (PN) | `-017` | `UNIQUE (obligation_id, accrual_date)` |
+| `bnpl_interest_accrual` (PN) | `-017` *(P12-DOC-001, 2026-10-22: born in `V008` by `-015`, `SELECT` only; its writer in `V009` by `-017`)* | `UNIQUE (obligation_id, accrual_date)` |
 | `bnpl_billing` (born by `-013` for P4's instalment 1, extended by `-015`), `bnpl_credit_balance_application` | `-013`, `-015` | `UNIQUE (instalment_id)` |
 | `bnpl_repayment`, `bnpl_repayment_allocation` (born by `-013` with the kind `AT_PURCHASE` for P4's instalment 1, extended by `-018`); `bnpl.principal_value_floor(obligation)` and its ranks (`-013`, extended by every later mover) | `-013`, `-018` | `UNIQUE (obligation_id, kind, request_key)`; Σ allocation = amount (deferred) |
 | `bnpl_collection_attempt` | `-019` | `UNIQUE (instalment_id, attempt_date)` |
-| `bnpl_refund`, `bnpl_refund_adjustment` | `-021` | `UNIQUE (merchant_id, refund_key)`; Σ adjustment + excess = amount (deferred); per-instalment rows |
+| `bnpl_refund`, `bnpl_refund_adjustment` | `-021` | `UNIQUE (merchant_id, requested_by, refund_key)` *(P12-DOC-001, 2026-10-22: read "`UNIQUE (merchant_id, refund_key)`" - `bnpl_refund_request_unique`, `V012`; the requester the merchant's `MERCHANT:<id>` or an operator's; `-023`'s `V015` added the `DISPUTE` door and `UNIQUE (dispute_id)`, and a `BEFORE INSERT` trigger refusing a refund beside an open dispute)*; Σ adjustment + excess = amount (deferred); per-instalment rows |
 | `bnpl_condition_event` | `-020` | `UNIQUE (obligation_id, business_date, kind)` |
 | `bnpl_fee_assessment`, `bnpl_waiver` (+ decision) | `-020`, `-024` | `UNIQUE (instalment_id, kind)`; four-eyes `CHECK` |
 | `bnpl_payoff_quote`, `bnpl_payoff_execution` | `-022` | `UNIQUE (quote_id)`, `UNIQUE (obligation_id)` |
 | `bnpl_dispute` (+ `_event`) | `-023` | partial `UNIQUE (purchase_id)` over open |
 | `bnpl_repayment_reversal` (+ allocation reversal) | `-024` | one live proposal per repayment |
+| `bnpl_obligation_closure` *(added by P12-DOC-001, 2026-10-22, as are the rows below)* | `-018` (`V010`) | `UNIQUE (obligation_id)`, `UNIQUE (refund_journal_entry_id)`; reason `CHECK` (four values) |
+| `bnpl_credit_balance_allocation` | `-015` (`V008`) | `UNIQUE (application_id, ordinal)`, `UNIQUE (application_id, billing_id, component)` |
+| `bnpl_dispute_claim`, `bnpl_dispute_hold`, `bnpl_dispute_proposal` | `-023` (`V015`) | the proposal's four-eyes `CHECK` (`bnpl_dispute_proposal_four_eyes`) and one live proposal per dispute (`bnpl_dispute_proposal_one_live`); the hold `UNIQUE (dispute_id, sequence)`, born once with its dispute |
+| view `bnpl.party_principal_exposure` | `-012` (`V007`) | definer view, read by credit's exposure v3 |
+| sequence `bnpl.record_order` | `P12-TST-001` (`V017`) | `recorded_order` on the fact tables; `bnpl_repayment_reversal.decided_order` stamped by trigger |
+| functions `days_past_due`, `fee_waiver_room`, `dispute_holds`, `business_date`, `business_date_latest` | `-013`, `-020`, `-023`, `-024` | the database's own reading of DPD, waiver room, the hold and the business date |
 
 **Other modules' migrations (expected order; the building task may renumber):** credit `V022` (`-001`: products,
 consumer kind); ledger `V027` (`-003`); identity `V022` (`-002`: BNPL permissions/roles); merchant `V010` (`-006`: BNPL fee
 schedule, BNPL enablement); checkout `V004` (`-007`: BNPL completion path); lending — no migration (`LendingCapitalHeadroom` and
 `LendingCapitalProof` stay lending's and sum the BNPL purposes by ledger purpose; `app`'s `BnplCapital` port adapts
-them, `-005`).
+them, `-005`). *(P12-DOC-001, 2026-10-22: as built merchant also took `V011` (`-021`: the API key's scopes,
+`BNPL_REFUND`); `-016` took none.)*
 
 **Provider references, audit records, reconciliation evidence.** BNPL stores no provider reference (it calls none).
 It stores: the checkout session and order ids; the merchant id and fee schedule version; the journal entry id on every
@@ -618,31 +659,47 @@ or merchant's id → `404`).
 
 | Route | Who | Command | Idempotency | Answer |
 |---|---|---|---|---|
-| `GET /v1/checkout/sessions/{id}/bnpl-options` (`-011`) | customer (session holder) | plans offered for this session's amount (no eligibility — products and illustrative plans only) | read | — |
+| `GET /v1/checkout/sessions/{id}/bnpl-options` (`-011`) *(P12-DOC-001, 2026-10-22: built as `POST /v1/checkout/sessions/bnpl-options`, the session token in the body - a token travels only in a body)* | customer (session holder) | plans offered for this session's amount (no eligibility — products and illustrative plans only) | read | — |
 | `POST /v1/me/bnpl-applications` | customer, `MULTI_FACTOR` | the session **token** (a capability, not a bare id — the `CheckoutSessions.byToken` precedent), product, plan | `bnpl.application:CUSTOMER:<id>` | `202` |
 | `GET /v1/me/bnpl-applications/{id}` | customer | status; decline texts via credit | read | — |
-| `POST /v1/me/bnpl-applications/{id}/withdrawal` | customer | withdraw | `bnpl.application-withdrawal:…` | sync |
+| `POST /v1/me/bnpl-applications/{id}/withdrawal` | customer (the conditional step-up) | withdraw | `bnpl.application-withdrawal:…` | sync |
 | `GET /v1/me/bnpl-offers/{id}` | customer | plan, schedule, totals, expiry, document | read | — |
 | `POST /v1/me/bnpl-offers/{id}/acceptance` | customer, `MULTI_FACTOR` | accept (echo `terms_sha256`) — **the purchase** | `bnpl.offer-acceptance:CUSTOMER:<id>` | `201` (agreement id; the session paid) |
-| `POST /v1/me/bnpl-offers/{id}/decline` | customer | decline | key | sync |
+| `POST /v1/me/bnpl-offers/{id}/decline` | customer (the conditional step-up) | decline | key (`bnpl.offer-decline:CUSTOMER:<id>`) | sync |
 | `GET /v1/me/bnpl-agreements` · `/{id}` · `/{id}/schedule` · `/{id}/repayments` | customer | state, conditions, balances (derived), schedule, refunds | read | — |
-| `POST /v1/me/bnpl-agreements/{id}/repayments` | customer, step-up | repay from wallet | `bnpl.repayment:CUSTOMER:<id>` | sync |
-| `POST /v1/me/bnpl-agreements/{id}/payoff-quotes` · `/payoff` | customer (payoff `MULTI_FACTOR`) | quote; execute | keys | sync |
-| `POST /v1/me/bnpl-agreements/{id}/disputes` | customer | open a dispute (reason, amount ≤ purchase) | `bnpl.dispute:CUSTOMER:<id>` | `201` |
+| `POST /v1/me/bnpl-agreements/{id}/repayments` | customer, step-up | repay from wallet | `bnpl.repayment:CUSTOMER:<id>` | sync *(P12-DOC-001, 2026-10-22: `201`)* |
+| `POST /v1/me/bnpl-agreements/{id}/payoff-quotes` · `/payoff` | customer (the quote the conditional step-up; payoff `MULTI_FACTOR`) | quote; execute | keys (`bnpl.payoff-quote:CUSTOMER:<id>`, `bnpl.payoff:CUSTOMER:<id>`) | sync *(P12-DOC-001, 2026-10-22: `201` each)* |
+| `POST /v1/me/bnpl-agreements/{id}/disputes` | customer (the conditional step-up) | open a dispute (reason, amount ≤ purchase) | `bnpl.dispute:CUSTOMER:<id>` | `201` |
+| `POST /v1/me/bnpl-disputes/{id}/withdrawal` *(added by P12-DOC-001, 2026-10-22, as are the other rows so marked)* | customer | withdraw an open dispute (audited `bnpl.DisputeWithdrawn`; event `bnpl.BnplDisputeResolved` (`WITHDRAWN`)) | `bnpl.dispute-withdrawal:CUSTOMER:<id>` | sync |
 | `GET /v1/merchant/bnpl-purchases/{id}` | merchant key | purchase, financed net, fee, refunds — **never** customer credit data, schedule or delinquency | read | — |
-| `POST /v1/merchant/bnpl-purchases/{id}/refunds` | merchant key, refund scope | amount (≤ gross − refunded), reason | `bnpl.refund:MERCHANT:<id>` | sync |
+| `POST /v1/merchant/bnpl-purchases/{id}/refunds` | merchant key, refund scope | amount (≤ gross − refunded), reason | `bnpl.refund:MERCHANT:<id>` | sync *(P12-DOC-001, 2026-10-22: `201`)* |
+| `POST /v1/operator/bnpl-purchases/{id}/refunds` *(added)* | `PAYMENT_REFUND` | the operator's refund of a BNPL purchase | `bnpl.refund:<actor type>:<id>` | `201` |
+| `GET /v1/merchant/bnpl-disputes` *(added)* | merchant key | its open disputes - amount, category, deadline | read | — |
 | `POST /v1/merchant/bnpl-disputes/{id}/response` | merchant key | evidence / accept | `bnpl.dispute-response:MERCHANT:<id>` | sync |
-| `POST /v1/operator/bnpl-disputes/{id}/resolution` | `BNPL_DISPUTE_RESOLVE` (four-eyes above threshold) | refund / uphold | `bnpl.servicing:EMPLOYEE:<id>` | sync |
-| `POST /v1/operator/bnpl-agreements/{id}/waivers` · `…/repayments/{rid}/reversal` (+ approval, rejection) | `BNPL_SERVICE` / `BNPL_SERVICE_APPROVE` | waive; reverse | `bnpl.servicing:EMPLOYEE:<id>` | sync |
-| `POST /v1/operator/bnpl/terms` (+ approval, rejection) | `BNPL_ADMINISTER` | terms versions | `bnpl.terms:EMPLOYEE:<id>` | sync |
+| `GET /v1/operator/bnpl-disputes/{id}` *(added)* | `BNPL_DISPUTE_RESOLVE` | the dispute, reason and statement (audited `bnpl.DisputeRead`) | read | — |
+| `POST /v1/operator/bnpl-disputes/{id}/resolution` (+ `/resolution/approval`, `/resolution/rejection` *(added)*) | `BNPL_DISPUTE_RESOLVE` (four-eyes above threshold) | refund / uphold; above the threshold a proposal another holder approves or rejects | `bnpl.servicing:EMPLOYEE:<id>` *(P12-DOC-001: as built `bnpl.servicing:<actor type>:<id>`, `CUSTOMER`-typed today)* | sync |
+| `POST /v1/operator/bnpl-agreements/{id}/waivers` · `…/repayments/{rid}/reversal` (+ approval, rejection) | `BNPL_SERVICE` / `BNPL_SERVICE_APPROVE` | waive; reverse | `bnpl.servicing:EMPLOYEE:<id>` *(P12-DOC-001: as built `bnpl.servicing:<actor type>:<id>`, `CUSTOMER`-typed today)* | sync *(P12-DOC-001: the proposals `201`)* |
+| `POST /v1/operator/bnpl/terms` (+ approval, rejection) | `BNPL_ADMINISTER` | terms versions | `bnpl.terms:EMPLOYEE:<id>` *(P12-DOC-001: as built `bnpl.terms:<actor type>:<id>`, `CUSTOMER`-typed today)* | sync *(P12-DOC-001: the proposal `201`)* |
+| `GET /v1/operator/bnpl/terms?product=&at=` · `/{versionId}` *(added)* | `BNPL_ADMINISTER` | the terms in force at an instant; one version in any state | read | — |
+| `POST /v1/operator/merchants/{merchantId}/bnpl-enablement` (+ `/{enablementId}/approval`, `/rejection`, `/withdrawal`), `PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}` *(added; `-006`)* | `MERCHANT_ADMINISTER` (enablement); `FEE_ADMINISTER` (the fee schedule) | BNPL enablement (four-eyes); the fee schedule per product | enablement acts keyed | `201` (the enablement proposal) |
 | `GET /v1/operator/bnpl-agreements/{id}` (+ `/explanation`), `POST …/replay`, `GET /v1/operator/reports/bnpl/{portfolio,merchant-financing,refunds,delinquency}` | `BNPL_INVESTIGATE` | read, explain, replay, reports (audited) | — | — |
+
+*(P12-DOC-001, 2026-10-22 - the table read against the controllers: the rows marked "added" were built and unlisted;
+"(the conditional step-up)" was added to the application withdrawal, the offer decline, the dispute opening and the
+quote, which take it (an MFA-enrolled identity acts from a `MULTI_FACTOR` session); the repayment, the quote, the
+payoff, the merchant and operator refunds, the waiver and reversal proposals and the terms proposal answer `201`, not
+"sync"; every operator key is `<scope>:<actor type>:<id>`, the actor type `CUSTOMER` for an operator session today (lending's
+A5-04 note, `LENDING_LIFECYCLES.md` §4.1), so the `EMPLOYEE` in the keys above is the plan's, not the code's.)*
 
 **Errors** (catalogued by the building task): `409 bnpl.ApplicationOpen`, `ApplicationNotWithdrawable`,
 `OfferNotAcceptable`, `SessionNotPayable`, `TermsChanged`, `ObligationClosed`, `PayoffQuoteStale`, `PurchaseFullyRefunded`,
 `DisputeOpen`, `ProposalPending`; `422 bnpl.ProductNotOffered`, `MerchantNotEnabled`, `SessionNotEligible`,
 `AmountOutOfRange`, `InsufficientFunds`, `CapitalUnavailable`, `RefundExceedsPurchase`, `ReasonRequired`,
 `WaiverExceedsDue`; `403 bnpl.SelfApprovalRefused`, `SelfDealingRefused`; `404 bnpl.NotFound`; credit's and checkout's
-refusals passed through.
+refusals passed through. *(P12-DOC-001, 2026-10-22: as built also `409 bnpl.TermsStale`, `RefundNotPostable`,
+`ProposalNotPending`, `RepaymentNotReversible`, `WalletUnavailable`, `DisputeNotActionable`; `422 bnpl.TermsInvalid`,
+`TermsNotAmortising`; `403 bnpl.RefundScopeRequired` - 31 codes in all, `BnplErrorCode` and `ERROR_CONTRACT.md`'s bnpl
+rows.)*
 
 ---
 
@@ -670,6 +727,11 @@ Outbox, the platform envelope (event id, type, aggregate id, event version, sche
 BNPL consumes no event for correctness; `credit.CreditDecisionRecorded` and checkout's session events are hints (an
 `InboxEventHandler` pulling a permit).
 
+*(P12-DOC-001, 2026-10-22 - as built: every event type carries the `bnpl.` prefix (`bnpl.BnplAgreementCreated`,
+`bnpl.MerchantFinanced`, `bnpl.InstalmentPaid`, …); the customer's dispute withdrawal publishes
+`bnpl.BnplDisputeResolved` with the outcome `WITHDRAWN`; and the hints are three - `credit.CreditDecisionRecorded`,
+`credit.CreditDecisionRequestClosed` and `checkout.CheckoutSessionExpired` (`BnplOriginationHint`).)*
+
 ---
 
 ## 11. Security, audit and privacy
@@ -681,7 +743,8 @@ BNPL consumes no event for correctness; `credit.CreditDecisionRecorded` and chec
   read and refund owner-scoped to the purchase's merchant (`INV-MER-01`); refunds bounded by the original purchase
   (`INV-BNPL-07`); the merchant never sees eligibility reasons, scores, credit amounts, the customer's schedule,
   repayments or delinquency (`DELIVERY_PLAN.md` §9) — only `ELIGIBLE/NOT_ELIGIBLE/PENDING`, the purchase, its financed
-  net, fee and refunds.
+  net, fee and refunds. *(P12-DOC-001, 2026-10-22: the `PENDING` signal was never built - the outcome is
+  `ELIGIBLE`/`NOT_ELIGIBLE` only (`BnplOrigination.Eligibility`); pending is the absence of the event.)*
 - **Consent:** credit's consent gate for bureau/financial-data sources applies unchanged (`INV-CRD-03`); acceptance is
   not consent (`INV-IDN-04`) — no consent purpose created. Whether the merchant may learn that the customer *applied*
   for BNPL is a privacy decision (OQ-12, owner accepted default: only `NOT_ELIGIBLE` for that session, never a reason).
@@ -693,6 +756,9 @@ BNPL consumes no event for correctness; `credit.CreditDecisionRecorded` and chec
   actor, reason), `bnpl.DisputeOpened` / `…Responded` / `…Resolved`, `bnpl.WaiverProposed/Approved/Rejected`,
   `bnpl.RepaymentReversalProposed/Approved/Rejected`, `bnpl.TermsVersionProposed/Activated/Rejected`,
   `bnpl.AgreementRead`, `bnpl.ExplanationRead`, `bnpl.Replayed`, `bnpl.ReportRead`; credit's `credit.DecisionConsumed`.
+  *(P12-DOC-001, 2026-10-22: as built also `bnpl.SelfApprovalRefused`, `bnpl.RefundScopeRefused`,
+  `bnpl.SelfDealingRefused`, `bnpl.DisputeWithdrawn`, `bnpl.DisputeResolutionProposed`, `bnpl.DisputeResolutionRejected`
+  and `bnpl.DisputeRead` - 29 bnpl actions in all, `BnplAuditAction` and `AUDITABLE_ACTIONS.md`.)*
 - **Data classification:** amounts on agreements, schedules, refunds — `RESTRICTED-FINANCIAL`; party, merchant and
   agreement references `CONFIDENTIAL`; acceptance session/IP `CONFIDENTIAL`; person-written reasons `RESTRICTED-PII`
   (the Phase 11 review's finding 19 resolved forward).
@@ -822,7 +888,9 @@ billings and allocations, plus unbilled instalments' principal).
 excess = a1 to wallet; during — cancels from the last; after completion — every instalment paid, the whole `R` is
 excess to the customer; a refund on a `CLOSED` obligation is admitted (the purchase is not terminal) and posts only the
 merchant debit and the customer credit (OQ-15, owner accepted default) — refused with nothing written when the wallet
-cannot take the credit (a `CLOSED` obligation holds no credit balance; the merchant retries, ADR-0105). **A refund while
+cannot take the credit (a `CLOSED` obligation holds no credit balance; the merchant retries, ADR-0105) *(P12-DOC-001,
+2026-10-22: the refusal is `409 bnpl.RefundNotPostable`, nothing written - for a `CLOSED` obligation whose wallet
+cannot be credited, or a merchant payable that cannot be debited (a closed merchant))*. **A refund while
 a dispute is open** is refused `409 bnpl.DisputeOpen` by both refund doors — the merchant settles a disputed purchase by
 accepting the dispute (ADR-0106). **Customer repays after full refund:** `409 bnpl.ObligationClosed`.
 
@@ -968,19 +1036,19 @@ wave; fleet `databaseTest`/`kafkaTest` skipped, recorded per task as a criterion
 | 2 | Duplicate purchase authorisation: BNPL acceptance racing a card payment of the same session | `#bnplAndCardOnOneSessionCompleteOnce` (`-013`) |
 | 3 | Concurrent eligibility: a BNPL acceptance and a loan decision for one party | `#acceptanceAndADecisionSerialiseOnTheProfile` (`-013`) |
 | 4 | Duplicate instalment collection (ten sweepers; sweep vs customer repayment) | `BnplCollectionDatabaseTest#tenSweepersCollectOnce` (`-019`) |
-| 5 | **A payment provider succeeds but the response is lost, then a retry** — the merchant payout of a BNPL-financed payable: dispatch accepted, response lost, the merchant retries under its key | `BnplMerchantPayoutDatabaseTest#aLostPayoutResponseIsHeldAndTheRetryReplays` (`-016`): the `SimulatedPayoutProvider` executes and the answer is lost → `merchant_payout` `UNKNOWN`, the hold standing; the merchant's retry under the same `merchant.payout:<merchantId>` key replays (no second dispatch); `MerchantPayoutResolution`'s query concludes `COMPLETED` and posts `DR MERCHANT_PAYABLE / CR PAYOUT_CLEARING` once; one payout at the provider; the BNPL-financed payable bounded throughout and the agreement unchanged; and the wallet top-up variant (customer tops up by card for an instalment, response lost, retry) in `P12-TST-001` |
+| 5 | **A payment provider succeeds but the response is lost, then a retry** — the merchant payout of a BNPL-financed payable: dispatch accepted, response lost, the merchant retries under its key | `BnplMerchantPayoutDatabaseTest#aLostPayoutResponseIsHeldAndTheRetryReplays` (`-016`): the `SimulatedPayoutProvider` executes and the answer is lost → `merchant_payout` `UNKNOWN`, the hold standing; the merchant's retry under the same `merchant.payout:<merchantId>` key replays (no second dispatch); `MerchantPayoutResolution`'s query concludes `COMPLETED` and posts `DR MERCHANT_PAYABLE / CR PAYOUT_CLEARING` once; one payout at the provider; the BNPL-financed payable bounded throughout and the agreement unchanged; and the wallet top-up variant (customer tops up by card for an instalment, response lost, retry) in `P12-TST-001` *(P12-DOC-001, 2026-10-22: `BnplStormCatalogue#lostCardTopUp`)* |
 | 6 | Two repayments on one instalment | `BnplRepaymentDatabaseTest#twoRepaymentsSerialiseAndConserve` (`-018`) |
 | 7 | Refund racing instalment collection | `BnplRefundDatabaseTest#aRefundRacingACollectionConservesInBothOrders` (`-021`) |
 | 8 | Duplicate refund (merchant retry; two instances; lapsed claim) | `#theSameRefundTwiceRefundsOnce` (`-021`) |
-| 9 | Refund before / during / after instalments; refund exceeding remaining → customer credit; full refund closes | `#refundBeforeDuringAfter`, `#excessGoesToTheCustomer`, `#aFullRefundClosesWithNothingStranded` (`-021`) |
+| 9 | Refund before / during / after instalments; refund exceeding remaining → customer credit; full refund closes | `#refundBeforeDuringAfter`, `#excessGoesToTheCustomerAndAPartialRefundReducesTheLatestInstalments` *(read `#excessGoesToTheCustomer` until P12-DOC-001, 2026-10-22)*, `#aFullRefundClosesWithNothingStranded` (`-021`) |
 | 10 | Chargeback/dispute plus refund cannot double-credit | `BnplDisputeDatabaseTest#disputeRefundAndMerchantRefundShareOneBound` (`-023`) |
 | 11 | Early payoff with a refund in flight | `BnplPayoffDatabaseTest#payoffBesideARefundIsStaleOrClosedNeverWrong` (`-022`) |
 | 12 | Repayment reversal after allocation | `BnplRepaymentReversalDatabaseTest#aReversalReopensWhatItPaid` (`-024`) |
 | 13 | Concurrent delinquency evaluation / payoff during the worker | `BnplConditionDatabaseTest#noConditionAfterClosure` (`-020`) |
-| 14 | Crash after posting before publication; crash at every T-pur step | `BnplOutboxAtomicityDatabaseTest`, `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing` (`-013`) |
+| 14 | Crash after posting before publication; crash at every T-pur step | `BnplOutboxAtomicityDatabaseTest#aCrashBetweenPostingAndPublicationLosesNothing` *(the method named by P12-DOC-001, 2026-10-22)*, `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing` (`-013`) |
 | 15 | Delayed / duplicated `CreditDecisionRecorded`; session expiry while awaiting a decision | `BnplOriginationDatabaseTest#hintsTwiceLateOrNeverConverge`, `#aSessionThatExpiresClosesTheApplication` (`-011`) |
 | 16 | Customer repays after a full refund | `#aRepaymentAfterAFullRefundIsRefused` (`-021`) |
-| 17 | Late fee application, and its release on a refund-cancelled instalment | `BnplLateFeeDatabaseTest` (`-020`, `-021`) |
+| 17 | Late fee application, and its release on a refund-cancelled instalment | `BnplLateFeeDatabaseTest#assessedOnceAtTheLateFeeDay`, `#aCancelledInstalmentsLateFeeIsReleased` *(the methods named by P12-DOC-001, 2026-10-22)* (`-020`, `-021`) |
 | 18 | PN accrual run twice / restart / skew | `BnplAccrualDatabaseTest#accruesOncePerDate` (`-017`) |
 
 ### 13.3 Exit tests
@@ -997,7 +1065,7 @@ wave; fleet `databaseTest`/`kafkaTest` skipped, recorded per task as a criterion
   for every refund order; a perturbed allocation, refund adjustment or agreement byte flips the verdict.
 
 ### 13.4 Probes (recorded in `MUTATION_TESTING.md` §2)
-Drop `UNIQUE (checkout_session_id)` on purchase **with the B3 session lock and its `OPEN` check bypassed** → scenario 2 red (every born-once arbiter is probed alone, the locks and conditions above it bypassed — the Phase 11 review's correction; dropped alone it would survive behind B3); refund earliest-first → `RefundAllocationEngineV1Test#refundCancelsLatestFirst` (`-009`) and `BnplRefundDatabaseTest#refundBeforeDuringAfter` red; skip the purchase lock in a refund → scenario 10 red; fee pro-rated by a running clamp → the telescoping property
+Drop `UNIQUE (checkout_session_id)` on purchase **with the B3 session lock and its `OPEN` check bypassed** → scenario 2 red (every born-once arbiter is probed alone, the locks and conditions above it bypassed — the Phase 11 review's correction; dropped alone it would survive behind B3); refund earliest-first → `RefundAllocationEngineV1Test#refundCancelsLatestFirst` (`-009`) and `BnplRefundDatabaseTest#refundBeforeDuringAfter` red; skip the purchase lock in a refund → scenario 10 red *(P12-DOC-001, 2026-10-22: never performed live by `-021`, `-023` or the storm; performed by the exit review - caught, by `BnplRefunds.derive`'s position check under B4 rather than scenario 10's assertion, with `V012`'s re-take of B5 also removed; `MUTATION_TESTING.md` §2)*; fee pro-rated by a running clamp → the telescoping property
 red; skip L6 → two purchases over-deploy; read the projection for allocation → scenario 6 red under a racing reversal;
 re-dispatch a payout on `UNKNOWN` → scenario 5 red **by a count of dispatches at the simulated provider and on the merchant side** (the probe survived in Phase 11 as an equivalent mutant because the key replays; the count is what makes it catchable — the Phase 11 review's finding 16 applied forward).
 
@@ -1034,7 +1102,9 @@ re-dispatch a payout on `UNKNOWN` → scenario 5 red **by a count of dispatches 
 
 *(Recast as a table by `P12-TSK-026`, one series per row so `BnplMetersTest` counts them exactly - the Phase 11 shape; the
 prose it replaces named the same series. Rows added by later tasks are marked; the shared rows are other contexts' series
-BNPL's alerts and gate read.)*
+BNPL's alerts and gate read.)* *(P12-DOC-001, 2026-10-22: there is no single meters class - the series are registered by
+`app`'s per-flow `app/.../bnpl/*Metrics` classes (fifteen: `BnplApplicationMetrics`, `BnplRefundMetrics`, …), and
+`BnplMetersTest` counts this table's 32 rows against them.)*
 
 | Series | Type | Tags | Alert |
 |---|---|---|---|
@@ -1138,13 +1208,13 @@ renumber within its module and says so.
 | `P12-TSK-007` | Checkout completed by a BNPL purchase | M12.2 | `-002` | checkout `V004` | `DOD-DOMAIN`, `DOD-API` |
 | `P12-TSK-008` | The P4 schedule engine | M12.3 | `-002` | none | `DOD-FIN` |
 | `P12-TSK-009` | The refund allocator and fee pro-rating (pure) | M12.3 | `-008` | none | `DOD-FIN` |
-| `P12-TSK-010` | The BNPL application at checkout | M12.4 | `-001`, `-004`, `-006` (merchant enablement), `-007` | `bnpl V003` (`V005` left unused unless the `-012`/`-013` pair's design renumbers — the credit `V018` precedent) | `DOD-FIN`, `DOD-API`, `DOD-SEC` |
+| `P12-TSK-010` | The BNPL application at checkout | M12.4 | `-001`, `-004`, `-006` (merchant enablement), `-007` | `bnpl V003` (`V005` left unused unless the `-012`/`-013` pair's design renumbers — the credit `V018` precedent) *(P12-DOC-001, 2026-10-22: `V005` stayed unused - the pair took `V007` (`-012`) and `V006` (`-013`); Flyway admits the gap and `outOfOrder=false` refuses a later fill)* | `DOD-FIN`, `DOD-API`, `DOD-SEC` |
 | `P12-TSK-011` | The offer and the origination schedule | M12.4 | `-010`, `-008` | `bnpl V004` | `DOD-FIN`, `DOD-EVENT` |
-| `P12-TSK-012` | Platform credit exposure version 3 | M12.4 | `-001`, `-003`; **paired with `-013`** (one branch, one merge - the view reads `-013`'s obligation table, the Phase 11 `-012`/`-013` precedent) | `bnpl V007` (definer view) | `DOD-FIN` |
-| `P12-TSK-013` | The acceptance: purchase, merchant financing and the obligation, atomically | M12.4 | `-005`, `-006`, `-007`, `-009`, `-011`; paired with `-012` | `bnpl V006` | `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-EVENT` |
+| `P12-TSK-012` | Platform credit exposure version 3 | M12.4 | `-001`, `-003`; **paired with `-013`** (one branch, one merge - the view reads `-013`'s obligation table, the Phase 11 `-012`/`-013` precedent) | `bnpl V007` (definer view) *(as built, P12-DOC-001, 2026-10-22)* | `DOD-FIN` |
+| `P12-TSK-013` | The acceptance: purchase, merchant financing and the obligation, atomically | M12.4 | `-005`, `-006`, `-007`, `-009`, `-011`; paired with `-012` | `bnpl V006` *(as built, P12-DOC-001, 2026-10-22)* | `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-EVENT` |
 | `P12-TSK-014` | Merchant reads of BNPL purchases | M12.5 | `-013` | none | `DOD-API`, `DOD-SEC` |
 | `P12-TSK-015` | Instalment billing, the catch-up application and the servicing schedule | M12.6 | `-013` | `bnpl V008` | `DOD-FIN` |
-| `P12-TSK-016` | The merchant payable drill-down and payouts of BNPL-financed money | M12.5 | `-013` | none (the drill-down is merchant code; a migration only if its design needs one) | `DOD-FIN`, `DOD-API` |
+| `P12-TSK-016` | The merchant payable drill-down and payouts of BNPL-financed money | M12.5 | `-013` | none (the drill-down is merchant code; a migration only if its design needs one) *(P12-DOC-001, 2026-10-22: none taken)* | `DOD-FIN`, `DOD-API` |
 | `P12-TSK-017` | PN interest accrual | M12.6 | `-015` | `bnpl V009` | `DOD-FIN` |
 | `P12-TSK-018` | Customer repayment from the wallet and closure | M12.6 | `-015` | `bnpl V010` | `DOD-FIN`, `DOD-API`, `DOD-SEC` |
 | `P12-TSK-019` | Auto-collection | M12.6 | `-018` | `bnpl V011` | `DOD-FIN` |
@@ -1155,9 +1225,16 @@ renumber within its module and says so.
 | `P12-TSK-024` | Repayment reversal and fee waiver (four-eyes) | M12.7 | `-020` | `bnpl V016` | `DOD-FIN`, `DOD-SEC` |
 | `P12-TSK-025` | The BNPL proofs and the explanation door | M12.8 | `-021`…`-024` | none | `DOD-FIN`, `DOD-OBS` |
 | `P12-TSK-026` | Operating BNPL: meters, reports, alerts, runbook | M12.8 | `-025` | none | `DOD-OBS`, `DOD-DOC` |
-| `P12-TST-001` | The BNPL storm | M12.9 | every task; the settlement-suite `X-TSK` (B8, OQ-20) | none | `DOD-TEST`, `DOD-FIN` |
+| `P12-TST-001` | The BNPL storm | M12.9 | every task; the settlement-suite `X-TSK` (B8, OQ-20) | none *(P12-DOC-001, 2026-10-22: `bnpl V017` - the record order, `bnpl.record_order`, a production fix of the replay)* | `DOD-TEST`, `DOD-FIN` |
 | `P12-TST-002` | The BNPL battery | M12.9 | `-008`, `-009`, `-021`, `-022` | none | `DOD-TEST`, `DOD-FIN` |
 | `P12-DOC-001` | The Phase 12 exit review | M12.9 | everything | none | `DOD-DOC`, `DOD-TEST` |
+| `P12-TSK-027` *(added by P12-DOC-001, 2026-10-22, as is the row below)* | Remediation: the bnpl module's database suites | — (outside the milestones, the `P11-TSK-034` convention) | the owner-authorised database pass (2026-10-20) | none | `DOD-TEST`, `DOD-DOC` |
+| `P12-TSK-028` | Remediation: the app BNPL database suites and the guard registers | — (outside the milestones) | `-027` | none | `DOD-TEST`, `DOD-DOC` |
+
+*(P12-DOC-001, 2026-10-22: beside the two remediation items, `X-TSK-018` (the three settlement database suites, red since
+`P9-TSK-026`) completed the owner-authorised database pass; it is a cross-phase item, not Phase 12's. The migrations as
+built: `-012` took `bnpl V007` and `-013` `V006`, `V005` unused; `-016` took no merchant migration; `-021` also took
+merchant `V011`; `P12-TST-001` took `bnpl V017` (this table read "none").)*
 
 **Critical path:** `-001` → `-002` → `-003` → `-005` → `-013` → `-015` → `-018` → `-019` → `-020` → `-023` →
 `-025` → `-026` → `TST-001` → `DOC-001`. `-004`, `-006`, `-007`, `-008` after `-002` (in parallel, at most two at a
@@ -1293,3 +1370,76 @@ accepted default, 2026-10-16, review later**. A task's design may raise one agai
 | OQ-18 | Offer validity cap and BNPL decision validity? | **Offer ≤ 30 min (and ≤ the session); request ≤ 1 h; decision ≤ 1 day** | B8 — owner accepted default, review later |
 | OQ-19 | The merchant discount's income account: new `BNPL_MERCHANT_FEE_INCOME` or the existing `FEE_REVENUE`? | **New purpose** | B8 — owner accepted default, review later |
 | OQ-20 | The three settlement suites red since `P9-TSK-026` — fix before `P12-TST-001`? | **Fix first (an `X-TSK`)** | B8 — owner accepted default, review later |
+
+---
+
+## 25. Errata — as built (`P12-DOC-001`, 2026-10-22)
+
+The exit review read this plan, `BNPL_LIFECYCLES.md` and ADR-0101…0106 against the code (`bnpl` and its migrations
+`V001`…`V017`, no `V005`; the doors and adapters in `app`; credit `V022`, ledger `V027`, identity `V022`, merchant
+`V010`…`V011`, checkout `V004`). Material statements were corrected where they stand (the header; §3.1's eligibility
+row; §3.3's ports and merchant migrations; §5.1's session unique; §5.7's refusals; §5.8's acceptance edge; §5.9's terms
+machine; §7.1's T-svc, T-ref, T-dsp and T-rev/T-wvr; §7.2's heading, (B6), (L8) and (B4); §8's grants, refund unique
+and the tables, view, sequence and functions added; §9's routes and errors; §10's prefix and hints; §11's PENDING and
+audit acts; §12.6's refusal; §13.2's rows 5, 9, 14 and 17; §15's meters; §17's rows); the rest are recorded here, each
+the truth that holds. "BL" is `BACKLOG.md` §Phase 12, the building task's record.
+
+- **`-009` - "whole" is judged against unpaid principal.** `RefundAllocation.leavesNoPrincipalUnpaid` is true even when
+  nothing was unpaid, so a full refund after full repayment still releases PN interest (BL, `P12-TSK-009`).
+- **`-021` - the refund as built.** The PN adjustments are the allocator's latest-first split, the schedule holding
+  principal(v n+1) = principal(v n) − the unbilled cancelled; accrued interest is also released when nothing is left to
+  bill; the operator's refund door is `PAYMENT_REFUND`'s; the wallet is never opened (an existing wallet only); and the
+  refund door's self-dealing check is permissive - an operator the platform cannot place in a party is admitted
+  (`BnplRefunds`), unlike the corrections and the investigation, which fail closed (BL, `P12-TSK-021`, `-025`).
+- **`-020` - the late fee's release** happens only on a whole cancellation of its instalment or when no principal is
+  left; a paid fee is never refunded. The task's judgements: a released PN fee may be charged again; a release frees no
+  cap room; a cure by closure keeps the last `DEFAULT` row (BL, `P12-TSK-020`).
+- **`-024` - the corrections.** No dispute hold applies to a correction; a `PAYOFF` repayment is never reversed; a
+  `CLOSED` obligation is terminal (BL, `P12-TSK-024`).
+- **`-011` - an `OFFERED` application holds its session for good** (bnpl `V003`'s partial unique; BL, `P12-TSK-011`).
+- **`-017` - no interest accrues at or after the final due date** (BL, `P12-TSK-017`; §7.1 T-acc).
+- **`-021`/`-023` - the closed wallet and the closed merchant.** `409 bnpl.RefundNotPostable`, nothing written, for a
+  `CLOSED` obligation whose wallet cannot take the refund, or a payable that cannot be debited; a dispute's opening
+  takes the payable at (P) and refuses a closed merchant the same way; the merchant's close asks `anyOpenAtMerchant`
+  under the same row lock, so the two are ordered. **Open for the owner:** there is no platform path to dispute a
+  purchase against an already-closed merchant (BL, `P12-TSK-023`).
+- **`-025` → `P12-TST-001` - the replay's order.** `-025`'s replay walked a record's facts by their wall-clock stamps,
+  so a backward clock gave a false `DIVERGED`; bnpl `V017` replaced it with the record's own order - the sequence
+  `bnpl.record_order`, `recorded_order` on the fact tables and `bnpl_repayment_reversal.decided_order` stamped by
+  trigger (`P12-TST-001`'s first production fix).
+- **`P12-TST-001` - B4's two statements.** The obligation lock is a statement of its own and the agreement version in
+  force is read by the next: one joined statement read the version a racing refund had just superseded - a repayment
+  queued behind a refund read version n and answered `500` before the fix (`P12-TST-001`'s second production fix; §7.2).
+- **`-013`.** `bnpl.MerchantFinanced` is recorded under the customer's actor; schedule v1 starts on the purchase's own
+  business date.
+- **`-014`, `-015`, `-016`.** A storage fault answers `500`, not `503` (`-014`). A billing is valued at its due date and
+  posted on the business date (`-015`). The payable's drill-down classifies a BNPL line by its posting-key namespace; a
+  payout serialises on the merchant row, then the payable (`-016`).
+- **`-018` - T-rep does not run T-acc first**; only the closure waits for the record to be caught up (§7.1 T-rep). The
+  gate's Multi-instance clause text still states the unrefined rule - recorded under the gate by the review.
+- **`-019`.** Retries follow the pinned terms' `collection_retry_days`; collection is strictly oldest-first.
+- **`-022`.** The payoff horizon is a terms field (`-004`'s); `V = max(G, floor)`; `V014` amended `V008`'s billing
+  `CHECK`; lending's RG-M1 is still open. A payoff makes no agreement or schedule version - it bills early, lending's
+  shape.
+- **`-023`.** A touched instalment is held whole; every lift restarts the DPD clock; the merchant's response needs the
+  key only, not the refund scope; the payoff and a voluntary repayment are not paused by a hold.
+- **`-004`.** Three terms fields were added - the collection retry cadence, the dispute four-eyes threshold and the
+  payoff horizon; the operator keys are `CUSTOMER`-typed (lending's A5-04 note).
+- **`-002`.** `EngineVersion` and `LendingEngine` moved whole into `creditmath`; the BNPL engines are `BnplEngine`;
+  `PurchaseStatus` became `BnplPurchaseStatus`.
+- **`-001`.** BNPL credit requests are auto-decided only, never referable.
+- **`-005`.** There is no BNPL committed term; `LendingReports.capital`'s duplicated formula was fixed.
+- **`-006`.** Rounding follows the pinned version's policy - `HALF_EVEN` is the default, not enforced.
+- **`-007`.** The confirm door's refusal of `"BNPL"` is `422 platform.ValidationFailed`.
+- **Migrations.** bnpl `V012` went to `-021` and `V013` to `-020` (renumbered, wave D); `V005` is unused (Flyway admits
+  the gap; `outOfOrder=false` refuses a later fill - the credit `V018` precedent); `V012` was corrected in place by the
+  coordinator (`2a6a3b93`, recorded under `P12-TSK-027`) after its `CHECK` and its deferred constraint trigger shared the
+  name `bnpl_refund_conserves`.
+- **`-026`.** An unreadable gauge reads `NaN`, never its last value; two series were added.
+- **`P12-TST-001`'s recorded deviations.** Two instances, not ten (the ten-way races run inside scenes); the relays off
+  (the kafka tier under B4); J1 UTC-only; J2 - scenario 5's wallet variant through a card pay-in
+  (`BnplStormCatalogue#lostCardTopUp`); J3 - hot rows sampled.
+- **`P12-TST-002`'s recorded exclusions.** Reversals, waivers and delinquency are excluded from the battery; the
+  perturbation floor is 500; `Instant.EPOCH` stamps escape holds (recorded).
+- **Criterion 7 (B4).** The fleet database and kafka tiers were skipped through Phase 12 (the owner's standing
+  deviation); the owner-authorised database pass was `X-TSK-018`, `P12-TSK-027` and `P12-TSK-028` (2026-10-20).

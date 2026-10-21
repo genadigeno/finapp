@@ -133,6 +133,40 @@ class BnplCollectionDatabaseTest {
                 + " r.obligation_id = '" + bought.id() + "'")).as("the attempt's key, value-dated its date").isEqualTo("t");
     }
 
+    @Test
+    @SuppressWarnings("try") // The SecurityContext Scope is used for its close side effect (the idiom).
+    @DisplayName("a collection whose instance dies after the attempt and its posting is re-driven by another, once: the"
+            + " dead transaction leaves nothing; the re-drive collects once - one attempt, one AUTO_COLLECTION repayment,"
+            + " one posting - and a re-drive after a lost response collects nothing more")
+    void aCrashedCollectionIsReDrivenOnceByAnotherInstance() throws SQLException {
+        World world = new World();
+        Purchased bought = world.collectingPurchase(true);
+        LocalDate due = bought.purchaseDate().plusDays(14);
+        UUID instalment = bought.schedule().instalments().get(1).id();
+        String attempted = "SELECT count(*) FROM bnpl.bnpl_collection_attempt WHERE instalment_id = '" + instalment
+                + "' AND attempt_date = DATE '" + due + "'";
+        String collected = "SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id()
+                + "' AND kind = 'AUTO_COLLECTION'";
+        long base = world.collectionPostings(); // instalment 1's AT_PURCHASE repayment
+        long[] seen;
+        try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
+            seen = BnplInstanceCrash.crashAfter(world.frameOn(due), uow -> world.servicing.service(uow,
+                    bought.obligation()), uow -> new long[] {BnplInstanceCrash.countOn(uow, attempted),
+                            BnplInstanceCrash.countOn(uow, collected), world.collectionPostings()});
+        }
+        assertThat(seen).as("the dead instance had attempted, repaid and posted").containsExactly(1, 1, base + 1);
+        assertThat(count(attempted)).as("nothing of the dead instance stands").isZero();
+        assertThat(count(collected)).isZero();
+        assertThat(world.collectionPostings()).isEqualTo(base);
+
+        world.serviceOn(due, bought); // another instance
+        world.serviceOn(due, bought); // and the sweep again: the response lost
+        assertThat(attempts(bought)).containsExactly(due + ":COLLECTED:15000:15000");
+        assertThat(count(collected)).isEqualTo(1);
+        assertThat(world.collectionPostings()).as("one entry").isEqualTo(base + 1);
+        assertNoComponentOverPaid(bought);
+    }
+
     // ------------------------------------------------------------------ the amount
 
     @Test
@@ -390,6 +424,11 @@ class BnplCollectionDatabaseTest {
             BnplTermsAdministration.Proposed proposed = inOneTransaction(uow -> terms.propose(uow, wanted,
                     "the collection suite's terms", employee(), correlation()));
             inOneTransaction(uow -> terms.approve(uow, proposed.id(), employee(), "in force", correlation()));
+        }
+
+        /** The book's repayment postings (an AUTO_COLLECTION's among them) - the entries, as the ledger keys them. */
+        long collectionPostings() {
+            return book.keys().stream().filter(key -> key.startsWith(BnplRepayments.POSTING_KEY_PREFIX)).count();
         }
 
         /** The wallet's available balance set to exactly {@code minor} - the fixture standing in for pay-ins. */

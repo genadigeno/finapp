@@ -88,6 +88,7 @@ final class BnplStormCensus {
             snapshot.setReadOnly(true);
             try {
                 proofs(snapshot, when, softly);
+                daysPastDue(snapshot, when, softly);
                 softly.assertThat(new ExposureCensus().take(snapshot).failing())
                         .as("%s: C5 the exposure census (v3) - no party's exposure beyond its decision's limit"
                                 + " (INV-BNPL-10, INV-CRD-09)", when).isZero();
@@ -111,6 +112,63 @@ final class BnplStormCensus {
         readingNanos.addAndGet(took);
         slowestReadingNanos.accumulateAndGet(took, Math::max);
     }
+
+    /**
+     * C19 - days past due (`P12-DOC-001`; `PHASE_GATES.md` section 5 Phase 12, Delinquency: "DPD equals the date difference
+     * ... for 100% of obligations in every storm round"): for every {@code ACTIVE} obligation, the Java rule
+     * ({@code BnplDelinquencyState}'s - the oldest billed instalment still owing, not held on the date, counted from its
+     * clock start) over its billed items and its dispute hold, against {@code bnpl V015}'s {@code bnpl.days_past_due} on
+     * the same business date. Both read paid amounts through {@code V008}'s one definition (the Phase 11 storm's I6, carried
+     * as recorded); what the census holds apart is the date arithmetic and the hold - two implementations.
+     */
+    private void daysPastDue(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
+        com.finapp.bnpl.JdbcBnplPurchaseStore purchases = new com.finapp.bnpl.JdbcBnplPurchaseStore();
+        java.time.LocalDate today;
+        try (Statement statement = snapshot.createStatement();
+                ResultSet row = statement.executeQuery("SELECT (clock_timestamp() AT TIME ZONE 'UTC')::date")) {
+            row.next();
+            today = row.getObject(1, java.time.LocalDate.class);
+        }
+        Map<UUID, Integer> sql = new LinkedHashMap<>();
+        try (PreparedStatement select = snapshot.prepareStatement("SELECT id, bnpl.days_past_due(id, ?)"
+                + " FROM bnpl.bnpl_obligation WHERE status = 'ACTIVE' ORDER BY id")) {
+            select.setObject(1, today);
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    sql.put(rows.getObject(1, UUID.class), rows.getInt(2));
+                }
+            }
+        }
+        int differing = 0;
+        int pastDue = 0;
+        for (Map.Entry<UUID, Integer> obligation : sql.entrySet()) {
+            com.finapp.bnpl.BnplObligationId id = com.finapp.bnpl.BnplObligationId.of(obligation.getKey());
+            com.finapp.bnpl.BnplDisputeHold hold = purchases.disputeHold(snapshot, id);
+            java.util.Optional<java.time.LocalDate> oldest = purchases.billedItems(snapshot, id).stream()
+                    .filter(item -> item.dueTotal().isPositive() && !hold.heldOn(item.dueDate(), today))
+                    .map(item -> hold.clockFrom(item.dueDate(), today))
+                    .filter(from -> from.isBefore(today))
+                    .min(java.time.LocalDate::compareTo);
+            int derived = oldest.map(from -> Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(from, today)))
+                    .orElse(0);
+            if (derived > 0) {
+                pastDue++;
+            }
+            if (derived != obligation.getValue()) {
+                differing++;
+                System.out.println(when + ": C19 DPD differs for " + obligation.getKey() + " - Java " + derived + ", SQL "
+                        + obligation.getValue());
+            }
+        }
+        dpdReadings.incrementAndGet();
+        dpdPastDueSeen.accumulateAndGet(pastDue, Math::max);
+        softly.assertThat(differing).as("%s: C19 an ACTIVE obligation whose days past due differ between the Java rule"
+                + " and bnpl.days_past_due on the business date (%s of %s past due)", when, pastDue, sql.size()).isZero();
+    }
+
+    /** Readings C19 took, and the most obligations it found past due at one - so a vacuous census shows. */
+    final AtomicInteger dpdReadings = new AtomicInteger();
+    final AtomicInteger dpdPastDueSeen = new AtomicInteger();
 
     /** C1-C3 from ONE reading of the BNPL proofs, and lending's (C1L, C2L) on the shared parties' loans. */
     private void proofs(Connection snapshot, String when, SoftAssertions softly) {

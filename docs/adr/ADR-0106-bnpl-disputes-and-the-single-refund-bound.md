@@ -1,6 +1,6 @@
 # ADR-0106 — BNPL disputes and the single refund bound: a customer's contest holds servicing on the disputed amount and resolves only as a refund under the purchase's one bound, so nothing is credited twice
 
-Status: Proposed
+Status: Accepted (2026-10-22, `P12-DOC-001` — read against the code and corrected first)
 Date: 2026-10-16
 Phase: 12
 Context: BNPL · Merchant · Payments (Disputes) · Identity · Audit
@@ -70,6 +70,10 @@ and §24 (OQ-9, OQ-10).
    kinds for the hold placed and lifted), derived and replayable. When it lifts without a refund (uphold, withdrawal),
    a held instalment's days past due and its late-fee day count from the **later of its due date and the lift's
    business date** — a good-faith contest never makes the customer delinquent retroactively.
+   *(Corrected by `P12-DOC-001`, 2026-10-22, as the Follow-up's `P12-TSK-023` entry records: the hold's record is the
+   dispute's own born-once `bnpl_dispute_hold` rows by due date (`bnpl V015`), not `bnpl_condition_event` kinds; the
+   disputed amount is `bnpl_dispute_claim`'s; and an instalment the dry run touches is held **whole** — no collection
+   attempt, no days past due and no fee on it — not only its held principal.)*
 
 4. **The merchant's response** (OQ-9's merchant-key doors; OQ-10, owner accepted default). The deadline is stamped at
    opening on the database clock, `opened_at + 14 days`, the window a field of the pinned terms version. The merchant
@@ -77,13 +81,20 @@ and §24 (OQ-9, OQ-10).
    `bnpl.dispute-response:MERCHANT:<id>` — **accept** (→ `RESOLVED_REFUND` at once) or **contest with evidence**
    (→ `MERCHANT_RESPONDED`). The response requires `deadline > statement_timestamp()` and the deadline sweep
    (`BnplDisputeSchedule`) requires `deadline <= statement_timestamp()`, both judged under the dispute's row lock —
-   complementary conditionals on one clock, so exactly one wins. The merchant sees the dispute's amount, reason
+   complementary conditionals on one clock, so exactly one wins. *(Corrected by `P12-DOC-001`, 2026-10-22: the clock is
+   `clock_timestamp()` read by `bnpl V015`'s edge trigger after the act's locks, not `statement_timestamp()`; the
+   complement is unchanged.)* The merchant sees the dispute's amount, reason
    category and deadline and its own evidence — never the customer's schedule, repayments, delinquency or any credit
    figure (plan §11). Evidence documents follow `INV-DSP-03`'s regime by analogy: least privilege, encrypted at rest,
-   every access audited; the storage shape is `P12-TSK-023`'s design.
+   every access audited; the storage shape is `P12-TSK-023`'s design. *(As built (`P12-TSK-023`; recorded by
+   `P12-DOC-001`, 2026-10-22): no evidence documents are stored — the merchant's evidence is a bounded text statement
+   on the dispute row (`merchant_statement`, 1–1,000 characters, `RESTRICTED-PII`, refused if it holds an instrument's
+   shape), every operator read of a dispute audited `bnpl.DisputeRead`. A document store is not built.)*
 
 5. **The operator's resolution** (`POST /v1/operator/bnpl-disputes/{id}/resolution`, `BNPL_DISPUTE_RESOLVE`, keyed
-   `bnpl.servicing:EMPLOYEE:<id>`). Only from `MERCHANT_RESPONDED`; the outcome is binary — refund D or uphold —
+   `bnpl.servicing:EMPLOYEE:<id>` *(as built: `bnpl.servicing:<actor type>:<id>` — `BnplDisputeDesk` keys by the
+   session's actor type, `CUSTOMER` until operator sessions carry `EMPLOYEE` actors (lending's A5-04 note); the
+   sub-routes are `…/resolution/approval` and `…/resolution/rejection`; recorded by `P12-DOC-001`, 2026-10-22)*). Only from `MERCHANT_RESPONDED`; the outcome is binary — refund D or uphold —
    reasoned, audited with actor, target, reason, correlation and outcome. **Four-eyes above a threshold**: the
    threshold is a field of the pinned terms version, compared with D, for either outcome. At or below it one resolver
    decides; above it one proposes (the proposal the act's own row, B6) and a second, different employee approves or
@@ -136,7 +147,10 @@ and §24 (OQ-9, OQ-10).
 12. **Events, audit, meters.** `BnplDisputeOpened`, `BnplDisputeResolved` (outcome) and, for a refund outcome,
     `BnplRefundApplied`, each in its state change's transaction; audit `bnpl.DisputeOpened`, `…Responded`, `…Resolved`
     (actor `SYSTEM` on a lapsed deadline) and the proposal's acts; `finapp.bnpl.dispute{outcome}`;
-    `BnplDisputeSchedule` the 29th lease-protected scheduler, gauged `…sweeper.enabled`.
+    `BnplDisputeSchedule` the 29th lease-protected scheduler, gauged `…sweeper.enabled`. *(As built (`P12-TSK-023`;
+    recorded by `P12-DOC-001`, 2026-10-22): a withdrawal also publishes `bnpl.BnplDisputeResolved` with the outcome
+    `WITHDRAWN` and is audited `bnpl.DisputeWithdrawn`; the proposal's acts are `bnpl.DisputeResolutionProposed` and
+    `…ResolutionRejected` (an approval is `bnpl.DisputeResolved`); the gauge is `finapp.bnpl.dispute.sweeper.enabled`.)*
 
 ## Alternatives Considered
 
@@ -206,5 +220,6 @@ Financial impact: none new — a dispute's only money is a refund's.
   `BnplDisputeStore.anyOpenAtMerchant`; the merchant's response needs its key, not the refund scope. Payoff and voluntary
   repayment are not paused by a dispute (the customer's own acts; what they pay on held instalments returns as excess on a
   refund outcome). `bnpl.days_past_due` replaced; the fee, collection and refund ranks are new triggers beside the old.
-- **Acceptance.** `Proposed` at the Phase 11 → 12 transition (2026-10-16); read against the code and accepted by the
-  Phase 12 exit review (`P12-DOC-001`).
+- **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
+  (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

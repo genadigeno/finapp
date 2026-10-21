@@ -98,8 +98,9 @@ relationships, every one through a port `app` implements and none a build edge (
   `credit_decision_consumption` fact" until the Phase 10 → 11 transition, which found the table
   with no owner and the application role holding `INSERT` — R13.)* Lending supplies the facts
   credit's `PlatformCreditExposure` version 2 reads; credit keeps the judgement. **BNPL (19)** is a
-  later downstream consumer of the same decision in Phase 12, through the same port — *planned by
-  the Phase 11 → 12 transition, 2026-10-16:* two new credit products (`BNPL_PAY_IN_4`,
+  second downstream consumer of the same decision, through the same port — *planned by
+  the Phase 11 → 12 transition, 2026-10-16, and built (`P12-TSK-001`, `-012`, `-013`; read against the code by
+  `P12-DOC-001`, 2026-10-22, which read "a later downstream consumer … in Phase 12" until then):* two new credit products (`BNPL_PAY_IN_4`,
   `BNPL_PAY_IN_N`, credit `V022`, `P12-TSK-001`), one decision request per purchase, taken up as
   `ConsumerKind.BNPL_AGREEMENT`, and exposure version 3 adding the party's BNPL outstanding principal.
 - **External credit bureaus and financial-data providers** — reached only through provider-neutral
@@ -153,14 +154,18 @@ only):
   `LENDING_ADMINISTER`, `LENDING_INVESTIGATE`, `LENDING_CAPITAL_ADMINISTER`, `LOAN_SERVICE` and
   `LOAN_SERVICE_APPROVE`; the customer's credit-creating acts on a `MULTI_FACTOR` session.
 - **BNPL (19)** — downstream, from Phase 12 *(planned by the Phase 11 → 12 transition,
-  2026-10-16, ADR-0101 and ADR-0104)*: shares two things and nothing else. Its **capital** — BNPL
+  2026-10-16, ADR-0101 and ADR-0104; built by `P12-TSK-002` and `-005`, its consumers by `-013` and `-024`, and read
+  against the code by `P12-DOC-001`, 2026-10-22)*: shares two things and nothing else. Its **capital** — BNPL
   principal is funded from the same `LENDING_CAPITAL` and judged under the same L6 row and headroom,
   which Lending's `LendingCapitalHeadroom` and `LendingCapitalProof` widen by summing the BNPL
   principal *ledger purposes* (no bnpl type enters lending), BNPL reading it through `app`'s port. Its
   **arithmetic** — the pure schedule, accrual and allocation engines moved unchanged into `creditmath`,
   on which both depend (`MODULE_ARCHITECTURE.md` M12; *built by `P12-TSK-002`, 2026-10-16, every Phase 11
   figure replaying identically — this read "move" until then*). BNPL never creates a `loan`, reads or writes a
-  lending store or posts a `LOAN_*` purpose, and Lending never knows a merchant.
+  lending store or posts a `LOAN_*` purpose, and Lending never knows a merchant. The capital port runs Lending's own
+  `LendingCapitalHeadroom.underLock` in BNPL's transaction - L6, the `LENDING_CAPITAL` ledger row `FOR UPDATE`, then
+  Lending's unlocked read of its committed principal and the journal lines - the only Lending code a BNPL
+  transaction runs, and no Lending table row is locked *(`P12-DOC-001`, 2026-10-22: added by the Phase 12 exit review)*.
 - **Downstream, deferred:** collections (Case Management, 23 — Phase 13) consumes
   `LoanDelinquencyChanged` and `LoanDefaulted`; write-off, provisioning and the GL (Accounting, 25 —
   Phase 14) map Lending's purposes; refinance is decided by the Phase 11 → 12 transition — *decided
@@ -170,9 +175,11 @@ only):
 
 **BNPL (19)** was bounded by the Phase 11 → 12 transition (ADR-0101, `Proposed`, 2026-10-16;
 `PHASE_12_PLAN.md` §3 and §12.13) — *the boundary, schema floor and vocabularies built by `P12-TSK-002`
-(2026-10-16; this read "planned: nothing of it is built" until then); the rest planned, and the task that
-builds each part corrects this paragraph to the code.* One context in one module, `bnpl`, serving two products —
-pay-in-4 (four equal instalments, the first at purchase, then every 14 days, no interest) and pay-in-N
+(2026-10-16; this read "planned: nothing of it is built" until then); the rest built by `P12-TSK-001`…`-028`, and
+the paragraph read against the code by the Phase 12 exit review, `P12-DOC-001`, 2026-10-22 (it read "the rest
+planned, and the task that builds each part corrects this paragraph to the code" until then).* One context in one module, `bnpl`, serving two products —
+pay-in-4 (four instalments, the first at purchase, then every 14 days, no interest - the three later ones equal,
+`floor(P / 4)`, the first carrying the remainder *(`P12-DOC-001`, 2026-10-22: read "four equal instalments")*) and pay-in-N
 (3, 6 or 12 monthly instalments with interest). **One economic event, two financial flows never
 collapsed**: the merchant is financed upfront, net of the merchant discount, and paid out on its normal
 cycle; the customer owes the platform a receivable funded from lending capital. **It owns the
@@ -194,9 +201,12 @@ them). Its relationships, every one through a port `app` implements and none a b
 `creditmath` (`bnpl` depends on `creditmath`, `ledger`, `platform` and `sharedkernel` only, and no
 module depends on `bnpl`):
 - **Checkout (11)** — upstream, customer-supplier, with one new seam on checkout's side: BNPL is
-  chosen inside an `OPEN` session (the `"BNPL"` instrument on confirmation routed to the application,
-  not to a payment); the session stays `OPEN` while the decision runs, so the card door stays usable;
-  the acceptance locks the session and completes it **by financing** — a new `OPEN → COMPLETED` edge,
+  chosen inside an `OPEN` session through BNPL's own doors (the session's BNPL options, then an application
+  presenting the session token) - checkout's confirmation refuses a `"BNPL"` instrument as unknown
+  (`422 platform.ValidationFailed`), so no payment is ever opened for it *(`P12-DOC-001`, 2026-10-22: read "the `"BNPL"`
+  instrument on confirmation routed to the application, not to a payment")*; the session stays `OPEN` while the decision runs, so the card door stays usable;
+  the acceptance locks the session (`FOR UPDATE`, B3 - the only Checkout row BNPL locks; every other read of
+  the session is unlocked) and completes it **by financing** — a new `OPEN → COMPLETED` edge,
   intent-less, with checkout's order born carrying the financing entry (checkout `V004`). A card
   confirmation and a BNPL acceptance of one session complete it once. BNPL never creates a payment
   intent or attempt.
@@ -208,7 +218,12 @@ module depends on `bnpl`):
   **BNPL never pays a merchant**. A refund after a payout may drive the payable below zero only within
   that purchase's own net, recovered before any payout (owner decision B7, `INV-MER-07` amended). The
   merchant never sees an eligibility reason, a score, a credit amount, the customer's schedule or
-  delinquency.
+  delinquency. The Merchant rows BNPL locks: the merchant row and its `ACTIVE` enablement `FOR SHARE` (the standing read
+  at the application and the acceptance, re-read by the fee pin after L6, re-entrant; the pin itself an insert),
+  and the merchant's `MERCHANT_PAYABLE` ledger row `FOR UPDATE` at (P) - the acceptance, a refund and a dispute's
+  opening. A close (the merchant row, then the payables `FOR UPDATE`, then an unlocked read of open BNPL
+  disputes), a suspension, a fee-schedule assignment and an enablement's withdrawal each wait one way on them
+  *(`P12-DOC-001`, 2026-10-22: added by the Phase 12 exit review)*.
 - **Payments (9)** — nothing at purchase: BNPL is not a rail, opens no intent and has no clearing
   position. Payments' outbound machinery pays the merchant out (through Merchant's payout) and its
   pay-ins top up the customer's wallet; a chargeback can arise only on a card-funded top-up, payments'
@@ -218,18 +233,30 @@ module depends on `bnpl`):
 - **Credit (17)** — upstream, customer-supplier: one decision request per purchase (owner decision
   B5, no spending limit), opened in the application's transaction for the two BNPL credit products; the
   offer reads the decision authoritatively; the acceptance takes the approval up through Credit's
-  consumption port (`ConsumerKind.BNPL_AGREEMENT`) under the party's profile lock, taken first.
+  consumption port (`ConsumerKind.BNPL_AGREEMENT`) under the party's profile lock, taken first. The Credit
+  rows BNPL locks: the party's `credit_profile` `FOR UPDATE` (L0) - first, in the acceptance and in a repayment
+  reversal's approval, Credit's consumption re-taking it re-entrantly; the decision request's row `FOR UPDATE`
+  only inside Credit's own cancellation, after B1 (an application's withdrawal, and the origination step on a
+  closed session). The submission inserts Credit's request (the profile ensured, never locked) and the
+  offering step reads the request and the decision unlocked *(`P12-DOC-001`, 2026-10-22: added by the Phase 12 exit review)*.
   Exposure stays Credit's judgement over facts BNPL supplies (`PlatformCreditExposure` version 3: the
   party's BNPL outstanding principal, beside Lending's facts, in one statement). BNPL never computes a
   score or an affordability figure and never opens a request outside a checkout.
 - **Lending (18)** — a sibling, sharing the `LENDING_CAPITAL` headroom under its L6 row (ADR-0104)
-  and the pure engines through `creditmath`; no build edge, no shared row, no `loan`.
+  and the pure engines through `creditmath`; no build edge, no Lending table row locked or written, no `loan` -
+  the L6 row is the Ledger's `LENDING_CAPITAL` account row *(`P12-DOC-001`, 2026-10-22: read "no shared row")*.
 - **Ledger (7)** — downstream conformist: a new `OwnerKind.BNPL_OBLIGATION` with six per-obligation
   purposes and four operational ones (`BNPL_MERCHANT_FEE_INCOME`, `BNPL_INTEREST_INCOME`,
   `BNPL_FEE_INCOME`, `BNPL_WRITE_OFF_EXPENSE` — seeded, unposted), all closed to free adjustments
-  (ledger `V027`); posting and reversal through the ledger's services only.
+  (ledger `V027`); posting and reversal through the ledger's services only. The Ledger rows BNPL locks:
+  `ledger_account` rows `FOR UPDATE` at L6 (`LENDING_CAPITAL`) and (P) (`MERCHANT_PAYABLE`, `CUSTOMER_WALLET`),
+  and at L8, in one sorted call, `FOR KEY SHARE` on every account posted to and then its `account_balance` rows
+  `FOR UPDATE` - the currency's shared `BNPL_MERCHANT_FEE_INCOME`, `BNPL_INTEREST_INCOME` and `BNPL_FEE_INCOME`
+  rows only there, after any (P) *(`P12-DOC-001`, 2026-10-22: added by the Phase 12 exit review)*.
 - **Accounts / Wallet (5, 6)** — the customer's wallet is the only instalment source (owner decision
-  B6 — no card-funded instalment) and a refund's excess destination; BNPL never owns it.
+  B6 — no card-funded instalment) and a refund's excess destination - the customer's existing wallet only,
+  never opened by BNPL (with none to credit, the excess is held as the obligation's credit balance), its ledger
+  row locked at (P); BNPL never owns it *(`P12-DOC-001`, 2026-10-22: the existing-wallet rule added)*.
 - **Settlement (13) and Reconciliation (14)** — nothing new: BNPL moves no money across a rail, so it
   opens no expectation and adds no evidence; the merchant payout's existing expectation and Phase 8's
   evidence settle the merchant leg, and capital is recognised by the existing bank recognition. BNPL's
@@ -248,8 +275,10 @@ module depends on `bnpl`):
   `BnplDelinquencyChanged` and `BnplDefaulted`; write-off, provisioning and the merchant discount's
   effective-interest treatment (Accounting, 25 — Phase 14) map BNPL's purposes. **Production
   originates nothing**: like Lending, BNPL is offered only while an `ACTIVE`, four-eyes BNPL terms
-  version exists, production activates none until a real bureau is connected (unresolved #13/#14), and
-  Phase 12 proves every flow against the simulators.
+  version exists, production activates none until a real bureau is connected (unresolved #13/#14) and the
+  activation gate of `OPERATIONS_RUNBOOK.md` §8.1 is passed (among it the legal review of the merchant
+  agreement and the consumer terms and an approved merchant-fee schedule - procedure, not code), and
+  Phase 12 proves every flow against the simulators *(`P12-DOC-001`, 2026-10-22: the activation gate added)*.
 
 1. Party & Customer
 2. Identity, Authentication & Authorization

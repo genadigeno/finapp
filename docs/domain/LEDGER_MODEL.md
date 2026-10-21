@@ -292,13 +292,44 @@ trigger. None is a reconciled position - bnpl opens no expectation, so `finapp.r
 (one series per reconciled position) gains no BNPL series - and no `*_CLEARING` purpose arrived
 (`INV-RAIL-04`): BNPL moves no money across a rail. The book is proven by bnpl's subledger and three-way
 proofs (`P12-TSK-025`). Statically, `BnplBooksHaveOnePosterTest` lets only bnpl (and the declaration) name a
-`BNPL_*` purpose; its reader-permit list is empty until lending's capital headroom reads the BNPL principal
-purposes (`P12-TSK-005`).
+`BNPL_*` purpose; its reader permits are two, each posting nothing - lending's `LendingCapitalHeadroom`
+(`P12-TSK-005`: it sums `BNPL_PRINCIPAL` and `BNPL_PRINCIPAL_DUE` by purpose under L6) and merchant's
+`MerchantPayable` (`P12-TSK-016`: the drill-down names F1's and F5's counterparties) *(`P12-DOC-001`, 2026-10-22: read "its
+reader-permit list is empty until lending's capital headroom reads the BNPL principal purposes")*.
 
 **`MERCHANT_PAYABLE` gains bnpl as a poster** - the financing credits it the gross and debits it the discount
 (F1), a refund debits it (F5) - beside merchant settlement's captures and refunds and merchant's payouts. No
 single-poster rule binds `MERCHANT_PAYABLE` (it is not a reconciled position, and no `*HasOnePosterTest`
-names it), so admitting a third poster changes no guard; `INV-MER-02`'s equation gains the BNPL terms with the
-drill-down (`P12-TSK-016`) - until then a BNPL line on the payable reads in `MerchantPayable`'s `other` bucket,
-never a failure. The posting rules are ADR-0103's F1–F11, each built by the task that posts it; **nothing posts
-to any of the ten yet.**
+names it), so admitting a third poster changes no guard; `INV-MER-02`'s equation gained the BNPL terms
+with the drill-down (`P12-TSK-016`): a payable line is classified by its entry's posting-key namespace first -
+`bnpl.financing:` as financed (credit) and fees (debit), `bnpl.refund:` as refunded (debit) and fees returned
+(credit) - before any counterparty rule, so no BNPL line reads in the `other` bucket.
+
+**The posting rules as built** (ADR-0103's F1–F11; each entry one balanced entry in its act's transaction, posted
+through `PostingService` or `ReversalService` on the caller's connection, its key the idempotency claim):
+
+| Rule | Built by | Key | Lines |
+|---|---|---|---|
+| F1 financing | `P12-TSK-013` (T-pur) | `bnpl.financing:<purchase>` | DR `BNPL_PRINCIPAL` G / CR `MERCHANT_PAYABLE` G; DR `MERCHANT_PAYABLE` f / CR `BNPL_MERCHANT_FEE_INCOME` f (a zero fee writes no fee lines) |
+| F2 billing | `-013` (pay-in-4's instalment 1, in T-pur), `-015` (T-svc), `-022` (the payoff's early billing) | `bnpl.billing:<instalment>` | DR `BNPL_PRINCIPAL_DUE` / CR `BNPL_PRINCIPAL`; pay-in-N also DR `BNPL_INTEREST_DUE` / CR `BNPL_INTEREST_ACCRUED` |
+| F2a accrual | `-017` (T-acc, its own transaction) | `bnpl.accrual:<obligation>:<date>` | DR `BNPL_INTEREST_ACCRUED` / CR `BNPL_INTEREST_INCOME` |
+| F3 repayment | `-013` (`AT_PURCHASE`), `-018` (`CUSTOMER`), `-019` (`AUTO_COLLECTION`), `-022` (`PAYOFF`) | `bnpl.repayment:<repayment>` | DR `CUSTOMER_WALLET` / CR the due accounts per allocation, `BNPL_CREDIT_BALANCE` the rest |
+| F3a credit applied | `-015` | `bnpl.credit-application:<…>` | DR `BNPL_CREDIT_BALANCE` / CR the due accounts per allocation |
+| closure refund | `-018` (every closure) | `bnpl.closure-refund:<obligation>` | DR `BNPL_CREDIT_BALANCE` / CR `CUSTOMER_WALLET` |
+| F4 late fee | `-020` | `bnpl.fee:<instalment>:LATE` | DR `BNPL_FEES_DUE` / CR `BNPL_FEE_INCOME` |
+| F5 + F5a refund | `-021` | `bnpl.refund:<refund>` | DR `MERCHANT_PAYABLE` R, DR `BNPL_MERCHANT_FEE_INCOME` r_f / CR `BNPL_PRINCIPAL` (unbilled cancelled), CR `BNPL_PRINCIPAL_DUE` (billed cancelled), CR `CUSTOMER_WALLET` or - no creditable wallet on an `ACTIVE` obligation - `BNPL_CREDIT_BALANCE` E, CR `MERCHANT_PAYABLE` r_f; with the releases DR `BNPL_INTEREST_INCOME` / CR `BNPL_INTEREST_ACCRUED`, `BNPL_INTEREST_DUE` and DR `BNPL_FEE_INCOME` / CR `BNPL_FEES_DUE` in the same entry |
+| F6 payoff | `-022` (T-pay) | each rule's own | F2a in T-acc before it, then F2, F3a, F3 (`PAYOFF`) and the closure refund in T-pay |
+| F7 fee waived | `-024` | `bnpl.waiver:<…>` | the exact reversal of F4's entry through `ReversalService` (DR `BNPL_FEE_INCOME` / CR `BNPL_FEES_DUE`), bounded |
+| F8 repayment reversed | `-024` | `bnpl.repayment-reversal:<…>` | the exact reversal of F3's entry through `ReversalService` |
+| F9 dispute refunded | `-023` | `bnpl.refund:<refund>` | F5 exactly, under the same bound |
+| F10 merchant payout | merchant's, unchanged (`P12-TSK-016` proved it over BNPL-financed money) | merchant's | DR `MERCHANT_PAYABLE` / CR `PAYOUT_CLEARING` |
+| F11 write-off | **deferred to Phase 14** | — | none |
+
+So nine of the ten post: the six per-obligation accounts and `BNPL_MERCHANT_FEE_INCOME`, `BNPL_INTEREST_INCOME` and
+`BNPL_FEE_INCOME`; **`BNPL_WRITE_OFF_EXPENSE` carries no line** - seeded, posted by nothing, F11 deferred. The
+reserved key `bnpl.accrual-correction:` names a correction run Phase 12 did not build. bnpl posts beside these only
+to `MERCHANT_PAYABLE` and `CUSTOMER_WALLET` - never `LENDING_CAPITAL`, which bank recognition alone credits.
+*(`P12-DOC-001`, 2026-10-22: this read "`INV-MER-02`'s equation gains the BNPL terms with the drill-down
+(`P12-TSK-016`) - until then a BNPL line on the payable reads in `MerchantPayable`'s `other` bucket, never a
+failure. The posting rules are ADR-0103's F1–F11, each built by the task that posts it; nothing posts to any of
+the ten yet." until the Phase 12 exit review, which read every rule against its code.)*

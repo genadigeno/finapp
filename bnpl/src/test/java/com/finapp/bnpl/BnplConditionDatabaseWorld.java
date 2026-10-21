@@ -89,6 +89,9 @@ final class BnplConditionDatabaseWorld {
     final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book, closures,
             (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
     /** T-pay (`P12-TSK-022`): the quote and the execution over the same stores - scenario 13's payoff during the worker. */
+    /** T-acc (`P12-TSK-017`) over the same stores and book - a pay-in-N obligation is serviced only caught up. */
+    final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE, book,
+            IDS);
     final BnplPayoffs payoffs = new BnplPayoffs(REPAYMENTS, new JdbcBnplPayoffStore(), SERVICING, PURCHASES, TERMS_STORE,
             new JdbcBnplAccrualStore(), ports, book, servicing, repayments, closures, IDS);
     private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
@@ -119,6 +122,22 @@ final class BnplConditionDatabaseWorld {
     /** A pay-in-4 purchase under the suite's default terms - no fee. */
     Purchased plain() {
         return purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+    }
+
+    /** A pay-in-N purchase over {@code plan} under the suite's pay-in-N terms (the billing suite's, 19.99%) - no fee. */
+    Purchased payInN(BnplPlan plan) {
+        return purchase(BnplProduct.BNPL_PAY_IN_N, plan);
+    }
+
+    /** T-acc (`P12-TSK-017`) until caught up through the day before {@code date}, in transactions of its own. */
+    void catchUpOn(LocalDate date, Purchased bought) {
+        for (int round = 0; round < 8; round++) {
+            if (BnplClockFrame.inOneTransaction(frameOn(date), uow -> accruals.accrue(uow, bought.obligation()))
+                    .caughtUp()) {
+                return;
+            }
+        }
+        throw new AssertionError("T-acc did not catch up");
     }
 
     private static void activate(BnplTerms wanted) {

@@ -1,6 +1,6 @@
 # ADR-0103 — BNPL accounting: per-obligation accounts, the financing entry, the merchant discount and the posting rules
 
-Status: Proposed
+Status: Accepted (2026-10-22, `P12-DOC-001` — read against the code and corrected first)
 Date: 2026-10-16
 Phase: 12
 Context: BNPL · Ledger · Merchant · Lending · Reconciliation
@@ -78,6 +78,13 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    projection rows through `lockBalancesInOrder` before its first post (the Phase 9 rule), the shared
    income rows inside that one sorted call at L8 (ADR-0101 decision 11). A journal line is never zero
    (`JournalLine`), so an entry's fee pair is absent when its fee is zero.
+   *(Corrected by `P12-DOC-001`, 2026-10-22: this read "Every entry: `posting_date = value_date =` the
+   business date …". As built every entry's **posting** date is the business date of the database clock
+   read under B4 (the purchase's, in T-pur), but the **value** date is the rule's own: F1 the purchase's
+   business date; F2 the instalment's due date (a payoff's early billing the payoff's value date `V`); F2a
+   the accrual date; F3, F3a, F5/F9 on an `ACTIVE` obligation and F8 `max(today, floor)`, the floor
+   `bnpl.principal_value_floor` read under B4; F4, F7 and the closure refund today. No value date is ever
+   before the floor — the R1 rule as stated.)*
 
 4. **The posting rules.**
 
@@ -85,14 +92,14 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    |---|---|---|---|---|---|
    | F1 | Purchase financed | `BNPL_PRINCIPAL` G; `MERCHANT_PAYABLE` f | `MERCHANT_PAYABLE` G; `BNPL_MERCHANT_FEE_INCOME` f | the platform acquires a claim on the customer for the price, owes the merchant the price, and takes its discount out of that payable — the capture's four-line shape with the receivable in the clearing's place; no cash moves (headroom binds it) | `bnpl.financing:<purchase>` |
    | F2 | Instalment falls due | `BNPL_PRINCIPAL_DUE` p; PN `BNPL_INTEREST_DUE` i | `BNPL_PRINCIPAL` p; PN `BNPL_INTEREST_ACCRUED` i | reclassification, not income | `bnpl.billing:<instalment>` |
-   | F2a | PN interest accrued (daily) | `BNPL_INTEREST_ACCRUED` | `BNPL_INTEREST_INCOME` | income as earned; its own transaction, T-acc | `bnpl.accrual:<obligation>:<date>` |
+   | F2a | PN interest accrued (daily) | `BNPL_INTEREST_ACCRUED` | `BNPL_INTEREST_INCOME` | income as earned; its own transaction, T-acc | `bnpl.accrual:<obligation>:<date>` (`bnpl.accrual-correction:<obligation>:<date>:<engine>` reserved, posted by nothing) |
    | F3 | Repayment, auto-collection, P4 instalment 1 | `CUSTOMER_WALLET` A | due accounts per allocation; `BNPL_CREDIT_BALANCE` the rest | the customer's own funds settle the claim | `bnpl.repayment:<repayment>` |
-   | F3a | Credit balance applied | `BNPL_CREDIT_BALANCE` | due accounts per allocation | held credit settles what fell due (the gate's R2 catch-up) | `bnpl.credit-application:<billing>` |
+   | F3a | Credit balance applied | `BNPL_CREDIT_BALANCE` | due accounts per allocation | held credit settles what fell due (the gate's R2 catch-up) | `bnpl.credit-application:<billing>`; a catch-up `bnpl.credit-application:<obligation>:catch-up:<n>` |
    | F4 | Late fee assessed | `BNPL_FEES_DUE` | `BNPL_FEE_INCOME` | contractual fee, once per instalment, capped | `bnpl.fee:<instalment>:LATE` |
-   | F5 | Merchant refund R, latest instalments first | `MERCHANT_PAYABLE` R; `BNPL_MERCHANT_FEE_INCOME` r_f | `BNPL_PRINCIPAL` (unbilled cancelled); `BNPL_PRINCIPAL_DUE` (billed cancelled); `CUSTOMER_WALLET` E (excess); `MERCHANT_PAYABLE` r_f | the merchant gives back the price and the platform its discount share (the `RETURNED` refund shape); the customer's debt falls by what it still owed and what it had already paid comes back | `bnpl.refund:<refund>` |
-   | F5a | Fees and interest released on cancellation | `BNPL_FEE_INCOME`; `BNPL_INTEREST_INCOME` | `BNPL_FEES_DUE`; `BNPL_INTEREST_DUE`, `BNPL_INTEREST_ACCRUED` | a fee on a cancelled instalment is not owed (OQ-14); PN interest only at a full cancellation (A11) | inside F5's entry |
-   | F6 | Payoff | rules F2a, F2, F3; then `BNPL_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | every receivable to zero | each rule's own key; the refund `bnpl.closure-refund:<obligation>` |
-   | F7 | Fee waived (four-eyes) | `BNPL_FEE_INCOME` | `BNPL_FEES_DUE` | `ReversalService` of F4's entry, bounded | scope `ledger.reverse` |
+   | F5 | Merchant refund R, latest instalments first | `MERCHANT_PAYABLE` R; `BNPL_MERCHANT_FEE_INCOME` r_f | `BNPL_PRINCIPAL` (unbilled cancelled); `BNPL_PRINCIPAL_DUE` (billed cancelled); `CUSTOMER_WALLET` E (excess) — `BNPL_CREDIT_BALANCE` E when the customer has no `ACTIVE` wallet and the obligation is `ACTIVE` *(as built, `P12-TSK-021`, OQ-13; a `CLOSED` obligation with no wallet is refused `bnpl.RefundNotPostable`)*; `MERCHANT_PAYABLE` r_f | the merchant gives back the price and the platform its discount share (the `RETURNED` refund shape); the customer's debt falls by what it still owed and what it had already paid comes back | `bnpl.refund:<refund>` |
+   | F5a | Fees and interest released on cancellation | `BNPL_FEE_INCOME`; `BNPL_INTEREST_INCOME` | `BNPL_FEES_DUE`; `BNPL_INTEREST_DUE`, `BNPL_INTEREST_ACCRUED` | a fee on a cancelled instalment is not owed (OQ-14); PN interest only at a full cancellation (A11) *(as built, `P12-TSK-020` / `-021`: the late fee still due on every billed instalment cancelled whole — on every billed one when no principal is left unpaid — is released, a partial cancellation releasing none and a paid fee never refunded; PN releases the accrued and billed-unpaid interest when no principal is left unpaid, and the accrued interest no billing could make due when nothing is left to bill)* | inside F5's entry |
+   | F6 | Payoff | rules F2 (early), F3a, F3 (`PAYOFF`); then `BNPL_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | every receivable to zero | each rule's own key; the refund `bnpl.closure-refund:<obligation>` *(corrected by `P12-DOC-001`, 2026-10-22: this read "rules F2a, F2, F3"; T-pay posts no F2a — pay-in-N must be caught up by T-acc in its own transaction first, else `BehindAccrual` with nothing written — and applies the held credit (F3a) before the wallet's F3)* |
+   | F7 | Fee waived (four-eyes) | `BNPL_FEE_INCOME` | `BNPL_FEES_DUE` | `ReversalService` of F4's entry, bounded | `bnpl.waiver:<waiver>` *(corrected by `P12-DOC-001`, 2026-10-22: this read "scope `ledger.reverse`"; `BnplWaivers` reverses under its own key)* |
    | F8 | Repayment reversed (four-eyes) | F3's credits | `CUSTOMER_WALLET` | the exact swap through `ReversalService`; re-instated principal consumes headroom (ADR-0104) | `bnpl.repayment-reversal:<id>` |
    | F9 | Dispute resolved as a refund | = F5 | = F5 | a refund under the same bound (ADR-0106, `INV-BNPL-08`) | `bnpl.refund:<refund>` |
    | F10 | Merchant payout | `MERCHANT_PAYABLE` | `PAYOUT_CLEARING` | merchant's own entry, unchanged — BNPL never pays a merchant | merchant's keys |
@@ -202,11 +209,15 @@ Positive:
 Negative:
 - Six accounts per obligation — at BNPL volume the chart grows fastest here.
 - `BNPL_MERCHANT_FEE_INCOME` is posted by every purchase of a currency: a hot row at L8, correct but
-  a throughput ceiling, measured by `P12-TST-001` (plan §21).
+  a throughput ceiling, measured by `P12-TST-001` (plan §21). *(As built (`P12-DOC-001`, 2026-10-22):
+  measured on the storm's final run — 12 waits on `BNPL_MERCHANT_FEE_INCOME`, 0 on `BNPL_FEE_INCOME`
+  and `BNPL_INTEREST_INCOME`, beside `LENDING_CAPITAL`'s 65; no deadlock.)*
 - The discount is income at purchase until Phase 14 says otherwise, and a refund reverses income
   already recognised.
 
-Operational impact: `finapp.bnpl.subledger.proof`, `finapp.bnpl.threeway.proof{verdict}` (alerting);
+Operational impact: `finapp.bnpl.subledger.proof{verdict}`, `finapp.bnpl.threeway.proof{verdict}` and
+`finapp.bnpl.replay{verdict}` (alerting; *the tag and the replay gauge as built by `P12-TSK-025`, recorded
+by `P12-DOC-001`, 2026-10-22*);
 a negative payable counted by `finapp.ledger.negative.positions`; amounts only in audited reports
 (ADR-0072).
 Security impact: no person posts to a BNPL account; waivers and reversals are four-eyes
@@ -246,10 +257,23 @@ ADR-0058, ADR-0096.
 - `P12-TSK-021` decides what happens to a late fee already **paid** on an instalment a refund
   cancels (F5a releases only the unpaid fee; the plan names none for the paid part) and to a fee on
   an instalment a refund only shortens.
+  - *Decided and built by `P12-TSK-020` (2026-10-19; recorded by `P12-DOC-001`):* a paid late fee is
+    never refunded by a release — it stays income; only what is still due of `FEES` on an instalment
+    cancelled whole (on every billed one when no principal is left unpaid) is released, in the refund's
+    own entry (`bnpl V013`: `late_fee_released_minor` on the adjustment); a refund that only shortens an
+    instalment releases nothing.
 - `P12-TSK-016` classifies a BNPL refund by its entry's origin, not by counterparty alone: a refund
   on a `CLOSED` obligation (OQ-15) posts only `DR MERCHANT_PAYABLE / CR CUSTOMER_WALLET` (+ the fee
   pair), which the drill-down's counterparty rule would read as a book-rail refund.
+  - *Built by `P12-TSK-016`:* decision 8's as-built note — classified by the posting-key namespace
+    before any counterparty rule.
 - `P12-TSK-013` and `-015` state the floor's billing arm: "the day after its latest billing" would
   value a same-day P4 refund on the day after the purchase; lending's statement arm uses the cycle
   end itself.
-- Accepted by the Phase 12 exit review (`P12-DOC-001`), read against the code first.
+  - *Stated and built (`P12-TSK-013`, `-015`, `-022`):* the billing arm is the latest billing's value
+    date **itself**, not the day after (a billing beside a payoff execution counted at most at the
+    execution's value date); the accrual arm the day after the latest accrual; never before the
+    purchase's business date (`bnpl.principal_value_floor`, last replaced by `bnpl V014`).
+- **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
+  (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

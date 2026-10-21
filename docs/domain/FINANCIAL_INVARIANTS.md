@@ -2419,7 +2419,10 @@ figure: read from a drifted column, it cancels what was never owed or leaves owe
 `SELECT, INSERT` on the fact tables and conditional `UPDATE` only of status and permit columns on the
 machine tables — never `UPDATE` of a money column, never `DELETE`) + `STATIC`
 (`BnplSchemaHasNoMutableMoneyTest`: every `*_minor` column on an `INSERT`-only table;
-`BnplBooksHaveOnePosterTest`: only bnpl's operations post to the BNPL purposes) + `DOMAIN` (every
+`BnplBooksHaveOnePosterTest`: only bnpl's operations post to the BNPL purposes)
+*(P12-DOC-001, 2026-10-22: `BnplSchemaHasNoMutableMoneyTest` is not `STATIC` - it is a database-tier catalogue sweep
+(`@Tag("database")`) with in-suite plants, first run 2026-10-20 in the Phase 12 database pass; it proves the
+`DB-PRIVILEGE` arm on PostgreSQL and does not fail the build. Only `BnplBooksHaveOnePosterTest` is `STATIC`.)* + `DOMAIN` (every
 deciding figure — the due state an allocation or a refund's split runs over, a payoff amount —
 derives from journal lines and rows through `BalanceDerivation` under the obligation's row lock,
 B4, never from the display-only projection, `INV-BAL-05`; bnpl posts only through `PostingService` /
@@ -2457,7 +2460,7 @@ included, rolls back everything) + `DB-CONSTRAINT` (a deferred trigger: a `merch
 exists iff its purchase, its obligation and its journal entry exist; `merchant_financing UNIQUE
 (purchase_id)`, `UNIQUE (journal_entry_id)`; the session's `financed_by_ref` set once, checkout
 `V004`).
-**Verify:** Scenario 14 — `#aFailureAtEveryStepLeavesNothing` (`P12-TSK-013`): a forced failure at
+**Verify:** Scenario 14 — `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing` (`P12-TSK-013`) *(P12-DOC-001, 2026-10-22: the class named)*: a forced failure at
 each T-pur step leaves no financing, no consumption, no capital commitment, no obligation and no
 order; the deferred trigger proven alone by a raw-SQL writer (`P12-TSK-013`);
 `BnplOutboxAtomicityDatabaseTest` — a crash between posting and publication loses nothing
@@ -2465,6 +2468,7 @@ order; the deferred trigger proven alone by a raw-SQL writer (`P12-TSK-013`);
 gauged `finapp.bnpl.threeway.proof{verdict}` (`P12-TSK-025`), at rest in every storm round
 (`P12-TST-001`).
 *(As built by `P12-TSK-013` (2026-10-18): `BnplAcceptances` (T-pur) - one transaction in the Phase 12 lock order; `bnpl V006`'s three deferred constraint triggers on `purchase_is_financed_at_commit` (a purchase, its financing and its obligation commit together, the purchase `FINANCED` beside its `ACCEPTED` offer, agreement version 1, its evidence and schedule version 1). Refined: the financing entry is named by id (`NOT NULL`, `UNIQUE`) - no bnpl trigger reads a ledger table (each module migrates its own schema in no guaranteed order, the `P11-TSK-013` refinement), so the entry's existence and lines are the one transaction's and the three-way proof's (`-025`). Hermetic: `BnplAcceptancesTest#aFailureAtEveryStepLeavesNothing` (23 steps), `BnplAcceptanceMigrationTest`. Database, written and owed a first run: `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing`, `BnplAcceptanceDatabaseTest#aFinancingRowWithoutItsObligationIsRefused`, `BnplOutboxAtomicityDatabaseTest`.)*
+*(P12-DOC-001, 2026-10-22: the Enforce line's deferred trigger is `bnpl V006`'s three constraint triggers - `purchase_is_financed_at_commit`, `merchant_financing_is_financed_at_commit` and `bnpl_obligation_is_financed_at_commit`, all executing `bnpl.purchase_is_financed_at_commit()`. The journal entry is not among what they check: no bnpl trigger reads a ledger table, so the entry is named by id, `NOT NULL`, `UNIQUE (journal_entry_id)`. `merchant_financing`'s `UNIQUE (purchase_id)` is its primary key. The database cases above ran green in the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest`, `:app:databaseTest` and `:app:ownContainerDatabaseTest`; every failure a test or register defect repaired by `P12-TSK-027`/`-028`, the one production defect the pass exposed - `bnpl V012`'s `CHECK`/constraint-trigger name collision - corrected in place, `P12-TSK-027` finding 1).)*
 **Phase:** 12
 
 ### INV-BNPL-03 — One decision, one agreement; one session, one purchase; one purchase, one financing
@@ -2500,6 +2504,7 @@ application holding its session for good - a declined or expired offer frees no 
 `BnplOriginationDatabaseTest#tenSweepersOfferOnce` written and not run under the owner's instruction, its hermetic half
 `BnplOriginationTest#tenSweepersOfferOnce` and `BnplOfferMigrationTest#theArbitersArePresent`).
 *(As built by `P12-TSK-013`: `purchase UNIQUE (checkout_session_id)`, `UNIQUE (offer_id)`; `merchant_financing` keyed by its purchase, `UNIQUE (journal_entry_id)`; `bnpl_obligation UNIQUE (purchase_id)`, `(agreement_id)`, `(decision_id)`; the claim `bnpl.offer-acceptance:CUSTOMER:<id>`; B2's conditional `OFFERED` and B3 judged at once. Hermetic: `BnplAcceptancesTest#theSameAcceptanceTwiceFinancesOnce`; database, owed: `BnplPurchaseDatabaseTest#theSameAcceptanceTwiceFinancesOnce`, `#bnplAndCardOnOneSessionCompleteOnce`, `#bnplAndAWalletPaymentOnOneSessionCompleteOnce`.)*
+*(P12-DOC-001, 2026-10-22: every "written and not run under the owner's instruction" and "owed" above - `CheckoutFinancingDatabaseTest`, `BnplApplicationDatabaseTest#tenApplicationsForOneSessionOpenOne`, `BnplOriginationDatabaseTest#tenSweepersOfferOnce` and `BnplPurchaseDatabaseTest`'s three - is discharged by the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest`, `:app:databaseTest` and `:app:ownContainerDatabaseTest`; every failure a test or register defect repaired by `P12-TSK-027`/`-028`, the one production defect the pass exposed - `bnpl V012`'s `CHECK`/constraint-trigger name collision - corrected in place, `P12-TSK-027` finding 1).)*
 **Phase:** 12
 
 ### INV-BNPL-04 — The financing conserves the purchase
@@ -2516,6 +2521,9 @@ a minor unit per purchase, invisibly, at volume.
 pinned by `bnpl_fee_pin`, frozen, `INV-MER-03`; a purchase must cover its fee, ADR-0058) +
 `DB-CONSTRAINT` (`merchant_financing` `CHECK (gross = fee + net)`; a trigger holding the financing
 entry's lines to its row) + the journal's per-currency balance (`INV-LED-01`).
+*(P12-DOC-001, 2026-10-22: as built no trigger holds the entry's lines to the row - no bnpl trigger reads a ledger table.
+One code path builds both from one `MerchantFeeSplit`, and the split's property tests are `app`'s
+`BnplMerchantFeeSplitPropertiesTest`. The `DB-CONSTRAINT` arm is the `CHECK` alone.)*
 **Verify:** `MerchantFeeSplit` property tests over amounts, basis points and fixed parts
 (`P12-TSK-006`); the financing row and entry asserted by every acceptance case (`P12-TSK-013`); the
 three-way proof's merchant leg — Σ (gross − fee) over purchases less refunds' payable debits equal to
@@ -2575,9 +2583,9 @@ then B4, pay-in-N accrued to date by T-acc first) + `DB-CONSTRAINT` (per-instalm
 commit) + the one entry F5/F5a under the key `bnpl.refund:<refund>`, balanced per currency.
 **Verify:** The allocator's properties — value preserved, latest first, never a paid amount cancelled,
 the fee order-independent and telescoping to f, a full refund leaving exactly zero (`P12-TSK-009`);
-scenario 9's `BnplRefundDatabaseTest#refundBeforeDuringAfter` and `#excessGoesToTheCustomer`, and
+scenario 9's `BnplRefundDatabaseTest#refundBeforeDuringAfter` and `#excessGoesToTheCustomerAndAPartialRefundReducesTheLatestInstalments` *(P12-DOC-001, 2026-10-22: the method's built name)*, and
 scenario 7 — `BnplRefundDatabaseTest#aRefundRacingACollectionConservesInBothOrders` (`P12-TSK-021`);
-`#refundCancelsLatestFirst`, the earliest-first probe's catcher (`P12-TSK-009`, `P12-TSK-021`); the late
+`#refundCancelsLatestFirst`, the earliest-first probe's catcher (`P12-TSK-009`, `P12-TSK-021`) *(P12-DOC-001, 2026-10-22: as performed, the earliest-first probe's catchers are `RefundAllocationEngineV1Test#refundCancelsLatestFirst` (`-009`), the battery (`P12-TST-002`) and, in the storm, `RefundAllocation`'s construction check (`P12-TST-001`). `BnplRefundDatabaseTest#refundCancelsLatestFirst` and `#refundBeforeDuringAfter` ran green in the Phase 12 database pass (2026-10-20), but the probe was never performed against them.)*; the late
 fee's release on a cancelled instalment, `BnplLateFeeDatabaseTest` (`P12-TSK-020`, `P12-TSK-021`);
 the probes refunding earliest first and pro-rating the fee by a running clamp (`MUTATION_TESTING.md`
 §2); the battery's value-preservation and fee-telescoping properties for every refund order
@@ -2613,11 +2621,12 @@ or, after a payout, from the platform; it is also the one bound the dispute path
 **Enforce:** `DOMAIN` (the purchase `FOR UPDATE` before the obligation, B5 then B4, and the bound judged
 under it) + `DB-CONSTRAINT` (a trigger bounding Σ refunds by the purchase's gross for every writer;
 `bnpl_refund UNIQUE (merchant_id, refund_key)`; the purchase's terminal `FULLY_REFUNDED` admitting no
-edge out).
+edge out). *(P12-DOC-001, 2026-10-22: as built the refund's arbiter is `UNIQUE (merchant_id, requested_by, refund_key)`
+(`bnpl_refund_request_unique`, `bnpl V012`), the requester the merchant's `MERCHANT:<id>` or an operator's.)*
 **Verify:** Scenario 8 — `BnplRefundDatabaseTest#theSameRefundTwiceRefundsOnce` (merchant retry, two
 instances, a lapsed claim) (`P12-TSK-021`); a refund above the remainder refused with nothing written,
 and refunds racing on one purchase counted (`P12-TSK-021`); the probe skipping the purchase lock in a
-refund, caught by scenario 10 (`MUTATION_TESTING.md` §2); Σ refunds ≤ gross for every purchase at
+refund, caught by scenario 10 (`MUTATION_TESTING.md` §2) *(P12-DOC-001, 2026-10-22: **performed live for the first time by the exit review** - B5 skipped in the refund, then also `bnpl V012`'s trigger re-take: caught both times, but by `BnplRefunds.derive`'s position check under B4 (the refunded-before figure read without B5 disagrees with the adjustments), before scenario 10's Σ ≤ G assertion or the trigger's bound; the strengthened suite's staggered rounds alone survived. `MUTATION_TESTING.md` §2, the `P12-DOC-001` rows.)*; Σ refunds ≤ gross for every purchase at
 every storm round (`P12-TST-001`).
 *(As built by `P12-TSK-021`: the purchase `FOR UPDATE` first (B5) - merchant-scoped at the merchant's door - the bound
 judged over the committed refunds under it, `422 bnpl.RefundExceedsPurchase` / `409 bnpl.PurchaseFullyRefunded`; `bnpl
@@ -2641,10 +2650,14 @@ third original exit criterion: two paths each judging their own bound return the
 body in the same transaction) + `DB-CONSTRAINT` (`bnpl_dispute` partial `UNIQUE (purchase_id)` over
 open states; the refund bound's trigger shared by both paths). If card-funded instalments are ever
 admitted (excluded by owner decision B6), `INV-DSP-01` must be extended to this bound first.
+*(P12-DOC-001, 2026-10-22: as built a merchant or operator refund beside an open dispute is refused `409
+bnpl.DisputeOpen` - by the domain's check under B5 and, for every writer, by `bnpl V015`'s `BEFORE INSERT` trigger on
+`bnpl_refund` (`bnpl_refund_is_not_beside_an_open_dispute`). Only the dispute's own `DISPUTE`-door refund is admitted.)*
 **Verify:** Scenario 10 — `BnplDisputeDatabaseTest#disputeRefundAndMerchantRefundShareOneBound`
-(`P12-TSK-023`, written and owed a first run), hermetically `BnplDisputesTest#aRefundThenADisputeShareOneBound` and
+(`P12-TSK-023`) *(P12-DOC-001, 2026-10-22: "written and owed a first run" removed - it ran green in the Phase 12
+database pass, 2026-10-20)*, hermetically `BnplDisputesTest#aRefundThenADisputeShareOneBound` and
 `#aDisputeThenARefundShareOneBound`; the probe skipping the purchase lock in a refund turning scenario 10 red
-(`MUTATION_TESTING.md` §2); disputes and refunds racing on shared purchases in the storm, Σ refunds ≤
+(`MUTATION_TESTING.md` §2) *(P12-DOC-001, 2026-10-22: **performed live for the first time by the exit review** - B5 skipped in the refund, then also `bnpl V012`'s trigger re-take: caught both times, but by `BnplRefunds.derive`'s position check under B4 (the refunded-before figure read without B5 disagrees with the adjustments), before scenario 10's Σ ≤ G assertion or the trigger's bound; the strengthened suite's staggered rounds alone survived. `MUTATION_TESTING.md` §2, the `P12-DOC-001` rows.)*; disputes and refunds racing on shared purchases in the storm, Σ refunds ≤
 gross at every round (`P12-TST-001`).
 **Phase:** 12
 
@@ -2657,7 +2670,9 @@ billed-unpaid interest released (A11) and late fees on cancelled instalments rel
 repayment, collection or fee on it is refused `409 bnpl.ObligationClosed`. A refund on an obligation
 already `CLOSED` by repayment is admitted and posts only the merchant's debit and the customer's
 credit. Where the wallet cannot be credited the excess is held in `BNPL_CREDIT_BALANCE` and refunded
-when postable (OQ-13), the closure following that refund.
+when postable (OQ-13), the closure following that refund. *(P12-DOC-001, 2026-10-22: after closure there is no
+credit balance to hold it - a refund on a `CLOSED` obligation whose wallet cannot be credited is refused `409
+bnpl.RefundNotPostable`, nothing written (`BnplRefunds`; OQ-15).)*
 **Why:** "Full refund closes the agreement and leaves no residual obligation or stranded value" is the
 phase's second original exit criterion: a residual cent of principal, interest or fee is a debt for
 goods returned, and an unreturned fee or credit balance is value the platform kept without an event.
@@ -3206,7 +3221,7 @@ dispute the books cannot win.
 **Verify:** The payable reconciles against independent SQL over the payment, fee and payout
 records; schema sweep asserts no stored-balance column in `merchant`; the resolution suite
 counts an approved transfer to a payable — from suspense and from an OUTBOUND clearing
-remainder — as `reconciliationAttributed`, never `captured` (`P8-TSK-015`); a BNPL refund whose excess credits a wallet is `bnplRefunded`, never `refunded`, and a line facing `BNPL_PRINCIPAL` under no BNPL key is `other`, never financed (`BnplMerchantDrillDownTest`, hermetic; the independent-SQL reconciliation re-run with BNPL lines is `BnplMerchantPayoutDatabaseTest#thePayableReconcilesWithIndependentSql`, first run owed - `P12-TSK-016`).
+remainder — as `reconciliationAttributed`, never `captured` (`P8-TSK-015`); a BNPL refund whose excess credits a wallet is `bnplRefunded`, never `refunded`, and a line facing `BNPL_PRINCIPAL` under no BNPL key is `other`, never financed (`BnplMerchantDrillDownTest`, hermetic; the independent-SQL reconciliation re-run with BNPL lines is `BnplMerchantPayoutDatabaseTest#thePayableReconcilesWithIndependentSql`, first run owed - `P12-TSK-016`). *(P12-DOC-001, 2026-10-22: "first run owed" discharged by the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest`, `:app:databaseTest` and `:app:ownContainerDatabaseTest`; every failure a test or register defect repaired by `P12-TSK-027`/`-028`, the one production defect the pass exposed - `bnpl V012`'s `CHECK`/constraint-trigger name collision - corrected in place, `P12-TSK-027` finding 1).)*
 **Phase:** 6
 
 ### INV-MER-03 — Fees are deterministic and version-pinned
@@ -3317,7 +3332,8 @@ second rank by `bnpl V012`'s refund trigger for every writer - Σ the purchase's
 returned ≤ its fee; `finapp.ledger.negative.positions{purpose=MERCHANT_PAYABLE}` counts a payable below zero whatever the
 source. Hermetic: `BnplRefundsTest#aRefundAfterPayoutIsBoundedByThePurchasesNet` (the payable at exactly -(G - f) after
 the payout and two refunds), `#theB7BoundHoldsForEverySplit`; database, owed:
-`BnplRefundDatabaseTest#aRefundAfterPayoutIsBoundedByThePurchasesNet`.)*
+`BnplRefundDatabaseTest#aRefundAfterPayoutIsBoundedByThePurchasesNet`.)* *(P12-DOC-001, 2026-10-22: "database, owed"
+discharged by the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest`, `:app:databaseTest` and `:app:ownContainerDatabaseTest`; every failure a test or register defect repaired by `P12-TSK-027`/`-028`, the one production defect the pass exposed - `bnpl V012`'s `CHECK`/constraint-trigger name collision - corrected in place, `P12-TSK-027` finding 1).)*
 
 ---
 

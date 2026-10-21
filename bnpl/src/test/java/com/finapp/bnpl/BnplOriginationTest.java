@@ -222,6 +222,28 @@ class BnplOriginationTest {
     }
 
     @Test
+    @DisplayName("no credit data to merchants (P12-DOC-001): the merchant-consumable eligibility event is exactly"
+            + " {checkoutSessionId, outcome} - for an offer ELIGIBLE and for an approval below the purchase NOT_ELIGIBLE -"
+            + " never a reason, a score, an amount or a schedule")
+    void theEligibilityEventCarriesExactlyTheSessionAndTheOutcome() {
+        BnplApplication offered = applied(UUID.randomUUID(), BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        world.credit.approve(offered.decisionRequest(), GROSS, world.now.plus(Duration.ofDays(1)));
+        world.events.clear();
+        world.payloads.clear();
+        assertThat(originate(offered).eligibility()).contains(BnplOrigination.Eligibility.ELIGIBLE);
+        assertThat(payloadOf(BnplOrigination.ELIGIBILITY_EVENT)).isEqualTo("{\"checkoutSessionId\":\""
+                + offered.checkoutSession() + "\",\"outcome\":\"ELIGIBLE\"}");
+
+        BnplApplication below = applied(UUID.randomUUID(), BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        world.credit.approve(below.decisionRequest(), GROSS - 1, world.now.plus(Duration.ofDays(1)));
+        world.events.clear();
+        world.payloads.clear();
+        assertThat(originate(below).eligibility()).contains(BnplOrigination.Eligibility.NOT_ELIGIBLE);
+        assertThat(payloadOf(BnplOrigination.ELIGIBILITY_EVENT)).isEqualTo("{\"checkoutSessionId\":\""
+                + below.checkoutSession() + "\",\"outcome\":\"NOT_ELIGIBLE\"}");
+    }
+
+    @Test
     @DisplayName("credit still deciding and the session open: WAITING, nothing written")
     void creditStillDecidingWaits() {
         BnplApplication application = applied(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);

@@ -1,11 +1,11 @@
 # ADR-0105 — The BNPL refund policy: latest instalments first, the excess to the customer, the merchant fee pro-rated back, the PN interest rule, and the merchant payable's third bounded negative source
 
-Status: Proposed
+Status: Accepted (2026-10-22, `P12-DOC-001` — read against the code and corrected first)
 Date: 2026-10-16
 Phase: 12
 Context: BNPL · Merchant · Ledger · Accounts (wallet) · Identity
-Supersedes: nothing. **Amends `INV-MER-07`** (a third, bounded source of merchant debt — effective when `P12-TSK-021`
-lands), after ADR-0061 §5's second. Applies ADR-0054 and ADR-0050 §6 (a merchant refund funded by its net; the fee
+Supersedes: nothing. **Amends `INV-MER-07`** (a third, bounded source of merchant debt — in force since `P12-TSK-021`,
+2026-10-19; *this read "effective when `P12-TSK-021` lands" until `P12-DOC-001`, 2026-10-22*), after ADR-0061 §5's second. Applies ADR-0054 and ADR-0050 §6 (a merchant refund funded by its net; the fee
 returned by the cumulative method, `MerchantSettlement.refund`), ADR-0058 (a sale covers its fee), ADR-0052 (merchant
 keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) and ADR-0093/ADR-0094 (the schedule's
 `recalculateAtInstalment`; accrual). Rests on `PHASE_12_PLAN.md` §2.2 (B3, B7), §2.3 (A10–A13, A19), §5.3, §5.5–§5.7,
@@ -49,8 +49,17 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
       same entry (A12), the wallet resolved or opened through `BnplWallets`. If the wallet's ledger account cannot take
       a posting (closed, OQ-13), E is credited to the obligation's `BNPL_CREDIT_BALANCE` and refunded at closure or when
       the wallet becomes postable — the obligation cannot close with a credit balance standing.
+      *(Corrected by `P12-DOC-001`, 2026-10-22: as built (`P12-TSK-021`) the wallet is **never opened** —
+      `BnplWallets.existingWallet` answers the party's existing wallet in the currency or nothing. With no wallet, or
+      one not `ACTIVE`, E is credited to `BNPL_CREDIT_BALANCE` while the obligation is `ACTIVE`; the held credit is
+      applied to what falls due by the servicing step's credit-balance applications (F3a) and refunded by the closure
+      (`bnpl.closure-refund:<obligation>`) once a wallet can be credited — no act refunds it merely because a wallet
+      became postable.)*
    3. Each cancellation is a born-once `bnpl_refund_adjustment` row (refund, instalment, from-not-due, from-due); a
-      deferred trigger holds Σ adjustments + E = R (`INV-BNPL-06`).
+      deferred trigger holds Σ adjustments + E = R (`INV-BNPL-06`). *(As built, `bnpl V012` / `V013`: the row carries
+      its sequence, instalment, `kind` (`UNBILLED` | `BILLED_UNPAID`), `principal_cancelled_minor`,
+      `interest_released_minor`, `whole` and `late_fee_released_minor` — one kind per row, not a from-not-due /
+      from-due pair; `bnpl.bnpl_refund_conserves` holds the sum at commit.)*
    4. When an unbilled instalment is cancelled or shortened, schedule v n+1 and agreement v n+1 are born (billed
       instalments kept, unbilled superseded — `INV-HIST-04`); nothing is edited.
    5. Latest-first is the customer's choice to make the refund shorten the plan, not lower every instalment, and it is
@@ -87,11 +96,17 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
    accrued to the refund date and interest billed stay owed; interest already paid is not refunded. **Except:** a
    refund that cancels the whole remaining principal also releases accrued-unbilled and billed-unpaid interest
    (`DR BNPL_INTEREST_INCOME / CR BNPL_INTEREST_ACCRUED, BNPL_INTEREST_DUE`), so the agreement closes with no residual
-   obligation (`INV-BNPL-09`).
+   obligation (`INV-BNPL-09`). *(As built (`P12-TSK-021`; recorded by `P12-DOC-001`, 2026-10-22), refined: a refund
+   that leaves nothing more to bill also releases the accrued interest no billing could make due — the Follow-up's
+   "decision 6 refined".)*
 
 7. **Closure.** If every receivable is zero after the entry and no credit balance stands, the obligation closes in the
    refund's transaction: `REFUNDED` when a full refund settled it, `REFUNDED_PARTIALLY_REPAID` when refunds and
-   repayments together did. A later customer repayment is `409 bnpl.ObligationClosed`.
+   repayments together did. A later customer repayment is `409 bnpl.ObligationClosed`. *(Corrected by `P12-DOC-001`,
+   2026-10-22: this read "If every receivable is zero after the entry and no credit balance stands". As built the
+   closure (`BnplClosures`, one for every act) refunds a standing credit balance to the customer's existing wallet held
+   under (P) in the same transaction and then closes; only a credit balance no wallet can take now keeps the obligation
+   open.)*
 
 8. **Refunds after closure** (OQ-15, owner accepted default). The purchase is not terminal when its obligation is:
    a refund of a `CLOSED (REPAID | PAID_OFF_EARLY | REFUNDED_PARTIALLY_REPAID)` obligation is admitted within the
@@ -102,12 +117,17 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
 9. **The doors** (OQ-9, owner accepted default). The **first merchant-key refund door** in the platform:
    `POST /v1/merchant/bnpl-purchases/{id}/refunds` — merchant API key with the BNPL refund scope (ADR-0052), tenant-
    isolated (another merchant's purchase is `404`, `INV-MER-01`), keyed `bnpl.refund:MERCHANT:<id>` and arbitrated
-   across lapsed claims by `UNIQUE (merchant_id, refund_key)`, a reason required (`RESTRICTED-PII`, screened), bounded
+   across lapsed claims by `UNIQUE (merchant_id, refund_key)` *(as built, `bnpl V012`: `UNIQUE (merchant_id,
+   requested_by, refund_key)`, `requested_by` the door and its actor — `MERCHANT:<merchant>` or `OPERATOR:<id>` — so the
+   two doors' keys never collide; corrected by `P12-DOC-001`, 2026-10-22)*, a reason required (`RESTRICTED-PII`, screened), bounded
    only by the purchase — no four-eyes and no threshold review (a merchant's act on its own sale). An **operator door
    beside it** for a merchant that cannot act over its key (suspended, or instructing out of band): reasoned, audited
    with actor, target, reason, correlation and outcome, self-dealing refused; its route and permission are named by
    `P12-TSK-021`'s design (the plan's §9 lists none), the payments precedent (one permission, `PAYMENT_REFUND`) its
-   default. No operator otherwise cancels an instalment (plan §11).
+   default. No operator otherwise cancels an instalment (plan §11). *(Named and built by `P12-TSK-021`:
+   `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, self-dealing refused
+   `403 bnpl.SelfDealingRefused` through `BnplActingParty`; the merchant key's scope is `BNPL_REFUND` (merchant `V011`),
+   a key without it refused `403 bnpl.RefundScopeRequired` and audited `bnpl.RefundScopeRefused`.)*
 
 10. **The merchant payable's third bounded negative source** (B7). A BNPL refund is applied, never reserved: it places
     no hold and is not refused for want of payable. It may leave `MERCHANT_PAYABLE` below zero by **at most the
@@ -123,7 +143,8 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
     integer `f − y` whenever y ≥ 1, so any monotone rounding of it is at least `f − y`; at y = 0 it is f exactly. The
     debt is recovered from later captures and BNPL financings before any payout: `INV-MER-05` bounds a payout by the
     payable, so a payable below zero refuses every payout. It is counted by `finapp.ledger.negative.positions` and named
-    `BNPL_REFUND` in the drill-down. **`INV-MER-07` is amended explicitly**, effective when `P12-TSK-021` lands:
+    `BNPL_REFUND` in the drill-down. **`INV-MER-07` is amended explicitly**, effective when `P12-TSK-021` lands
+    *(in force since `P12-TSK-021`, 2026-10-19 — recorded by `P12-DOC-001`, 2026-10-22)*:
 
     > *Amended by ADR-0105 (the Phase 11 → 12 transition), in force from `P12-TSK-021`: a BNPL refund after a payout is
     > the third, bounded source of merchant debt — it leaves the payable below zero by no more than that purchase's own
@@ -141,7 +162,10 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
     currency's `BNPL_MERCHANT_FEE_INCOME`, `BNPL_FEE_INCOME`, `BNPL_INTEREST_INCOME`, none taken before (P)) → the entry
     → refund and adjustment rows → closure → outbox `BnplRefundApplied` → audit `bnpl.RefundApplied`. No L0 and no L6:
     a refund lowers exposure and restores capital headroom at commit (ADR-0104). The refund row is born `APPLIED`;
-    a refusal writes no bnpl row.
+    a refusal writes no bnpl row. *(Corrected by `P12-DOC-001`, 2026-10-22: `bnpl_refund` has no status column — an
+    `INSERT`-only fact whose existence is the applied refund; the claim is the door's key under
+    `bnpl.refund:<actor type>:<id>` (`MERCHANT` or the operator's), and pay-in-N on an `ACTIVE` obligation behind its
+    accrual answers `BehindAccrual` with nothing written, the door running T-acc first and retrying.)*
 
 12. **Worked examples** (plan §12.6, §12.11's check). P4, G = 100.00 EUR, f = 4.00 (400 bps), four instalments of
     25.00 (A4), instalment 1 paid at purchase. F1 left the payable +96.00.
@@ -214,6 +238,8 @@ Negative:
   row (merchant debt with no reserve, Phase 13).
 - Interest accrued before a partial PN refund stays owed (A11) — recorded for review with the other defaults.
 - Every refund posts to the currency's `BNPL_MERCHANT_FEE_INCOME` row at L8 (ADR-0104 Decision 9, measured in the storm).
+  *(As built: measured by `P12-TST-001` — 12 waits on the row on the final run, purchases and refunds together;
+  recorded by `P12-DOC-001`, 2026-10-22.)*
 
 Operational impact: `finapp.bnpl.refund{kind,outcome}`; the negative-position gauge; the audited refunds report.
 Security impact: the BNPL refund scope on merchant keys; tenant isolation negatives; the operator door reasoned and
@@ -248,5 +274,9 @@ only other movements are point 5's and 6's releases), `INV-BNPL-07` (Σ refunds 
 - `P12-TSK-016` — the drill-down's `BNPL_REFUND` kind and `INV-MER-02`'s equation with the BNPL terms.
 - To settle in `P12-TSK-021`'s design: the operator door's route and permission; whether `AccountClosing`'s
   pending-credits port refuses closing a wallet while a BNPL obligation is `ACTIVE`.
-- **Acceptance.** `Proposed` at the Phase 11 → 12 transition (2026-10-16); read against the code and accepted by the
-  Phase 12 exit review (`P12-DOC-001`).
+  - *Settled by `P12-TSK-021` (recorded by `P12-DOC-001`, 2026-10-22):* the route and permission as decision 9's
+    as-built note; the pending-credits port **not built** — a wallet may close while an obligation is `ACTIVE`, the
+    excess then held as credit (decision 2.2's note) — recorded for the owner.
+- **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
+  (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

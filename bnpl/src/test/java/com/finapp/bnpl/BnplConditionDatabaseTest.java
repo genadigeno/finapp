@@ -49,8 +49,9 @@ class BnplConditionDatabaseTest {
         world.serviceOn(last, bought);
         assertThat(scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'")).isEqualTo("CLOSED");
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event e JOIN bnpl.bnpl_obligation_closure c ON"
-                + " c.obligation_id = e.obligation_id WHERE e.obligation_id = '" + bought.id() + "' AND e.created_at >"
-                + " c.created_at")).as("nothing after the closure").isZero();
+                + " c.obligation_id = e.obligation_id WHERE e.obligation_id = '" + bought.id() + "' AND e.recorded_order >"
+                + " c.recorded_order")).as("nothing after the closure, in the record's order (V017) - never a clock").isZero();
+        assertRecordOrdered(bought);
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(last.plusDays(1)))) {
             refused(app, "INSERT INTO bnpl.bnpl_condition_event (id, obligation_id, business_date, kind, days_past_due,"
                     + " bucket, previous_bucket, defaulted, agreement_id, agreement_version, created_at, correlation_id)"
@@ -80,8 +81,9 @@ class BnplConditionDatabaseTest {
         assertThat(scalar("SELECT status || ':' || closure_reason FROM bnpl.bnpl_obligation WHERE id = '" + bought.id()
                 + "'")).isEqualTo("CLOSED:PAID_OFF_EARLY");
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event e JOIN bnpl.bnpl_obligation_closure c ON"
-                + " c.obligation_id = e.obligation_id WHERE e.obligation_id = '" + bought.id() + "' AND e.created_at >"
-                + " c.created_at")).as("nothing after the closure").isZero();
+                + " c.obligation_id = e.obligation_id WHERE e.obligation_id = '" + bought.id() + "' AND e.recorded_order >"
+                + " c.recorded_order")).as("nothing after the closure, in the record's order (V017) - never a clock").isZero();
+        assertRecordOrdered(bought);
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + bought.id() + "'"))
                 .isEqualTo(1);
         for (com.finapp.ledger.AccountPurpose purpose : BnplAccounts.purposes()) {
@@ -129,6 +131,79 @@ class BnplConditionDatabaseTest {
         assertThat(scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'")).isEqualTo("CLOSED");
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event WHERE obligation_id = '" + bought.id() + "'"))
                 .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("default posts nothing and accelerates nothing, and a real cure clears it once (the review's finding: the"
+            + " pay-in-4 case above cures only by closing): a pay-in-6 obligation, instalment 1 unpaid 90 days - the"
+            + " default step adds no ledger line or key beyond a billing due that day, no schedule version and bills nothing"
+            + " early; the past-due amount repaid while ACTIVE, DPD back to 0 - exactly one bnpl.BnplDefaultCleared, the"
+            + " obligation still ACTIVE")
+    void defaultPostsNothingAndACureWhileActiveClearsItOnce() throws SQLException {
+        BnplConditionDatabaseWorld world = new BnplConditionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.payInN(BnplPlan.PAY_IN_6_MONTHS);
+        List<LocalDate> dues = bought.schedule().instalments().stream()
+                .map(BnplPurchaseStore.StoredInstalment::dueDate).toList();
+        LocalDate defaultDay = bought.due(1).plusDays(90);
+        // Every instalment due before the default day billed on its due date, its period accrued first (T-acc, then T-svc).
+        for (LocalDate due : dues) {
+            if (due.isBefore(defaultDay)) {
+                world.catchUpOn(due, bought);
+                world.serviceOn(due, bought);
+            }
+        }
+        world.catchUpOn(defaultDay, bought);
+        String billings = "SELECT count(*) FROM bnpl.bnpl_billing WHERE obligation_id = '" + bought.id() + "'";
+        long billedBefore = count(billings);
+        List<String> keysBefore = world.book.keys();
+        int linesBefore;
+        synchronized (world.book) {
+            linesBefore = world.fakes.book.lines.size();
+        }
+
+        world.serviceOn(defaultDay, bought);
+
+        assertThat(history(bought)).contains(defaultDay + ":DEFAULT:90:B4_90_PLUS:true:-")
+                .anyMatch(row -> row.startsWith(defaultDay + ":DELINQUENCY:90:B4_90_PLUS:true:"));
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = '" + bought.id()
+                + "' AND event_type = '" + BnplConditions.DEFAULTED_EVENT + "'")).isEqualTo(1);
+        List<String> keysAfter = world.book.keys();
+        assertThat(keysAfter.subList(keysBefore.size(), keysAfter.size())).as("the default step posts nothing of its own")
+                .allMatch(key -> key.startsWith(BnplServicing.BILLING_KEY_PREFIX));
+        long dueThatDay = dues.stream().filter(defaultDay::equals).count();
+        assertThat(count(billings)).as("nothing accelerated: only an instalment due that day is billed")
+                .isEqualTo(billedBefore + dueThatDay);
+        if (dueThatDay == 0) {
+            synchronized (world.book) {
+                assertThat(world.fakes.book.lines).as("no ledger line at all").hasSize(linesBefore);
+            }
+        }
+        assertThat(scalar("SELECT max(schedule_version)::text FROM bnpl.bnpl_schedule WHERE obligation_id = '"
+                + bought.id() + "'")).as("no new schedule version").isEqualTo("1");
+        assertThat(scalar("SELECT max(version)::text FROM bnpl.bnpl_agreement WHERE obligation_id = '" + bought.id()
+                + "'")).as("no new agreement version").isEqualTo("1");
+
+        // The cure: the whole past-due amount repaid the next day, the obligation still owing unbilled instalments.
+        LocalDate cure = defaultDay.plusDays(1);
+        world.catchUpOn(cure, bought);
+        long owed = world.balance(bought, com.finapp.ledger.AccountPurpose.BNPL_PRINCIPAL_DUE).minorUnits()
+                + world.balance(bought, com.finapp.ledger.AccountPurpose.BNPL_INTEREST_DUE).minorUnits()
+                + world.balance(bought, com.finapp.ledger.AccountPurpose.BNPL_FEES_DUE).minorUnits();
+        world.repayOn(cure, bought, "cure", owed);
+        assertThat(scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'"))
+                .as("cured, not closed").isEqualTo("ACTIVE");
+        world.serviceOn(cure, bought);
+        world.serviceOn(cure.plusDays(1), bought);
+        assertThat(scalar("SELECT bnpl.days_past_due('" + bought.id() + "', DATE '" + cure + "')::text")).isEqualTo("0");
+        assertThat(history(bought)).contains(cure + ":DELINQUENCY:0:CURRENT:false:B4_90_PLUS",
+                cure + ":DEFAULT:0:CURRENT:false:-");
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event WHERE obligation_id = '" + bought.id()
+                + "' AND kind = 'DEFAULT' AND NOT defaulted")).as("cleared once").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = '" + bought.id()
+                + "' AND event_type = '" + BnplConditions.DEFAULT_CLEARED_EVENT + "'")).as("one BnplDefaultCleared")
+                .isEqualTo(1);
+        assertThat(scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'"))
+                .isEqualTo("ACTIVE");
     }
 
     @Test
@@ -243,6 +318,17 @@ class BnplConditionDatabaseTest {
     }
 
     // ------------------------------------------------------------------ plumbing
+
+    /**
+     * The "after the closure" comparison is not vacuous: the closure and every condition row of the obligation carry the
+     * record's order (bnpl V017), so a NULL never silently compares false.
+     */
+    private static void assertRecordOrdered(BnplConditionDatabaseWorld.Purchased bought) throws SQLException {
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_obligation_closure WHERE obligation_id = '" + bought.id()
+                + "' AND recorded_order IS NOT NULL")).as("the closure, ordered").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event WHERE obligation_id = '" + bought.id()
+                + "' AND recorded_order IS NULL")).as("every condition row, ordered").isZero();
+    }
 
     private static List<String> history(BnplConditionDatabaseWorld.Purchased bought) throws SQLException {
         String rows = scalar("SELECT string_agg(business_date || ':' || kind || ':' || days_past_due || ':' || bucket"

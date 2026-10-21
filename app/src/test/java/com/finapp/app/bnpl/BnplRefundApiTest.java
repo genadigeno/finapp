@@ -16,11 +16,8 @@ import com.finapp.lending.LoanWallets;
 import com.finapp.merchant.BnplEnablements;
 import com.finapp.merchant.BnplPricing;
 import com.finapp.merchant.FeeSchedules;
-import com.finapp.platform.testing.database.DatabaseRoles;
 import java.net.http.HttpResponse;
 import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -192,55 +189,86 @@ class BnplRefundApiTest {
     }
 
     @Test
-    @DisplayName("a refund racing a wallet-paid capture for the same customer at the same merchant never deadlocks: (P)"
-            + " takes the payable and the wallet in UUID.compareTo order, payments' lockPairInFixedOrder - both id orders"
-            + " observed, no 40P01")
+    @DisplayName("a refund racing a REAL wallet-paid capture and a REAL payments refund for the same customer at the same"
+            + " merchant never deadlocks: (P) takes the payable and the wallet in UUID.compareTo order, payments'"
+            + " lockPairInFixedOrder - counted rounds in BOTH UUID orders of the pair, every BNPL refund 201, every"
+            + " capture COMPLETED, every payments refund 201, no 40P01 and no 5xx")
     void aRefundRacingAWalletPaidCaptureNeverDeadlocks() throws Exception {
+        CreditFixtures.Customer customer = world.customers.consentingCustomer();
+        // UUIDv7 by creation time: a merchant opened before the wallet sorts its payable first, one after it last.
+        BnplApplicationClient.Merchant before = world.merchant();
+        UUID wallet = world.walletOf(customer.party()).value();
+        BnplApplicationClient.Merchant after = world.merchant();
+        assertThat(BnplPurchaseWorld.payableOf(before).compareTo(wallet)).as("the payable sorts first").isNegative();
+        assertThat(BnplPurchaseWorld.payableOf(after).compareTo(wallet)).as("the wallet sorts first").isPositive();
+        world.topUpWallet(customer.party(), eur(100_000_00L));
+        String operator = world.client.operatorSession(authorization, RoleName.LEDGER_OPERATOR);
         int[] orders = new int[2];
-        for (int round = 0; round < 8 && (orders[0] == 0 || orders[1] == 0); round++) {
-            Bought bought = bought();
-            String scoped = scopedKey(bought.merchant());
-            UUID payable = ledgerAccount("SELECT a.id FROM ledger.ledger_account a WHERE a.purpose = 'MERCHANT_PAYABLE'"
-                    + " AND a.owner_ref = ?::uuid", bought.merchant().id());
-            // The customer's wallet through accounts' own door: customer_account.customer_id is the customer's id,
-            // never the party's - a lookup by party found no row (P12-TSK-028).
-            UUID wallet = world.walletOf(bought.party()).value();
-            orders[payable.compareTo(wallet) < 0 ? 0 : 1]++;
-            UUID first = payable.compareTo(wallet) < 0 ? payable : wallet;
-            UUID second = first.equals(payable) ? wallet : payable;
-            ExecutorService pool = Executors.newFixedThreadPool(2);
-            CountDownLatch start = new CountDownLatch(1);
-            try {
-                Future<Integer> refund = pool.submit((Callable<Integer>) () -> {
-                    start.await();
-                    return world.client.post(PURCHASES + bought.purchase() + "/refunds",
-                            "{\"amount\":\"600.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", scoped,
-                            BnplApplicationClient.key()).statusCode();
-                });
-                Future<String> capture = pool.submit((Callable<String>) () -> {
-                    start.await();
-                    try (Connection racer = DatabaseRoles.application()) {
-                        racer.setAutoCommit(false);
-                        try (Statement lock = racer.createStatement()) {
-                            // payments' book rail: the pair in UUID.compareTo order, then a pause inside the lock.
-                            lock.execute("SELECT 1 FROM ledger.ledger_account WHERE id = '" + first + "' FOR UPDATE");
-                            lock.execute("SELECT pg_sleep(0.05)");
-                            lock.execute("SELECT 1 FROM ledger.ledger_account WHERE id = '" + second + "' FOR UPDATE");
-                        }
-                        racer.rollback();
-                        return "ok";
-                    } catch (SQLException failure) {
-                        return failure.getSQLState();
-                    }
-                });
-                start.countDown();
-                assertThat(capture.get(60, TimeUnit.SECONDS)).as("never 40P01").isEqualTo("ok");
-                assertThat(refund.get(60, TimeUnit.SECONDS)).isEqualTo(201);
-            } finally {
-                pool.shutdownNow();
+        for (BnplApplicationClient.Merchant merchant : List.of(before, after)) {
+            String scoped = scopedKey(merchant);
+            UUID payable = BnplPurchaseWorld.payableOf(merchant);
+            for (int round = 0; round < 3; round++) {
+                BnplPurchaseWorld.Offer offer = world.offered(customer, merchant, GROSS, BnplApplicationClient::payIn4);
+                HttpResponse<String> accepted = world.accept(customer.token(), offer, BnplApplicationClient.key());
+                assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+                String purchase = BnplApplicationClient.field(accepted.body(), "purchaseId");
+                // A wallet payment already captured at the merchant, for payments' refund to take back in the race.
+                BnplApplicationClient.Opened earlier = world.client.openSession(merchant, 10_00);
+                HttpResponse<String> paid = confirmFromWallet(customer.token(), earlier.token());
+                assertThat(BnplApplicationClient.field(paid.body(), "status")).as(paid.body()).isEqualTo("COMPLETED");
+                String intent = BnplApplicationClient.scalar("SELECT payment_intent_ref::text FROM"
+                        + " checkout.checkout_session WHERE id = ?", earlier.id());
+                BnplApplicationClient.Opened racing = world.client.openSession(merchant, 10_00);
+
+                List<HttpResponse<String>> answers = atOnce(List.of(
+                        () -> world.client.post(PURCHASES + purchase + "/refunds",
+                                "{\"amount\":\"600.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", scoped,
+                                BnplApplicationClient.key()),
+                        () -> confirmFromWallet(customer.token(), racing.token()),
+                        () -> world.client.post("/v1/payments/" + intent + "/refund",
+                                "{\"amount\":\"10.00\",\"currency\":\"EUR\",\"reason\":\"goods returned\"}", operator,
+                                BnplApplicationClient.key())));
+                String context = (payable.compareTo(wallet) < 0 ? "payable first" : "wallet first") + ", round " + round;
+                assertThat(answers).as(context).noneMatch(answer -> answer.body().contains("40P01"))
+                        .allSatisfy(answer -> assertThat(answer.statusCode()).as(answer.body()).isLessThan(500));
+                assertThat(answers.get(0).statusCode()).as(context + ": " + answers.get(0).body()).isEqualTo(201);
+                assertThat(BnplApplicationClient.field(answers.get(1).body(), "status")).as(context + ": "
+                        + answers.get(1).body()).isEqualTo("COMPLETED");
+                assertThat(answers.get(2).statusCode()).as(context + ": " + answers.get(2).body()).isEqualTo(201);
+                assertThat(BnplApplicationClient.field(answers.get(2).body(), "status")).as(context + ": "
+                        + answers.get(2).body()).isEqualTo("COMPLETED");
+                orders[payable.compareTo(wallet) < 0 ? 0 : 1]++;
             }
         }
-        assertThat(orders[0] + orders[1]).isPositive();
+        assertThat(orders).as("rounds in both UUID orders of the pair: [payable first, wallet first]")
+                .containsExactly(3, 3);
+    }
+
+    private HttpResponse<String> confirmFromWallet(String token, String sessionToken) throws Exception {
+        return world.client.post("/v1/checkout/sessions/confirmation", "{\"sessionToken\":\"" + sessionToken
+                + "\",\"instrument\":\"WALLET\"}", token, null);
+    }
+
+    private static <T> List<T> atOnce(List<Callable<T>> tasks) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(tasks.size());
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<T>> futures = new java.util.ArrayList<>();
+            for (Callable<T> task : tasks) {
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    return task.call();
+                }));
+            }
+            start.countDown();
+            List<T> results = new java.util.ArrayList<>();
+            for (Future<T> future : futures) {
+                results.add(future.get(120, TimeUnit.SECONDS));
+            }
+            return results;
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -271,16 +299,5 @@ class BnplRefundApiTest {
     private static long refunds(String purchase) throws Exception {
         return BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
                 purchase);
-    }
-
-    private static UUID ledgerAccount(String sql, String parameter) throws Exception {
-        try (Connection migrator = DatabaseRoles.migrator();
-                java.sql.PreparedStatement select = migrator.prepareStatement(sql)) {
-            select.setString(1, parameter);
-            try (java.sql.ResultSet row = select.executeQuery()) {
-                assertThat(row.next()).as("the ledger account exists: %s", parameter).isTrue();
-                return row.getObject(1, UUID.class);
-            }
-        }
     }
 }

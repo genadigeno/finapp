@@ -1,6 +1,6 @@
 # ADR-0104 — BNPL funding from lending capital: the shared headroom and credit exposure version 3
 
-Status: Proposed
+Status: Accepted (2026-10-22, `P12-DOC-001` — read against the code and corrected first)
 Date: 2026-10-16
 Phase: 12
 Context: BNPL · Lending · Credit · Ledger · Merchant
@@ -88,7 +88,10 @@ Rests on `PHASE_12_PLAN.md` §1, §2.2 (B2), §3.2, §3.3, §6 (`INV-BNPL-02`, `
      the rows born → (P) → L8 → F1 (plan §7.1, §7.2). L6 sits after every bnpl row and before any wallet or payable row.
    - **T-rev** (a four-eyes repayment reversal re-instating principal, `P12-TSK-024`): L0 → B4 → B6 proposal →
      **L6** → (P) → L8; a shortfall refuses the approval with the proposal staying `PROPOSED` (ADR-0096's Follow-up
-     rule for lending's reversal, applied unchanged).
+     rule for lending's reversal, applied unchanged). *(As built (`P12-TSK-024`; recorded by `P12-DOC-001`,
+     2026-10-22): L0 is taken always, first; L6 only when the reversed repayment paid principal — a reversal
+     re-instating interest or fees alone raises no principal and judges no headroom — and the shortfall is
+     `422 bnpl.CapitalUnavailable`.)*
 
    Every other BNPL act lowers or reclassifies principal and takes no L6: a refund (T-ref), a repayment or collection,
    a payoff, a billing (principal → principal due, same sum), a dispute outcome (a refund, or an uphold that re-bills
@@ -126,6 +129,12 @@ Rests on `PHASE_12_PLAN.md` §1, §2.2 (B2), §3.2, §3.3, §6 (`INV-BNPL-02`, `
                          + Σ DR−CR(BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE) over the party's obligations in c not CLOSED
    ```
 
+   *(Corrected by `P12-DOC-001`, 2026-10-22: as built (`app`'s `BnplCreditExposure`, `P12-TSK-012`) the sum runs
+   over **every** obligation of the party in c whatever its status — a `CLOSED` obligation's principal is zero by the
+   closure rule, so the figure at rest is the same, and a defect leaving principal on a closed obligation is still
+   counted as exposure (lending's as-built choice); an obligation's principal below zero counts zero, never offsetting
+   another's.)*
+
    Principal only (lending A3: no interest, fees or credit balance); no committed term (Context 5). It is read in
    **one statement** over lending's definer view, bnpl's definer view (`bnpl V007`: obligation → party, currency,
    status, account ids; no money column, `INV-BNPL-01`) and the journal lines — the v2 precedent, one snapshot, credit
@@ -151,6 +160,11 @@ Rests on `PHASE_12_PLAN.md` §1, §2.2 (B2), §3.2, §3.3, §6 (`INV-BNPL-02`, `
    `P12-TST-001` **measures** lock waits and latency on the capital row and on `BNPL_MERCHANT_FEE_INCOME` under the
    storm's mixed lending and BNPL load — not only proves correctness — and records the figures against the two debt
    rows. Capital tranches and batched or per-obligation income recognition are Phase 16's, if the measurement demands.
+   *(As built (`P12-TST-001`, 2026-10-21; recorded by `P12-DOC-001`, 2026-10-22): measured — on the storm's final run
+   under mixed lending and BNPL load on two instances, `LENDING_CAPITAL` 65 waits, p95 142 ms; `BNPL_MERCHANT_FEE_INCOME`
+   12 waits, `BNPL_FEE_INCOME` and `BNPL_INTEREST_INCOME` 0; no deadlock (`BnplStormLocks.HotRows`). The figures are
+   recorded in `CURRENT_STATE.md`'s `P12-TST-001` entry, **not** against the two debt rows this decision names: the
+   capital row's debt row still reads "unmeasured", left for the review's record.)*
 
 ## Alternatives Considered
 
@@ -238,6 +252,8 @@ rule extended to `BNPL_AGREEMENT`), `INV-CRD-01`, `INV-CRD-09`, `INV-SET-06`, `I
   headroom ≥ the gross under L6 after the consumption (`422 bnpl.CapitalUnavailable`). The race against a LOAN acceptance
   for the last capital is `-005`'s `BnplCapitalDatabaseTest` (unchanged); `-013`'s suite races two BNPL acceptances for
   it, the L6 lock-wait asserted. Database suites written, owed a first run - the owner's instruction for the pair.)*
+  *(Run green in the owner-authorised Phase 12 database pass (`P12-TSK-027`, `-028`, 2026-10-20) and again in
+  `P12-TST-001`'s app selection — recorded by `P12-DOC-001`, 2026-10-22.)*
 - `P12-TSK-024` — T-rev's L6 re-check and its refusal leaving the proposal `PROPOSED`.
 - `P12-TST-001` — the capital proof and the census at every storm round with capital contested across lending and BNPL;
   the lock-wait measurement of Decision 9, recorded in `CURRENT_STATE.md` §Known Architectural Debt.
@@ -250,5 +266,6 @@ rule extended to `BNPL_AGREEMENT`), `INV-CRD-01`, `INV-CRD-09`, `INV-SET-06`, `I
   or 12 (`LOAN_WRITE_OFF_EXPENSE` and `BNPL_WRITE_OFF_EXPENSE` seeded, carrying no line), so no figure is wrong today;
   Phase 14's accounting design must charge the loss against capital (or subtract the write-off expense in the headroom)
   in the same commit. Recorded beside the write-off debt row in `CURRENT_STATE.md` §Known Architectural Debt.
-- **Acceptance.** `Proposed` at the Phase 11 → 12 transition (2026-10-16); read against the code and accepted by the
-  Phase 12 exit review (`P12-DOC-001`).
+- **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
+  (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.

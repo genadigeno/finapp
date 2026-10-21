@@ -373,6 +373,42 @@ class BnplRepaymentDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("Σ allocation = amount for every repayment, at commit - the deferred bnpl_repayment_is_allocated_whole"
+            + " trigger proven alone by a raw writer of each role: a repayment of 1.00 allocated 0.50 (its line well within"
+            + " instalment 2's billed principal, so the over-pay rank is not what refuses) is refused at commit")
+    void aRepaymentNotAllocatedWholeIsRefusedAtCommit() throws SQLException {
+        World world = new World();
+        Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate due = bought.purchaseDate().plusDays(14);
+        world.serviceOn(due, bought);
+        UUID billed = bought.schedule().instalments().get(1).id();
+        for (boolean asMigrator : List.of(true, false)) {
+            UUID raw = UUID.randomUUID();
+            Connection role = asMigrator ? DatabaseRoles.migrator() : DatabaseRoles.application();
+            try (Connection writer = BnplClockFrame.framed(role, world.frameOn(due));
+                    Statement insert = writer.createStatement()) {
+                insert.execute("INSERT INTO bnpl.bnpl_repayment (id, obligation_id, kind, request_key, currency, scale,"
+                        + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
+                        + " received_at) SELECT '" + raw + "', o.id, 'CUSTOMER', 'raw-half-" + asMigrator + "', 'EUR', 2,"
+                        + " 100, o.agreement_id, 1, 'ALLOCATION_ENGINE_V1', gen_random_uuid(), DATE '" + due + "',"
+                        + " clock_timestamp() FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'");
+                insert.execute("INSERT INTO bnpl.bnpl_repayment_allocation (id, repayment_id, sequence, target,"
+                        + " instalment_id, component, currency, scale, amount_minor) VALUES (gen_random_uuid(), '" + raw
+                        + "', 1, 'DUE_ITEM', '" + billed + "', 'PRINCIPAL', 'EUR', 2, 50)");
+                // Both statements were admitted: the row ranks passed, only the deferred rank is left to judge.
+                assertThatThrownBy(writer::commit).as(asMigrator ? "the migrator" : "the application role")
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("a BNPL repayment is allocated whole: its lines sum to its amount")
+                        .satisfies(refusal -> assertThat(((SQLException) refusal).getSQLState()).isEqualTo("P0001"))
+                        .hasMessageNotContaining("no billed component is ever paid beyond what it billed");
+            }
+            assertThat(count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE id = '" + raw + "'")).isZero();
+        }
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id()
+                + "' AND kind = 'CUSTOMER'")).as("nothing committed").isZero();
+    }
+
     // ------------------------------------------------------------------ the wallet, the floor, the lock
 
     @Test

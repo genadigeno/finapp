@@ -124,9 +124,15 @@ Pay-in-N
 BNPL Purchase
 Merchant Financing
 Merchant Discount
+BNPL Enablement
+BNPL Fee Pin
 Customer Repayment Obligation
 BNPL Schedule
 BNPL Instalment
+BNPL Interest Accrual
+BNPL Payoff
+BNPL Repayment Reversal
+BNPL Waiver
 BNPL Refund
 Refund Adjustment
 BNPL Dispute
@@ -261,7 +267,7 @@ renamed **BNPL Schedule** so that "plan" means only what the customer chooses. B
 lending terms (billing, accrual, repayment, allocation, Days Past Due, Delinquency, Default, Payoff, Waiver,
 Repayment Reversal) to the obligation and add none. Nothing of Phase 12 is built: each is the planned design,
 defined in the glossary's §7b with the same guard, and the machines are in
-[`BNPL_LIFECYCLES.md`](BNPL_LIFECYCLES.md).)*
+[`BNPL_LIFECYCLES.md`](BNPL_LIFECYCLES.md).)* *(The Phase 12 exit review, `P12-DOC-001`, 2026-10-22: Phase 12 is built — `P12-TSK-001`…`-028`, `P12-TST-001` and `-002`, bnpl `V001`…`V017` — and every BNPL entry was read against the code; every term above is built, so the transition's "Nothing of Phase 12 is built: each is the planned design" no longer holds and the glossary states each as built. Six terms were added, each built as its own table, which the glossary already defined and this list did not name — a disagreement `DomainGlossaryTest`'s union check refuses: BNPL Enablement and BNPL Fee Pin (`merchant` `V010`, `P12-TSK-006`) after Merchant Discount, and BNPL Interest Accrual (`bnpl` `V008`/`V009`), BNPL Payoff (`V014`), BNPL Repayment Reversal and BNPL Waiver (`V016`) after BNPL Instalment — so "BNPL's servicing facts re-apply the lending terms … and add none" held for billing, repayment, allocation, Days Past Due, Delinquency and Default only. No term was renamed.)*
 
 ---
 

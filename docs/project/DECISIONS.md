@@ -1061,12 +1061,17 @@ fee, no APR display (L8); credit's migrations continue at `V021`, `lending` owni
 origination only against the simulators until a real bureau is connected (L11); the ten mandatory
 test scenarios, each a named test in a task and in the storm (L12).
 
-### Buy now, pay later (Phase 12, `Proposed` at the Phase 11 → 12 transition)
-Planned by the Phase 11 → 12 transition (2026-10-16) in `PHASE_12_PLAN.md`, with the owner's decisions B1–B8; nothing
-of it is built. The phase's tasks are `P12-TSK-001`…`P12-TSK-026`, `P12-TST-001`, `P12-TST-002` and `P12-DOC-001`,
-whose review reads each ADR against the code. The invariants are `INV-BNPL-01`…`10` (ten new; the catalogue 142 → 152)
-and `INV-MER-07`'s amendment (proposed, effective when `P12-TSK-021` lands). The phase's ADRs are ADR-0101…ADR-0106; no
-ADR-0107 (B5). Phase 12 moves money; production originates nothing until a real bureau is connected (inherited).
+### Buy now, pay later (Phase 12, `Proposed` at the Phase 11 → 12 transition; `Accepted` at the Phase 12 review, `P12-DOC-001`, each read against the code with its corrected passages marked in place)
+Planned by the Phase 11 → 12 transition (2026-10-16) in `PHASE_12_PLAN.md`, with the owner's decisions B1–B8; built by
+`P12-TSK-001`…`P12-TSK-026`, the Phase 12 database pass's remediation items `P12-TSK-027` and `P12-TSK-028` (each
+added out of turn on the owner's instruction), `P12-TST-001` and `P12-TST-002`, and read against the
+code and accepted by the Phase 12 review (`P12-DOC-001`, 2026-10-22), which corrected every drifted passage in place
+with a dated note before accepting any, the `P11-DOC-001` precedent. *(This paragraph read "nothing of it is built. The
+phase's tasks are `P12-TSK-001`…`P12-TSK-026`, `P12-TST-001`, `P12-TST-002` and `P12-DOC-001`, whose review reads each
+ADR against the code" until that review.)* The invariants are `INV-BNPL-01`…`10` (ten new; the catalogue 142 → 152)
+and `INV-MER-07`'s amendment (in force since `P12-TSK-021`, 2026-10-19; *read "proposed, effective when `P12-TSK-021`
+lands" until `P12-DOC-001`*). The phase's ADRs are ADR-0101…ADR-0106; no ADR-0107 (B5). Phase 12 moves money;
+production originates nothing until a real bureau is connected (inherited).
 
 **BNPL is its own bounded context that owns the agreement, the purchase, the merchant financing and the customer's
 obligation, and none of the money — not a lending loan, not a payment rail.** `bnpl` holds every BNPL fact as a

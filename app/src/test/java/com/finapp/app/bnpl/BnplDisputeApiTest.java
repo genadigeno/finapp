@@ -194,6 +194,112 @@ class BnplDisputeApiTest {
                 bought.purchase())).isZero();
     }
 
+    @Test
+    @DisplayName("four eyes through the API (INV-AUD-04): above the threshold the answered dispute's resolution is a"
+            + " proposal; no session is 401 and a role without BNPL_DISPUTE_RESOLVE 403 on the approval and the rejection;"
+            + " the proposer's own approval is 403 bnpl.SelfApprovalRefused, recorded FAILED once against the proposal,"
+            + " the dispute unchanged; another operator's approval resolves it")
+    void aProposersOwnApprovalIs403AndRecordedFailed() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        assertThat(world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", CONTEST,
+                bought.merchant().apiKey(), BnplApplicationClient.key()).statusCode()).isEqualTo(200);
+        String proposer = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        String resolutions = "/v1/operator/bnpl-disputes/" + dispute + "/resolution";
+        HttpResponse<String> proposed = world.client.post(resolutions, "{\"outcome\":\"REFUND\",\"reason\":\"the"
+                + " parcel never arrived\"}", proposer, BnplApplicationClient.key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(200);
+        assertThat(proposed.body()).contains("\"status\":\"MERCHANT_RESPONDED\"", "\"proposalStatus\":\"PROPOSED\"");
+        String proposal = BnplApplicationClient.field(proposed.body(), "proposalId");
+        String decision = "{\"proposalId\":\"" + proposal + "\",\"reason\":\"checked\"}";
+
+        String outsider = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
+        for (String door : List.of(resolutions + "/approval", resolutions + "/rejection")) {
+            assertThat(world.client.post(door, decision, null, BnplApplicationClient.key()).statusCode())
+                    .as("no session at " + door).isEqualTo(401);
+            assertThat(world.client.post(door, decision, outsider, BnplApplicationClient.key()).statusCode())
+                    .as("no BNPL_DISPUTE_RESOLVE at " + door).isEqualTo(403);
+        }
+
+        HttpResponse<String> own = world.client.post(resolutions + "/approval", decision, proposer,
+                BnplApplicationClient.key());
+        assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
+        assertThat(own.body()).contains("bnpl.SelfApprovalRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfApprovalRefused' AND outcome = 'FAILED' AND target_id = ?", proposal)).isEqualTo(1);
+        assertThat(BnplApplicationClient.scalar("SELECT d.status || '|' || p.status || '|' || (p.decided_by IS NULL)"
+                + " FROM bnpl.bnpl_dispute d JOIN bnpl.bnpl_dispute_proposal p ON p.dispute_id = d.id WHERE p.id ="
+                + " ?::uuid", proposal)).as("the dispute and its proposal unchanged")
+                .isEqualTo("MERCHANT_RESPONDED|PROPOSED|true");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+
+        String approver = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> approved = world.client.post(resolutions + "/approval", decision, approver,
+                BnplApplicationClient.key());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(approved.body()).contains("\"status\":\"RESOLVED_REFUND\"", "\"proposalStatus\":\"APPROVED\"");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid AND"
+                + " door = 'DISPUTE'", bought.purchase())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("self-dealing through the API: an operator whose identity is the dispute's own party is 403"
+            + " bnpl.SelfDealingRefused at the resolution, the approval and the rejection - each recorded FAILED against"
+            + " the dispute, nothing written: no proposal of theirs, the other operator's proposal undecided, no refund")
+    void anInsidersResolutionIsSelfDealing() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        assertThat(world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", CONTEST,
+                bought.merchant().apiKey(), BnplApplicationClient.key()).statusCode()).isEqualTo(200);
+        String insider = world.client.sessionWithRole(authorization, bought.owner().login(),
+                RoleName.BNPL_SERVICING_AGENT);
+        String resolutions = "/v1/operator/bnpl-disputes/" + dispute + "/resolution";
+        HttpResponse<String> resolved = world.client.post(resolutions, "{\"outcome\":\"REFUND\",\"reason\":\"mine\"}",
+                insider, BnplApplicationClient.key());
+        assertThat(resolved.statusCode()).as(resolved.body()).isEqualTo(403);
+        assertThat(resolved.body()).contains("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_dispute_proposal WHERE dispute_id ="
+                + " ?::uuid", dispute)).as("the insider proposed nothing").isZero();
+
+        String agent = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        String proposal = BnplApplicationClient.field(world.client.post(resolutions, "{\"outcome\":\"REFUND\","
+                + "\"reason\":\"the evidence holds\"}", agent, BnplApplicationClient.key()).body(), "proposalId");
+        String decision = "{\"proposalId\":\"" + proposal + "\",\"reason\":\"mine\"}";
+        for (String door : List.of(resolutions + "/approval", resolutions + "/rejection")) {
+            HttpResponse<String> refused = world.client.post(door, decision, insider, BnplApplicationClient.key());
+            assertThat(refused.statusCode()).as(door + " " + refused.body()).isEqualTo(403);
+            assertThat(refused.body()).contains("bnpl.SelfDealingRefused");
+        }
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ?", dispute)).isEqualTo(3);
+        assertThat(BnplApplicationClient.scalar("SELECT d.status || '|' || p.status || '|' || (p.decided_by IS NULL)"
+                + " FROM bnpl.bnpl_dispute d JOIN bnpl.bnpl_dispute_proposal p ON p.dispute_id = d.id WHERE p.id ="
+                + " ?::uuid", proposal)).isEqualTo("MERCHANT_RESPONDED|PROPOSED|true");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_dispute_proposal WHERE dispute_id ="
+                + " ?::uuid", dispute)).isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+    }
+
+    @Test
+    @DisplayName("self-dealing through the API at the operator refund door: an operator holding PAYMENT_REFUND whose"
+            + " identity is the purchase's own party is 403 bnpl.SelfDealingRefused, recorded FAILED once against the"
+            + " purchase, no refund written")
+    void anInsidersOperatorRefundIsSelfDealing() throws Exception {
+        Bought bought = bought();
+        String insider = world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.LEDGER_OPERATOR);
+        HttpResponse<String> refused = world.client.post("/v1/operator/bnpl-purchases/" + bought.purchase()
+                + "/refunds", "{\"amount\":\"100.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", insider,
+                BnplApplicationClient.key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ?", bought.purchase())).isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** A pay-in-4 purchase accepted by a fresh customer at a fresh merchant. */

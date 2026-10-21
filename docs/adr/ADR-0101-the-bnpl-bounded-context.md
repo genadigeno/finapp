@@ -1,6 +1,6 @@
 # ADR-0101 — The BNPL bounded context: `bnpl` owns the agreement, purchase, financing and servicing facts and none of the money; lending's pure engines shared through `creditmath`, lending's `loan` not composed
 
-Status: Proposed
+Status: Accepted (2026-10-22, `P12-DOC-001` — read against the code and corrected first)
 Date: 2026-10-16
 Phase: 12
 Context: BNPL · Lending · Credit · Merchant · Checkout · Payments · Ledger · Platform
@@ -112,14 +112,27 @@ money, and none of the merchant) and ADR-0091 (decision consumption through cred
    |---|---|---|
    | `BnplCreditDecisions` | `open`, `cancel`, `decisionFor`, `consume(uow, decisionId, ConsumerRef(BNPL_AGREEMENT, agreementId))`, `lockExposure` (L0) | application, offer, acceptance, a principal-re-instating reversal |
    | `BnplPartyStanding` | `CreditPartyStanding` | application, acceptance |
-   | `BnplWallets` | the customer's `CUSTOMER_WALLET` — existing only for collection; resolved or opened for a refund excess | acceptance (P4 instalment 1), repayment, collection, refund, payoff |
-   | `BnplCheckoutSessions` | read the session; in T-pur lock it `FOR UPDATE` and complete it by financing (`app`'s `CheckoutSessions.completedByFinancing`) | application, offer, acceptance |
-   | `BnplMerchants` | standing (`ACTIVE`, BNPL-enabled; `merchant` read `FOR SHARE` as `requireTrading` does), the `MERCHANT_PAYABLE` account, the BNPL fee schedule version to pin, the fee split and the returned fee through `FeeCalculation` | application, acceptance, refund |
-   | `BnplCapital` | `LendingCapitalHeadroom.underLock(uow, currency)` (L6), extended to the BNPL purposes | acceptance, reversal (ADR-0104) |
-   | `BnplUnitOfWork` | the one-transaction seam | every act |
+   | `BnplWallets` | `existingWallet(uow, party, currency)` — the customer's existing `CUSTOMER_WALLET` ledger account in exactly that currency, never opened (`app`'s `AccountsBnplWallets`) | acceptance (P4 instalment 1), repayment, collection, closure, refund, payoff, waiver |
+   | `BnplCheckoutSessions` | `read` (by the wrapped token) and `byRef`, unlocked; `lockForPurchase` (B3, judged at once); `completeByFinancing` (`app`'s `CheckoutBnplSessions` over `CheckoutSessions.lockForFinancing` and `completedByFinancing`) | application, offer, acceptance |
+   | `BnplMerchants` | `standing` (`ACTIVE`, BNPL-enabled; `merchant` read `FOR SHARE` as `requireTrading` does), `coversFee`, `payableAccount` (the `MERCHANT_PAYABLE` account), `pinFee` (the BNPL fee schedule version pinned and the split, `MerchantFeeSplit`) and `returnedFee` (`app`'s `MerchantBnplMerchants` over merchant's `BnplPricing`) | application, acceptance, refund |
+   | `BnplCapital` | `underLock(uow, currency)` → `BnplHeadroom` (L6), over `LendingCapitalHeadroom.underLock`, extended to the BNPL purposes (`app`'s `LendingBnplCapital`) | acceptance, reversal (ADR-0104) |
+   | `BnplProductBounds` | credit's `CreditProduct` amount and term bounds (`app`'s `CreditBnplProductBounds`) | the terms proposal's amortisation judgement (ADR-0102) |
+   | `BnplActingParty` | identity's party of an acting person (`app`'s `IdentityActingParty`, shared with lending and credit) | the operator refund door's self-dealing refusal (ADR-0105) |
+   | `BnplProofReads` | the merchant payable leg, the trial balance, the capital and exposure censuses (`app`'s `LedgerBnplProofReads`) | the three-way proof (ADR-0103) |
 
-   No score, attribute, threshold or policy figure crosses into `bnpl`; no customer credit datum
-   crosses to a merchant (only `ELIGIBLE`, `NOT_ELIGIBLE`, `PENDING`).
+   Plus the one-transaction seam, which is `app`'s `BnplTransactions` (`inTransaction`, and
+   `inSnapshot` for the proofs): every bnpl act takes the caller's `Connection` as its unit of work, so
+   no `BnplUnitOfWork` type was declared. No score, attribute, threshold or policy figure crosses into
+   `bnpl`; no customer credit datum crosses to a merchant (only `ELIGIBLE`, `NOT_ELIGIBLE`, `PENDING`).
+   *(Corrected by `P12-DOC-001`, 2026-10-22: this table read "`BnplWallets` | … existing only for
+   collection; resolved or opened for a refund excess", "`BnplCheckoutSessions` | read the session; in
+   T-pur lock it `FOR UPDATE` and complete it …", the merchant and capital rows without their methods,
+   and "`BnplUnitOfWork` | the one-transaction seam | every act". As built the wallet is never opened —
+   a refund's excess with no existing wallet stays as the obligation's credit balance while it is
+   `ACTIVE` and is refused on a `CLOSED` one (ADR-0105); no `BnplUnitOfWork` port exists; and the last
+   three rows were built (`P12-TSK-004`, `-021`, `-025`) without being listed. `BnplCreditDecisions` also
+   carries `reasonTexts` (a decided request's customer-readable reasons) and `requestOf` (the decision
+   event's hint resolved to its request) — neither a score, attribute or threshold.)*
 
 8. **The neighbours' changes are theirs, each by a named task.** Credit `V022` (`P12-TSK-001`:
    products, the term shape, `ConsumerKind.BNPL_AGREEMENT`); identity `V022` (`-002`: permissions and
@@ -128,6 +141,9 @@ money, and none of the merchant) and ADR-0091 (decision consumption through cred
    ledger-purpose read, so lending learns nothing of `bnpl`); merchant `V010` (`-006`: enablement, the
    BNPL fee schedule, `bnpl_fee_pin`); checkout `V004` (`-007`: the edge `OPEN → COMPLETED` by
    financing, `financed_by_ref` set once); `app`'s `PlatformCreditExposure` v3 (`-012`).
+   *(As built (`P12-DOC-001`, 2026-10-22): a sixth neighbour migration, merchant `V011` (`P12-TSK-021`:
+   the merchant API key's `BNPL_REFUND` scope, ADR-0105), was added by the refund task; exposure v3 is
+   `app`'s `BnplCreditExposure`, credit's `PlatformCreditExposure` read over `bnpl V007`'s definer view.)*
 
 9. **The purchase is one transaction.** Acceptance, consumption, capital commitment, agreement v1,
    purchase, financing, obligation, accounts, the financing entry, (P4) instalment 1's collection and
@@ -152,6 +168,18 @@ money, and none of the merchant) and ADR-0091 (decision consumption through cred
     `BNPL_INTEREST_INCOME` rows inside that one sorted call. Then only inserts. B5 precedes B4: a
     refund and a dispute lock the purchase, then its obligation; servicing takes only B4, so no writer
     holding B4 waits on B5.
+    *(As built (`P12-DOC-001`, 2026-10-22), three refinements, none changing the order: **B6** is taken
+    `FOR UPDATE` on the dispute (T-dsp), the dispute proposal and the repayment-reversal proposal
+    (T-rev); the waiver's proposal is `INSERT`-only and read under B4, its decision a born-once row; the
+    payoff **quote** is never locked — it is immutable and read plainly, the execution's uniques beneath
+    B4 arbitrating (T-pay) — so "(B6) … quote" above is not taken. **B4** is taken in a statement of its
+    own and the agreement version in force read by the next one (`P12-TST-001`, 2026-10-21: a taker that
+    locked and read in one statement, queued behind a refund writing agreement version n+1, read version n
+    and was refused as a `500`). **The obligation's own projection rows** — written only by holders of its
+    B4 (T-pur creating them, T-acc, T-svc, T-rep, T-ref, T-pay) — are taken by T-svc's collection and
+    closure and by T-pay before (P), after B4: a step holding them while it waits on a wallet waits on
+    nothing that can wait on it; every currency-wide income row stays inside the L8 call after (P).
+    `DISTRIBUTED_EXECUTION.md` §3's lock-order row records all three.)*
 
 11. **No shared income row before (P).** Pay-in-N accrual is its own transaction, **T-acc** — B4,
     the accrual postings, commit, no wallet. Any act needing the record caught up (servicing,
@@ -258,8 +286,12 @@ Positive:
 Negative:
 - Lending's patterns are re-applied in a second schema — real work, each pattern already documented
   with its races and probes; the machines are smaller (no disbursement, no payout, no line).
-- Six ports and the unit of work in `app`; five neighbour migrations (credit, identity, ledger,
-  merchant, checkout), lending's Java and `app`'s exposure v3 make the first two milestones wide.
+- Nine ports and the unit of work in `app`; six neighbour migrations (credit `V022`, identity
+  `V022`, ledger `V027`, merchant `V010` and `V011`, checkout `V004`), lending's Java and `app`'s
+  exposure v3 make the phase wide. *(Corrected by `P12-DOC-001`, 2026-10-22: this read "Six ports and
+  the unit of work in `app`; five neighbour migrations (credit, identity, ledger, merchant, checkout) …
+  make the first two milestones wide" — decision 7's three unlisted ports and merchant `V011`, built by
+  `P12-TSK-021`, were not counted.)*
 - The extraction touches lending after its exit gate; only a byte-identical replay justifies it.
 - Production originates nothing in Phase 12 — accepted (decision 14).
 
@@ -283,7 +315,10 @@ balance of its own and every money effect is one journal entry in its own transa
 - Built by `P12-TSK-002` (the module, `bnpl V001`'s floor, the isolation tests, identity `V022`, the
   `creditmath` extraction with the battery and replay re-run), the ports landing in the tasks that
   first use them (`-005` `BnplCapital`, `-006` `BnplMerchants`, `-007` `BnplCheckoutSessions`, `-010`
-  `BnplCreditDecisions` and `BnplPartyStanding`, `-018` `BnplWallets`). `BOUNDED_CONTEXTS.md` and
+  `BnplCreditDecisions` and `BnplPartyStanding`, `-018` `BnplWallets`) *(corrected by `P12-DOC-001`,
+  2026-10-22: `BnplWallets` landed with `-013`, the acceptance's instalment 1, not `-018`; the unlisted
+  ports landed with `-004` `BnplProductBounds`, `-021` `BnplActingParty` and `-025` `BnplProofReads`)*.
+  `BOUNDED_CONTEXTS.md` and
   `MODULE_ARCHITECTURE.md` carry the planned entries; each building task corrects them as built.
   - *Built by `P12-TSK-002` (2026-10-16):* `creditmath` (decision 5) and `bnpl`'s boundary — the
     module, `bnpl V001` (the migrator-owned floor, `USAGE` alone to the application role, no default
@@ -318,7 +353,14 @@ balance of its own and every money effect is one journal entry in its own transa
 - `P12-TSK-013` and `-021` count the (P) race against a wallet-paid capture and refund in both id
   orders; `P12-TST-001` asserts lock waits on L0, B3, B5, B4, L6 and (P) and measures the shared
   capital and fee-income rows (plan §21).
-- Accepted by the Phase 12 exit review (`P12-DOC-001`), read against the code first.
+  - *As built (`P12-TST-001`, 2026-10-21; recorded by `P12-DOC-001`):* every named lock wait — L0, B3,
+    B5, B4, L6 and (P) in both id orders — seen as the act's own backend and counted
+    (`BnplStormLocks`, `BnplStormCatalogue`), 0 deadlocks; the hot rows measured on the final run:
+    `LENDING_CAPITAL` 65 waits (p95 142 ms), the shared `BNPL_MERCHANT_FEE_INCOME`, `BNPL_FEE_INCOME`
+    and `BNPL_INTEREST_INCOME` rows 12, 0 and 0.
+- **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
+  (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
+  notes, and accepted it.
 - **The activation gate, written (`P12-TSK-026`, 2026-10-20).** `PHASE_12_PLAN.md` §1.1's closed production state and its
   preconditions are `OPERATIONS_RUNBOOK.md` §8.1, in order, each a person's recorded act: lending's §7.4 preconditions
   (#13 and #14 answered, a real bureau adapter, a credit policy reading it, lending capital recognised), legal review of

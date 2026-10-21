@@ -1660,6 +1660,31 @@ run, and each criterion names the tasks that build its proof (**Owners**). A cri
 cut candidate (`-023`'s operator resolution, then `-022`'s pay-in-N payoff) is met by the task or by its
 deferral recorded with an owner. Nothing of Phase 12 is built at the transition.*
 
+*Read at the exit review (`P12-DOC-001`, 2026-10-22), every clause against the code and its counted tests
+([`reviews/PHASE_12_REVIEW.md`](reviews/PHASE_12_REVIEW.md)). Clauses met in a form their words did not anticipate, each
+recorded rather than re-worded: the **third original**'s probe ("skip the purchase lock in a refund, caught by scenario 10")
+is caught by the refund's own position check under B4, not by scenario 10's Σ assertion (`bnpl V012`'s re-take of B5 removed
+too); **Offer and agreement**'s "a version n+1 for … every payoff recalculation" - a payoff makes no version (it bills early,
+lending's shape); **Merchant financing**'s drill-down "naming `BNPL_FINANCING` and `BNPL_REFUND` and `BNPL_PRINCIPAL` among its
+counterparties" classifies by posting-key namespace (`-016`); the **fourth original**'s "a `merchant_financing` row iff its
+purchase, obligation and entry" - no bnpl trigger reads the ledger, so the entry leg is carried by the one transaction, the
+storm's C7 and the three-way merchant leg; **Purchase and origination**'s "a BNPL completion, a card confirmation and the expiry
+sweeper on one session" is proven pairwise; **Allocation and collection**'s wallet-only rule by construction (`bnpl` cannot
+see `payments`); **Security**'s "every route is in `RoutePermissionRegisterTest`" holds for the operator routes (merchant routes
+in `MerchantTenancyBatteryDatabaseTest`, customer routes in `OwnershipIsScopedTest`), its "only `ELIGIBLE`, `NOT_ELIGIBLE` or
+`PENDING`" has no `PENDING` (the absence of the event), and its "merchant doors … with the BNPL refund scope" excludes the
+dispute response, which ADR-0106 put on the key alone; **Multi-instance execution**'s "a repayment … finding an unaccrued date
+writes nothing until T-acc has run" is `-018`'s refinement - the repayment posts at the floored date and only the closure waits;
+**Ledger**'s "`posting_date = value_date =` the database business date" is per rule (ADR-0103 corrected: F2 at the due date,
+F3/F5/F7 at `max(today, floor)`), and `BNPL_WRITE_OFF_EXPENSE`'s zero lines rest on the seed and a source scan, not an at-rest
+census; **Testing**'s storm ran two instances with the ten-way races inside its scenes, its earliest-first and fee-clamp probes
+caught upstream (the domain constructor, `V012`'s trigger - accepted by the owner as defence in depth), and its DPD census
+(C19, added by the review) reads paid amounts through `V008`'s one definition (the Phase 11 storm's I6). The review's own
+corrections - every born-once arbiter probed alone, the terminal edges on real rows, the purchase-lock probe, the allocation
+trigger, the session's lapse, the acceptance evidence, the payout against a refund, the suspended merchant, the draw racer, (P)
+against a real refund, scenarios 10, 11 and 13, the DPD census and properties, the one-key races, the four-eyes and self-dealing
+doors through the API, the crash-and-re-drives - are each recorded in the review with its probe.*
+
 ### Phase 13 — Risk, Fraud and AML
 - Fail-safe behaviour on risk-service unavailability is explicit per operation and value
   band, and is tested.

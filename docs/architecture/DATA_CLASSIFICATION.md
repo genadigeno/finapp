@@ -3509,7 +3509,7 @@ template versions `INTERNAL`.
 | `bnpl_offer_terms` | `currency` | `INTERNAL` | ISO 4217 |
 | `bnpl_offer_terms` | `scale` | `INTERNAL` | The currency's minor-unit scale |
 | `bnpl_offer_terms` | `amount_minor` | `RESTRICTED-FINANCIAL` | Exactly the purchase amount |
-| `bnpl_offer_terms` | `nominal_annual_rate` | `INTERNAL` | The pinned version's published rate |
+| `bnpl_offer_terms` | `nominal_annual_rate` | `RESTRICTED-FINANCIAL` | The pinned version's published rate *(P12-DOC-001, 2026-10-22: was `INTERNAL`; a copy of `bnpl_terms.nominal_annual_rate`, which is `RESTRICTED-FINANCIAL`, and a copy is never classified below its source)* |
 | `bnpl_offer_terms` | `schedule_engine` | `INTERNAL` | The pinned engine version |
 | `bnpl_offer_terms` | `illustrative_start` | `INTERNAL` | The offering day the illustration starts on |
 | `bnpl_offer_terms` | `instalment_count` | `INTERNAL` | The plan's instalments |
@@ -3540,6 +3540,9 @@ template versions `INTERNAL`.
 acceptance evidence, the schedule, its instalments, the billing, the repayment and its allocation. Every money column
 is on an INSERT-only table and `RESTRICTED-FINANCIAL`; the evidence's session, address and agent `CONFIDENTIAL`; no
 figure leaves in a log line, tag, span attribute or exception message (`INV-AUD-02`).
+*(P12-DOC-001, 2026-10-22: the table below also holds the columns of the `bnpl V008`-`V017` tables - accrual,
+servicing, repayment and closure, refunds, payoff, disputes, corrections and the record order - each row naming the task
+that added it.)*
 
 **Who reads which, since `P12-TSK-014`.** The merchant's read (`GET /v1/merchant/bnpl-purchases/{id}`, its own key)
 serves exactly the purchase's `id`, `checkout_session_id` (as `checkoutId`), `order_id`, `product` and `status` and the
@@ -3547,6 +3550,10 @@ financing's `currency`, `gross_minor`, `fee_minor`, `net_minor`, `fee_schedule_v
 `financed_at` - the `RESTRICTED-FINANCIAL` figures to the one counterparty they are about, the tenant in the statement
 (`INV-MER-01`). No `bnpl_obligation`, agreement, schedule, billing or repayment column and no `party_id` or `plan`
 reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`MerchantBnplPurchaseView`).
+*(P12-DOC-001, 2026-10-22: since `P12-TSK-021` the read also serves `refunded` (the sum of the purchase's refunds) and,
+per refund, `bnpl_refund`'s `id`, `amount_minor`, `fee_returned_minor`, `payable_debit_minor`, `created_at`, `door` and -
+at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or the instalments cancelled
+(`MerchantBnplRefundView`).)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -3756,7 +3763,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_interest_accrual` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_obligation_closure` | `id` | `INTERNAL` | Generated (`P12-TSK-018`) |
 | `bnpl_obligation_closure` | `obligation_id` | `CONFIDENTIAL` | Its obligation - one closure each |
-| `bnpl_obligation_closure` | `reason` | `INTERNAL` | A closed reason code (`REPAID` here) |
+| `bnpl_obligation_closure` | `reason` | `INTERNAL` | A closed reason code *(P12-DOC-001, 2026-10-22: "(`REPAID` here)" was stale - the `CHECK`'s four values `REPAID`, `PAID_OFF_EARLY`, `REFUNDED`, `REFUNDED_PARTIALLY_REPAID`, `V010`)* |
 | `bnpl_obligation_closure` | `currency` | `INTERNAL` | Its currency |
 | `bnpl_obligation_closure` | `scale` | `INTERNAL` | Its scale |
 | `bnpl_obligation_closure` | `refund_minor` | `RESTRICTED-FINANCIAL` | The credit balance refunded to the wallet at closure |
@@ -3810,7 +3817,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_refund` | `id` | `INTERNAL` | Generated (`P12-TSK-021`) |
 | `bnpl_refund` | `purchase_id` | `CONFIDENTIAL` | Its purchase - the bound's subject |
 | `bnpl_refund` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation |
-| `bnpl_refund` | `merchant_id` | `INTERNAL` | The merchant by value - the tenant of every merchant read |
+| `bnpl_refund` | `merchant_id` | `CONFIDENTIAL` | The merchant by value - the tenant of every merchant read *(P12-DOC-001, 2026-10-22: was `INTERNAL`; `PHASE_12_PLAN.md` §11 classifies merchant references `CONFIDENTIAL`, as `purchase`, `merchant_financing` and `bnpl_application`'s `merchant_id` are)* |
 | `bnpl_refund` | `door` | `INTERNAL` | `MERCHANT`, `OPERATOR` or - a dispute's refund outcome, `P12-TSK-023` - `DISPUTE` |
 | `bnpl_refund` | `requested_by` | `RESTRICTED-PII` | Who asked - the merchant, or the operator's identity (`audit_record.actor_id`'s reasoning) |
 | `bnpl_refund` | `refund_key` | `CONFIDENTIAL` | The requester's idempotency key |
@@ -3939,7 +3946,7 @@ reaches a merchant (`INV-CRD-04`); the field set is closed in the type (`Merchan
 | `bnpl_dispute` | `id` | `INTERNAL` | Generated (`P12-TSK-023`) |
 | `bnpl_dispute` | `purchase_id` | `CONFIDENTIAL` | The purchase contested |
 | `bnpl_dispute` | `obligation_id` | `CONFIDENTIAL` | The purchase's obligation - the hold's subject |
-| `bnpl_dispute` | `merchant_id` | `INTERNAL` | The merchant by value - the tenant of every merchant read |
+| `bnpl_dispute` | `merchant_id` | `CONFIDENTIAL` | The merchant by value - the tenant of every merchant read *(P12-DOC-001, 2026-10-22: was `INTERNAL`; `PHASE_12_PLAN.md` §11 classifies merchant references `CONFIDENTIAL`, as `purchase`, `merchant_financing` and `bnpl_application`'s `merchant_id` are)* |
 | `bnpl_dispute` | `party_id` | `CONFIDENTIAL` | The customer - the owner of every customer read |
 | `bnpl_dispute` | `agreement_id` | `CONFIDENTIAL` | The agreement whose pinned terms set the window and the threshold |
 | `bnpl_dispute` | `terms_version_id` | `INTERNAL` | The pinned terms version |

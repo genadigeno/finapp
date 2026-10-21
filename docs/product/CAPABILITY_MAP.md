@@ -74,11 +74,15 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
 - Affordability assessment — delivered: exact single-currency arithmetic (the annuity at scale
   10, rounded once), a foreign-currency source partial data, never converted
 - Exposure — delivered: the party's bureau balance, the platform's outstanding credit (since
-  Phase 11 `PlatformCreditExposure` version 2, `P11-TSK-013`: every loan's committed and
-  outstanding principal and every open credit line's limit, one statement), the reserved exposure
-  of current approvals and the request, judged under the party's profile lock; a policy that does
-  not bound its own limit refused at proposal *(read "the platform's outstanding credit (zero until
-  Phase 11)" until the Phase 11 exit review, `P11-DOC-001`, 2026-10-15)*
+  Phase 12 `PlatformCreditExposure` version 3, `P12-TSK-012`: every loan's committed and
+  outstanding principal, every open credit line's limit and every BNPL obligation's principal not
+  yet due and billed, one statement; decisions frozen under versions 1 and 2 replay from their own
+  snapshots), the reserved exposure of current approvals and the request, judged under the party's
+  profile lock; a policy that does not bound its own limit refused at proposal *(read "the
+  platform's outstanding credit (zero until Phase 11)" until the Phase 11 exit review,
+  `P11-DOC-001`, 2026-10-15, and "(since Phase 11 `PlatformCreditExposure` version 2,
+  `P11-TSK-013`: every loan's committed and outstanding principal and every open credit line's
+  limit, one statement)" until the Phase 12 exit review, `P12-DOC-001`, 2026-10-22)*
 - Decisioning — delivered: a versioned scorecard and a versioned policy of rules as data, both
   four-eyes, through a deterministic engine with its own version; a keyed asynchronous decision
   request decided once from a sealed snapshot, immutable with ordered reason codes; the customer's
@@ -93,7 +97,9 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
   and **a person may not approve on an absent bureau balance** — so, with production composing only
   the fail-safe sources, **production approves no credit until a real bureau is connected**
   (unresolved #13, #14)
-- BNPL *(Phase 12 — see the BNPL section below)*
+- BNPL *(Phase 12 — see the BNPL section below)*: credit decides the two BNPL products
+  (`BNPL_PAY_IN_4`, `BNPL_PAY_IN_N`) on a request from the BNPL origin, consumed by a
+  `BNPL_AGREEMENT` (credit `V022`, `P12-TSK-001`)
 
 *(The Credit section's Phase 10 capabilities were marked "planned" by the Phase 9 → 10 transition,
 2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, then `Proposed`), marked delivered by the Phase
@@ -122,7 +128,9 @@ Phase 13: credit consumes a risk signal through a seam and computes none.)*
   payments and concluded only by inquiry; interest starts at the payout's terminal outcome
 - Lending capital — delivered: every loan and draw funded from the platform's own capital, a
   four-eyes contribution recognised only from bank evidence and never over-deployed, so loan-funded
-  wallet money is platform-funded, proven per currency by the capital proof
+  wallet money is platform-funded, proven per currency by the capital proof; since Phase 12 one pool
+  with BNPL - the headroom, the capital proof and the capital report count BNPL principal too
+  (`P12-TSK-005`, ADR-0104) *(added by the Phase 12 exit review, `P12-DOC-001`, 2026-10-22)*
 - Delinquency and default — delivered: days past due derived, buckets, default at 90 days past due,
   late fees as configured and capped, waivers and repayment reversals four-eyes, restructuring by an
   amendment the customer accepts
@@ -145,26 +153,59 @@ completion gate, 2026-10-16** (`reviews/PHASE_11_TO_12_TRANSITION.md`): interest
 step, held credit settling past-due items, a refunded fee never forgiven twice, self-approval refusals on the
 record, no admitted terms version that cannot be scheduled - lending `V029`, `V030`.)*
 
-## BNPL *(Phase 12, planned at the Phase 11 → 12 transition, 2026-10-16 — `PHASE_12_PLAN.md`)*
-- BNPL at checkout — planned: the customer chooses pay-in-4 or pay-in-N inside a checkout session; one credit decision
-  per purchase (no spending limit); the merchant sees only eligible, not eligible or pending
-- Pay-in-4 — planned: four equal instalments, the first collected at purchase, then every fourteen days, no customer
-  interest; late fees per the pinned terms
-- Pay-in-N — planned: 3, 6 or 12 monthly instalments with interest (ACT/365F, lending's engines)
-- Merchant financing — planned: the purchase, the merchant's payable credited net of the merchant discount, the
-  customer's obligation, the decision's consumption and the capital commitment in one transaction; the merchant paid
-  through its existing payout
-- Customer repayment — planned: wallet-only auto-collection and repayment, allocation oldest-due first, early payoff,
-  delinquency and default derived, four-eyes waivers and reversals
-- Refunds and disputes — planned: merchant-initiated refunds cancelling the latest instalments first, the excess to the
-  customer, the fee pro-rated back; a refund after payout bounded by the purchase's net; disputes resolved under the one
-  refund bound
-- BNPL accounting and reconciliation — planned: per-obligation ledger accounts funded from lending capital, credit
-  exposure version 3, the three-way proof (merchant leg, customer leg, ledger)
-- **Production constraint** — inherited: production originates nothing until a real bureau is connected
+## BNPL *(Phase 12, delivered 2026-10-22 — `P12-DOC-001`)*
+- BNPL at checkout — delivered: the customer reads the products the session's merchant offers for its gross, each plan
+  illustrated (`POST /v1/checkout/sessions/bnpl-options`, the session's token - no eligibility, credit not asked), then
+  applies inside the checkout session (a `MULTI_FACTOR` session) - one credit decision per purchase for exactly the
+  session's gross, no spending limit; an approved decision becomes an expiring offer (at most 30 minutes, never beyond the
+  decision or the session) pinned to the four-eyes terms version in force, its canonical terms sealed by a hash the
+  acceptance echoes; the acceptance completes the session `OPEN → COMPLETED` by financing, intent-less (checkout `V004`),
+  so a financed session is as paid as a captured one; the merchant reads its own purchase over its API key and never the
+  customer's credit *(the plan's "the merchant sees only eligible, not eligible or pending" was not built: the merchant
+  sees the completed session and its purchase, nothing before)*
+- Pay-in-4 — delivered: four interest-free instalments, the first collected from the wallet at purchase, then every
+  fourteen days; the remainder of the one division (at most three minor units) on the first, so the three open
+  instalments are equal (`BNPL_SCHEDULE_ENGINE_V1`); late fees per the pinned terms, capped per agreement
+- Pay-in-N — delivered: 3, 6 or 12 monthly instalments with interest, ACT/365F simple daily interest accrued once per
+  obligation and date, on lending's engines moved unchanged into the pure `creditmath` module (every Phase 11 figure
+  replaying identically)
+- Merchant enablement and pricing — delivered: a merchant BNPL-enabled under four eyes (`MERCHANT_ADMINISTER`, merchant
+  `V010`), each product priced by a BNPL fee schedule whose versions return their fee on refund (`RETURNED`), the fee
+  pinned per purchase; a suspended, closed, unenabled or unpriced merchant is not offered BNPL
+- Merchant financing — delivered: the purchase, the merchant's payable credited the gross less the merchant discount,
+  the customer's obligation, agreement and schedule version 1, credit's decision consumed and lending's capital headroom
+  judged (`422 bnpl.CapitalUnavailable`), and pay-in-4's first instalment collected, in one transaction in the Phase 12
+  lock order; the merchant paid through its existing payout, its payable drill-down naming the BNPL terms
+- Customer repayment — delivered: repayment and scheduled auto-collection from the wallet only, allocated by the pinned
+  order over billed items oldest first, any excess held as a credit balance; early payoff, a quote and its execution, for
+  both products; days past due derived, buckets, default at the pinned threshold (90 days), late fees; repayment
+  reversals and fee waivers four-eyes (`BNPL_SERVICE`, `BNPL_SERVICE_APPROVE`), never on an operator's own party's
+  agreement
+- Refunds and disputes — delivered: refunds by the merchant over a key carrying the `BNPL_REFUND` scope, or by an operator,
+  cancelling the latest instalments first, the excess to the customer's wallet or credit balance, the merchant fee
+  pro-rated back; a refund never exceeds what remains of its purchase, and one after the payout leaves the payable below
+  zero by at most the purchase's own net, recovered from later captures and financings before any payout (B7, the amended
+  `INV-MER-07`); the customer's dispute holds its instalments (no collection, days past due or late fee), the merchant
+  accepts or contests before its deadline - its silence is acceptance, concluded by the deadline sweep - and an operator
+  resolves a contested one, four-eyes above the pinned threshold, all under the one refund bound
+- BNPL accounting and reconciliation — delivered: six ledger accounts per obligation (ledger `V027`), every figure a
+  journal balance, the receivable funded from lending capital under the shared headroom, credit exposure version 3
+  counting BNPL principal; the three-way proof per currency (merchant leg, customer leg, economic identity, trial balance,
+  capital, exposure), the subledger proof and the replay by the record's own order (bnpl `V017`); each agreement explained
+  and replayed to an investigator (`BNPL_INVESTIGATE`), and reported - portfolio, merchant financing, refunds,
+  delinquency - with the alerts and procedures of `OPERATIONS_RUNBOOK.md` §8
+- **Production constraint** — production originates nothing: no BNPL terms version is `ACTIVE` in production and no
+  production credit decision can be `APPROVED` (inherited, unresolved #13, #14), so the application door answers
+  `422 bnpl.MerchantNotEnabled` or `422 bnpl.ProductNotOffered` until `OPERATIONS_RUNBOOK.md` §8.1's activation gate is
+  passed - lending's preconditions, legal review of the merchant agreement and of the consumer terms, the merchant-fee
+  schedule approved, a four-eyes terms activation - none of which is met; Phase 12 proves BNPL end to end against the
+  simulators
 
-*(Marked "planned" by the Phase 11 → 12 transition, 2026-10-16 (ADR-0101…0106 `Proposed`); to be marked delivered by
-the Phase 12 exit review, `P12-DOC-001`.)*
+*(Marked "planned" by the Phase 11 → 12 transition, 2026-10-16 (`PHASE_12_PLAN.md`; ADR-0101…0106, `Proposed`), and
+marked delivered by the Phase 12 exit review, `P12-DOC-001`, 2026-10-22 - each capability built by `P12-TSK-001`…`-028`
+and proven by `P12-TST-001` (the BNPL storm) and `P12-TST-002` (the battery); ADR-0101…0106 `Accepted` by the review
+(2026-10-22, `P12-DOC-001`, each read against the code and corrected first) *(P12-DOC-001, 2026-10-22: this read "stay
+`Proposed` until the review's verdict" until the ADRs were accepted)*. This note read "to be marked delivered by the Phase 12 exit review, `P12-DOC-001`" until then.)*
 
 ## Risk
 - Fraud
