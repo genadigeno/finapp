@@ -9,6 +9,7 @@ import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplObligationId;
 import com.finapp.bnpl.BnplOrigination;
+import com.finapp.bnpl.BnplPayoffs;
 import com.finapp.bnpl.BnplProofs;
 import com.finapp.bnpl.BnplPurchaseId;
 import com.finapp.bnpl.BnplRefunds;
@@ -119,6 +120,7 @@ class BnplProofDatabaseTest {
     @Autowired private BnplAccruals accruals;
     @Autowired private BnplRepayments repayments;
     @Autowired private BnplRefunds refunds;
+    @Autowired private BnplPayoffs payoffs;
     @Autowired private BnplProofs proofs;
     @Autowired private BnplProofMetrics proofMetrics;
     @Autowired private FileReception<Connection> reception;
@@ -393,6 +395,43 @@ class BnplProofDatabaseTest {
     }
 
     @Test
+    @DisplayName("a payoff after a partial refund, at agreement and schedule version 2, for both products: the quote and"
+            + " the execution read the version the refund made, the obligation closes PAID_OFF_EARLY, every account"
+            + " zero, and the subledger and replay proofs hold - IDENTICAL - after")
+    void aPayoffAfterAPartialRefundAtVersionTwoReplaysIdentical() throws Exception {
+        // The Phase 12 -> 13 transition gate, A6-F4: BnplPayoffsTest#aPnPayoffAfterAPartialRefundPaysTheLatestVersion's
+        // path, hermetic until now, over the real stores, triggers, ledger and proofs - pay-in-4 and pay-in-N.
+        for (boolean payIn4 : List.of(true, false)) {
+            String product = payIn4 ? "pay-in-4" : "pay-in-N";
+            Bought bought = payIn4 ? bought() : bought(token -> BnplApplicationClient.payInN(token, 3));
+            if (!payIn4) {
+                // The purchase some ten days back, its dates accrued: the refund and the payoff each read accrued interest.
+                toAge(bought, 1, -20);
+                serviceStep(bought);
+                assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_interest_accrual WHERE"
+                        + " obligation_id = ?::uuid", bought.obligation().value().toString())).as(product).isPositive();
+            }
+            refund(bought, "partial", 100_00);
+            assertThat(scalar("SELECT max(a.version) || '|' || (SELECT max(s.schedule_version) FROM bnpl.bnpl_schedule s"
+                    + " WHERE s.obligation_id = " + bought.o() + ") FROM bnpl.bnpl_agreement a WHERE a.obligation_id = "
+                    + bought.o())).as("%s: the refund made version 2 of both", product).isEqualTo("2|2");
+            BnplPayoffs.Executed executed = payOff(bought, "payoff-" + product);
+            assertThat(executed.quote().agreementVersion()).as(product).isEqualTo(2);
+            assertThat(scalar("SELECT status || ':' || closure_reason FROM bnpl.bnpl_obligation WHERE id = "
+                    + bought.o())).as(product).isEqualTo("CLOSED:PAID_OFF_EARLY");
+            assertThat(scalar("SELECT agreement_version::text FROM bnpl.bnpl_repayment WHERE obligation_id = "
+                    + bought.o() + " AND kind = 'PAYOFF'")).as("%s: paid off under version 2", product).isEqualTo("2");
+            BnplProofs.Proven proven = proven(bought);
+            assertThat(proven.subledger().holds()).as("%s: %s", product, proven.subledger()).isTrue();
+            assertThat(proven.subledger().figures()).as(product)
+                    .allSatisfy(figure -> assertThat(figure.ledger().isZero()).isTrue());
+            assertThat(proven.replay().verdict()).as("%s: %s", product, proven.replay())
+                    .isEqualTo(BnplReplayProof.Verdict.IDENTICAL);
+        }
+        assertHolds();
+    }
+
+    @Test
     @DisplayName("a proof during servicing is stable: readings on ten threads racing the sweep, repayments and refunds"
             + " over five rounds - every reading green in its own snapshot")
     void aProofDuringServicingIsStable() throws Exception {
@@ -440,13 +479,18 @@ class BnplProofDatabaseTest {
     // ------------------------------------------------------------------ plumbing
 
     private Bought bought() throws Exception {
+        return bought(BnplApplicationClient::payIn4);
+    }
+
+    /** A purchase of {@code GROSS} under the product and plan {@code body} applies for. */
+    private Bought bought(java.util.function.Function<String, String> body) throws Exception {
         CreditFixtures.Customer owner = world.customers.consentingCustomer();
         // Exactly instalment 1, collected at the acceptance: the wallet is then empty, so the servicing step's automatic
         // collection (P12-TSK-019) takes nothing and each case's own repayments are what pay - the cases' arithmetic
         // assumed no collection, and a 5,000.00 wallet let the step pay every due instalment first (P12-TSK-028).
         world.topUpWallet(owner.party(), eur(GROSS / 4));
         BnplApplicationClient.Merchant merchant = world.merchant();
-        BnplPurchaseWorld.Offer offer = world.offered(owner, merchant, GROSS, BnplApplicationClient::payIn4);
+        BnplPurchaseWorld.Offer offer = world.offered(owner, merchant, GROSS, body);
         HttpResponse<String> accepted = world.accept(owner.token(), offer, BnplApplicationClient.key());
         assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
         String agreement = BnplApplicationClient.field(accepted.body(), "agreementId");
@@ -520,6 +564,20 @@ class BnplProofDatabaseTest {
                 CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {
             return transactions.inTransaction(uow -> repayments.repay(uow, bought.agreement(), bought.party(),
                     new BnplRepayments.Request(key, eur(minor)), customer, BnplApplicationClient.correlation()));
+        }
+    }
+
+    /** The owner's payoff: quoted today, the wallet funded with exactly the quote, then executed under it. */
+    private BnplPayoffs.Executed payOff(Bought bought, String key) {
+        Actor customer = new Actor(bought.party().toString(), ActorType.CUSTOMER);
+        try (SecurityContext.Scope actor = SecurityContext.enter(customer);
+                CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {
+            BnplPayoffs.Quoted quoted = transactions.inTransaction(uow -> payoffs.quote(uow, bought.agreement(),
+                    bought.party(), new BnplPayoffs.QuoteRequest(key, Optional.empty()),
+                    BnplApplicationClient.correlation()));
+            world.topUpWallet(bought.party(), quoted.quote().amount());
+            return transactions.inTransaction(uow -> payoffs.execute(uow, bought.agreement(), bought.party(), key,
+                    quoted.quote().id(), customer, BnplApplicationClient.correlation()));
         }
     }
 

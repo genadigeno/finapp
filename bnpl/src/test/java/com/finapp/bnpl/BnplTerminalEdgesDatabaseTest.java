@@ -47,8 +47,9 @@ import org.junit.jupiter.api.Test;
  * {@code REJECTED}; the offer out of {@code ACCEPTED}, {@code DECLINED} and {@code EXPIRED}; the application out of
  * {@code OFFERED}, {@code DECLINED} and {@code WITHDRAWN}. Each edge is shaped to satisfy every rank after the terminal one
  * where it can (a withdrawal by the dispute's own customer, refunding nothing; an approval by another operator), so the
- * terminal rank - not a later one - is what must refuse it. Every refusal is collected, then judged at once, and the rows
- * are re-read unchanged.
+ * terminal rank - not a later one - is what must refuse it; and since the Phase 12 &rarr; 13 transition gate (A6-F2) each
+ * refusal must name that rank, its message carrying the rule's own words. Every refusal is collected, then judged at once,
+ * and the rows are re-read unchanged.
  */
 @Tag("database")
 @DisplayName("nothing leaves a terminal state, for any role, on real terminal rows (the Phase 12 exit review)")
@@ -59,8 +60,13 @@ class BnplTerminalEdgesDatabaseTest {
         BnplBillingDatabaseTest.termsAndClock();
     }
 
-    /** One raw edge: what it attempts, its statement, and the SQLSTATE each role must meet. */
-    private record Edge(String name, String sql, String migratorState, String applicationState) {}
+    /**
+     * One raw edge: what it attempts, its statement, the SQLSTATE each role must meet - and the rule that must refuse it,
+     * a fragment of that rule's own message (the Phase 12 &rarr; 13 transition gate, A6-F2: every bnpl rule raises
+     * {@code P0001}, so a state alone cannot tell the terminal rank from a later one that refused the same row).
+     */
+    private record Edge(String name, String sql, String migratorState, String applicationState, String migratorReason,
+            String applicationReason) {}
 
     @Test
     @DisplayName("every raw edge out of every terminal state is refused for the migrator and the application role; every"
@@ -78,19 +84,23 @@ class BnplTerminalEdgesDatabaseTest {
         BnplConditionDatabaseWorld.Purchased financed = world.plain();
         String financedPurchase = where(financed.purchase().value());
         edges.add(p0001("purchase FINANCED -> AUTHORISED",
-                "UPDATE bnpl.purchase SET status = 'AUTHORISED'" + financedPurchase));
+                "UPDATE bnpl.purchase SET status = 'AUTHORISED'" + financedPurchase,
+                "FINANCED -> AUTHORISED is not an edge"));
         BnplConditionDatabaseWorld.Purchased refunded = world.plain();
         world.refundOn(refunded.purchaseDate().plusDays(1), refunded, "full", 600_00);
         String refundedPurchase = where(refunded.purchase().value());
         for (String to : List.of("FINANCED", "AUTHORISED")) {
             edges.add(p0001("purchase FULLY_REFUNDED -> " + to,
-                    "UPDATE bnpl.purchase SET status = '" + to + "'" + refundedPurchase));
+                    "UPDATE bnpl.purchase SET status = '" + to + "'" + refundedPurchase,
+                    "FULLY_REFUNDED -> " + to + " is not an edge"));
         }
         String closedObligation = where(refunded.obligation().value());
         edges.add(p0001("obligation CLOSED -> ACTIVE",
-                "UPDATE bnpl.bnpl_obligation SET status = 'ACTIVE', closure_reason = NULL" + closedObligation));
+                "UPDATE bnpl.bnpl_obligation SET status = 'ACTIVE', closure_reason = NULL" + closedObligation,
+                "CLOSED -> ACTIVE is not an edge"));
         edges.add(p0001("obligation CLOSED -> CLOSED for another reason",
-                "UPDATE bnpl.bnpl_obligation SET closure_reason = 'REPAID'" + closedObligation));
+                "UPDATE bnpl.bnpl_obligation SET closure_reason = 'REPAID'" + closedObligation,
+                "CLOSED -> CLOSED is not an edge"));
         terminal.put("SELECT status FROM bnpl.purchase" + financedPurchase, "FINANCED");
         terminal.put("SELECT status FROM bnpl.purchase" + refundedPurchase, "FULLY_REFUNDED");
         terminal.put("SELECT status || ':' || closure_reason FROM bnpl.bnpl_obligation" + closedObligation,
@@ -117,29 +127,30 @@ class BnplTerminalEdgesDatabaseTest {
         for (Map.Entry<String, BnplDispute> dispute : resolved.entrySet()) {
             String from = dispute.getKey();
             String at = where(dispute.getValue().id().value());
+            String terminalRank = "a " + from + " BNPL dispute is terminal";
             edges.add(p0001("dispute " + from + " -> OPEN", "UPDATE bnpl.bnpl_dispute SET status = 'OPEN',"
                     + " resolved_by = NULL, resolution_reason = NULL, resolved_at = NULL, resolved_business_date = NULL,"
-                    + " refund_id = NULL, proposal_id = NULL, next_sweep_at = response_deadline_at" + at));
+                    + " refund_id = NULL, proposal_id = NULL, next_sweep_at = response_deadline_at" + at, terminalRank));
             edges.add(p0001("dispute " + from + " -> MERCHANT_RESPONDED", "UPDATE bnpl.bnpl_dispute SET status ="
                     + " 'MERCHANT_RESPONDED', merchant_statement = coalesce(merchant_statement, 'raw'), resolved_by ="
                     + " NULL, resolution_reason = NULL, resolved_at = NULL, resolved_business_date = NULL, refund_id ="
-                    + " NULL, proposal_id = NULL" + at));
+                    + " NULL, proposal_id = NULL" + at, terminalRank));
             if (!from.equals("WITHDRAWN")) {
                 // Shaped as the withdrawal edge wants it: by the dispute's own customer, refunding nothing.
                 edges.add(p0001("dispute " + from + " -> WITHDRAWN by its own customer", "UPDATE bnpl.bnpl_dispute SET"
                         + " status = 'WITHDRAWN', resolved_by = 'CUSTOMER:' || party_id::text, resolution_reason = NULL,"
-                        + " refund_id = NULL, proposal_id = NULL" + at));
+                        + " refund_id = NULL, proposal_id = NULL" + at, terminalRank));
             }
             if (!from.equals("RESOLVED_UPHELD")) {
                 // Shaped as the operator's decision wants it: an operator, reasoned, the merchant's answer untouched.
                 edges.add(p0001("dispute " + from + " -> RESOLVED_UPHELD by an operator", "UPDATE bnpl.bnpl_dispute"
                         + " SET status = 'RESOLVED_UPHELD', resolved_by = 'OPERATOR:operator-z', resolution_reason ="
-                        + " 'raw', refund_id = NULL, proposal_id = NULL" + at));
+                        + " 'raw', refund_id = NULL, proposal_id = NULL" + at, terminalRank));
             }
             if (!from.equals("RESOLVED_REFUND")) {
                 edges.add(p0001("dispute " + from + " -> RESOLVED_REFUND by an operator", "UPDATE bnpl.bnpl_dispute"
                         + " SET status = 'RESOLVED_REFUND', resolved_by = 'OPERATOR:operator-z', resolution_reason ="
-                        + " 'raw'" + at));
+                        + " 'raw'" + at, terminalRank));
             }
             terminal.put("SELECT status FROM bnpl.bnpl_dispute" + at, from);
         }
@@ -162,12 +173,14 @@ class BnplTerminalEdgesDatabaseTest {
         for (Map.Entry<String, UUID> proposal : Map.of("APPROVED", approvedProposal, "REJECTED", rejectedProposal)
                 .entrySet()) {
             String at = where(proposal.getValue());
+            String proposalRank = "a BNPL dispute proposal moves PROPOSED -> APPROVED | REJECTED only";
             edges.add(p0001("dispute proposal " + proposal.getKey() + " -> PROPOSED", "UPDATE bnpl.bnpl_dispute_proposal"
-                    + " SET status = 'PROPOSED', decided_by = NULL, decision_reason = NULL, decided_at = NULL" + at));
+                    + " SET status = 'PROPOSED', decided_by = NULL, decision_reason = NULL, decided_at = NULL" + at,
+                    proposalRank));
             String other = proposal.getKey().equals("APPROVED") ? "REJECTED" : "APPROVED";
             edges.add(p0001("dispute proposal " + proposal.getKey() + " -> " + other + " (re-decided by another)",
                     "UPDATE bnpl.bnpl_dispute_proposal SET status = '" + other + "', decided_by = 'OPERATOR:operator-z',"
-                            + " decision_reason = 'raw'" + at));
+                            + " decision_reason = 'raw'" + at, proposalRank));
             terminal.put("SELECT status FROM bnpl.bnpl_dispute_proposal" + at, proposal.getKey());
         }
 
@@ -190,13 +203,15 @@ class BnplTerminalEdgesDatabaseTest {
             String at = where(reversal.getValue());
             edges.add(p0001("repayment reversal " + reversal.getKey() + " -> PROPOSED", "UPDATE"
                     + " bnpl.bnpl_repayment_reversal SET status = 'PROPOSED', decided_by = NULL, decided_by_type = NULL,"
-                    + " decision_reason = NULL, journal_entry_id = NULL, value_date = NULL" + at));
+                    + " decision_reason = NULL, journal_entry_id = NULL, value_date = NULL" + at,
+                    reversal.getKey() + " -> PROPOSED is not an edge"));
             String other = reversal.getKey().equals("APPROVED") ? "REJECTED" : "APPROVED";
             edges.add(p0001("repayment reversal " + reversal.getKey() + " -> " + other + " (re-decided by another)",
                     "UPDATE bnpl.bnpl_repayment_reversal SET status = '" + other + "', decided_by = 'operator-z',"
                             + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = "
                             + (other.equals("APPROVED") ? "gen_random_uuid(), value_date = DATE '" + due + "'"
-                                    : "NULL, value_date = NULL") + at));
+                                    : "NULL, value_date = NULL") + at,
+                    reversal.getKey() + " -> " + other + " is not an edge"));
             terminal.put("SELECT status FROM bnpl.bnpl_repayment_reversal" + at, reversal.getKey());
         }
 
@@ -221,10 +236,11 @@ class BnplTerminalEdgesDatabaseTest {
                             + " gen_random_uuid(), w.id, w.proposed_by, '" + other + "', 'operator-z', 'EMPLOYEE',"
                             + " clock_timestamp(), 'raw', " + (other.equals("APPROVED") ? "gen_random_uuid()" : "NULL")
                             + ", 'raw' FROM bnpl.bnpl_waiver w WHERE w.id = '" + waiver.getValue() + "'",
-                    "23505", "23505"));
+                    "23505", "23505", "bnpl_waiver_decision_once", "bnpl_waiver_decision_once"));
             edges.add(new Edge("waiver decision " + waiver.getKey() + " edited to " + other,
                     "UPDATE bnpl.bnpl_waiver_decision SET outcome = '" + other + "' WHERE waiver_id = '"
-                            + waiver.getValue() + "'", "P0001", "42501"));
+                            + waiver.getValue() + "'", "P0001", "42501",
+                    "a BNPL waiver decision is immutable from insert", "permission denied"));
             terminal.put("SELECT string_agg(outcome, ',') FROM bnpl.bnpl_waiver_decision WHERE waiver_id = '"
                     + waiver.getValue() + "'", waiver.getKey());
         }
@@ -241,13 +257,14 @@ class BnplTerminalEdgesDatabaseTest {
         for (Map.Entry<String, String> version : versions.entrySet()) {
             String at = " WHERE id = '" + version.getValue() + "'";
             edges.add(p0001("terms version " + version.getKey() + " -> ACTIVE", "UPDATE bnpl.bnpl_terms_version SET"
-                    + " status = 'ACTIVE', effective_to = NULL" + at));
+                    + " status = 'ACTIVE', effective_to = NULL" + at, version.getKey() + " -> ACTIVE is not an edge"));
             edges.add(p0001("terms version " + version.getKey() + " -> PROPOSED", "UPDATE bnpl.bnpl_terms_version SET"
                     + " status = 'PROPOSED', decided_by = NULL, decided_by_type = NULL, decided_at = NULL,"
-                    + " decision_reason = NULL, effective_from = NULL, effective_to = NULL" + at));
+                    + " decision_reason = NULL, effective_from = NULL, effective_to = NULL" + at,
+                    version.getKey() + " -> PROPOSED is not an edge"));
             if (version.getKey().equals("REJECTED")) {
                 edges.add(p0001("terms version REJECTED -> RETIRED", "UPDATE bnpl.bnpl_terms_version SET"
-                        + " status = 'RETIRED'" + at));
+                        + " status = 'RETIRED'" + at, "REJECTED -> RETIRED is not an edge"));
             }
             terminal.put("SELECT status FROM bnpl.bnpl_terms_version" + at, version.getKey());
         }
@@ -266,12 +283,13 @@ class BnplTerminalEdgesDatabaseTest {
                 "EXPIRED", expiring.offer().value().toString());
         for (Map.Entry<String, String> offer : offers.entrySet()) {
             String at = " WHERE id = '" + offer.getValue() + "'";
+            String offerRank = "a " + offer.getKey() + " BNPL offer is terminal";
             edges.add(p0001("offer " + offer.getKey() + " -> OFFERED", "UPDATE bnpl.bnpl_offer SET status = 'OFFERED',"
-                    + " next_step_at = clock_timestamp()" + at));
+                    + " next_step_at = clock_timestamp()" + at, offerRank));
             for (String to : List.of("ACCEPTED", "DECLINED", "EXPIRED")) {
                 if (!to.equals(offer.getKey())) {
                     edges.add(p0001("offer " + offer.getKey() + " -> " + to, "UPDATE bnpl.bnpl_offer SET status = '"
-                            + to + "'" + at));
+                            + to + "'" + at, offerRank));
                 }
             }
             terminal.put("SELECT status FROM bnpl.bnpl_offer" + at, offer.getKey());
@@ -289,11 +307,12 @@ class BnplTerminalEdgesDatabaseTest {
             for (String to : List.of("SUBMITTED", "AWAITING_DECISION", "OFFERED", "DECLINED", "WITHDRAWN")) {
                 if (!to.equals(application.getKey())) {
                     edges.add(p0001("application " + application.getKey() + " -> " + to, "UPDATE bnpl.bnpl_application"
-                            + " SET status = '" + to + "'" + at));
+                            + " SET status = '" + to + "'" + at, application.getKey() + " -> " + to + " is not an edge"));
                 }
             }
             edges.add(p0001("application " + application.getKey() + " moves its permit", "UPDATE"
-                    + " bnpl.bnpl_application SET next_step_at = clock_timestamp()" + at));
+                    + " bnpl.bnpl_application SET next_step_at = clock_timestamp()" + at,
+                    "a BNPL application moves only its permit, and only while AWAITING_DECISION"));
             terminal.put("SELECT status FROM bnpl.bnpl_application" + at, application.getKey());
         }
 
@@ -303,8 +322,10 @@ class BnplTerminalEdgesDatabaseTest {
             migrator.setAutoCommit(false);
             application.setAutoCommit(false);
             for (Edge edge : edges) {
-                attempt(migrator, "migrator", edge.sql(), edge.migratorState(), edge.name(), violations);
-                attempt(application, "application", edge.sql(), edge.applicationState(), edge.name(), violations);
+                attempt(migrator, "migrator", edge.sql(), edge.migratorState(), edge.migratorReason(), edge.name(),
+                        violations);
+                attempt(application, "application", edge.sql(), edge.applicationState(), edge.applicationReason(),
+                        edge.name(), violations);
             }
         }
         assertThat(violations).as(edges.size() + " edges x 2 roles").isEmpty();
@@ -316,23 +337,30 @@ class BnplTerminalEdgesDatabaseTest {
 
     // ------------------------------------------------------------------ plumbing
 
-    private static Edge p0001(String name, String sql) {
-        return new Edge(name, sql, "P0001", "P0001");
+    /** An edge both roles meet as {@code P0001}, refused by the rule whose message carries {@code reason}. */
+    private static Edge p0001(String name, String sql, String reason) {
+        return new Edge(name, sql, "P0001", "P0001", reason, reason);
     }
 
     private static String where(UUID id) {
         return " WHERE id = '" + id + "'";
     }
 
-    /** {@code sql} as {@code role}, rolled back whatever happened; a refusal other than {@code expected} is a violation. */
-    private static void attempt(Connection connection, String role, String sql, String expected, String edge,
-            List<String> violations) throws SQLException {
+    /**
+     * {@code sql} as {@code role}, rolled back whatever happened; a refusal other than {@code expected}, or one by a rule
+     * whose message does not carry {@code reason}, is a violation.
+     */
+    private static void attempt(Connection connection, String role, String sql, String expected, String reason,
+            String edge, List<String> violations) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             int moved = statement.executeUpdate(sql);
             violations.add(edge + " [" + role + "]: ADMITTED (" + moved + " row(s)) - expected " + expected);
         } catch (SQLException refused) {
             if (!expected.equals(refused.getSQLState())) {
                 violations.add(edge + " [" + role + "]: " + refused.getSQLState() + " - expected " + expected + " ("
+                        + refused.getMessage().lines().findFirst().orElse("") + ")");
+            } else if (!String.valueOf(refused.getMessage()).contains(reason)) {
+                violations.add(edge + " [" + role + "]: refused by another rule - expected \"" + reason + "\" ("
                         + refused.getMessage().lines().findFirst().orElse("") + ")");
             }
         } finally {

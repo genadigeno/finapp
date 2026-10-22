@@ -89,6 +89,14 @@ class BnplOutboxAtomicityDatabaseTest {
                 BnplApplications.SUBMITTED_EVENT, BnplOrigination.ELIGIBILITY_EVENT, BnplOrigination.OFFERED_EVENT,
                 "%" + offer.session() + "%")).as("before the acceptance, only the origination's events name the session")
                 .isZero();
+        // Exactly the origination's three, each once (the 12 -> 13 transition gate, A6-F11): "no other type" alone
+        // would pass with none of them, or with one twice.
+        assertThat(BnplApplicationClient.scalar("SELECT string_agg(event_type, ',' ORDER BY event_type) FROM"
+                + " platform.outbox_event WHERE event_type LIKE 'bnpl.%' AND convert_from(payload, 'UTF8') LIKE ?",
+                "%" + offer.session() + "%")).as("the session's events before the acceptance").isEqualTo(String.join(",",
+                java.util.stream.Stream.of(BnplApplications.SUBMITTED_EVENT, BnplOrigination.ELIGIBILITY_EVENT,
+                        BnplOrigination.OFFERED_EVENT).sorted().toList()));
+        assertThat(naming).isEqualTo(3);
         HttpResponse<String> refused = world.accept(customer.token(), offer, BnplApplicationClient.key());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
         assertThat(outboxRows()).as("a refused acceptance leaves no outbox row of its own").isEqualTo(before);
@@ -112,8 +120,11 @@ class BnplOutboxAtomicityDatabaseTest {
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type IN (?, ?)"
                 + " AND aggregate_id = ?::uuid", BnplAcceptances.INSTALMENT_DUE_EVENT,
                 BnplAcceptances.INSTALMENT_PAID_EVENT, obligation)).isEqualTo(2);
+        // The order this purchase paid, and only it - scoped to the session's own checkoutId, never any FINANCED order in
+        // the shared database (the 12 -> 13 transition gate, A6-F11).
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
-                + " 'checkout.OrderPaid' AND convert_from(payload, 'UTF8') LIKE ?", "%FINANCED%")).isPositive();
+                + " 'checkout.OrderPaid' AND convert_from(payload, 'UTF8') LIKE ? AND convert_from(payload, 'UTF8') LIKE ?",
+                "%" + offer.session() + "%", "%FINANCED%")).as("this session's order paid, once, FINANCED").isEqualTo(1);
     }
 
     private static long outboxRows() throws Exception {

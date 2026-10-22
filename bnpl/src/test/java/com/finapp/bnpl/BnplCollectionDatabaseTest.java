@@ -245,7 +245,7 @@ class BnplCollectionDatabaseTest {
                     + " outcome, currency, scale, due_minor, collected_minor, agreement_version, repayment_id, created_at,"
                     + " correlation_id) VALUES (gen_random_uuid(), '" + bought.id() + "', '" + instalment + "', DATE '"
                     + due.plusDays(1) + "', 'INSUFFICIENT_FUNDS', 'EUR', 2, 100, 0, 1, NULL, clock_timestamp(), 'x')",
-                    "P0001");
+                    "P0001", "records what its instalment had due and what it collected");
         }
     }
 
@@ -287,14 +287,17 @@ class BnplCollectionDatabaseTest {
                 + " %d, %d, 1, NULL, clock_timestamp(), 'raw writer')";
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(due))) {
             // Back-filled: an attempt dated before the instalment's later one.
-            refused(app, String.format(insert, second, due, "INSUFFICIENT_FUNDS", 150_00, 0), "P0001");
+            refused(app, String.format(insert, second, due, "INSUFFICIENT_FUNDS", 150_00, 0), "P0001",
+                    "never dated before an earlier attempt of its instalment");
             // Not billed: instalment 4.
-            refused(app, String.format(insert, fourth, due, "INSUFFICIENT_FUNDS", 150_00, 0), "P0001");
+            refused(app, String.format(insert, fourth, due, "INSUFFICIENT_FUNDS", 150_00, 0), "P0001",
+                    "attempted on a billed instalment of its own obligation");
         }
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(due.plusDays(2)))) {
             // PARTIAL under terms that allow none - the trigger's terms rank, before the shape's CHECK and the FK.
             refused(app, String.format(insert.replace("NULL, clock_timestamp()", "gen_random_uuid(), clock_timestamp()"),
-                    second, due.plusDays(2), "PARTIAL", 150_00, 1_00), "P0001");
+                    second, due.plusDays(2), "PARTIAL", 150_00, 1_00), "P0001",
+                    "a partial BNPL collection only where the pinned terms allow it");
         }
         // An AUTO_COLLECTION repayment no attempt names - whole and paying a billed instalment, so only the deferred
         // "every automatic repayment has its attempt" can refuse it, at commit.
@@ -320,10 +323,10 @@ class BnplCollectionDatabaseTest {
                     + bought.id() + "'", "42501");
             refused(app, "DELETE FROM bnpl.bnpl_collection_attempt", "42501");
             refused(migrator, "UPDATE bnpl.bnpl_collection_attempt SET collected_minor = 1 WHERE obligation_id = '"
-                    + bought.id() + "'", "P0001");
+                    + bought.id() + "'", "P0001", "a BNPL collection attempt is immutable from insert");
             refused(migrator, "DELETE FROM bnpl.bnpl_collection_attempt WHERE obligation_id = '" + bought.id() + "'",
-                    "P0001");
-            refused(migrator, "TRUNCATE bnpl.bnpl_collection_attempt", "P0001");
+                    "P0001", "a BNPL collection attempt is immutable from insert");
+            refused(migrator, "TRUNCATE bnpl.bnpl_collection_attempt", "P0001", "are never truncated");
         }
     }
 

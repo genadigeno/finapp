@@ -113,11 +113,19 @@ class BnplBillingDatabaseTest {
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
         Duration frame = world.frameOn(bought.purchaseDate().plusDays(43));
         ExecutorService pool = Executors.newFixedThreadPool(10);
+        // A start latch (the 12 -> 13 transition gate, A6-F9): the ten released together once all are ready, so the race is
+        // a race and not ten submissions served in the order the pool happened to start them.
+        java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(10);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
         try {
             List<Future<Integer>> sweepers = new ArrayList<>();
             for (int sweeper = 0; sweeper < 10; sweeper++) {
                 boolean claims = sweeper < 5;
                 sweepers.add(pool.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(60, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("never started");
+                    }
                     List<BnplObligationId> page = claims
                             ? BnplClockFrame.inOneTransaction(frame, uow -> world.servicing.claim(uow, 50, RETRY))
                             : List.of(bought.obligation());
@@ -131,6 +139,8 @@ class BnplBillingDatabaseTest {
                     return billed;
                 }));
             }
+            assertThat(ready.await(60, TimeUnit.SECONDS)).as("all ten sweepers ready").isTrue();
+            start.countDown();
             int billed = 0;
             for (Future<Integer> sweeper : sweepers) {
                 billed += sweeper.get(60, TimeUnit.SECONDS);
@@ -218,10 +228,14 @@ class BnplBillingDatabaseTest {
                 .isEqualTo(ServicingOutcome.Kind.BEHIND_ACCRUAL);
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_billing WHERE obligation_id = '" + bought.id() + "'")).isZero();
         BnplBilling raw = world.billingOf(bought, first, Money.ofMinorUnits(30 * 30, EUR));
+        List<SQLException> refusals = new java.util.concurrent.CopyOnWriteArrayList<>();
         assertThatThrownBy(() -> BnplClockFrame.inOneTransaction(world.frameOn(first.dueDate()), uow -> {
-            PURCHASES.insertBilling(uow, raw);
+            PURCHASES.insertBilling(BnplAcceptanceDatabaseTest.capturing(uow, refusals), raw);
             return null;
         })).hasMessageContaining("P0001");
+        // The rule the case names, read beneath the store (the 12 -> 13 transition gate, A6-F2).
+        assertThat(refusals).singleElement().satisfies(refusal -> assertThat(refusal.getMessage())
+                .contains("a pay-in-N billing waits for every accrual of its period"));
     }
 
     @Test
@@ -233,10 +247,13 @@ class BnplBillingDatabaseTest {
         assertThat(world.serviceOn(bought.purchaseDate().plusDays(28), bought.obligation()).billed()).isEqualTo(2);
         BnplPurchaseStore.StoredInstalment last = bought.schedule().instalments().get(3);
         BnplBilling wrong = world.billingOf(bought, last, Money.zero(EUR), last.principal().plus(Money.ofMinorUnits(1, EUR)));
+        List<SQLException> refusals = new java.util.concurrent.CopyOnWriteArrayList<>();
         assertThatThrownBy(() -> BnplClockFrame.inOneTransaction(world.frameOn(last.dueDate()), uow -> {
-            PURCHASES.insertBilling(uow, wrong);
+            PURCHASES.insertBilling(BnplAcceptanceDatabaseTest.capturing(uow, refusals), wrong);
             return null;
         })).hasMessageContaining("P0001");
+        assertThat(refusals).singleElement().satisfies(refusal -> assertThat(refusal.getMessage())
+                .contains("the last instalment the remainder"));
         world.serviceOn(last.dueDate(), bought.obligation());
         assertThat(scalar("SELECT sum(principal_minor)::text FROM bnpl.bnpl_billing WHERE obligation_id = '" + bought.id()
                 + "'")).isEqualTo("60000");
@@ -320,7 +337,7 @@ class BnplBillingDatabaseTest {
                     + " journal_entry_id, created_at, correlation_id) SELECT gen_random_uuid(), o.id, 2, 'EUR', 2, 1,"
                     + " o.agreement_id, 1, 'ALLOCATION_ENGINE_V1', DATE '" + due.minusDays(1) + "', gen_random_uuid(),"
                     + " clock_timestamp(), 'raw' FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'",
-                    "P0001");
+                    "P0001", "a credit-balance application is value-dated on or after its obligation's floor");
         }
     }
 
@@ -394,7 +411,8 @@ class BnplBillingDatabaseTest {
             migrator.setAutoCommit(false);
             refused(application, "UPDATE bnpl.bnpl_obligation SET plan = plan" + where, "42501");
             refused(migrator, "UPDATE bnpl.bnpl_obligation SET status = 'CLOSED', closed_at = clock_timestamp(),"
-                    + " closure_reason = 'REPAID'" + where, "P0001");
+                    + " closure_reason = 'REPAID'" + where, "P0001",
+                    "a BNPL obligation is CLOSED only beside its closure");
             // P12-TSK-017's V009 grants the writer INSERT - never UPDATE or DELETE.
             refused(application, "DELETE FROM bnpl.bnpl_interest_accrual", "42501");
             refused(application, "UPDATE bnpl.bnpl_interest_accrual SET posted_minor = posted_minor", "42501");

@@ -7,6 +7,7 @@ import com.finapp.accounts.CustomerAccount;
 import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.accounts.ProductType;
 import com.finapp.accounts.UnsupportedAccountCurrencyException;
+import com.finapp.app.accounts.ExistingWallets;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
@@ -81,17 +82,12 @@ public final class AccountsLoanWallets implements LoanWallets {
      * The party's existing wallet in exactly {@code currency} (`P11-TSK-018`): its live customer - whatever its status, so a
      * suspended customer's wallet is found and a suspended customer may still repay - its live {@code WALLET} agreement,
      * and that agreement's {@code CUSTOMER_WALLET} account. Never opened: a repayment needs money already there, and a
-     * closure refunds to the wallet the loan was repaid from. Empty when any link is missing.
+     * closure refunds to the wallet the loan was repaid from. Empty when any link is missing. The resolution is
+     * {@link ExistingWallets}' - the one bnpl's {@code AccountsBnplWallets} reads too (the Phase 12 &rarr; 13 transition
+     * gate, A4-F7); no behaviour changed.
      */
     @Override
     public Optional<LedgerAccountId> existingWallet(Connection unitOfWork, UUID party, CurrencyCode currency) {
-        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(party, "party must not be null");
-        Objects.requireNonNull(currency, "currency must not be null");
-        return parties.findLiveCustomerFor(unitOfWork, PartyId.of(party))
-                .flatMap(found -> customerAccounts.findLive(unitOfWork, found.id().value(), ProductType.WALLET))
-                .flatMap(agreement -> ledgerAccounts.findOwned(
-                        unitOfWork, agreement.id().value(), AccountPurpose.CUSTOMER_WALLET, currency))
-                .map(LedgerAccount::id);
+        return new ExistingWallets(parties, customerAccounts, ledgerAccounts).existingWallet(unitOfWork, party, currency);
     }
 }

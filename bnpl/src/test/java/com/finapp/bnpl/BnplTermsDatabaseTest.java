@@ -135,7 +135,7 @@ class BnplTermsDatabaseTest {
         assertThat(count(audited("bnpl.TermsVersionActivated", proposed.id()))).as("losers record nothing").isEqualTo(1);
         try (Connection owner = DatabaseRoles.migrator()) {
             refused(owner, "UPDATE bnpl.bnpl_terms_version SET status = 'RETIRED' WHERE id = '" + proposed.id().value()
-                    + "'", "P0001");
+                    + "'", "P0001", "retired with no later ACTIVE successor");
         }
         assertThat(status(proposed.id())).isEqualTo("ACTIVE");
     }
@@ -182,10 +182,11 @@ class BnplTermsDatabaseTest {
                 refused(writer, "INSERT INTO bnpl.bnpl_terms_version (id, product, version, status, proposed_by,"
                         + " proposed_by_type, proposed_at, proposal_reason, decided_by, decided_by_type, decision_reason,"
                         + " correlation_id) VALUES (gen_random_uuid(), 'BNPL_PAY_IN_4', 9999, 'ACTIVE', 'a', 'EMPLOYEE',"
-                        + " now(), 'r', 'b', 'EMPLOYEE', 'r', 'c')", "P0001");
+                        + " now(), 'r', 'b', 'EMPLOYEE', 'r', 'c')", "P0001", "born PROPOSED and undecided");
                 refused(writer, "INSERT INTO bnpl.bnpl_terms_version (id, product, version, status, proposed_by,"
                         + " proposed_by_type, proposed_at, proposal_reason, correlation_id) VALUES (gen_random_uuid(),"
-                        + " 'BNPL_PAY_IN_4', 9998, 'PROPOSED', 'a', 'EMPLOYEE', now(), 'r', 'c')", "P0001");
+                        + " 'BNPL_PAY_IN_4', 9998, 'PROPOSED', 'a', 'EMPLOYEE', now(), 'r', 'c')", "P0001",
+                        "committed without its term set");
             }
         }
     }
@@ -207,16 +208,20 @@ class BnplTermsDatabaseTest {
             refused(application, "DELETE FROM bnpl.bnpl_terms_version WHERE id = '" + id.value() + "'", "42501");
         }
         try (Connection owner = DatabaseRoles.migrator()) {
-            refused(owner, update, "P0001");
-            refused(owner, delete, "P0001");
+            refused(owner, update, "P0001", "term set is immutable from insert");
+            refused(owner, delete, "P0001", "term set is immutable from insert");
             refused(owner, "UPDATE bnpl.bnpl_terms_version_event SET reason = 'x' WHERE terms_version_id = '"
-                    + id.value() + "'", "P0001");
+                    + id.value() + "'", "P0001", "a BNPL terms version event is append-only");
             refused(owner, "UPDATE bnpl.bnpl_terms_version SET product = 'BNPL_PAY_IN_4' WHERE id = '" + id.value()
-                    + "'", "P0001");
-            refused(owner, "TRUNCATE bnpl.bnpl_terms CASCADE", "P0001");
-            refused(owner, "DELETE FROM bnpl.bnpl_terms_version WHERE id = '" + id.value() + "'", "P0001");
+                    + "'", "P0001", "a BNPL terms version's identity is frozen");
+            // The cascade reaches no other table (nothing references the term set), so the refusal is the term set's own
+            // trigger's - asserted, not assumed (the 12 -> 13 transition gate, A6-F2).
+            assertThat(BnplAcceptanceDatabaseTest.truncateRefusedByItsOwnTrigger(owner, "bnpl.bnpl_terms",
+                    "the BNPL terms history is never truncated")).as("the cascade's reach").isEmpty();
+            refused(owner, "DELETE FROM bnpl.bnpl_terms_version WHERE id = '" + id.value() + "'", "P0001",
+                    "a BNPL terms version is never deleted");
             refused(owner, "INSERT INTO bnpl.bnpl_terms SELECT * FROM bnpl.bnpl_terms WHERE terms_version_id = '"
-                    + id.value() + "'", "P0001");
+                    + id.value() + "'", "P0001", "a BNPL term set is born with its PROPOSED version");
         }
         // Unchanged: the fixture's own late fee, never the 1 the refused UPDATE wrote. (The fixture's default late fee
         // became 0 at P12-TSK-020 - "no late fee unless a suite asks" - and this literal 500 was left behind;
@@ -544,6 +549,11 @@ class BnplTermsDatabaseTest {
                 .as(sql)
                 .isInstanceOf(SQLException.class)
                 .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState));
+    }
+
+    /** {@code sql} refused with {@code sqlState} by the rule whose message carries {@code reason} (the 12 -> 13 gate, A6-F2). */
+    private static void refused(Connection connection, String sql, String sqlState, String reason) {
+        BnplAcceptanceDatabaseTest.refused(connection, sql, sqlState, reason);
     }
 
     private static <T> List<T> race(int racers, Callable<T> work) throws Exception {

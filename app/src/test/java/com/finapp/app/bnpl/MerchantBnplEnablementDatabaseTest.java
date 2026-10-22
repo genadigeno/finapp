@@ -249,7 +249,9 @@ class MerchantBnplEnablementDatabaseTest {
                 "UPDATE merchant.bnpl_fee_pin SET gross_amount_minor = 1 WHERE purchase_id = ?",
                 "DELETE FROM merchant.bnpl_fee_pin WHERE purchase_id = ?")) {
             assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), sql, purchase.value()))
-                    .as("the application role: " + sql).isInstanceOf(SQLException.class);
+                    .as("the application role: " + sql).isInstanceOf(SQLException.class)
+                    .satisfies(refusal -> assertThat(((SQLException) refusal).getSQLState()).as("no grant: " + sql)
+                            .isEqualTo("42501"));
             assertThatThrownBy(() -> rawUpdate(DatabaseRoles.migrator(), sql, purchase.value()))
                     .as("the migrator, bound by the trigger: " + sql)
                     .isInstanceOf(SQLException.class).hasMessageContaining("immutable");

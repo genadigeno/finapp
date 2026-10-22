@@ -210,9 +210,34 @@ class BnplRepaymentReversalDatabaseTest {
                     + " agreement_version, status, proposed_by, proposed_by_type, proposed_at, proposal_reason,"
                     + " correlation_id) SELECT gen_random_uuid(), r.obligation_id, r.id, r.agreement_id,"
                     + " r.agreement_version, 'PROPOSED', 'someone', 'EMPLOYEE', clock_timestamp(), 'r', 'c'"
-                    + " FROM bnpl.bnpl_repayment r WHERE r.id = '" + payoff + "'", "P0001");
+                    + " FROM bnpl.bnpl_repayment r WHERE r.id = '" + payoff + "'", "P0001",
+                    "a repayment of a BNPL obligation not ACTIVE is never reversed");
             migrator.rollback();
         }
+        // The PAYOFF arm alone (the 12 -> 13 transition gate, A6-F2): above, the CLOSED arm refused first, as it must
+        // for every real PAYOFF repayment - a payoff closes its obligation. So a PAYOFF repayment is planted on an ACTIVE
+        // obligation (the bootstrap role, its row triggers off for the one statement), and a proposal naming it - its
+        // obligation ACTIVE, its repayment its own under its agreement version - meets the PAYOFF arm and nothing before
+        // it. All of it rolled back.
+        BnplConditionDatabaseWorld.Purchased active = world.base.plain();
+        try (Connection bootstrap = DatabaseRoles.bootstrap(); Statement statement = bootstrap.createStatement()) {
+            bootstrap.setAutoCommit(false);
+            UUID planted = UUID.randomUUID();
+            statement.execute("SET LOCAL session_replication_role = replica");
+            statement.execute("INSERT INTO bnpl.bnpl_repayment SELECT '" + planted + "', obligation_id, 'PAYOFF',"
+                    + " 'planted', currency, scale, amount_minor, agreement_id, agreement_version, allocation_engine,"
+                    + " gen_random_uuid(), value_date, received_at FROM bnpl.bnpl_repayment WHERE obligation_id = '"
+                    + active.id() + "' AND kind = 'AT_PURCHASE'");
+            statement.execute("SET LOCAL session_replication_role = origin");
+            refused(bootstrap, "INSERT INTO bnpl.bnpl_repayment_reversal (id, obligation_id, repayment_id, agreement_id,"
+                    + " agreement_version, status, proposed_by, proposed_by_type, proposed_at, proposal_reason,"
+                    + " correlation_id) SELECT gen_random_uuid(), r.obligation_id, r.id, r.agreement_id,"
+                    + " r.agreement_version, 'PROPOSED', 'someone', 'EMPLOYEE', clock_timestamp(), 'r', 'c'"
+                    + " FROM bnpl.bnpl_repayment r WHERE r.id = '" + planted + "'", "P0001",
+                    "a PAYOFF repayment closed its obligation and is never reversed");
+        }
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + active.id()
+                + "' AND kind = 'PAYOFF'")).as("the plant rolled back").isZero();
     }
 
     @Test
@@ -320,7 +345,7 @@ class BnplRepaymentReversalDatabaseTest {
             refused(migrator, "UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED', decided_by = 'other',"
                     + " decided_by_type = 'EMPLOYEE', decision_reason = 'r', journal_entry_id = gen_random_uuid(),"
                     + " value_date = DATE '" + repaid.bought().due(3).minusDays(1) + "' WHERE id = '" + proposed.id() + "'",
-                    "P0001");
+                    "P0001", "valued on or after its obligation's floor");
             migrator.rollback();
             try (Statement statement = migrator.createStatement()) {
                 statement.execute("UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED', decided_by = 'other',"

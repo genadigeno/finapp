@@ -204,7 +204,7 @@ class BnplAcceptanceDatabaseTest {
         assertThatThrownBy(() -> accept(new Scripted(), early, offered)).isInstanceOf(BnplStorageException.class)
                 .hasMessage("bnpl storage failed inserting a BNPL billing: SQLSTATE P0001").hasNoCause();
         assertThat(refusals).singleElement().satisfies(refusal -> assertThat(refusal.getMessage())
-                .contains("due date"));
+                .contains("a BNPL billing is dated its instalment's due date"));
         assertThat(count("SELECT count(*) FROM bnpl.purchase WHERE offer_id = '" + offered.offer().value() + "'"))
                 .isZero();
     }
@@ -222,12 +222,14 @@ class BnplAcceptanceDatabaseTest {
             application.rollback();
             refused(application, "DELETE FROM bnpl.bnpl_agreement" + where, "42501");
             application.rollback();
-            refused(migrator, "UPDATE bnpl.bnpl_agreement SET plan = plan" + where, "P0001");
+            refused(migrator, "UPDATE bnpl.bnpl_agreement SET plan = plan" + where, "P0001",
+                    "a BNPL agreement is immutable from insert");
             migrator.rollback();
-            refused(migrator, "DELETE FROM bnpl.bnpl_agreement" + where, "P0001");
+            refused(migrator, "DELETE FROM bnpl.bnpl_agreement" + where, "P0001",
+                    "a BNPL agreement is immutable from insert");
             migrator.rollback();
             refused(migrator, "UPDATE bnpl.merchant_financing SET fee_minor = fee_minor WHERE purchase_id = '"
-                    + accepted.purchase().id().value() + "'", "P0001");
+                    + accepted.purchase().id().value() + "'", "P0001", "a merchant financing is immutable from insert");
         }
     }
 
@@ -239,13 +241,16 @@ class BnplAcceptanceDatabaseTest {
         try (Connection migrator = DatabaseRoles.migrator()) {
             migrator.setAutoCommit(false);
             refused(migrator, "UPDATE bnpl.bnpl_offer SET status = 'ACCEPTED' WHERE id = '" + offered.offer().value()
-                    + "'", "P0001");
+                    + "'", "P0001", "a BNPL offer is ACCEPTED only beside its FINANCED purchase");
         }
+        List<SQLException> refusals = new java.util.concurrent.CopyOnWriteArrayList<>();
         assertThatThrownBy(() -> inOneTransaction(uow -> {
             OFFERS.lockOwnedBy(uow, offered.offer(), offered.party());
-            return OFFERS.accept(uow, offered.offer());
+            return OFFERS.accept(capturing(uow, refusals), offered.offer());
         })).as("the domain's conditional matches, the trigger refuses: no FINANCED purchase beside it")
                 .isInstanceOf(BnplStorageException.class).hasMessageContaining("P0001");
+        assertThat(refusals).as("the edge's own rule, beneath the store").singleElement().satisfies(refusal ->
+                assertThat(refusal.getMessage()).contains("a BNPL offer is ACCEPTED only beside its FINANCED purchase"));
         assertThat(scalar("SELECT status FROM bnpl.bnpl_offer WHERE id = '" + offered.offer().value() + "'"))
                 .isEqualTo("OFFERED");
     }
@@ -725,6 +730,72 @@ class BnplAcceptanceDatabaseTest {
                 .as(sql)
                 .isInstanceOf(SQLException.class)
                 .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState));
+        try {
+            connection.rollback();
+        } catch (SQLException ignored) {
+            // the next statement's own assertion says what matters
+        }
+    }
+
+    /**
+     * {@code TRUNCATE table CASCADE} by its owner is refused by {@code table}'s <em>own</em> truncate trigger (the Phase 12
+     * &rarr; 13 transition gate, A6-F2): the cascade reaches every table referencing it, and bnpl's truncate triggers
+     * share one function and so one message - a refusal reached through the cascade would read the same. So every other
+     * truncate trigger the cascade reaches is disabled first, inside the attempt's own transaction (DDL is
+     * transactional, and the attempt is rolled back with it), and {@code table}'s own is the only one left to refuse.
+     *
+     * @return the triggers disabled for the attempt, {@code table.trigger} - the cascade's reach, for the case to assert
+     */
+    static List<String> truncateRefusedByItsOwnTrigger(Connection owner, String table, String reason)
+            throws SQLException {
+        boolean autoCommit = owner.getAutoCommit();
+        owner.setAutoCommit(false);
+        List<String> disabled = new ArrayList<>();
+        try (Statement statement = owner.createStatement()) {
+            try (ResultSet rows = statement.executeQuery("WITH RECURSIVE reached (relid) AS (SELECT c.conrelid FROM"
+                    + " pg_constraint c WHERE c.contype = 'f' AND c.confrelid = '" + table + "'::regclass UNION SELECT"
+                    + " c.conrelid FROM pg_constraint c JOIN reached r ON c.confrelid = r.relid WHERE c.contype = 'f')"
+                    + " SELECT t.tgrelid::regclass::text || '.' || t.tgname FROM pg_trigger t JOIN reached r ON r.relid ="
+                    + " t.tgrelid WHERE NOT t.tgisinternal AND (t.tgtype & 32) <> 0 AND t.tgrelid <> '" + table
+                    + "'::regclass ORDER BY 1")) {
+                while (rows.next()) {
+                    disabled.add(rows.getString(1));
+                }
+            }
+            for (String trigger : disabled) {
+                int dot = trigger.lastIndexOf('.');
+                statement.execute("ALTER TABLE " + trigger.substring(0, dot) + " DISABLE TRIGGER "
+                        + trigger.substring(dot + 1));
+            }
+            try (ResultSet own = statement.executeQuery("SELECT count(*) FROM pg_trigger t WHERE t.tgrelid = '" + table
+                    + "'::regclass AND NOT t.tgisinternal AND (t.tgtype & 32) <> 0 AND t.tgenabled <> 'D'")) {
+                own.next();
+                assertThat(own.getInt(1)).as(table + "'s own truncate trigger, enabled").isEqualTo(1);
+            }
+        }
+        refused(owner, "TRUNCATE " + table + " CASCADE", "P0001", reason);
+        owner.setAutoCommit(autoCommit);
+        return disabled;
+    }
+
+    /**
+     * {@code sql}, run alone by {@code connection}, is refused with {@code sqlState} <em>by the rule the case names</em>:
+     * the refusal's own message must carry {@code reason}, a fragment of that rule's {@code RAISE} or constraint text
+     * (the Phase 12 &rarr; 13 transition gate, A6-F2). A bare SQLSTATE cannot tell the named rule from an earlier rank
+     * that refuses the same row first - triggers fire alphabetically and every bnpl rule raises {@code P0001} - so a
+     * refusal case asserts both.
+     */
+    static void refused(Connection connection, String sql, String sqlState, String reason) {
+        assertThatThrownBy(() -> {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute(sql);
+                    }
+                })
+                .as(sql)
+                .isInstanceOf(SQLException.class)
+                .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState))
+                .satisfies(failure -> assertThat(failure.getMessage()).as("the rule that refused: " + sql)
+                        .contains(reason));
         try {
             connection.rollback();
         } catch (SQLException ignored) {
