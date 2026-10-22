@@ -560,7 +560,10 @@ A7-1, A7-2, A5-F2, A5-F4, A5-F7, A3-M2, A7-6:*
 - *The operator's acts and read refuse an operator of the dispute's own party **or one the platform cannot place in a
   party** (fail closed), the read included; the queue never shows one's own party's disputes.*
 - *`→ WITHDRAWN`: the hold lifts, and **the withdrawal never restarts the clock** - the held instalments' DPD and fee day
-  count from their due dates as if never held (§5).)*
+  count from their due dates as if never held (§5) - and **starts a cooldown**: the purchase takes no new dispute for 30
+  days from the withdrawal's stamp (`BnplDisputes.WITHDRAWAL_COOLDOWN`, the owner's to change), the (birth) edge refused
+  `409 bnpl.DisputeCoolingOff` under B5 on the database clock and by `bnpl V018`'s trigger
+  `bnpl_dispute_respects_the_withdrawal_cooldown` for every writer. A merchant's or an operator's outcome starts none.)*
 
 **One bound, two paths** (`INV-BNPL-08`, ADR-0106): a dispute's refund outcome *is* a `BnplRefund`, under
 the same B5 lock and the same `INV-BNPL-07` bound as a merchant refund, so at most the gross ever returns to
@@ -714,7 +717,7 @@ is refused at the assignment (`422 merchant.BnplScheduleNotReturning`, and by tr
 |---|---|---|---|
 | Delinquency | `CURRENT`; `PAST_DUE` with DPD and bucket (the pinned terms' bounds) | S, daily in T-svc under B4, derived from billed and allocated rows | late-fee eligibility; `BnplDelinquencyChanged` (old/new bucket, DPD) — also announcing cure |
 | Default | `DEFAULTED` flag | S at DPD ≥ 90 (A14); cleared at cure, no probation | `BnplDefaulted` / `BnplDefaultCleared`; **no acceleration, no posting** (write-off is Phase 14's) |
-| Disputed (servicing hold) | the held amount and the instalments it covers, latest first | the dispute's opening (T-dsp); lifted by its resolution or withdrawal | no late fee and no DPD on the held instalments; no auto-collection beyond the undisputed part — the hold Phase 11 designed and did not build (lending's A9), built here for BNPL's own reason. *(The Phase 12 → 13 gate's A5-F2, `bnpl V018`, 2026-10-22: after a refund or upheld lift the clock restarts at the lift's business date; after a **withdrawal** it does not - DPD and the fee day count from the due date as if never held. A re-dispute cooldown or limit is the owner's choice.)* |
+| Disputed (servicing hold) | the held amount and the instalments it covers, latest first | the dispute's opening (T-dsp); lifted by its resolution or withdrawal | no late fee and no DPD on the held instalments; no auto-collection beyond the undisputed part — the hold Phase 11 designed and did not build (lending's A9), built here for BNPL's own reason. *(The Phase 12 → 13 gate's A5-F2, `bnpl V018`, 2026-10-22: after a refund or upheld lift the clock restarts at the lift's business date; after a **withdrawal** it does not - DPD and the fee day count from the due date as if never held; and the purchase takes no new dispute for 30 days after the withdrawal (`409 bnpl.DisputeCoolingOff`, `BnplDisputes.WITHDRAWAL_COOLDOWN` - the length the owner's to change), so a withdraw-and-re-open loop cannot keep an instalment held.)* |
 | Late-fee eligibility | derived | S, read in T-svc under B4 | a late fee once per instalment on the pinned day, capped, never on a held instalment |
 
 DPD is the days between the oldest past-due, unheld instalment's due date and the current business date

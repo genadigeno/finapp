@@ -375,6 +375,11 @@ public final class BnplDisputeDesk {
                 metrics.record(BnplDisputeMetrics.Outcome.DISPUTE_OPEN);
                 throw new ApiException(BnplErrorCode.DISPUTE_OPEN, "The BNPL purchase has an open dispute",
                         "the purchase already has an open dispute; nothing was written.");
+            } catch (BnplDisputes.DisputeCoolingOff coolingOff) {
+                metrics.record(BnplDisputeMetrics.Outcome.COOLING_OFF);
+                throw new ApiException(BnplErrorCode.DISPUTE_COOLING_OFF, "The BNPL purchase cannot be disputed yet",
+                        "a dispute of this purchase was withdrawn less than "
+                                + BnplDisputes.WITHDRAWAL_COOLDOWN.toDays() + " days ago; nothing was written.");
             } catch (BnplDisputes.DisputeNotActionable notActionable) {
                 metrics.record(BnplDisputeMetrics.Outcome.NOT_ACTIONABLE);
                 throw new ApiException(BnplErrorCode.DISPUTE_NOT_ACTIONABLE, "The BNPL dispute is not open to this act",

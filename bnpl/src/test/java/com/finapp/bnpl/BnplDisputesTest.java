@@ -640,9 +640,10 @@ class BnplDisputesTest {
     // ------------------------------------------------------------------ the Phase 12 to 13 gate's repairs (R1)
 
     @Test
-    @DisplayName("the open, withdraw and re-open loop cannot suppress default (A5-F2): a customer withdrawing and re-opening"
-            + " a dispute every twelve days is still defaulted on the first day past 90 that no dispute holds instalment"
-            + " 2 - its days past due counted from its due date, never from a withdrawal")
+    @DisplayName("the open, withdraw and re-open loop cannot suppress default (A5-F2): the same-day re-opening is refused"
+            + " DisputeCoolingOff; re-opened after the cooldown and withdrawn again, cycle after cycle, the customer is"
+            + " still defaulted on the first unheld servicing day past 90 - days past due from the due date, never from a"
+            + " withdrawal")
     void theOpenWithdrawLoopStillDefaults() {
         BnplConditionWorld.Agreement p4 = world.payIn4();
         BnplDispute dispute = openAt("2026-10-20T12:00:00Z", p4, "open-0", 450_00).dispute();
@@ -650,25 +651,57 @@ class BnplDisputesTest {
         LocalDate threshold = DUE_2.plusDays(90);
         LocalDate withdrawal = DUE_2.plusDays(1);
         LocalDate defaultedOn = null;
-        for (int cycle = 1; defaultedOn == null && cycle <= 12; cycle++) {
-            // Withdrawn on one day, nothing holding instalment 2 the next (the servicing step's), re-opened the day after.
+        for (int cycle = 1; defaultedOn == null && cycle <= 6; cycle++) {
             withdrawAt(withdrawal.atTime(8, 0).toInstant(ZoneOffset.UTC), dispute);
-            LocalDate gap = withdrawal.plusDays(1);
-            world.serviceOn(gap, p4);
-            assertThat(world.conditions.derive(BnplApplicationFakes.UOW, p4.obligation(), pinned(p4), gap).daysPastDue())
-                    .as("on %s no dispute holds instalment 2: its days past due from its due date", gap)
-                    .isEqualTo((int) java.time.temporal.ChronoUnit.DAYS.between(DUE_2, gap));
-            if (world.history(p4).stream().anyMatch(line -> line.startsWith(gap + " DEFAULT") && line.endsWith("true"))) {
-                defaultedOn = gap;
+            String sameDay = withdrawal.atTime(12, 0).toInstant(ZoneOffset.UTC).toString();
+            String key = "again-" + cycle;
+            assertThatThrownBy(() -> openAt(sameDay, p4, key, 450_00)).as("re-opened the day it was withdrawn")
+                    .isInstanceOf(BnplDisputes.DisputeCoolingOff.class);
+            // Nothing holds instalment 2 through the cooldown: the servicing step on its first and its last day.
+            for (LocalDate unheld : List.of(withdrawal.plusDays(1), withdrawal.plusDays(29))) {
+                world.serviceOn(unheld, p4);
+                assertThat(world.conditions.derive(BnplApplicationFakes.UOW, p4.obligation(), pinned(p4), unheld)
+                        .daysPastDue()).as("on %s no dispute holds instalment 2: from its due date", unheld)
+                        .isEqualTo((int) java.time.temporal.ChronoUnit.DAYS.between(DUE_2, unheld));
+                if (defaultedOn == null && world.history(p4).stream()
+                        .anyMatch(line -> line.startsWith(unheld + " DEFAULT") && line.endsWith("true"))) {
+                    defaultedOn = unheld;
+                }
             }
-            LocalDate reopen = gap.plusDays(1);
+            LocalDate reopen = withdrawal.plusDays(30);
             dispute = openAt(reopen.atTime(12, 0).toInstant(ZoneOffset.UTC).toString(), p4, "open-" + cycle, 450_00)
                     .dispute();
             assertThat(dispute.holds()).extracting(BnplDispute.Held::dueDate).contains(DUE_2);
             withdrawal = reopen.plusDays(10);
         }
-        assertThat(defaultedOn).as("defaulted on the first unheld day at or past 90 days").isNotNull()
-                .isAfterOrEqualTo(threshold).isBefore(threshold.plusDays(12));
+        assertThat(defaultedOn).as("defaulted on the first unheld servicing day at or past 90 days").isNotNull()
+                .isAfterOrEqualTo(threshold).isBefore(threshold.plusDays(40));
+    }
+
+    @Test
+    @DisplayName("a withdrawal starts a cooldown (A5-F2): the purchase takes no new dispute until 30 days after the"
+            + " withdrawal's stamp - a second before refused DisputeCoolingOff with nothing written, at it admitted -"
+            + " while an upheld dispute starts none")
+    void aWithdrawalStartsACooldown() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        BnplDispute withdrawn = openAt("2026-10-20T12:00:00Z", p4, "open-1", 200_00).dispute();
+        Instant at = Instant.parse("2026-10-22T08:00:00Z");
+        withdrawAt(at, withdrawn);
+        assertThat(BnplDisputes.WITHDRAWAL_COOLDOWN).isEqualTo(Duration.ofDays(30));
+        Instant cooled = at.plus(BnplDisputes.WITHDRAWAL_COOLDOWN);
+        assertThatThrownBy(() -> openAt(at.plusSeconds(60).toString(), p4, "open-2", 200_00))
+                .isInstanceOf(BnplDisputes.DisputeCoolingOff.class);
+        assertThatThrownBy(() -> openAt(cooled.minusSeconds(1).toString(), p4, "open-3", 200_00))
+                .isInstanceOf(BnplDisputes.DisputeCoolingOff.class);
+        assertThat(world.fakes.disputes.rows).as("nothing written").hasSize(1);
+        assertThat(openAt(cooled.toString(), p4, "open-4", 200_00).dispute().status()).isEqualTo(BnplDisputeStatus.OPEN);
+
+        BnplConditionWorld.Agreement upheld = world.payIn4();
+        BnplDispute contested = openAt("2026-10-20T12:00:00Z", upheld, "open-5", 200_00).dispute();
+        respondAt("2026-10-21T09:00:00Z", contested, BnplDisputes.Decision.CONTEST);
+        resolveAt(Instant.parse("2026-10-22T08:00:00Z"), contested, OPERATOR_A, BnplDisputeStatus.RESOLVED_UPHELD);
+        assertThat(openAt("2026-10-22T08:01:00Z", upheld, "open-6", 200_00).dispute().status())
+                .as("an operator's outcome starts no cooldown").isEqualTo(BnplDisputeStatus.OPEN);
     }
 
     @Test

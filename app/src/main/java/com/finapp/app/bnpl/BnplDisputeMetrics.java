@@ -11,13 +11,15 @@ import java.util.Objects;
  * ({@code opened}, {@code responded}, {@code resolved_refund}, {@code resolved_upheld}, {@code withdrawn}, {@code proposed},
  * {@code proposal_rejected}), or its refusal ({@code dispute_open}, {@code not_actionable}, {@code exceeds_purchase},
  * {@code fully_refunded}, {@code not_postable}, {@code self_approval_refused}, {@code self_dealing_refused},
- * {@code wallet_unavailable}), and {@code sweep_failed} for a deadline step that rolled back. A replay, an unknown dispute,
+ * {@code wallet_unavailable}, {@code cooling_off}), and {@code sweep_failed} for a deadline step that rolled back. A replay,
+ * an unknown dispute,
  * a malformed body or a missing reason counts nothing. Every series registered eagerly. Never an amount, a dispute, a
  * purchase or a party (ADR-0072).
  *
  * <p>{@code not_postable} is alerted ({@code BnplDisputeRefundNotPostable}, the Phase 12 to 13 gate's A7-1): a refund
  * outcome that cannot post - the deadline step's, retried on the cadence, or a door's - is never silent.
- * {@code wallet_unavailable} is an opening on a {@code CLOSED} obligation refused for want of an {@code ACTIVE} wallet.
+ * {@code wallet_unavailable} is an opening on a {@code CLOSED} obligation refused for want of an {@code ACTIVE} wallet;
+ * {@code cooling_off} an opening inside the cooldown after its customer withdrew a dispute of the purchase (A5-F2).
  */
 public final class BnplDisputeMetrics {
 
@@ -41,6 +43,7 @@ public final class BnplDisputeMetrics {
         SELF_APPROVAL_REFUSED,
         SELF_DEALING_REFUSED,
         WALLET_UNAVAILABLE,
+        COOLING_OFF,
         SWEEP_FAILED;
 
         String tag() {

@@ -1237,6 +1237,12 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
                                     "P12-TSK-023. The purchase id is the one this transaction holds FOR UPDATE (B5) - its open dispute, read under it; never a request value unscoped.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.latestWithdrawalOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "The Phase 12 -> 13 gate's A5-F2 cooldown. The purchase id is the one the opening holds FOR UPDATE (B5) after its owner-scoped agreement read - when its latest withdrawal was, read under it; an instant leaves, never a row; never a request value unscoped.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplDisputeStore.holds",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

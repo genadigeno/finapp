@@ -11,7 +11,13 @@
 --    fee day are judged from the due date as if the instalment had never been held. A lift by a refund or an upheld
 --    outcome keeps V015's rule (a good-faith contest the platform decided never makes the customer delinquent
 --    retroactively). The hold itself (bnpl.dispute_holds) is unchanged: while a dispute is open its instalments take no
---    collection, no DPD and no fee. A re-dispute cooldown or limit is the owner's choice, not built.
+--    collection, no DPD and no fee.
+--
+-- 1b. A withdrawal starts a cooldown (A5-F2, the gate's follow-up): a customer who withdrew and re-opened at once could keep
+--    an instalment held for ever. After its customer withdraws a dispute, the purchase takes no new dispute for
+--    bnpl.dispute_withdrawal_cooldown() (30 days, BnplDisputes.WITHDRAWAL_COOLDOWN - the owner's to change, or later a
+--    terms field) from the withdrawal's own stamp (resolved_at), judged at the opening's stamp - after the edge trigger
+--    has re-taken B5, under which every withdrawal moved. A dispute a merchant or an operator resolved starts none.
 --
 -- 2. The four-eyes threshold is judged on the purchase's cumulative refunds by dispute (A5-F7). V015 compared each
 --    dispute's own claim with the pinned threshold, so a large contest split into sequential disputes each at or below
@@ -43,6 +49,40 @@ $$;
 
 COMMENT ON FUNCTION bnpl.dispute_clock_start(uuid, date, date) IS
     'Where an obligation''s instalment''s days-past-due and late-fee day count from on a date (P12-TSK-023; ADR-0106 decision 3; bnpl V018, the Phase 12 -> 13 gate''s A5-F2): the later of its due date and the business date of the latest lift, by that date, of a dispute that held it and was RESOLVED - a refund or upheld; a customer''s withdrawal counts for nothing, so its due date when no resolved dispute ever held it. BnplDisputeHold.clockFrom is the same rule.';
+
+-- ---------------------------------------------------------------------------------------------
+-- 1b. The withdrawal's cooldown, for every writer.
+-- ---------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION bnpl.dispute_withdrawal_cooldown()
+    RETURNS interval
+    LANGUAGE sql
+    IMMUTABLE
+AS $$
+    SELECT interval '30 days'
+$$;
+
+COMMENT ON FUNCTION bnpl.dispute_withdrawal_cooldown() IS
+    'How long a BNPL purchase takes no new dispute after its customer withdrew one (bnpl V018, the Phase 12 -> 13 gate''s A5-F2): 30 days, the owner''s to change. BnplDisputes.WITHDRAWAL_COOLDOWN is the same figure.';
+
+CREATE OR REPLACE FUNCTION bnpl.bnpl_dispute_respects_the_withdrawal_cooldown()
+    RETURNS trigger
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Fires after bnpl_dispute_permits_only_machine_edges (names in order), which has re-taken B5 and stamped opened_at.
+    IF EXISTS (SELECT 1 FROM bnpl.bnpl_dispute d
+                WHERE d.purchase_id = NEW.purchase_id AND d.status = 'WITHDRAWN'
+                  AND NEW.opened_at < d.resolved_at + bnpl.dispute_withdrawal_cooldown()) THEN
+        RAISE EXCEPTION 'a BNPL purchase whose dispute its customer withdrew is not disputed again within the cooldown (bnpl V018, the Phase 12 -> 13 gate''s A5-F2)';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER bnpl_dispute_respects_the_withdrawal_cooldown
+    BEFORE INSERT ON bnpl.bnpl_dispute
+    FOR EACH ROW
+    EXECUTE FUNCTION bnpl.bnpl_dispute_respects_the_withdrawal_cooldown();
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. The amount the four-eyes threshold is judged against: the dispute's claim and every earlier dispute's refund.

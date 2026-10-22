@@ -112,6 +112,11 @@ class BnplDisputeApiTest {
                 bought.owner().token(), BnplApplicationClient.key());
         assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
         assertThat(withdrawn.body()).contains("\"status\":\"WITHDRAWN\"");
+        // The Phase 12 -> 13 gate's A5-F2 follow-up: the withdrawn purchase cools off - a re-opening is 409, nothing written.
+        HttpResponse<String> again = open(bought);
+        assertThat(again.statusCode()).as(again.body()).isEqualTo(409);
+        assertThat(again.body()).contains("bnpl.DisputeCoolingOff");
+        assertThat(disputes(bought.purchase())).isEqualTo(1);
     }
 
     @Test

@@ -35,6 +35,12 @@ public interface BnplDisputeStore {
     Optional<BnplDispute> openOf(Connection unitOfWork, BnplPurchaseId purchase);
 
     /**
+     * When the purchase's latest {@code WITHDRAWN} dispute was withdrawn (its database-stamped {@code resolved_at}) - read
+     * under the caller's B5, the withdrawal's cooldown's input (the Phase 12 to 13 gate's A5-F2); empty when none was.
+     */
+    Optional<java.time.Instant> latestWithdrawalOf(Connection unitOfWork, BnplPurchaseId purchase);
+
+    /**
      * Births the dispute, its claim and its hold; the database stamps the opening, its business date, the response deadline
      * and the sweep's permit - the dispute answered as stamped.
      */

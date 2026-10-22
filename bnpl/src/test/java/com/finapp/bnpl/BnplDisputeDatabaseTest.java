@@ -602,9 +602,10 @@ class BnplDisputeDatabaseTest {
     }
 
     @Test
-    @DisplayName("the open, withdraw and re-open loop cannot suppress default (the gate's A5-F2): a dispute withdrawn and"
-            + " re-opened every twelve days, the servicing step on each day between - days past due from the due date on"
-            + " each such day (bnpl V018's clock start, bnpl.days_past_due), and the default recorded at 90")
+    @DisplayName("the open, withdraw and re-open loop cannot suppress default (the gate's A5-F2): the same-day re-opening is"
+            + " refused DisputeCoolingOff; re-opened after the cooldown and withdrawn again, cycle after cycle - days past"
+            + " due from the due date on every unheld servicing day (bnpl V018's clock start, bnpl.days_past_due), and the"
+            + " default recorded at 90")
     void theOpenWithdrawLoopStillDefaults() throws SQLException {
         BnplConditionDatabaseWorld.Purchased bought = world.plain();
         LocalDate due = bought.due(2);
@@ -612,24 +613,68 @@ class BnplDisputeDatabaseTest {
         world.serviceOn(due, bought);
         LocalDate withdrawal = due.plusDays(1);
         LocalDate defaultedOn = null;
-        for (int cycle = 1; defaultedOn == null && cycle <= 12; cycle++) {
+        for (int cycle = 1; defaultedOn == null && cycle <= 6; cycle++) {
             BnplDispute open = dispute;
+            LocalDate withdrawnOn = withdrawal;
             BnplClockFrame.inOneTransaction(world.frameOn(withdrawal), uow -> disputes.withdraw(uow, open.id(),
                     bought.party(), customer(bought.party()), correlation()));
-            LocalDate gap = withdrawal.plusDays(1);
-            world.serviceOn(gap, bought);
-            assertThat(count("SELECT bnpl.days_past_due('" + bought.id() + "', DATE '" + gap + "')"))
-                    .as("on %s no dispute holds instalment 2: from its due date", gap)
-                    .isEqualTo(java.time.temporal.ChronoUnit.DAYS.between(due, gap));
+            String key = "again-" + cycle;
+            assertThatThrownBy(() -> openOn(withdrawnOn, bought, key, 450_00)).as("re-opened the day it was withdrawn")
+                    .isInstanceOf(BnplDisputes.DisputeCoolingOff.class);
+            for (LocalDate unheld : List.of(withdrawal.plusDays(1), withdrawal.plusDays(30))) {
+                world.serviceOn(unheld, bought);
+                assertThat(count("SELECT bnpl.days_past_due('" + bought.id() + "', DATE '" + unheld + "')"))
+                        .as("on %s no dispute holds instalment 2: from its due date", unheld)
+                        .isEqualTo(java.time.temporal.ChronoUnit.DAYS.between(due, unheld));
+            }
             String defaulted = scalar("SELECT min(business_date)::text FROM bnpl.bnpl_condition_event WHERE obligation_id"
                     + " = '" + bought.id() + "' AND kind = 'DEFAULT' AND defaulted");
             defaultedOn = defaulted == null ? null : LocalDate.parse(defaulted);
-            LocalDate reopen = gap.plusDays(1);
+            LocalDate reopen = withdrawal.plusDays(31);
             dispute = openOn(reopen, bought, "open-" + cycle, 450_00).dispute();
             withdrawal = reopen.plusDays(10);
         }
-        assertThat(defaultedOn).as("defaulted on the first unheld day at or past 90 days").isNotNull()
-                .isAfterOrEqualTo(due.plusDays(90)).isBefore(due.plusDays(90 + 12));
+        assertThat(defaultedOn).as("defaulted on the first unheld servicing day at or past 90 days").isNotNull()
+                .isAfterOrEqualTo(due.plusDays(90)).isBefore(due.plusDays(90 + 41));
+    }
+
+    @Test
+    @DisplayName("a withdrawal starts a cooldown for every writer (the gate's A5-F2): the purchase takes no new dispute"
+            + " within 30 days of the withdrawal - the domain refuses DisputeCoolingOff, and bnpl V018's trigger refuses a"
+            + " raw insert with its own message (dropped in a transaction that rolls back, the same row is admitted); after"
+            + " the cooldown it opens; an upheld dispute starts none")
+    void aWithdrawalStartsACooldownForEveryWriter() throws SQLException {
+        BnplConditionDatabaseWorld.Purchased bought = world.plain();
+        LocalDate withdrawnOn = bought.purchaseDate().plusDays(2);
+        BnplDispute dispute = openOn(bought.purchaseDate().plusDays(1), bought, "open-1", 200_00).dispute();
+        BnplClockFrame.inOneTransaction(world.frameOn(withdrawnOn), uow -> disputes.withdraw(uow, dispute.id(),
+                bought.party(), customer(bought.party()), correlation()));
+        assertThatThrownBy(() -> openOn(withdrawnOn, bought, "open-2", 200_00))
+                .isInstanceOf(BnplDisputes.DisputeCoolingOff.class);
+        assertThatThrownBy(() -> openOn(withdrawnOn.plusDays(29), bought, "open-3", 200_00))
+                .isInstanceOf(BnplDisputes.DisputeCoolingOff.class);
+        String raw = "INSERT INTO bnpl.bnpl_dispute (id, purchase_id, obligation_id, merchant_id, party_id, agreement_id,"
+                + " terms_version_id, status, reason_category, reason, request_key, opened_at, opened_business_date,"
+                + " response_deadline_at, next_sweep_at, correlation_id) SELECT gen_random_uuid(), p.id, o.id, p.merchant_id,"
+                + " p.party_id, o.agreement_id, (SELECT a.terms_version_id FROM bnpl.bnpl_agreement a WHERE a.obligation_id ="
+                + " o.id ORDER BY a.version DESC LIMIT 1), 'OPEN', 'OTHER', 'raw', 'raw-key', clock_timestamp(), current_date,"
+                + " clock_timestamp() + interval '1 day', clock_timestamp(), 'raw' FROM bnpl.purchase p JOIN"
+                + " bnpl.bnpl_obligation o ON o.purchase_id = p.id WHERE p.id = '" + bought.purchase().value() + "'";
+        refusedFramed(withdrawnOn.plusDays(1), raw, "P0001", "is not disputed again within the cooldown");
+        assertThat(admittedWithout(withdrawnOn.plusDays(1), "bnpl_dispute_respects_the_withdrawal_cooldown",
+                "bnpl.bnpl_dispute", raw)).as("the same raw dispute, V018's trigger dropped").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_dispute WHERE purchase_id = '" + bought.purchase().value() + "'"))
+                .as("nothing written").isEqualTo(1);
+        assertThat(openOn(withdrawnOn.plusDays(31), bought, "open-4", 200_00).dispute().status())
+                .as("after the cooldown").isEqualTo(BnplDisputeStatus.OPEN);
+
+        BnplConditionDatabaseWorld.Purchased upheld = world.plain();
+        BnplDispute contested = openOn(upheld.purchaseDate().plusDays(1), upheld, "open-5", 200_00).dispute();
+        respondOn(upheld.purchaseDate().plusDays(2), contested, upheld, BnplDisputes.Decision.CONTEST);
+        resolveOn(upheld.purchaseDate().plusDays(3), contested, new Actor("operator-a", ActorType.CUSTOMER),
+                BnplDisputeStatus.RESOLVED_UPHELD);
+        assertThat(openOn(upheld.purchaseDate().plusDays(3), upheld, "open-6", 200_00).dispute().status())
+                .as("an operator's outcome starts no cooldown").isEqualTo(BnplDisputeStatus.OPEN);
     }
 
     @Test

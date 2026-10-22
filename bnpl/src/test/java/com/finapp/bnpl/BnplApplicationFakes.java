@@ -2817,6 +2817,8 @@ final class BnplApplicationFakes {
          * trigger's rank beneath, a storage failure.
          */
         boolean deadlineConditionDropped;
+        /** {@code bnpl V018}'s withdrawal-cooldown trigger dropped - the domain's check alone (the gate's A5-F2). */
+        boolean cooldownRankDropped;
 
         record State(Map<UUID, BnplDispute> rows, Map<UUID, Instant> permits, List<Event> history,
                 Map<UUID, BnplDisputeProposal> proposals) {}
@@ -2891,10 +2893,23 @@ final class BnplApplicationFakes {
         }
 
         @Override
+        public Optional<Instant> latestWithdrawalOf(Connection unitOfWork, BnplPurchaseId purchase) {
+            return rows.values().stream().filter(row -> row.purchase().equals(purchase)
+                    && row.status() == BnplDisputeStatus.WITHDRAWN).map(row -> row.resolvedAt().orElseThrow())
+                    .max(Instant::compareTo);
+        }
+
+        @Override
         public BnplDispute insert(Connection unitOfWork, BnplDispute dispute) {
             step("dispute insert");
             if (rows.values().stream().anyMatch(row -> row.purchase().equals(dispute.purchase()) && row.open())) {
                 throw new BnplStorageException("bnpl_dispute_one_open_per_purchase: SQLSTATE 23505");
+            }
+            // bnpl V018's bnpl_dispute_respects_the_withdrawal_cooldown (the gate's A5-F2), for every writer.
+            if (!cooldownRankDropped && latestWithdrawalOf(unitOfWork, dispute.purchase())
+                    .filter(withdrawn -> now.isBefore(withdrawn.plus(BnplDisputes.WITHDRAWAL_COOLDOWN))).isPresent()) {
+                throw new BnplStorageException("a BNPL purchase whose dispute its customer withdrew is not disputed again"
+                        + " within the cooldown: P0001");
             }
             if (findByKey(unitOfWork, dispute.party(), dispute.requestKey()).isPresent()) {
                 throw new BnplStorageException("bnpl_dispute_request_unique: SQLSTATE 23505");

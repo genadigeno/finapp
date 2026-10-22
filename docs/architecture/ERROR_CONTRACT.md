@@ -1269,6 +1269,7 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.WalletUnavailable` | 409 | The customer's wallet cannot be credited now; nothing was posted. |
 | `bnpl.DisputeOpen` | 409 | The BNPL purchase has an open dispute. |
 | `bnpl.DisputeNotActionable` | 409 | The BNPL dispute is not open to this act. |
+| `bnpl.DisputeCoolingOff` | 409 | A dispute of this BNPL purchase was withdrawn too recently to open another. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its
@@ -1356,7 +1357,11 @@ nothing and rolls the key back; the proposal of a refused approval stays `PROPOS
 The dispute doors (`P12-TSK-023`, ADR-0106; recorded by the Phase 12 → 13 transition gate's repair R1, 2026-10-22, with
 its changes): the customer's opening `POST /v1/me/bnpl-agreements/{id}/disputes` (`201`) and withdrawal, the merchant's
 response over its key, the operator's queue, read and resolution under `BNPL_DISPUTE_RESOLVE`. `DisputeOpen` a second
-open dispute of the purchase, or a merchant's or operator's refund beside one; `PurchaseFullyRefunded`,
+open dispute of the purchase, or a merchant's or operator's refund beside one; **`DisputeCoolingOff` (new, the gate's
+A5-F2 follow-up) an opening less than 30 days (`BnplDisputes.WITHDRAWAL_COOLDOWN`, the owner's to change) after its
+customer withdrew a dispute of the same purchase** - judged under the purchase's lock on the database clock from the
+withdrawal's stamp and by `bnpl V018`'s trigger for every writer, nothing written; a dispute a merchant or an operator
+resolved starts no cooldown; `PurchaseFullyRefunded`,
 `RefundExceedsPurchase` the opening's bound; `RefundNotPostable` an opening against a merchant whose payable cannot be
 debited, or a refund outcome that cannot post now; **`WalletUnavailable` (reused, the gate's A7-1) an opening on a
 `CLOSED` agreement whose customer has no `ACTIVE` wallet** - the only account its refund outcome could be credited to

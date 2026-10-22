@@ -204,7 +204,16 @@ public enum BnplErrorCode implements ErrorCode {
      * withdrawn, or - for the merchant's response - its response deadline has passed on the database clock (the deadline
      * resolves it as a refund); nothing was written.
      */
-    DISPUTE_NOT_ACTIONABLE("bnpl.DisputeNotActionable", 409, "The BNPL dispute is not open to this act.");
+    DISPUTE_NOT_ACTIONABLE("bnpl.DisputeNotActionable", 409, "The BNPL dispute is not open to this act."),
+
+    /**
+     * Its customer withdrew a dispute of the purchase less than the cooldown ago (the Phase 12 to 13 gate's A5-F2;
+     * {@code BnplDisputes.WITHDRAWAL_COOLDOWN}, 30 days, the owner's to change): judged under the purchase's lock on the
+     * database clock from the withdrawal's stamp, and by {@code bnpl V018}'s trigger for every writer; nothing was written.
+     * A dispute a merchant or an operator resolved starts no cooldown.
+     */
+    DISPUTE_COOLING_OFF("bnpl.DisputeCoolingOff", 409,
+            "A dispute of this BNPL purchase was withdrawn too recently to open another.");
 
     private final String code;
     private final int status;

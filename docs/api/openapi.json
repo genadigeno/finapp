@@ -752,6 +752,41 @@
           }
         }
       },
+      "bnpl.DisputeCoolingOff": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.DisputeCoolingOff"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.DisputeCoolingOff"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A dispute of this BNPL purchase was withdrawn too recently to open another.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "bnpl.DisputeNotActionable": {
         "content": {
           "application/problem+json": {

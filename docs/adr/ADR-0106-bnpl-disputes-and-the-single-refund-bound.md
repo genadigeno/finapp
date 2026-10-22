@@ -265,9 +265,15 @@ this ADR meant. Each is repaired as below, each with a regression test red befor
    each time and could keep an unpaid instalment from ever reaching default. Now a **withdrawn** dispute's lift counts for
    nothing - DPD and the fee day are judged from the due date as if never held (`bnpl.dispute_clock_start` replaced in
    `bnpl V018`; `BnplDisputeHold.clockFrom` the same rule, read by `BnplDelinquencyState` and `BnplConditions`); a refund
-   or upheld lift keeps decision 3's rule. While a dispute is open its instalments are still held; a customer who
-   re-opens on the very day of a withdrawal therefore still holds them - **a re-dispute cooldown or limit is the owner's
-   choice**, not built.
+   or upheld lift keeps decision 3's rule. While a dispute is open its instalments are still held, so a customer who
+   could re-open on the very day of a withdrawal would still hold them for ever; therefore **a customer's withdrawal
+   starts a cooldown**: the purchase takes no new dispute for 30 days from the withdrawal's own stamp
+   (`BnplDisputes.WITHDRAWAL_COOLDOWN`, `bnpl.dispute_withdrawal_cooldown()` - a safe default, **the length the owner's
+   to change**, or later a field of the pinned terms), judged under B5 on the database clock and refused
+   `409 bnpl.DisputeCoolingOff`, nothing written; `bnpl V018`'s `BEFORE INSERT` trigger
+   (`bnpl_dispute_respects_the_withdrawal_cooldown`) holds every writer to it. A dispute a merchant or an operator
+   resolved starts no cooldown. Ten instances opening at once after a withdrawal all meet the same B5 and the same stamp:
+   every one is refused within the cooldown, and after it the one-open-per-purchase unique admits one.
 4. **Four eyes on the purchase's cumulative refunds by dispute** (FINDINGS A5-F7; decision 5). The threshold was compared
    with each dispute's own D, so a contest split into sequential disputes, each at or below it, was resolved by one
    operator each time. Now it is compared with **D plus every refund an earlier dispute of the same purchase made**

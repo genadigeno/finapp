@@ -179,6 +179,14 @@ class BnplDisputeMigrationTest {
                         + " 'MERCHANT_RESPONDED';")
                 .doesNotContain("ALTER TABLE").doesNotContain("INSERT INTO").doesNotContain("UPDATE bnpl.")
                 .doesNotContain("GRANT");
+        // The withdrawal's cooldown (the gate's follow-up on A5-F2): one figure, the code's; a BEFORE INSERT rank for every
+        // writer, firing after the edge trigger (names in order) has re-taken B5 and stamped the opening.
+        assertThat(sql).contains("    SELECT interval '" + BnplDisputes.WITHDRAWAL_COOLDOWN.toDays() + " days'")
+                .contains("AND NEW.opened_at < d.resolved_at + bnpl.dispute_withdrawal_cooldown()) THEN")
+                .contains("WHERE d.purchase_id = NEW.purchase_id AND d.status = 'WITHDRAWN'")
+                .contains("CREATE TRIGGER bnpl_dispute_respects_the_withdrawal_cooldown\n    BEFORE INSERT ON bnpl.bnpl_dispute");
+        assertThat("bnpl_dispute_permits_only_machine_edges")
+                .isLessThan("bnpl_dispute_respects_the_withdrawal_cooldown");
         // The replaced edge function keeps V015's body but for the four-eyes amount: every other rank verbatim.
         String v015Edges = body("bnpl.bnpl_dispute_permits_only_machine_edges()");
         int start = sql.indexOf("CREATE OR REPLACE FUNCTION bnpl.bnpl_dispute_permits_only_machine_edges()");

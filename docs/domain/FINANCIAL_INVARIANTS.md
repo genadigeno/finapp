@@ -2329,8 +2329,11 @@ clock, so a customer who opened, withdrew and re-opened disputes could keep an u
 default threshold - the derivation correct to its rule, the rule wrong. Verified by
 `BnplDisputesTest#theOpenWithdrawLoopStillDefaults` and `BnplDisputeDatabaseTest#theOpenWithdrawLoopStillDefaults` (the
 loop across 90 days still defaults; `bnpl.days_past_due` from the due date on every unheld day) and
-`BnplDisputeHoldTest#aWithdrawalNeverMovesTheClock`; probes in `MUTATION_TESTING.md` §2. A re-dispute cooldown or limit -
-a customer who re-opens on the day of a withdrawal still holds the instalment - is the owner's choice.)*
+`BnplDisputeHoldTest#aWithdrawalNeverMovesTheClock`; probes in `MUTATION_TESTING.md` §2. And a withdrawal starts a
+cooldown - the purchase takes no new dispute for 30 days (`BnplDisputes.WITHDRAWAL_COOLDOWN`, the length the owner's to
+change; `409 bnpl.DisputeCoolingOff`; `bnpl V018`'s trigger for every writer) - so a customer cannot re-open on the day of
+a withdrawal and keep the instalment held for ever (`BnplDisputesTest#aWithdrawalStartsACooldown`,
+`BnplDisputeDatabaseTest#aWithdrawalStartsACooldownForEveryWriter`).)*
 
 ### INV-LND-13 — Lending capital is recognised only from bank evidence and never over-deployed
 **Statement:** The `LENDING_CAPITAL` account of a currency is credited only by bank recognition of a

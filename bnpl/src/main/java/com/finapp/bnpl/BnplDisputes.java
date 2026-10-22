@@ -70,7 +70,8 @@ import lombok.RequiredArgsConstructor;
  * their own statement, so an acceptance that waited at (P) past it is {@link DisputeNotActionable}, never a storage failure
  * (A3-M2); the four-eyes threshold is judged on the purchase's cumulative refunds by dispute ({@link #fourEyesAmount},
  * A5-F7); the self-dealing judgement fails closed on an operator the platform cannot place in a party, and covers the
- * operator's read (A7-6, A5-F4). A withdrawal's lift never restarts the clock ({@link BnplDisputeHold}, A5-F2).
+ * operator's read (A7-6, A5-F4). A withdrawal's lift never restarts the clock ({@link BnplDisputeHold}, A5-F2), and its
+ * purchase takes no new dispute for {@link #WITHDRAWAL_COOLDOWN} ({@link DisputeCoolingOff}).
  */
 @RequiredArgsConstructor
 public final class BnplDisputes {
@@ -98,6 +99,16 @@ public final class BnplDisputes {
 
     /** The most disputes one page of the operator's queue serves. */
     public static final int QUEUE_PAGE = 100;
+
+    /**
+     * How long a purchase takes no new dispute after its customer withdrew one - the safe default the Phase 12 to 13 gate
+     * set (A5-F2): a customer who could withdraw and re-open at once could keep an instalment held for ever, its collection,
+     * days past due and fee suppressed. Judged from the withdrawal's own stamp on the database clock, under B5. 30 days, the
+     * owner's to change (or to make a field of the pinned terms); {@code bnpl V018}'s
+     * {@code bnpl.dispute_withdrawal_cooldown()} is the same figure for every writer. A dispute a merchant or an operator
+     * resolved starts no cooldown.
+     */
+    public static final Duration WITHDRAWAL_COOLDOWN = Duration.ofDays(30);
 
     /** The longest key a customer may open a dispute under: the door's own bound. */
     public static final int MAX_REQUEST_KEY_LENGTH = com.finapp.platform.idempotency.IdempotencyKey.MAX_LENGTH;
@@ -197,6 +208,7 @@ public final class BnplDisputes {
      *
      * @throws DisputeNotFound no agreement of {@code party} has the id
      * @throws DisputeOpen the purchase already has an open dispute
+     * @throws DisputeCoolingOff its customer withdrew a dispute of the purchase less than {@link #WITHDRAWAL_COOLDOWN} ago
      * @throws BnplRefunds.PurchaseFullyRefunded nothing remains of the purchase to dispute
      * @throws BnplRefunds.RefundExceedsPurchase {@code D > G - refunded}
      * @throws BnplRefunds.RefundNotPostable the merchant's payable cannot be debited (a closed merchant)
@@ -244,6 +256,13 @@ public final class BnplDisputes {
         }
         if (store.openOf(unitOfWork, purchaseId).isPresent()) {
             throw new DisputeOpen();
+        }
+        // The withdrawal's cooldown (the gate's A5-F2): judged under B5 - which the withdrawal took too - on the database
+        // clock, from the withdrawal's own stamp; bnpl V018's trigger holds every writer to it.
+        Optional<Instant> withdrawn = store.latestWithdrawalOf(unitOfWork, purchaseId);
+        if (withdrawn.isPresent()
+                && servicing.databaseNow(unitOfWork).isBefore(withdrawn.get().plus(WITHDRAWAL_COOLDOWN))) {
+            throw new DisputeCoolingOff();
         }
         // (B4) The obligation: the hold judged on the due state no other servicing act can move meanwhile.
         BnplServicingStore.Locked obligation = servicing.lock(unitOfWork, locked.obligation())
@@ -798,6 +817,18 @@ public final class BnplDisputes {
 
         DisputeOpen() {
             super("the BNPL purchase already has an open dispute; nothing was written");
+        }
+    }
+
+    /**
+     * Its customer withdrew a dispute of the purchase less than {@link #WITHDRAWAL_COOLDOWN} ago (the gate's A5-F2;
+     * {@code 409 bnpl.DisputeCoolingOff}). Nothing was written.
+     */
+    public static final class DisputeCoolingOff extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        DisputeCoolingOff() {
+            super("a dispute of the BNPL purchase was withdrawn too recently to dispute it again; nothing was written");
         }
     }
 

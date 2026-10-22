@@ -89,6 +89,22 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
     }
 
     @Override
+    public Optional<Instant> latestWithdrawalOf(Connection unitOfWork, BnplPurchaseId purchase) {
+        Objects.requireNonNull(purchase, "purchase");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT max(resolved_at) FROM bnpl.bnpl_dispute"
+                + " WHERE purchase_id = ? AND status = 'WITHDRAWN'")) {
+            select.setObject(1, purchase.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                Timestamp withdrawn = row.getTimestamp(1);
+                return Optional.ofNullable(withdrawn).map(Timestamp::toInstant);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a BNPL purchase's latest withdrawn dispute", failure);
+        }
+    }
+
+    @Override
     public BnplDispute insert(Connection unitOfWork, BnplDispute dispute) {
         Objects.requireNonNull(dispute, "dispute");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
