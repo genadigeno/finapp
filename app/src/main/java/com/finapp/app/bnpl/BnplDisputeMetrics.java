@@ -10,9 +10,14 @@ import java.util.Objects;
  * dispute act is counted once, after its transaction committed or its refusal rolled back: the act's own outcome
  * ({@code opened}, {@code responded}, {@code resolved_refund}, {@code resolved_upheld}, {@code withdrawn}, {@code proposed},
  * {@code proposal_rejected}), or its refusal ({@code dispute_open}, {@code not_actionable}, {@code exceeds_purchase},
- * {@code fully_refunded}, {@code not_postable}, {@code self_approval_refused}, {@code self_dealing_refused}), and
- * {@code sweep_failed} for a deadline step that rolled back. A replay, an unknown dispute, a malformed body or a missing
- * reason counts nothing. Every series registered eagerly. Never an amount, a dispute, a purchase or a party (ADR-0072).
+ * {@code fully_refunded}, {@code not_postable}, {@code self_approval_refused}, {@code self_dealing_refused},
+ * {@code wallet_unavailable}), and {@code sweep_failed} for a deadline step that rolled back. A replay, an unknown dispute,
+ * a malformed body or a missing reason counts nothing. Every series registered eagerly. Never an amount, a dispute, a
+ * purchase or a party (ADR-0072).
+ *
+ * <p>{@code not_postable} is alerted ({@code BnplDisputeRefundNotPostable}, the Phase 12 to 13 gate's A7-1): a refund
+ * outcome that cannot post - the deadline step's, retried on the cadence, or a door's - is never silent.
+ * {@code wallet_unavailable} is an opening on a {@code CLOSED} obligation refused for want of an {@code ACTIVE} wallet.
  */
 public final class BnplDisputeMetrics {
 
@@ -35,6 +40,7 @@ public final class BnplDisputeMetrics {
         NOT_POSTABLE,
         SELF_APPROVAL_REFUSED,
         SELF_DEALING_REFUSED,
+        WALLET_UNAVAILABLE,
         SWEEP_FAILED;
 
         String tag() {

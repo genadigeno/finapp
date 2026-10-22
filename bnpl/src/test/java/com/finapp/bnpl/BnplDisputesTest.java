@@ -51,6 +51,8 @@ class BnplDisputesTest {
 
     private static final Actor OPERATOR_A = new Actor("operator-a", ActorType.CUSTOMER);
     private static final Actor OPERATOR_B = new Actor("operator-b", ActorType.CUSTOMER);
+    /** An operator the platform cannot place in a party - refused at every operator door (the gate's A7-6). */
+    private static final Actor UNPLACED = new Actor("operator-unplaced", ActorType.CUSTOMER);
 
     private BnplConditionWorld world;
     private BnplDisputes disputes;
@@ -59,8 +61,10 @@ class BnplDisputesTest {
     @BeforeEach
     void setUp() {
         world = new BnplConditionWorld();
-        disputes = world.fakes.disputesOver(world.refunds,
-                (uow, actor) -> Optional.ofNullable(operatorParties.get(actor.id())), IDS, CLOCK);
+        // Every operator a party of their own (an identity always belongs to one) - but UNPLACED, which has none.
+        disputes = world.fakes.disputesOver(world.refunds, (uow, actor) -> Optional.ofNullable(
+                operatorParties.computeIfAbsent(actor.id(), id -> id.equals(UNPLACED.id()) ? null : UUID.randomUUID())),
+                IDS, CLOCK);
     }
 
     // ------------------------------------------------------------------ the opening and the hold
@@ -226,18 +230,21 @@ class BnplDisputesTest {
     }
 
     @Test
-    @DisplayName("a withdrawal lifts the hold: WITHDRAWN by its customer, nothing posted, DPD from the withdrawal's date")
+    @DisplayName("a withdrawal lifts the hold: WITHDRAWN by its customer, nothing posted - and DPD counts from the due date"
+            + " as if the instalment had never been held, never from the withdrawal (the Phase 12 to 13 gate's A5-F2)")
     void aWithdrawalLiftsTheHold() {
         BnplConditionWorld.Agreement p4 = world.payIn4();
         BnplDispute dispute = openAt("2026-10-20T12:00:00Z", p4, "open-1", 450_00).dispute();
         world.serviceOn(DUE_2, p4);
         LocalDate lift = DUE_2.plusDays(10);
+        assertThat(world.conditions.derive(BnplApplicationFakes.UOW, p4.obligation(), pinned(p4), lift.minusDays(1))
+                .daysPastDue()).as("held while open").isZero();
         BnplDisputes.Acted withdrawn = withdrawAt(lift.atTime(8, 0).toInstant(ZoneOffset.UTC), dispute);
         assertThat(withdrawn.dispute().status()).isEqualTo(BnplDisputeStatus.WITHDRAWN);
         assertThat(withdrawn.dispute().resolvedBy()).contains("CUSTOMER:" + world.party);
         assertThat(world.fakes.refunds.rows).isEmpty();
         assertThat(world.conditions.derive(BnplApplicationFakes.UOW, p4.obligation(), pinned(p4), lift.plusDays(2))
-                .daysPastDue()).isEqualTo(2);
+                .daysPastDue()).as("from instalment 2's due date, not the withdrawal's").isEqualTo(12);
         assertThatThrownBy(() -> world.fakes.inTransaction(() -> disputes.withdraw(BnplApplicationFakes.UOW,
                 dispute.id(), UUID.randomUUID(), world.customer, CORRELATION)))
                 .as("another party's dispute is the same 404").isInstanceOf(BnplDisputes.DisputeNotFound.class);
@@ -628,6 +635,204 @@ class BnplDisputesTest {
         assertThat(read.dispute().id()).isEqualTo(dispute.id());
         assertThat(audited(BnplAuditAction.DISPUTE_READ)).hasSize(1);
         assertThat(dispute.toString()).doesNotContain("not received").doesNotContain("300");
+    }
+
+    // ------------------------------------------------------------------ the Phase 12 to 13 gate's repairs (R1)
+
+    @Test
+    @DisplayName("the open, withdraw and re-open loop cannot suppress default (A5-F2): a customer withdrawing and re-opening"
+            + " a dispute every twelve days is still defaulted on the first day past 90 that no dispute holds instalment"
+            + " 2 - its days past due counted from its due date, never from a withdrawal")
+    void theOpenWithdrawLoopStillDefaults() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        BnplDispute dispute = openAt("2026-10-20T12:00:00Z", p4, "open-0", 450_00).dispute();
+        world.serviceOn(DUE_2, p4);
+        LocalDate threshold = DUE_2.plusDays(90);
+        LocalDate withdrawal = DUE_2.plusDays(1);
+        LocalDate defaultedOn = null;
+        for (int cycle = 1; defaultedOn == null && cycle <= 12; cycle++) {
+            // Withdrawn on one day, nothing holding instalment 2 the next (the servicing step's), re-opened the day after.
+            withdrawAt(withdrawal.atTime(8, 0).toInstant(ZoneOffset.UTC), dispute);
+            LocalDate gap = withdrawal.plusDays(1);
+            world.serviceOn(gap, p4);
+            assertThat(world.conditions.derive(BnplApplicationFakes.UOW, p4.obligation(), pinned(p4), gap).daysPastDue())
+                    .as("on %s no dispute holds instalment 2: its days past due from its due date", gap)
+                    .isEqualTo((int) java.time.temporal.ChronoUnit.DAYS.between(DUE_2, gap));
+            if (world.history(p4).stream().anyMatch(line -> line.startsWith(gap + " DEFAULT") && line.endsWith("true"))) {
+                defaultedOn = gap;
+            }
+            LocalDate reopen = gap.plusDays(1);
+            dispute = openAt(reopen.atTime(12, 0).toInstant(ZoneOffset.UTC).toString(), p4, "open-" + cycle, 450_00)
+                    .dispute();
+            assertThat(dispute.holds()).extracting(BnplDispute.Held::dueDate).contains(DUE_2);
+            withdrawal = reopen.plusDays(10);
+        }
+        assertThat(defaultedOn).as("defaulted on the first unheld day at or past 90 days").isNotNull()
+                .isAfterOrEqualTo(threshold).isBefore(threshold.plusDays(12));
+    }
+
+    @Test
+    @DisplayName("four-eyes on the purchase's cumulative refunds by dispute (A5-F7): 200 then 100 on one purchase, each at"
+            + " or below the 250.00 threshold - the first resolved by one operator, the second (300 cumulative) only by a"
+            + " proposal another operator approves; the edge's rank refuses one operator above it for every writer")
+    void theFourEyesThresholdIsCumulative() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        BnplDispute first = openAt("2026-10-20T12:00:00Z", p4, "open-1", 200_00).dispute();
+        respondAt("2026-10-21T09:00:00Z", first, BnplDisputes.Decision.CONTEST);
+        assertThat(resolveAt(Instant.parse("2026-10-22T10:00:00Z"), first, OPERATOR_A, BnplDisputeStatus.RESOLVED_REFUND)
+                .outcome()).as("200 alone is at or below the threshold").isEqualTo(BnplDisputes.Outcome.RESOLVED_REFUND);
+        BnplDispute second = openAt("2026-10-23T12:00:00Z", p4, "open-2", 100_00).dispute();
+        respondAt("2026-10-24T09:00:00Z", second, BnplDisputes.Decision.CONTEST);
+        assertThat(disputes.fourEyesAmount(BnplApplicationFakes.UOW, second)).isEqualTo(eur(300_00));
+        BnplDispute answered = world.fakes.disputes.rows.get(second.id().value());
+        world.fakes.now = Instant.parse("2026-10-25T10:00:00Z");
+        assertThatThrownBy(() -> world.fakes.disputes.move(BnplApplicationFakes.UOW, answered.resolved(
+                BnplDisputeStatus.RESOLVED_UPHELD, "OPERATOR:operator-a", Optional.empty(), Optional.of("one person"),
+                Optional.empty(), Optional.empty()), BnplDisputeStatus.MERCHANT_RESPONDED))
+                .as("bnpl V018's edge, mirrored").hasMessageContaining("another operator approved");
+        BnplDisputes.Acted proposed = resolveAt(Instant.parse("2026-10-25T10:00:00Z"), second, OPERATOR_A,
+                BnplDisputeStatus.RESOLVED_REFUND);
+        assertThat(proposed.outcome()).as("100 more makes 300 refunded by dispute on the purchase")
+                .isEqualTo(BnplDisputes.Outcome.PROPOSED);
+        assertThat(world.fakes.refunds.rows).hasSize(1);
+        BnplDisputes.Acted approved = world.fakes.inTransaction(() -> disputes.approve(BnplApplicationFakes.UOW,
+                second.id(), proposed.proposal().orElseThrow().id(), "checked", OPERATOR_B, CORRELATION));
+        assertThat(approved.dispute().status()).isEqualTo(BnplDisputeStatus.RESOLVED_REFUND);
+        assertThat(world.fakes.refunds.rows).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("a dispute of a CLOSED agreement needs an ACTIVE wallet (A7-1): its refund can be credited nowhere else - with"
+            + " the wallet closed, or none, the opening is refused WalletUnavailable with nothing written; with one, the"
+            + " opening takes the payable and the wallet as one (P) element and its lapse posts the whole refund to it")
+    void aDisputeOfAClosedAgreementNeedsAnActiveWallet() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        for (LocalDate due : List.of(DUE_2, DUE_3, BnplConditionWorld.DUE_4)) {
+            world.serviceOn(due, p4);
+            world.repayOn(due, p4, "pay-" + due, 150_00);
+        }
+        assertThat(world.obligation(p4).status()).isEqualTo(BnplObligationStatus.CLOSED);
+        world.fakes.book.statuses.put(world.wallet, com.finapp.ledger.LedgerAccountStatus.CLOSED);
+        assertThatThrownBy(() -> openAt("2026-11-29T12:00:00Z", p4, "open-1", 600_00))
+                .isInstanceOf(BnplDisputes.WalletUnavailable.class);
+        world.fakes.wallets.byParty.remove(world.party);
+        assertThatThrownBy(() -> openAt("2026-11-29T12:00:00Z", p4, "open-2", 600_00))
+                .isInstanceOf(BnplDisputes.WalletUnavailable.class);
+        assertThat(world.fakes.disputes.rows).as("nothing written").isEmpty();
+
+        world.fakes.wallets.byParty.put(world.party, world.wallet);
+        world.fakes.book.statuses.put(world.wallet, com.finapp.ledger.LedgerAccountStatus.ACTIVE);
+        world.fakes.log.clear();
+        BnplDispute dispute = openAt("2026-11-29T12:00:00Z", p4, "open-3", 600_00).dispute();
+        assertThat(world.fakes.log.stream().filter(step -> step.startsWith("lock ") || step.equals("dispute insert")))
+                .as("(P) the payable and the wallet, one element, before the dispute is born")
+                .containsExactlyInAnyOrder("lock payable", "lock wallet", "dispute insert").last()
+                .isEqualTo("dispute insert");
+        BnplRefund refund = lapseAt("2026-12-13T12:00:00Z", dispute).orElseThrow().refund().orElseThrow().refund();
+        assertThat(refund.excess()).isEqualTo(eur(600_00));
+        assertThat(refund.excessTo()).isEqualTo(BnplRefund.ExcessTo.WALLET);
+        assertThat(world.labelled(world.fakes.book.linesOf(BnplRefunds.POSTING_KEY_PREFIX + refund.id())))
+                .contains("wallet CREDIT 60000");
+    }
+
+    @Test
+    @DisplayName("self-dealing fails closed (A7-6) and covers the read (A5-F4): an operator the platform cannot place in a"
+            + " party is refused the resolution, the read and the queue; an operator of the dispute's own party is refused"
+            + " the read - nothing read or written, each refusal recorded FAILED")
+    void selfDealingFailsClosedAndCoversTheRead() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        BnplDispute dispute = openAt("2026-10-20T12:00:00Z", p4, "open-1", 200_00).dispute();
+        respondAt("2026-10-21T09:00:00Z", dispute, BnplDisputes.Decision.CONTEST);
+        assertThatThrownBy(() -> resolveAt(Instant.parse("2026-10-25T10:00:00Z"), dispute, UNPLACED,
+                BnplDisputeStatus.RESOLVED_REFUND)).isInstanceOf(BnplDisputes.SelfDealingRefused.class);
+        assertThat(world.fakes.disputes.rows.get(dispute.id().value()).status())
+                .isEqualTo(BnplDisputeStatus.MERCHANT_RESPONDED);
+        assertThatThrownBy(() -> disputes.investigate(BnplApplicationFakes.UOW, dispute.id(), UNPLACED, CORRELATION))
+                .isInstanceOf(BnplDisputes.SelfDealingRefused.class);
+        BnplDisputes.SelfDealingRefused queue = org.junit.jupiter.api.Assertions.assertThrows(
+                BnplDisputes.SelfDealingRefused.class, () -> disputes.queue(BnplApplicationFakes.UOW,
+                        BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(), UNPLACED, CORRELATION));
+        assertThat(queue.targetType()).isEqualTo(BnplDisputes.QUEUE_TARGET);
+        assertThat(queue.dispute()).isEmpty();
+
+        operatorParties.put(OPERATOR_A.id(), world.party);
+        BnplDisputes.SelfDealingRefused read = org.junit.jupiter.api.Assertions.assertThrows(
+                BnplDisputes.SelfDealingRefused.class, () -> disputes.investigate(BnplApplicationFakes.UOW, dispute.id(),
+                        OPERATOR_A, CORRELATION));
+        assertThat(audited(BnplAuditAction.DISPUTE_READ)).as("nothing read").isEmpty();
+        world.fakes.inTransaction(() -> {
+            disputes.recordSelfDealing(BnplApplicationFakes.UOW, read, OPERATOR_A, CORRELATION);
+            disputes.recordSelfDealing(BnplApplicationFakes.UOW, queue, UNPLACED, CORRELATION);
+            return null;
+        });
+        assertThat(audited(BnplAuditAction.SELF_DEALING_REFUSED)).hasSize(2)
+                .allSatisfy(record -> assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED))
+                .extracting(record -> record.targetType() + " " + record.changeSummary().orElseThrow())
+                .anySatisfy(line -> assertThat(line).startsWith(BnplDisputes.DISPUTE_TARGET + " dispute=")
+                        .contains("act=dispute read refused"))
+                .anySatisfy(line -> assertThat(line).startsWith(BnplDisputes.QUEUE_TARGET + " queue=MERCHANT_RESPONDED")
+                        .contains("act=dispute queue read refused"));
+        assertThat(disputes.investigate(BnplApplicationFakes.UOW, dispute.id(), OPERATOR_B, CORRELATION).dispute().id())
+                .as("another operator reads it").isEqualTo(dispute.id());
+    }
+
+    @Test
+    @DisplayName("a contest is announced and queued (A7-2): bnpl.BnplDisputeContested published in the contest's"
+            + " transaction; the operator's queue lists the contested disputes oldest first by when the merchant answered,"
+            + " pages after a cursor, never shows the operator's own party's, and records every page")
+    void aContestIsAnnouncedAndQueued() {
+        List<BnplDispute> contested = new ArrayList<>();
+        for (int purchase = 0; purchase < 3; purchase++) {
+            BnplConditionWorld.Agreement p4 = world.payIn4();
+            contested.add(openAt("2026-10-20T12:0" + purchase + ":00Z", p4, "open-" + purchase, 100_00).dispute());
+        }
+        // Answered out of order: the second first, then the third, then the first.
+        respondAt("2026-10-21T09:00:00Z", contested.get(1), BnplDisputes.Decision.CONTEST);
+        respondAt("2026-10-21T09:10:00Z", contested.get(2), BnplDisputes.Decision.CONTEST);
+        respondAt("2026-10-21T09:20:00Z", contested.get(0), BnplDisputes.Decision.CONTEST);
+        BnplConditionWorld.Agreement stillOpen = world.payIn4();
+        BnplDispute open = openAt("2026-10-22T12:00:00Z", stillOpen, "open-x", 100_00).dispute();
+        assertThat(world.fakes.events).filteredOn(event -> event.eventType().equals(BnplDisputes.CONTESTED_EVENT))
+                .hasSize(3);
+
+        BnplDisputes.Queue page = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
+                Optional.empty(), OPERATOR_A, CORRELATION);
+        assertThat(page.disputes()).extracting(BnplDispute::id).containsExactly(contested.get(1).id(),
+                contested.get(2).id(), contested.get(0).id());
+        assertThat(page.next()).isEmpty();
+        assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
+                Optional.of(contested.get(1).id()), OPERATOR_A, CORRELATION).disputes()).extracting(BnplDispute::id)
+                .containsExactly(contested.get(2).id(), contested.get(0).id());
+        assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.OPEN, Optional.empty(), OPERATOR_A,
+                CORRELATION).disputes()).extracting(BnplDispute::id).containsExactly(open.id());
+        operatorParties.put(OPERATOR_B.id(), world.party);
+        assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(),
+                OPERATOR_B, CORRELATION).disputes()).as("never the operator's own party's").isEmpty();
+        assertThatThrownBy(() -> disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.WITHDRAWN, Optional.empty(),
+                OPERATOR_A, CORRELATION)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(audited(BnplAuditAction.DISPUTE_QUEUE_READ)).hasSize(4)
+                .allSatisfy(record -> assertThat(record.changeSummary().orElseThrow()).doesNotContain("100.00"));
+    }
+
+    @Test
+    @DisplayName("the queue pages at a hundred (A7-2): 101 contested disputes are served 100 then 1, the first page's next the"
+            + " cursor of the second")
+    void theQueuePagesAtAHundred() {
+        world.availableTo(1_000_000_00L); // a first instalment collected at each of 101 purchases
+        for (int purchase = 0; purchase <= BnplDisputes.QUEUE_PAGE; purchase++) {
+            BnplConditionWorld.Agreement p4 = world.payIn4();
+            BnplDispute dispute = openAt("2026-10-20T12:00:00Z", p4, "open-" + purchase, 100_00).dispute();
+            respondAt(Instant.parse("2026-10-21T09:00:00Z").plusSeconds(purchase).toString(), dispute,
+                    BnplDisputes.Decision.CONTEST);
+        }
+        BnplDisputes.Queue first = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
+                Optional.empty(), OPERATOR_A, CORRELATION);
+        assertThat(first.disputes()).hasSize(BnplDisputes.QUEUE_PAGE);
+        assertThat(first.next()).contains(first.disputes().get(BnplDisputes.QUEUE_PAGE - 1).id());
+        BnplDisputes.Queue second = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
+                first.next(), OPERATOR_A, CORRELATION);
+        assertThat(second.disputes()).hasSize(1).doesNotContainAnyElementsOf(first.disputes());
+        assertThat(second.next()).isEmpty();
     }
 
     // ------------------------------------------------------------------ helpers

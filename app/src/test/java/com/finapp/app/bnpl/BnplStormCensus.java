@@ -567,6 +567,9 @@ final class BnplStormCensus {
         {"bnpl.BnplLateFeeAssessed", "SELECT obligation_id, 1 FROM bnpl.bnpl_fee_assessment"},
         {"bnpl.BnplRefundApplied", "SELECT purchase_id, 1 FROM bnpl.bnpl_refund"},
         {"bnpl.BnplDisputeOpened", "SELECT id, 1 FROM bnpl.bnpl_dispute"},
+        // The Phase 12 -> 13 gate's A7-2: every contest announced once - the dispute's own history row of the state.
+        {"bnpl.BnplDisputeContested", "SELECT dispute_id, 1 FROM bnpl.bnpl_dispute_event WHERE to_status ="
+                + " 'MERCHANT_RESPONDED'"},
         {"bnpl.BnplDisputeResolved", "SELECT id, 1 FROM bnpl.bnpl_dispute WHERE status IN ('RESOLVED_REFUND',"
                 + " 'RESOLVED_UPHELD', 'WITHDRAWN')"},
         {"bnpl.BnplRepaymentReversed", "SELECT obligation_id, 1 FROM bnpl.bnpl_repayment_reversal WHERE status ="

@@ -186,7 +186,9 @@ public enum BnplErrorCode implements ErrorCode {
 
     /**
      * The wallet the reversed repayment debited cannot be credited now - absent or not {@code ACTIVE} (`P12-TSK-024`;
-     * lending's {@code WalletUnavailable}). Nothing was posted; the proposal is still {@code PROPOSED}.
+     * lending's {@code WalletUnavailable}). Nothing was posted; the proposal is still {@code PROPOSED}. Since the Phase 12
+     * to 13 gate (A7-1), also a dispute of a {@code CLOSED} agreement whose customer has no {@code ACTIVE} wallet - the only
+     * account its refund outcome could be credited to: refused at the opening, nothing written.
      */
     WALLET_UNAVAILABLE("bnpl.WalletUnavailable", 409, "The customer's wallet cannot be credited now; nothing was posted."),
 

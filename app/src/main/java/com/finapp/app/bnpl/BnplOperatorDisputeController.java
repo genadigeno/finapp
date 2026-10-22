@@ -18,10 +18,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The operator's BNPL dispute doors (`P12-TSK-023`; ADR-0106 decision 5): the audited read, and the resolution of a dispute
+ * The operator's BNPL dispute doors (`P12-TSK-023`; ADR-0106 decision 5): the audited queue (the Phase 12 to 13 gate's
+ * A7-2), the audited read, and the resolution of a dispute
  * the merchant answered - a refund or upheld, reasoned - under {@code BNPL_DISPUTE_RESOLVE}, keyed
  * ({@code bnpl.servicing:<actor type>:<id>}). At or below the pinned four-eyes threshold one operator resolves; above it the
  * resolution is a proposal another holder approves or rejects. A self-approval is {@code 403 bnpl.SelfApprovalRefused} and
@@ -34,6 +36,19 @@ public class BnplOperatorDisputeController {
 
     @NonNull private final BnplDisputeDesk desk;
     @NonNull private final BnplFlowScope flow;
+
+    /**
+     * The queue (the Phase 12 to 13 gate's A7-2): a page of the disputes in {@code status} - {@code MERCHANT_RESPONDED},
+     * contested and awaiting an operator, or {@code OPEN} - oldest first, at most a hundred, after the cursor {@code after}
+     * (the previous page's {@code next}); never the operator's own party's, no free text, every page recorded.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
+    public BnplDisputeDesk.BnplDisputeQueue listBnplDisputes(
+            @RequestParam(name = "status") String status,
+            @RequestParam(name = "after", required = false) String after) {
+        return desk.queue(status, after);
+    }
 
     /** The dispute, with the customer's reason and the merchant's statement - every access recorded. */
     @GetMapping("/{id}")

@@ -15,12 +15,14 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +62,15 @@ import lombok.RequiredArgsConstructor;
  * condition and late-fee steps read it ({@link BnplPurchaseStore#disputeHold}); it lifts at any resolution. <strong>Payoff
  * and voluntary repayment are not paused</strong> - the customer's own acts; what they pay on held instalments returns as
  * excess if the dispute resolves as a refund. No L0, no L6: no outcome raises exposure. No JVM state.
+ *
+ * <p><strong>The Phase 12 to 13 gate's repairs</strong> (R1): an opening on a {@code CLOSED} obligation takes the payable
+ * and the wallet as one (P) element and refuses a customer with no {@code ACTIVE} wallet - the only account its refund could
+ * post to - {@link WalletUnavailable} (A7-1); the merchant's contest publishes {@link #CONTESTED_EVENT} and the operator
+ * reads the contested disputes as a queue ({@link #queue}, A7-2); the merchant's edges are conditional on the deadline in
+ * their own statement, so an acceptance that waited at (P) past it is {@link DisputeNotActionable}, never a storage failure
+ * (A3-M2); the four-eyes threshold is judged on the purchase's cumulative refunds by dispute ({@link #fourEyesAmount},
+ * A5-F7); the self-dealing judgement fails closed on an operator the platform cannot place in a party, and covers the
+ * operator's read (A7-6, A5-F4). A withdrawal's lift never restarts the clock ({@link BnplDisputeHold}, A5-F2).
  */
 @RequiredArgsConstructor
 public final class BnplDisputes {
@@ -70,11 +81,23 @@ public final class BnplDisputes {
     /** The event every resolution and withdrawal publishes (the outcome in it). */
     public static final String RESOLVED_EVENT = "bnpl.BnplDisputeResolved";
 
+    /**
+     * The event the merchant's contest publishes - the dispute now awaits an operator, its hold standing (the Phase 12 to 13
+     * gate's A7-2: a contested dispute is never silent).
+     */
+    public static final String CONTESTED_EVENT = "bnpl.BnplDisputeContested";
+
     /** The dispute's audit target type and aggregate type. */
     public static final String DISPUTE_TARGET = "bnpl_dispute";
 
     /** A proposal's audit target type. */
     public static final String PROPOSAL_TARGET = "bnpl_dispute_proposal";
+
+    /** The operator queue's audit target type - its target id the status read (the gate's A7-2). */
+    public static final String QUEUE_TARGET = "bnpl_dispute_queue";
+
+    /** The most disputes one page of the operator's queue serves. */
+    public static final int QUEUE_PAGE = 100;
 
     /** The longest key a customer may open a dispute under: the door's own bound. */
     public static final int MAX_REQUEST_KEY_LENGTH = com.finapp.platform.idempotency.IdempotencyKey.MAX_LENGTH;
@@ -158,6 +181,15 @@ public final class BnplDisputes {
     /** What the operator's read shows: the dispute and its live proposal. */
     public record Investigated(BnplDispute dispute, Optional<BnplDisputeProposal> proposal) {}
 
+    /** One page of the operator's queue, and the cursor of the next when more remain. */
+    public record Queue(List<BnplDispute> disputes, Optional<BnplDisputeId> next) {
+
+        public Queue {
+            disputes = List.copyOf(Objects.requireNonNull(disputes, "disputes must not be null"));
+            Objects.requireNonNull(next, "next must not be null");
+        }
+    }
+
     // ------------------------------------------------------------------ the customer's doors
 
     /**
@@ -167,6 +199,9 @@ public final class BnplDisputes {
      * @throws DisputeOpen the purchase already has an open dispute
      * @throws BnplRefunds.PurchaseFullyRefunded nothing remains of the purchase to dispute
      * @throws BnplRefunds.RefundExceedsPurchase {@code D > G - refunded}
+     * @throws BnplRefunds.RefundNotPostable the merchant's payable cannot be debited (a closed merchant)
+     * @throws WalletUnavailable the obligation is {@code CLOSED} and the customer has no {@code ACTIVE} wallet a refund
+     *     outcome could be credited to (the gate's A7-1)
      */
     public Acted open(Connection unitOfWork, BnplAgreementId agreement, UUID party, OpenRequest request, Actor actor,
             CorrelationId correlation) {
@@ -219,8 +254,27 @@ public final class BnplDisputes {
         // same row FOR UPDATE and asks whether a dispute is open, is ordered before or after this opening, never beside it.
         LedgerAccountId payable = merchants.payableAccount(unitOfWork, locked.purchase().merchant(), gross.currency())
                 .orElseThrow(() -> new BnplRefunds.RefundNotPostable(kind));
-        if (book.lockForUpdate(unitOfWork, payable).filter(LedgerAccountStatus.ACTIVE::equals).isEmpty()) {
-            throw new BnplRefunds.RefundNotPostable(kind);
+        if (obligation.obligation().status() == BnplObligationStatus.ACTIVE) {
+            if (book.lockForUpdate(unitOfWork, payable).filter(LedgerAccountStatus.ACTIVE::equals).isEmpty()) {
+                throw new BnplRefunds.RefundNotPostable(kind);
+            }
+        } else {
+            // The Phase 12 to 13 gate's A7-1: on a CLOSED obligation a refund outcome cancels nothing and holds no credit
+            // balance (INV-BNPL-09), so the whole of D can only be credited to the customer's wallet - a dispute whose
+            // refund could post nowhere would lapse into a retry no one sees. So the opening takes (P) as the refund will:
+            // the payable and the wallet as ONE element in UUID order (BnplAcceptances.lockAsOneElement), and refuses a
+            // customer with no ACTIVE wallet (409 bnpl.WalletUnavailable, nothing written). The wallet close, which takes
+            // the wallet's row FOR UPDATE and asks whether a dispute may still refund to it, is ordered before or after
+            // this opening, never beside it.
+            Optional<LedgerAccountId> wallet = refunds.existingWallet(unitOfWork, party, gross.currency());
+            Map<LedgerAccountId, LedgerAccountStatus> pair = BnplAcceptances.lockAsOneElement(book, unitOfWork, payable,
+                    wallet);
+            if (pair.get(payable) != LedgerAccountStatus.ACTIVE) {
+                throw new BnplRefunds.RefundNotPostable(kind);
+            }
+            if (wallet.map(pair::get).filter(LedgerAccountStatus.ACTIVE::equals).isEmpty()) {
+                throw new WalletUnavailable();
+            }
         }
         BnplDispute dispute = new BnplDispute(BnplDisputeId.next(ids), purchaseId, obligation.obligation().id(),
                 locked.purchase().merchant(), party, obligation.agreement(), obligation.termsVersionId(),
@@ -276,7 +330,8 @@ public final class BnplDisputes {
      * accepting it (a refund of the disputed amount, at once).
      *
      * @throws DisputeNotFound no dispute of {@code merchant}'s has the id (another merchant's included)
-     * @throws DisputeNotActionable it is not {@code OPEN}, or its deadline has passed on the database clock
+     * @throws DisputeNotActionable it is not {@code OPEN}, or its deadline has passed on the database clock - judged after
+     *     the locks, and again by the edge's own statement after any wait at (P) (the gate's A3-M2: never a 5xx)
      */
     public Acted respond(Connection unitOfWork, BnplDisputeId id, UUID merchant, Response response, Actor actor,
             CorrelationId correlation) {
@@ -309,6 +364,8 @@ public final class BnplDisputes {
         if (response.decision() == Decision.CONTEST) {
             BnplDispute responded = moved(unitOfWork, dispute.responded(statement), BnplDisputeStatus.OPEN);
             event(unitOfWork, responded, Optional.of(BnplDisputeStatus.OPEN), by, correlation);
+            // The gate's A7-2: the contest is announced - the dispute now awaits an operator, its hold standing.
+            publish(unitOfWork, CONTESTED_EVENT, responded, correlation);
             auditResponded(unitOfWork, responded, response, statement, actor, correlation);
             return new Acted(responded, Optional.empty(), Optional.empty(), Outcome.RESPONDED, false);
         }
@@ -371,7 +428,7 @@ public final class BnplDisputes {
      * proposal another operator approves or rejects.
      *
      * @throws DisputeNotFound no dispute has the id
-     * @throws SelfDealingRefused the dispute is the operator's own party's
+     * @throws SelfDealingRefused the dispute is the operator's own party's, or the operator has no party the platform knows
      * @throws DisputeNotActionable it is not {@code MERCHANT_RESPONDED}
      * @throws ProposalPending a proposal already awaits a decision
      */
@@ -384,7 +441,7 @@ public final class BnplDisputes {
         }
         String why = BnplReasons.reasoned(reason);
         BnplDispute found = store.find(unitOfWork, id).orElseThrow(DisputeNotFound::new);
-        refuseSelfDealing(unitOfWork, found, actor);
+        refuseSelfDealing(unitOfWork, found, actor, "dispute resolution");
         BnplRefundStore.LockedPurchase locked = lockAll(unitOfWork, found, Optional.empty());
         BnplDispute dispute = lockDispute(unitOfWork, id);
         String by = operator(actor);
@@ -425,7 +482,7 @@ public final class BnplDisputes {
         requirePerson(actor);
         String why = BnplReasons.reasoned(reason);
         BnplDispute found = store.find(unitOfWork, id).orElseThrow(DisputeNotFound::new);
-        refuseSelfDealing(unitOfWork, found, actor);
+        refuseSelfDealing(unitOfWork, found, actor, "dispute resolution approval");
         BnplRefundStore.LockedPurchase locked = lockAll(unitOfWork, found, Optional.empty());
         BnplDispute dispute = lockDispute(unitOfWork, id);
         BnplDisputeProposal proposal = store.lockProposal(unitOfWork, proposalId, id).orElseThrow(DisputeNotFound::new);
@@ -456,7 +513,7 @@ public final class BnplDisputes {
         requirePerson(actor);
         String why = BnplReasons.reasoned(reason);
         BnplDispute found = store.find(unitOfWork, id).orElseThrow(DisputeNotFound::new);
-        refuseSelfDealing(unitOfWork, found, actor);
+        refuseSelfDealing(unitOfWork, found, actor, "dispute resolution rejection");
         lockAll(unitOfWork, found, Optional.empty());
         BnplDispute dispute = lockDispute(unitOfWork, id);
         BnplDisputeProposal proposal = store.lockProposal(unitOfWork, proposalId, id).orElseThrow(DisputeNotFound::new);
@@ -489,14 +546,60 @@ public final class BnplDisputes {
         return store.anyOpenAtMerchant(unitOfWork, Objects.requireNonNull(merchant, "merchant"));
     }
 
-    /** The operator's read - every access recorded ({@code bnpl.DisputeRead}, {@code INV-DSP-03} by analogy). */
+    /**
+     * Whether a refund outcome of an open dispute of {@code party} may still credit its wallet in {@code currency} - the
+     * wallet close's pending-credits question (the Phase 12 to 13 gate's A7-1): any {@code OPEN} or
+     * {@code MERCHANT_RESPONDED} dispute of the party in the currency. Asked by the close under its {@code FOR UPDATE} on
+     * the wallet's ledger row, which the opening on a {@code CLOSED} obligation and every refund outcome take at (P).
+     */
+    public boolean anyMayRefundToWalletOf(Connection unitOfWork, UUID party, CurrencyCode currency) {
+        return store.anyOpenOfParty(unitOfWork, Objects.requireNonNull(party, "party"),
+                Objects.requireNonNull(currency, "currency"));
+    }
+
+    /**
+     * The operator's read - every access recorded ({@code bnpl.DisputeRead}, {@code INV-DSP-03} by analogy); never a
+     * dispute of the operator's own party, nor by an operator the platform cannot place in a party (the gate's A5-F4:
+     * {@link SelfDealingRefused}, nothing read, the caller recording the refusal {@code FAILED}).
+     */
     public Investigated investigate(Connection unitOfWork, BnplDisputeId id, Actor actor, CorrelationId correlation) {
         requirePerson(actor);
         BnplDispute dispute = store.find(unitOfWork, id).orElseThrow(DisputeNotFound::new);
+        refuseSelfDealing(unitOfWork, dispute, actor, "dispute read");
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(), BnplAuditAction.DISPUTE_READ,
                 DISPUTE_TARGET, id.value().toString(), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
                 Optional.of("status=" + dispute.status())));
         return new Investigated(dispute, store.liveProposal(unitOfWork, id));
+    }
+
+    /**
+     * The operator's queue (the gate's A7-2; ADR-0106's promised dispute report, delivered as the queue): a page of at most
+     * {@link #QUEUE_PAGE} disputes in {@code status} - {@code MERCHANT_RESPONDED} (contested, awaiting an operator) or
+     * {@code OPEN} (awaiting the merchant or the deadline) - oldest first, after the cursor named, never one of the
+     * operator's own party; every page recorded ({@code bnpl.DisputeQueueRead}). An operator the platform cannot place in a
+     * party is refused (fail closed).
+     *
+     * @throws SelfDealingRefused the operator has no party the platform knows
+     */
+    public Queue queue(Connection unitOfWork, BnplDisputeStatus status, Optional<BnplDisputeId> after, Actor actor,
+            CorrelationId correlation) {
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(after, "after");
+        requirePerson(actor);
+        if (status != BnplDisputeStatus.OPEN && status != BnplDisputeStatus.MERCHANT_RESPONDED) {
+            throw new IllegalArgumentException("the queue is of the open disputes: OPEN or MERCHANT_RESPONDED");
+        }
+        UUID own = actingParties.partyOf(unitOfWork, actor)
+                .orElseThrow(() -> new SelfDealingRefused(QUEUE_TARGET, status.name(), "dispute queue read"));
+        List<BnplDispute> read = store.queue(unitOfWork, status, own, after, QUEUE_PAGE + 1);
+        boolean more = read.size() > QUEUE_PAGE;
+        List<BnplDispute> page = more ? read.subList(0, QUEUE_PAGE) : read;
+        Optional<BnplDisputeId> next = more ? Optional.of(page.get(page.size() - 1).id()) : Optional.empty();
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
+                BnplAuditAction.DISPUTE_QUEUE_READ, QUEUE_TARGET, status.name(), Optional.empty(), AuditOutcome.SUCCEEDED,
+                correlation, Optional.of("queue read: " + page.size() + " dispute(s), status " + status
+                        + after.map(cursor -> ", after=" + cursor.value()).orElse("") + (more ? ", more remain" : ""))));
+        return new Queue(page, next);
     }
 
     // ------------------------------------------------------------------ the refusals' records
@@ -508,14 +611,19 @@ public final class BnplDisputes {
                 "proposal=" + refused.proposal() + ", act=dispute resolution approval", correlation);
     }
 
-    /** A self-dealing act - recorded {@code FAILED} in a transaction of its own after the act rolled back. */
+    /**
+     * A self-dealing act - an act or read on a dispute of the operator's own party, or by an operator the platform cannot
+     * place in a party - recorded {@code FAILED} in a transaction of its own after the act rolled back.
+     */
     public void recordSelfDealing(Connection unitOfWork, SelfDealingRefused refused, Actor actor,
             CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
-                BnplAuditAction.SELF_DEALING_REFUSED, DISPUTE_TARGET, refused.dispute().value().toString(),
-                Optional.empty(), AuditOutcome.FAILED, correlation,
-                Optional.of("dispute=" + refused.dispute().value() + ", act=dispute resolution refused - the operator's"
-                        + " own party")));
+                BnplAuditAction.SELF_DEALING_REFUSED, refused.targetType(), refused.target(), Optional.empty(),
+                AuditOutcome.FAILED, correlation,
+                Optional.of((DISPUTE_TARGET.equals(refused.targetType()) ? "dispute=" : "queue=") + refused.target()
+                        + ", act=" + refused.act() + " refused - the operator's own party, or the operator has no party"
+                        + " the platform knows")));
     }
 
     // ------------------------------------------------------------------ the body
@@ -560,12 +668,34 @@ public final class BnplDisputes {
         BnplTerms pinned = terms.version(unitOfWork, dispute.termsVersion())
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
-        return dispute.amount().compareTo(pinned.disputeFourEyesThreshold()) > 0;
+        return fourEyesAmount(unitOfWork, dispute).compareTo(pinned.disputeFourEyesThreshold()) > 0;
     }
 
-    private void refuseSelfDealing(Connection unitOfWork, BnplDispute dispute, Actor actor) {
-        if (actingParties.partyOf(unitOfWork, actor).filter(dispute.party()::equals).isPresent()) {
-            throw new SelfDealingRefused(dispute.id());
+    /**
+     * What the four-eyes threshold is judged against (the Phase 12 to 13 gate's A5-F7; {@code bnpl V018}'s
+     * {@code bnpl.dispute_four_eyes_amount}, the same rule): the dispute's claim plus every refund another dispute of the
+     * purchase already made - the purchase's cumulative refunded-by-dispute amount, this one included - so a contest split
+     * into sequential disputes, each at or below the threshold, is judged as the one it is. Read under the caller's B5.
+     */
+    Money fourEyesAmount(Connection unitOfWork, BnplDispute dispute) {
+        Money cumulative = dispute.amount();
+        for (BnplRefund refund : purchaseLocks.ofPurchase(unitOfWork, dispute.purchase())) {
+            if (refund.door() == BnplRefund.Door.DISPUTE
+                    && !refund.dispute().equals(Optional.of(dispute.id().value()))) {
+                cumulative = cumulative.plus(refund.amount());
+            }
+        }
+        return cumulative;
+    }
+
+    /**
+     * Refuses an act or read by an operator of the dispute's own party - or one the platform cannot place in a party at
+     * all: fail closed, as the corrections' {@code BnplRepaymentReversals.judgeSelfDealing} (the gate's A7-6).
+     */
+    private void refuseSelfDealing(Connection unitOfWork, BnplDispute dispute, Actor actor, String act) {
+        Optional<UUID> actorsParty = actingParties.partyOf(unitOfWork, actor);
+        if (actorsParty.isEmpty() || actorsParty.get().equals(dispute.party())) {
+            throw new SelfDealingRefused(dispute.id(), act);
         }
     }
 
@@ -724,20 +854,65 @@ public final class BnplDisputes {
         }
     }
 
-    /** The dispute is the operator's own party's. */
+    /**
+     * The dispute is the operator's own party's - or the platform cannot place the operator in a party at all (fail closed,
+     * the corrections' rule; the Phase 12 to 13 gate's A7-6). Its target the dispute, or - for the queue - the status read.
+     */
     public static final class SelfDealingRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        private final transient BnplDisputeId dispute;
+        private final String targetType;
+        private final String target;
+        private final String act;
 
         SelfDealingRefused(BnplDisputeId dispute) {
-            super("an employee never resolves a BNPL dispute of their own party");
-            this.dispute = dispute;
+            this(dispute, "dispute resolution");
         }
 
-        /** The dispute - the refusal's audit target. */
-        public BnplDisputeId dispute() {
-            return dispute;
+        SelfDealingRefused(BnplDisputeId dispute, String act) {
+            this(DISPUTE_TARGET, dispute.value().toString(), act);
+        }
+
+        SelfDealingRefused(String targetType, String target, String act) {
+            super("an employee never acts on a BNPL dispute of their own party, nor as one the platform cannot place in a"
+                    + " party");
+            this.targetType = Objects.requireNonNull(targetType, "targetType");
+            this.target = Objects.requireNonNull(target, "target");
+            this.act = Objects.requireNonNull(act, "act");
+        }
+
+        /** The dispute, when the refused act named one. */
+        public Optional<BnplDisputeId> dispute() {
+            return DISPUTE_TARGET.equals(targetType) ? Optional.of(BnplDisputeId.of(UUID.fromString(target)))
+                    : Optional.empty();
+        }
+
+        /** The refusal's audit target type - the dispute's, or the queue's. */
+        public String targetType() {
+            return targetType;
+        }
+
+        /** The refusal's audit target - the dispute's id, or the queue's status. */
+        public String target() {
+            return target;
+        }
+
+        /** The act refused. */
+        public String act() {
+            return act;
+        }
+    }
+
+    /**
+     * A dispute of a {@code CLOSED} obligation whose refund outcome could be credited nowhere: the customer has no
+     * {@code ACTIVE} wallet (the Phase 12 to 13 gate's A7-1; {@code 409 bnpl.WalletUnavailable}). Nothing was written.
+     */
+    public static final class WalletUnavailable extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        WalletUnavailable() {
+            super("the BNPL agreement is closed and the customer has no active wallet its dispute's refund could be credited"
+                    + " to; nothing was written");
         }
     }
 }

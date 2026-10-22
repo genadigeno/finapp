@@ -298,6 +298,15 @@ public final class BnplRefunds {
                 correlation);
     }
 
+    /**
+     * The party's existing wallet in {@code currency} - the one a refund's excess is credited to, and the only account a
+     * refund on a {@code CLOSED} obligation can post to (INV-BNPL-09, OQ-15): the dispute's opening asks it there (the
+     * Phase 12 to 13 gate's A7-1).
+     */
+    Optional<LedgerAccountId> existingWallet(Connection unitOfWork, UUID party, CurrencyCode currency) {
+        return wallets.existingWallet(unitOfWork, party, currency);
+    }
+
     // ------------------------------------------------------------------ T-ref's body
 
     private Refunded refund(Connection unitOfWork, BnplRefundStore.LockedPurchase locked, BnplRefund.Door door,

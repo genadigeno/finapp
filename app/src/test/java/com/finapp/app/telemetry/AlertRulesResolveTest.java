@@ -338,7 +338,9 @@ class AlertRulesResolveTest {
                 "BnplApplicationAwaitingTooLong", "BnplOriginationStepFailing", "BnplServicingStepFailing",
                 "BnplDisputeDeadlineStepFailing", "BnplAllocationAnomaly", "BnplThreeWayProofFailing",
                 "BnplSubledgerProofFailing", "BnplReplayDiverged", "MerchantPayableNegative", "BnplTermsNoneActive",
-                "BnplOriginationSweeperOff", "BnplServicingSweeperOff", "BnplDisputeSweeperOff", "BnplGaugesUnreadable");
+                "BnplOriginationSweeperOff", "BnplServicingSweeperOff", "BnplDisputeSweeperOff", "BnplGaugesUnreadable",
+                // The Phase 12 -> 13 gate's A7-1 and A7-2: a dispute that cannot conclude is never silent.
+                "BnplDisputeRefundNotPostable", "BnplDisputeContestedTooLong");
         Set<String> queried = bnpl.stream()
                 .map(rule -> String.valueOf(rule.get("expr")))
                 .flatMap(AlertRulesResolveTest::seriesIn)
@@ -348,12 +350,16 @@ class AlertRulesResolveTest {
                 "finapp_bnpl_servicing_total", "finapp_bnpl_dispute_total", "finapp_bnpl_allocation_anomaly_total",
                 "finapp_bnpl_threeway_proof", "finapp_bnpl_subledger_proof", "finapp_bnpl_replay",
                 "finapp_ledger_negative_positions", "finapp_bnpl_terms_active", "finapp_bnpl_origination_sweeper_enabled",
-                "finapp_bnpl_servicing_sweeper_enabled", "finapp_bnpl_dispute_sweeper_enabled");
+                "finapp_bnpl_servicing_sweeper_enabled", "finapp_bnpl_dispute_sweeper_enabled",
+                "finapp_bnpl_dispute_contested_age_seconds");
         assertThat(publishedSeriesNames()).containsAll(queried);
 
         assertThat(threshold(expressions.get("BnplAccrualLagging"))).isEqualTo(BnplObjectives.ACCRUAL_LAG.toSeconds());
         assertThat(threshold(expressions.get("BnplApplicationAwaitingTooLong")))
                 .isEqualTo(BnplObjectives.awaitingDecision().toSeconds());
+        assertThat(threshold(expressions.get("BnplDisputeContestedTooLong")))
+                .isEqualTo(BnplObjectives.CONTESTED_DISPUTE.toSeconds());
+        assertThat(expressions.get("BnplDisputeRefundNotPostable")).contains("outcome=\"not_postable\"");
         String scrape = scrape();
         assertThat(scrape).contains("finapp_bnpl_threeway_proof{verdict=\"FAILS\"}",
                 "finapp_bnpl_subledger_proof{verdict=\"FAILS\"}", "finapp_bnpl_replay{verdict=\"DIVERGED\"}",
