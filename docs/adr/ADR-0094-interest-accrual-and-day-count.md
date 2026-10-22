@@ -240,6 +240,16 @@ Financial impact: daily income recognition on the operational ledger; the GL map
   valued on or before its date (`DIVERGED(ACCRUAL)`). `BackwardClockDatabaseTest` reproduces every mover;
   `LendingProofDatabaseTest#aPrincipalLineValuedIntoAnAccruedDateDiverges`. Residual RG-M1 (the payoff's own billing
   applications dated by the clock) is an owner item.
+- **RG-M1 closed (the Phase 12 → 13 transition gate's A7-4, repair R3, 2026-10-22).** The Phase 11 gate's residual - the
+  payoff's own billing applications dated by the clock - is repaired, carried no longer (`EXECUTION_PROTOCOL.md`'s rule):
+  `Payoffs#execute` reads `max(today, floor)` under L3 after its catch-up and values with it every credit-balance
+  application it writes - each early billing's (`InstalmentBillings#billForPayoff`), each early statement's
+  (`CreditLineStatements#stateForPayoff`, the line's same shape) and the catch-up's (A4-M1's, floored already). A payoff
+  quoted and executed on a clock stepped back behind an accrued date no longer pays principal into a day whose accrual
+  counted it. The billings themselves move principal only between not-due and due and stand on today. No database rank:
+  lending's triggers never read the ledger and the application row carries no value date - the replay's `ACCRUAL` arm
+  finds a principal line valued into an accrued date, as it did. `BackwardClockDatabaseTest#everyPayoffApplicationIsFloored`,
+  `#everyLinePayoffApplicationIsFloored`.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

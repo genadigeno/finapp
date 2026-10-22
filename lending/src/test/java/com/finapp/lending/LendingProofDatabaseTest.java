@@ -673,7 +673,7 @@ class LendingProofDatabaseTest {
     }
 
     /** {@code flip} planted: the replay names {@code check}; {@code restore} planted: IDENTICAL again. */
-    private static LendingProofs.Proven flipped(LoanId loan, String flip, String restore, LoanReplayProof.Check check) {
+    static LendingProofs.Proven flipped(LoanId loan, String flip, String restore, LoanReplayProof.Check check) {
         asOwner(flip);
         LendingProofs.Proven seen;
         try {

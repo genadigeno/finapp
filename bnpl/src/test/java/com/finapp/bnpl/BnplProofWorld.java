@@ -240,7 +240,12 @@ final class BnplProofWorld {
                         negations.add(new BnplRecord.Negation(allocation, line.amount()));
                     }
                 });
-                reversals.add(new BnplRecord.Reversal(stamped, negations));
+                // bnpl V019's releases (the Phase 12 transition gate's A7-3), as JdbcBnplRecordStore reads them.
+                List<BnplRecord.FeeRelease> releases = fakes.corrections.feeReleases.stream()
+                        .filter(release -> release.reversal().equals(row.id()))
+                        .map(release -> new BnplRecord.FeeRelease(release.instalment(), release.amount(), release.entry()))
+                        .toList();
+                reversals.add(new BnplRecord.Reversal(stamped, negations, releases));
             }
             List<BnplWaiver> waivers = fakes.corrections.waiverRows.values().stream()
                     .filter(row -> row.obligation().equals(id))

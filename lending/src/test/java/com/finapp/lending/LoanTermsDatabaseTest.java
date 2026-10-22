@@ -328,6 +328,37 @@ class LoanTermsDatabaseTest {
         assertThat(status(successor.id())).isEqualTo("ACTIVE");
     }
 
+    @Test
+    @DisplayName("the activation first (the Phase 12 transition gate's A3-I1): a pin begun while an activation's transaction"
+            + " holds the predecessor retired and the successor activated waits on it, and once it commits pins the"
+            + " successor - never neither, so no approved application closes and no submission is refused")
+    void aPinBehindAnActivationPinsTheSuccessor() throws Exception {
+        LoanTermsVersionId predecessor = activate(LOAN, "0.0710");
+        LoanTermsAdministration.Proposed successor = propose(LOAN, "0.0711", employee());
+        try (Connection activation = DatabaseRoles.application()) {
+            activation.setAutoCommit(false);
+            LoanTermsAdministration.Decided decided =
+                    ADMINISTRATION.approve(activation, successor.id(), employee(), "held past the retirement", correlation());
+            assertThat(decided.retired()).as("the predecessor retired in the open transaction").contains(predecessor);
+            int activationPid;
+            try (Statement pid = activation.createStatement();
+                    ResultSet row = pid.executeQuery("SELECT pg_backend_pid()")) {
+                row.next();
+                activationPid = row.getInt(1);
+            }
+            CompletableFuture<LoanTermsVersionId> pin = CompletableFuture.supplyAsync(
+                    () -> inOneTransaction(uow -> ADMINISTRATION.pinActive(uow, LOAN).row().id()));
+            String waiting = awaitAStatementBlockedBy(activationPid);
+            assertThat(waiting).as("the pin waits on the retiring row's lock").contains("FOR SHARE")
+                    .contains("status = 'ACTIVE'");
+            assertThat(pin).as("blocked behind the activation").isNotDone();
+            activation.commit();
+            assertThat(pin.get(30, TimeUnit.SECONDS)).as("the successor - never neither").isEqualTo(successor.id());
+        }
+        assertThat(status(predecessor)).isEqualTo("RETIRED");
+        assertThat(status(successor.id())).isEqualTo("ACTIVE");
+    }
+
     // ------------------------------------------------------------------ the clock
 
     @Test

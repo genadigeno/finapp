@@ -299,6 +299,131 @@ class BackwardClockDatabaseTest {
     }
 
     @Test
+    @DisplayName("A2-1 (the Phase 12 transition gate): a repayment reversal approved on a clock stepped back behind the"
+            + " repayment it reverses - the floor further back - is valued the repayment's own date, never the day before"
+            + " it where the re-opened amount would stand twice; beneath, lending V031 refuses a raw approval valued between"
+            + " the floor and the repayment, for every writer; the replay proves the account")
+    void aReversalSteppedBackBehindItsRepaymentIsValuedOnIt() throws SQLException {
+        LoanId loan = AmendmentDatabaseTest.onItsDay(5_710_00, true);
+        LocalDate today = DisbursementWorld.businessDate(loan);
+        // The repayment on a clock just after tomorrow's midnight - nothing accrued for today, so it is valued tomorrow.
+        Repayments.Repaid repaid = ClockStep.inOneTransaction(ClockStep.afterTomorrowsMidnight(), uow ->
+                RepaymentDatabaseTest.repayAs(uow, DisbursementWorld.REPAYMENTS, partyOf(loan), loan,
+                        RepaymentDatabaseTest.key(), 100_00));
+        Repayment repayment = repaid.repayment();
+        assertThat(valueDateOf(repaid)).isEqualTo(today.plusDays(1));
+        assertThat(repayment.paid(AllocationComponent.PRINCIPAL).isPositive()).as("it pays principal").isTrue();
+        assertThat(scalar("SELECT (coalesce(lending.principal_value_floor(?), DATE '1970-01-01') <= ?::date)::text",
+                loan.value(), today.toString())).as("the floor stands on or before today").isEqualTo("true");
+        DisbursementWorld.fund(repayment.paid(AllocationComponent.PRINCIPAL)
+                .plus(repayment.to(AllocationLine.Target.NOT_DUE_PRINCIPAL)));
+        RepaymentReversal proposal = RepaymentReversalDatabaseTest.propose(loan, repayment.id(),
+                DisbursementWorld.employee());
+
+        // The rank alone, first: a raw approval valued today - on the floor's side of the repayment - is refused by V031.
+        RepaymentDatabaseTest.refusedAlone("BEGIN; UPDATE lending.repayment_reversal SET status = 'APPROVED',"
+                + " decided_by = 'another-decider', decided_by_type = 'EMPLOYEE', decision_reason = 'raw',"
+                + " journal_entry_id = gen_random_uuid(), value_date = DATE '" + today + "' WHERE id = '" + proposal.id()
+                + "'; ROLLBACK;", "P0001", "never valued before the repayment it reverses");
+
+        // The domain, on the clock back at today - behind the repayment's tomorrow.
+        Actor approver = DisbursementWorld.employee();
+        RepaymentReversals.Decided decided = ClockStep.inOneTransaction(Duration.ZERO, uow ->
+                RepaymentReversalDatabaseTest.as(approver, correlation -> RepaymentReversalDatabaseTest.REVERSALS.approve(
+                        uow, loan, repayment.id(), proposal.id(), "checked against the bank statement", approver,
+                        correlation)));
+        assertThat(decided.reversal().status()).isEqualTo(RepaymentReversalStatus.APPROVED);
+        assertThat(entryValueDate(decided.reversal().journalEntry().orElseThrow().value()))
+                .isEqualTo(today.plusDays(1));
+        assertThat(LocalDate.parse(scalar("SELECT value_date::text FROM lending.repayment_reversal WHERE id = ?",
+                proposal.id()))).isEqualTo(today.plusDays(1));
+        LendingProofDatabaseTest.assertProven(loan);
+        // The replay's arm, every writer's: the reversal's entry planted the day before the repayment - nothing accrued
+        // there, so no accrual's base moves - is REVERSAL; restored, IDENTICAL.
+        String entry = decided.reversal().journalEntry().orElseThrow().value().toString();
+        LendingProofDatabaseTest.flipped(loan,
+                "UPDATE ledger.journal_entry SET value_date = DATE '" + today + "' WHERE id = '" + entry + "'",
+                "UPDATE ledger.journal_entry SET value_date = DATE '" + today.plusDays(1) + "' WHERE id = '" + entry + "'",
+                LoanReplayProof.Check.REVERSAL);
+    }
+
+    @Test
+    @DisplayName("A7-4 (the Phase 11 gate's RG-M1, closed by the Phase 12 transition gate): a payoff quoted and executed on"
+            + " a clock stepped back behind a date already accrued values every credit-balance application - its billings'"
+            + " own included - the day after it, never into the accrued date whose base already counted the principal; the"
+            + " replay proves the account")
+    void everyPayoffApplicationIsFloored() {
+        LoanId loan = AmendmentDatabaseTest.onItsDay(5_720_00, false);
+        LocalDate today = DisbursementWorld.businessDate(loan);
+        Assumptions.assumeTrue(count("SELECT count(*) FROM lending.loan_instalment WHERE loan_id = ? AND due_date = ?::date",
+                loan.value(), today.plusDays(1).toString()) == 0,
+                "tomorrow is no due date, so the step after midnight bills nothing the held credit would meet");
+        UUID party = partyOf(loan);
+        RepaymentDatabaseTest.topUp(party, 7_000_00);
+        // Everything due paid and 300.00 more held as credit - met only by the payoff's own billings.
+        RepaymentDatabaseTest.repay(loan, RepaymentDatabaseTest.key(), RepaymentDatabaseTest.due(loan) + 300_00);
+        LocalDate accrued = accruedThroughTodayJustAfterMidnight(loan);
+        long ordered = Long.parseLong(scalar("SELECT coalesce(max(recorded_order), 0)::text"
+                + " FROM lending.credit_balance_application WHERE loan_id = ?", loan.value()));
+
+        Actor customer = DisbursementWorld.customer(party);
+        PayoffQuote quote = ClockStep.inOneTransaction(steppedBackAcrossThatMidnight(), uow ->
+                RepaymentReversalDatabaseTest.as(customer, correlation -> PayoffDatabaseTest.PAYOFFS.quote(uow, loan, party,
+                        new Payoffs.QuoteRequest(RepaymentDatabaseTest.key(), Optional.empty()), correlation))).quote();
+        assertThat(quote.goodThrough()).as("quoted on the clock stepped back to the accrued date").isEqualTo(accrued);
+        ClockStep.inOneTransaction(steppedBackAcrossThatMidnight(), uow ->
+                PayoffDatabaseTest.executeOn(uow, loan, quote, RepaymentDatabaseTest.key()));
+        PayoffDatabaseTest.assertPaidOff(loan, ClosureReason.PAID_OFF_EARLY);
+
+        String payoffApplications = " FROM lending.credit_balance_application a JOIN ledger.journal_entry e"
+                + " ON e.id = a.journal_entry_id WHERE a.loan_id = ? AND a.recorded_order > ?";
+        assertThat(count("SELECT count(*)" + payoffApplications, loan.value(), ordered))
+                .as("the payoff's billings met the held credit").isPositive();
+        assertThat(count("SELECT count(*)" + payoffApplications + " AND e.value_date <= ?::date", loan.value(), ordered,
+                accrued.toString())).as("no application valued into the accrued date").isZero();
+        LendingProofDatabaseTest.assertProven(loan);
+    }
+
+    @Test
+    @DisplayName("A7-4, the line's arm: a line's payoff quoted and executed on a clock stepped back behind a date already"
+            + " accrued values its early statement's credit-balance application the day after it, never into the accrued"
+            + " date; the line's subledger and the replay prove it")
+    void everyLinePayoffApplicationIsFloored() {
+        LocalDate today = DisbursementWorld.businessDate();
+        DisbursementWorld.Accepted line = DelinquencyDatabaseTest.statedLine(
+                CreditLineStatementDatabaseTest.onOrBefore(today.minusDays(10)), 25);
+        RepaymentDatabaseTest.topUp(line.party(), 1_300_00);
+        Repayments.Repaid beyond = CreditLineRepaymentDatabaseTest.repay(line, 2_000_00);
+        assertThat(beyond.repayment().to(AllocationLine.Target.CREDIT_BALANCE).isPositive()).as("credit held").isTrue();
+        CreditLineStatementDatabaseTest.draw(line, 500_00);
+        long statements = count("SELECT count(*) FROM lending.credit_line_statement WHERE loan_id = ?", line.loan().value());
+        LocalDate accrued = accruedThroughTodayJustAfterMidnight(line.loan());
+        Assumptions.assumeTrue(count("SELECT count(*) FROM lending.credit_line_statement WHERE loan_id = ?",
+                line.loan().value()) == statements, "no statement date at that midnight, so the credit waits for the payoff");
+        long ordered = Long.parseLong(scalar("SELECT coalesce(max(recorded_order), 0)::text"
+                + " FROM lending.credit_balance_application WHERE loan_id = ?", line.loan().value()));
+
+        Actor customer = DisbursementWorld.customer(line.party());
+        PayoffQuote quote = ClockStep.inOneTransaction(steppedBackAcrossThatMidnight(), uow ->
+                RepaymentReversalDatabaseTest.as(customer, correlation -> PayoffDatabaseTest.PAYOFFS.quote(uow,
+                        line.loan(), line.party(), new Payoffs.QuoteRequest(RepaymentDatabaseTest.key(),
+                                Optional.empty()), correlation))).quote();
+        assertThat(quote.goodThrough()).isEqualTo(accrued);
+        ClockStep.inOneTransaction(steppedBackAcrossThatMidnight(), uow ->
+                PayoffDatabaseTest.executeOn(uow, line.loan(), quote, RepaymentDatabaseTest.key()));
+        PayoffDatabaseTest.assertPaidOff(line.loan(), ClosureReason.CLOSED_BY_CUSTOMER);
+
+        String payoffApplications = " FROM lending.credit_balance_application a JOIN ledger.journal_entry e"
+                + " ON e.id = a.journal_entry_id WHERE a.loan_id = ? AND a.recorded_order > ?";
+        assertThat(count("SELECT count(*)" + payoffApplications, line.loan().value(), ordered))
+                .as("the early statement met the held credit").isPositive();
+        assertThat(count("SELECT count(*)" + payoffApplications + " AND e.value_date <= ?::date", line.loan().value(),
+                ordered, accrued.toString())).as("no application valued into the accrued date").isZero();
+        CreditLineStatementDatabaseTest.assertLineSubledgerProves(line, 0);
+        LendingProofDatabaseTest.assertProven(line.loan());
+    }
+
+    @Test
     @DisplayName("a prepayment on a clock stepped back behind a date already accrued is value-dated - and re-schedules"
             + " from - the day after it, never the accrued date (the Phase 11 gate R1); the replay proves the account")
     void aPrepaymentSteppedBackBehindAnAccruedDateIsValuedAfterIt() {

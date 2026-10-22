@@ -255,6 +255,28 @@ class BnplOriginationTest {
     }
 
     @Test
+    @DisplayName("an approval with no terms version ACTIVE to pin WAITS - nothing written, no offer, no closure - and is"
+            + " offered by a later step once one is (the Phase 12 transition gate's A3-I1; credit's DecisionProgress)")
+    void anEmptyPinWaits() {
+        BnplApplication application = applied(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        world.credit.approve(application.decisionRequest(), GROSS, world.now.plus(Duration.ofDays(1)));
+        BnplTermsVersionId inForce = world.terms.active.remove(BnplProduct.BNPL_PAY_IN_4);
+        world.events.clear();
+        int history = world.store.history.size();
+
+        BnplOrigination.Outcome step = originate(application);
+        assertThat(step.kind()).as("never a terminal closure").isEqualTo(BnplOrigination.Outcome.Kind.WAITING);
+        assertThat(step.reason()).isEmpty();
+        assertThat(status(application)).isEqualTo(BnplApplicationStatus.AWAITING_DECISION);
+        assertThat(world.offers.rows).isEmpty();
+        assertThat(world.events).isEmpty();
+        assertThat(world.store.history).hasSize(history);
+
+        world.terms.active.put(BnplProduct.BNPL_PAY_IN_4, inForce);
+        assertThat(originate(application).kind()).isEqualTo(BnplOrigination.Outcome.Kind.OFFERED);
+    }
+
+    @Test
     @DisplayName("a session that expires while awaiting the decision closes the application SESSION_CLOSED and cancels"
             + " credit's request; once credit has evaluated, the request decides and its approval is never offered")
     void aSessionThatExpiresClosesTheApplication() {

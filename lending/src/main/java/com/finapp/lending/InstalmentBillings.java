@@ -143,7 +143,7 @@ public final class InstalmentBillings {
         // Dj is billable once it has come and every date through Dj - 1 is accrued.
         LocalDate limit = today.isBefore(accruedThrough.plusDays(1)) ? today : accruedThrough.plusDays(1);
         List<BilledItem> items = store.billedItems(unitOfWork, loan.id());
-        return bill(unitOfWork, loan, agreement, pinned, today, schedule, candidates(schedule, items, limit));
+        return bill(unitOfWork, loan, agreement, pinned, today, today, schedule, candidates(schedule, items, limit));
     }
 
     /**
@@ -155,14 +155,23 @@ public final class InstalmentBillings {
      * elapsed date and beside the loan's {@code payoff_execution} (the billing trigger admits an early billing only there).
      * Afterwards {@code LOAN_PRINCIPAL} and {@code LOAN_INTEREST_ACCRUED} are zero: what the loan owes is all billed.
      *
-     * @param today the business date of the database clock in the pinned zone, read after L3 - the payoff's date
+     * @param today the business date of the database clock in the pinned zone, read after L3 - the payoff's date, the
+     *     billings' own
+     * @param applied the date each billing's credit-balance application is valued - the caller's {@code max(today, floor)}
+     *     read under L3 ({@code LoanStore#principalValueDate}; the Phase 11 gate's RG-M1, closed by the Phase 12 transition
+     *     gate's A7-4): an application pays principal due, so it never joins a date already accrued
      */
-    Billed billForPayoff(Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, LocalDate today) {
+    Billed billForPayoff(Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
+            LocalDate applied) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(loan, "loan");
         Objects.requireNonNull(agreement, "agreement");
         Objects.requireNonNull(pinned, "pinned");
         Objects.requireNonNull(today, "today");
+        Objects.requireNonNull(applied, "applied");
+        if (applied.isBefore(today)) {
+            throw new IllegalArgumentException("an application is valued on or after today - max(today, floor)");
+        }
         if (loan.kind() != LoanKind.INSTALMENT) {
             return Billed.NOTHING;
         }
@@ -172,12 +181,16 @@ public final class InstalmentBillings {
         }
         BillableSchedule schedule = latest.get();
         List<BilledItem> items = store.billedItems(unitOfWork, loan.id());
-        return bill(unitOfWork, loan, agreement, pinned, today, schedule, everythingUnbilled(schedule, items, today));
+        return bill(unitOfWork, loan, agreement, pinned, today, applied, schedule,
+                everythingUnbilled(schedule, items, today));
     }
 
-    /** Bills {@code candidates}, oldest first, each followed by the credit-balance application. */
+    /**
+     * Bills {@code candidates}, oldest first, each followed by the credit-balance application - the billing on
+     * {@code today}, the application valued {@code valuedOn}.
+     */
     private Billed bill(Connection unitOfWork, Loan loan, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
-            BillableSchedule schedule, List<Candidate> candidates) {
+            LocalDate valuedOn, BillableSchedule schedule, List<Candidate> candidates) {
         if (candidates.isEmpty()) {
             return Billed.NOTHING;
         }
@@ -211,7 +224,7 @@ public final class InstalmentBillings {
             notDue = notDue.minus(principal);
             billed++;
             Optional<CreditBalanceApplication> application =
-                    apply(unitOfWork, loan, agreement, rules, billing, today, accounts, zero);
+                    apply(unitOfWork, loan, agreement, rules, billing, valuedOn, accounts, zero);
             if (application.isPresent()) {
                 applied++;
             }

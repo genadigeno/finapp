@@ -416,6 +416,35 @@ class BnplRepaymentReversalsTest {
     }
 
     @Test
+    @DisplayName("A2-1 (the Phase 12 transition gate): on a database clock stepped back behind the repayment it reverses -"
+            + " the floor further back still - the reversal is valued the repayment's own date, never the day before it,"
+            + " where the re-opened amount would stand twice and over-charge pay-in-N's interest")
+    void theReversalIsValuedNeverBeforeItsRepayment() {
+        BnplConditionWorld.Agreement p4 = base.payIn4();
+        base.serviceOn(DUE_2, p4);
+        LocalDate paidOn = DUE_2.plusDays(4);
+        BnplPurchaseStore.Repayment late = base.repayOn(paidOn, p4, "late", 150_00).repayment();
+        assertThat(late.valueDate()).isEqualTo(paidOn);
+        assertThat(fakes.servicing.principalValueFloor(BnplApplicationFakes.UOW, p4.obligation()))
+                .as("the floor - instalment 2's billing - stands before the day the clock steps back to")
+                .isBefore(paidOn.minusDays(1));
+        BnplRepaymentReversal proposed = world.propose(paidOn, p4, late.id(), world.alice);
+        BnplRepaymentReversal approved = world.approve(paidOn.minusDays(1), p4, late.id(), proposed.id(), world.bob)
+                .reversal();
+        assertThat(approved.valueDate()).contains(paidOn);
+        assertThat(fakes.book.linesOf("ledger.reverse:" + BnplRepaymentReversals.REVERSAL_KEY_PREFIX))
+                .isNotEmpty()
+                .allSatisfy(line -> {
+                    assertThat(line.valueDate()).isEqualTo(paidOn);
+                    assertThat(line.postingDate()).isEqualTo(paidOn.minusDays(1));
+                });
+        assertThat(BnplRepaymentReversals.valuedOn(paidOn.minusDays(1), DUE_2, paidOn)).isEqualTo(paidOn);
+        assertThat(BnplRepaymentReversals.valuedOn(paidOn.plusDays(1), DUE_2, paidOn)).isEqualTo(paidOn.plusDays(1));
+        assertThat(BnplRepaymentReversals.valuedOn(paidOn.minusDays(1), paidOn.plusDays(2), paidOn))
+                .isEqualTo(paidOn.plusDays(2));
+    }
+
+    @Test
     @DisplayName("an automatic collection is reversed like any repayment - its instalment due again")
     void anAutoCollectionIsReversible() {
         base.withFees(BnplTermsFixtures.payIn4().autoCollection(true));

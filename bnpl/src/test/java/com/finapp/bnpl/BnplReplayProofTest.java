@@ -280,6 +280,26 @@ class BnplReplayProofTest {
     }
 
     @Test
+    @DisplayName("A2-1's arm (the Phase 12 transition gate): a planted reversal valued before the repayment it reverses -"
+            + " on or after the floor, its row and its lines dated back together, so nothing else moves - is VALUE_DATE")
+    void aReversalValuedBeforeItsRepaymentDiverges() {
+        BnplConditionWorld.Agreement p4 = world.base.payIn4();
+        world.stepOn(DUE_2, p4);
+        LocalDate paidOn = DUE_2.plusDays(2);
+        BnplPurchaseStore.Repayment late = world.repayDueOn(paidOn, p4, "r2-late").repayment();
+        BnplRepaymentReversal proposed = world.corrections.propose(paidOn, p4, late.id(), world.corrections.alice);
+        world.corrections.approve(paidOn, p4, late.id(), proposed.id(), world.corrections.bob);
+        BnplRecord record = world.record(p4);
+        BnplRepaymentReversal approved = record.reversals().get(0).row();
+        assertThat(approved.valueDate()).contains(paidOn);
+        LocalDate before = paidOn.minusDays(1); // after the floor (DUE_2's billing), before the repayment
+        BnplRecord planted = RecordEdits.redated(with(record, "reversals", edited(record.reversals(), 0, reversal ->
+                with(reversal, "row", with(reversal.row(), "valueDate", Optional.of(before))))),
+                approved.entry().orElseThrow(), before);
+        assertDiverged(record, planted, BnplReplayProof.Check.VALUE_DATE, proposed.id());
+    }
+
+    @Test
     @DisplayName("a payoff quote whose balances are not the ledger's at its birth is PAYOFF")
     void aPayoffAwayFromItsQuoteDiverges() {
         BnplConditionWorld.Agreement p4 = world.base.payIn4();

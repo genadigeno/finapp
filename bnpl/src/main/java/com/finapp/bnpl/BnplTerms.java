@@ -52,8 +52,9 @@ import lombok.Builder;
  * @param lateFeeDay the days past due at which it is assessed - beyond grace, at or before the default threshold
  * @param lateFeeCap the most late fee one agreement may be charged, at least one fee
  * @param graceDays how long the late fee waits after a due date (grace delays only the fee, never DPD)
- * @param delinquencyBounds the buckets' lower bounds in days past due, the first 1, the last the default threshold
- * @param defaultThresholdDays the days past due at which an obligation defaults (A14: 90)
+ * @param delinquencyBounds the buckets' lower bounds in days past due, the first 1, the last the default threshold -
+ *     exactly {@link #DELINQUENCY_BOUNDS} while the buckets' labels name them (the Phase 12 transition gate's A7-5)
+ * @param defaultThresholdDays the days past due at which an obligation defaults (A14: 90 - the only value the bounds admit)
  * @param allocationSequence {@code OLDEST_DUE_FIRST}
  * @param allocationOrder every {@link AllocationComponent} exactly once, in the order a repayment pays them
  * @param overpaymentTreatment {@code HOLD_AS_CREDIT} - both products (applied at the next billing, refunded at closure)
@@ -113,6 +114,14 @@ public record BnplTerms(
 
     /** The delinquency buckets' count - lending's four (ADR-0098), named by `P12-TSK-020`. */
     public static final int DELINQUENCY_BUCKETS = 4;
+
+    /**
+     * The one set of delinquency bounds this build admits (the Phase 12 transition gate's A7-5): the buckets' recorded
+     * labels ({@link BnplDelinquencyBucket} - {@code B1_1_29} ... {@code B4_90_PLUS}) carry these bounds in their names, so
+     * a version declaring others would record a band under a label that misnames it. Until the labels derive from the
+     * bounds (an owner's choice, ADR-0102), the terms door refuses any other - and with it any default threshold but 90.
+     */
+    public static final List<Integer> DELINQUENCY_BOUNDS = List.of(1, 30, 60, 90);
 
     /** The longest wait between two collection attempts of a due instalment. */
     public static final int MAXIMUM_COLLECTION_RETRY_DAYS = 7;
@@ -194,6 +203,10 @@ public record BnplTerms(
                 || delinquencyBounds.get(delinquencyBounds.size() - 1) != defaultThresholdDays) {
             throw new TermsInvalid("the delinquency bounds are one lower bound per bucket, rising from 1 to the default"
                     + " threshold");
+        }
+        if (!delinquencyBounds.equals(DELINQUENCY_BOUNDS)) {
+            throw new TermsInvalid("the delinquency bounds are " + DELINQUENCY_BOUNDS + " and the default threshold "
+                    + DELINQUENCY_BOUNDS.get(DELINQUENCY_BOUNDS.size() - 1) + " days - the buckets' labels name them");
         }
         if (allocationSequence != AllocationSequence.OLDEST_DUE_FIRST) {
             throw new TermsInvalid("the allocation sequence is oldest due first");

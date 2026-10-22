@@ -111,7 +111,10 @@ public final class LoanReplayProof {
         FEE,
         /** A waiver exceeds what was due or paid. */
         WAIVER,
-        /** A reversal does not negate its repayment exactly. */
+        /**
+         * A reversal does not negate its repayment exactly - or its entry is valued before that repayment (the Phase 12
+         * transition gate's A2-1).
+         */
         REVERSAL,
         /** A re-scheduled arrear is not what its item had due. */
         RESCHEDULING,
@@ -934,6 +937,11 @@ public final class LoanReplayProof {
             for (LoanRecord.PaymentLine line : reversed.lines()) {
                 exact &= line.amount().equals(negated.get(line.id()));
             }
+            // Never valued before the repayment it reverses (the Phase 12 transition gate's A2-1): its entry's lines, the
+            // ledger's - so every writer is judged - none dated before the repayment's own date, where the re-opened amount
+            // would stand twice; every accrual reads the same lines, so ACCRUAL alone re-derives it.
+            exact &= reversal.entry().stream().noneMatch(entry -> record.journalLines().stream()
+                    .anyMatch(line -> line.entry().equals(entry) && line.valueDate().isBefore(reversed.valueDate())));
             if (!exact) {
                 diverged(Check.REVERSAL, reversal.id());
             }

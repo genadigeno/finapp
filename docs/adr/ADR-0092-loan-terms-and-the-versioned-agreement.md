@@ -295,6 +295,17 @@ only by an accepted amendment.
   (c) **A3-M1**: the engine-version `CHECK` admitted any version ≥ 1 though only 1 exists in code - now `= 1` (lending
   `V029`, `LoanTermsDatabaseTest#anEngineVersionNoCodeHoldsIsRefused`). Recorded in
   `reviews/PHASE_11_TO_12_TRANSITION.md`.
+- **The pin re-reads after A0 shared - never "neither" (the Phase 12 → 13 transition gate's A3-I1, repair R3,
+  2026-10-22).** `pinActive`'s `SELECT … status = 'ACTIVE' FOR SHARE` that waited on an activation's A2 re-checked only the
+  predecessor it waited on - `RETIRED` - and never saw the successor born after its snapshot (`READ COMMITTED`): an approved
+  application closed `CLOSED_UNDECIDED (PRODUCT_NOT_OFFERED)` for good and a submission was refused `TermsNotFound`.
+  `JdbcLoanTermsStore#shareActive` now reads again when its first read is empty, in a statement begun after
+  `pg_advisory_xact_lock_shared(11, hashtext(product))` (A0 shared: no activation in flight; a retirement commits only
+  beside its successor, so a second empty read is genuine), and `LoanOrigination` treats an empty pin as `WAITING` -
+  nothing written, a later sweep reads again - never a terminal closure (`PRODUCT_NOT_OFFERED_REASON` is no longer
+  written). The common path takes nothing of the administration's; the shared A0 is held only by a pin that found none,
+  holding no terms row an administration act waits on - one-way. bnpl's pin, the same shape, alike (ADR-0102's follow-up
+  (c)). `LoanTermsDatabaseTest#aPinBehindAnActivationPinsTheSuccessor`, `LoanOriginationDatabaseTest#anEmptyPinWaits`.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

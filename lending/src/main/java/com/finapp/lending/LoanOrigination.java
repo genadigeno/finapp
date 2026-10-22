@@ -40,8 +40,10 @@ import lombok.RequiredArgsConstructor;
  * with exactly the approved amount and term (A20), the pinned version's whole term set in its canonical terms, the loan's
  * illustrative schedule from the offering day or the line's minimum-payment rule (A5), the application moved
  * {@code OFFERED} beside it. The offering instant is the insert's own database stamp, never the step's read
- * (`P11-TSK-036`, {@code lending V028}). An approval that cannot be offered closes the application {@code CLOSED_UNDECIDED} with its reason and no offer:
- * no {@code ACTIVE} terms ({@code PRODUCT_NOT_OFFERED}), the chosen day no longer offered
+ * (`P11-TSK-036`, {@code lending V028}). No {@code ACTIVE} terms to pin waits - nothing written, a later sweep reads
+ * again (the Phase 12 transition gate's A3-I1; until then a terminal {@code PRODUCT_NOT_OFFERED} the activation race could
+ * reach). An approval that cannot be offered closes the application {@code CLOSED_UNDECIDED} with its reason and no
+ * offer: the chosen day no longer offered
  * ({@code REPAYMENT_DAY_NOT_OFFERED}), the decision already lapsed ({@code DECISION_LAPSED}), or a loan whose own
  * schedule would not amortise ({@code TERMS_NOT_AMORTISING}).
  *
@@ -62,6 +64,10 @@ public final class LoanOrigination {
 
     public static final String APPROVED_REASON = "DECISION_APPROVED";
     public static final String CREDIT_DECLINED_REASON = "CREDIT_DECLINED";
+    /**
+     * A closure reason the step no longer writes (the Phase 12 transition gate's A3-I1: an empty pin waits) - kept, since
+     * history rows written before it may carry it.
+     */
     public static final String PRODUCT_NOT_OFFERED_REASON = "PRODUCT_NOT_OFFERED";
     public static final String DAY_NOT_OFFERED_REASON = "REPAYMENT_DAY_NOT_OFFERED";
     public static final String DECISION_LAPSED_REASON = "DECISION_LAPSED";
@@ -97,7 +103,7 @@ public final class LoanOrigination {
         public enum Kind {
             /** The application had already left {@code AWAITING_DECISION} - another step, or the customer, moved it. */
             NOTHING,
-            /** Credit's request is still open. */
+            /** Credit's request is still open - or credit approved and no terms version is {@code ACTIVE} to pin (A3-I1). */
             WAITING,
             /** The offer was born and the application {@code OFFERED}. */
             OFFERED,
@@ -182,8 +188,10 @@ public final class LoanOrigination {
         try {
             version = terms.pinActive(unitOfWork, application.product());
         } catch (LoanTermsAdministration.TermsNotFound none) {
-            return close(unitOfWork, application, LoanApplicationStatus.CLOSED_UNDECIDED, PRODUCT_NOT_OFFERED_REASON,
-                    actor);
+            // Nothing in force to pin (the Phase 12 transition gate's A3-I1; credit's DecisionProgress#collect): the step
+            // waits - nothing written, the claim's permit lapses and a later sweep reads again - never a terminal closure.
+            // The application was submitted under an ACTIVE version and a retirement commits only beside its successor.
+            return Outcome.waiting(application.product());
         }
         LoanTerms pinned = version.terms();
         if (!pinned.allowedDays().contains(application.repaymentDay())) {

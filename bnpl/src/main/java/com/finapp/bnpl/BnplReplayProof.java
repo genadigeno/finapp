@@ -66,7 +66,8 @@ import java.util.UUID;
  *       covers), every refund (the position, {@link RefundAllocationEngineV1}, the releases, the adjustments, the schedule
  *       it made), every late fee (the pinned fee within the cap, on its instalment's own day), the payoff (its quote's
  *       balances, every fact dated its execution's value date - `-022`'s hand-off), every approved reversal (an exact
- *       negation) and waiver (within its room) and the closure's refund.
+ *       negation, and its release of the late fees it re-opened where a refund cancelled whole - A7-3) and waiver (within
+ *       its room) and the closure's refund.
  * </ul>
  *
  * <h2>The two arms the Phase 11 gate taught</h2>
@@ -75,7 +76,9 @@ import java.util.UUID;
  *   <li><strong>R1's arm</strong> ({@link Check#VALUE_DATE}, {@link Check#ACCRUAL}): no principal fact - a repayment, an
  *       application, a refund, a reversal - valued before the obligation's floor as it stood when the fact was written
  *       ({@code bnpl.principal_value_floor}'s rule replayed from the rows); and every accrual's base is still the final
- *       ledger's principal valued through its date, so a principal line dated back into an accrued date is found.
+ *       ledger's principal valued through its date, so a principal line dated back into an accrued date is found. And a
+ *       reversal never valued before the repayment it reverses (the Phase 12 transition gate's A2-1) - which no accrual
+ *       finds, each reading the same lines.
  *   <li><strong>RG-M5</strong> ({@link Check#CATCH_UP_MISSING}): held credit standing beside a billed item still due at a
  *       servicing STEP's end - judged where a step's later slots write (its collection attempts, its condition changes,
  *       its late fees), after the step's catch-up application: never between steps, where a reversal may legitimately
@@ -123,7 +126,10 @@ public final class BnplReplayProof {
         CATCH_UP_MISSING,
         /** A repayment's allocation does not re-derive. */
         ALLOCATION,
-        /** A principal fact is valued before its floor, or a payoff fact away from the payoff's date (R1, RG-M1). */
+        /**
+         * A principal fact is valued before its floor, or a payoff fact away from the payoff's date (R1, RG-M1) - or a
+         * reversal before the repayment it reverses (the Phase 12 transition gate's A2-1).
+         */
         VALUE_DATE,
         /** A refund does not re-derive. */
         REFUND,
@@ -131,7 +137,10 @@ public final class BnplReplayProof {
         FEE,
         /** The payoff's quote or execution does not re-derive. */
         PAYOFF,
-        /** A reversal does not negate its repayment exactly. */
+        /**
+         * A reversal does not negate its repayment exactly - or does not release, exactly, the late fees it re-opened on
+         * instalments a refund cancelled whole (the Phase 12 transition gate's A7-3).
+         */
         REVERSAL,
         /** A waiver exceeds what its fee still had to forgive. */
         WAIVER,
@@ -1023,6 +1032,10 @@ public final class BnplReplayProof {
                 principalFactValued(reversal.id(), value, at);
                 reversal.entry().filter(entry -> !valuedOn(entry, value))
                         .ifPresent(entry -> diverged(Check.VALUE_DATE, reversal.id()));
+                // Never before the repayment it reverses (the Phase 12 transition gate's A2-1): a date between the two counts
+                // the re-opened amount twice, and every accrual reads the same lines - so ACCRUAL alone re-derives it.
+                reversed.filter(original -> value.isBefore(original.valueDate()))
+                        .ifPresent(original -> diverged(Check.VALUE_DATE, reversal.id()));
             });
             for (BnplRecord.Negation negation : stamped.negations()) {
                 BnplPurchaseStore.Allocation line = allocations.get(negation.allocation());
@@ -1030,6 +1043,24 @@ public final class BnplReplayProof {
                     item(line.instalment().orElseThrow()).ifPresent(due -> due.pay(
                             AllocationComponent.valueOf(line.component().orElseThrow()), negation.amount().negated()));
                 }
+            }
+            // OQ-14 across the two orders (the Phase 12 transition gate's A7-3): the late fees the swap re-opened on an
+            // instalment a refund BEFORE it cancelled whole, released beside it - re-derived by the domain's own rule from
+            // the refunds the walk has met, exactly, else REVERSAL; then settled on their items and counted as forgiven.
+            java.util.Set<UUID> wholeCancelled = new java.util.HashSet<>();
+            adjustments.stream().filter(adjustment -> adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID
+                    && adjustment.whole()).forEach(adjustment -> wholeCancelled.add(adjustment.instalment()));
+            Map<UUID, Money> expected = reversed.map(original -> BnplRepaymentReversals.feesReleased(original,
+                    wholeCancelled)).orElse(Map.of());
+            Map<UUID, Money> recorded = new HashMap<>();
+            stamped.releases().forEach(release -> recorded.merge(release.instalment(), release.amount(), Money::plus));
+            if (!new HashMap<>(expected).equals(recorded)
+                    || stamped.releases().stream().map(BnplRecord.FeeRelease::entry).distinct().count() > 1) {
+                diverged(Check.REVERSAL, reversal.id());
+            }
+            for (BnplRecord.FeeRelease release : stamped.releases()) {
+                item(release.instalment()).ifPresent(due -> due.pay(AllocationComponent.FEES, release.amount()));
+                releasedOn.merge(release.instalment(), release.amount(), Money::plus);
             }
         }
 

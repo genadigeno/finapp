@@ -3186,6 +3186,7 @@ versions and stamps `INTERNAL`.
 | `repayment_reversal` | `decided_order` | `INTERNAL` | The decision's place in its loan's history - `lending.record_order` drawn by the edge function when the decision is written (`P11-TSK-029`, `V025`) |
 | `repayment_reversal` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
 | `repayment_reversal` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 10's journal entry, by value - exactly when approved |
+| `repayment_reversal` | `value_date` | `INTERNAL` | The value date of the approval's entry - `max(today, floor, the reversed repayment's value date)`, never before the repayment (the Phase 12 → 13 transition gate's A2-1, lending `V031`); `NULL` while proposed, when rejected and on decisions before `V031` |
 | `repayment_reversal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
 | `repayment_allocation_reversal` | `id` | `INTERNAL` | Generated |
 | `repayment_allocation_reversal` | `reversal_id` | `CONFIDENTIAL` | The approved reversal it belongs to |
@@ -3904,7 +3905,7 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 | `bnpl_repayment_reversal` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
 | `bnpl_repayment_reversal` | `decision_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
 | `bnpl_repayment_reversal` | `journal_entry_id` | `INTERNAL` | F8's entry (`bnpl.repayment-reversal:<id>`), by value - exactly when `APPROVED` |
-| `bnpl_repayment_reversal` | `value_date` | `INTERNAL` | F8's value date - `max(today, floor)` |
+| `bnpl_repayment_reversal` | `value_date` | `INTERNAL` | F8's value date - `max(today, floor)`; since the Phase 12 → 13 transition gate's A2-1 (`bnpl V019`) `max(today, floor, the reversed repayment's value date)` |
 | `bnpl_repayment_reversal` | `correlation_id` | `INTERNAL` | The proposal's correlation |
 | `bnpl_repayment_reversal` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_repayment_reversal` | `decided_order` | `INTERNAL` | The decision's place in its obligation's history - `bnpl.record_order` drawn by its trigger as `PROPOSED` moves on (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
@@ -3914,6 +3915,14 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 | `bnpl_repayment_allocation_reversal` | `currency` | `INTERNAL` | The allocation's currency |
 | `bnpl_repayment_allocation_reversal` | `scale` | `INTERNAL` | Its persisted scale |
 | `bnpl_repayment_allocation_reversal` | `amount_minor` | `RESTRICTED-FINANCIAL` | The allocation line's amount, mirrored exactly |
+| `bnpl_reversal_fee_release` | `id` | `INTERNAL` | Generated (the Phase 12 → 13 transition gate's A7-3, `bnpl V019`) |
+| `bnpl_reversal_fee_release` | `reversal_id` | `INTERNAL` | The approved reversal that re-opened the fee |
+| `bnpl_reversal_fee_release` | `obligation_id` | `INTERNAL` | Its obligation |
+| `bnpl_reversal_fee_release` | `instalment_id` | `INTERNAL` | The instalment a refund cancelled whole |
+| `bnpl_reversal_fee_release` | `currency` | `INTERNAL` | The fee's currency |
+| `bnpl_reversal_fee_release` | `scale` | `INTERNAL` | Its persisted scale |
+| `bnpl_reversal_fee_release` | `amount_minor` | `RESTRICTED-FINANCIAL` | The late fee released - exactly the `FEES` due on the instalment once the negating rows stand |
+| `bnpl_reversal_fee_release` | `journal_entry_id` | `INTERNAL` | F8a's entry (`bnpl.reversal-fee-release:<reversal>`), by value - one per reversal |
 | `bnpl_waiver` | `id` | `INTERNAL` | Generated (`P12-TSK-024`) |
 | `bnpl_waiver` | `obligation_id` | `CONFIDENTIAL` | The fee's obligation |
 | `bnpl_waiver` | `kind` | `INTERNAL` | `FEE` |

@@ -1088,6 +1088,16 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P12-TSK-024. The negating rows of the reversal this transaction approved under B4 and B6 - bnpl V016's trigger holds each to an allocation of the reversed repayment, exactly, for every writer.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.wholeCancelledInstalments",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "The Phase 12 transition gate's A7-3. The instalments a refund cancelled whole, of the obligation the reversal's approval holds FOR UPDATE (B4) - the obligation JdbcBnplCorrectionStore.addressed answered for the agreement the path names, under BNPL_SERVICE_APPROVE and the not-self rule; read-only, no door names it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplCorrectionStore.insertFeeReleases",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "The Phase 12 transition gate's A7-3. The releases of the reversal this transaction approved under B4 and B6, of its own obligation - bnpl V019's trigger holds each to an APPROVED reversal of that obligation, an instalment a refund cancelled whole and exactly the fee due, for every writer.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplCorrectionStore.waiversOf",
                             new Entry(
                                     Scope.ADMINISTERED,

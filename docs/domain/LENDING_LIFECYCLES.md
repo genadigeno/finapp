@@ -207,6 +207,14 @@ offer is never born expired) and `TERMS_NOT_AMORTISING`. The application gained 
 re-stamped by every claim, pulled forward by a credit event's hint) - a permit-only update admitted only while
 `AWAITING_DECISION`. The owner's read names the offer's id once `OFFERED`.*
 
+*The Phase 12 → 13 transition gate's repair R3 (2026-10-22, A3-I1):* an approval that finds **no terms version `ACTIVE` to
+pin** no longer closes `CLOSED_UNDECIDED (PRODUCT_NOT_OFFERED)`: the step waits - nothing written, a later sweep reads again
+(credit's `DecisionProgress` rule). The only way to that empty pin was the activation race - the pin's `FOR SHARE` that
+waited on an activation re-checked only the retired predecessor and never saw its successor - which `JdbcLoanTermsStore`
+now closes by reading again after the administration's A0 granted in shared mode (ADR-0092's follow-up); an application is
+submitted under an `ACTIVE` version and a retirement commits only beside its successor. The reason stays in the vocabulary
+for the rows written before.
+
 ### 4.4 Loan offer (`lending.loan_offer`) — `P11-TSK-011`, accepted `-012`
 
 ```
