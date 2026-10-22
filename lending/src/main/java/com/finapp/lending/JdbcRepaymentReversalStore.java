@@ -93,7 +93,7 @@ public final class JdbcRepaymentReversalStore implements RepaymentReversalStore 
         try (PreparedStatement update = unitOfWork.prepareStatement(
                 "UPDATE lending.repayment_reversal SET status = ?, decided_by = ?, decided_by_type = ?,"
                         // The instant is the trigger's; the placeholder is overwritten.
-                        + " decided_at = statement_timestamp(), decision_reason = ?, journal_entry_id = ?"
+                        + " decided_at = statement_timestamp(), decision_reason = ?, journal_entry_id = ?, value_date = ?"
                         + " WHERE id = ? AND status = 'PROPOSED'")) {
             int i = 0;
             update.setString(++i, decision.status().name());
@@ -101,6 +101,7 @@ public final class JdbcRepaymentReversalStore implements RepaymentReversalStore 
             update.setString(++i, decision.decider().type().name());
             update.setString(++i, decision.reason());
             update.setObject(++i, decision.journalEntry().map(JournalEntryId::value).orElse(null));
+            update.setObject(++i, decision.valueDate().orElse(null));
             update.setObject(++i, decision.reversal());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {

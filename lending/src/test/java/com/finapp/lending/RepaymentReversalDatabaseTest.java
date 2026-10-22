@@ -474,12 +474,14 @@ class RepaymentReversalDatabaseTest {
         Repayment third = repay(loan, key(), bill).repayment();
         RepaymentReversal partial = propose(loan, third.id(), employee());
         refusedAlone("BEGIN; UPDATE lending.repayment_reversal SET status = 'APPROVED', decided_by = 'another-decider',"
-                + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = gen_random_uuid() WHERE id = '"
+                + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = gen_random_uuid(),"
+                + " value_date = " + rawValueDate(partial.id()) + " WHERE id = '"
                 + partial.id() + "'; " + rawNegation(partial.id(), third.allocations().get(0).id(),
                         third.allocations().get(0).line().amount().minorUnits()) + "; COMMIT;", "P0001",
                 "negates every allocation row");
         refusedAlone("BEGIN; UPDATE lending.repayment_reversal SET status = 'APPROVED', decided_by = 'another-decider',"
-                + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = gen_random_uuid() WHERE id = '"
+                + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = gen_random_uuid(),"
+                + " value_date = " + rawValueDate(partial.id()) + " WHERE id = '"
                 + partial.id() + "'; " + rawNegation(partial.id(), third.allocations().get(0).id(),
                         third.allocations().get(0).line().amount().minorUnits() + 1) + "; COMMIT;", "P0001", "mirrors");
 
@@ -920,11 +922,22 @@ class RepaymentReversalDatabaseTest {
      */
     static String rawApproval(UUID reversal, UUID repayment, String decider, String end) {
         return "BEGIN; UPDATE lending.repayment_reversal SET status = 'APPROVED', decided_by = " + decider + ","
-                + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = gen_random_uuid() WHERE id = '"
+                + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw', journal_entry_id = gen_random_uuid(),"
+                + " value_date = " + rawValueDate(reversal) + " WHERE id = '"
                 + reversal + "'; INSERT INTO lending.repayment_allocation_reversal (id, reversal_id, allocation_id,"
                 + " currency, scale, amount_minor) SELECT gen_random_uuid(), '" + reversal + "', a.id, a.currency, a.scale,"
                 + " a.amount_minor FROM lending.repayment_allocation a WHERE a.repayment_id = '" + repayment + "'; " + end
                 + ";";
+    }
+
+    /**
+     * A raw approval's value date, admitted by {@code lending V031}'s ranks: the later of the reversed repayment's own date
+     * and the loan's floor - so the raw statement reaches the rule its case names (the Phase 12 transition gate's A2-1 made
+     * an approval name its date).
+     */
+    static String rawValueDate(UUID reversal) {
+        return "(SELECT GREATEST(r.value_date, lending.principal_value_floor(r.loan_id)) FROM lending.repayment r"
+                + " JOIN lending.repayment_reversal x ON x.repayment_id = r.id WHERE x.id = '" + reversal + "')";
     }
 
     static String rawNegation(UUID reversal, UUID allocation, long amount) {
