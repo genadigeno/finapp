@@ -153,7 +153,7 @@ completion gate, 2026-10-16** (`reviews/PHASE_11_TO_12_TRANSITION.md`): interest
 step, held credit settling past-due items, a refunded fee never forgiven twice, self-approval refusals on the
 record, no admitted terms version that cannot be scheduled - lending `V029`, `V030`.)*
 
-## BNPL *(Phase 12, delivered 2026-10-22 — `P12-DOC-001`)*
+## BNPL *(Phase 12, delivered 2026-10-22 — `P12-DOC-001`; confirmed after repair by the Phase 12 → 13 transition gate, 2026-10-22)*
 - BNPL at checkout — delivered: the customer reads the products the session's merchant offers for its gross, each plan
   illustrated (`POST /v1/checkout/sessions/bnpl-options`, the session's token - no eligibility, credit not asked), then
   applies inside the checkout session (a `MULTI_FACTOR` session) - one credit decision per purchase for exactly the
@@ -205,7 +205,7 @@ record, no admitted terms version that cannot be scheduled - lending `V029`, `V0
 marked delivered by the Phase 12 exit review, `P12-DOC-001`, 2026-10-22 - each capability built by `P12-TSK-001`…`-028`
 and proven by `P12-TST-001` (the BNPL storm) and `P12-TST-002` (the battery); ADR-0101…0106 `Accepted` by the review
 (2026-10-22, `P12-DOC-001`, each read against the code and corrected first) *(P12-DOC-001, 2026-10-22: this read "stay
-`Proposed` until the review's verdict" until the ADRs were accepted)*. This note read "to be marked delivered by the Phase 12 exit review, `P12-DOC-001`" until then.)*
+`Proposed` until the review's verdict" until the ADRs were accepted)*. This note read "to be marked delivered by the Phase 12 exit review, `P12-DOC-001`" until then. **Confirmed after repair by the Phase 12 → 13 transition's completion gate, 2026-10-22** (`reviews/PHASE_12_TO_13_TRANSITION.md`): a refund-scoped merchant key needs `PAYMENT_REFUND` beside `MERCHANT_ADMINISTER` and is refused on a purchase of its issuer's own party, and a dispute ACCEPT needs the `BNPL_REFUND` scope; a withdrawn dispute never moves the days-past-due clock and starts a 30-day cooldown on its purchase; contested disputes are announced, gauged, alerted after seven days and queued for operators (`GET /v1/operator/bnpl-disputes`); a dispute refund that cannot post is alerted and a wallet cannot close beneath an open dispute; the terms pin is never "neither" during an activation; a repayment reversal is never valued before its repayment and releases a late fee a refund released; the BNPL fee is pinned on the database clock; merchant BNPL reasons are screened for card and account numbers; the delinquency bounds are the ones the labels name - bnpl `V018`, `V019`, merchant `V012`, lending `V031`.)*
 
 ## Risk
 - Fraud
