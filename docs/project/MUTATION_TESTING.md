@@ -2300,8 +2300,10 @@ owed** after the gate, **101** if every conditional lands. *As recorded on R4's 
 and the deferred conservation (no row), and `:1691` in part (`V014:520`; its deferred `:258` stays owed); `:1659` and
 `:1705` stay owed - R4's `bnpl_refund_conserves` probe disabled the whole trigger, not the `V013:463` or `:458` arm;
 `:1724` and `:1725` gained their database case (`BnplWaiverDatabaseTest#aReopenedFeeIsForgivableOnlyToWhatWasNeverForgiven`)
-and still owe a probe. `:1664` (R2) and `:1731`, `:1733` (R1) are theirs to record. So **109** remain owed on this
-branch, **106** once R1's and R2's three land. Line numbers are `master` `993eaec3`'s; the gate removed one §2 row
+and still owe a probe. `:1731` and `:1733` are **discharged** by R1 (merged: §2's `INV-LND-12` row naming
+`BnplDisputeDatabaseTest#theHoldTriggersAreTheRanksThatRefuse` - each hold trigger dropped in a rolled-back owner
+transaction, the row then admitted); `:1664` is R2's to record. So **107** remain owed on this branch, **106** once
+R2's lands. Line numbers are `master` `993eaec3`'s; the gate removed one §2 row
 (`:1793`, re-filed as a note - A6-F12), so a row below it reads one line earlier on the merged file.
 
 *One shared note for the uniques.* `P12-DOC-001`'s `BnplBornOnceArbitersDatabaseTest` (`:1817`, `:1818`) now proves
@@ -2436,8 +2438,8 @@ owed, marked "(arbiter: :1817)".
 
 **Disputes and the hold (`P12-TSK-023`)**:
 - `:1730` `INV-BNPL-08` `BnplDisputesTest#theDisputeTakesThePurchaseThenTheObligation` - B5 - **discharged** by `:1806`, `:1807`.
-- `:1731` `ADR-0106 decision 3` `BnplDisputesTest#theHoldSuspendsCollectionDpdAndFees` - **the fake's copy dropped** (`V015:755`, collection on a held instalment) - **P12-GATE** R1 (A1-1, live test and probe).
-- `:1733` `A13` `BnplDisputesTest#theHoldSuspendsCollectionDpdAndFees` - **the fake's copy dropped** (`V015:731`, a fee on a held instalment) - **P12-GATE** R1 (A1-1).
+- `:1731` `ADR-0106 decision 3` `BnplDisputesTest#theHoldSuspendsCollectionDpdAndFees` - **the fake's copy dropped** (`V015:755`, collection on a held instalment) - **discharged** by `P12-GATE` R1 (A1-1, live test and probe).
+- `:1733` `A13` `BnplDisputesTest#theHoldSuspendsCollectionDpdAndFees` - **the fake's copy dropped** (`V015:731`, a fee on a held instalment) - **discharged** by `P12-GATE` R1 (A1-1, live test and probe).
 - `:1736` `INV-BNPL-08` `BnplDisputesTest#aDisputeThenARefundShareOneBound` - **the fake's copy dropped** (`V015:609`, no refund beside an open dispute) - live, probed.
 - `:1738` `INV-AUD-04` `BnplDisputesTest#selfApprovalRefusedAndAudited` - **caught by a fake** (copy of `V015:165` `bnpl_dispute_proposal_four_eyes`) - raw SQL, `BnplDisputeDatabaseTest`.
 - `:1740` `OQ-10` `BnplDisputesTest#aLateAcceptanceAtTheDeadlineResolvesOnce` - **caught by a fake** (copy of `V015:342`) - the ten-racer count `BnplDisputeDatabaseTest#aLateAcceptanceAtTheDeadlineResolvesOnce` (the path R1 reworks for A3-M2).
