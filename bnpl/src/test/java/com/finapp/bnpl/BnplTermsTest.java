@@ -164,6 +164,25 @@ class BnplTermsTest {
     }
 
     @Test
+    @DisplayName("the delinquency bounds are (1, 30, 60, 90) and nothing else, whatever else would rise from 1 to an admitted"
+            + " threshold - the buckets' labels name those bounds (the Phase 12 transition gate's A7-5); refused clean,"
+            + " TermsInvalid naming the rule, for both products")
+    void theBoundsAreTheOnesTheLabelsName() {
+        assertThat(BnplTerms.DELINQUENCY_BOUNDS).containsExactly(1, 30, 60, 90);
+        assertThat(payInN("0.2").build().delinquencyBounds()).isEqualTo(BnplTerms.DELINQUENCY_BOUNDS);
+        assertThat(payIn4().build().defaultThresholdDays()).isEqualTo(90);
+        List<List<Integer>> others = List.of(List.of(1, 10, 20, 30), List.of(1, 30, 60, 120), List.of(1, 29, 60, 90),
+                List.of(1, 30, 61, 90), List.of(1, 45, 90, 180));
+        for (List<Integer> bounds : others) {
+            int threshold = bounds.get(3);
+            refused(payInN("0.2").delinquencyBounds(bounds).defaultThresholdDays(threshold).lateFeeDay(5),
+                    "the delinquency bounds are [1, 30, 60, 90]");
+            refused(payIn4().delinquencyBounds(bounds).defaultThresholdDays(threshold).lateFeeDay(5),
+                    "the delinquency bounds are [1, 30, 60, 90]");
+        }
+    }
+
+    @Test
     @DisplayName("every amount is in the product's currency at its scale; nothing is missing")
     void amountsAreTheProductsAndNothingIsMissing() {
         Money pounds = Money.ofMinorUnits(500, CurrencyCode.of("GBP"));
