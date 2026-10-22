@@ -89,7 +89,7 @@ when a real jurisdiction is chosen.
 
 | Concept | Owner | Phase 13 | Relationships, lifecycle |
 |---|---|---|---|
-| **Risk Signal** | `risk` | yes | An append-only fact about a subject (party, account, device, merchant, beneficiary, session): kind from a closed vocabulary, observed at, attributes; born once per source event (`UNIQUE (source_event_id)`); from identity, kyc, accounts, merchant, crossborder, lending, bnpl and payments events, and from monitoring |
+| **Risk Signal** | `risk` | yes | An append-only fact about a subject (party, account, device, merchant, beneficiary, session): kind from a closed vocabulary, observed at, attributes; born once per source event (`UNIQUE (source_event_id)`); from identity, kyc, accounts, merchant, crossborder, lending, bnpl and payments events, and from monitoring. *(As built, `P13-TSK-005`, 2026-10-23: the subject is the aggregate the event names — the platform's events carry their own aggregate and enumerated codes, never the party behind it (`EventPayload`, `INV-AUD-02`) — so `SubjectKind` gained `IDENTITY` and `CREDIT_AGREEMENT` (a loan or a BNPL obligation); the party join is the consumer's, through a port at evaluation time. The attributes are typed columns bounded per kind; a device is only ever identity's SHA-256 of the description, `DeviceHash`.)* |
 | **Risk Policy Version** | `risk` | yes | Per operation: rules as data, weights, score bands, fail-safe bands, challenge and override thresholds, effective-from; `PROPOSED → ACTIVE \| REJECTED`, `ACTIVE → RETIRED`; four eyes; one `ACTIVE` per operation |
 | **Rule** | `risk` (inside the policy version) | yes | One row of a closed `RuleKind` with parameters and a weight or a hard decision — data, never code |
 | **Risk Assessment** | `risk` | yes | The sealed record of one evaluation: operation, subject refs, amount, the inputs read, the policy and engine versions, rule hits, score, decision, ordered reason codes, fail-safe applied, latency; `INSERT`-only; `UNIQUE (operation, command_ref)` |
@@ -427,6 +427,27 @@ screening outcomes; `accounts.AccountOpened`; `crossborder.BeneficiaryRegistered
 suspension; `lending.LoanDelinquencyChanged`/`LoanDefaulted`; `bnpl.BnplDelinquencyChanged`/`BnplDefaulted`;
 `transfers`, `payments` and `crossborder` completions as hints that pull the monitoring permit forward.
 
+*(Erratum, `P13-TSK-005`, 2026-10-23 — the list above named events that do not exist; only events that exist are
+consumed, every one under the consumer name `risk.signals` (one dedupe scope, one group `finapp.risk`, one handler
+instance per event type — `app`'s `RiskSignalIntake`). **Consumed as signals:** identity's `CredentialChanged`,
+`RecoveryInitiated`, `RecoveryCompleted`, `IdentitySuspended`; `accounts.AccountOpened`; crossborder's
+`BeneficiaryRegistered`, `BeneficiaryActivated`, `BeneficiaryBlocked` (the counterparty screening's outcome as its
+owner committed it); `merchant.MerchantOnboarded`; lending's `LoanDelinquencyChanged`, `LoanDefaulted`; bnpl's
+`BnplDelinquencyChanged`, `BnplDefaulted`. **Consumed as hints, recording no signal:** `transfers.TransferCompleted`,
+`payments.PaymentCaptured`, `payments.PaymentExecuted`, `payments.WithdrawalCompleted`,
+`crossborder.CrossBorderPaymentDelivered` — each handed to `MonitoringHints`, `NONE` until `-019` implements the permit
+pull; a signal per completed movement would be a second, event-derived copy of the journal's born-once
+`monitored_transaction` (`INV-RSK-09`). **Named here but not existing today, recorded as planned:** identity's
+`AuthenticationLocked`, `MfaChallengeFailed`, `ContactChannelAdded`, `SessionRotated` (audit actions only);
+`identity.AuthenticationFailed` exists but names no identity by design (`INV-IDN-07`: its aggregate is a fresh id),
+so a signal from it would have no subject — `recentAuthFailures` has no event source until the owner decides
+otherwise, and `-004` may read identity's `authentication_failure` through a port; kyc's case outcomes
+(`kyc.DecisionRecorded` is an audit action; `KycCaseOpened` is an opening, not an outcome, and names a customer);
+`kyc.CounterpartyScreeningDecided` exists but names its subject only inside crossborder's private request-reference
+convention; merchant enablement and suspension (audit actions only). The handler reads the payload — the first
+consumer to do so — through `EventPayload.fields`, the writer's exact inverse; an unknown version or an unreadable
+payload is thrown, never acknowledged: the inbox has no "parking", the loud stall is its mechanism.)*
+
 ---
 
 ## 11. Security, audit and privacy
@@ -556,6 +577,16 @@ signals and case history, and its **rating bands** map the resulting signal scor
 the current rating's code (`LOW`…`PROHIBITED`) with seam version 2 and the profile version, recorded in the snapshot
 (`INV-RSK-10`). Devices: identity's `session.device` description is hashed at the source (the handler receives the
 hash only) and compared for novelty; no device description is stored in `risk`.
+
+*(As built, `P13-TSK-005`, 2026-10-23: the canonical hash is `risk`'s `DeviceHash.of(description)` — SHA-256 over the
+description's UTF-8 bytes, lowercase hex — declared once for identity to mirror when it first publishes a device;
+today no identity event carries one, and `EventPayload`'s grammar could not carry a description. A `DEVICE` subject's
+reference is that hash and nothing else, held by `SignalSubject`, by the handler (a `device` field is refused by name)
+and by `risk V003`'s `CHECK`. The readings `-004` takes are `SignalReadings`: `recentCredentialChange` and
+`recentRecovery` within a lookback on the identity, `deviceNovelty` as the absence of any signal about the hash,
+`accountAge` from the first `ACCOUNT_OPENED`, a merchant's age from `MERCHANT_ONBOARDED`, a beneficiary's standing from
+its latest `BENEFICIARY_*` signal; `screeningHit` is `ScreeningClearances`' answer (`app`'s `KycScreeningClearances`
+over kyc's case checks); `recentAuthFailures` and `kycStatus` have no event source — see §10's erratum.)*
 
 ### 12.6 Fraud detection
 

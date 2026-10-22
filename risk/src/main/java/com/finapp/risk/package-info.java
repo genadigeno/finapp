@@ -46,8 +46,18 @@
  * closed vocabularies ({@link com.finapp.risk.RiskOperation} with the decisions each admits, {@code RuleKind} with each
  * kind's operations and parameter schema, the alert, case, disposition, action, subject, window, rating and assurance
  * vocabularies, the engine identity), the aggregates' typed identifiers, the three error codes and two audit actions
- * the role split owns, the span names and the ports above. No table, no rule, no evaluation, no door, no event, no
- * schedule: production evaluates nothing until a policy version is activated under four eyes (section 1.1), and until
- * `-008`…`-011` and `-007` land, the consumers' seams stay wired to their permit-all and not-assessed defaults.
+ * the role split owns, the span names and the ports above (`P13-TSK-001`). <strong>The born-once signal</strong>
+ * (`P13-TSK-005`, {@code V003}): {@link com.finapp.risk.SignalKind} - thirteen kinds, one per consumed event that
+ * exists, each with its subject and its typed, bounded attribute schema - {@link com.finapp.risk.RiskSignal},
+ * {@link com.finapp.risk.SignalSubject} (a device only ever by {@link com.finapp.risk.DeviceHash}, OQ-4),
+ * {@link com.finapp.risk.RiskSignalStore} ({@code INSERT ... ON CONFLICT (source_event_id) DO NOTHING}, four bounded
+ * reads), {@link com.finapp.risk.RiskSignals} (T-sig: record and announce {@code risk.RiskSignalRecorded} when born),
+ * {@link com.finapp.risk.SignalReadings} (the signal half of `-004`'s inputs) and {@link com.finapp.risk.MonitoringHints}
+ * (the completions as hints; `NONE` until `-019`); {@code SubjectKind} gained {@code IDENTITY} and
+ * {@code CREDIT_AGREEMENT}, the aggregates the events actually name. The handlers live in {@code app}
+ * ({@code RiskSignalIntake}, consumer {@code risk.signals}), as does {@code ScreeningClearances}' implementation over
+ * kyc's case checks. No rule, no evaluation, no door, no schedule: production evaluates nothing until a policy version
+ * is activated under four eyes (section 1.1), and until `-008`…`-011` and `-007` land, the consumers' seams stay wired
+ * to their permit-all and not-assessed defaults.
  */
 package com.finapp.risk;

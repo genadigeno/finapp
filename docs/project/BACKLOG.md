@@ -22639,7 +22639,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: High (in every money transaction once the seams
   land). **Cx**: H.
 
-**P13-TSK-005 — Signal ingestion from the platform's events** — `READY` (2026-10-23; wave B beside `P13-TSK-002`, dependency-free after `P13-TSK-001` — marked by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel)
+**P13-TSK-005 — Signal ingestion from the platform's events** — `IN_PROGRESS` (2026-10-23; wave B beside `P13-TSK-002` and `P13-TSK-019`, dependency-free after `P13-TSK-001` — marked `READY` by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel; branch `P13-TSK-005` from master `5238a455`)
 - **Objective**: risk signals born once per source event — from identity, kyc, accounts, merchant, crossborder, lending,
   bnpl and payments events — recorded by inbox handlers in their own transaction with the attributes the event carries
   and nothing read from the source's tables; the device description hashed at the source handler and never stored
@@ -22695,6 +22695,53 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: every listed event records exactly one signal, once, with bounded typed attributes; no
   description, secret or PII beyond the hash; the readings answer `-004`'s inputs.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- **As built (2026-10-23)**: **`risk V003`** `risk_signal` — `UNIQUE (source_event_id)` (`risk_signal_born_once`), a
+  closed `kind` and `subject_kind`, `subject_ref` text shaped by `CHECK` (a canonical UUID, or for a `DEVICE` identity's
+  SHA-256 as 64 hex — never a description, OQ-4), thirteen typed, bounded, nullable attribute columns with
+  `risk_signal_attributes_match_kind` (per kind exactly its set non-null, counted), `observed_at` the event's own
+  instant and `recorded_at` the database's by trigger, `UPDATE`/`DELETE`/`TRUNCATE` refused for every writer by
+  trigger, `GRANT SELECT, INSERT`, the index `(subject_kind, subject_ref, kind, observed_at DESC)`. **risk**:
+  `SignalKind` (thirteen kinds, each with its `SubjectKind`, its one source event type and its attribute schema —
+  `AttributeType` `CODE`, `COUNTRY`, `CURRENCY`, `DATE`, `DAYS`, `FLAG`, `VERSION`, `REF`), `SignalAttributes`,
+  `SignalSubject`, `DeviceHash` (the canonical SHA-256, declared for identity to mirror), `RiskSignal` (+ `SourceEvent`),
+  `RiskSignalStore` / `JdbcRiskSignalStore` (one `INSERT … ON CONFLICT (source_event_id) DO NOTHING`; `countSince`,
+  `latest`, `firstObservedAt`, `seen`), `RiskSignals` (T-sig; `risk.RiskSignalRecorded` v1 with `signalId`, `kind`,
+  `subjectKind`, `subjectRef`, caused by the consumed event, only when born), `SignalReadings` (`withinLookback`,
+  `countWithin`, `latest`, `age`, `isNovel` — the signal half of `-004`'s inputs), `MonitoringHints` (`NONE` until
+  `-019`), `RiskStorageException`; **`SubjectKind` + `IDENTITY`, `CREDIT_AGREEMENT`** — the design's finding: the
+  platform's events name their own aggregate and codes, never the party (`EventPayload`, `INV-AUD-02`), and "nothing
+  read from the source's tables" is binding, so a signal's subject is the aggregate the event names and the party join
+  is the consumer's through a port. **app**: `RiskSignalIntake` — eighteen `InboxEventHandler` beans under the one
+  consumer name `risk.signals` (group `finapp.risk`), one per event type: thirteen signal sources and five completion
+  hints; `SignalMappings` (the payload read through **`EventPayload.fields`**, added to `platform` as the writer's exact
+  inverse — the first consumer to read a payload; a `device` field refused by name); `KycScreeningClearances`
+  (`ScreeningClearances` over kyc's `PartyStore`, `KycCaseStore`, `CheckStore`: the latest decided `SANCTIONS`/`PEP`
+  check of the party's live customer's latest case, empty where none is decided); `RiskBeans`; `RiskFlowScope.step`
+  (`risk.signal.record`, no attribute). **Consumed (exist today)**: identity's `CredentialChanged`,
+  `RecoveryInitiated`, `RecoveryCompleted`, `IdentitySuspended`; `accounts.AccountOpened`; crossborder's
+  `BeneficiaryRegistered`, `BeneficiaryActivated`, `BeneficiaryBlocked` (the counterparty screening's outcome as its
+  owner committed it); `merchant.MerchantOnboarded`; lending's and bnpl's `*DelinquencyChanged` / `*Defaulted`; as
+  hints `transfers.TransferCompleted`, `payments.PaymentCaptured`, `PaymentExecuted`, `WithdrawalCompleted`,
+  `crossborder.CrossBorderPaymentDelivered`. **Not consumed, recorded as planned** (`PHASE_13_PLAN.md` §10 erratum):
+  `identity.AuthenticationFailed` (names no identity by design, `INV-IDN-07` — no subject), `AuthenticationLocked`,
+  `MfaChallengeFailed`, `ContactChannelAdded`, `SessionRotated` (audit actions, no event), kyc's case outcomes (none
+  published) and `CounterpartyScreeningDecided` (its subject only in crossborder's private request reference),
+  merchant enablement/suspension (audit actions). **Deviations from this entry, argued in the design**: (a) the
+  completions record no signal — a signal per movement would be a second, event-derived copy of the journal's
+  born-once `monitored_transaction` (`INV-RSK-09`), Kafka projected into evidence; the hint port is the handler's
+  effect; (b) "the inbox's parking" does not exist — an unknown version or an unreadable / out-of-bound payload is
+  thrown, rolled back with the dedupe record, seeked back and stalled loudly (`finapp.inbox.consumption{failed}`),
+  never truncated, never acknowledged; (c) no meter registered — `finapp.risk.signal{kind}` is `-024`'s to register per
+  plan §15 (`kind` a bounded vocabulary; the inbox's own `finapp.inbox.consumption{outcome}` counts every delivery);
+  (d) `recentAuthFailures` and `kycStatus` have no event source — `SignalReadings` says so rather than pretending.
+  **Tests**: hermetic — risk `RiskSignalTest` (9), `RiskSignalsTest` (3), `SignalReadingsTest` (5),
+  `RiskSignalMigrationTest` (6, the SQL held to the code); app `RiskSignalIntakeTest` (13, every source mapped or
+  refused), `KycScreeningClearancesTest` (4), `RiskBeansTest` (1); platform `EventPayloadTest` (+4); database,
+  **written and owed** (C5) — app `SignalIntakeDatabaseTest` (`#theSameEventTwiceRecordsOnce` with a third delivery past
+  the dedupe, `#tenInstancesRecordOnce`, `#reorderedEventsRecordEach`, `#anAttributeOutsideItsBoundIsRefused`,
+  `#theReadingsIndexAnswersInOneScan`), risk `RiskMigrationTest` (the table list, the live grants with the migrator's
+  edit refused by trigger, constraint-name uniqueness, the shape `CHECK`s live). No audit act, no error code, no door,
+  no schedule, no producer changed.
 
 **P13-TSK-006 — Velocity windows in the caller's transaction, and their proof** — `PLANNED`
 - **Objective**: durable velocity windows — a count and a sum per (dimension, subject, window kind, window start) —

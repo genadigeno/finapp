@@ -4,6 +4,15 @@ package com.finapp.risk;
  * What a signal, a velocity window, an alert or a case is about (`P13-TSK-001`; {@code PHASE_13_PLAN.md} sections 3.1,
  * 12.4) - the subject kinds, each referenced by identifier only, never by constraint (ADR-0029) and never by a row of
  * another module. A velocity dimension is one of these ({@link RuleKind.ParameterType#SUBJECT_KIND}).
+ *
+ * <p><strong>Two kinds the plan did not name, added by `P13-TSK-005`.</strong> A signal records what its source
+ * event <em>said</em> and nothing read from the producer's tables (section 12.5), and the platform's events name
+ * their own aggregate - an identity, a loan, a BNPL obligation - never the party behind it ({@code EventPayload}
+ * carries identifiers and codes only, {@code INV-AUD-02}). So the subject of identity's credential, recovery and
+ * suspension events is the {@link #IDENTITY}, and of lending's and bnpl's delinquency and default events the
+ * {@link #CREDIT_AGREEMENT}. The party behind either is an immutable fact the consumer resolves through a port at
+ * evaluation time, where it is needed - the ATO rule (`-013`) joins an identity's signals to the party's movements that
+ * way; an action still targets the {@link #PARTY} ({@link ActionKind#SUSPEND_IDENTITY}).
  */
 public enum SubjectKind {
 
@@ -13,7 +22,7 @@ public enum SubjectKind {
     /** A ledger-backed account - a wallet, or a destination account. */
     ACCOUNT,
 
-    /** A device, by identity's hash of its description - never the description (OQ-4). */
+    /** A device, by identity's hash of its description - never the description (OQ-4; {@link DeviceHash}). */
     DEVICE,
 
     /** A merchant. */
@@ -23,5 +32,15 @@ public enum SubjectKind {
     BENEFICIARY,
 
     /** A session. */
-    SESSION
+    SESSION,
+
+    /** An identity - the subject identity's events name (`P13-TSK-005`); its party is identity's fact, through a port. */
+    IDENTITY,
+
+    /**
+     * A credit agreement - a loan or a BNPL obligation, by the id its module's events carry (`P13-TSK-005`); which
+     * module is the signal's kind's business ({@link SignalKind#LOAN_DEFAULTED}, {@link SignalKind#BNPL_DEFAULTED}),
+     * and the borrower is the module's fact, through a port.
+     */
+    CREDIT_AGREEMENT
 }

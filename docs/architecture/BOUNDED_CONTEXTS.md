@@ -363,7 +363,11 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   `POST …/monitoring/reprocessing` (`RISK_POLICY_ADMINISTER`, audited `risk.ReprocessingOrdered`), the audited reports `GET /v1/operator/reports/risk/{decisions,alerts,cases,velocity}`.
   *Events produced:* `AlertRaised`, `RegulatoryReportFiled` (report id and jurisdiction — never the subject),
   `RiskSignalRecorded`; *consumed:* `transfers`, `payments` and `crossborder` completions as hints that pull the
-  watermark's permit forward — never as the record. *Failure behaviour:* a sweep crashing mid-claim lapses its permit
+  watermark's permit forward — never as the record *(built by `P13-TSK-005`, 2026-10-23: `app`'s `RiskSignalIntake`
+  under consumer `risk.signals` — identity's credential, recovery and suspension events, `accounts.AccountOpened`,
+  crossborder's beneficiary registered / activated / blocked, `merchant.MerchantOnboarded`, lending's and bnpl's
+  delinquency and default events as born-once signals; the completions as hints to `MonitoringHints`, `NONE` until
+  `-019`; `RiskSignalRecorded` the signal id, kind, subject kind and reference)*. *Failure behaviour:* a sweep crashing mid-claim lapses its permit
   and the next claim re-reads from the committed watermark; a filing provider unavailable or unknown leaves `FILED`
   committed with the reference pending, reconciled by the inquiry leg (`risk.ReportAcknowledged` / `risk.ReportRejected`),
   never re-filed (the payout precedent). *Security

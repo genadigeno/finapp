@@ -2066,7 +2066,10 @@ may carry one, and a customer's answer is the operation's generic outcome.
 from a closed vocabulary, with when it was observed and the attributes its source event carried; born once per source
 event (`UNIQUE (source_event_id)`) by an inbox handler from identity, kyc, accounts, merchant, crossborder, lending,
 bnpl and payments events, or by the monitoring sweep. A device arrives as a hash computed at the source; no
-description is stored.
+description is stored. *(As built by `P13-TSK-005`, 2026-10-23: the subject is the aggregate the event names — the
+events carry their own aggregate and codes, never the party — so a subject is also an identity or a credit agreement
+(a loan or a BNPL obligation); thirteen kinds from the events that exist; the completions are hints and record no
+signal; a device's hash is `DeviceHash`, SHA-256 of the description, the only shape admitted.)*
 **Not:** a Risk Decision or an Alert — a signal is an input nobody judged; a rule reads signals and may raise an alert.
 Nor credit's Credit Attribute (evidence from a bureau about creditworthiness), nor the risk *signal* credit receives
 through its `CreditRiskSignal` port, which is the Customer Risk Profile's rating code, not a row here.

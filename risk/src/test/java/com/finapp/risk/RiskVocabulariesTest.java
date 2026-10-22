@@ -175,11 +175,13 @@ class RiskVocabulariesTest {
     }
 
     @Test
-    @DisplayName("six subject kinds, four windows of fixed length, four ratings least to most severe with PROHIBITED set"
-            + " only by disposition, two assurances with MULTI_FACTOR satisfying both")
+    @DisplayName("eight subject kinds (the plan's six, plus the identity and the credit agreement the events name - P13-TSK-005),"
+            + " four windows of fixed length, four ratings least to most severe with PROHIBITED set only by disposition,"
+            + " two assurances with MULTI_FACTOR satisfying both")
     void theSubjectsWindowsRatingsAndAssurances() {
         assertThat(names(SubjectKind.values()))
-                .containsExactly("PARTY", "ACCOUNT", "DEVICE", "MERCHANT", "BENEFICIARY", "SESSION");
+                .containsExactly("PARTY", "ACCOUNT", "DEVICE", "MERCHANT", "BENEFICIARY", "SESSION", "IDENTITY",
+                        "CREDIT_AGREEMENT");
         assertThat(names(WindowKind.values())).containsExactly("H1", "D1", "D7", "D30");
         assertThat(WindowKind.H1.length()).isEqualTo(Duration.ofHours(1));
         assertThat(WindowKind.D1.length()).isEqualTo(Duration.ofDays(1));
