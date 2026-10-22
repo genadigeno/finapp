@@ -165,6 +165,11 @@ They also have different owners. *(Settled by the Phase 9 → 10 transition, 202
 input among many through its `CreditRiskSignal` port, records the answer it was given in the
 Decision Snapshot, and never computes a risk score of its own (§10).
 
+*(The Phase 12 → 13 transition, 2026-10-22 — ADR-0107…0109 (`Proposed`), `PHASE_13_PLAN.md` §3.1 and §12.2: the Risk
+Score is now defined to the design — an integer 0–1000, Σ rule contributions clamped, a field of the Risk Assessment,
+never stored anywhere else — and the signal credit consumes is the Customer Risk Profile's rating code with seam
+version 2 (`P13-TSK-007`), never the score; the four stay four, and the risk-side terms are in §8a.)*
+
 ### Consent / Authentication / Authorization
 
 | | |
@@ -279,6 +284,18 @@ immutable.
 control persons.
 **Not:** a KYC Case with a flag set. The ownership graph is structurally different — it is
 recursive, and it terminates in Parties who must each be verified.
+**Owned by:** `kyc`
+
+### Screening Result
+**Is:** kyc's recorded outcome of one screening of a party or counterparty against sanctions and PEP lists — at
+onboarding, or at a transaction-time check — `CLEAR`, a hit, or a person's release, with the evidence and the basis it
+was decided on; Counterparty Screening (§8) is its transaction-time form for an external party.
+**Not:** `risk`'s state — Phase 13 reads clearances through a port and records what it was given as a Risk Signal; a
+Screening List Version and the rescreening its activation enqueues are `risk`'s, the screening itself and its result
+stay kyc's (`ROADMAP.md` Refinement 3; `MODULE_ARCHITECTURE.md` §5 "Screening result reads like one state but is
+two"). Nor a KYC Case: a case may run several screenings. *(Added by the Phase 12 → 13 transition, 2026-10-22: the
+canonical list never named it, though the register has owned it to `kyc` since `P0-TSK-006`; Phase 13 reads it, so
+the list names it.)*
 **Owned by:** `kyc`
 
 ### Authentication
@@ -693,12 +710,18 @@ read "ours or a bureau's" until the Phase 9 → 10 transition, 2026-10-07.)*
 **Owned by:** `credit`
 
 ### Risk Score
-**Is:** a numeric assessment of the likelihood that an action is fraudulent or abusive.
+**Is:** an integer 0–1000 — the sum of the contributions of the Rules that fired in one Risk Assessment, clamped —
+answering *how likely is this to be fraud or abuse?*; a field of the assessment, pinned with the policy and engine
+versions that produced it, never stored anywhere else. *(Sharpened by the Phase 12 → 13 transition, 2026-10-22 —
+ADR-0107…0109 (`Proposed`), `PHASE_13_PLAN.md` §3.1 and §12.2; this read "a numeric assessment of the likelihood that
+an action is fraudulent or abusive" until then.)*
 **Not:** a Credit Score. Different question, different inputs, different consequence — and summing
-them produces a number that answers nothing. Credit consumes a risk *signal* through its
-`CreditRiskSignal` port and records what it was given; in Phase 10 the port answers
-`NOT_ASSESSED` for every party, deterministically, so a decision made before Phase 13 replays
-identically after it. See §10: the owner is settled.
+them produces a number that answers nothing (`INV-CRD-04`). Nor a Risk Decision: a score band maps to a decision, a
+hard rule's decision beats a band's, and the decision is what the seam answers. Credit consumes a risk *signal* through
+its `CreditRiskSignal` port and records what it was given; in Phase 10 the port answers `NOT_ASSESSED` for every party,
+deterministically, so a decision made before Phase 13 replays identically after it; Phase 13's `app` implements the
+port over the Customer Risk Profile's rating with seam version 2 (`P13-TSK-007`), never over this score. See §10: the
+owner is settled.
 **Owned by:** `risk` (Phase 13) *(was `credit` until the Phase 9 → 10 transition, 2026-10-07 —
 ADR-0084, `MODULE_ARCHITECTURE.md` §4)*
 
@@ -2008,6 +2031,290 @@ provider leg. Nor a voided cover: a cover that never executed is voided, never u
 
 ---
 
+## 8a. Risk, fraud, AML and case management
+
+*(Added by the Phase 12 → 13 transition, 2026-10-22 — ADR-0107…0112 (`Proposed`), `PHASE_13_PLAN.md` §3 and §12.
+Twenty-one Phase 13 terms, in the order `DOMAIN_MODEL.md` lists them; Screening Result, `kyc`'s, gains its entry in §3
+and Risk Score is sharpened in §7. Nothing of Phase 13 is built: every entry is the planned design, and the task that
+builds a concept corrects its entry to the code. The machines they name are in
+[`RISK_LIFECYCLES.md`](RISK_LIFECYCLES.md); the module is `MODULE_ARCHITECTURE.md` §4 `risk`. The canonical names
+(`PHASE_13_PLAN.md` §3.1): **Risk Assessment** is the record of one evaluation, **Risk Decision** its outcome, **Risk
+Score** its number, **Alert** the born-once observation, **Case** the investigation, **Disposition** its end,
+**Regulatory Report** the filing artefact — never "the SAR" in code; the jurisdiction names it. The ten Phase 13
+invariants (`PHASE_13_PLAN.md` §6) are catalogued by the same transition; the entries below cite only invariants
+catalogued before it, and the building tasks add the Phase 13 citations when they correct an entry to the code — the
+Phase 9 → 10 precedent.)*
+
+**The words the entries use.** The five decisions, each with a fixed meaning and the operations that admit it
+(`PHASE_13_PLAN.md` §12.3, owner decision C2): **`ALLOW`** — the movement may proceed; **`CHALLENGE`** — it may proceed
+only under `MULTI_FACTOR` assurance, else it is refused as the reserved `RISK_REFUSED` with reason `CHALLENGE_REQUIRED`;
+**`DENY`** — refuse, the caller committing its reserved reason; **`HOLD`** — accept the command and move nothing until a
+person decides, admitted only where the operation has a native hold-then-dispatch shape (a withdrawal `HELD`; a card
+payment in `P13-TSK-010`'s second slice); **`REVIEW`** — refuse now and open a case. Precedence when rules disagree:
+`DENY` > `HOLD` > `REVIEW` > `CHALLENGE` > `ALLOW`, a hard rule's decision beating a score band's. A **fail-safe
+decision** is the decision taken when the evaluation is unavailable — no `ACTIVE` policy, a failed read, a throwing
+rule, the statement timeout — the policy's fail-safe band for the judged amount (or, with no policy at all, the compiled
+`ALLOW`), always **recorded** as an assessment with reason `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE`; never a silent
+default (owner decision C1). **Four eyes** is two persons' acts — the proposer never the approver, by the domain and by
+a `CHECK`, a refused self-approval recorded `FAILED` (`INV-AUD-04`). **Self-dealing** is an operator acting on their
+own party's subject: refused, fail closed, recorded `FAILED`. **Tipping-off** is letting a subject learn that an AML
+alert, case, report or investigation exists: no customer- or merchant-facing surface, log, event payload or metric tag
+may carry one, and a customer's answer is the operation's generic outcome.
+
+### Risk Signal
+**Is:** an append-only fact about a subject — a party, account, device, merchant, beneficiary or session — of a kind
+from a closed vocabulary, with when it was observed and the attributes its source event carried; born once per source
+event (`UNIQUE (source_event_id)`) by an inbox handler from identity, kyc, accounts, merchant, crossborder, lending,
+bnpl and payments events, or by the monitoring sweep. A device arrives as a hash computed at the source; no
+description is stored.
+**Not:** a Risk Decision or an Alert — a signal is an input nobody judged; a rule reads signals and may raise an alert.
+Nor credit's Credit Attribute (evidence from a bureau about creditworthiness), nor the risk *signal* credit receives
+through its `CreditRiskSignal` port, which is the Customer Risk Profile's rating code, not a row here.
+**Owned by:** `risk`
+
+### Risk Policy
+**Is:** the per-operation line of Risk Policy Versions — `TRANSFER`, `WITHDRAWAL`, `CARD_PAYMENT`, `WALLET_PAYMENT`,
+`CROSS_BORDER`, `CREDIT_SIGNAL` and `MONITORING` (the sweep's policy, with no seam) — identified by its operation; at most one version
+`ACTIVE` at a time, and only an `ACTIVE` version is ever evaluated.
+**Not:** the Credit Policy, which decides whether to lend; nor payments' routing policy or crossborder's corridor
+policy; nor code — a Rule is data. Production holds no active risk policy until one is activated under four eyes and
+the runbook's activation gate is passed; until then every seam answers `ALLOW` with reason `NO_POLICY_ACTIVE`,
+recorded.
+**Owned by:** `risk`
+
+### Risk Policy Version
+**Is:** one immutable version of a Risk Policy as data — its Rules in declared order, each with a weight and/or a hard
+decision; score bands mapping [0, 1000] to decisions (for `MONITORING`, rating bands mapping the party's signal score to
+`LOW`, `MEDIUM` or `HIGH`); fail-safe bands mapping amount bands to the decision taken when the evaluation is
+unavailable (owner decision C1); the hold validity (how long a `HOLD` may stand, default 72 h); the challenge
+assurance (`MULTI_FACTOR`); the override threshold
+(C7); the engine version it is written for (`RISK_ENGINE_V1`); effective-from — `PROPOSED → ACTIVE → RETIRED` or
+`PROPOSED → REJECTED`, activated by a second person, its successor's activation retiring it in one transaction so the
+pin never reads "neither". Every Risk Assessment pins the version that judged it (`INV-HIST-04`).
+**Not:** credit's Policy Version or bnpl's BNPL Terms Version — the same four-eyes shape, other modules' tables for
+other questions. Nor the engine: the engine is code, versioned separately, and a policy version names which engine
+reads it.
+**Owned by:** `risk`
+
+### Rule
+**Is:** one row inside a Risk Policy Version: a `RuleKind` from the closed vocabulary (`AMOUNT_BAND`,
+`VELOCITY_COUNT`, `VELOCITY_SUM`, `NEW_PAYEE`, `NEW_DEVICE`, `SESSION_ASSURANCE_BELOW`, `RECENT_AUTH_FAILURES`,
+`RECENT_CREDENTIAL_CHANGE`, `RECENT_RECOVERY`, `ACCOUNT_AGE_BELOW`, `KYC_NOT_APPROVED`, `SCREENING_HIT`,
+`PROFILE_RATING`, `MERCHANT_SUSPENDED`, `CORRIDOR_HIGH_RISK`, `DORMANT_THEN_ACTIVE`, `RAPID_IN_OUT`, `STRUCTURING`,
+`ROUND_AMOUNT`, `REFUND_RATIO`, `CHARGEBACK_RATIO`, `BNPL_MULTI_APPLICATION`) with typed parameters validated against
+the kind's schema at the policy door, and a weight (its score contribution when it fires) and/or a hard decision —
+data, never code.
+**Not:** a kind — the kind is code and declares the parameter schema; the rule is one parameterisation of it. Nor
+credit's policy rule row (an operand over credit attributes with an adverse Reason Code) nor reconciliation's Match
+Rule (a member of a Matching Rule Set). A rule's firing is a rule hit recorded on the Risk Assessment; a rule never
+decides alone — precedence and the bands do.
+**Owned by:** `risk`
+
+### Risk Assessment
+**Is:** the sealed record of one evaluation of one judged command — operation, subject refs, the judged amount, the
+inputs read, the policy and engine versions, every rule hit and its contribution, the Risk Score, the Risk Decision
+with its ordered reason codes, whether the fail-safe applied, the latency — written `INSERT`-only in the judged
+command's own transaction after the caller's locks, `UNIQUE (operation, command_ref)`, born `DECIDED` and never
+changed; replayable from its sealed inputs to `IDENTICAL` or `DIVERGED`.
+**Not:** credit's Credit Assessment or Decision Snapshot (the affordability, exposure and scorecard figures over frozen
+credit data), and not the outcome the caller commits — a transfer's `FAILED(RISK_REFUSED)`, a withdrawal's `HELD` —
+which is the owning domain's own row. Nor an Alert, which is an observation a rule made, not a judgement on a command.
+The assessment moves no money and is never read by a customer or merchant surface.
+**Owned by:** `risk`
+
+### Risk Decision
+**Is:** the outcome field of a Risk Assessment — `ALLOW | CHALLENGE | DENY | HOLD | REVIEW` (the five words above) with
+its ordered reason codes — immutable, admitted per operation by the policy, mapped by `app`'s seam adapter to the
+consuming seam's two-valued verdict (`PERMIT` / `REFUSE`) or, for a withdrawal, to its `HELD`. A fail-safe decision is
+a Risk Decision like any other, recorded with reason `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE`.
+**Not:** the money movement's outcome — the caller commits that in its own machine (`transfers`' `RISK_REFUSED`;
+payments' `HELD` or `RISK_REFUSED`), and `risk` never posts, holds or releases. Nor a Credit Decision (`INV-CRD-04`'s
+four kept apart), nor a Disposition (a person's end to a case), nor a Decision Override, which is a separate aggregate
+that never edits the decision.
+**Owned by:** `risk`
+
+### Decision Override
+**Is:** a four-eyes proposal over one `DENY`, `HOLD` or `REVIEW` Risk Decision — `PROPOSED → APPROVED | REJECTED`, a
+second `RISK_OVERRIDE` holder at or above the threshold (owner decision C7: the judged amount at or above EUR 1,000,
+or a `DENY`), one holder with a reason below it — recording the action it issues: the release of a held withdrawal (keyed
+`risk.action:<override id>` from the approval door; a Risk Action proper once `P13-TSK-017` folds it in), or, for a
+denied transfer, a one-time allowance for the same command reference that the customer's retry
+is evaluated against.
+**Not:** an edit of the decision — the assessment stands as sealed and the override names it. Nor a Disposition (a
+case's end), nor an `ALLOW` undone: an `ALLOW` is never overridden after the fact, the money has moved and a case is
+the remedy. Nor credit's underwriting second approval.
+**Owned by:** `risk`
+
+### Velocity Window
+**Is:** a durable counter per (dimension, subject, window kind, window start) — dimensions party, source account,
+destination account or beneficiary, device, merchant; kinds `H1`, `D1`, `D7`, `D30`, cut on the database clock read
+after the caller's lock — holding a count and a sum in an explicit currency; read by the evaluation and upserted in one
+statement in the judged command's own transaction, only when the decision permits the movement, so a refused movement
+counts for nothing and a committed one exactly once; derivable, and proven against the Monitored Transactions it
+counts (`INV-CON-03`).
+**Not:** a cache or a Redis counter — a counter that can be lost is not an authority, and one outside the money
+transaction can be passed twice. Nor a Balance (the ledger's), nor a limit: a limit is a Rule's parameter judged over
+the window. It has no lifecycle.
+**Owned by:** `risk`
+
+### Customer Risk Profile
+**Is:** `risk`'s rating of one party — `LOW | MEDIUM | HIGH | PROHIBITED` — as versioned, append-only rows
+(`UNIQUE (party_id, version)`) naming the assessment or disposition that set each, recomputed by the monitoring sweep
+on signals and case outcomes under the profile's head-row lock, through the `MONITORING` policy version's rating
+bands (`LOW`, `MEDIUM`, `HIGH`); `PROHIBITED` only by a four-eyes disposition. Read by
+every evaluation (`PROFILE_RATING`) and answered to credit's `CreditRiskSignal` seam as the rating code with seam
+version 2, recorded in the decision's snapshot so the decision replays as it was sealed whatever the rating does after
+(`INV-CRD-01`).
+**Not:** credit's Credit Profile (the deciding transaction's anchor, holding no rating) nor kyc's Risk Rating
+(onboarding's own, set by the KYC case); nor a Risk Score, which is one assessment's number. A rating change never
+rewrites a decision already made, and no customer or merchant surface reads it.
+**Owned by:** `risk`
+
+### Transaction Risk Profile
+**Is:** the computed view of one judged movement — its amount band, counterparty novelty, device novelty and velocity
+readings — assembled by the evaluation from signals, the profile and the windows, and stored only as the Risk
+Assessment's sealed inputs.
+**Not:** a Customer Risk Profile (per party, versioned, persistent) and not a row of its own: it is a value inside the
+assessment, never a table, so the same movement judged again under the same inputs reads the same view (the
+`INV-CRD-01` discipline, applied to risk).
+**Owned by:** `risk`
+
+### Monitored Transaction
+**Is:** the channel-neutral record of one money movement, born once per `ledger` Journal Entry
+(`UNIQUE (journal_entry_id)`) by the monitoring sweep reading the journal through the `MonitoredLedger` port from a
+watermark — classified by the entry's posting-key namespace into a kind with subject refs, counterparties, amount and
+value date; an entry of an unknown namespace recorded `UNCLASSIFIED` and alerted, so nothing passes unseen. The
+subject of the monitoring rules and the proof of the Velocity Windows.
+**Not:** the Journal Entry (the ledger's truth, which it references and never copies as a balance), nor a Transfer,
+Payment or Cross-Border Payment (the owning domains' aggregates), nor an event: events are hints that pull the sweep's
+permit forward and the sweep reads rows. Reprocessing from any earlier watermark — ordered at
+`POST /v1/operator/risk/monitoring/reprocessing`, audited `risk.ReprocessingOrdered` — creates no second row.
+**Owned by:** `risk`
+
+### Alert
+**Is:** the born-once observation of a monitoring or fraud Rule over a subject — `UNIQUE (subject_ref, rule_code,
+window_start)` — carrying its kind, severity, policy version and evidence references; `OPEN → ATTACHED` (to a Case — an
+alert raised while its subject has an open case of the kind attaches to it, the system's dedupe; else the case is
+opened) `| SUPPRESSED` (only an operator's reasoned suppression under four eyes); never deleted. An **AML alert** is an alert of kind `AML`, raised by the monitoring sweep over
+Monitored Transactions; a fraud alert one raised by a fraud rule, synchronously or retrospectively.
+**Not:** a Risk Decision (nothing is refused by an alert), nor a Case (the investigation it folds into), nor an
+operational alert (`infra/prometheus/rules/risk.yml` fires on metrics, never on a row). A replayed event or a
+reprocessed history raises no second alert, and no alert reaches a customer or merchant surface, log, event payload or
+metric tag.
+**Owned by:** `risk`
+
+### Case
+**Is:** the unit of a person's judgement — the investigation — of kind `FRAUD | ATO | MERCHANT_ABUSE | AML |
+COLLECTIONS` (owner decision C3), `OPEN → IN_INVESTIGATION → ESCALATED → DISPOSED`, one open per (subject, kind),
+opened by the evaluation (`REVIEW`, `HOLD`, a policy-flagged `DENY`), by the sweep (an alert with no open case) or by
+hand; taken by one investigator; worked by append-only Investigator Actions under a `revision` compare-and-set;
+carrying an SLA deadline; closable as a false positive or with no action straight from `OPEN` by one person; disposed
+under four eyes where the Disposition confirms or acts; never re-opened — a new
+case references it. An **AML case** is a case of kind `AML`, the subject's open case the monitoring alerts fold into
+and the only case a Regulatory Report is drafted from.
+**Not:** kyc's KYC Case or Review Task (onboarding's own files), credit's Underwriting Case (a referral's second look
+at a credit decision) or reconciliation's Investigation (a break's case file, with no machine of its own) — four
+states with four owners, never one shared store (`MODULE_ARCHITECTURE.md` §5). Nor the Regulatory Report: the case is
+the platform's own and the report a filing to an authority — different aggregates, lifecycles, permissions and
+retention. Nor a collections operation: the `COLLECTIONS` case holds facts only.
+**Owned by:** `risk`
+
+### Investigator Action
+**Is:** one append-only, reasoned, audited fact of a Case's investigation — a note, evidence attached (as references:
+signal, assessment and journal entry ids resolved through audited reads, never copied), an escalation, an action
+proposed, approved or rejected, a disposition proposed, approved or rejected, a report drafted — each carrying the
+case's `revision` it was made against, so two investigators' concurrent actions are both kept while one answers
+`409 risk.CaseRevisionStale`.
+**Not:** a Risk Action — the investigator's act records; the risk action is the downstream command through an owning
+domain's door. Nor a case state: an action never edits or deletes an earlier one. Notes are bounded, screened for
+instrument shapes and classified `CONFIDENTIAL`.
+**Owned by:** `risk`
+
+### Disposition
+**Is:** a Case's end — `CLOSED_FALSE_POSITIVE | CLOSED_NO_ACTION | CONFIRMED_FRAUD | CONFIRMED_SUSPICIOUS | REFERRED` —
+proposed by a `RISK_INVESTIGATE` holder and, for every `CONFIRMED_*` and for any disposition that issues a Risk
+Action, approved by a second person holding `RISK_CASE_APPROVE` on a `MULTI_FACTOR` session; recorded as Investigator
+Actions; the act that may set a Customer Risk Profile to `PROHIBITED` and that permits a Regulatory Report
+(`CONFIRMED_SUSPICIOUS`).
+**Not:** a Risk Decision (made by the engine on a command, before any person) nor a Decision Override (a person's act
+on one decision). Nor a reversal: `REFERRED` recommends the owning domain's four-eyes act and performs nothing.
+**Owned by:** `risk`
+
+### Escalation
+**Is:** the case transition `IN_INVESTIGATION → ESCALATED` — the case's level and queue raised by an investigator,
+reasoned and recorded as an Investigator Action, published as `CaseEscalated`; the case goes on.
+**Not:** a Disposition (an escalated case is still open) nor a Risk Action (nothing leaves `risk`). Nor
+reconciliation's break escalation, which is a severity's forward-only step on a break.
+**Owned by:** `risk`
+
+### Risk Action
+**Is:** `risk`'s record of one downstream effect a Case or a Decision Override issues — `PROPOSED → APPROVED` (a
+second person) `| REJECTED`; `APPROVED → DISPATCHED → DONE | FAILED` — of a kind from the closed vocabulary
+(`SUSPEND_IDENTITY`, `REINSTATE_IDENTITY`, `REVOKE_SESSIONS`, `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT`,
+`SUSPEND_MERCHANT`, `BLOCK_BENEFICIARY`, `RELEASE_HELD_WITHDRAWAL`, `DENY_HELD_WITHDRAWAL`, `RESCREEN_PARTY`), one
+live per (case, kind, target); dispatched by `RiskActionSchedule` in its own transaction as a keyed command
+(`risk.action:<id>`) through the owning domain's **existing** door on that domain's lock order, its outcome recorded —
+a domain's refusal (already suspended) a recorded `DONE`, never an error; a `FAILED` action re-proposable, never
+re-dispatched by itself.
+**Not:** the effect — the suspension, the block, the release are the owning domain's own commands, audited by their
+owner; `risk` never writes another module's row, never posts and never reverses a transaction (ADR-0112). Nor an
+Investigator Action (the case's record of proposing it).
+**Owned by:** `risk`
+
+### Screening List Version
+**Is:** an operator-recorded fact, under `RISK_POLICY_ADMINISTER`, that a sanctions or PEP list version is in force —
+`UNIQUE (list, version)`, recorded then activated — whose activation enqueues one rescreening permit per `ACTIVE`
+party; the sweep's rescreening leg requests each screening through kyc's existing ports, records the clearance as a
+Risk Signal and raises an Alert on a hit.
+**Not:** a Screening Result — kyc screens and owns the result and its evidence; `risk` asks, and owns only the list
+fact, the permits and what it records from the answer (`ROADMAP.md` Refinement 3). Nor a Risk Policy Version: no rule
+reads the list itself.
+**Owned by:** `risk`
+
+### Regulatory Report
+**Is:** the filing artefact to an authority, drafted from a `DISPOSED` `CONFIRMED_SUSPICIOUS` Case by an
+`AML_REPORT_APPROVE` holder, approved by a second and filed by an `AML_REPORT_FILE` holder through the
+`RegulatoryFilingProvider` port (simulated in Phase 13) — `DRAFT → APPROVED → FILED → ACKNOWLEDGED | REJECTED`, a
+rejected filing a new draft — carrying a jurisdiction code and format version, the reporting entity's reference, the
+subject, account and transaction references, the grounds (the case's reason codes and the approved narrative,
+`RESTRICTED-PII`), the attachments' references and the acknowledgement; immutable once `FILED`; `FILED` committed
+before the call, the acknowledgement or rejection recorded by the filing port's inquiry leg, and an unknown answer a
+permit on the `FILED` row, never re-filed.
+**Not:** the Case — the platform's own investigation, with other permissions and retention — nor "the SAR": the
+jurisdiction names the report, and every field a real jurisdiction adds is the adapter's data (owner decision C4,
+ADR-0111). Nor an audit record, nor a report in the operator-reports sense (`GET /v1/operator/reports/…`). Its event
+carries the report id and jurisdiction and never the subject; its existence is never derivable from a customer or
+merchant surface (tipping-off).
+**Owned by:** `risk`
+
+### Fraud Detection
+**Is:** the capability (bounded context 21) that judges a money-moving command before it happens and watches for abuse
+after: synchronous fraud decisioning in the caller's transaction, latency-bounded, through the seams the domains
+declare — the Risk Assessment and its Risk Decision — and retrospective fraud rules over Risk Signals (account
+takeover: a credential change or recovery followed by a new payee, a new device and a withdrawal; payment, merchant
+and BNPL abuse: chargeback and refund ratios, refunds to new accounts, applications across merchants, a session
+confirming many checkouts), each raising an Alert born once and folding into a Case of the matching kind.
+**Not:** Transaction Monitoring — fraud decisioning is synchronous and asks "should this movement proceed?";
+monitoring is asynchronous and asks "is this subject's pattern suspicious?". Nor onboarding screening (kyc's), nor
+credit's Underwriting, nor a machine-learned model: rules as data through a versioned, deterministic engine, every
+verdict explainable as a sum of rule contributions.
+**Owned by:** `risk`
+
+### Transaction Monitoring
+**Is:** the AML capability (bounded context 22) that watches money after it moves: a leaderless sweep reading the
+ledger journal — the one financial truth — through a port from a watermark, classifying every entry into a Monitored
+Transaction, evaluating the monitoring policy's rules per subject over durable aggregates (`STRUCTURING`,
+`RAPID_IN_OUT`, `DORMANT_THEN_ACTIVE`, `ROUND_AMOUNT`, `CORRIDOR_HIGH_RISK`, `VELOCITY_*`), raising Alerts born once,
+folding them into the subject's open AML Case, recomputing the Customer Risk Profile, and keeping the internal
+investigation physically distinct from the Regulatory Report; idempotent under reprocessing from any watermark.
+**Not:** Fraud Detection (synchronous, in the money transaction, never from the journal), nor kyc's onboarding
+screening or Counterparty Screening (a decision at a moment about a party; monitoring is ongoing and about patterns —
+rescreening on list updates is requested through kyc), nor reconciliation (which compares the platform's records with
+external evidence; monitoring judges the platform's own movements). It moves no money and reads no event as truth.
+**Owned by:** `risk`
+
+---
+
 ## 9. Ledger, settlement and reconciliation
 
 ### Journal Entry
@@ -2278,6 +2585,17 @@ its own canonical term in §7b, beside `BNPL Schedule` — the register's "Insta
 that "plan" means only what the customer chooses (Pay-in-4, or Pay-in-N over 3, 6 or 12 months).
 Register, list and glossary changed together, so the three never disagreed.
 
+**`Investigation` is `reconciliation`'s, and the risk investigation is `Case`** *(the Phase 12 → 13 transition,
+2026-10-22 — ADR-0107, ADR-0110 (`Proposed`))*. The register's `reconciliation` `Owns:` line names Investigation — the
+break's case file, with no machine of its own — so this glossary defines no `Investigation` entry for Phase 13, which
+would contradict the register under the §11 guard; the plan's canonical name for the risk investigation is **Case**
+(§8a), whose entry contrasts the four case-like states with four owners (kyc's KYC Case and Review Task, credit's
+Underwriting Case, reconciliation's Investigation, risk's Case). Likewise "AML alert" and "AML case" are kinds of
+Alert and Case, defined inside those entries, not canonical terms. **`Screening Result` is `kyc`'s** and gains an entry
+in §3 because Phase 13 reads it: `risk` owns the Screening List Version and records a Risk Signal from the answer,
+never the result — the register's "Screening result reads like one state but is two", resolved in favour of one
+owner.
+
 ---
 
 ## 11. What is enforced
@@ -2298,7 +2616,7 @@ Register, list and glossary changed together, so the three never disagreed.
    `credit` — settled by the Phase 9 → 10 transition (2026-10-07, §10), which moved it to `risk`
    in the register itself, both documents changed together.
 7. **Every `INV-*` the glossary cites exists.** Ninety-six distinct invariants, cited two hundred
-   and two times (recounted by the Phase 12 exit review, `P12-DOC-001`, 2026-10-22, after its corrections to the BNPL
+   and two times (the Phase 12 → 13 transition, 2026-10-22, added §8a's twenty-one entries, Screening Result in §3 and the sharpened Risk Score, each citing only invariants catalogued before it — the ten Phase 13 invariants the same transition catalogued are to be cited when the building tasks correct the entries to the code, the Phase 9 → 10 precedent; the count is the Phase 12 exit review's, to be recounted at the Phase 13 exit review; recounted by the Phase 12 exit review, `P12-DOC-001`, 2026-10-22, after its corrections to the BNPL
    entries - no new invariant cited; the guard checks only that each cited invariant exists, never the count
    *(P12-DOC-001, 2026-10-22: this read "cited two hundred times", stale already at `2b0d68b6`'s two hundred and one)*;
    the Phase 11 → 12 transition, 2026-10-16, had counted ninety-six and two hundred after §7b's fourteen new entries,

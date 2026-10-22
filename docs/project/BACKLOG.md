@@ -22106,6 +22106,1977 @@ after everything.
 
 ---
 
+# Phase 13 — Risk, Fraud and AML
+
+Status: `READY` (2026-10-22 — entry gate passed by the Phase 12 → 13 transition
+([`reviews/PHASE_12_TO_13_TRANSITION.md`](reviews/PHASE_12_TO_13_TRANSITION.md): Phase 12 confirmed after repair,
+R1–R4 closed in bnpl `V018`, merchant `V012`, bnpl `V019` and lending `V031`, merged at `27bd7e1f`), elaborated to task
+granularity by the same transition's Part B: twenty-eight items (`P13-TSK-001`…`-025`, `P13-TST-001`, `P13-TST-002`,
+`P13-DOC-001`) across nine milestones, with `P13-TSK-001` marked `READY`. The engineering plan is
+[`PHASE_13_PLAN.md`](PHASE_13_PLAN.md); decisions are ADR-0107…ADR-0112 (`Proposed` at the transition); the domain
+statement is [`RISK_LIFECYCLES.md`](../domain/RISK_LIFECYCLES.md), written before the first task (the
+`BNPL_LIFECYCLES.md` precedent). The in-scope invariants are whatever the catalogue marks `Phase: 13` — **ten at
+planning**, the transition's `INV-RSK-01`…`-10` (the catalogue 152 → 162) — **read from the catalogue at the gate, never
+from this file**, beside the existing ones the phase must protect (`INV-CON-03`, `INV-IDEM-01`/`-04`, `INV-HIST-04`,
+`INV-AUD-02`/`-03`/`-04`, `INV-CRD-01`/`-04`, `INV-EVT-04`, `INV-BAL-04`). Until Phase 13's first task lands, nothing in
+this section is implemented; every statement is the decided design, corrected by the tasks that build it.
+
+**Phase 13 moves no money** (`PHASE_13_PLAN.md` §1). It never posts, never holds, never releases a hold of its own and
+never writes another module's row: a decision changes a money movement only because the owning domain consulted a seam
+in its own transaction and committed its own outcome, and an action — a suspension, a freeze, a release — is a keyed
+command through the owning domain's existing door, recorded on both sides (`INV-RSK-02`). So `DOD-FIN` is carried not by
+postings but by the tasks that run **inside** a money transaction (the seams, `-008`…`-011`, and the override that
+releases or denies a held withdrawal, `-012`), that keep a **derivable money figure** (the velocity windows, `-006`),
+that read the **ledger journal** as the one financial truth (`-019`) or that **prove** the phase's censuses (`-023`);
+each reads the supplement F1–F8 and states it in its entry: F1 and F2 are the consuming domain's own, re-run unchanged
+through the seam (a refusal moves nothing; a held withdrawal keeps the hold the domain placed); F3 the idempotency
+guarantee at the seam (`UNIQUE (operation, command_ref)` under the caller's lock) and at every keyed door; F4 the
+compensation path is the owning domain's (a denial releases the hold in the same transaction; risk never reverses);
+F5 duplicate external delivery (the filing provider's answer, a domain's answer to a keyed action) producing no second
+effect; F6 a counted concurrency test per contended resource — the fifteen rows of `PHASE_13_PLAN.md` §7.4, each a
+named test; F7 no floating point, statically verified over `risk`; F8 the reconciliation implication implemented (the
+velocity proof, the assessment census, the journal census, born-once alerts, one open case) or deferred with a named
+owner. An item a task cannot touch is answered vacuous with its reason, asserted rather than assumed; a pure engine
+binds F7 and answers the rest vacuous.
+
+**The production limitation, recorded up front** (`PHASE_13_PLAN.md` §1.1). Production evaluates nothing until a risk
+policy version is activated under four eyes and `OPERATIONS_RUNBOOK.md` §9's activation gate (`-024`) is passed. Until
+then every seam answers `ALLOW` with the reason code `NO_POLICY_ACTIVE`, **recorded as a decision** (the control ran;
+it had no policy), so the first activation changes behaviour and not the shape of any record. The monitoring sweep runs
+from the first deployment and raises no alert until a monitoring policy is `ACTIVE`. The regulatory filing adapter is
+simulated; the platform's reference jurisdiction is still the neutral EUR one (C4) and `PHASE_13_PLAN.md` §12.9 records
+what was researched for the EU and what must be verified when a real jurisdiction is chosen. No policy version is
+migration-activated, ever (the BNPL terms precedent); the v1 policy fixtures are test-only (C8).
+
+**Every task below states the gate's fields** — objective, bounded context, dependencies, scope, out of scope, domain
+changes, persistence, APIs, events, policy/model versioning, financial impact, invariants, distributed-system concerns
+(the ten-instance question answered), idempotency, consistency, atomicity, failure handling, security, audit,
+observability, reconciliation implications, tests, probe, acceptance criteria and definition of done, with the
+standing risk and complexity at its end — Phase 12's labels, kept unchanged. **Policy/model versioning** here means the
+risk policy version pinned per assessment (one `ACTIVE` per operation, four eyes), the engine version
+(`RISK_ENGINE_V1`, risk's own; deterministic, replayed by the battery in two JVMs), the monitoring policy version the
+sweep pins, the screening list version a rescreening cites, and `CreditRiskSignal`'s seam version 2 recorded in
+credit's snapshot. **Probe** is the deliberate break its completion gate performs and must see caught, each restore
+byte-identical, sha256-verified, with its `MUTATION_TESTING.md` §2 row. A task's design (`task-design`) may correct its
+entry, and says so in the entry — the `P6-TSK-001` precedent. The ten-instance answer is `PASS` only on the counted
+tests the entry names; it is never claimed by construction, and a pure engine answers it by determinism across JVMs.
+A task without them answers `UNKNOWN` and is not complete. Every keyed scope is per principal from birth. Every window
+boundary, deadline, SLA and effective date is judged on `clock_timestamp()` read **after** the row lock (the gate's
+A3-M1 applied forward). **Risk rows are taken after every money row and only in two shapes** — last inside a caller's
+transaction, or first in a risk-only transaction that takes no money row (`PHASE_13_PLAN.md` §7.2, positions
+(R1)–(R8)); the Phase 13 lock order is written to `DISTRIBUTED_EXECUTION.md` §3 as "The Phase 13 lock order" by the
+task that first takes more than one of its elements (`P13-TSK-004`: (R1) the pin, (R2) the windows and (R3) the
+insert), and extended as built. **No register row is pre-filled by the transition:** each task catalogues its own audit acts in
+`AUDITABLE_ACTIONS.md`, its own errors in `ERROR_CONTRACT.md`, its columns in `DATA_CLASSIFICATION.md` (assessment
+inputs and rule hits `CONFIDENTIAL`; signal attributes at their source's level, `device` `RESTRICTED-PII`; case notes
+and evidence refs `CONFIDENTIAL`, screened by `InstrumentShapes`; the report narrative `RESTRICTED-PII`; nothing in
+`risk` `INTERNAL` except identifiers and timestamps) and its lock and schedule rows in `DISTRIBUTED_EXECUTION.md` as
+it lands them.
+
+**Testing under C5** (owner, 2026-10-22; `PHASE_13_PLAN.md` §13.1): the standing criterion-7 deviation continues. Per
+task the hermetic tier of the touched modules and the task's `app` tests by filter run with the guard suites by name
+(`RiskModuleIsolationTest`, `NoCustomerSurfaceReadsRiskTest`, `NoSingleInstanceAssumptionRulesTest`,
+`ColumnClassificationTest`, `RoutePermissionRegisterTest`, `NoFloatingPointMoneyRulesTest`, `OpenApiContractTest`,
+`PlannedMetersExistTest` as each applies); the task's database suites are **written and owed a first run**; the fleet
+`databaseTest` and `kafkaTest` tiers are skipped — recorded as a criterion-7 deviation in every entry's gate; every
+dependency-free task of a wave runs in parallel (the cap lifted 2026-10-17). **The Phase 12 lesson** — three
+database-only defects found only when the database tier ran — is answered by one owner-authorised database pass before
+`P13-DOC-001` (a gate agenda item, not a task) and by every migration test asserting constraint-name uniqueness per
+table (the V012 class).
+
+**Migration numbers are assigned in landing order** (`PHASE_13_PLAN.md` §8, §17; next free re-verified at the
+transition): Flyway runs with out-of-order off, so a lower number must never land after a higher one (the Phase 12
+wave D lesson), and the plan therefore numbers by the wave that lands each migration, not by task id — the wave board
+confirms the numbers and renumbers nothing. Wave A: `risk V001` (`-001`, the module's first — the floor, no table) and
+identity `V023` (`-001`); wave B: `risk V002` (`-002`), `V003` (`-005`), `V004` (`-019`); wave C: `V005` (`-006`), `V006`
+(`-007`); wave D: `V007` (`-004` — the assessment tables and the `decision_override` table, whose machine `-012`
+builds), `V008` (`-015`, `risk_alert`); wave E: `V009` (`-016` — `risk_case`, `risk_case_action`, `risk_case_event`),
+payments `V033` (`-009`, the `HELD` withdrawal and `WithdrawalFailureReason.RISK_REFUSED`) and `V034` (`-010`,
+`PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row); wave F: `V010` (`-017`,
+`risk_action`), `V011` (`-021`), `V012` (`-022`). Lending, credit, bnpl, ledger, accounts, identity (beyond `V023`), kyc,
+merchant and crossborder take no migration: the seams and the actions are the consuming modules' existing contracts
+(`TransferLimitCheck`/`TransferRiskDecision`, `CrossBorderLimitCheck`/`CrossBorderRiskDecision`, `CreditRiskSignal`)
+implemented in `app`. Advisory namespace **`13`** is reserved for risk's administrations (policy versions,
+`hashtext(operation)`). `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` goes 29 → 31
+(`RiskMonitoringSchedule`, created by `-019` with its intake leg, `-007` and `-022` adding legs; `RiskActionSchedule`,
+`-017`); the held withdrawal's expiry is a leg of payments' existing `WithdrawalResolutionSchedule` (`-009`), no new
+scheduler; every Phase 13 schedule meters its claim failures from its first task (the gate's N5).
+
+**Milestones** (acceptance per milestone in `PHASE_13_PLAN.md` §16): M13.1 Foundations (`P13-TSK-001`…`-004` — the
+module, floors, roles and vocabularies; policy versions as data under four eyes; the deterministic engine; the sealed
+assessment and its replay) · M13.2 Signals and profile (`P13-TSK-005`…`-007` — signals born once from events; durable
+velocity windows proven against the journal; the customer risk profile and credit's seam version 2) · M13.3 Synchronous
+decisioning (`P13-TSK-008`…`-012` — the seams implemented on transfers, withdrawals (with `HOLD`), checkout payments and
+cross-border; the override under four eyes) · M13.4 Fraud detection (`P13-TSK-013`…`-015` — account-takeover and abuse
+rules; alerts folding into cases) · M13.5 Case management (`P13-TSK-016`…`-018` — the case machine with concurrent
+updates, escalation and four-eyes dispositions; downstream actions through the owning domains; queues and the
+tipping-off control) · M13.6 AML monitoring (`P13-TSK-019`…`-022` — the journal intake and reprocessing; monitoring
+rules and born-once alerts; the AML case and the regulatory report; rescreening on list updates) · M13.7 Proof and
+operations (`P13-TSK-023`, `-024` — the proofs, the explanation door, meters, alerts, reports, runbook §9) · M13.8
+Collections (`P13-TSK-025` — optional, C3: a collections case opened on default, facts only) · M13.9 Exit
+(`P13-TST-001`, `P13-TST-002`, `P13-DOC-001` — the storm, the battery, the review).
+
+**If the phase must shrink** (`PHASE_13_PLAN.md` §16), cut `P13-TSK-025` first (C3), then `P13-TSK-010`'s slice 2 (the
+card `HOLD`), then `P13-TSK-022` (rescreening), then `P13-TSK-014`'s merchant-abuse rules; each deferral is recorded with
+its owner. **Never cut:** the sealed assessment and replay (`-004`), the fail-safe as a recorded decision (`-004`), the
+in-transaction velocity windows (`-006`), the withdrawal `HOLD` (`-009`), born-once alerts (`-015`), four-eyes
+dispositions (`-016`), the tipping-off control (`-001`, `-018`), the journal intake (`-019`), the storm, the battery.
+
+**Parallel waves** (`PHASE_13_PLAN.md` §17; each task in its own worktree; the migration numbers above are the
+waves' landing order): **A** `-001`; **B** `-002`, `-005`, `-019`; **C** `-003`, `-006`, `-007`; **D** `-004`,
+`-015`; **E** `-008`, `-009`, `-010`, `-011`, `-016`, `-020`; **F** `-012`, `-013`, `-014`, `-017`, `-018`, `-021`,
+`-022`; **G** `-023`, `-025`; **H** `-024`; **I** `P13-TST-002`, then `P13-TST-001`, then `P13-DOC-001`.
+
+**The Phase 14 boundary and what Phase 13 must not implement** (`PHASE_13_PLAN.md` §20): no task below builds a
+machine-learned model; a real FIU, list or device-intelligence provider; a credential reset or any identity mutation
+beyond the existing suspend/reinstate/revoke commands; a reversal of any transaction (a case may only recommend one —
+an investigator action of kind `REFERRED`); collections operations beyond the case opening (C3 — contact strategy,
+promises to pay, placement); write-off or provisioning (Phase 14 — `accounting`); a customer-facing "risk status" or a
+customer-facing dispute of a risk decision (the existing support path and the override stand); a risk service outside
+the monolith (Phase 16's measured decision, ADR-0001); Redis or any cache as an authority (`INV-CON-03`); a spending
+limit product. A reviewer finding any of it in a Phase 13 change refuses the change.
+
+**The owner decided at the transition** (2026-10-22, C1–C10, recorded as accepted defaults pending ratification; each
+folded into `PHASE_13_PLAN.md` §2.2, `RISK_LIFECYCLES.md` and ADR-0107…0112; a task's design may revisit one only by
+saying so, and `P13-DOC-001` reads each against the code): **C1** fail-safe per operation and value band — internal
+transfers below EUR 1,000 `ALLOW` recorded, at or above `DENY`; wallet withdrawals and cross-border `DENY` at every
+band; checkout card and wallet payments below EUR 250 `ALLOW` recorded, at or above `DENY` — every one a field of the
+policy version, changed by activation and never by code (`-002`, `-004`); **C2** the decision vocabulary `ALLOW`,
+`CHALLENGE`, `DENY`, `HOLD`, `REVIEW`, each with a fixed meaning and the operations that admit it; `HOLD` only where the
+operation has a native hold-then-dispatch shape (withdrawals `-009`; card payments in `-010`'s second slice) (ADR-0108);
+**C3** collections case management a thin slice only, cut candidate — `-025` opens a `COLLECTIONS` case on
+`LoanDefaulted`/`BnplDefaulted` with investigator actions as facts; **C4** the reporting jurisdiction stays the neutral
+EUR reference; the regulatory report models the EU shape behind a simulated filing adapter, every jurisdiction-specific
+field adapter data (`-021`, ADR-0111); **C5** criterion 7 — the standing deviation continues; database suites written
+and owed per task; one owner-authorised database pass before the exit review, a gate agenda item; **C6** what a
+customer sees of a held or refused movement — the operation's generic answer (`transfers.RISK_REFUSED` → the existing
+error; a `HELD` withdrawal reads `HELD` with no reason); nothing of an AML alert, case or report ever reaches a customer
+or merchant surface (`INV-RSK-08`); **C7** an override of a `DENY`/`HOLD`/`REVIEW` needs a second `RISK_OVERRIDE` holder
+when the judged amount is at or above EUR 1,000 or the decision was `DENY`; below that, one holder with a reason,
+audited (`-012`); **C8** policy v1 content — a test-only version per operation with `PHASE_13_PLAN.md` §12.2's
+parameters; production activates none (`-002`); **C9** `rule` added to `MetricNames.ALLOWED_TAG_KEYS` (the bounded rule
+codes of a policy); no `decision_id`-shaped key (`-004`); **C10** a confirmed account-takeover case may propose
+`REVOKE_SESSIONS` and `SUSPEND_IDENTITY`, both executed through identity's existing commands under four eyes; the
+platform never resets a credential (`-013`, `-017`, ADR-0112). **The open questions settled by default** (OQ-1…OQ-10,
+`PHASE_13_PLAN.md` §24 — a refused movement counts for nothing in a window; `REVIEW` opens its case in the money
+transaction, the case row risk's and no money lock taken; the intake reads the journal, not events; a device is stored
+only as its hash; an `ALLOW` is never overridden; a case never re-opens; the report is not the case; risk asks and kyc
+screens; a merchant sees the generic refusal only; collections a thin slice) are the defaults the tasks build on; a
+task that departs from one says so in its entry.
+
+**The fifteen mandatory scenarios** (`PHASE_13_PLAN.md` §13.2), each a named test in its task and exercised again by
+`P13-TST-001`: (1) the same transaction event arrives three times, delayed and reordered — one signal, one alert, one
+case — `-005` (`SignalIntakeDatabaseTest#theSameEventTwiceRecordsOnce`), `-015` (`AlertDatabaseTest#twoInstancesRaiseOnce`),
+`-016` (`CaseDatabaseTest#tenAlertsOneOpenCase`); (2) two instances raise the same alert concurrently — one row — `-015`
+(`AlertDatabaseTest#twoInstancesRaiseOnce`); (3) a policy version is activated while ten evaluations run — every
+assessment pins exactly one version, none "neither", the activation never waits on a money row — `-002` and `-004`
+(`RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor`); (4) a risk action times out at the owning
+domain and is retried — one effect — `-017` (`RiskActionDatabaseTest#aReDriveReplays`); (5) two investigators update one
+case concurrently — both actions kept, one `409`, no lost update — `-016` (`CaseDatabaseTest#concurrentUpdatesKeepEveryAction`);
+(6) a delayed event arrives after its case is disposed — the disposed case untouched, a new alert opens a new case
+referencing it — `-016` (`CaseDatabaseTest#aLateEventAfterDispositionOpensANewCase`); (7) a downstream payment
+operation fails after a risk decision — the decision stands, the domain's outcome recorded, nothing retried by risk —
+`-017` (`RiskActionDatabaseTest#aDomainRefusalIsARecordedOutcome`) and `-009` (`WithdrawalRiskSeamDatabaseTest#aFailedDispatchLeavesTheDecisionStanding`);
+(8) historical journal entries replayed from an earlier watermark — no new monitored transaction, alert, case or action
+— `-019` (`MonitoringIntakeDatabaseTest#reprocessingCreatesNothingNew`) and `-020` (`MonitoringRulesDatabaseTest#reprocessingRaisesNoSecondAlert`);
+(9) the risk evaluation is unavailable (no policy; a timeout) — the fail-safe decision recorded, the alert fired, the
+money movement committing the band's outcome — `-004` (`RiskEvaluationDatabaseTest#aTimeoutIsARecordedFailSafe`,
+`#noActivePolicyRecordsAllow`) and each seam's `#riskUnavailableCommitsTheBandsOutcome` (`-008`…`-011`); (10) a held
+withdrawal released by an approved override — dispatched once; denied — the hold released once — `-012`
+(`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`, `#aReleaseDispatchesOnce`, `#aDenialReleasesTheHoldOnce`);
+(11) an account-takeover sequence (credential change → new payee → withdrawal) held and cased — `-013`
+(`AccountTakeoverDatabaseTest#aCredentialChangeThenNewPayeeThenWithdrawalIsHeldAndCased`); (12) a structuring sequence
+alerted once per window and the case folding every alert — `-020` (`MonitoringRulesDatabaseTest#aStructuringSequenceAlertsOncePerWindow`,
+`#everyAlertFoldsIntoOneCase`); (13) the customer risk profile changes after a credit decision was sealed — the decision
+replays `IDENTICAL` — `-007` (`ProfileDatabaseTest#aRatingChangeNeverRewritesASealedDecision`); (14) a velocity window
+counts ten concurrent movements of one subject as ten, and a refused movement as zero — `-006`
+(`VelocityWindowDatabaseTest#tenMovementsCountTen`, `#aRefusedMovementCountsNothing`); (15) an override, a disposition
+and a policy activation are each refused to their proposer and recorded `FAILED` — `-012`
+(`DecisionOverrideDatabaseTest#theProposerCannotApprove`), `-016` (`CaseDatabaseTest#theProposerCannotApproveADisposition`),
+`-002` (`RiskPolicyDatabaseTest#theProposerCannotActivate`).
+
+**Dependency graph** (critical path in bold, `PHASE_13_PLAN.md` §17): **`-001` → `-002` → `-003` → `-004` → `-015` →
+`-016` → `-023` → `-024` → `TST-001` → `DOC-001`**, with `-004` → `-009` → `-012` → `-017` beside it; `-005`, `-006`
+and `-019` after `-001` alone; `-003` after `-002`; `-004` after `-003` and `-006`; `-007` after `-005`; `-008`, `-009`,
+`-010`, `-011` after `-004` and `-007`; `-012` after `-009`; `-013` after `-005`, `-009` and `-015`; `-014` after `-004`,
+`-010` and `-015`; `-015` after `-004`; `-016` after `-015`; `-017` after `-016` and `-012`; `-018` after `-016`; `-020`
+after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and `-016`; `-023` after `-006`, `-019` and
+`-016`; `-024` after `-023`; `-025` after `-016`; `TST-002` after `-003` and `-004`; `TST-001` after `-001`…`-024`
+(never `-025`, the cut candidate); `DOC-001` after both exit tests.
+
+**P13-TSK-001 — The `risk` module boundary, floors, vocabularies and roles** — `READY` (2026-10-22; marked by the Phase 12 → 13 transition)
+- **Objective**: make `risk` a build-graph fact with a privilege floor, its closed vocabularies, its ports declared
+  and empty, its guards green, and the three roles with their six permissions — before any table, rule or evaluation
+  exists — so that every later task writes into this schema and composes through these ports, and the role split (the
+  trust decision the whole phase rests on) is made first (`PHASE_13_PLAN.md` §22; ADR-0107; mirrors `P12-TSK-002`).
+- **Bounded context**: Risk (20), Fraud (21), AML / Transaction Monitoring (22) and Case Management (23) — one module,
+  scaffolding only; Identity (roles); `app` (guards, the wiring points left as they are).
+- **Dependencies**: Phase 12 `COMPLETE` (confirmed after repair by the transition).
+- **Scope**: `settings.gradle.kts` include and build file from the sibling templates (per-schema Flyway,
+  `db/migration/risk`); edges **`risk → platform, sharedkernel` only** — no ledger edge (`risk` posts nothing) and no
+  edge to any business module — pinned by `RiskModuleIsolationTest` with planted probes (`ledger`, `accounts`,
+  `transfers`, `payments`, `checkout`, `merchant`, `crossborder`, `credit`, `lending`, `bnpl`, `identity`, `kyc`,
+  `settlement`, `creditmath` and `app` each refused); every sibling isolation test gains `risk` (no module depends on
+  `risk`); `app → risk`; **`risk V001`** (schema `risk`, owner `finapp_migrator`, `REVOKE ALL FROM PUBLIC`, `USAGE` to
+  `finapp_app`, no default privileges, no table); the closed vocabularies: `RiskOperation { TRANSFER, WITHDRAWAL,
+  CARD_PAYMENT, WALLET_PAYMENT, CROSS_BORDER, CREDIT_SIGNAL, MONITORING }` (the seventh the sweep's policy key, not a
+  seam — `PHASE_13_PLAN.md` §12.1 lists it; `-020`), `RiskDecision { ALLOW, CHALLENGE, DENY, HOLD, REVIEW }` with the operations
+  each admits (§12.1) and the precedence `DENY > HOLD > REVIEW > CHALLENGE > ALLOW`, `RuleKind` (the twenty-two of
+  §12.2: `AMOUNT_BAND`, `VELOCITY_COUNT`, `VELOCITY_SUM`, `NEW_PAYEE`, `NEW_DEVICE`, `SESSION_ASSURANCE_BELOW`,
+  `RECENT_AUTH_FAILURES`, `RECENT_CREDENTIAL_CHANGE`, `RECENT_RECOVERY`, `ACCOUNT_AGE_BELOW`, `KYC_NOT_APPROVED`,
+  `SCREENING_HIT`, `PROFILE_RATING`, `MERCHANT_SUSPENDED`, `CORRIDOR_HIGH_RISK`, `DORMANT_THEN_ACTIVE`, `RAPID_IN_OUT`,
+  `STRUCTURING`, `ROUND_AMOUNT`, `REFUND_RATIO`, `CHARGEBACK_RATIO`, `BNPL_MULTI_APPLICATION` — each declaring its
+  parameter schema, code never configuration), `AlertKind`, `CaseKind { FRAUD, ATO, MERCHANT_ABUSE, AML, COLLECTIONS }`,
+  `CaseStatus { OPEN, IN_INVESTIGATION, ESCALATED, DISPOSED }`, `Disposition { CLOSED_FALSE_POSITIVE, CLOSED_NO_ACTION,
+  CONFIRMED_FRAUD, CONFIRMED_SUSPICIOUS, REFERRED }`, `ActionKind { SUSPEND_IDENTITY, REINSTATE_IDENTITY,
+  REVOKE_SESSIONS, SUSPEND_ACCOUNT, REINSTATE_ACCOUNT, SUSPEND_MERCHANT, BLOCK_BENEFICIARY, RELEASE_HELD_WITHDRAWAL,
+  DENY_HELD_WITHDRAWAL, CAPTURE_HELD_PAYMENT, VOID_HELD_PAYMENT, RESCREEN_PARTY }` (the two payment kinds `-010`'s slice
+  2's, `PHASE_13_PLAN.md` §12.8), `SubjectKind { PARTY, ACCOUNT, DEVICE, MERCHANT, BENEFICIARY, SESSION }`,
+  `WindowKind { H1, D1, D7, D30 }`, `RiskRating { LOW, MEDIUM, HIGH, PROHIBITED }`, `RiskEngine` (`RISK_ENGINE_V1` at
+  version 1 — the `BnplEngine` precedent: the plan names it, `-003` builds it), typed ids; `RiskAuditAction` and
+  `RiskErrorCode` with their register rows (§11's acts and §9's twelve codes — whether the enums are declared whole here
+  with their rows marked as raised by the task that first raises each, or grow per task (the `BnplErrorCode` precedent),
+  is the design's and it says so; `risk.NotFound`, `risk.SelfDealingRefused` and `risk.SelfApprovalRefused` are declared
+  here in either case, the role split's own refusals); **identity `V023`** — permissions `RISK_INVESTIGATE`,
+  `RISK_CASE_APPROVE`, `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE`; roles
+  `RISK_ANALYST` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`}, `RISK_OFFICER` {`RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`,
+  `RISK_INVESTIGATE`}, `AML_OFFICER` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE`};
+  pairwise-disjoint grants between the new roles and every existing one (`INV-AUD-03`), four eyes inside a role between
+  two holders (enforced per task, never by role) (`PHASE_13_PLAN.md` §11); **`NoCustomerSurfaceReadsRiskTest`**
+  (architecture, `app`: no `/v1/me/**` controller, no merchant controller and none of their desks reaches a `risk` type,
+  port or table — `INV-RSK-08`, first enforced here, the guard every later route is read against); `RiskFlowScope`
+  (spans per step, no attributes); the sweeper property names for `RiskMonitoringSchedule` and `RiskActionSchedule`
+  (the lending precedent's naming; off in every test context) reserved in `application.yml` and the test profiles; the
+  ports' interfaces declared empty of implementation, each with its javadoc contract: `MonitoredLedger` (the journal by
+  sequence, `-019`), `RegulatoryFilingProvider` (`-021`), `RiskInputs`' source ports, the owning domains' action ports
+  (`IdentityActions`, `AccountActions`, `MerchantActions`, `BeneficiaryActions`, `HeldWithdrawalActions`,
+  `PartyRescreening`), `CaseOpener`; `NoFloatingPointMoneyRulesTest`'s module guard over `risk`; `package-info` (risk
+  owns the judgement, the evidence and the case, and none of the money; it never posts, never holds, never releases a
+  hold of its own and never writes another module's row); the `lombok.config` opt-in; `MODULE_ARCHITECTURE.md`'s `risk`
+  entry written as planned, `BOUNDED_CONTEXTS.md` 20–23 pointed at it.
+- **Out of scope**: every risk table beyond the schema; every port implementation, bean, route, event and schedule; any
+  rule, policy, evaluation or seam adapter (`PermitAllUntilPhase13` and `NotAssessedUntilPhase13` stay wired until
+  `-008`…`-011` and `-007`).
+- **Domain changes**: the closed vocabularies; the port interfaces; `package-info`.
+- **Persistence**: `risk V001`; identity `V023`.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: `RiskEngine` declares `RISK_ENGINE_V1` at version 1; nothing pins it yet.
+- **Financial impact**: none; the schema guard and the surface guard bind from the first table.
+- **Invariants**: `INV-RSK-08` (the surface guard), `INV-AUD-03` (disjoint grants), `INV-MON-01` (no floating point over
+  `risk`, F7).
+- **Distributed-system concerns**: none — no state, no writer. `PASS` vacuously for the scaffolding, recorded with its
+  reason.
+- **Idempotency**: N/A — no command.
+- **Consistency**: N/A — no state.
+- **Atomicity**: N/A — no transaction.
+- **Failure handling**: N/A — a misconfigured vocabulary fails the build or the startup check.
+- **Security**: six permissions and three roles admitted by migration, least privilege (no role both proposes and
+  approves its own act by role alone; four eyes is two holders of one permission); `RoleNameTest` extended with the
+  disjointness case; the tipping-off guard green on day one.
+- **Audit**: none raised; `RiskAuditAction` declared.
+- **Observability**: `RiskFlowScope`; the `sweeper.enabled` gauges' names reserved, registered by the schedules' tasks.
+- **Reconciliation implications**: none.
+- **Tests**: `RiskModuleIsolationTest` (every planted import refused), every sibling isolation test refusing `risk`,
+  `RiskVocabulariesTest` (every operation's admitted decisions, the precedence, every `RuleKind`'s parameter schema
+  declared), `NoCustomerSurfaceReadsRiskTest` (a planted `risk` read in a `/v1/me` controller refused),
+  `NoFloatingPointMoneyRulesTest` over `risk`, `RoleNameTest` (the three roles, the disjointness), `RoutePermissionRegisterTest`
+  (six permissions known, no route), `ColumnClassificationTest` (vacuous — no column); database, written and owed (C5):
+  `RiskMigrationTest` (the floor: no table, no public privilege, `USAGE` only), `IdentityAdministrationDatabaseTest`
+  (the three roles granted through the real endpoint and refused administration).
+- **Probe**: add an import of `com.finapp.ledger` in `risk` → `RiskModuleIsolationTest` red; read a `risk` type from a
+  `/v1/me` controller → `NoCustomerSurfaceReadsRiskTest` red; grant `RISK_OVERRIDE` to `BNPL_OFFICER` in `V023` →
+  `RoleNameTest`'s disjointness case red.
+- **Acceptance criteria**: the module builds and is isolated; nothing but `app` depends on `risk`; every vocabulary,
+  permission, port and guard the later tasks need is declared; the tipping-off guard is green and proven by its probe.
+- **Definition of done**: `DOD-ARCH`, `DOD-SEC`. **Risk**: Low (nothing runs). **Cx**: M.
+
+**P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `PLANNED`
+- **Objective**: a policy version per operation as versioned data under four eyes — rules of closed kinds with validated
+  typed parameters, a weight and/or a hard decision, in a declared order; score bands over [0, 1000]; fail-safe bands by
+  amount (C1); the challenge assurance (`MULTI_FACTOR`); the override threshold (C7); effective-from — proposed,
+  activated by a second holder (retiring the predecessor in the same transaction so the pin never reads "neither"),
+  rejected or retired; one `ACTIVE` per operation; immutable once decided (ADR-0109; `INV-RSK-05`).
+- **Bounded context**: Risk (the policy); Identity (step-up); `app` (doors).
+- **Dependencies**: `-001`.
+- **Scope**: **`risk V002`**: `risk_policy_version` (operation, engine version `RISK_ENGINE_V1`, version number per
+  operation, status `PROPOSED | ACTIVE | REJECTED | RETIRED`, score bands, fail-safe bands by amount band, challenge
+  assurance, override threshold `*_minor` + currency, the hold validity (`WITHDRAWAL`; default 72 h — `-009`'s
+  `held_until`), the rating bands (`MONITORING` — the signal score mapped to `LOW | MEDIUM | HIGH`, `-007`),
+  `effective_from`, `proposed_by`/`proposed_at`,
+  `decided_by`/`decided_at` on the database clock; partial `UNIQUE (operation) WHERE status = 'ACTIVE'`; `UNIQUE
+  (operation, version)`; the four-eyes `CHECK (decided_by <> proposed_by)` on the decided states; `INSERT` plus a
+  conditional status `UPDATE` only) and `risk_rule` (policy version id, ordinal, `RuleKind`, typed parameters, weight,
+  hard decision; `UNIQUE (policy_version_id, ordinal)`; `INSERT`-only); **T-pol** (`PHASE_13_PLAN.md` §7.1, position
+  (A0)): `pg_advisory_xact_lock(13, hashtext(operation))` → propose (every rule parameter validated against its kind's
+  schema — window kind, threshold count or amount, lookback days, ratio basis points, the set of corridors; a parameter
+  outside its schema or a band mapping to a decision the operation does not admit → `422 risk.PolicyInvalid`) → activate
+  by a **second** `RISK_POLICY_ADMINISTER` holder under `MULTI_FACTOR` (the predecessor `RETIRED` and the successor
+  `ACTIVE` in one transaction — the BNPL terms shape; the proposer refused `403 risk.SelfApprovalRefused` and recorded
+  `FAILED`) → reject (reason required) → retire; **the pin** `RiskPolicies.active(uow, operation)` — the `ACTIVE` row
+  `FOR SHARE`, and when the first read is empty `pg_advisory_xact_lock_shared(13, hashtext(operation))` and one more
+  read (the gate's A3-I1 rule applied forward) — consumed by `-004`; routes `POST /v1/operator/risk/policies`,
+  `POST …/{id}/activation`, `POST …/{id}/rejection`, `GET /v1/operator/risk/policies/{id}`, `GET
+  /v1/operator/risk/policies?operation=`; **the policy v1 fixtures** (C8; test-only; the credit policy fixture
+  precedent) — per judged operation a version with `AMOUNT_BAND` (challenge at EUR 500, deny at EUR 10,000 for
+  transfers; withdrawals hold at EUR 2,500), `VELOCITY_COUNT` (10 per 24 h per source account), `VELOCITY_SUM` (EUR 5,000
+  per 24 h per party), the `NEW_PAYEE` + `AMOUNT_BAND` composite weight, the `NEW_DEVICE` weight,
+  `RECENT_CREDENTIAL_CHANGE` + withdrawal → `HOLD`, `SCREENING_HIT` → `DENY`, `PROFILE_RATING = PROHIBITED` → `DENY`,
+  and C1's fail-safe bands; the monitoring version with `STRUCTURING` (≥ 3 movements each below EUR 1,000 summing above
+  EUR 2,500 in 24 h), `RAPID_IN_OUT` (≥ 80 % out within 24 h of in), `DORMANT_THEN_ACTIVE` (90 days dormant, then ≥ EUR
+  1,000 in 24 h), the `ROUND_AMOUNT` weight, `CORRIDOR_HIGH_RISK` and its rating bands; every fixture validates at the
+  door; `RiskPolicyActivated`; audit.
+- **Out of scope**: evaluation (`-003`, `-004`); the activation gate's operational preconditions (`-024`); production
+  activation of any version; a rule kind beyond the twenty-two.
+- **Domain changes**: `RiskPolicyVersion`, `RiskRule`, `RuleParameters` (one record per kind), `ScoreBand`,
+  `FailSafeBand`, `RiskPolicies` (store and pin).
+- **Persistence**: `risk V002`.
+- **APIs**: the five operator routes (closed bodies; keyed `risk.policy:<actor>`); errors `risk.PolicyInvalid`,
+  `risk.PolicyStale` (a decided version re-decided), `risk.SelfApprovalRefused`, `risk.ReasonRequired`, `risk.NotFound`
+  — catalogued in `ERROR_CONTRACT.md` by this task.
+- **Events**: `RiskPolicyActivated` (operation, version).
+- **Policy/model versioning**: this task is the versioning — every version pins `RISK_ENGINE_V1`; the number is per
+  operation and monotonic; a decided version is never edited (`INV-HIST-04`).
+- **Financial impact**: none — no money; the fail-safe bands decide what a later money movement does when risk is
+  unavailable, and are data.
+- **Invariants**: `INV-RSK-05`, `INV-RSK-07` (activation two persons), `INV-HIST-04`, `INV-AUD-04`.
+- **Distributed-system concerns**: ten proposals for one operation on two instances → serialised by the advisory lock,
+  ten versions numbered without a gap; ten activations of one proposed version → one `ACTIVE`, nine `409
+  risk.PolicyStale`; an activation racing ten evaluations → every assessment pins exactly one version, none "neither",
+  the activation never waiting on a money row (`RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor`,
+  scenario 3 — the evaluation half built with `-004`, the test owned here and completed there). `PASS` on the counts.
+- **Idempotency**: `risk.policy:<actor>` keyed; the partial unique; the version number.
+- **Consistency**: one `ACTIVE` per operation at every instant — retire-and-activate in one transaction under the
+  advisory lock; the pin reads it `FOR SHARE`.
+- **Atomicity**: a version and its rules commit together or not at all; the predecessor's retirement and the successor's
+  activation together.
+- **Failure handling**: an invalid parameter or band → `422`, nothing written; a self-approval → `403`, recorded `FAILED`;
+  a stale decision → `409`; a crash between retire and activate impossible — one transaction.
+- **Security**: `RISK_POLICY_ADMINISTER`; `MULTI_FACTOR` for activation; four eyes between two holders; the self-approval
+  refused and audited; reads for `RISK_POLICY_ADMINISTER` and `RISK_INVESTIGATE`.
+- **Audit**: `risk.PolicyProposed`, `risk.PolicyActivated`, `risk.PolicyRejected`, `risk.PolicyRetired`,
+  `risk.SelfApprovalRefused` — catalogued by this task.
+- **Observability**: `finapp.risk.policy.active{operation,policy_version}` (gauge), registered eagerly.
+- **Reconciliation implications**: none.
+- **Tests**: hermetic — `RiskPolicyVersionTest` (the machine, every invalid edge), `RuleParametersTest` (every kind's
+  schema, every rejection, a band to an unadmitted decision), `PolicyFixturesTest` (every v1 fixture validates and
+  carries C1's bands), `RiskPolicyDeskTest`; database, written and owed (C5) — `RiskPolicyDatabaseTest`
+  (`#oneActivePerOperation`, `#tenActivationsOneActive`, `#retireAndActivateAreOneTransaction`,
+  `#anEvaluationBehindAnActivationPinsTheSuccessor`, `#theProposerCannotActivate`, `#aDecidedVersionIsImmutable`),
+  `RiskPolicyMigrationTest` (constraint names unique per table); `RiskPolicyApiTest` (MFA, the self-approval `403`, the
+  negatives); `RoutePermissionRegisterTest`, `ColumnClassificationTest`, `OpenApiContractTest` extended.
+- **Probe**: drop the partial unique → `#tenActivationsOneActive` red; remove the four-eyes `CHECK` →
+  `#theProposerCannotActivate` red; skip the advisory re-read in the pin → `#anEvaluationBehindAnActivationPinsTheSuccessor`
+  red (an evaluation reading "neither").
+- **Acceptance criteria**: a version is proposed, activated by a second person, rejected or retired; one `ACTIVE` per
+  operation at every instant; an invalid rule never persists; every fixture validates; the proposer cannot approve.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `PLANNED`
+- **Objective**: `RiskEngineV1` — a pure, deterministic function from sealed inputs and a policy version to a verdict:
+  the rules evaluated in the version's declared order, every firing rule's contribution summed into a score 0–1000
+  clamped, hard decisions and score bands resolved under the precedence `DENY > HOLD > REVIEW > CHALLENGE > ALLOW` (a
+  hard rule's decision beats a score band's), ordered reason codes, and the fail-safe band computed for an amount — the
+  same bytes in any JVM (ADR-0109; `INV-RSK-04`).
+- **Bounded context**: Risk (the engine); `creditmath`'s shape, not its module — the engine is risk's own.
+- **Dependencies**: `-002`.
+- **Scope**: `RiskEngineV1` (no clock, no IO, no randomness); `EvaluationInputs` — the sealed readings every rule kind
+  consumes (operation, subject refs, the amount, velocity readings per dimension and window, payee novelty, device
+  novelty by hash, session assurance, recent authentication failures, recent credential change, recent recovery,
+  account age, KYC status, screening hit, profile rating, merchant status, corridor, and the monitoring readings —
+  each reading `PRESENT(value)` or `ABSENT`, a rule over an `ABSENT` reading not firing and saying so in its hit record);
+  one `RuleEvaluation` per `RuleKind` (the twenty-two); `RuleHit` (ordinal, kind, contribution, hard decision, the
+  reading it judged); `Score`; `ReasonCode` (closed, ordered; `NO_POLICY_ACTIVE`, `RISK_UNAVAILABLE`,
+  `CHALLENGE_REQUIRED` and one per rule kind among them); `Verdict` (decision, ordered reason codes, hits, score,
+  fail-safe applied); `failSafe(policy, amount)` → the band's decision, and the compiled `ALLOW` with no policy;
+  `EvaluationFailed` (a rule throwing — never a partial verdict); determinism by construction (sorted inputs, no map
+  iteration order, integer arithmetic only); `SecondJvm` digest (the `creditmath` precedent).
+- **Out of scope**: reading any input (`-004`, `-005`, `-006`, `-007`); persistence; the velocity upsert (`-006`); the
+  monitoring runner (`-020`).
+- **Domain changes**: the engine and its records.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: `RISK_ENGINE_V1`; a semantic change (a new kind, a changed precedence, a changed clamp) is
+  a new engine version, never an edit (the `INV-LND-09` discipline).
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-04` (every hit and contribution in the verdict), `INV-CRD-04` (no credit score enters the
+  sum — the profile rating is a code, never a number), `INV-MON-01` (F7).
+- **Distributed-system concerns**: none — pure; the ten-instance question answered by determinism across JVMs: `PASS`
+  on the two-JVM digest.
+- **Idempotency**: N/A — pure.
+- **Consistency**: N/A.
+- **Atomicity**: N/A.
+- **Failure handling**: a rule evaluation throwing is `EvaluationFailed` for the caller's fail-safe (`-004`); an input
+  outside its bound is a refusal, never a clamp.
+- **Security**: no PII in any input beyond hashed device ids and references.
+- **Audit**: none.
+- **Observability**: none (the caller meters).
+- **Reconciliation implications**: none.
+- **Tests**: `RiskEngineV1Test` (golden cases per rule kind, the precedence table, the clamp, the fail-safe per band
+  and with no policy, `ABSENT` readings), `RiskEngineV1PropertiesTest` (determinism; order-independence of the inputs'
+  presentation; the score monotone in contributions; bounds; a hard decision never lowered by a band),
+  `RuleKindCoverageTest` (every kind evaluated by a case), the two-JVM `RiskEngineDigestTest` (sha256 over a generated
+  corpus, equal in two JVMs); `P13-TST-002` later replays ≥ 10,000 subjects through it.
+- **Probe**: swap `HOLD` and `REVIEW` in the precedence → the golden table red; iterate a `HashMap` of hits → the
+  determinism property red; clamp at 999 → the bounds case red.
+- **Acceptance criteria**: every rule kind evaluates deterministically; the precedence holds; the fail-safe is a function
+  of the policy's bands and the amount; the two-JVM digest is equal.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-TEST`. **Risk**: Medium (the engine judges every movement). **Cx**: M.
+
+**P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `PLANNED`
+- **Objective**: **T-eval** — one sealed, `INSERT`-only assessment per judged command, written in the caller's
+  transaction after the caller's locks, pinning the `ACTIVE` policy, carrying the inputs read, the engine and policy
+  versions, every rule hit and contribution, the score, the decision, the ordered reason codes, whether the fail-safe
+  applied and the latency; **T-advise** for the doors' step-up answer; the operator read and replay (`IDENTICAL` /
+  `DIVERGED`); and the fail-safe as a **recorded decision** behind a savepoint and a statement timeout — never a silent
+  default and never an aborted caller (ADR-0108; `INV-RSK-01`, `-04`).
+- **Bounded context**: Risk (assessment, decision); `app` (doors; the lock-order row).
+- **Dependencies**: `-003`, `-006` (T-eval wires `-006`'s read and its step-(R2) upsert).
+- **Scope**: **`risk V007`**: `risk_assessment` (operation, `command_ref`, subject refs, `amount_minor` + currency,
+  policy version id — null when none was `ACTIVE`, engine version, score, decision, `fail_safe_applied`, the
+  unavailability reason, `latency_ms`, `assessed_at` on the database clock; `UNIQUE (operation, command_ref)`;
+  **`INSERT`-only** — no `UPDATE` or `DELETE` grant for any role), `risk_assessment_input` (the sealed readings, typed
+  and bounded, `CONFIDENTIAL`), `risk_rule_hit` (ordinal, kind, contribution, hard decision, the judged reading),
+  `risk_reason` (ordinal, code), and **`decision_override`** (the four-eyes machine's table — `assessment_id`, status
+  `PROPOSED | APPROVED | REJECTED`, reason code and text `RESTRICTED-PII`, the action issued and its outcome, proposer
+  and decider on the database clock; `UNIQUE (assessment_id) WHERE status = 'PROPOSED'`; four-eyes `CHECK` — the table
+  landing here in `V007`, the machine built by `-012`); **T-eval** `RiskEvaluation.evaluate(uow, request)`
+  (`PHASE_13_PLAN.md` §7.1): (R1) the pin (`-002`'s read with the A3-I1 rule) → the inputs read through `RiskInputs`
+  (ports; `-005` and `-007` fill the signal and profile readings — until each lands its readings are `ABSENT` and
+  the rules over them do not fire; `-006`'s velocity readings wired here) under `SET LOCAL statement_timeout = 250ms` **behind a savepoint**, restored after → `RiskEngineV1` → (R2)
+  `-006`'s windows upserted in sorted key order, only when the verdict permits the movement (OQ-1) → (R3) the assessment and its children inserted → `RiskDecisionMade` in the outbox → the `Verdict`
+  returned; **unavailable** — no `ACTIVE` policy, the pin's read failing, the engine refusing, the timeout — answered by
+  the policy's fail-safe band for the judged amount (C1), or the compiled `ALLOW` with no policy at all, **always
+  recorded** as an assessment with `NO_POLICY_ACTIVE` or `RISK_UNAVAILABLE` and the alert `RiskEvaluationUnavailable`
+  raised (through `-015`'s alert model once it lands; until then a counted meter and a structured log line with ids
+  only); `REVIEW` opens its case through `CaseOpener` in the same transaction (the hook wired here, implemented by
+  `-016`; a no-op recorded as such until then — OQ-2); **T-advise** `RiskEvaluation.advise(request)` — the same evaluation
+  with no upsert and no row, for a door's step-up answer before anything exists, never authoritative; routes `GET
+  /v1/operator/risk/assessments/{id}` (the assessment with its inputs, hits, score, decision and reasons; audited
+  `risk.AssessmentRead`) and `POST /v1/operator/risk/assessments/{id}/replay` (re-evaluate the sealed inputs through the
+  pinned policy and engine; `IDENTICAL` / `DIVERGED` with the first differing row named; audited `risk.Replayed`);
+  **the Phase 13 lock order** written to `DISTRIBUTED_EXECUTION.md` §3 as "The Phase 13 lock order" ((R1)–(R3) built,
+  (R4)–(R8) marked planned); `MetricNames.ALLOWED_TAG_KEYS` + `rule` (C9; `PHASE_13_PLAN.md` §15).
+- **Out of scope**: the seams (`-008`…`-011` — nothing consults T-eval yet); the override machine (`-012`); the case (`-016`); any signal or
+  profile reading beyond `ABSENT`.
+- **Domain changes**: `RiskAssessment`, `RiskAssessments` (store), `RiskEvaluation`, `EvaluationRequest`, `CommandRef`,
+  `RiskInputs` (port), `CaseOpener` (port).
+- **Persistence**: `risk V007`.
+- **APIs**: the two operator routes; `risk.NotFound`.
+- **Events**: `RiskDecisionMade` (assessment id, operation, command ref, decision, reason codes — never a text, a score
+  or a rule name beyond its code); `LimitBreached` (assessment id, rule code — when a velocity or amount rule fired
+  `DENY`/`HOLD`).
+- **Policy/model versioning**: the assessment pins the policy version and `RISK_ENGINE_V1`; a replay runs the pinned
+  pair over the sealed inputs.
+- **Financial impact**: none directly; the decision governs the money movement the caller commits.
+- **Invariants**: `INV-RSK-01`, `INV-RSK-03` (the windows in the command's transaction), `INV-RSK-04`, `INV-RSK-05`
+  (the pin), `INV-RSK-08` (events and logs carry codes),
+  `INV-CON-03`.
+- **Distributed-system concerns**: ten retries of one command ref under the caller's lock → one assessment
+  (`RiskEvaluationDatabaseTest#tenRetriesOneAssessment`); an activation racing ten evaluations → every assessment pins
+  exactly one version (`RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor`, scenario 3, completed
+  here); a timeout → the fail-safe recorded and the caller's transaction intact (`#aTimeoutIsARecordedFailSafe`, scenario
+  9). `PASS` on the counts.
+- **Idempotency**: `UNIQUE (operation, command_ref)` — a caller's retry replays its own key before T-eval runs; a second
+  evaluation of one command ref in one transaction reads the row just inserted (the two-seam shape of `-008`).
+- **Consistency**: in the caller's transaction — the assessment commits with the money outcome or neither does.
+- **Atomicity**: the savepoint around the reads; the insert after the engine; an insert failing aborts the caller (a
+  judged command is never committed without its assessment).
+- **Failure handling**: `PHASE_13_PLAN.md` §14 rows 1–3 — a throw or a timeout → the band's fail-safe recorded
+  `RISK_UNAVAILABLE`, the alert; no `ACTIVE` policy → `ALLOW(NO_POLICY_ACTIVE)` recorded, `RiskPolicyNoneActive` where
+  production is meant to judge; a version activated mid-evaluation → the pin's one version, the successor next time.
+- **Security**: `RISK_INVESTIGATE` for the reads, audited; inputs and hits `CONFIDENTIAL`; no customer route; the
+  self-dealing rule on the read (an operator never reads an assessment of their own party; fail closed).
+- **Audit**: `risk.AssessmentRead`, `risk.Replayed`, `risk.SelfDealingRefused` — catalogued by this task.
+- **Observability**: `finapp.risk.evaluation{operation,verdict}`, `evaluation.latency{operation}` (timer: p50/p99/max),
+  `evaluation.unavailable{operation}`, `rule.hit{operation,rule}`, `challenge{operation}` — registered eagerly;
+  `RiskFlowScope` per step.
+- **Reconciliation implications**: assessments = judged commands per operation (the storm's census; `-023`'s proof).
+- **Tests**: hermetic — `RiskEvaluationTest` (over fakes: the pin, every unavailable path, the fail-safe per band and
+  with no policy, the advise path writing nothing, `ABSENT` readings), `AssessmentReplayTest`, `RiskEvaluationDeskTest`;
+  database, written and owed (C5) — `RiskEvaluationDatabaseTest` (`#tenRetriesOneAssessment`,
+  `#aTimeoutIsARecordedFailSafe` (the timeout injected on the reads; the caller's transaction commits),
+  `#noActivePolicyRecordsAllow`, `#theAssessmentIsInsertOnly` (every role refused an `UPDATE`), `#replayIsIdentical`,
+  `#aPerturbedInputDiverges`, `#aPermittedCommandIncrementsItsWindowsOnce`, `#aRefusedCommandIncrementsNothing`),
+  `RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor`,
+  `RiskAssessmentMigrationTest` (constraint names unique per table); `RiskAssessmentApiTest` (the reads audited, the
+  self-dealing refusal, the uniform `404`); `RoutePermissionRegisterTest`, `ColumnClassificationTest`,
+  `OpenApiContractTest`, `PlannedMetersExistTest`, `MetricNames`' tag-key test extended.
+- **Probe**: drop `UNIQUE (operation, command_ref)` → `#tenRetriesOneAssessment` red; run the timed-out read without the
+  savepoint → `#aTimeoutIsARecordedFailSafe` red (the caller aborted); grant `UPDATE` on `risk_assessment` →
+  `#theAssessmentIsInsertOnly` red.
+- **Acceptance criteria**: exactly one assessment per judged command, in the command's own transaction; the fail-safe is
+  a recorded decision with its reason code and alert, never a silent default and never an aborted caller; a replay from
+  the sealed inputs is `IDENTICAL` and a perturbation `DIVERGED` naming its row; the operator read is audited.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: High (in every money transaction once the seams
+  land). **Cx**: H.
+
+**P13-TSK-005 — Signal ingestion from the platform's events** — `PLANNED`
+- **Objective**: risk signals born once per source event — from identity, kyc, accounts, merchant, crossborder, lending,
+  bnpl and payments events — recorded by inbox handlers in their own transaction with the attributes the event carries
+  and nothing read from the source's tables; the device description hashed at the source handler and never stored
+  (OQ-4); the signal readings `-004`'s `RiskInputs` consume (`PHASE_13_PLAN.md` §12.5; `INV-RSK-06`).
+- **Bounded context**: Risk (signals); the producing modules unchanged; `app` (the handlers).
+- **Dependencies**: `-001`.
+- **Scope**: **`risk V003`**: `risk_signal` (`SignalKind` closed — one per consumed event kind, plus the monitoring
+  kinds `-020` and `-022` record; subject kind and ref; `observed_at` from the event; `source_event_id` `UNIQUE`;
+  attributes typed and bounded per kind, classified at the source's level; `recorded_at`; `INSERT`-only); **T-sig**
+  (§7.1) in the inbox handler's transaction: `RiskSignals.record(uow, signal)` as one `INSERT … ON CONFLICT
+  (source_event_id) DO NOTHING`; one `InboxEventHandler` per source module, consumer `risk.signals`, for
+  `identity.AuthenticationFailed`, `AuthenticationLocked`, `MfaChallengeFailed`, `CredentialChanged`,
+  `ContactChannelAdded`, `RecoveryInitiated`, `RecoveryCompleted`, `SessionRotated`, `IdentitySuspended`; kyc's case
+  and screening outcomes; `accounts.AccountOpened`; `crossborder.BeneficiaryRegistered`; merchant enablement and
+  suspension; `lending.LoanDelinquencyChanged`/`LoanDefaulted`; `bnpl.BnplDelinquencyChanged`/`BnplDefaulted`; and
+  `transfers`, `payments` and `crossborder` completions as **hints** (recorded as signals of a movement kind and, once
+  `-019` lands, pulling the monitoring watermark's `next_sweep_at` forward — `-019` wires the pull, this task the
+  handler); `RiskSignalRecorded`; the readings for `-004` (`recentAuthFailures`, `recentCredentialChange`,
+  `recentRecovery`, `deviceNovelty` by hash, `accountAge`, `kycStatus`, `screeningHit`, `merchantStatus`) as
+  `RiskInputs`' signal source, read in T-eval by indexed queries on (subject, kind, observed_at).
+- **Out of scope**: the profile (`-007`); any rule; the sweep (`-019`); the hint's permit pull (`-019`); the
+  payments dispute and refund events `-014` consumes for the ratios (added there).
+- **Domain changes**: `RiskSignal`, `SignalKind`, `RiskSignals` (store), `SignalReadings`.
+- **Persistence**: `risk V003`.
+- **APIs**: none (signals are read through `-018`'s case evidence and `-023`'s reports).
+- **Events**: consumed — the list above, each tolerant of duplication, delay and replay (`INV-EVT-04`); produced —
+  `RiskSignalRecorded` (signal id, kind, subject kind and ref).
+- **Policy/model versioning**: none.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-06` (born once), `INV-IDEM-04` (inbox dedupe), `INV-EVT-04`, `INV-RSK-08` and `INV-AUD-02`
+  (no PII, no secret, no device description — the hash only).
+- **Distributed-system concerns**: the same event three times, delayed and reordered, on two instances → one signal
+  (`SignalIntakeDatabaseTest#theSameEventTwiceRecordsOnce`, scenario 1's signal half); reordered events each recorded
+  with their own `observed_at` (`#reorderedEventsRecordEach`). `PASS` on the counts.
+- **Idempotency**: inbox dedupe per consumer + `UNIQUE (source_event_id)`.
+- **Consistency**: the handler's transaction; a late event records late and is read by the next evaluation.
+- **Atomicity**: the inbox mark and the signal in one transaction.
+- **Failure handling**: an event of an unknown version → the inbox's parking, alerted; an attribute outside its bound →
+  refused and parked, never truncated; a handler crash → the inbox re-delivers, the unique absorbs.
+- **Security**: the device description hashed by identity's handler before the signal exists (the handler receives the
+  hash only); `device` attributes `RESTRICTED-PII`, the rest at the source's level; nothing read from another module's
+  table (`risk` has no edge to read one).
+- **Audit**: none — machine acts; the inbox's own record.
+- **Observability**: `finapp.risk.signal{kind}`, registered eagerly.
+- **Reconciliation implications**: none.
+- **Tests**: hermetic — one handler test per source module (the envelope mapped, the hash never the description, every
+  attribute bounded), `SignalReadingsTest`; database, written and owed (C5) — `SignalIntakeDatabaseTest`
+  (`#theSameEventTwiceRecordsOnce`, `#reorderedEventsRecordEach`, `#anEventOfAnUnknownVersionIsParked`,
+  `#theReadingsIndexAnswersInOneScan`), `RiskSignalMigrationTest`; `ColumnClassificationTest` (every attribute column
+  classified), `CredentialReachesNoEmittedSinkTest` extended over the signal's log lines.
+- **Probe**: drop `UNIQUE (source_event_id)` → `#theSameEventTwiceRecordsOnce` red; store the raw device description →
+  identity's handler test and `ColumnClassificationTest` red.
+- **Acceptance criteria**: every listed event records exactly one signal, once, with bounded typed attributes; no
+  description, secret or PII beyond the hash; the readings answer `-004`'s inputs.
+- **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P13-TSK-006 — Velocity windows in the caller's transaction, and their proof** — `PLANNED`
+- **Objective**: durable velocity windows — a count and a sum per (dimension, subject, window kind, window start) —
+  read in T-eval and upserted in the judged command's own transaction, in sorted key order, **only when the decision
+  permits the movement**, so a refused movement counts for nothing and a committed one counts exactly once; the window
+  cut by the database clock read after the caller's lock; and `VelocityProof`, which recomputes every live window from
+  the monitored transactions and alerts on a difference, never self-correcting (`PHASE_13_PLAN.md` §12.4;
+  `INV-RSK-03`; the refusal of Redis, ADR-0107 alternative 4).
+- **Bounded context**: Risk (velocity); `app` (the proof's wiring).
+- **Dependencies**: `-001` (the window table, the one-statement upsert on the database clock and the proof contract are
+  standalone; T-eval's read and its step-(R2) upsert are wired by `-004`, which depends on this task).
+- **Scope**: **`risk V005`**: `velocity_window` (primary key (`dimension`, `subject_ref`, `window_kind`,
+  `window_start`); `count`, `sum_minor`, `currency`; a `CHECK` and the upsert's own arithmetic that a sum and a count
+  never decrease within a window; the `UPDATE` grant bounded to the two counters through the one-statement upsert);
+  `VelocityDimension { PARTY, SOURCE_ACCOUNT, DESTINATION, DEVICE, MERCHANT }` (`DESTINATION` an account or a
+  beneficiary; `-014` may add `SESSION` and says so); `WindowKind` `H1`, `D1`, `D7`, `D30`, each keyed by its start
+  computed from `clock_timestamp()` read after the caller's lock; (R2) `VelocityWindows.increment(uow, keys)` — the keys
+  sorted (dimension, subject, window kind, window start), each one statement `INSERT … ON CONFLICT DO UPDATE SET count
+  = count + 1, sum_minor = sum_minor + EXCLUDED.sum_minor RETURNING`; `VelocityWindows.read(uow, keys)` the current
+  figures as T-eval's readings for `VELOCITY_COUNT` and `VELOCITY_SUM` — both wired by `-004`'s T-eval: read → evaluate →
+  upsert only on `ALLOW` or a satisfied `CHALLENGE` (a `DENY`, `HOLD`, `REVIEW` or unsatisfied `CHALLENGE` upserts nothing
+  — OQ-1), the contract stated here and exercised through a fake evaluation;
+  **`VelocityProof`** — every live window (its end not yet past) recomputed from `MonitoredTransactions` (`-019`'s port;
+  until `-019` lands the proof is declared over an empty source and answers vacuous, recorded) and compared; a
+  difference → the alert `VelocityDiverged` and `finapp.risk.velocity.proof{verdict}`, never an `UPDATE`.
+- **Out of scope**: T-eval's wiring (`-004`); any rule's parameters (`-002`); the monitored transactions (`-019`); the
+  seams (`-008`…`-011`).
+- **Domain changes**: `VelocityWindow`, `VelocityKey`, `VelocityWindows`, `VelocityProof`, `WindowStarts` (the cut
+  from a database instant).
+- **Persistence**: `risk V005`.
+- **APIs**: none (the velocity report is `-023`'s).
+- **Events**: none (`LimitBreached` is `-004`'s, fired when a velocity rule decides `DENY`/`HOLD`).
+- **Policy/model versioning**: none — the thresholds are the policy's; the window kinds are code.
+- **Financial impact**: the windows carry sums of judged amounts (`amount_minor` + currency), never a balance; no
+  posting; F7 binding.
+- **Invariants**: `INV-RSK-03`, `INV-CON-03` (durable authority, in-lock), `INV-MON-01`.
+- **Distributed-system concerns**: ten concurrent movements of one subject on two instances count ten
+  (`VelocityWindowDatabaseTest#tenMovementsCountTen`, scenario 14); a refused movement counts nothing
+  (`#aRefusedMovementCountsNothing`); the boundary across instances with clocks ±5 s cut by the database clock
+  (`#aWindowIsCutByTheDatabaseClock`); overlapping windows of two subjects upserted in sorted order never deadlock
+  (`#overlappingWindowsNeverDeadlock`). `PASS` on the counts.
+- **Idempotency**: the caller's key replays before T-eval runs — one increment per committed command; the primary key.
+- **Consistency**: the figures read and the increment written in one transaction after the caller's money locks; the
+  proof reads one `REPEATABLE READ` snapshot.
+- **Atomicity**: the increments and the assessment commit with the money outcome or none of them does.
+- **Failure handling**: a timeout on the read → `-004`'s fail-safe; a timeout on the upsert → the same, the movement
+  committing the band's outcome without the increment (the proof names the difference); a proof failing → the alert.
+- **Security**: no customer route; the subject refs are ids.
+- **Audit**: none.
+- **Observability**: `finapp.risk.velocity.proof{verdict}`; the proof's lag in `-023`'s report.
+- **Reconciliation implications**: F8 — the proof: windows = the monitored transactions they count, run by `-023`'s
+  proofs and the storm's census.
+- **Tests**: hermetic — `WindowStartsTest` (every kind's cut, the boundary instant), `VelocityReadingsTest`,
+  `VelocityProofTest` (over fakes: a difference alerts, nothing corrected); database, written and owed (C5) —
+  `VelocityWindowDatabaseTest` (`#tenMovementsCountTen`, `#aRefusedMovementCountsNothing`,
+  `#aWindowIsCutByTheDatabaseClock`, `#overlappingWindowsNeverDeadlock`, `#aSumNeverDecreases`),
+  `VelocityWindowMigrationTest`; `RiskSchemaMoneyColumnsTest` (every `*_minor` column `bigint`; the window counters the
+  only updatable money columns in the schema, and only through the upsert); `ColumnClassificationTest`.
+- **Probe**: upsert the keys unsorted → `#overlappingWindowsNeverDeadlock` red; increment before the decision →
+  `#aRefusedMovementCountsNothing` red; compute the window start from the JVM clock → `#aWindowIsCutByTheDatabaseClock`
+  red.
+- **Acceptance criteria**: a window counts exactly the committed movements it saw, under concurrency, and none that
+  were refused; the boundary is the database's; the proof detects and never corrects a difference.
+- **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F8 binding — the proof; F1, F2, F4, F5 vacuous — no posting,
+  no reversal, no external delivery), `DOD-DOMAIN`. **Risk**: High (a lost or double count is a wrong decision on every
+  later movement). **Cx**: M.
+
+**P13-TSK-007 — The customer risk profile and credit's `CreditRiskSignal` version 2** — `PLANNED`
+- **Objective**: a per-party rating `LOW | MEDIUM | HIGH | PROHIBITED`, versioned and append-only, recomputed under the
+  profile head row's lock from the party's signals and case outcomes; `PROHIBITED` set only by a four-eyes disposition
+  (`-016`); read by every evaluation (`PROFILE_RATING`) and by credit's seam, whose `app` adapter answers the current
+  rating's code with **seam version 2** and the profile version, recorded in credit's snapshot — a decision made under
+  version 1 replaying with `NOT_ASSESSED`, one made under version 2 with the rating it was given (`PHASE_13_PLAN.md`
+  §12.5; `INV-RSK-10`, `INV-CRD-01`; the transition's agenda: `NotAssessedUntilPhase13` retired).
+- **Bounded context**: Risk (the profile); Credit Decisioning (the seam's consumer, unchanged); `app` (the adapter, the
+  schedule leg).
+- **Dependencies**: `-005`.
+- **Scope**: **`risk V006`**: `customer_risk_profile` (the head: `party_id` primary key, current version, rating,
+  `next_recompute_at` permit, `recomputed_at`; conditional `UPDATE` of those columns only) and
+  `customer_risk_profile_version` (`UNIQUE (party_id, version)`; rating, ordered reason codes, the assessment, case or
+  disposition that set it, `computed_at`; `INSERT`-only); (R8) `CustomerRiskProfiles.recompute(uow, party)` — the head
+  `FOR UPDATE` → the party's signals and case outcomes read → the party's **signal score** (Σ contributions of the
+  `MONITORING` policy version's rule kinds that fire over the signals and the case history, through `RiskEngineV1`)
+  mapped by that version's **rating bands** to `LOW | MEDIUM | HIGH` (there is no `PROFILE` rule kind; `PROHIBITED` is
+  never a band's answer); until a `MONITORING` version is `ACTIVE`, the rating is `LOW` by the compiled default,
+  recorded as such → a new version only when the rating or its reasons change →
+  `CustomerRiskRatingChanged`; `PROHIBITED` writable only by `-016`'s `CONFIRMED_*` disposition path (a `CHECK` that a
+  `PROHIBITED` version names a disposition); the permit pulled forward by T-sig on a party's signal (`-005`'s handlers
+  set `next_recompute_at = now`) and by a case outcome (`-016`); **the profile leg** added to `RiskMonitoringSchedule`,
+  which `-019` creates (wave B) — leaderless, `SKIP LOCKED` over heads due, off in tests, claim failures metered (N5);
+  **`RiskCreditRiskSignal`** in `app` replacing `NotAssessedUntilPhase13`: `signal(uow, party)` → the head read (no
+  lock; the version named) → the rating code and the profile version, seam version 2; credit's snapshot records the
+  seam version and the profile version (credit's own schema unchanged — the snapshot already carries the signal's
+  record; the design confirms the column and adds one only if the record lacks the version); `GET
+  /v1/operator/risk/parties/{partyId}/profile` (the rating history; audited `risk.ProfileRead`).
+- **Out of scope**: the rating bands' and rules' parameters (`-002`'s monitoring fixture); the disposition (`-016`); any customer-facing rating
+  (never — `INV-RSK-08`).
+- **Domain changes**: `CustomerRiskProfile`, `CustomerRiskProfileVersion`, `CustomerRiskProfiles`, `ProfileRecompute`;
+  `app`'s `RiskCreditRiskSignal`.
+- **Persistence**: `risk V006`; no credit migration unless the design finds the snapshot lacks the version column, and
+  says so.
+- **APIs**: the one operator read; `risk.NotFound`.
+- **Events**: `CustomerRiskRatingChanged` (party id, rating, version).
+- **Policy/model versioning**: the profile version, pinned in credit's snapshot; `CreditRiskSignal` seam version 2; the
+  monitoring policy version that mapped the rating, recorded on the version row.
+- **Financial impact**: none; a credit decision's exposure reservation is credit's, unchanged.
+- **Invariants**: `INV-RSK-10`, `INV-CRD-01` (replay identical), `INV-CRD-04` (a rating code, never a number summed),
+  `INV-RSK-07` (`PROHIBITED` two persons).
+- **Distributed-system concerns**: ten sweepers recomputing one party → one new version (`ProfileDatabaseTest#tenRecomputesOneVersion`);
+  a rating change after a credit decision was sealed → the decision replays `IDENTICAL` with the rating it was given
+  (`#aRatingChangeNeverRewritesASealedDecision`, scenario 13); a recompute racing a disposition that sets `PROHIBITED`
+  → the head's lock serialises, the disposition's version wins and is never overwritten by a rule-mapped one
+  (`#prohibitedIsNeverDemotedByTheSweep`). `PASS` on the counts.
+- **Idempotency**: the head's lock + `UNIQUE (party_id, version)`; a recompute with no change writes nothing.
+- **Consistency**: the head and its newest version in one transaction; credit reads the head without a lock and records
+  what it read.
+- **Atomicity**: the version row, the head's advance and the event together.
+- **Failure handling**: no monitoring policy `ACTIVE` → the compiled default, recorded; a sweeper crash → the permit
+  lapses and the next claim recomputes; a signal for an unknown party → recorded, no profile.
+- **Security**: `RISK_INVESTIGATE` for the read, audited, self-dealing refused; the rating never reaches a customer
+  surface; credit's decline texts never name it.
+- **Audit**: `risk.ProfileRead`, `risk.SelfDealingRefused`.
+- **Observability**: `finapp.risk.profile.rating{bucket}` (gauge), `sweeper.enabled` for the leg; claim failures.
+- **Reconciliation implications**: none; the profile is derived and versioned, never an authority over money.
+- **Tests**: hermetic — `CustomerRiskProfileTest` (the versioning, no-change writes nothing, `PROHIBITED` only by a
+  disposition), `ProfileRecomputeTest`, `app`'s `RiskCreditRiskSignalTest` (seam version 2, the record's shape);
+  database, written and owed (C5) — `ProfileDatabaseTest` (`#tenRecomputesOneVersion`,
+  `#aRatingChangeNeverRewritesASealedDecision` (through credit's real `SnapshotFreezer` and replay),
+  `#prohibitedIsNeverDemotedByTheSweep`, `#aSignalPullsThePermitForward`), `ProfileMigrationTest`; credit's
+  `DecisionReplayDatabaseTest` re-run (a version-1 decision replays `NOT_ASSESSED`); `ProfileApiTest`;
+  `RoutePermissionRegisterTest`, `ColumnClassificationTest`.
+- **Probe**: recompute without the head's lock → `#tenRecomputesOneVersion` red; let the sweep write `PROHIBITED` →
+  `#prohibitedIsNeverDemotedByTheSweep` and the `CHECK` red; answer the seam without the profile version →
+  `RiskCreditRiskSignalTest` red.
+- **Acceptance criteria**: one version per rating change, under concurrency; `PROHIBITED` only by a four-eyes
+  disposition; credit records the rating and version it was given and replays identically after any change.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-008 — The transfer seams implemented, with the door's step-up advice** — `PLANNED`
+- **Objective**: `app`'s `RiskTransferLimitCheck` and `RiskTransferRiskDecision` replace the `PermitAllUntilPhase13`
+  wiring — T-eval for `TRANSFER` runs inside `TransferExecution` after `lockBothInFixedOrder` and the availability read
+  and before the posting, its verdict mapped to the Phase 4 `SeamVerdict` (`ALLOW` → `PERMIT`; `CHALLENGE` → `PERMIT`
+  when the session is `MULTI_FACTOR`, else `REFUSE` committed as `RISK_REFUSED` with reason `CHALLENGE_REQUIRED`;
+  `DENY` and `REVIEW` → `REFUSE`); the door's T-advise turns an unsatisfied `CHALLENGE` into `403
+  identity.AssuranceRequired` before any row exists; the `transfers` module changes nothing (`FAILED(RISK_REFUSED)` /
+  `FAILED(LIMIT_REFUSED)` as today) (`PHASE_13_PLAN.md` §7.3, §12.1, §12.3; ADR-0108).
+- **Bounded context**: Internal Transfers (the consumer, unchanged); Risk; Identity (assurance); `app` (the adapters,
+  the door).
+- **Dependencies**: `-004`, `-007`.
+- **Scope**: the two adapters in `app`, one T-eval per transfer: the first seam consulted runs `RiskEvaluation.evaluate`
+  with command ref = the transfer's id and the request's subjects (party, source account, destination account, device
+  hash, session assurance); the second reads the assessment of the same command ref in the same transaction (the
+  unique makes a second insert impossible) — which seam answers which rule outcome (the limit check from the
+  `AMOUNT_BAND`/`VELOCITY_*` hard rules → `LIMIT_REFUSED`; the risk decision from the rest → `RISK_REFUSED`) is the
+  design's mapping, stated, with one assessment carrying both; the velocity increments (R2) when permitted; the
+  door's advise (`POST /v1/me/transfers` — the existing door, `T-advise` before the command; an unsatisfied
+  `CHALLENGE` → `403 identity.AssuranceRequired`, the committed refusal the race's answer only); `-012`'s one-time
+  allowance read as an input for a retried command ref; the customer's answer unchanged (C6: the existing
+  `RISK_REFUSED` error; nothing of a case); `DISTRIBUTED_EXECUTION.md`'s lock-order row extended ((R1)–(R3) inside
+  transfers' T-exec, after both account locks).
+- **Out of scope**: any change to `TransferExecution`'s locks, posting or reasons; the case opened on `REVIEW` beyond
+  `-004`'s hook; the cross-border seams (`-011`).
+- **Domain changes**: none in `transfers`; `app`'s two adapters and the door's advice.
+- **Persistence**: none.
+- **APIs**: the existing transfer door, the step-up `403` added to its contract.
+- **Events**: `RiskDecisionMade` per transfer (`-004`'s); transfers' own events unchanged.
+- **Policy/model versioning**: the `TRANSFER` policy version pinned per assessment.
+- **Financial impact**: a refused transfer moves nothing and commits `FAILED(RISK_REFUSED)` / `FAILED(LIMIT_REFUSED)`;
+  a permitted one posts as today; the evaluation is paid by every transfer (the latency budget, §7.6).
+- **Invariants**: `INV-RSK-01`, `-02`, `-03`, `-04`, `INV-CON-03`; transfers' existing invariants unchanged and re-run.
+- **Distributed-system concerns**: `TransferRiskSeamDatabaseTest` (`app`, transfers' real door, own container):
+  `#tenTransfersOfOneSubjectCountTen` (scenario 14 through the seam), `#aRefusedTransferCountsNothingAndCommitsRiskRefused`,
+  `#anUnsatisfiedChallengeIsRefusedAtTheDoor`, `#riskUnavailableCommitsTheBandsOutcome` (scenario 9: below EUR 1,000
+  commits `COMPLETED`, at or above `FAILED(RISK_REFUSED)`, both recorded), `#oneAssessmentPerTransferAcrossBothSeams`,
+  `#aRetryUnderTheSameKeyReplaysWithoutASecondAssessment`. `PASS` on the counts.
+- **Idempotency**: the transfer's key replays before T-eval; `UNIQUE (operation, command_ref)`.
+- **Consistency**: in transfers' transaction after both locks; the windows and the assessment commit with the transfer's
+  outcome.
+- **Atomicity**: the savepoint around the reads (`-004`); the posting after the verdict.
+- **Failure handling**: a timeout → the band's fail-safe (C1) and the transfer's outcome per band; a throw → the same;
+  no policy → `ALLOW(NO_POLICY_ACTIVE)` recorded.
+- **Security**: the customer sees the generic refusal; the step-up through identity's existing assurance; nothing of
+  the assessment in the response or the log.
+- **Audit**: transfers' own; none new.
+- **Observability**: `evaluation{operation=TRANSFER,…}`, `evaluation.latency{TRANSFER}`.
+- **Reconciliation implications**: assessments(`TRANSFER`) = transfers judged (the census, `-023`).
+- **Tests**: hermetic — `RiskTransferSeamsTest` (the mapping of every decision to the two seams, the challenge paths),
+  `TransferDoorAdviceTest`; database, written and owed (C5) — `TransferRiskSeamDatabaseTest` (the six cases above),
+  transfers' own `TransferExecutionDatabaseTest` re-run with the real adapters; `TransferApiTest` extended (the `403`,
+  the generic refusal, no risk word in any body); `NoCustomerSurfaceReadsRiskTest` (the door's advice reads risk only
+  through the adapter, never a table — the guard's allowed seam).
+- **Probe**: wire `PermitAllUntilPhase13` back → `#aRefusedTransferCountsNothingAndCommitsRiskRefused` red; increment
+  the windows on `DENY` → the refused count red; evaluate before the locks → the lock-order row's test red.
+- **Acceptance criteria**: every transfer is judged once in its own transaction; the four decisions map as stated; an
+  unsatisfied challenge is answered at the door; a refusal moves nothing; the unavailable path commits the band's
+  outcome, recorded.
+- **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F1, F2 transfers' own, re-run unchanged; F4 N/A — a refusal
+  moves nothing; F5 vacuous; F8 — the assessment census), `DOD-API`, `DOD-SEC`. **Risk**: High. **Cx**: M.
+
+**P13-TSK-009 — The withdrawal risk seam and the `HELD` withdrawal** — `PLANNED`
+- **Objective**: payments gains `WithdrawalRiskDecision` — a required seam with no defaulted overload (a skipped control
+  must not compile) — consulted in `Withdrawals` under the wallet account's lock after the ledger hold is placed and
+  before the dispatch is committed; `HOLD` commits **`HELD`** with the hold kept; `DENY` commits `FAILED(RISK_REFUSED)`
+  and releases the hold in the same transaction; `ALLOW` and a satisfied `CHALLENGE` commit `DISPATCHED` as today;
+  payments' machine gains `HELD → DISPATCHED | FAILED(RISK_REFUSED)`, driven by the keyed release and denial doors
+  `-012`'s override and `-017`'s actions call; `app`'s `RiskWithdrawalRiskDecision` (`PHASE_13_PLAN.md` §5, §7.3; ADR-0062
+  §6's hold-then-dispatch; `INV-BAL-04`).
+- **Bounded context**: Payment Infrastructure (the withdrawal, its own machine); Risk; `app` (the adapter).
+- **Dependencies**: `-004`, `-007`.
+- **Scope**: **payments `V033`**: the `HELD` status in the withdrawal machine's `CHECK` and edge function (`SUBMITTED →
+  HELD`, `HELD → DISPATCHED`, `HELD → FAILED`), `WithdrawalFailureReason.RISK_REFUSED` with the reason detail
+  `HOLD_EXPIRED`, `held_at` and `held_until` = `held_at` + the `WITHDRAWAL` policy version's **hold validity** (a policy
+  field, default 72 h, `-002`); **the expiry leg** of payments' existing **`WithdrawalResolutionSchedule`** (no new
+  scheduler): past `held_until`, under the withdrawal row lock, the withdrawal commits `FAILED(RISK_REFUSED)` with
+  `HOLD_EXPIRED` and the hold is released; the case stays open; `WithdrawalRiskDecision`
+  in payments (the `TransferRiskDecision` shape: `uow`, the judged context → `WithdrawalVerdict { PERMIT, HOLD, REFUSE }`;
+  a required constructor parameter of `Withdrawals`, no default); `Withdrawals` consulting it in-lock after the hold:
+  `PERMIT` → `DISPATCHED` as today; `HOLD` → `HELD`, the hold kept, the dispatch not scheduled, the case opened through
+  `CaseOpener` (`-016`); `REFUSE` → `FAILED(RISK_REFUSED)` and `ReleaseHold` in the same transaction; the keyed doors
+  `Withdrawals.releaseHeld(key, id)` (→ `DISPATCHED`, the dispatch scheduled) and `Withdrawals.denyHeld(key, id)` (→
+  `FAILED(RISK_REFUSED)`, the hold released) on the withdrawal row's lock in payments' order, idempotent by key, audited
+  by payments; `app`'s `RiskWithdrawalRiskDecision` (one T-eval per withdrawal, command ref = the withdrawal id,
+  subjects party, source account, destination (the external account's ref), device hash, session assurance; the
+  mapping `ALLOW` → `PERMIT`, `CHALLENGE` → `PERMIT` if `MULTI_FACTOR` else `REFUSE(CHALLENGE_REQUIRED)`, `HOLD` →
+  `HOLD`, `DENY`/`REVIEW` → `REFUSE`); the velocity increments when permitted (a `HELD` withdrawal counts — it will
+  move unless denied; the design confirms OQ-1's reading for `HOLD` and says so); `GET /v1/me/withdrawals/{id}` reads
+  `HELD` as a status word only (C6 — no reason, no case); the wallet close refuses while the hold is `ACTIVE` (accounts'
+  existing rule, re-tested); the lock-order row extended ((R1)–(R3) under the wallet account lock, after the hold).
+- **Out of scope**: the override and the release's dispatch (`-012`); the action machine (`-017`); the case (`-016`);
+  the pay-in and the merchant payout (not judged in Phase 13).
+- **Domain changes**: payments' `WithdrawalRiskDecision`, `WithdrawalVerdict`, the `HELD` status and the two keyed doors;
+  `app`'s adapter.
+- **Persistence**: payments `V033`.
+- **APIs**: the existing customer withdrawal doors (`HELD` added to the status vocabulary, no reason); the keyed
+  release/deny doors are internal (ports for `-012`/`-017`), not routes.
+- **Events**: payments' `WithdrawalHeld` (ids, status) and its existing `WithdrawalFailed` with `RISK_REFUSED` — the
+  owner announces its own outcome (`TransactionBlocked` is not a risk event); `RiskDecisionMade` per withdrawal.
+- **Policy/model versioning**: the `WITHDRAWAL` policy version pinned per assessment.
+- **Financial impact**: a `HELD` withdrawal keeps the wallet's ledger hold (available balance reduced, nothing moved); a
+  denial releases it in the same transaction; a release dispatches as a normal withdrawal; no new posting.
+- **Invariants**: `INV-BAL-04` (the hold under the wallet lock), `INV-RSK-01`, `-02`, `-03`, `INV-LIFE-*` (the new
+  edges explicit and validated), `INV-CON-03`.
+- **Distributed-system concerns**: `WithdrawalRiskSeamDatabaseTest` (`app`, payments' real door, own container):
+  `#aHoldCommitsHeldWithTheHoldKept`, `#aDenialReleasesTheHoldInTheSameTransaction`, `#tenWithdrawalsOfOneSubjectCountTen`,
+  `#riskUnavailableCommitsDenyAtEveryBand` (C1; scenario 9), `#aFailedDispatchLeavesTheDecisionStanding` (scenario 7's
+  withdrawal half: the provider fails after `DISPATCHED`, the assessment untouched, payments' own failure path),
+  `#tenReleasesOfOneHeldWithdrawalDispatchOnce`, `#aHeldWalletCannotClose`; the expiry half of
+  `WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne` (`WithdrawalResolutionSchedule`'s leg) built here, the
+  override half in `-012`. `PASS` on the
+  counts.
+- **Idempotency**: the withdrawal's key; the release and denial doors keyed; `UNIQUE (operation, command_ref)`.
+- **Consistency**: the hold, the verdict and the status in one transaction under the wallet account's lock.
+- **Atomicity**: `DENY`'s release and `FAILED` together; `HOLD`'s status and the kept hold together; a crash after the
+  commit and before the response → the key replays the stored answer.
+- **Failure handling**: unavailable → `DENY` at every band (C1), the hold released, `FAILED(RISK_REFUSED)`; the expiry
+  → `FAILED(RISK_REFUSED, HOLD_EXPIRED)` once, the case left open; a release racing the expiry → exactly one wins on the
+  row lock.
+- **Security**: the customer reads `HELD` and nothing else; the release and denial are internal doors reached only
+  through `-012`/`-017`'s four-eyes paths; the external account's ref never in a log.
+- **Audit**: payments' own `payments.WithdrawalHeld`, `WithdrawalReleased`, `WithdrawalDenied`, `WithdrawalHoldExpired` (acts
+  payments catalogues;
+  actor = the risk action's key holder) — catalogued by this task.
+- **Observability**: payments' withdrawal meter gains `HELD`; `finapp.risk.evaluation{operation=WITHDRAWAL,…}`.
+- **Reconciliation implications**: F8 — held ledger holds = `HELD` withdrawals (a census row for the storm and `-023`);
+  payments' existing withdrawal reconciliation unchanged.
+- **Tests**: hermetic — payments' `WithdrawalsTest` (the new edges, the seam required, every verdict's path, the
+  expiry leg), `WithdrawalMachineTest` (the invalid edges), `app`'s `RiskWithdrawalRiskDecisionTest`; database, written
+  and owed (C5) — `WithdrawalRiskSeamDatabaseTest` (the seven cases), `WithdrawalHoldDatabaseTest` (the expiry half),
+  payments' `WithdrawalMigrationTest` over `V033` (the edge function, constraint names unique), `WithdrawalDatabaseTest`
+  re-run with the real adapter; `WithdrawalApiTest` (`HELD` with no reason; no risk word in any body);
+  `NoCustomerSurfaceReadsRiskTest`, `ColumnClassificationTest`, `OpenApiContractTest` extended.
+- **Probe**: default the seam to permit-all → payments' compile-time test (`WithdrawalsSeamIsRequiredTest`, the Phase 4
+  "must not compile" shape) red; release the hold on `HOLD` → `#aHoldCommitsHeldWithTheHoldKept` red; deny without the
+  release → `#aDenialReleasesTheHoldInTheSameTransaction` red.
+- **Acceptance criteria**: every withdrawal is judged in-lock after its hold; `HOLD` keeps the hold and commits `HELD`;
+  `DENY` releases and fails in one transaction; the customer sees a status word; release and expiry leave exactly one
+  outcome.
+- **Definition of done**: `DOD-FIN` (F1, F2 payments' own re-run — the hold kept or released, nothing moved; F3, F4
+  (the denial's release), F6, F7 binding; F5 vacuous — no provider call before dispatch; F8 — held holds = `HELD`
+  withdrawals), `DOD-API`, `DOD-SEC`. **Risk**: High. **Cx**: H.
+
+**P13-TSK-010 — The checkout payment risk seam (card and wallet); slice 2: authorise-and-hold** — `PLANNED`
+- **Objective**: payments gains `PaymentRiskDecision`, consulted in `PaymentConfirmation.confirm`'s Tx1 under the
+  intent, after the eligibility checks and before the routing decision commits, for `CARD_PAYMENT` and
+  `WALLET_PAYMENT`; `DENY` commits the refused decision the way routing's refusal does today
+  (`PaymentFailureReason.RISK_REFUSED`); `CHALLENGE` as the transfer's; `app`'s `RiskPaymentRiskDecision`; **slice 2
+  (cut candidate, second in the cut order)**: `HOLD` on a card payment authorises and defers the capture until a person
+  decides (`PHASE_13_PLAN.md` §7.3, §12.1, §12.3; C2).
+- **Bounded context**: Payment Infrastructure (the confirmation, its own machine); Checkout and Merchant (unchanged);
+  Risk; `app`.
+- **Dependencies**: `-004`, `-007`.
+- **Scope**: **payments `V034`**: `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row —
+  **terminal for the intent**: routing's refusal today leaves the intent `REQUIRES_CONFIRMATION`; a risk refusal must
+  not (the intent is not re-confirmable; the customer creates a new intent); the decision row sealed in Tx1; whether it
+  is a `FAILED(RISK_REFUSED)` attempt row written before any dispatch or an intent-level refused state is this task's
+  design decision, said so (`PHASE_13_PLAN.md` §7.3); slice 2's deferred-capture marker on the intent (`capture_deferred_at`, `capture_deadline`);
+  `PaymentRiskDecision` in payments (required, no default; `uow`, the judged context → `PaymentVerdict { PERMIT, HOLD,
+  REFUSE }`, `HOLD` admitted for cards only); `PaymentConfirmation.confirm` consulting it in Tx1 after eligibility and
+  before routing: `REFUSE` → the refused decision committed and the intent ended, the merchant and the customer answered the
+  intent's generic failure (C6, OQ-9); `PERMIT` → routing as today; the book rail's wallet pair lock unchanged — the wallet payment's T-eval runs
+  before the pair lock is taken (Tx1 holds the intent only, so (R1)–(R3) are last in Tx1 and no money row is held) —
+  the design confirms the position against `PaymentConfirmation` and records it in the lock-order row; `app`'s
+  `RiskPaymentRiskDecision` (one T-eval per confirmation, command ref = the intent id; subjects party, merchant, device
+  hash, session, the wallet source account for the wallet rail; the `MERCHANT_SUSPENDED` reading); the velocity
+  dimensions `MERCHANT` and `DEVICE` incremented when permitted; **slice 2**: `HOLD` → the card authorised and the
+  capture deferred, the intent `AUTHORISED_HELD` (the design names the status in payments' machine), a case opened
+  through `CaseOpener`, the capture or the void issued by `-012`'s override or `-016`'s disposition as a keyed action
+  of kind `CAPTURE_HELD_PAYMENT` or `VOID_HELD_PAYMENT` (payments; `PHASE_13_PLAN.md` §12.8 — declared in `-001`'s
+  `ActionKind`, implemented with the slice, deferred with it if cut); the capture deadline's expiry voids (payments' own
+  schedule).
+- **Out of scope**: BNPL at checkout (judged through credit's signal, `-007`); the pay-in; the merchant payout; the
+  wallet `HOLD` (no native hold shape at confirmation — C2); slice 2 when cut.
+- **Domain changes**: payments' `PaymentRiskDecision`, `PaymentVerdict`, the reason and the intent's terminal risk
+  refusal (attempt row or intent state — the design's); slice 2's status and the two action kinds' implementation;
+  `app`'s adapter.
+- **Persistence**: payments `V034` (slice 1; slice 2's columns in the same migration if built together, else the next
+  free).
+- **APIs**: the existing confirm door (the intent's generic failure, terminal — a re-confirmation refused; the step-up `403` through T-advise at the door); the
+  merchant's order and payment reads unchanged in shape (`HELD` visible to the merchant as a pending capture only in
+  slice 2 — a status word, nothing of risk).
+- **Events**: payments' own `PaymentFailed(RISK_REFUSED)`; slice 2's `PaymentCaptureDeferred`; `RiskDecisionMade`.
+- **Policy/model versioning**: the `CARD_PAYMENT` and `WALLET_PAYMENT` policy versions pinned per assessment.
+- **Financial impact**: a refusal moves nothing and authorises nothing; slice 2's hold authorises (the provider's
+  authorisation, no posting until capture) and captures or voids once.
+- **Invariants**: `INV-RSK-01`, `-02`, `-03`, `INV-CON-03`; payments' confirmation invariants unchanged; `INV-LIFE-*` on
+  the intent's terminal risk refusal and on slice 2's edges.
+- **Distributed-system concerns**: `PaymentRiskSeamDatabaseTest` (`app`, the real confirm door, own container):
+  `#aDeniedConfirmationCommitsRiskRefused`, `#oneAssessmentPerConfirmation`, `#tenConfirmationsOnOneDeviceCountTen`,
+  `#riskUnavailableCommitsTheBandsOutcome` (C1: below EUR 250 proceeds, at or above refused, recorded),
+  `#aMerchantSeesOnlyTheGenericRefusal`, `#theWalletPairLockIsNeverHeldDuringEvaluation` (the lock-order probe),
+  `#aRiskRefusedIntentCannotBeReconfirmed` (ten re-confirmations of a refused intent → every one refused, nothing
+  routed); slice 2: `#aHeldCardPaymentAuthorisesAndDefersCapture`, `#captureAndVoidLeaveExactlyOne`. `PASS` on the counts.
+- **Idempotency**: the confirmation's key; `UNIQUE (operation, command_ref)`; slice 2's capture/void keyed
+  `risk.action:<id>`.
+- **Consistency**: Tx1 under the intent; the refused decision and the assessment commit together.
+- **Atomicity**: the verdict before routing; a refusal writes the decision row and no routing row.
+- **Failure handling**: unavailable → the band's fail-safe, recorded; the provider failing after a `PERMIT` → payments'
+  own path, the assessment standing (scenario 7's payment half, `#aProviderFailureAfterAPermitLeavesTheDecision`).
+- **Security**: the merchant key and the customer see the generic refusal; no risk word in any merchant surface
+  (`NoCustomerSurfaceReadsRiskTest` extended over the merchant controllers); the device hash from identity's session.
+- **Audit**: payments' own confirmation acts; slice 2's `payments.CaptureDeferred` — catalogued by this task.
+- **Observability**: `evaluation{operation=CARD_PAYMENT|WALLET_PAYMENT,…}`; payments' confirmation meter gains
+  `RISK_REFUSED`.
+- **Reconciliation implications**: assessments = confirmations judged; slice 2 — deferred authorisations = held
+  intents, reconciled by payments' existing settlement expectation when captured.
+- **Tests**: hermetic — payments' `PaymentConfirmationTest` (the seam required, every verdict's path, the position in
+  Tx1), `app`'s `RiskPaymentRiskDecisionTest`; database, written and owed (C5) — `PaymentRiskSeamDatabaseTest` (the seven
+  cases; slice 2's two), payments' `PaymentConfirmationDatabaseTest` re-run with the real adapter, the `V034` migration
+  test; `CheckoutConfirmApiTest` and the merchant API tests extended (the generic refusal, no risk word);
+  `NoCustomerSurfaceReadsRiskTest`, `ColumnClassificationTest`, `OpenApiContractTest` extended.
+- **Probe**: evaluate after the routing decision commits → `#aDeniedConfirmationCommitsRiskRefused` red (money routed
+  on a `DENY`); hold the wallet pair lock around T-eval → the lock-order probe red; default the seam → the compile-time
+  test red; leave the intent `REQUIRES_CONFIRMATION` after a `DENY` → `#aRiskRefusedIntentCannotBeReconfirmed` red.
+- **Acceptance criteria**: every card and wallet confirmation is judged once in Tx1 before routing; a refusal commits
+  `RISK_REFUSED`, routes nothing and ends the intent — a re-confirmation is refused, a new intent is the customer's
+  path; the merchant and the customer see the intent's generic failure; slice 2 (if built) authorises, defers, and
+  captures or voids exactly once.
+- **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F1, F2 payments' own; F4 slice 2's void; F5 slice 2's duplicated
+  authorisation answer; F8 — the assessment census), `DOD-API`, `DOD-SEC`. **Risk**: High. **Cx**: H (M without slice 2).
+
+**P13-TSK-011 — The cross-border seams implemented** — `PLANNED`
+- **Objective**: `app`'s `RiskCrossBorderLimitCheck` and `RiskCrossBorderRiskDecision` replace the Phase 9 permit-all
+  wiring — T-eval for `CROSS_BORDER` runs in `CrossBorderAuthorization`'s first transaction before the offer is
+  accepted; a refusal consumes nothing (`422 crossborder.RiskRefused` / `LimitRefused`); the `CrossBorderVerdict`
+  contract unchanged; the corridor and the beneficiary as inputs and dimensions (`PHASE_13_PLAN.md` §7.3, §12.1).
+- **Bounded context**: FX and Cross-Border Payments (the consumer, unchanged); Risk; `app`.
+- **Dependencies**: `-004`, `-007`.
+- **Scope**: the two adapters, one T-eval per authorisation (command ref = the cross-border payment's id; subjects
+  party, source account, beneficiary (`DESTINATION`), device hash, session; the readings `corridor` for
+  `CORRIDOR_HIGH_RISK`, `screeningHit` from `-005`'s kyc counterparty-screening signals, `NEW_PAYEE` from the
+  beneficiary's `D30` window); the mapping as `-008`'s with `REVIEW` → `REFUSE` and the case through `CaseOpener`; the
+  door's T-advise for the step-up (`403 identity.AssuranceRequired`); the velocity increments when permitted — in the
+  first transaction, before the quote is consumed (the design confirms the position: crossborder's first transaction
+  holds no money row, so (R1)–(R3) are its only rows and the increments count an authorised-but-not-yet-executed
+  payment; the proof's reading of such a window is stated); the lock-order row extended.
+- **Out of scope**: any change to `CrossBorderAuthorization`'s transactions, the quote or the corridor policy; the
+  beneficiary block action (`-017`); rescreening (`-022`).
+- **Domain changes**: none in `crossborder`; `app`'s two adapters.
+- **Persistence**: none.
+- **APIs**: the existing cross-border door (the `403` added).
+- **Events**: `RiskDecisionMade`; crossborder's own unchanged.
+- **Policy/model versioning**: the `CROSS_BORDER` policy version pinned per assessment.
+- **Financial impact**: a refusal consumes nothing; an authorisation proceeds as today.
+- **Invariants**: `INV-RSK-01`, `-02`, `-03`; crossborder's existing invariants unchanged.
+- **Distributed-system concerns**: `CrossBorderRiskSeamDatabaseTest`: `#tenAuthorisationsToOneBeneficiaryCountTen`,
+  `#aRefusedAuthorisationConsumesNothing`, `#aHighRiskCorridorIsRefusedAndRecorded`, `#riskUnavailableDeniesAtEveryBand`
+  (C1), `#oneAssessmentPerAuthorisation`. `PASS` on the counts.
+- **Idempotency**: the authorisation's key; `UNIQUE (operation, command_ref)`.
+- **Consistency**: crossborder's first transaction; the assessment commits with the authorisation's outcome.
+- **Atomicity**: the savepoint; the offer's acceptance after the verdict.
+- **Failure handling**: unavailable → `DENY` at every band (C1), `422 crossborder.RiskRefused`, recorded.
+- **Security**: the customer sees crossborder's existing refusal; nothing of risk in the body.
+- **Audit**: crossborder's own.
+- **Observability**: `evaluation{operation=CROSS_BORDER,…}`.
+- **Reconciliation implications**: assessments = authorisations judged.
+- **Tests**: hermetic — `RiskCrossBorderSeamsTest`; database, written and owed (C5) — `CrossBorderRiskSeamDatabaseTest`
+  (the five cases), crossborder's `CrossBorderAuthorizationDatabaseTest` re-run with the real adapters;
+  `CrossBorderApiTest` extended; `NoCustomerSurfaceReadsRiskTest`.
+- **Probe**: wire the permit-all back → `#aRefusedAuthorisationConsumesNothing` red; drop the corridor reading →
+  `#aHighRiskCorridorIsRefusedAndRecorded` red.
+- **Acceptance criteria**: every authorisation is judged once before the offer is accepted; a refusal consumes nothing;
+  the unavailable path denies and records.
+- **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F1, F2 crossborder's own; F4, F5 vacuous; F8 — the census),
+  `DOD-API`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-012 — Decision override under four eyes, and the held withdrawal's release** — `PLANNED`
+- **Objective**: the override machine over `V007`'s `decision_override`: a `RISK_OVERRIDE` holder proposes an override
+  of a `DENY`, `HOLD` or `REVIEW` decision with a reason code and text; at or above EUR 1,000 or for any `DENY` a
+  **second** holder approves (C7), below that one holder with a reason, audited; it **never edits the decision**; it
+  records the action it issues — `RELEASE_HELD_WITHDRAWAL` or `DENY_HELD_WITHDRAWAL` through payments' keyed doors, or a
+  one-time allowance for a denied transfer's command ref read as an input by the retry's evaluation; an `ALLOW` is never
+  overridden (OQ-5) (`PHASE_13_PLAN.md` §12.3 Override; ADR-0108; `INV-RSK-07`).
+- **Bounded context**: Risk (the override); Payment Infrastructure (the held withdrawal's doors, `-009`'s); `app`.
+- **Dependencies**: `-009` (and through it `-004`'s `V007` table).
+- **Scope**: **T-ovr** (§7.1): (R1) the assessment read → (R4) the override row — propose (`PROPOSED`; `UNIQUE
+  (assessment_id) WHERE status = 'PROPOSED'`; refused for an `ALLOW` assessment `422 risk.ActionNotProposable`; the
+  threshold read from the pinned policy version's override threshold (C7)) → approve by a second holder under
+  `MULTI_FACTOR` (the proposer refused `403 risk.SelfApprovalRefused`, recorded `FAILED`; below the threshold the
+  proposer's own approval admitted with the reason, audited as one-person) → reject; **the issued action**: for a
+  `HELD` withdrawal, `RELEASE_HELD_WITHDRAWAL` (an approved override) or `DENY_HELD_WITHDRAWAL` (a rejected one that
+  the rejecter marks final) dispatched in **T-act's shape** — its own transaction after the override commits, through
+  payments' `Withdrawals.releaseHeld` / `denyHeld` with key `risk.action:<override id>`, the outcome recorded on the
+  override row (`DONE`, `DONE(ALREADY)`, `FAILED`); a lost response re-driven by the same key by the approval door's
+  retry and, once `-017` lands, by `RiskActionSchedule` (`-017` folds the override's issued action into the
+  `risk_action` machine — `PHASE_13_PLAN.md` §17); for a denied transfer, a one-time `override_allowance` (assessment id, command
+  ref, consumed_at) read by T-eval as an input for the same command ref and consumed in that evaluation's transaction —
+  the customer retries under a new key; routes `POST /v1/operator/risk/assessments/{id}/overrides`, `POST
+  …/overrides/{id}/approval`, `POST …/overrides/{id}/rejection`; `risk.OverrideProposed/Approved/Rejected`; the
+  `override{outcome}` meter.
+- **Out of scope**: the case's disposition issuing the same actions (`-016`, `-017`); overriding an `ALLOW` (never);
+  slice 2's capture/void (`-010`, `-017`).
+- **Domain changes**: `DecisionOverride`, `DecisionOverrides`, `OverrideAllowance`; the `RiskInputs` reading
+  `overrideAllowance`.
+- **Persistence**: none — `V007`'s `decision_override` (`-004`); the transfer allowance a column set of it, or a small
+  table in the next free migration — the design says which.
+- **APIs**: the three operator routes (keyed `risk.override:<actor>`); errors `risk.ActionNotProposable`,
+  `risk.SelfApprovalRefused`, `risk.ReasonRequired`, `risk.NotFound`.
+- **Events**: `RiskActionRequested` / `RiskActionCompleted` for the issued action (action id, kind, target kind and
+  ref, outcome).
+- **Policy/model versioning**: the threshold from the pinned policy version; the override names the assessment.
+- **Financial impact**: a release dispatches the held withdrawal (the hold consumed by payments' normal dispatch); a
+  denial releases the hold; the transfer allowance moves nothing by itself.
+- **Invariants**: `INV-RSK-07`, `INV-RSK-02` (the effect is payments' keyed command), `INV-RSK-01` (the decision
+  untouched), `INV-AUD-04`, `INV-BAL-04`.
+- **Distributed-system concerns**: ten approvers of one override → one approval, one dispatch
+  (`DecisionOverrideDatabaseTest#tenApproversOneApproval`); the proposer refused (`#theProposerCannotApprove`, scenario
+  15's override half); an override racing the held withdrawal's expiry (`WithdrawalResolutionSchedule`'s leg, `-009`) → exactly one of
+  release, expiry, on the withdrawal row's lock in payments' order (`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`); a release
+  dispatched once under a lost response (`#aReleaseDispatchesOnce`), a denial releasing the hold once
+  (`#aDenialReleasesTheHoldOnce`) — scenario 10; the allowance consumed once by ten concurrent retries
+  (`#aDeniedTransfersRetryReadsTheAllowanceOnce`). `PASS` on the counts.
+- **Idempotency**: `risk.override:<actor>`; the live-proposal partial unique; the action key `risk.action:<override
+  id>` at payments' door.
+- **Consistency**: the override row and its decision in one transaction; the action in its own, after.
+- **Atomicity**: the approval commits before the action is attempted; the outcome recorded in a third transaction; a
+  crash between → the re-drive.
+- **Failure handling**: payments refusing (already dispatched, already failed) → `DONE(ALREADY)`; a timeout → `FAILED`,
+  re-driven by key; the expiry having won → `DONE(ALREADY)` with the expiry's outcome recorded.
+- **Security**: `RISK_OVERRIDE`; `MULTI_FACTOR` for approval; four eyes above the threshold; self-dealing fail closed;
+  the reason text `RESTRICTED-PII`, screened by `InstrumentShapes`.
+- **Audit**: `risk.OverrideProposed`, `risk.OverrideApproved`, `risk.OverrideRejected`, `risk.SelfApprovalRefused`,
+  `risk.SelfDealingRefused`; `risk.ActionDispatched/Concluded` for the issued action.
+- **Observability**: `finapp.risk.override{outcome}`, `action{kind,outcome}` for the two kinds.
+- **Reconciliation implications**: F8 — no `HELD` withdrawal with a `DONE` release; no `DONE` denial with an `ACTIVE`
+  hold (a census row).
+- **Tests**: hermetic — `DecisionOverrideTest` (the machine, the threshold, `ALLOW` refused, the allowance consumed
+  once), `OverrideDeskTest`; database, written and owed (C5) — `DecisionOverrideDatabaseTest` (`#tenApproversOneApproval`,
+  `#theProposerCannotApprove`, `#belowTheThresholdOneHolderWithAReason`, `#anAllowIsNeverOverridden`,
+  `#aDeniedTransfersRetryReadsTheAllowanceOnce`, `#aReleaseDispatchesOnce`, `#aDenialReleasesTheHoldOnce`),
+  `WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne` (completed here); `OverrideApiTest` (MFA, the `403`, the
+  reason screened); `RoutePermissionRegisterTest`, `ColumnClassificationTest`, `OpenApiContractTest`.
+- **Probe**: remove the four-eyes `CHECK` → `#theProposerCannotApprove` red; dispatch the release in the approval's
+  transaction → `#aReleaseDispatchesOnce` red under the injected lost response (a double dispatch); consume the
+  allowance without its row lock → `#aDeniedTransfersRetryReadsTheAllowanceOnce` red.
+- **Acceptance criteria**: an override is proposed and approved by a second person above the threshold, never edits the
+  decision, and issues its action exactly once; release and expiry leave exactly one outcome; an `ALLOW` cannot be
+  overridden.
+- **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-FIN` (F3, F4, F6, F7 binding — the release and the denial through
+  payments; F1, F2 payments' own; F5 vacuous; F8 — the census row). **Risk**: High. **Cx**: M.
+
+**P13-TSK-013 — Account-takeover detection** — `PLANNED`
+- **Objective**: the account-takeover rules — a credential change or a recovery followed within the lookback by a new
+  payee, a new device and a withdrawal — firing `HOLD` in T-eval (`RECENT_CREDENTIAL_CHANGE`, `RECENT_RECOVERY`,
+  `NEW_DEVICE`, `NEW_PAYEE`, `SESSION_ASSURANCE_BELOW`, `RECENT_AUTH_FAILURES` with their parameters) and, retrospectively,
+  over the signals on their arrival, each firing an alert born once that folds into an `ATO` case; C10's response —
+  `REVOKE_SESSIONS` and `SUSPEND_IDENTITY` proposed as actions through identity's existing commands under four eyes,
+  never a credential reset (`PHASE_13_PLAN.md` §12.6; ADR-0112).
+- **Bounded context**: Fraud (21) inside `risk`; Identity (the signals' source and the actions' target, unchanged);
+  `app`.
+- **Dependencies**: `-005`, `-009`, `-015`.
+- **Scope**: the six rule kinds' evaluations wired to their readings (from `-005`'s signals: credential change,
+  recovery, authentication failures, session assurance; device novelty by the hash's `D30` window; payee novelty from
+  the `DESTINATION` dimension's `D30` count = 0 — no new table); the withdrawal and transfer v1 fixtures' ATO rules
+  confirmed (`RECENT_CREDENTIAL_CHANGE` + withdrawal → `HOLD`; the composite `NEW_PAYEE` + `NEW_DEVICE` +
+  `RECENT_RECOVERY` weight → `REVIEW` for transfers); **the retrospective evaluation** in the profile leg of
+  `RiskMonitoringSchedule` (`-007`'s leg on `-019`'s schedule) on a party's signal — the ATO sequence read from signals alone (no journal leg
+  needed), the alert `ACCOUNT_TAKEOVER_SUSPECTED` born once per (party, rule, window) through `-015`'s model, folding
+  into the party's open `ATO` case or opening one (`-016`; until `-016` lands, the alert stays `OPEN`); the `ATO` case's
+  proposable actions `REVOKE_SESSIONS` and `SUSPEND_IDENTITY` (the kinds declared by `-001`, dispatched by `-017`); the
+  `alert{kind=ATO,…}` meter.
+- **Out of scope**: the action's dispatch (`-017`); any identity change beyond the existing commands; device
+  intelligence (never).
+- **Domain changes**: the rule evaluations; `AtoSequence` (the retrospective detector, pure).
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: `AlertRaised` (`-015`'s); `RiskDecisionMade` carrying the rule codes.
+- **Policy/model versioning**: the rules' parameters in the policy versions; the detector's lookback a parameter.
+- **Financial impact**: none; a `HOLD` keeps the withdrawal's hold (`-009`).
+- **Invariants**: `INV-RSK-06` (born once), `INV-RSK-02` (the response is identity's command), `INV-RSK-08`.
+- **Distributed-system concerns**: the sequence on two instances with the events delayed and reordered → held once,
+  one alert, one case (`AccountTakeoverDatabaseTest#aCredentialChangeThenNewPayeeThenWithdrawalIsHeldAndCased`, scenario
+  11); the sequence outside the lookback not held (`#theSequenceOutsideTheLookbackIsNotHeld`); a recovery with no
+  movement alerting once (`#aRecoveryWithoutAMovementAlertsOnce`). `PASS` on the counts.
+- **Idempotency**: the signals' and alerts' uniques.
+- **Consistency**: T-eval's readings in the withdrawal's transaction; the retrospective leg under the profile head's
+  lock.
+- **Atomicity**: as T-eval's and T-mon's.
+- **Failure handling**: a reading `ABSENT` → the rule does not fire, said in its hit; unavailable → the band's
+  fail-safe.
+- **Security**: the device hash only; C10 — no credential reset; the customer sees `HELD`.
+- **Audit**: none new (the alert's and case's are `-015`/`-016`'s).
+- **Observability**: `alert{kind=ATO,severity}`, `rule.hit{…,rule=<each>}`.
+- **Reconciliation implications**: none.
+- **Tests**: hermetic — `AtoRulesTest` (each kind's parameters and readings), `AtoSequenceTest` (the detector over
+  generated signal sequences, property-based: the sequence inside the lookback always fires, outside never);
+  database, written and owed (C5) — `AccountTakeoverDatabaseTest` (the three cases, through the real withdrawal door
+  and handlers).
+- **Probe**: drop `RECENT_CREDENTIAL_CHANGE` from the withdrawal fixture → `#aCredentialChangeThenNewPayeeThenWithdrawalIsHeldAndCased`
+  red; read the device description instead of its hash → the handler's test red.
+- **Acceptance criteria**: the ATO sequence is held and cased exactly once under delayed and reordered events; the
+  response actions are proposable and never a credential reset.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-014 — Payment, merchant and BNPL abuse rules** — `PLANNED`
+- **Objective**: the payment and merchant abuse rules — chargeback and refund ratios per merchant and per customer
+  (`CHARGEBACK_RATIO`, `REFUND_RATIO`), a merchant's refunds to new accounts, BNPL applications across merchants within a
+  window (`BNPL_MULTI_APPLICATION`), a session confirming many checkouts — each a `RuleKind` with parameters, firing in
+  T-eval for `CARD_PAYMENT`/`WALLET_PAYMENT` and retrospectively over signals, raising alerts born once that fold into
+  `MERCHANT_ABUSE` or `FRAUD` cases; the merchant-abuse rules are the fourth cut candidate (`PHASE_13_PLAN.md` §12.6,
+  §16).
+- **Bounded context**: Fraud (21); Payment Infrastructure, Merchant and BNPL as the signals' sources (unchanged); `app`.
+- **Dependencies**: `-004`, `-010`, `-015`.
+- **Scope**: the inbox handlers `-005` did not consume — payments' dispute (chargeback) and refund events, bnpl's
+  application events, merchant refund outcomes — recorded as signals (`risk.signals`, born once); the ratio readings
+  (chargebacks ÷ captures, refunds ÷ captures per merchant and per customer over `D30`, basis points, from the
+  `MERCHANT` and `PARTY` windows and the dispute signals — the design states the denominator's source: the velocity
+  windows' counts, never a read of payments' tables); the session dimension — `SESSION` added to `VelocityDimension` if
+  the design finds `DEVICE` insufficient for "a session confirming many checkouts", said so; the checkout v1 fixtures'
+  abuse rules (`CHARGEBACK_RATIO` → `REVIEW`, `REFUND_RATIO` weight, `BNPL_MULTI_APPLICATION` → the credit signal's
+  input rather than a seam — BNPL is judged through credit, §12.1); the retrospective evaluation in the profile leg;
+  alerts `MERCHANT_ABUSE_SUSPECTED`, `REFUND_ABUSE_SUSPECTED`, `BNPL_MULTI_APPLICATION` born once; the `MERCHANT_ABUSE`
+  case's proposable action `SUSPEND_MERCHANT` (dispatched by `-017`).
+- **Out of scope**: the merchant's suspension itself (`-017`, merchant's existing command); any merchant-facing signal
+  (OQ-9: the generic refusal only); BNPL's own eligibility (credit's).
+- **Domain changes**: the rule evaluations; `AbuseRatios` (pure).
+- **Persistence**: none (`-005`'s signal table).
+- **APIs**: none.
+- **Events**: consumed — the dispute, refund and application events; produced — `AlertRaised` (`-015`'s).
+- **Policy/model versioning**: the parameters in the policy versions.
+- **Financial impact**: none; a merchant suspension stops future captures (merchant's rule).
+- **Invariants**: `INV-RSK-06`, `INV-RSK-08` (a merchant never learns of a case), `INV-RSK-02`.
+- **Distributed-system concerns**: `AbuseRulesDatabaseTest`: `#aChargebackRatioOverTheThresholdAlertsOncePerWindow`,
+  `#tenApplicationsAcrossMerchantsAlertOnce`, `#aSessionConfirmingManyCheckoutsIsReviewed`, `#duplicateDisputeEventsCountOnce`.
+  `PASS` on the counts.
+- **Idempotency**: the signals' and alerts' uniques.
+- **Consistency**: as T-eval's and the profile leg's.
+- **Atomicity**: as theirs.
+- **Failure handling**: a ratio with a zero denominator → `ABSENT`, the rule not firing.
+- **Security**: the merchant sees the generic refusal only; the handlers read the events' ids and counts, never
+  amounts beyond the judged one.
+- **Audit**: none new.
+- **Observability**: `alert{kind=MERCHANT_ABUSE|FRAUD,…}`, `rule.hit{…}`.
+- **Reconciliation implications**: none.
+- **Tests**: hermetic — `AbuseRulesTest` (each kind, the basis-point arithmetic exact, the zero denominator),
+  `AbuseRatiosPropertiesTest`; database, written and owed (C5) — `AbuseRulesDatabaseTest` (the four cases).
+- **Probe**: compute a ratio in floating point → `NoFloatingPointMoneyRulesTest` red; count a duplicated dispute
+  event twice → `#duplicateDisputeEventsCountOnce` red.
+- **Acceptance criteria**: each rule fires on its threshold exactly once per window under duplicated events; the
+  merchant learns nothing; the BNPL rule feeds credit's signal, not a seam.
+- **Definition of done**: `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-015 — Alerts born once: the alert table, raise, dedupe and suppression** — `PLANNED`
+- **Objective**: the alert — born once per (subject, rule, window start) from a synchronous or a monitoring rule, with
+  `ON CONFLICT DO NOTHING`; `OPEN → ATTACHED | SUPPRESSED`; evidence refs, severity, kind, the policy version; never
+  deleted — and its folding contract: an alert for a subject with an open case of the matching kind **attaches** to it
+  (the system's dedupe is `ATTACHED`, never `SUPPRESSED`), one with none opens one (declared here, implemented by `-016`
+  over its case tables); `SUPPRESSED` only by an operator's four-eyes act with a reason, through `-018`'s door
+  (`PHASE_13_PLAN.md` §3.1, §4, §5, §11; ADR-0110; `INV-RSK-06`).
+- **Bounded context**: Risk (alerts); Case Management (the folding's target); `app`.
+- **Dependencies**: `-004`.
+- **Scope**: **`risk V008`**: `risk_alert` (`AlertKind`, severity, subject kind and ref, `rule_code`, `window_start`,
+  the policy version, evidence refs (assessment, signal, monitored transaction ids — references, never copies), status
+  `OPEN | ATTACHED | SUPPRESSED`, `attached_case_id` (its foreign key added by `-016`'s `V009` with the case table), the
+  suppression proposal (reason code and text, `suppression_proposed_by`/`_at`) and decision (`suppression_decided_by`/`_at`,
+  a four-eyes `CHECK` that the two differ), `raised_at`; `UNIQUE (subject_ref, rule_code, window_start)`;
+  `INSERT` plus a conditional status `UPDATE`); `Alerts.raise(uow, alert)` as one statement; **the folding contract**
+  `AlertFolding.fold(uow, alert)` — (R4) the subject's open case of the kind `FOR UPDATE` if any → (R5) the alert
+  `ATTACHED` → the case's `revision` advanced and an event row; with none → `Cases.open` — declared here with its
+  dedupe half (the window key) and implemented by `-016` over its case tables; until `-016` lands an alert is born
+  `OPEN` and stays queued, counted; `AlertRaised` (alert id, kind, severity, subject ref); **the suppression machine** —
+  `SUPPRESSED` is only an operator's four-eyes act, never the system's dedupe (a duplicate attaches):
+  `Alerts.proposeSuppression` (`RISK_INVESTIGATE`, a reason required; the alert `OPEN`, else `422 risk.AlertNotOpen`),
+  `Alerts.approveSuppression` (a second holder with `RISK_CASE_APPROVE` → `SUPPRESSED`; the proposer refused
+  `403 risk.SelfApprovalRefused`, recorded `FAILED`), `Alerts.rejectSuppression` (the proposal cleared, the alert
+  `OPEN`), audited `risk.AlertSuppressed` — the door is `-018`'s (`PHASE_13_PLAN.md` §5, §11); the alert kinds `-004` needed (`RiskEvaluationUnavailable`,
+  `RiskPolicyNoneActive`), `-006`'s `VelocityDiverged`, and the ATO, abuse and AML kinds declared; `-004`'s unavailable
+  path now raises through the model.
+- **Out of scope**: the case machine, its actions and dispositions (`-016`); the queues (`-018`); the monitoring rules
+  (`-020`).
+- **Domain changes**: `RiskAlert`, `Alerts`, `AlertFolding`, `Severity`.
+- **Persistence**: `risk V008`.
+- **APIs**: none — the suppression door and the alert reads are `-018`'s; the errors the machine raises
+  (`risk.AlertNotOpen`, `risk.ReasonRequired`, `risk.SelfApprovalRefused`) catalogued here.
+- **Events**: `AlertRaised`.
+- **Policy/model versioning**: the alert names the policy version whose rule raised it.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-06`, `INV-RSK-07` (suppression two persons), `INV-RSK-08` (the event carries ids and codes).
+- **Distributed-system concerns**: two instances raising one alert → one row (`AlertDatabaseTest#twoInstancesRaiseOnce`,
+  scenario 2); an alert born before any case exists stays `OPEN`, once (`#anOpenAlertIsQueuedUntilACaseExists`); a
+  suppression needs a second person (`#aSuppressionNeedsASecondPerson`) and ten approvers suppress once
+  (`#tenApproversSuppressOnce`); the folding's counted cases (`CaseDatabaseTest#tenAlertsOneOpenCase`,
+  `#anAlertWithAnOpenCaseAttaches`, `#aDuplicateAlertAttachesAndIsNeverSuppressed`) are `-016`'s over its tables. `PASS`
+  on the counts.
+- **Idempotency**: the unique; `ON CONFLICT DO NOTHING`; the folding under the case row's lock; the suppression under
+  the alert row's lock.
+- **Consistency**: the alert and its attachment in one transaction; the case's `revision` advanced by the attachment.
+- **Atomicity**: raise and fold together in T-eval's or T-mon's transaction.
+- **Failure handling**: a conflict → nothing, the existing row's id returned; a case disposed between the read and the
+  lock → a new case (`-016`'s rule).
+- **Security**: `RISK_INVESTIGATE` proposes and `RISK_CASE_APPROVE` approves a suppression — two holders, never the
+  system; evidence as references; no customer surface.
+- **Audit**: `risk.AlertSuppressed`, `risk.SelfApprovalRefused`.
+- **Observability**: `finapp.risk.alert{kind,severity}`, `alert.suppressed{reason_code}`.
+- **Reconciliation implications**: alerts born once — a census (`-023`, the storm).
+- **Tests**: hermetic — `RiskAlertTest`, `AlertFoldingTest` (over fakes: attach — never suppress —, open, the disposed
+  case never re-opened), `AlertSuppressionTest` (the machine: `OPEN` only, two persons, a rejection clears); database,
+  written and owed (C5) — `AlertDatabaseTest` (`#twoInstancesRaiseOnce`, `#anOpenAlertIsQueuedUntilACaseExists`,
+  `#aSuppressionNeedsASecondPerson`, `#tenApproversSuppressOnce`, `#anAlertIsNeverDeleted`), `RiskAlertMigrationTest`
+  (constraint names unique per table); `ColumnClassificationTest`.
+- **Probe**: drop the alert's unique → `#twoInstancesRaiseOnce` red; suppress with one person →
+  `#aSuppressionNeedsASecondPerson` red; let the folding mark a duplicate `SUPPRESSED` → `AlertFoldingTest` red; grant
+  `DELETE` on `risk_alert` → `#anAlertIsNeverDeleted` red.
+- **Acceptance criteria**: an alert is born once under concurrency, stays queued `OPEN` until the folding's case half
+  lands (`-016`), is suppressed only by an operator's two-person act with a reason — never by the system — and is never
+  deleted.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-016 — The case: lifecycle, the folding of alerts, investigator actions, concurrent updates, escalation, four-eyes dispositions** — `PLANNED`
+- **Objective**: the case as the unit of a person's judgement — `OPEN → IN_INVESTIGATION → ESCALATED → DISPOSED` (and
+  `OPEN → DISPOSED` for a one-person closing disposition, `PHASE_13_PLAN.md` §5), opened by T-eval (`REVIEW`, `HOLD`, a policy-flagged `DENY`), by an alert with no open case, or by hand; taken by an
+  investigator; worked by append-only, reasoned investigator actions; escalated; disposed under four eyes where the
+  disposition confirms or acts; concurrent updates by the case row's lock and a `revision` compare-and-set; one open
+  case per (subject, kind); a case never re-opens — a new one references it (`PHASE_13_PLAN.md` §12.8; ADR-0110;
+  `INV-RSK-06`, `-07`).
+- **Bounded context**: Case Management (23); Risk (the profile's `PROHIBITED`); `app`.
+- **Dependencies**: `-015`.
+- **Scope**: **`risk V009`**: `risk_case` (kind, subject kind and ref, status, level and queue, `revision`,
+  `sla_deadline`, the opening alert or assessment, the referenced predecessor case, `opened_at`, `disposed_at`, the
+  disposition and its two actors; partial `UNIQUE (subject_ref, kind) WHERE status <> 'DISPOSED'`; four-eyes `CHECK` on
+  the confirming dispositions; `INSERT` plus a conditional `UPDATE` of status, level, queue, revision and the
+  disposition columns), `risk_case_action` (case id, ordinal, kind `NOTE | EVIDENCE_ATTACHED | TAKEN | ESCALATED |
+  ACTION_PROPOSED | ACTION_APPROVED | ACTION_REJECTED | DISPOSITION_PROPOSED | DISPOSITION_APPROVED |
+  DISPOSITION_REJECTED | REPORT_DRAFTED`, actor, reason code and text (`CONFIDENTIAL`, screened by `InstrumentShapes`,
+  bounded), evidence refs, `recorded_at`; `INSERT`-only), `risk_case_event` (the history), and the foreign key from
+  `-015`'s `risk_alert.attached_case_id`; **T-case** (§7.1): (R4) the case row `FOR UPDATE` → the `revision` compared with
+  the body's (`409 risk.CaseRevisionStale` on a mismatch) → the act → `revision + 1` → the event row; `Cases.open`
+  (from T-eval through `CaseOpener`: the assessment as the first evidence, in the money transaction with no money lock
+  taken — OQ-2; from an alert — `-015`'s `AlertFolding` implemented here: attach to the subject's open case of the kind
+  or open one; by hand — `POST /v1/operator/risk/cases`); `take`
+  (`IN_INVESTIGATION`, one person's act); `note`; `attachEvidence` (refs only); `escalate` (level and queue raised,
+  reasoned, `ESCALATED`); dispositions — `CLOSED_FALSE_POSITIVE` and `CLOSED_NO_ACTION` one person's reasoned act,
+  admitted straight from `OPEN` without the case being taken (`OPEN → DISPOSED`) as well as from `IN_INVESTIGATION` and
+  `ESCALATED`; `CONFIRMED_FRAUD`, `CONFIRMED_SUSPICIOUS`, `REFERRED` and any disposition that issues an action need the
+  case **taken** (`IN_INVESTIGATION` or `ESCALATED`) and four eyes — proposed by `RISK_INVESTIGATE`, approved by a
+  **second** `RISK_CASE_APPROVE` holder (the proposer refused `403 risk.SelfApprovalRefused`, recorded `FAILED`; a
+  confirming proposal on an untaken case refused `422`, the code the design names); `DISPOSED` final;
+  a `CONFIRMED_*` disposition → the profile's `PROHIBITED` version through `-007`'s path (two persons' act) and the
+  held withdrawal's release or denial as actions (`-017`); `REFERRED` records the recommendation of a reversal the
+  owning domain alone may make (never an action); the SLA deadline per kind (the design's table) on the database clock;
+  the `COLLECTIONS` kind's shape reserved for `-025`; routes `POST /v1/operator/risk/cases` (never the operator's own
+  party — self-dealing, fail closed), `GET /v1/operator/risk/cases/{id}`, `POST /v1/operator/risk/cases/{id}/actions`
+  (note, evidence, escalate, take; the body carries the `revision`), `POST /v1/operator/risk/cases/{id}/dispositions`,
+  `POST …/dispositions/{id}/approval`, `POST …/dispositions/{id}/rejection`; events `CaseOpened`, `CaseEscalated`,
+  `CaseDisposed` (case id, kind, status, disposition code); audit.
+- **Out of scope**: the actions' dispatch (`-017`); the queues and the full tipping-off control (`-018`); the
+  regulatory report (`-021`); the collections case's opening (`-025`).
+- **Domain changes**: `RiskCase`, `Cases`, `CaseAction`, `CaseActionKind`, `CaseLevel`, `CaseQueue`, `SlaDeadlines`,
+  `CaseOpener` and `AlertFolding` implemented.
+- **Persistence**: `risk V009`.
+- **APIs**: the six routes (keyed `risk.case:<actor>`); errors `risk.CaseRevisionStale`, `risk.CaseNotOpen`,
+  `risk.SelfDealingRefused`, `risk.SelfApprovalRefused`, `risk.ReasonRequired`, `risk.NotFound`.
+- **Events**: `CaseOpened`, `CaseEscalated`, `CaseDisposed`.
+- **Policy/model versioning**: none; the case names the alerts' and assessments' versions through its evidence.
+- **Financial impact**: none; a disposition's money effect is an action through the owning domain (`-017`).
+- **Invariants**: `INV-RSK-06` (one open per subject and kind; never re-opened), `INV-RSK-07`, `INV-RSK-08`,
+  `INV-AUD-04`.
+- **Distributed-system concerns**: two investigators updating one case → both actions kept, one `409`, no lost update
+  (`CaseDatabaseTest#concurrentUpdatesKeepEveryAction`, scenario 5); ten alerts → one open case (`#tenAlertsOneOpenCase`); an alert with an open case attaches, never
+  suppressed (`#anAlertWithAnOpenCaseAttaches`, `#aDuplicateAlertAttachesAndIsNeverSuppressed`); a late event after disposition → the disposed case untouched, a new case referencing it
+  (`#aLateEventAfterDispositionOpensANewCase`, scenario 6); the proposer refused (`#theProposerCannotApproveADisposition`,
+  scenario 15); a `CONFIRMED_*` disposition sets `PROHIBITED` once under ten approvers
+  (`#aConfirmedDispositionSetsProhibitedOnce`); self-dealing (`#selfDealingFailsClosed` — an operator with no placeable
+  party refused). `PASS` on the counts.
+- **Idempotency**: `risk.case:<actor>`; the `revision`; the partial unique.
+- **Consistency**: every act under the case row's lock; the `revision` the client's view.
+- **Atomicity**: the act, the revision and the event row together; the disposition and the profile's version together
+  (T-case takes (R8) after (R4) — a risk-only transaction, no money row).
+- **Failure handling**: stale → `409`, the client re-reads; a disposed case → `409 risk.CaseNotOpen`; a crash → the key
+  replays.
+- **Security**: `RISK_INVESTIGATE` / `RISK_CASE_APPROVE`; `MULTI_FACTOR` for every `CONFIRMED_*`; four eyes; self-dealing
+  fail closed; notes screened and bounded; evidence as references resolved through audited reads.
+- **Audit**: `risk.CaseOpened`, `risk.CaseTaken`, `risk.CaseNoted`, `risk.CaseEscalated`, `risk.CaseDisposed`,
+  `risk.DispositionProposed`, `risk.DispositionApproved`, `risk.DispositionRejected`, `risk.SelfApprovalRefused`,
+  `risk.SelfDealingRefused` — catalogued by this task.
+- **Observability**: `finapp.risk.case{kind,status}`, `case.age{kind}` (gauge, oldest open), `case.backlog{kind}`
+  (gauge), `case.resolution{kind}` (timer).
+- **Reconciliation implications**: one open case per (subject, kind) — a census.
+- **Tests**: hermetic — `RiskCaseTest` (the machine, every invalid edge, the revision), `CaseActionsTest`,
+  `DispositionRulesTest` (which dispositions need the case taken and two persons), `CaseDeskTest`; database, written and owed (C5) —
+  `CaseDatabaseTest` (`#concurrentUpdatesKeepEveryAction`, `#tenAlertsOneOpenCase`, `#anAlertWithAnOpenCaseAttaches`,
+  `#aLateEventAfterDispositionOpensANewCase`, `#theProposerCannotApproveADisposition`,
+  `#aConfirmedDispositionSetsProhibitedOnce`, `#selfDealingFailsClosed`, `#aReviewDecisionOpensItsCaseInTheMoneyTransaction`,
+  `#aDuplicateAlertAttachesAndIsNeverSuppressed`, `#aCloseFromOpenNeedsNoTake`, `#aConfirmedDispositionNeedsTheCaseTaken`),
+  `RiskCaseMigrationTest`; `CaseApiTest` (MFA, the `409`s and the `403`, the notes screened, the uniform `404`);
+  `RoutePermissionRegisterTest`, `ColumnClassificationTest`, `OpenApiContractTest`, `CredentialReachesNoEmittedSinkTest`
+  over the bodies.
+- **Probe**: drop the `revision` compare → `#concurrentUpdatesKeepEveryAction` red (a lost update); fold an alert without
+  the case row's lock → `#tenAlertsOneOpenCase` red; re-open a disposed case on a late alert →
+  `#aLateEventAfterDispositionOpensANewCase` red; remove the four-eyes `CHECK` → `#theProposerCannotApproveADisposition`
+  red.
+- **Acceptance criteria**: one open case per subject and kind; concurrent updates lose nothing; a disposed case is
+  final; a false-positive or no-action close is one person's reasoned act, from `OPEN` too; every confirming
+  disposition is two persons' act on a taken case; the operator never works their own party's case.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: H.
+
+**P13-TSK-017 — Downstream actions through the owning domains** — `PLANNED`
+- **Objective**: every downstream effect of a case as a **risk action** — `PROPOSED → APPROVED → DISPATCHED → DONE |
+  FAILED` (`REJECTED` beside) — proposed and approved in T-case under four eyes, dispatched by `RiskActionSchedule` in
+  T-act on the owning domain's lock order through its existing keyed command with key `risk.action:<id>`, its outcome
+  recorded; a domain's refusal a recorded outcome, never an error; a `FAILED` action re-proposable, never re-dispatched
+  by itself; risk never writes another domain's row and never reverses a transaction (`PHASE_13_PLAN.md` §12.8;
+  ADR-0112; `INV-RSK-02`).
+- **Bounded context**: Case Management; Identity, Accounts, Merchant, Cross-Border and Payment Infrastructure as the
+  actions' targets through their existing commands (unchanged); `app` (the ports' implementations, the schedule).
+- **Dependencies**: `-016`, `-012`.
+- **Scope**: **`risk V010`**: `risk_action` (case id, `ActionKind`, target kind and
+  ref, status, `next_attempt_at`, attempts, the proposer and approver on the database clock, the outcome and the
+  domain's reference; `UNIQUE (case_id, kind, target_ref) WHERE status IN ('PROPOSED', 'APPROVED', 'DISPATCHED')`;
+  four-eyes `CHECK`; conditional `UPDATE` of status, permit and outcome only); T-case's `proposeAction` /
+  `approveAction` (a second `RISK_CASE_APPROVE` holder; the proposer refused) / `rejectAction`; **`RiskActionSchedule`**
+  (leaderless, `SKIP LOCKED` over `APPROVED` actions due and `DISPATCHED` ones awaiting an outcome — and, from `-021`, `FILED`
+  reports due an inquiry —, off in tests, +1 lease-protected, claim failures metered — N5); **T-act** (§7.1): (R6) the action row `FOR UPDATE` → `DISPATCHED` with
+  the permit advanced, committed → the owning domain's command in **its** transaction on its own lock order with
+  key `risk.action:<id>` → the outcome recorded in a third transaction (`DONE`, `DONE(ALREADY)` on the domain's
+  refusal, `FAILED` with the reason); never holding (R4) during the domain's command; the ports `risk` declared in
+  `-001` implemented in `app` over the existing commands — `IdentityActions` (`IdentityAdministration.suspend` /
+  reinstate / revoke sessions), `AccountActions` (accounts' suspension), `MerchantActions`
+  (`MerchantAdministration.suspend`), `BeneficiaryActions` (crossborder's beneficiary block), `HeldWithdrawalActions`
+  (`-009`'s `releaseHeld` / `denyHeld`), `PartyRescreening` (`-022`, a no-op until then); `-012`'s override-issued action
+  folded into this machine (an approved override creates the `risk_action` row `APPROVED` and the schedule dispatches
+  it — `PHASE_13_PLAN.md` §17); routes `POST /v1/operator/risk/cases/{id}/risk-actions`, `POST …/risk-actions/{id}/approval` (`202` —
+  dispatched by the schedule), `POST …/risk-actions/{id}/rejection`; events `RiskActionRequested`,
+  `RiskActionCompleted`; audit.
+- **Out of scope**: any new command in any domain; a reversal (never); the rescreening leg (`-022`); slice 2's capture
+  and void kinds (with `-010`).
+- **Domain changes**: `RiskAction`, `RiskActions`, `ActionDispatch`, `ActionOutcome`; the six ports implemented in `app`.
+- **Persistence**: `risk V010`.
+- **APIs**: the three routes (keyed `risk.case:<actor>`); errors `risk.ActionNotProposable`, `risk.SelfApprovalRefused`,
+  `risk.CaseNotOpen`, `risk.NotFound`.
+- **Events**: `RiskActionRequested` / `RiskActionCompleted` (action id, kind, target kind and ref, outcome).
+- **Policy/model versioning**: none.
+- **Financial impact**: none in `risk`; a released withdrawal dispatches, a denied one releases its hold — payments'
+  own postings; a suspension moves nothing.
+- **Invariants**: `INV-RSK-02`, `INV-RSK-07`, `INV-IDEM-01` (the domain's key), `INV-AUD-04`.
+- **Distributed-system concerns**: ten approvers of one action → one approval, one dispatch
+  (`RiskActionDatabaseTest#tenApproversOneDispatch`); a timed-out domain command re-driven → one effect by the
+  domain's key (`#aReDriveReplays`, scenario 4); a domain's refusal recorded, nothing retried (`#aDomainRefusalIsARecordedOutcome`,
+  scenario 7); the proposer refused (`#theProposerCannotApprove`); ten sweepers over one `APPROVED` action → one
+  dispatch (`#tenSweepersDispatchOnce`); the lock order — (R6) released before the domain's command takes its money
+  rows (`#noRiskRowIsHeldDuringTheDomainsCommand`, a lock-wait probe). `PASS` on the counts.
+- **Idempotency**: the live partial unique; `risk.action:<id>` at every domain's door; the permit.
+- **Consistency**: the action's status and the domain's outcome recorded in separate transactions, reconciled by the
+  re-drive; the case's `revision` advanced by the proposal and the approval.
+- **Atomicity**: `DISPATCHED` committed before the command; the outcome after; a crash between → the permit lapses and
+  the next claim re-drives the same key.
+- **Failure handling**: a timeout → re-drive by key; an unknown outcome → inquiry through the domain's read, never a
+  second command; a domain refusing → `DONE(ALREADY)`; `FAILED` → re-proposable.
+- **Security**: `RISK_INVESTIGATE` / `RISK_CASE_APPROVE`; `MULTI_FACTOR` for approval; four eyes; the domain's own
+  authorisation of the keyed command (a service principal with the one permission each command needs — least
+  privilege, the design names it); self-dealing fail closed.
+- **Audit**: `risk.ActionProposed`, `risk.ActionApproved`, `risk.ActionRejected`, `risk.ActionDispatched`,
+  `risk.ActionConcluded`, `risk.SelfApprovalRefused`; the domain's own audit of the command with the action's key as
+  correlation.
+- **Observability**: `finapp.risk.action{kind,outcome}`, `action.failed{kind}`, `sweeper.enabled` for the schedule,
+  the claim-failure meter.
+- **Reconciliation implications**: every `DONE` action has the domain's reference; every `DISPATCHED` older than its
+  permit is alerted (the storm's census).
+- **Tests**: hermetic — `RiskActionTest` (the machine, every invalid edge), `ActionDispatchTest` (over fake ports:
+  timeout, refusal, unknown, re-drive), `RiskActionScheduleTest`; database, written and owed (C5) —
+  `RiskActionDatabaseTest` (`#tenApproversOneDispatch`, `#aReDriveReplays`, `#aDomainRefusalIsARecordedOutcome`,
+  `#theProposerCannotApprove`, `#tenSweepersDispatchOnce`, `#noRiskRowIsHeldDuringTheDomainsCommand`, one case per
+  port through the real domain command), `RiskActionMigrationTest`; `RiskActionApiTest`; `RoutePermissionRegisterTest`,
+  `NoSingleInstanceAssumptionRulesTest` (+1), `ColumnClassificationTest`, `OpenApiContractTest`.
+- **Probe**: dispatch inside the approval's transaction holding (R4) → the lock-wait probe red; drop the domain's key
+  → `#aReDriveReplays` red (two suspensions audited); re-dispatch a `FAILED` action from the schedule →
+  `RiskActionTest`'s edge case red.
+- **Acceptance criteria**: an action is approved by a second person and dispatched exactly once through the owning
+  domain's keyed command with its outcome recorded; no risk row is held during the command; a refusal is an outcome.
+- **Definition of done**: `DOD-SEC`, `DOD-EVENT`, `DOD-API`. **Risk**: High. **Cx**: H.
+
+**P13-TSK-018 — Case and alert queues, reads, and the tipping-off control** — `PLANNED`
+- **Objective**: the investigator's queues and reads — alerts and cases oldest first, keyset paged, filtered by status
+  and kind; the case read with its evidence resolved through audited reads; the alert suppression door (an operator's
+  four-eyes act over `-015`'s machine) — and the tipping-off control made whole:
+  no customer or merchant route reads any `risk` table, no event carries a reason text, a score, a rule name, a note
+  or any PII, no log or metric tag carries more than ids, counts and bounded codes, and no customer response differs
+  with a case open (`PHASE_13_PLAN.md` §9, §11; `INV-RSK-08`; C6).
+- **Bounded context**: Case Management; `app` (routes, guards).
+- **Dependencies**: `-016`.
+- **Scope**: `GET /v1/operator/risk/alerts?status=&kind=&after=` and `GET /v1/operator/risk/cases?status=&kind=&after=`
+  (oldest first by (raised_at | opened_at, id), keyset by `after`, bounded page), `GET /v1/operator/risk/cases/{id}`
+  completed (the actions, the alerts attached, the evidence refs — each resolved by a separate audited read of the
+  assessment, signal or monitored transaction, never embedded), every read audited and self-dealing-refused;
+  **the suppression door** over `-015`'s machine — `POST /v1/operator/risk/alerts/{id}/suppression` (proposed by
+  `RISK_INVESTIGATE` with a reason, `201`), `POST …/suppression/approval` (a second holder with `RISK_CASE_APPROVE`,
+  `200`), `POST …/suppression/rejection` (`200`); key `risk.alert:<actor>`; audited `risk.AlertSuppressed`; the
+  proposer `403 risk.SelfApprovalRefused`, recorded `FAILED`; `SUPPRESSED` is only this door's outcome — the system's
+  dedupe is `ATTACHED` (`PHASE_13_PLAN.md` §9, §11); **the control**: `NoCustomerSurfaceReadsRiskTest` extended over every route, desk and repository reachable from a
+  customer or merchant principal (the allowed seams enumerated: the five adapters and `RiskCreditRiskSignal`, nothing
+  else); `RiskEventsCarryOnlyCodesTest` (every `risk` event's schema: ids, codes, statuses, kinds — no free text, no
+  amount beyond none, no name); `CredentialReachesNoEmittedSinkTest` and the log-line rule over every `risk` log site;
+  the metric-tag rule (`MetricNames.ALLOWED_TAG_KEYS`, bounded vocabularies — a tag value from a bounded enum only);
+  `CustomerAnswerIsIndifferentToACaseTest` (`app`, database: for each customer and merchant read and command the
+  response body and status equal with and without an open case on the party — timing outside the claim); the case
+  SLA alert's queue (`case.age` the gauge).
+- **Out of scope**: any customer-facing surface (never); the reports (`-023`); the dispositions and actions (`-016`,
+  `-017`).
+- **Domain changes**: `AlertQueue`, `CaseQueue` (read models over the tables, no projection); `AlertSuppressionDesk`.
+- **Persistence**: none (indexes for the keyset reads if the design finds them missing — the next free migration, said
+  so).
+- **APIs**: the two queue routes, the completed case read and the three suppression routes (keyed `risk.alert:<actor>`);
+  errors `risk.NotFound`, `risk.SelfDealingRefused`, `risk.AlertNotOpen`, `risk.ReasonRequired`, `risk.SelfApprovalRefused`.
+- **Events**: none.
+- **Policy/model versioning**: none.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-08` (made whole), `INV-AUD-02`.
+- **Distributed-system concerns**: a keyset page under concurrent inserts neither skips nor repeats
+  (`QueueDatabaseTest#aPageUnderInsertsNeitherSkipsNorRepeats`); the suppression door replays its key and leaves the
+  race to `-015`'s counted machine (`#tenApproversSuppressOnce`). `PASS` on that count; the rest vacuous, recorded.
+- **Idempotency**: `risk.alert:<actor>` for the suppression door; the reads N/A.
+- **Consistency**: a page is one snapshot.
+- **Atomicity**: N/A.
+- **Failure handling**: an unknown `after` → `422`; a page beyond the bound → the bound.
+- **Security**: `RISK_INVESTIGATE` (the reads, the suppression proposal) and `RISK_CASE_APPROVE` (the approval, a second
+  holder); self-dealing fail closed on every read and act; evidence by reference; the narrative of a report never in a
+  case read (`-021`'s own permission).
+- **Audit**: `risk.CaseRead`, `risk.AlertRead`, `risk.AlertSuppressed`, `risk.SelfApprovalRefused` (`PHASE_13_PLAN.md`
+  §11), `risk.SelfDealingRefused`.
+- **Observability**: `case.backlog{kind}`, `case.age{kind}` from the queues' counts.
+- **Reconciliation implications**: none.
+- **Tests**: hermetic — `AlertQueueTest`, `CaseQueueTest`, `AlertSuppressionDeskTest`, the new architecture guards;
+  database, written and owed (C5) — `QueueDatabaseTest`, `CustomerAnswerIsIndifferentToACaseTest`; `QueueApiTest`
+  (self-dealing, audited reads, the uniform `404`), `AlertSuppressionApiTest` (`201`/`200`, the `403`, `422
+  risk.AlertNotOpen` on an `ATTACHED` alert, the reason required, the key replayed); `RoutePermissionRegisterTest`,
+  `OpenApiContractTest`.
+- **Probe**: read an alert count into a customer's transfer response → `NoCustomerSurfaceReadsRiskTest` red; add a
+  reason text to `CaseDisposed` → `RiskEventsCarryOnlyCodesTest` red; answer a held withdrawal's read with a reason →
+  `CustomerAnswerIsIndifferentToACaseTest` red; approve a suppression as its proposer → the `403` case red.
+- **Acceptance criteria**: the queues page correctly under concurrency; every read is audited and self-dealing-refused;
+  a suppression is proposed and approved by two holders through the door and never by the system; the four tipping-off
+  guards are green and each proven by its probe; no customer response differs with a case open.
+- **Definition of done**: `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-019 — Monitored transactions: the journal intake, the watermark, reprocessing** — `PLANNED`
+- **Objective**: the monitoring intake reads the **ledger journal** — the one financial truth — through
+  `MonitoredLedger`, from a watermark, in a leaderless sweep with its own transactions: each journal entry classified
+  by its posting-key namespace into a monitored transaction born once per `journal_entry_id`, entries of an unknown
+  namespace recorded `UNCLASSIFIED` and alerted (nothing passes unseen); events are hints that pull the watermark's
+  permit forward; reprocessing from an earlier watermark is idempotent by construction (`PHASE_13_PLAN.md` §12.7;
+  ADR-0111; `INV-RSK-09`).
+- **Bounded context**: AML / Transaction Monitoring (22); Ledger (read through a port, unchanged); `app` (the port's
+  implementation, the schedule).
+- **Dependencies**: `-001`.
+- **Scope**: **`risk V004`**: `monitored_transaction` (`journal_entry_id` `UNIQUE`, the journal sequence, kind
+  `MonitoredTransactionKind` (from the namespace register) or `UNCLASSIFIED`, the posting-key namespace, subject refs
+  (party, account) and counterparties, `amount_minor` + currency, value date, `recorded_at`; `INSERT`-only) and
+  `monitoring_watermark` (one row per source — the journal; the last sequence ingested, `next_sweep_at`, the claim's
+  permit; conditional `UPDATE`); **`MonitoredLedger`** (`risk`'s port: journal entries after a sequence, in order,
+  bounded batch, with their lines' posting keys, accounts, amounts and value dates) implemented in `app` over the
+  ledger's journal entry store; the namespace register (`transfer:`, `payments.`, `merchant-payout:`, `crossborder.`,
+  `lending.`, `bnpl.` and the rest read from the posting-key catalogue — the design lists every namespace the ledger
+  emits today and the register's test fails on a namespace the ledger adds that the register does not know); **T-mon's
+  intake leg** (§7.1): (R7) the watermark `FOR UPDATE SKIP LOCKED` → the entries since through the port → `INSERT …
+  ON CONFLICT (journal_entry_id) DO NOTHING` → the watermark advanced → commit alone (the rule leg `-020`'s, per
+  subject after); **`RiskMonitoringSchedule` created here** with its intake leg (`-007` adds the profile leg, `-022` the rescreening
+  leg; leaderless, off in tests, claim failures metered — N5; `LEASE_PROTECTED_SCHEDULERS` +1); the hint — `-005`'s
+  completion handlers set `next_sweep_at = now` on the watermark; **reprocessing** —
+  `POST /v1/operator/risk/monitoring/reprocessing` (body: the sequence to restart from; `RISK_POLICY_ADMINISTER`;
+  `Idempotency-Key`; `202`; audited `risk.ReprocessingOrdered` — `PHASE_13_PLAN.md` §9, §11) resets the watermark
+  under its lock; the gauges `monitoring.lag` (journal head − watermark) and
+  `monitoring.unclassified`; the alert on `UNCLASSIFIED > 0` (`-015`'s model, or a counted meter until it lands).
+- **Out of scope**: the monitoring rules (`-020`); the velocity proof's consumption (`-006` declared it; `-023` runs
+  it); any read of a business module's table (the journal is read through the ledger's store, the one edge-free port).
+- **Domain changes**: `MonitoredTransaction`, `MonitoredTransactionKind`, `MonitoredTransactions`, `MonitoringWatermark`,
+  `NamespaceRegister`, `MonitoredLedger` implemented in `app`.
+- **Persistence**: `risk V004`.
+- **APIs**: the reprocessing route (`202`, `Idempotency-Key`); `risk.NotFound`.
+- **Events**: consumed — the completion hints; produced — none (the alert's is `-015`'s).
+- **Policy/model versioning**: none; a reprocessing names the reason and the policy version it precedes.
+- **Financial impact**: none — a read of the journal; the monitored record carries the entry's amount as a judged
+  figure, never a balance.
+- **Invariants**: `INV-RSK-09`, `INV-RSK-06` (reprocessing creates nothing), `INV-CON-03`, `INV-MON-01`.
+- **Distributed-system concerns**: ten sweepers over one watermark → every entry ingested once
+  (`MonitoringIntakeDatabaseTest#tenSweepersIngestOnce`); reprocessing from an earlier watermark → no new row
+  (`#reprocessingCreatesNothingNew`, scenario 8); a crash mid-claim → the permit lapses, the next claim re-reads from the
+  committed watermark (`#aCrashMidClaimLapsesAndResumes`); an unknown namespace → `UNCLASSIFIED`, alerted, the sweep
+  continuing (`#anUnknownNamespaceIsUnclassifiedAndAlerted`); the census (`#theCensusAgreesWithTheJournal`). `PASS` on
+  the counts.
+- **Idempotency**: `UNIQUE (journal_entry_id)` with `DO NOTHING`; the watermark's claim.
+- **Consistency**: the batch and the watermark's advance in one transaction; the journal read in sequence order from
+  one snapshot.
+- **Atomicity**: the batch's inserts and the advance together; a partial batch never advances.
+- **Failure handling**: the port failing → the claim released, the permit backed off, the lag gauge rising; a bounded
+  batch → the next claim continues.
+- **Security**: no customer route; the port reads the ledger's store with a read-only principal (the design names it).
+- **Audit**: `risk.ReprocessingOrdered`.
+- **Observability**: `finapp.risk.monitoring.lag`, `monitoring.unclassified`, `sweeper.enabled`, the claim-failure meter.
+- **Reconciliation implications**: F8 — monitored transactions = journal entries since the floor (the census, run by
+  `-023` and the storm).
+- **Tests**: hermetic — `NamespaceRegisterTest` (every namespace the ledger emits classified; an unknown one
+  `UNCLASSIFIED`), `MonitoringIntakeTest` (over a fake ledger: batches, the watermark, reprocessing),
+  `RiskMonitoringScheduleTest`; database, written and owed (C5) — `MonitoringIntakeDatabaseTest` (the five cases,
+  over the real ledger store with postings from transfers, payments and bnpl), `MonitoredTransactionMigrationTest`;
+  `ReprocessingApiTest`; `NoSingleInstanceAssumptionRulesTest` (+1), `RoutePermissionRegisterTest`,
+  `ColumnClassificationTest`, `PlannedMetersExistTest`.
+- **Probe**: advance the watermark before the batch commits → `#aCrashMidClaimLapsesAndResumes` red (entries skipped);
+  drop the unique → `#reprocessingCreatesNothingNew` red; remove a namespace from the register → `NamespaceRegisterTest`
+  red.
+- **Acceptance criteria**: every journal entry becomes exactly one monitored transaction, classified or `UNCLASSIFIED`
+  and alerted, under ten sweepers and any reprocessing; the census agrees with the journal.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-FIN` (F2 — the monitored record replayable from the journal; F6, F7, F8
+  binding — the census; F1, F3, F4, F5 vacuous — no posting, no command, no external delivery). **Risk**: Medium.
+  **Cx**: M.
+
+**P13-TSK-020 — Monitoring rules and AML alerts** — `PLANNED`
+- **Objective**: the monitoring policy version (`RiskOperation.MONITORING`) and T-mon's rule leg — per subject, under
+  the profile head's lock, the rules `STRUCTURING`, `RAPID_IN_OUT`, `DORMANT_THEN_ACTIVE`, `ROUND_AMOUNT`,
+  `CORRIDOR_HIGH_RISK` and `VELOCITY_*` evaluated over the subject's monitored transactions and velocity windows,
+  raising alerts born once per (subject, rule, window start) and folding them into the subject's open `AML` case; the
+  sweep raises nothing until a monitoring version is `ACTIVE` (`PHASE_13_PLAN.md` §12.7; ADR-0111).
+- **Bounded context**: AML / Transaction Monitoring; `app`.
+- **Dependencies**: `-019`, `-015`.
+- **Scope**: the monitoring readings (`MonitoringReadings`: per subject the monitored transactions in the window,
+  the in/out sums, the dormancy gap, the round-amount share, the corridors — from `-019`'s table and `-006`'s windows,
+  computed in the sweep, never cached); the five kinds' evaluations and the `VELOCITY_*` reuse; the monitoring v1
+  fixture (`-002`'s: `STRUCTURING` ≥ 3 movements each below EUR 1,000 summing above EUR 2,500 in 24 h; `RAPID_IN_OUT` ≥
+  80 % out within 24 h of in; `DORMANT_THEN_ACTIVE` 90 days then ≥ EUR 1,000 in 24 h; `ROUND_AMOUNT` weight;
+  `CORRIDOR_HIGH_RISK`); **T-mon's rule leg**: per subject touched by the intake batch (and per subject due by the
+  profile permit) — (R8) the head `FOR UPDATE` → the readings → `RiskEngineV1` over the `ACTIVE` monitoring version
+  (the pin as T-eval's; none `ACTIVE` → nothing raised, counted) → alerts raised and folded (`-015`) into the open
+  `AML` case or a new one (`-016`) → the profile recomputed (`-007`) → commit; the subject loop bounded per claim; the
+  `alert{kind=AML,…}` meter.
+- **Out of scope**: the intake (`-019`); the regulatory report (`-021`); rescreening (`-022`); any customer effect
+  (monitoring is retrospective — it never refuses a movement).
+- **Domain changes**: `MonitoringReadings`, `MonitoringRun`; the five rule evaluations.
+- **Persistence**: none.
+- **APIs**: none (the monitoring version's doors are `-002`'s).
+- **Events**: `AlertRaised`, `CaseOpened` (through `-015`/`-016`).
+- **Policy/model versioning**: the monitoring policy version pinned per run and named on every alert.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-06`, `INV-RSK-09` (reprocessing raises nothing new), `INV-RSK-04` (every hit recorded on
+  the alert's evidence).
+- **Distributed-system concerns**: a structuring sequence alerted once per window with the case folding every alert
+  (`MonitoringRulesDatabaseTest#aStructuringSequenceAlertsOncePerWindow`, `#everyAlertFoldsIntoOneCase`, scenario 12); no
+  `ACTIVE` version → nothing (`#noActiveMonitoringPolicyRaisesNothing`); reprocessing → no second alert
+  (`#reprocessingRaisesNoSecondAlert`, scenario 8); two sweepers over one subject serialised on the head
+  (`#twoSweepersOneSubjectRaiseOnce`). `PASS` on the counts.
+- **Idempotency**: the alert's unique; the head's lock.
+- **Consistency**: the readings and the alerts in one transaction per subject.
+- **Atomicity**: per subject.
+- **Failure handling**: a rule throwing → the subject skipped and counted, the sweep continuing, alerted; a stale pin
+  → the next run.
+- **Security**: no customer surface; the alert's evidence by reference.
+- **Audit**: none (machine acts).
+- **Observability**: `alert{kind=AML,severity}`, `rule.hit{operation=MONITORING,rule}`, the run's timer beside
+  `evaluation.latency` (M3's split trigger measured by the storm).
+- **Reconciliation implications**: alerts born once per window — the census.
+- **Tests**: hermetic — `MonitoringRulesTest` (each kind over generated transaction sets, golden), `MonitoringReadingsTest`
+  (exact integer arithmetic, the window cuts); database, written and owed (C5) — `MonitoringRulesDatabaseTest` (the
+  five cases over real postings).
+- **Probe**: compute the in/out ratio in floating point → `NoFloatingPointMoneyRulesTest` red; raise the alert without
+  the window start in its key → `#aStructuringSequenceAlertsOncePerWindow` red (one per run).
+- **Acceptance criteria**: every monitoring rule fires once per subject and window over the journal's record, folds
+  into one case, and raises nothing without an active version or on reprocessing.
+- **Definition of done**: `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-021 — The AML case and the regulatory report artefact** — `PLANNED`
+- **Objective**: the `AML` case's specifics and the **regulatory report** as an aggregate distinct from the case —
+  drafted from a disposed `CONFIRMED_SUSPICIOUS` case by an `AML_REPORT_APPROVE` holder, approved by a second, filed by
+  an `AML_REPORT_FILE` holder through `RegulatoryFilingProvider` (simulated), acknowledged or rejected by the authority
+  through the port's inquiry leg (the system actor); immutable once `FILED`; a jurisdiction field; the narrative `RESTRICTED-PII` readable only by `AML_REPORT_*` holders;
+  never the subject in its event (`PHASE_13_PLAN.md` §12.9; ADR-0111; C4).
+- **Bounded context**: AML (22); Case Management; `app` (the provider's simulation, routes).
+- **Dependencies**: `-016`, `-020`.
+- **Scope**: **`risk V011`**: `regulatory_report` (case id, jurisdiction code, format version, the reporting entity's
+  reference, subject and account refs, the transactions referenced (monitored transaction ids), the grounds — the
+  case's reason codes and the approved narrative (`RESTRICTED-PII`, bounded, screened), the attachments' references,
+  status `DRAFT | APPROVED | FILED | ACKNOWLEDGED | REJECTED`, the provider's reference and acknowledgement, the drafter,
+  approver and filer on the database clock; partial `UNIQUE (case_id) WHERE status IN ('DRAFT', 'APPROVED')`; four-eyes
+  `CHECK (approved_by <> drafted_by)`; no `UPDATE` of any content column after `FILED` (a trigger or the grant's shape
+  — the design decides)) and `regulatory_report_event`; **T-rep** (§7.1): (R4) the case → the report row — draft (the
+  case `DISPOSED` with `CONFIRMED_SUSPICIOUS`, else `422 risk.ReportNotFileable`) → approve (a second holder,
+  `MULTI_FACTOR`; the drafter refused `403 risk.SelfApprovalRefused`, recorded `FAILED`) → file (`AML_REPORT_FILE`,
+  `MULTI_FACTOR`): `FILED` committed **before** the provider call with the reference pending, the call outside any
+  connection; **the acknowledgement** recorded by the filing port's **inquiry leg** — a leg of `RiskActionSchedule`
+  (`-017`'s, wave F beside this task; the leg lands with whichever merges second, said so), the system actor, permit
+  `next_inquiry_at` on the `FILED` row: `FILED → ACKNOWLEDGED` with the authority's reference (audited
+  `risk.ReportAcknowledged`) `| REJECTED` with the reason (audited `risk.ReportRejected`; a rejected filing is a new
+  draft); an `UNKNOWN` answer is a permit on the `FILED` row — inquire by the filing reference, never re-file (the payout
+  precedent; `PHASE_13_PLAN.md` §5, §7.3); `RegulatoryFilingProvider` (the port, `-001`'s: `file`, `inquire`)
+  implemented as a simulated FIU endpoint (the `ScreeningAdapter` precedent: deterministic outcomes by a test knob, an
+  `UNKNOWN` path); the EU reference shape as adapter data
+  (jurisdiction `EU-REF`, format version 1) with §12.9's content categories, every jurisdiction-specific field the
+  adapter's; the `AML` case kind's SLA and queue; `REPORT_DRAFTED` as a case action; routes `POST
+  /v1/operator/risk/cases/{id}/reports`, `POST …/reports/{id}/approval`, `POST …/reports/{id}/filing` (`202`);
+  `RegulatoryReportFiled` (report id, jurisdiction — never the subject); audit; `report{status}` meter; retention noted
+  as a Phase 15 item in the entry's debt row (M3's split trigger: AML retention obligations).
+- **Out of scope**: a real FIU, a real jurisdiction (C4), any customer effect, the report's inclusion in a case read
+  (`-018` — the narrative is the report's own permission).
+- **Domain changes**: `RegulatoryReport`, `RegulatoryReports`, `ReportContent`, `FilingOutcome`, `FilingInquiry`,
+  `RegulatoryFilingProvider` implemented (simulated) in `app`.
+- **Persistence**: `risk V011`.
+- **APIs**: the three routes (keyed `risk.report:<actor>`); errors `risk.ReportNotFileable`,
+  `risk.SelfApprovalRefused`, `risk.ReasonRequired`, `risk.NotFound`.
+- **Events**: `RegulatoryReportFiled`.
+- **Policy/model versioning**: the format version; the jurisdiction code.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-07` (approval two persons), `INV-RSK-08` (the event never the subject; the narrative's
+  permission), `INV-RSK-06` (one filing per case), `INV-AUD-02`.
+- **Distributed-system concerns**: the approver is not the drafter (`RegulatoryReportDatabaseTest#theApproverIsNotTheDrafter`);
+  `FILED` immutable (`#filedIsImmutable`); a lost filing response inquired, never re-filed
+  (`#aLostFilingResponseIsInquiredNeverReFiled`); one open draft per case (`#oneOpenDraftPerCase`); ten filers of one
+  approved report → one filing (`#tenFilersFileOnce`); ten inquirers of one `FILED` report → one acknowledgement
+  (`#tenInquirersAcknowledgeOnce`). `PASS` on the counts.
+- **Idempotency**: `risk.report:<actor>`; the partial unique; the provider's reference.
+- **Consistency**: the report and the case action in one transaction; the filing's outcome in its own after.
+- **Atomicity**: `FILED` before the call; the outcome after; a crash between → the inquiry.
+- **Failure handling**: the provider unavailable or `UNKNOWN` → `FILED` with the permit set, the inquiry leg re-asking
+  by the filing reference until `ACKNOWLEDGED` or `REJECTED`, never a second filing; `REJECTED` → a new draft; a
+  sweeper crash mid-inquiry → the permit lapses, the next claim re-asks.
+- **Security**: `AML_REPORT_APPROVE` / `AML_REPORT_FILE`; `MULTI_FACTOR`; four eyes; the narrative readable by the two
+  permissions only (`RoutePermissionRegisterTest`, a dedicated case in `ReportApiTest`); self-dealing fail closed; the
+  simulated provider receives no PII beyond the artefact's references.
+- **Audit**: `risk.ReportDrafted`, `risk.ReportApproved`, `risk.ReportFiled`, `risk.ReportAcknowledged` and
+  `risk.ReportRejected` (the system actor, the inquiry leg), `risk.SelfApprovalRefused`.
+- **Observability**: `finapp.risk.report{status}`; the alert on a filing `UNKNOWN`.
+- **Reconciliation implications**: every `FILED` report acknowledged or inquired — a census row.
+- **Tests**: hermetic — `RegulatoryReportTest` (the machine, every invalid edge, immutability), `ReportContentTest`
+  (the categories, the adapter's additions), `SimulatedFilingProviderTest`; database, written and owed (C5) —
+  `RegulatoryReportDatabaseTest` (the six cases), `RegulatoryReportMigrationTest`; `ReportApiTest` (the narrative's
+  permission, MFA, the `403`); `RoutePermissionRegisterTest`, `ColumnClassificationTest`, `OpenApiContractTest`,
+  `RiskEventsCarryOnlyCodesTest` (the subject absent from `RegulatoryReportFiled`).
+- **Probe**: call the provider before committing `FILED` → `#aLostFilingResponseIsInquiredNeverReFiled` red (a second
+  filing); grant `UPDATE` on the narrative after `FILED` → `#filedIsImmutable` red; put the party id in the event →
+  `RiskEventsCarryOnlyCodesTest` red.
+- **Acceptance criteria**: a report is drafted only from a confirmed-suspicious case, approved by a second person,
+  filed once with its outcome reconciled, immutable after filing, and never names its subject in an event.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-022 — Rescreening on screening-list updates** — `PLANNED` *(cut candidate, third in the cut order)*
+- **Objective**: `risk` records a sanctions or PEP list version as an operator fact; its activation enqueues one
+  rescreening permit per `ACTIVE` party; the sweep's rescreening leg requests the screening through kyc's existing
+  ports, records the clearance as a signal and raises an alert on a hit — kyc stays the screening owner (OQ-8;
+  `PHASE_13_PLAN.md` §12.10; Refinement 3).
+- **Bounded context**: Risk (the list fact, the permits); KYC (the screening, through its ports, unchanged); `app`.
+- **Dependencies**: `-005`, `-016`.
+- **Scope**: **`risk V012`**: `screening_list_version` (list `SANCTIONS | PEP`, version, recorded and activated by and
+  at; `UNIQUE (list, version)`; one `ACTIVE` per list by partial unique) and `rescreening_permit` (party, list version,
+  status `PENDING | DONE | FAILED`, `next_attempt_at`, attempts; `UNIQUE (party_id, list_version_id)`); **T-list**
+  (§7.1): record → activate (`RISK_POLICY_ADMINISTER`, `MULTI_FACTOR`; a second activation of one version `409
+  risk.PolicyStale` — the design may name a list-specific code) → the permits enqueued for every `ACTIVE` party (through
+  a port over identity's party store — `ActiveParties`, declared in `-001`'s set or added here, said so) in bounded
+  batches by the sweep, not in the door's transaction; **the rescreening leg** added to `-019`'s `RiskMonitoringSchedule`
+  (`SKIP LOCKED` over permits due; claim failures metered): per permit → kyc's ports (`CounterpartyScreenings` for
+  counterparties; the case-bound screening for parties) through `app`'s `PartyRescreening` (`-017`'s port implemented)
+  → the clearance recorded as a signal (`SCREENING_CLEARED` / `SCREENING_HIT`, born once per (party, list version)) → a
+  hit → the alert `SCREENING_HIT` (born once) folding into an `AML` case (`-016`); `ActionKind.RESCREEN_PARTY` as a
+  case's proposable action (one party re-screened on demand, through `-017`); routes `POST
+  /v1/operator/risk/screening-lists`, `POST …/{id}/activation` (`202`); audit; the leg's gauge.
+- **Out of scope**: the list's content (kyc's provider, simulated); any screening logic; onboarding screening (kyc's).
+- **Domain changes**: `ScreeningListVersion`, `ScreeningListVersions`, `RescreeningPermit`, `RescreeningRun`;
+  `PartyRescreening` implemented in `app`.
+- **Persistence**: `risk V012`.
+- **APIs**: the two routes (keyed `risk.list:<actor>`); errors `risk.PolicyStale`, `risk.NotFound`.
+- **Events**: `RiskSignalRecorded` per clearance; `AlertRaised` on a hit.
+- **Policy/model versioning**: the list version named on every clearance signal and permit.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-06` (one permit, one signal, one alert per party and version), `INV-RSK-02` (kyc screens;
+  risk asks).
+- **Distributed-system concerns**: an activation enqueues every `ACTIVE` party once under ten sweepers
+  (`RescreeningDatabaseTest#anActivationEnqueuesEveryActivePartyOnce`); ten sweepers rescreen each permit once
+  (`#tenSweepersRescreenOnce`); a hit alerts once and cases (`#aHitAlertsOnceAndCases`); a second activation of one
+  version refused (`#aSecondActivationOfOneVersionIsRefused`). `PASS` on the counts.
+- **Idempotency**: the permits' unique; the signal's `source_event_id` = the permit's id; kyc's own screening key.
+- **Consistency**: the permit's outcome and the signal in one transaction; the kyc call outside it (the port's own
+  transaction), the outcome recorded after.
+- **Atomicity**: per permit.
+- **Failure handling**: kyc unavailable → the permit backed off, `FAILED` after the bound, alerted; a party
+  deactivated meanwhile → `DONE(SKIPPED)`.
+- **Security**: `RISK_POLICY_ADMINISTER`; `MULTI_FACTOR`; the screening result's detail stays in kyc — risk records the
+  clearance code only.
+- **Audit**: `risk.ListVersionRecorded`, `risk.ListVersionActivated`.
+- **Observability**: `sweeper.enabled` for the leg; `finapp.risk.rescreening{outcome}`; the permits' backlog gauge.
+- **Reconciliation implications**: permits `DONE` = clearance signals per list version — a census row.
+- **Tests**: hermetic — `ScreeningListVersionTest`, `RescreeningRunTest` (over fake kyc ports: hit, clear, unavailable,
+  skipped); database, written and owed (C5) — `RescreeningDatabaseTest` (the four cases, through kyc's real ports and
+  its simulated provider), `ScreeningListMigrationTest`; `ScreeningListApiTest`; `RoutePermissionRegisterTest`,
+  `ColumnClassificationTest`.
+- **Probe**: enqueue in the activation's transaction → `#anActivationEnqueuesEveryActivePartyOnce` red under the
+  injected crash (half the parties enqueued twice); drop the permit's unique → `#tenSweepersRescreenOnce` red.
+- **Acceptance criteria**: an activated list version rescreens every active party exactly once through kyc, records
+  the clearance, and alerts and cases a hit once.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P13-TSK-023 — The risk proofs, the explanation door and replay** — `PLANNED`
+- **Objective**: the phase's proofs as operator-runnable, audited reads — `VelocityProof` made whole over the
+  monitored transactions, the assessment census (assessments = judged commands per operation), the monitoring census
+  (monitored transactions = journal entries since the floor), the born-once and one-open censuses — the explanation
+  door (an assessment's decision explained rule by rule), the reports, and replay over a day (`PHASE_13_PLAN.md` §9,
+  §12.4, §13.3; `INV-RSK-01`, `-03`, `-06`, `-09`).
+- **Bounded context**: Risk; `app` (the censuses' consumer-side counts through ports).
+- **Dependencies**: `-006`, `-019`, `-016`.
+- **Scope**: `VelocityProof` run over `-019`'s `MonitoredTransactions` (every live window recomputed and compared; a
+  difference alerted `VelocityDiverged`, never corrected); `AssessmentCensus` (per operation and day: assessments
+  versus the judged commands counted through ports `app` implements over transfers', payments' and crossborder's
+  stores — reads, no edge); `MonitoringCensus` (monitored = journal entries since the floor, by sequence, through
+  `MonitoredLedger`); `AlertBornOnceCensus` and `CaseOneOpenCensus` (the uniques' truth re-proven by query); each
+  proof one `REPEATABLE READ` snapshot (the Phase 11 lesson I2); **the explanation door** — `GET
+  /v1/operator/risk/assessments/{id}` extended with the explanation: the rules in their order, each reading, each
+  contribution, the band reached, the precedence step that decided, the fail-safe if applied — from the sealed rows
+  only, never a re-evaluation; **replay over a day** — `POST /v1/operator/risk/assessments/replay?date=` (every
+  assessment of the day replayed `IDENTICAL` / `DIVERGED`, the first divergent named; audited `risk.Replayed`);
+  **the reports** `GET /v1/operator/reports/risk/{decisions,alerts,cases,velocity}?date=` (counts and codes, never
+  amounts beyond bucketed sums or names; audited `risk.ReportRead`); the proofs' meters.
+- **Out of scope**: any correction (never — a proof names, a person acts); Prometheus rules and the runbook (`-024`).
+- **Domain changes**: the four censuses, `Explanation`, `DailyReplay`; the counting ports in `app`.
+- **Persistence**: none.
+- **APIs**: the explanation (extended read), the daily replay, the four reports; `risk.NotFound`.
+- **Events**: none.
+- **Policy/model versioning**: the replay runs every assessment under its own pinned pair.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-01`, `-03`, `-06`, `-09` — each proven by a census, not assumed.
+- **Distributed-system concerns**: a census under concurrent movements reads one snapshot and agrees with itself
+  (`RiskProofsDatabaseTest#aCensusUnderLoadIsOneSnapshot`); the velocity proof detects an injected difference and
+  corrects nothing (`#theVelocityProofNamesADifferenceAndCorrectsNothing`); the daily replay under a policy activation
+  replays each assessment under its own version (`#aDailyReplayPinsEachAssessmentsOwnVersion`). `PASS` on the counts.
+- **Idempotency**: N/A — reads.
+- **Consistency**: one snapshot per proof.
+- **Atomicity**: N/A.
+- **Failure handling**: a difference → an alert and the report's row; never an `UPDATE`.
+- **Security**: `RISK_INVESTIGATE`; audited; the reports carry counts and codes.
+- **Audit**: `risk.ReportRead`, `risk.Replayed`, `risk.AssessmentRead`.
+- **Observability**: `velocity.proof{verdict}`, the censuses' verdict meters.
+- **Reconciliation implications**: F8 — this task is the phase's reconciliation.
+- **Tests**: hermetic — `VelocityProofTest` (completed), `AssessmentCensusTest`, `ExplanationTest` (from sealed rows
+  only — a planted re-evaluation refused), `DailyReplayTest`; database, written and owed (C5) — `RiskProofsDatabaseTest`
+  (the three cases and one per census over real rows); `RiskReportsApiTest`; `RoutePermissionRegisterTest`,
+  `OpenApiContractTest`.
+- **Probe**: let the proof upsert the corrected figure → `#theVelocityProofNamesADifferenceAndCorrectsNothing` red;
+  build the explanation by re-running the engine → `ExplanationTest` red; count judged commands from `risk`'s own
+  table → `AssessmentCensusTest` red (a tautology).
+- **Acceptance criteria**: every proof runs as one snapshot, names a difference and corrects nothing; the explanation
+  is read from the sealed rows; a day replays `IDENTICAL`.
+- **Definition of done**: `DOD-FIN` (F8 binding — the proofs; F2, F7 binding; F1, F3, F4, F5, F6 vacuous — reads only,
+  with the snapshot test as the one counted case), `DOD-API`. **Risk**: Medium. **Cx**: M.
+
+**P13-TSK-024 — Operating risk: meters, alerts, reports, runbook §9, the activation gate** — `PLANNED`
+- **Objective**: the phase operable — every `PHASE_13_PLAN.md` §15 series registered eagerly and guarded, the
+  Prometheus rules, the spans, `OPERATIONS_RUNBOOK.md` §9 with the **activation gate** (the preconditions for the first
+  policy activation in production) and the risk operations procedures (a case backlog, a filing unknown, a velocity
+  proof failing, a reprocessing), and the owner list carried forward (`PHASE_13_PLAN.md` §15, §1.1).
+- **Bounded context**: Risk; `app` (meters, rules, docs).
+- **Dependencies**: `-023`.
+- **Scope**: every series of §15 confirmed registered eagerly by its task or registered here (`evaluation`,
+  `evaluation.latency`, `evaluation.unavailable`, `rule.hit`, `challenge`, `alert`, `alert.suppressed`, `case`,
+  `case.age`, `case.backlog`, `case.resolution`, `override`, `action`, `action.failed`, `report`, `policy.active`,
+  `monitoring.lag`, `monitoring.unclassified`, `velocity.proof`, `profile.rating`, `sweeper.enabled` per schedule, the
+  claim-failure meters) under `PlannedMetersExistTest`; `infra/prometheus/rules/risk.yml` — evaluation unavailable >
+  0; p99 latency over budget (50 ms); no active policy where judging is expected; unclassified journal entries > 0;
+  monitoring lag over an hour; velocity proof failing; a case older than its SLA; an action failed; a filing unknown —
+  under `AlertRulesResolveTest`; `RiskFlowScope` on every step; **`OPERATIONS_RUNBOOK.md` §9** — the activation gate:
+  the battery's fingerprint recorded for the version, the storm's latency figures within budget, the fail-safe bands
+  (C1) reviewed and signed, the reporting jurisdiction decided (C4) or the simulation explicitly accepted, the roles
+  held by named persons with the pairwise disjointness verified, the four-eyes rehearsal performed, the tipping-off
+  guards green on the release, the owner's written allowance — then the activation by two holders; and the
+  procedures: an alert flood, a case backlog, a filing `UNKNOWN`, a `VelocityDiverged`, a reprocessing, an action
+  `FAILED`, the monitoring lag; `DISTRIBUTED_EXECUTION.md`'s component register rows for both risk schedules and payments'
+  `WithdrawalResolutionSchedule`'s expiry leg confirmed as built; the debt rows the phase accrued listed.
+- **Out of scope**: dashboards beyond the existing Grafana provisioning pattern (added only if the pattern exists
+  — the design says); any production activation.
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: the gate names the version it admits.
+- **Financial impact**: none.
+- **Invariants**: none directly; every alert rule names the invariant it watches.
+- **Distributed-system concerns**: none — `PASS` vacuously, recorded with its reason.
+- **Idempotency**: N/A.
+- **Consistency**: N/A.
+- **Atomicity**: N/A.
+- **Failure handling**: a missing meter fails `PlannedMetersExistTest`; a rule naming an unknown series fails
+  `AlertRulesResolveTest`.
+- **Security**: the runbook's gate is the trust procedure for the roles; no secret in any procedure.
+- **Audit**: none.
+- **Observability**: this task.
+- **Reconciliation implications**: the runbook's procedure for a failing proof.
+- **Tests**: `PlannedMetersExistTest`, `AlertRulesResolveTest`, `RiskMetricTagsAreBoundedTest` (every tag value from a
+  bounded vocabulary), the document guards (`OperationsRunbookSectionsTest` or the existing guard over the runbook's
+  sections, extended with §9).
+- **Probe**: remove `evaluation.unavailable`'s registration → `PlannedMetersExistTest` red; misspell a series in
+  `risk.yml` → `AlertRulesResolveTest` red; tag `rule.hit` with the assessment id → `RiskMetricTagsAreBoundedTest` red.
+- **Acceptance criteria**: every series exists and is bounded; every alert rule resolves; runbook §9 states the
+  activation gate and each procedure; the register rows agree with the code.
+- **Definition of done**: `DOD-OBS`, `DOD-DOC`. **Risk**: Low. **Cx**: L.
+
+**P13-TSK-025 — A collections case opened on default (C3, cut candidate)** — `PLANNED` *(cut candidate, first in the cut order)*
+- **Objective**: a `COLLECTIONS` case opened once per party on `lending.LoanDefaulted` / `bnpl.BnplDefaulted`, with
+  investigator actions as facts (note, evidence, `REFERRED`) — the thin slice of collections case management, nothing
+  of collections operations (C3; `PHASE_13_PLAN.md` §3.1).
+- **Bounded context**: Case Management; Lending and BNPL as the events' sources (unchanged — they emit the events
+  today).
+- **Dependencies**: `-016`.
+- **Scope**: `-005`'s handlers' default events recorded as signals (already consumed; the kind `OBLIGATION_DEFAULTED`
+  carrying the obligation's kind and id); the folding — a default signal → an alert `OBLIGATION_DEFAULTED` born once
+  per (party, obligation) → the party's open `COLLECTIONS` case or a new one (one open per (party, `COLLECTIONS`)); the
+  case's SLA for the kind; the dispositions admitted (`CLOSED_NO_ACTION`, `REFERRED` — a referral to the owning domain's
+  own restructuring or write-off path, never an action); no `ActionKind` for the kind; the `case{kind=COLLECTIONS,…}`
+  meter.
+- **Out of scope**: contact strategy, promises to pay, placement, agencies, write-off, provisioning (Phase 14 and a
+  later collections context); any change to lending's or bnpl's delinquency machines.
+- **Domain changes**: the kind's rules in `Cases`.
+- **Persistence**: none.
+- **APIs**: none new (the case routes).
+- **Events**: consumed — the two default events; produced — `AlertRaised`, `CaseOpened`.
+- **Policy/model versioning**: none.
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-06`, `INV-RSK-02`.
+- **Distributed-system concerns**: a default opens one case (`CollectionsCaseDatabaseTest#aDefaultOpensOneCase`); a
+  second default of one party attaches (`#aSecondDefaultOfOnePartyAttaches`); the same event twice opens once
+  (`#theSameEventTwiceOpensOnce`). `PASS` on the counts.
+- **Idempotency**: the signal's, alert's and case's uniques.
+- **Consistency**: as the folding's.
+- **Atomicity**: as T-sig's and T-case's.
+- **Failure handling**: as `-005`'s and `-015`'s.
+- **Security**: `RISK_INVESTIGATE`; nothing customer-facing.
+- **Audit**: the case's acts.
+- **Observability**: `case{kind=COLLECTIONS,status}`.
+- **Reconciliation implications**: none.
+- **Tests**: hermetic — `CollectionsCaseRulesTest`; database, written and owed (C5) — `CollectionsCaseDatabaseTest`
+  (the three cases, through the real handlers).
+- **Probe**: drop the alert's unique → `#theSameEventTwiceOpensOnce` red.
+- **Acceptance criteria**: a default opens exactly one collections case per party, worked by facts only.
+- **Definition of done**: `DOD-DOMAIN`. **Risk**: Low. **Cx**: L.
+
+**P13-TST-001 — The risk storm** — `PLANNED`
+- **Objective**: prove risk correct under N instances, clock skew, provider faults and crashes, end to end from the
+  judged movement to the filed report, beside every money-moving domain it judges — every one of the fifteen mandatory
+  scenarios exercised with counts, every census at every round, every named lock wait counted, and **the latency
+  budget measured** (`PHASE_13_PLAN.md` §13.3).
+- **Bounded context**: all of the phase, with transfers, payments, checkout, crossborder, credit, lending, bnpl,
+  identity and kyc as they meet it.
+- **Dependencies**: `P13-TSK-001`…`-024` (never `-025`).
+- **Scope**: two application instances, clocks ±5 s; parties moving money through every judged operation at once,
+  holding loans and BNPL obligations; merchants shared across captures and refunds; devices and sessions shared across
+  parties; a policy activation mid-storm for every operation and the monitoring version; the fail-safe forced (a
+  policy retired, a timeout injected) in a measured window; held withdrawals released, denied and expired in races;
+  ATO and structuring sequences seeded with delayed and reordered events; cases worked by concurrent investigators;
+  actions dispatched against domains failing and timing out; a filing with a lost response; a reprocessing from an
+  earlier watermark mid-storm; **every one of the fifteen scenarios** of `PHASE_13_PLAN.md` §13.2 by name; crash
+  points — two killed backends, a crash at every T-eval, T-mon, T-case, T-act and T-rep step; **the latency budget**:
+  T-eval p50/p99/max per operation with the monitoring sweep running beside it, the figures recorded (M3's split
+  trigger: a p99 over 50 ms with the sweep on and under it with the sweep off is the finding); **at rest, every
+  round**, in one `REPEATABLE READ` snapshot: assessments = judged commands per operation; windows = monitored sums;
+  alerts born once; cases one open per (subject, kind); every `DISPATCHED` action concluded or within its permit; every
+  `FILED` report acknowledged or inquired; held holds = `HELD` withdrawals; no customer or merchant route having
+  touched `risk` (the guard's runtime counterpart: a `risk` table read counted per principal kind, zero for customers
+  and merchants); and the Phase 12 harness lessons (A6-03, -04, -06, -07) honoured — closure censuses by the record's
+  order, dates shifted, coverage forced by the seed, the kill placed after the receive it must follow; the named lock
+  waits (R1 `FOR SHARE` against an activation; R7 claims; R4 revisions) counted; the 0-deadlock assertion; a run
+  recorded with its figures in the entry.
+- **Out of scope**: the battery's exactness (`P13-TST-002`); `-025` (optional).
+- **Domain changes**: none — tests.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: the activation mid-storm and the pin's one-version census.
+- **Financial impact**: none; every money census is the consuming domain's existing one, re-run.
+- **Invariants**: every `Phase: 13` invariant exercised by name; the consuming domains' censuses (the trial balance per
+  currency, the holds) re-run.
+- **Distributed-system concerns**: this task is the ten-instance answer for the phase: `PASS` on its counts or not at
+  all.
+- **Idempotency**: every keyed door raced under its key.
+- **Consistency**: the censuses.
+- **Atomicity**: the crash points.
+- **Failure handling**: the injected faults — timeouts, lost responses, killed backends, a retired policy.
+- **Security**: the runtime tipping-off census; MFA sessions for every four-eyes act.
+- **Audit**: every act's audit row counted against its command.
+- **Observability**: the latency figures; the meters' values at rest agreeing with the censuses.
+- **Reconciliation implications**: the censuses.
+- **Tests**: `RiskStormTest` (own container, two instances; the `BnplStormTest` shape); `RiskStormCensus`; the
+  scenario cases by name (one method per scenario); `RiskStormLatencyReport`.
+- **Probe**: skip (R2)'s sorted order in one instance → the deadlock count non-zero; retire the policy without the
+  successor's activation in one transaction → the "neither" count non-zero; release a held withdrawal twice under two
+  keys → the holds census red.
+- **Acceptance criteria**: 0 failures, 0 deadlocks, every census green at every round, every scenario by name, the
+  latency figures recorded, within budget or the finding recorded against M3's trigger.
+- **Definition of done**: `DOD-TEST`. **Risk**: Medium. **Cx**: H.
+
+**P13-TST-002 — The policy battery** — `PLANNED`
+- **Objective**: exactness and replay over a large generated population — ≥ 10,000 subjects and movement sequences
+  replayed through `RISK_ENGINE_V1` under every v1 policy version in two JVMs, byte-identical; perturbations of an
+  input, a rule parameter or a policy version flipping the verdict and naming their row; a fingerprint committed; a
+  shrunk run failing the census (`PHASE_13_PLAN.md` §13.3).
+- **Bounded context**: Risk (the engine and the policy model).
+- **Dependencies**: `-003`, `-004`.
+- **Scope**: a generator of subjects (parties, accounts, devices, merchants, beneficiaries) and movement sequences over
+  a simulated calendar — amounts across every band's edge, velocity bursts at every window boundary, novelty
+  patterns, ATO and structuring shapes, dormancy gaps, round amounts, corridors — with their readings sealed as
+  `EvaluationInputs`; **independent oracles** per rule kind (never the production evaluations — the Phase 11 battery's
+  Q2) and an oracle for the precedence and the fail-safe; every verdict replayed through `RiskEngineV1` and the
+  assessment replay path (`-004`'s `IDENTICAL`) in two JVMs with a sha256 digest equal; perturbations — one reading,
+  one rule parameter, one band, the policy version swapped — each flipping the verdict or the digest and naming its
+  row (`Flip.namesItsRow`); selections by a mixed hash of the index, never the generator's walk; coverage floors (every
+  rule kind fired, every decision reached, every band edge, every window boundary, the fail-safe at every band); a
+  population fingerprint committed; a probe-only size knob (`FINAPP_RISK_BATTERY_SUBJECTS`, the
+  `FINAPP_BNPL_BATTERY_PURCHASES` precedent — a shrunk run fails the census by design); every v1 fixture version replayed.
+- **Out of scope**: concurrency (the storm's); persistence beyond the replay path.
+- **Domain changes**: none — tests.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: the battery is the proof that a version is the data it says — the activation gate
+  records its fingerprint (`-024`).
+- **Financial impact**: none.
+- **Invariants**: `INV-RSK-01` (replay), `INV-RSK-04` (every hit), `INV-RSK-05` (the version's immutability shown by the
+  swap's flip), `INV-MON-01`.
+- **Distributed-system concerns**: determinism across two JVMs — `PASS` on the digest.
+- **Idempotency**: N/A.
+- **Consistency**: N/A.
+- **Atomicity**: N/A.
+- **Failure handling**: a shrunk run fails; a perturbation that flips nothing fails naming the perturbation.
+- **Security**: none — generated data.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none.
+- **Tests**: `RiskPolicyBatteryTest` (two JVMs through `SecondJvm`), `RiskBatteryOraclesTest` (the oracles against
+  hand-computed cases), `RiskBatteryCoverageTest`, `RiskBatteryFlipTest`.
+- **Probe**: change one band edge in a fixture → the digest and the flip test red naming the version; clamp the score
+  at 999 → the oracle red.
+- **Acceptance criteria**: ≥ 10,000 subjects replayed byte-identically in two JVMs; every perturbation flips and names
+  its row; the coverage floors met; the fingerprint committed.
+- **Definition of done**: `DOD-TEST`. **Risk**: Low. **Cx**: M.
+
+**P13-DOC-001 — The Phase 13 exit review** — `PLANNED`
+- **Objective**: close Phase 13 against its gate (`PHASE_GATES.md` §5 Phase 13, extended by the transition), with the
+  documents made true against the code — the six original bullets made measurable and the per-area blocks for risk
+  evaluation, policy versioning, decision explainability, fraud workflows, AML monitoring, alert deduplication, case
+  management, domain integrations, multi-instance correctness, idempotency and recovery, security and privacy,
+  auditability, observability, testing and documentation, each naming its test and its task.
+- **Bounded context**: all of the phase.
+- **Dependencies**: `P13-TST-001`, `P13-TST-002` (and with them every Phase 13 task; `-025` if built, else its
+  deferral recorded with its owner).
+- **Scope**: **first, the owner-authorised database pass** (C5 — the gate's agenda item, not a task: every Phase 13
+  database suite run once on the final tree, the findings repaired before the review as the Phase 12 pass's
+  precedent); then the review — the gate read clause by clause; the independent read-only audits (completion
+  criteria, financial correctness as it applies to a phase that moves no money — the seams' consumers' censuses,
+  multi-instance, architecture and reuse, security, privacy and tipping-off, test meaningfulness, the open items); the
+  flip — a `Phase: 13` invariant's register rows withheld → `MutationDemonstrationTest` red naming exactly it, restored
+  byte-identical; ADR-0107…0112 to `Accepted` after correction; `PHASE_13_PLAN.md`'s errata; C1–C10 read against the
+  code and listed for ratification; `RISK_LIFECYCLES.md`, `FINANCIAL_INVARIANTS.md`, `DISTRIBUTED_EXECUTION.md`,
+  `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `DATA_CLASSIFICATION.md`, `MODULE_ARCHITECTURE.md`, `OPERATIONS_RUNBOOK.md`
+  §9 made true; the debt rows (AML retention — M3's trigger; the EU verification items of §12.9; the owed probes
+  counted in `MUTATION_TESTING.md` §3); the owner list; `CURRENT_STATE.md`; the phase's status line.
+- **Out of scope**: Phase 14.
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: none.
+- **Events**: none.
+- **Policy/model versioning**: every pinned version's immutability re-audited.
+- **Financial impact**: none.
+- **Invariants**: every `Phase: 13` invariant's register rows and tests read.
+- **Distributed-system concerns**: re-audited — every §7.4 row's test exists, ran and is meaningful.
+- **Idempotency**: re-audited.
+- **Consistency**: re-audited.
+- **Atomicity**: re-audited.
+- **Failure handling**: re-audited.
+- **Security**: re-audited — the role disjointness, four eyes, self-dealing, tipping-off, the narrative's permission.
+- **Audit**: re-audited.
+- **Observability**: re-audited.
+- **Reconciliation implications**: re-audited — the proofs and censuses.
+- **Tests**: fresh targeted tiers; the document guards; the database pass's results recorded.
+- **Probe**: the flip — a `Phase: 13` invariant's register rows withheld → `MutationDemonstrationTest` red naming
+  exactly it, restored byte-identical.
+- **Acceptance criteria**: the gate holds, counted.
+- **Definition of done**: `DOD-DOC`. **Risk**: Medium. **Cx**: L.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -23015,11 +24986,16 @@ items above — with the revolving credit line and lending capital added by the 
 the same way at the Phase 11 → 12 transition, 2026-10-16: eligibility at checkout, instalment plan, agreement
 lifecycle, merchant financing, merchant settlement, customer obligation, refund and return adjustment, late fees, and
 BNPL accounting and reconciliation are Phase 12's twenty-nine items above — with pay-in-N and disputes added by the
-owner's decisions.)*
+owner's decisions. The Phase 13 row went the same way at the Phase 12 → 13 transition, 2026-10-22: signal ingestion,
+versioned rules engine, synchronous risk decisioning, fail-safe policy, limits and velocity, device and behavioural
+signals, account-takeover detection, AML transaction monitoring, alerting, case management and manual override
+controls are Phase 13's twenty-eight items above, in the section "Phase 13 — Risk, Fraud and AML" (initialised
+2026-10-22, 28 items) — with the regulatory report artefact, rescreening on screening-list updates and the collections
+case added by the owner's decisions.)*
 
 | Phase | Epics |
 |-------|-------|
-| 13 Risk, Fraud, AML | Signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls |
+| 13 Risk, Fraud, AML | Elaborated to the section "Phase 13 — Risk, Fraud and AML" above by the Phase 12 → 13 transition — initialised 2026-10-22, 28 items (`P13-TSK-001`…`-025`, `P13-TST-001`, `P13-TST-002`, `P13-DOC-001`) across M13.1–M13.9, `P13-TSK-001` marked `READY`; the epic wording (signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls) superseded by the task decomposition |
 | 14 Accounting and Reporting | GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility |
 | 15 Production Hardening | Threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion |
 | 16 Scale and DR | Load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation |

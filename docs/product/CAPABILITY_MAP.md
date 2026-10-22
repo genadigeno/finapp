@@ -207,13 +207,47 @@ and proven by `P12-TST-001` (the BNPL storm) and `P12-TST-002` (the battery); AD
 (2026-10-22, `P12-DOC-001`, each read against the code and corrected first) *(P12-DOC-001, 2026-10-22: this read "stay
 `Proposed` until the review's verdict" until the ADRs were accepted)*. This note read "to be marked delivered by the Phase 12 exit review, `P12-DOC-001`" until then. **Confirmed after repair by the Phase 12 → 13 transition's completion gate, 2026-10-22** (`reviews/PHASE_12_TO_13_TRANSITION.md`): a refund-scoped merchant key needs `PAYMENT_REFUND` beside `MERCHANT_ADMINISTER` and is refused on a purchase of its issuer's own party, and a dispute ACCEPT needs the `BNPL_REFUND` scope; a withdrawn dispute never moves the days-past-due clock and starts a 30-day cooldown on its purchase; contested disputes are announced, gauged, alerted after seven days and queued for operators (`GET /v1/operator/bnpl-disputes`); a dispute refund that cannot post is alerted and a wallet cannot close beneath an open dispute; the terms pin is never "neither" during an activation; a repayment reversal is never valued before its repayment and releases a late fee a refund released; the BNPL fee is pinned on the database clock; merchant BNPL reasons are screened for card and account numbers; the delinquency bounds are the ones the labels name - bnpl `V018`, `V019`, merchant `V012`, lending `V031`.)*
 
-## Risk
-- Fraud
-- Transaction risk
-- Account takeover
-- AML monitoring
-- Limits / velocity
-- Manual review
+## Risk *(Phase 13, planned at the Phase 12 → 13 transition, 2026-10-22 — `PHASE_13_PLAN.md`)*
+- Risk evaluation at the seams — planned: every money-moving command judged inside its owner's transaction through the
+  seams Phases 4, 9 and 10 reserved (`TransferLimitCheck`, `TransferRiskDecision`, `CrossBorderLimitCheck`,
+  `CrossBorderRiskDecision`, `CreditRiskSignal` version 2) and the two added for the wallet withdrawal (with a `HELD`
+  state) and the checkout payment confirmation; one channel-neutral `risk` capability that owns the judgement and none
+  of the money; a decision `ALLOW | CHALLENGE | DENY | HOLD | REVIEW` with reason codes; the fail-safe a recorded
+  decision per operation and value band, never a silent default; manual override under four eyes
+- Policy versioning — planned: rules as data of closed kinds, weights, score bands and fail-safe bands per operation,
+  versioned, four-eyes activated, one `ACTIVE` per operation; a deterministic engine (`RISK_ENGINE_V1`); every assessment
+  sealed with its inputs and the versions it pinned, replayable `IDENTICAL`
+- Limits / velocity — planned: durable windows (`H1`, `D1`, `D7`, `D30`) per party, account, beneficiary, device and
+  merchant, upserted in the judged command's own transaction and proven against the monitored transactions; no cache
+  and no counter outside the money transaction
+- Customer risk profile — planned: a versioned, append-only rating per party (`LOW | MEDIUM | HIGH | PROHIBITED`)
+  recomputed from signals and case outcomes; credit consumes it through its seam and computes no risk score
+- Fraud detection — planned: account takeover (a credential change or recovery followed by a new payee, a new device and
+  a withdrawal - held and cased) and payment, merchant and BNPL abuse (chargeback and refund ratios, multi-application,
+  many checkouts in one session) as rule kinds with parameters, synchronous and retrospective
+- AML transaction monitoring — planned: a leaderless sweep over the ledger's own journal classifying every movement into
+  a monitored transaction; monitoring rules per subject over durable aggregates (structuring, rapid in-out,
+  dormant-then-active, round amounts, high-risk corridors); alerts born once per (subject, rule, window); reprocessing
+  idempotent from any watermark
+- Manual review (cases) — planned: one case open per (subject, kind) for fraud, account takeover, merchant abuse, AML
+  and - a thin slice, cut candidate (C3) - collections; taken, worked by append-only investigator actions, escalated,
+  disposed under four eyes; concurrent updates by revision; queues oldest first; the tipping-off control - no AML alert,
+  case or report reaches a customer or merchant surface
+- Downstream actions — planned: identity suspension, reinstatement and session revocation, account and merchant
+  suspension, a beneficiary block, a held withdrawal's release or denial, a party's rescreening - each a keyed command
+  through the owning domain's existing door, proposed and approved under four eyes, dispatched by a leaderless schedule;
+  risk never writes another domain's row and never reverses a transaction
+- Regulatory report artefact — planned: a filing distinct from the investigation, drafted from a confirmed-suspicious
+  case, approved by a second person, filed through a port (simulated; the jurisdiction a field), immutable once filed
+- Rescreening — planned: a sanctions or PEP list version recorded and activated by an operator enqueues the rescreening
+  of every active party through kyc's existing screening ports; kyc stays the screening owner (Refinement 3)
+- **Production constraint** — planned: production evaluates nothing until a risk policy version is activated under
+  four eyes and `OPERATIONS_RUNBOOK.md` §9's activation gate is passed; until then every seam answers `ALLOW` with the
+  reason code `NO_POLICY_ACTIVE`, recorded; the filing adapter is simulated and the reference jurisdiction neutral (C4)
+
+*(Marked "planned" by the Phase 12 → 13 transition, 2026-10-22 (`PHASE_13_PLAN.md`; ADR-0107…0112 `Proposed`); to be
+marked delivered by the Phase 13 exit review, `P13-DOC-001`. This section read "Fraud / Transaction risk / Account
+takeover / AML monitoring / Limits / velocity / Manual review", unannotated, until then.)*
 
 ## Financial Operations
 - Settlement

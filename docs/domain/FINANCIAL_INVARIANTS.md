@@ -350,6 +350,17 @@ state, not to cache alone.
 **Verify:** Concurrency tests; counter-store loss test.
 **Phase:** 13
 
+*(The Phase 12 → 13 transition, 2026-10-22: catalogued at initiation and subjectless until now, this
+entry is Phase 13's and keeps its words. Its subject is `INV-RSK-03`'s: every velocity figure a
+decision reads is a `velocity_window` row upserted in the judged command's own transaction after the
+caller's lock, one statement per window in sorted key order, the window start from the database
+clock — there is no counter store to lose, and a window is derivable from the monitored transactions
+by `VelocityProof`. Its "concurrency tests" are `VelocityWindowDatabaseTest#tenMovementsCountTen` and
+`#aWindowIsCutByTheDatabaseClock` and its "counter-store loss test" the proof's planted drift, all
+`P13-TSK-006`'s and `P13-TSK-023`'s, with the transfer and cross-border limit seams' existing tests
+unchanged. The demonstration `MUTATION_TESTING.md` §2 will demand of this entry at Phase 13's
+`COMPLETE` is the same as `INV-RSK-03`'s.)*
+
 ---
 
 # Lifecycle and State — `INV-LIFE`
@@ -2844,6 +2855,386 @@ the decided design, corrected by the tasks that build it.*
 
 ---
 
+# Risk, Fraud and AML — `INV-RSK`
+
+### INV-RSK-01 — Every judged command has exactly one sealed assessment, replayable `IDENTICAL`
+**Statement:** Every money-moving command an operation judges (`TRANSFER`, `WITHDRAWAL`,
+`CARD_PAYMENT`, `WALLET_PAYMENT`, `CROSS_BORDER`) and every `CREDIT_SIGNAL` read has exactly one risk
+assessment, inserted in the judged command's own transaction after the caller's locks (T-eval,
+positions (R1)–(R3)) and sealed at insert: the operation, the subject refs, the judged amount and
+currency, every input read, the policy version and the engine version, every rule hit with its
+contribution, the score, the decision, the ordered reason codes, whether the fail-safe applied, and
+the latency. Under one command ref replayed, under ten retries, across instances, there is one
+assessment; a refused command's assessment commits with the refusal, and a rolled-back command
+leaves none. Re-evaluating a sealed assessment from its own stored inputs under its own pinned
+versions reproduces the same hits, score, decision and reason codes (`IDENTICAL`) in any JVM; a
+difference is `DIVERGED`, reported and never repaired in place. T-advise (the door's step-up advice)
+writes no assessment and is never authoritative.
+**Why:** A judgement that cannot be shown later is not a control: a regulator, an investigator and a
+customer dispute each ask what the platform knew and decided at the moment the money moved. Two
+assessments for one command are two answers; an assessment outside the command's transaction can
+describe a movement that never committed, or miss one that did. Replay is how the sealed record is
+proven to be what the engine actually did (`INV-CRD-01`'s rule, applied to risk).
+**Enforce:** `DB-CONSTRAINT` (`risk_assessment UNIQUE (operation, command_ref)`; `risk_assessment`,
+`risk_assessment_input`, `risk_rule_hit` and `risk_reason` `INSERT`-only; `engine_version NOT NULL`;
+`policy_version_id NOT NULL` except under `NO_POLICY_ACTIVE`) + `DB-PRIVILEGE` (schema `risk`
+`REVOKE ALL FROM PUBLIC`; the application role holds `SELECT, INSERT` on the assessment tables, no
+`UPDATE`, and no role holds `DELETE`) + `DOMAIN` (T-eval runs on the caller's connection after the
+caller's locks — `TransferExecution` after `lockBothInFixedOrder`, `Withdrawals` under the wallet
+lock after the hold, `PaymentConfirmation.confirm` in Tx1 under the intent, `CrossBorderAuthorization`
+in its first transaction; the engine `RISK_ENGINE_V1` is pure and evaluates rules in the version's
+declared order; the replay door re-runs the engine over the sealed inputs only, never over live
+tables).
+**Verify:** `RiskEvaluationDatabaseTest#tenRetriesOneAssessment` (`P13-TSK-004`); the replay door
+`POST /v1/operator/risk/assessments/{id}/replay` answering `IDENTICAL` for every assessment, audited
+`risk.Replayed` (`P13-TSK-004`, `P13-TSK-023`); the battery `P13-TST-002` — ≥ 10,000 generated
+subjects and movement sequences replayed through `RISK_ENGINE_V1` in two JVMs, byte-identical, a
+perturbed input, rule parameter or policy version flipping the verdict and naming its row; scenario
+13 — the profile changes after a credit decision is sealed and the decision replays `IDENTICAL`
+(`P13-TSK-007`); the storm's census at every round, assessments = judged commands (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-02 — A risk decision never moves money, holds money or writes another domain's row
+**Statement:** The `risk` module posts no journal entry, places and releases no ledger hold, and
+inserts, updates or deletes no row outside schema `risk`. A decision changes a money movement only
+because the owning domain consulted a seam in its own transaction and committed its own outcome
+under its own machine: `transfers` `FAILED(RISK_REFUSED)`; payments' withdrawal `HELD` with the hold
+payments placed kept, or `FAILED(RISK_REFUSED)` with that hold released by payments in the same
+transaction; the payment intent's refused-by-risk decision row (`PaymentFailureReason.RISK_REFUSED`);
+crossborder's `422 crossborder.RiskRefused` with nothing consumed. Every downstream effect of a case
+or an override — `SUSPEND_IDENTITY`, `REINSTATE_IDENTITY`, `REVOKE_SESSIONS`, `SUSPEND_ACCOUNT`,
+`REINSTATE_ACCOUNT`, `SUSPEND_MERCHANT`, `BLOCK_BENEFICIARY`, `RELEASE_HELD_WITHDRAWAL`,
+`DENY_HELD_WITHDRAWAL`, `RESCREEN_PARTY` — is a risk action: a keyed command (`risk.action:<id>`)
+through the owning domain's existing door, dispatched in its own transaction (T-act) on that domain's
+lock order with no risk row held but (R6), its outcome recorded on both sides; a domain's refusal (an
+identity already suspended) is a recorded outcome, never a retry. Risk never reverses a transaction;
+a case may only recommend one (an investigator action of kind `REFERRED`).
+**Why:** A control that can move money is a second money-mover whose postings nobody reconciles and
+whose defects are financial. The seams were built in Phase 4 as the caller's own decision point so
+that the money transaction keeps one writer; a `risk` row written into `payments`, or a hold released
+by `risk`, would make the withdrawal's lifecycle explainable only by reading two modules
+(`INV-LED-04`, `INV-BAL-04`, `INV-LIFE-01`).
+**Enforce:** `STATIC` (`RiskModuleIsolationTest`: `risk → platform, sharedkernel` only — no `ledger`
+edge, no business module, no `app`; every sibling's isolation test refusing `risk`;
+`NoFloatingPointMoneyRulesTest` over `risk`) + `DB-PRIVILEGE` (schema `risk` `REVOKE ALL FROM
+PUBLIC`; the application role's grants on `risk` confer nothing on another schema; no money column in
+`risk` is a balance — `amount_minor` + `currency` appear only as the judged amount on `INSERT`-only
+rows and as window sums on the velocity rows) + `DOMAIN` (every seam adapter in `app` —
+`RiskTransferLimitCheck`, `RiskTransferRiskDecision`, `RiskWithdrawalRiskDecision`,
+`RiskPaymentRiskDecision`, `RiskCrossBorderLimitCheck`, `RiskCrossBorderRiskDecision` — maps the
+decision to the consumer's two-value verdict and the caller commits; every action's effect is a port
+`risk` declares and `app` implements over the owning domain's existing command; the Phase 13 lock
+order takes risk rows last inside a caller's transaction or first in a risk-only one that takes no
+money row).
+**Verify:** `RiskModuleIsolationTest` refusing a planted edge to `ledger`, to a business module and to
+`app` (`P13-TSK-001`); a schema sweep that no `risk` table carries a balance column (`P13-TSK-001`,
+`P13-TSK-006`); scenario 7 — a downstream payment operation fails after a decision, the decision
+stands, the domain's outcome is recorded, nothing is retried by risk (`P13-TSK-010`, `P13-TSK-017`);
+`RiskActionDatabaseTest#aReDriveReplays` — a duplicated downstream command replays on the owning
+domain's key (`P13-TSK-017`); `WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`
+(`P13-TSK-012`); the storm's census at every round — every refusal left the ledger as it was, every
+`HELD` withdrawal holds exactly its one hold, no `FAILED` withdrawal holds any (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-03 — A velocity window is a durable row written in the judged command's transaction, equal to what it counts
+**Statement:** Every velocity figure a decision reads is a row of `velocity_window`, keyed by
+(dimension, subject ref, window kind, window start) — dimensions party, source account, destination
+account or beneficiary, device, merchant; windows `H1`, `D1`, `D7`, `D30` — with the window start
+computed from `clock_timestamp()` read after the caller's lock, and holding a count and a sum in one
+currency. T-eval reads the current figures, evaluates, and — only when the decision permits the
+movement — upserts the increments in the same transaction, each window one statement `INSERT … ON
+CONFLICT DO UPDATE … RETURNING` in sorted key order (position (R2)), so a committed movement counts
+exactly once, a refused or rolled-back movement counts for nothing, and ten concurrent movements of
+one subject count ten. No window lives in Redis, a cache or process memory. A window's count and sum
+equal the monitored transactions it covers, recomputed by `VelocityProof`; a difference is an alert,
+never self-corrected.
+**Why:** A velocity limit enforced from a counter that can be lost, lag or be passed twice is not a
+limit (`INV-CON-03`; the Phase 4 seam contract: an authoritative check is anchored to durable state
+read in-lock). A counter outside the money transaction counts movements that never committed or
+misses ones that did; a counter incremented before the decision counts a refusal as spend.
+Structuring and account-takeover detection both rest on these figures being exactly the money's.
+**Enforce:** `DB-CONSTRAINT` (primary key (dimension, subject_ref, window_kind, window_start); a
+`CHECK` that a window's sum never decreases within a window; `currency NOT NULL`) + `DB-PRIVILEGE`
+(the velocity rows' only `UPDATE` is the one-statement upsert; no `DELETE`) + `DOMAIN` (the upsert
+runs in T-eval after the caller's locks, in sorted key order; the window start from the database
+clock read after the lock; the increment skipped for `DENY`, `REVIEW` and an unsatisfied
+`CHALLENGE`; nothing in `risk` reads a counter from any store but these rows).
+**Verify:** `VelocityWindowDatabaseTest#tenMovementsCountTen` and `#aWindowIsCutByTheDatabaseClock`
+(two instances, clocks ±5 s) (`P13-TSK-006`); scenario 14 — ten concurrent movements of one subject
+count ten and a refused movement zero (`P13-TSK-006`, `P13-TST-001`); `VelocityProof` recomputing
+every live window from the monitored transactions, gauged `finapp.risk.velocity.proof{verdict}` and
+alerting on any failure, a planted drift caught (`P13-TSK-023`); the storm's census at every round,
+windows = monitored sums (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-04 — Every decision is explainable, and the fail-safe is a recorded decision, never a silent default
+**Statement:** Every assessment records the policy version it was evaluated under, the engine version
+(`RISK_ENGINE_V1`), every rule that fired with its contribution to the score, and the ordered reason
+codes from a closed vocabulary; the score is Σ rule contributions clamped to [0, 1000], never summed
+with a credit score. When the evaluation is unavailable — no `ACTIVE` policy for the operation, the
+pin's read failing, a rule evaluation throwing, or the statement timeout — the answer is the policy's
+fail-safe band for the judged amount, or with no policy at all the compiled `ALLOW`, and it is always
+recorded as an assessment with the reason code `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE`, its decision
+`ALLOW` or `DENY` per the band (C1), and the alert `RiskEvaluationUnavailable` raised; a fail-open is
+a visible, counted event, never silence. The engine is deterministic; when rules disagree the
+precedence is `DENY` > `HOLD` > `REVIEW` > `CHALLENGE` > `ALLOW`, and a hard rule's decision beats a
+score band's.
+**Why:** A decision without its reasons cannot be explained to a customer's dispute, an investigator,
+an auditor or a regulator, and cannot be reproduced after the policy changes (`INV-HIST-04`,
+`INV-CRD-02`). A fail-safe that is a silent default is the worst of both: money moves or stops with
+no record that a control ran and failed, so the outage is discovered by the fraud it let through or
+the customers it refused (`DELIVERY_PLAN.md` §Phase 13's unresolved #11, answered by ADR-0108).
+**Enforce:** `DB-CONSTRAINT` (`risk_assessment.engine_version NOT NULL`; `policy_version_id NOT NULL`
+unless the fail-safe reason is `NO_POLICY_ACTIVE`, a `CHECK`; `risk_reason UNIQUE (assessment_id,
+position)`; `risk_rule_hit.contribution NOT NULL`; the score `CHECK`ed to 0–1000; decisions and reason
+codes `CHECK`ed to their closed vocabularies) + `DOMAIN` (the fail-safe bands are a field of the
+policy version, so the owner changes them by activation and never by code; a band mapping to a
+decision the operation does not admit is refused at the policy door, `422 risk.PolicyInvalid`; the
+250 ms `SET LOCAL statement_timeout` on `risk`'s reads runs behind a savepoint, so the caller's
+transaction survives the timeout and commits the band's outcome; the risk score and credit's score
+are distinct types, `INV-CRD-04`) + `STATIC` (`NoFloatingPointMoneyRulesTest` over `risk`;
+`MetricNames.ALLOWED_TAG_KEYS` admitting `rule` and no decision-shaped key, C9).
+**Verify:** scenario 9 — no policy, and a timeout, each record the fail-safe decision, fire the alert
+and let the money movement commit the band's outcome (`P13-TSK-004`, `P13-TSK-008`); the replay door
+`IDENTICAL` from the sealed hits and reasons (`P13-TSK-004`); the battery `P13-TST-002`;
+`finapp.risk.evaluation.unavailable{operation}` and `finapp.risk.policy.active{operation,policy_version}`
+with their rules in `infra/prometheus/rules/risk.yml` firing in a test that breaks the condition and
+only then (`P13-TSK-024`); the storm's census at every round — no assessment without an engine
+version, none without a policy version except `NO_POLICY_ACTIVE`, every fail-safe assessment counted
+by its alert (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-05 — A policy version is immutable once decided, only an `ACTIVE` one is evaluated, activation is four eyes, and the pin never answers "neither"
+**Statement:** A risk policy version — its rules, weights, score bands, fail-safe bands, challenge
+assurance, override threshold and effective-from — is immutable from the moment it is decided
+(`ACTIVE` or `REJECTED`); a change is a new version. For each operation at most one version is
+`ACTIVE`; T-eval evaluates only the `ACTIVE` version it pins `FOR SHARE` (position (R1)), and a
+successor's activation retires its predecessor in the same transaction, so an evaluation racing an
+activation pins exactly one of the two and never reads "neither": when the pin's first read is empty
+it takes `pg_advisory_xact_lock_shared(13, hashtext(operation))` and reads once more. Activation is
+a second person's act under `RISK_POLICY_ADMINISTER` with a `MULTI_FACTOR` session; the proposer
+never activates; every rule parameter is validated at the door against its `RuleKind`'s schema.
+Production evaluates nothing until a version is activated and the runbook's activation gate is
+passed.
+**Why:** A rule edited in place rewrites the meaning of every decision already taken under it and
+defeats replay (`INV-HIST-04`, `INV-CRD-05`); two `ACTIVE` versions are two policies, and "neither"
+during an activation is a window in which every money movement falls to the fail-safe — the Phase
+12 → 13 gate's A3-I1 found exactly that in BNPL's terms pin. One person activating a policy alone can
+open the platform to fraud or close it to every customer with no second judgement (`INV-AUD-04`).
+**Enforce:** `DB-CONSTRAINT` (partial unique one `ACTIVE` per operation; the status `CHECK`; the
+four-eyes `CHECK` `activated_by <> proposed_by`; `risk_rule` rows keyed to their version and
+`INSERT`-only; the conditional edges `PROPOSED → ACTIVE | REJECTED`, `ACTIVE → RETIRED`) +
+`DB-PRIVILEGE` (conditional `UPDATE` only of status and decision columns on the version row; no
+`UPDATE` of a rule row; no `DELETE`) + `DOMAIN` (T-pol takes advisory namespace **13**
+`hashtext(operation)` exclusively, retires and activates in one transaction; the pin `FOR SHARE` and
+the shared advisory re-read — the gate's A3-I1 rule applied forward; `403 risk.SelfApprovalRefused`
+recorded `FAILED`; `422 risk.PolicyInvalid` for a parameter outside its kind's schema or a band
+mapping to a decision the operation does not admit) + `PROCESS` (`OPERATIONS_RUNBOOK.md` §9's
+activation gate).
+**Verify:** `RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor` (`P13-TSK-002`);
+scenario 3 — a version activated while ten evaluations run, every assessment pinning exactly one
+version, none "neither", the activation never waiting on a money row (`P13-TSK-002`, `P13-TSK-008`,
+`P13-TST-001`); scenario 15's activation arm — a self-activation refused and recorded `FAILED`
+(`P13-TSK-002`); a raw-SQL `UPDATE` of a decided version's rule row refused for every role
+(`P13-TSK-002`); the battery replaying every version (`P13-TST-002`);
+`finapp.risk.policy.active{operation,policy_version}` and its rule "no active policy where judging is
+expected" (`P13-TSK-024`).
+**Phase:** 13
+
+### INV-RSK-06 — An alert is born once, a case is open at most once per subject and kind, and a replay creates no second alert, case, action or filing
+**Statement:** An alert is born once per (subject ref, rule code, window start), by a monitoring rule
+in the sweep or a fraud rule in T-eval, on any number of instances; a case of one kind is open at
+most once per subject, and a new alert for that subject and kind folds into the open case rather than
+opening another; a risk action is live at most once per (case, kind, target); a regulatory report has
+at most one open draft per case; a signal is born once per source event id. The same event delivered
+three times, delayed and reordered, a reprocessing from an earlier watermark, and a sweep re-run over
+history create no second signal, alert, case, action or filing. A disposed case never re-opens; a
+later alert opens a new case that references it.
+**Why:** Alert floods bury the one alert that matters and let an investigator close the wrong one;
+two cases for one subject split the evidence and the judgement; a second action suspends twice or
+releases twice; a second filing reports one suspicion to the authority twice. Events are hints and
+duplicates are expected (`INV-EVT-04`, `INV-IDEM-04`): correctness comes from the rows' own
+arbiters, never from delivery.
+**Enforce:** `DB-CONSTRAINT` (`risk_alert UNIQUE (subject_ref, rule_code, window_start)` with `ON
+CONFLICT DO NOTHING`; `risk_case` partial unique one open per (subject ref, kind); `risk_action
+UNIQUE (case_id, kind, target_ref)` over live actions; `regulatory_report UNIQUE (case_id)` over open
+drafts; `risk_signal UNIQUE (source_event_id)`; `monitored_transaction UNIQUE (journal_entry_id)`;
+no `DELETE` on any of them) + `DOMAIN` (inbox dedupe per consumer `risk.<component>`; the case row
+`FOR UPDATE` (R4) and alert rows (R5) under it; a disposed case's terminal status refusing every
+edge; the new case's reference to the disposed one).
+**Verify:** `AlertDatabaseTest#twoInstancesRaiseOnce` (`P13-TSK-015`);
+`CaseDatabaseTest#tenAlertsOneOpenCase` and `#aLateEventAfterDispositionOpensANewCase`
+(`P13-TSK-016`); `SignalIntakeDatabaseTest#theSameEventTwiceRecordsOnce` (`P13-TSK-005`);
+`MonitoringIntakeDatabaseTest#reprocessingCreatesNothingNew` (`P13-TSK-019`); scenarios 1, 2, 6, 8
+and 12 (the structuring sequence alerted once per window, the case folding every alert) in their
+tasks and in the storm; each born-once arbiter probed alone with the lock or conditional above it
+bypassed (`MUTATION_TESTING.md` §2); the storm's census at every round — alerts born once, cases one
+open per subject and kind (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-07 — Every consequential risk act is two persons' acts, and a refused self-approval is recorded `FAILED`
+**Statement:** A disposition that confirms fraud or suspicion (`CONFIRMED_FRAUD`,
+`CONFIRMED_SUSPICIOUS`) or that issues an action; an override of a `DENY`, `HOLD` or `REVIEW`
+decision at or above the threshold (C7: the judged amount at or above EUR 1,000, or the decision
+`DENY`; below it one holder with a reason, audited); a policy activation; a regulatory report's
+approval; and every downstream risk action are each proposed by one holder and approved by a
+different one. The proposer's own approval is refused at the domain and by the row's `CHECK`, each
+alone, and the refusal is audited `FAILED` (`risk.SelfApprovalRefused`). An override carries a reason
+code and text and never edits the decision; an `ALLOW` is never overridden after the fact. No holder
+reads or works a case, approves an override or files a report on their own party's subject, and an
+operator with no placeable party is refused (`risk.SelfDealingRefused`, audited `FAILED`). Every such
+act requires a `MULTI_FACTOR` operator session.
+**Why:** The override is the one door through which a person can let refused money move; the
+disposition is the door through which a person can suspend a customer or report them to an
+authority; the activation is the door that sets the rules for every movement. One person at any of
+these is a single point of fraud, coercion or error, and a self-approval that fails silently is
+indistinguishable from one that never happened (`INV-AUD-04`: four eyes are two persons;
+`INV-AUD-01`).
+**Enforce:** `DB-CONSTRAINT` (four-eyes `CHECK`s `approved_by <> proposed_by` on
+`decision_override`, the disposition rows of `risk_case_action`, `risk_action`, `regulatory_report`
+and `risk_policy_version`; `decision_override UNIQUE (assessment_id)` over live proposals;
+`reason_code NOT NULL` on an override and a disposition) + `DOMAIN` (the approval edge compares
+actors in the aggregate before the write; `risk.ReasonRequired`; the self-dealing check in every
+case, override and report door against the actor's placeable party, fail closed — the gate's A7-6
+applied forward; the `MULTI_FACTOR` step-up; `RISK_CASE_APPROVE`, `RISK_OVERRIDE`,
+`RISK_POLICY_ADMINISTER` and `AML_REPORT_APPROVE` grants pairwise-disjoint from every existing role,
+`INV-AUD-03`) + `PROCESS` (audit `risk.OverrideProposed/Approved/Rejected`,
+`risk.DispositionProposed/Approved/Rejected`, `risk.ActionProposed/Approved/Rejected`,
+`risk.PolicyActivated`, `risk.ReportApproved`, `risk.SelfApprovalRefused`, `risk.SelfDealingRefused`,
+each with actor, time, target, reason, correlation and outcome in the act's transaction).
+**Verify:** scenario 15 — an override, a disposition and a policy activation each refused to their
+proposer and recorded `FAILED` (`P13-TSK-012`, `P13-TSK-016`, `P13-TSK-002`); each four-eyes `CHECK`
+proven alone by a raw-SQL writer with the domain bypassed (`MUTATION_TESTING.md` §2);
+`RiskActionDatabaseTest#tenApproversOneDispatch` (`P13-TSK-017`); scenario 10 — a held withdrawal
+released by an approved override dispatched once, denied with the hold released once
+(`P13-TSK-012`); the self-dealing refusal on the operator's own party through the API, audited
+`FAILED` (`P13-TSK-018`); `RoleNameTest`'s exact grants and `RoutePermissionRegisterTest`'s negatives
+(`P13-TSK-001`, `P13-TSK-018`); `finapp.risk.override{outcome}` (`P13-TSK-024`).
+**Phase:** 13
+
+### INV-RSK-08 — Nothing of an alert, case, report or investigation reaches a customer or merchant surface, a log, an event payload or a metric tag
+**Statement:** No customer- or merchant-facing route reads any `risk` table. A customer's or
+merchant's answer to a judged movement is the operation's generic outcome — `transfers.RISK_REFUSED`
+through the existing error, a withdrawal reading `HELD` as a status word with no reason, a payment
+intent's refused decision, crossborder's existing refusal — and never a score, a rule, a reason
+text, an alert, a case, a report or a disposition. No risk event carries a reason text, a score, a
+rule name, a note or any PII — ids, codes and statuses only; `RegulatoryReportFiled` carries the
+report id and the jurisdiction, never the subject. Logs carry ids and counts; metric tags are bounded
+vocabularies (`rule` is a policy's bounded rule codes, C9); spans carry no attributes. Evidence is
+held as references (signal, assessment and journal entry ids) resolved through audited reads, never
+copied; notes are bounded and screened by `InstrumentShapes`; the report narrative is
+`RESTRICTED-PII`, readable only by `AML_REPORT_*` holders. Whether an AML case exists is never
+derivable from a customer response (a timing difference being outside this phase's claims).
+**Why:** Tipping off a subject that they are under investigation or reported is an offence in every
+AML regime the platform may adopt (FATF Recommendation 21; the AMLR's tipping-off article as
+researched in `PHASE_13_PLAN.md` §12.9) and destroys the investigation; a reason text on a refusal
+teaches a fraudster the rule to step around; a score in a metric tag or a note in a log is the same
+disclosure by another channel (`INV-AUD-02`).
+**Enforce:** `STATIC` (`NoCustomerSurfaceReadsRiskTest`: no customer or merchant route depends on
+`risk` or reads a `risk` table; `ColumnClassificationTest` with every `risk` column classified —
+assessment inputs and rule hits `CONFIDENTIAL`, signal attributes at their source's level, case notes
+and evidence refs `CONFIDENTIAL`, the narrative `RESTRICTED-PII`, nothing `INTERNAL` but identifiers
+and timestamps; the metric tag register; the event payload tests) + `DB-PRIVILEGE` (the narrative
+read only through the `AML_REPORT_*` doors) + `DOMAIN` (the seam adapters map the decision to the
+consumer's two-value verdict and the caller's reserved reason; the customer withdrawal read answers
+`HELD` only; `InstrumentShapes` over notes; the queue and read doors under `RISK_INVESTIGATE`,
+audited `risk.AssessmentRead`, `risk.ProfileRead`, `risk.ReportRead`; a device description hashed at
+the source and never stored).
+**Verify:** `NoCustomerSurfaceReadsRiskTest` refusing a planted customer-route read (`P13-TSK-001`,
+`P13-TSK-018`); the test that no customer or merchant response differs with a case open against the
+same subject (`P13-TSK-018`); negative tests that the transfer, withdrawal, payment and cross-border
+refusals and the `HELD` read carry no reason, score, rule, alert or case (`P13-TSK-008`…`-011`);
+every `RiskDecisionMade`, `AlertRaised`, `CaseOpened` and `RegulatoryReportFiled` payload asserted to
+carry ids, codes and statuses only (`P13-TSK-004`, `-015`, `-016`, `-021`); the needle walk extended
+to risk's doors — no score, reason text, note, party or amount in a log line, metric tag, span
+attribute or exception message (`P13-TST-001`); the storm's census at every round, no customer route
+touching `risk` (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
+**Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through
+`MonitoredLedger` in the journal's own sequence from a durable watermark, and records exactly one
+monitored transaction per journal entry, classified by the entry's posting-key namespace
+(`transfer:`, `payments.`, `merchant-payout:`, `crossborder.`, `lending.`, `bnpl.`…) into its kind,
+subject refs, counterparties, amount and value date; an entry of a namespace the register does not
+know is recorded `UNCLASSIFIED` and alerted, so nothing passes unseen. The monitoring record never
+diverges from the journal: a census proves that every journal entry since the floor has its one
+monitored transaction carrying the entry's amount and that no monitored transaction exists without
+its entry. Ten sweepers over one watermark ingest once; a sweeper that crashes mid-claim lapses its
+permit and the next claim re-reads from the committed watermark; reprocessing from any earlier
+watermark — after a policy change or an incident, ordered under `RISK_POLICY_ADMINISTER` and audited
+— creates no new monitored transaction, alert, case or action. Events only pull the watermark's
+permit forward; the sweep reads rows.
+**Why:** AML monitoring that reads events watches a copy that may be late, duplicated or missing
+(`INV-EVT-02`, `INV-BAL-05`); a movement the monitor never saw is a suspicion never raised, and one
+it saw twice is a structuring pattern it invented. The journal is the only record from which "every
+movement was watched" can be proven, and reprocessing is how a corrected policy is applied to
+history without inventing a second history.
+**Enforce:** `DB-CONSTRAINT` (`monitored_transaction UNIQUE (journal_entry_id)`, `INSERT`-only;
+`kind` `CHECK`ed to the closed vocabulary with `UNCLASSIFIED` among it; `monitoring_watermark` one
+row per source) + `DB-PRIVILEGE` (no `UPDATE` of a monitored row; no `DELETE`) + `DOMAIN` (the claim
+`FOR UPDATE SKIP LOCKED` (R7) committing alone; the watermark advanced only in the claim's
+transaction after its inserts; `RiskMonitoringSchedule` leaderless, off in test contexts, registered
+in `LEASE_PROTECTED_SCHEDULERS`; the intake through a port `app` implements over the ledger's journal
+entry store ordered by its sequence — `risk` has no `ledger` edge).
+**Verify:** `MonitoringIntakeDatabaseTest#tenSweepersIngestOnce` and `#reprocessingCreatesNothingNew`
+(`P13-TSK-019`); scenario 8 — historical journal entries replayed from an earlier watermark, no new
+monitored transaction, alert, case or action (`P13-TSK-019`, `P13-TST-001`); the monitoring census —
+journal entries = monitored transactions, amounts equal, no orphan — at every storm round
+(`P13-TSK-023`, `P13-TST-001`); a planted entry under an unregistered namespace recorded
+`UNCLASSIFIED` with `finapp.risk.monitoring.unclassified` > 0 firing its rule (`P13-TSK-019`,
+`P13-TSK-024`); `finapp.risk.monitoring.lag` (journal head − watermark) with its rule at an hour
+(`P13-TSK-024`); a sweeper killed mid-claim among the storm's crash points, the next claim re-reading
+from the committed watermark (`P13-TST-001`).
+**Phase:** 13
+
+### INV-RSK-10 — The customer risk profile is versioned and append-only, credit's snapshot records the rating it was given, and a rating change never rewrites a decision
+**Statement:** A party's customer risk profile is a head row and append-only versions, `UNIQUE
+(party_id, version)`, each version recording the rating (`LOW | MEDIUM | HIGH | PROHIBITED`), the
+assessment or case outcome that set it, and the database time; no version is edited or deleted;
+`PROHIBITED` is set only by a disposition under four eyes. Two sweepers recomputing one profile
+produce one version. Credit's `CreditRiskSignal` (seam version 2) answers the current rating's code
+with the profile version, and credit's decision snapshot records exactly what it was given, so a
+decision made under profile version n replays `IDENTICAL` after the profile moves to n+1; a decision
+made under seam version 1 replays `NOT_ASSESSED`. A rating change never rewrites, re-scores or
+re-decides an assessment or a credit decision already made; it applies to the next evaluation.
+**Why:** A rating that can be edited in place makes every past decision unexplainable — the snapshot
+says `LOW` and the profile says `HIGH`, and nobody can say which was true when the money moved
+(`INV-CRD-01`, `INV-CRD-07`, `INV-HIST-04`). A rating that re-decides history turns a monitoring
+outcome into a retroactive refusal of credit already extended. `PROHIBITED` closes a customer's money
+movement entirely and is therefore a four-eyes act.
+**Enforce:** `DB-CONSTRAINT` (`customer_risk_profile_version UNIQUE (party_id, version)`,
+`INSERT`-only; the rating `CHECK`ed; a `PROHIBITED` version carrying a `NOT NULL` reference to its
+approved disposition, a `CHECK`; the head row's version advanced by a conditional `UPDATE` only) +
+`DB-PRIVILEGE` (no `UPDATE` or `DELETE` of a version row for any role) + `DOMAIN` (the head row `FOR
+UPDATE` (R8) before a recompute; the seam adapter `RiskCreditRiskSignal` reads the head and answers
+code and version; credit's `SnapshotFreezer` stores the answer in the sealed snapshot, `INV-CRD-07`;
+the risk score and the credit score are distinct types never summed, `INV-CRD-04`).
+**Verify:** `ProfileDatabaseTest#tenRecomputesOneVersion` (`P13-TSK-007`); scenario 13 — the profile
+changes after a credit decision is sealed and the decision replays `IDENTICAL` under credit's
+`CreditReplayProof` (`P13-TSK-007`); a raw-SQL `UPDATE` of a version row refused for every role, and
+a `PROHIBITED` version without its disposition refused by the `CHECK` alone (`P13-TSK-007`,
+`P13-TSK-016`); a decision made under seam version 1 replaying `NOT_ASSESSED` (`P13-TSK-007`);
+`finapp.risk.profile.rating{bucket}` (`P13-TSK-024`); the battery replaying every assessment under
+the profile version it recorded (`P13-TST-002`).
+**Phase:** 13
+
+*`INV-RSK-01`…`INV-RSK-10` catalogued by the Phase 12 → 13 transition (2026-10-22), the `INV-BNPL`
+precedent: Phase 13's gate properties given stable IDs before any risk code exists, so the register
+can demand their demonstrations by identifier rather than by prose. A new group, because Phase 13
+moves no money and its properties are about judgement, evidence and separation (`PHASE_13_PLAN.md`
+§6). Decisions in ADR-0107…0112 (`Proposed`); the machines in `RISK_LIFECYCLES.md`; the design in
+`PHASE_13_PLAN.md` (§6 names these entries and the invariants it restates for Phase 13 —
+`INV-CON-03`, `INV-IDEM-01`/`-04`, `INV-HIST-04`, `INV-AUD-02`/`-03`/`-04`, `INV-CRD-01`/`-04`,
+`INV-EVT-04`, `INV-BAL-04` — which keep their own entries here unchanged; §7.4 their contention rows;
+§13.2 the fifteen scenarios they cite; §2.2 the owner decisions C1–C10 applied as accepted defaults
+pending ratification). Table, constraint, test and task names are the plan's; the building task may
+rename a test, renumber a migration within its module or shape a constraint differently, and says
+so. None built yet: until `P13-TSK-001` lands, nothing these entries name is implemented, and every
+statement is the decided design, corrected by the tasks that build it.*
+
+---
+
 # Identity, Credentials and Sessions — `INV-IDN`
 
 Added by the Phase 0 → Phase 1 transition (2026-09-03). **Why this group did not exist and now
@@ -3696,6 +4087,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-CRD` | 01–12 | Credit decisioning |
 | `INV-LND` | 01–14 | Lending |
 | `INV-BNPL` | 01–10 | Buy now, pay later |
+| `INV-RSK` | 01–10 | Risk, fraud and AML |
 | `INV-IDN` | 01–08 | Identity, credentials and sessions |
 | `INV-KYC` | 01–06 | Verification and case management |
 | `INV-CNS` | 01–04 | Consent |
@@ -3704,7 +4096,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-RAIL` | 01–04 | Payment rails and routing |
 | `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**152 invariants.** Every one must be enforced and verified before the phase that owns it can
+**162 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate. *(The count moved from 110 to 120 at the Phase 8 → 9 transition,
 2026-10-02: `INV-FX-04`…`INV-FX-09` and `INV-XB-01`…`INV-XB-04` catalogued, and thirteen
 entries restated, each with its dated provenance.)* *(The count moved from 120 to 128 at the
@@ -3712,3 +4104,5 @@ Phase 9 → 10 transition, 2026-10-07: `INV-CRD-05`…`12` catalogued.)* *(The c
 to 142 at the Phase 10 → 11 transition, 2026-10-10: `INV-LND-01`…`14` catalogued, a new group.)*
 *(The count moved from 142 to 152 at the Phase 11 → 12 transition, 2026-10-16: `INV-BNPL-01`…`10`
 catalogued, a new group, and `INV-MER-07` amended — proposed, in force when `P12-TSK-021` lands.)*
+*(The count moved from 152 to 162 at the Phase 12 → 13 transition, 2026-10-22: `INV-RSK-01`…`10`
+catalogued, a new group — the decided design, nothing built until `P13-TSK-001` lands.)*
