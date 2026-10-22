@@ -351,8 +351,9 @@ class BnplTerminalEdgesDatabaseTest {
     private static void respond(BnplConditionDatabaseWorld world, BnplDisputes disputes, BnplDispute dispute,
             BnplConditionDatabaseWorld.Purchased bought, BnplDisputes.Decision decision) {
         BnplClockFrame.inOneTransaction(world.frameOn(bought.purchaseDate().plusDays(2)), uow -> disputes.respond(uow,
-                dispute.id(), bought.merchant(), new BnplDisputes.Response(decision, "we shipped it", "key-under-test"),
-                new Actor(bought.merchant().toString(), ActorType.MERCHANT), correlation()));
+                dispute.id(), bought.merchant(), new BnplDisputes.Response(decision, "we shipped it", "key-under-test",
+                        BnplKeyIssuer.KEY_ISSUER), new Actor(bought.merchant().toString(), ActorType.MERCHANT),
+                correlation()));
     }
 
     private static BnplDisputes.Acted resolve(BnplConditionDatabaseWorld world, BnplDisputes disputes,

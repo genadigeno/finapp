@@ -177,4 +177,45 @@ class BnplEnablementsTest {
         assertThat(store.rows).isEmpty();
         assertThat(audit.records).isEmpty();
     }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F5: every act's reason - and the BNPL fee schedule assignment's - is screened"
+            + " by InstrumentShapes before anything is locked or written: a grouped card number and a printed account"
+            + " identifier refused, a platform identifier admitted")
+    void everyReasonIsScreenedForInstrumentShapes() {
+        java.util.List<String> instruments = java.util.List.of("card 4111 1111 1111 1111 on file",
+                "card 4111-1111-1111-1111 on file", "pay to GB82 WEST 1234 5698 7654 32 instead");
+        for (String reason : instruments) {
+            assertThatThrownBy(() -> enablements.propose(UOW, merchant.id(), reason, ANNA, CORRELATION))
+                    .as(reason).isInstanceOf(BnplEnablement.ReasonRefused.class).hasMessageNotContaining(reason);
+        }
+        assertThat(store.rows).isEmpty();
+        BnplEnablement proposed = enablements.propose(UOW, merchant.id(),
+                "contract 0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b signed", ANNA, CORRELATION);
+        for (String reason : instruments) {
+            assertThatThrownBy(() -> enablements.approve(UOW, merchant.id(), proposed.id(), reason, BORIS, CORRELATION))
+                    .as(reason).isInstanceOf(BnplEnablement.ReasonRefused.class);
+            assertThatThrownBy(() -> enablements.reject(UOW, merchant.id(), proposed.id(), reason, BORIS, CORRELATION))
+                    .as(reason).isInstanceOf(BnplEnablement.ReasonRefused.class);
+        }
+        assertThat(store.rows.get(proposed.id()).status()).isEqualTo(BnplEnablementStatus.PROPOSED);
+        enablements.approve(UOW, merchant.id(), proposed.id(), "ok", BORIS, CORRELATION);
+        for (String reason : instruments) {
+            assertThatThrownBy(() -> enablements.withdraw(UOW, merchant.id(), proposed.id(), reason, ANNA, CORRELATION))
+                    .as(reason).isInstanceOf(BnplEnablement.ReasonRefused.class);
+        }
+        assertThat(store.rows.get(proposed.id()).status()).isEqualTo(BnplEnablementStatus.ACTIVE);
+        assertThat(audit.records).as("two acts, both screened clean").hasSize(2);
+
+        BnplFakes.Schedules schedules = new BnplFakes.Schedules();
+        BnplFakes.Pricing pricingStore = new BnplFakes.Pricing(CLOCK);
+        BnplPricing pricing = new BnplPricing(pricingStore, store, merchants, schedules, audit, IDS, CLOCK);
+        FeeSchedule schedule = FeeSchedule.create(IDS, "BNPL", CurrencyCode.of("EUR"), "operator", CLOCK);
+        schedules.insertSchedule(UOW, schedule);
+        for (String reason : instruments) {
+            assertThatThrownBy(() -> pricing.assign(UOW, merchant.id(), MerchantBnplProduct.BNPL_PAY_IN_4, schedule.id(),
+                    reason, ANNA, CORRELATION)).as(reason).isInstanceOf(BnplEnablement.ReasonRefused.class);
+        }
+        assertThat(pricingStore.assignments).isEmpty();
+    }
 }

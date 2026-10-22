@@ -482,8 +482,9 @@ class BnplDisputeDatabaseTest {
     private BnplDisputes.Acted respondOn(LocalDate date, BnplDispute dispute, BnplConditionDatabaseWorld.Purchased bought,
             BnplDisputes.Decision decision) {
         return BnplClockFrame.inOneTransaction(world.frameOn(date), uow -> disputes.respond(uow, dispute.id(),
-                bought.merchant(), new BnplDisputes.Response(decision, "we shipped it", "key-under-test"),
-                new Actor(bought.merchant().toString(), ActorType.MERCHANT), correlation()));
+                bought.merchant(), new BnplDisputes.Response(decision, "we shipped it", "key-under-test",
+                        BnplKeyIssuer.KEY_ISSUER), new Actor(bought.merchant().toString(), ActorType.MERCHANT),
+                correlation()));
     }
 
     private Optional<BnplDisputes.Acted> lapseOn(LocalDate date, BnplDispute dispute) {

@@ -18,4 +18,14 @@ public interface BnplActingParty {
 
     /** The party {@code actor}'s identity belongs to - empty when the actor is no identity the platform knows. */
     Optional<UUID> partyOf(Connection unitOfWork, Actor actor);
+
+    /**
+     * The party of the person who issued a merchant API key (the Phase 12 -> 13 gate's A5-F1): {@code issuedBy} is the
+     * issuing operator's actor id as merchant {@code V003} froze it ({@code merchant_api_key.issued_by}) - the id alone,
+     * which is all {@link #partyOf} reads; the actor's type was not recorded and is not consulted. Empty when it names no
+     * identity the platform knows - which a money-moving merchant door treats as refused (fail closed).
+     */
+    default Optional<UUID> partyOfIssuer(Connection unitOfWork, String issuedBy) {
+        return partyOf(unitOfWork, new Actor(issuedBy, com.finapp.platform.security.ActorType.EMPLOYEE));
+    }
 }

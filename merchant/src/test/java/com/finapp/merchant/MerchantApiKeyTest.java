@@ -70,6 +70,21 @@ class MerchantApiKeyTest {
         assertThat(MerchantApiKeys.scopesFingerprint(scoped.scopes())).isEqualTo(", scopes=BNPL_REFUND");
     }
 
+    @Test
+    @DisplayName("the authenticated tenant carries the key's issuer for the money-moving doors' self-dealing rule (the Phase"
+            + " 12 -> 13 gate's A5-F1) - and never prints it: issued_by is an operator's identity, RESTRICTED-PII")
+    void theAuthenticatedTenantCarriesTheIssuerAndNeverPrintsIt() {
+        MerchantApiKey scoped = MerchantApiKey.issue(IDS, CLOCK, MerchantId.next(IDS),
+                MerchantApiKeySecret.issue(new SecureRandom()), "operator-0192a3b4",
+                java.util.Set.of(MerchantApiKeyScope.BNPL_REFUND));
+        AuthenticatedMerchant tenant = new AuthenticatedMerchant(scoped.merchantId(), scoped.id(), scoped.scopes(),
+                java.util.Optional.of(scoped.issuedBy()));
+        assertThat(tenant.issuedBy()).contains("operator-0192a3b4");
+        assertThat(tenant.toString()).contains(scoped.id().toString()).doesNotContain("operator-0192a3b4");
+        assertThat(new AuthenticatedMerchant(scoped.merchantId(), scoped.id()).issuedBy())
+                .as("built without the key row: no issuer, which a money-moving door refuses").isEmpty();
+    }
+
     private static MerchantApiKey issued() {
         return MerchantApiKey.issue(
                 IDS,

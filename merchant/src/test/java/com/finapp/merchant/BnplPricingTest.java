@@ -53,7 +53,7 @@ class BnplPricingTest {
     void setUp() {
         enablementStore = new BnplFakes.Enablements(CLOCK);
         merchants = new BnplFakes.Merchants();
-        pricingStore = new BnplFakes.Pricing();
+        pricingStore = new BnplFakes.Pricing(CLOCK);
         schedules = new BnplFakes.Schedules();
         audit = new BnplFakes.Audit();
         enablements = new BnplEnablements(enablementStore, merchants, audit, IDS, CLOCK);
@@ -134,6 +134,32 @@ class BnplPricingTest {
         assertThat(pinned.pinnedBy()).isEqualTo(CUSTOMER.id());
         assertThatThrownBy(() -> pin(purchase, 10_000)).isInstanceOf(BnplPricing.AlreadyPinned.class);
         assertThat(pricingStore.pins).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A3-M1: an instance whose clock runs past a version's effective_from still pins"
+            + " the version in force on the DATABASE's clock, stamped with the database's instant - never its own")
+    void theVersionInForceIsTheDatabaseClocksNotTheInstances() {
+        priced();
+        // Version 2 of the BNPL schedule, in force an hour after the database's now.
+        Instant later = CLOCK.instant().plusSeconds(3_600);
+        schedules.insertVersionIfNumberIsFree(UOW, FeeScheduleVersion.rehydrate(FeeScheduleVersionId.next(IDS),
+                returning.id(), 2, FeeRate.of(new BigDecimal("0.0100")), Money.ofMinorUnits(0, EUR),
+                RoundingPolicy.HALF_EVEN, RefundFeePolicy.RETURNED, later, CLOCK.instant(), "operator"));
+        FeeScheduleVersionId inForce = schedules.findEffectiveVersion(UOW, returning.id(), CLOCK.instant())
+                .orElseThrow().id();
+        // This instance's clock two hours ahead of the database's - past version 2's effective_from.
+        Clock skewed = Clock.offset(CLOCK, java.time.Duration.ofHours(2));
+        BnplPricing onASkewedInstance = new BnplPricing(pricingStore, enablementStore, merchants, schedules, audit, IDS,
+                skewed);
+        UUID purchase = UUID.randomUUID();
+
+        FeeAssessment split = onASkewedInstance.pin(UOW, merchant.id(), MerchantBnplProduct.BNPL_PAY_IN_4, purchase,
+                Money.ofMinorUnits(10_000, EUR), CUSTOMER);
+
+        assertThat(split.version()).as("the version in force on the database's clock").isEqualTo(inForce);
+        assertThat(split.fee()).isEqualTo(Money.ofMinorUnits(299, EUR));
+        assertThat(pricingStore.pins.get(purchase).pinnedAt()).as("the database's instant").isEqualTo(CLOCK.instant());
     }
 
     @Test

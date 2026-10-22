@@ -434,6 +434,9 @@ one `api.NotFound`, the merchant surface's standing rule.
 - `merchant.BnplScheduleNotReturning` (`422`) refuses a fee schedule with any version that
   retains its fee for a BNPL product: a BNPL fee is pro-rated back on refund (ADR-0105).
 - Unknown and malformed merchant, enablement, product and schedule identifiers are one `api.NotFound`.
+- A reason - the enablement's proposal, decision or withdrawal, the BNPL fee schedule's assignment - holding a card or
+  account number is `422 api.ValidationFailed`, nothing written (the Phase 12 → 13 gate's A5-F5; merchant `V012`'s
+  CHECKs refuse a raw writer); the detail never repeats the reason.
 
 **The payout's five codes (`P6-TSK-012`, ADR-0051, ADR-0057).**
 - `merchant.PayoutUnfunded` is `INV-MER-05` refusing a payout the payable cannot fund, judged
@@ -1322,7 +1325,9 @@ written; `RefundScopeRequired` a merchant key not issued with the scope (every k
 closed), before anything is read, recorded `FAILED` (`bnpl.RefundScopeRefused`); `RefundNotPostable` the customer's wallet
 cannot take a refund of an agreement already `CLOSED` (a closed agreement holds no credit balance - the merchant retries
 later under the same key) or the merchant's payable cannot be debited; `SelfDealingRefused` an operator refunding a
-purchase of their own party, recorded `FAILED`; `ReasonRequired` a reason missing, past 1,000 characters or holding a card
+purchase of their own party - or an operator the platform cannot place in a party (fail closed) - and, at the merchant's
+door, a key whose issuer (`merchant_api_key.issued_by`) is the purchase's own party or cannot be placed in one (the
+Phase 12 → 13 gate's A5-F1, A7-6; the merchant's detail never names the issuer), recorded `FAILED`; `ReasonRequired` a reason missing, past 1,000 characters or holding a card
 or account number; `NotFound` another merchant's purchase exactly as an unknown or malformed id (`INV-MER-01`); the
 platform's `409 api.Conflict` the key reused for another purchase or amount (the arbiter `UNIQUE (merchant_id,
 requested_by, refund_key)` behind a lapsed claim) or a pay-in-N agreement still being caught up on its accrual after the
@@ -1331,7 +1336,12 @@ A refund is never refused for a short payable: after a payout it may leave the p
 purchase's financed net (B7, `INV-MER-07` as amended). Every refusal writes nothing and rolls the key back; a refused
 conservation is the platform's `500`, counted `finapp.bnpl.allocation.anomaly`. The operator's API-key issuance
 (`POST /v1/operator/merchants/{id}/api-keys`) takes the optional `scope` query parameter (`BNPL_REFUND`); an unknown scope
-is `422 api.ValidationFailed`.
+is `422 api.ValidationFailed`. Issuing a key with `BNPL_REFUND` asks `PAYMENT_REFUND` beside the route's `MERCHANT_ADMINISTER` (the gate's
+A5-F1): an operator without it is `403 api.Forbidden`, the denial audited `identity.AuthorizationDenied` `FAILED`, nothing
+minted. The merchant's answer to a BNPL dispute (`POST /v1/merchant/bnpl-disputes/{id}/response`) `ACCEPT`s - a refund at
+once - only over a key carrying `BNPL_REFUND`: `403 bnpl.RefundScopeRequired` before anything is read, audited
+`bnpl.RefundScopeRefused` against the dispute; and `403 bnpl.SelfDealingRefused` through a key its customer's own party
+issued, as at the refund door. A `CONTEST` needs any key.
 
 The servicing correction doors (`P12-TSK-024`; `POST /v1/operator/bnpl-agreements/{id}/repayments/{rid}/reversal`
 (`201`) and `/reversal/approval`, `/reversal/rejection`; `POST /v1/operator/bnpl-agreements/{id}/waivers` (`201`) and

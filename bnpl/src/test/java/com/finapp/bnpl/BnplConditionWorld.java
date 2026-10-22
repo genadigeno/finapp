@@ -50,6 +50,8 @@ final class BnplConditionWorld {
     final BnplServicing servicing;
     final BnplRepayments repayments;
     final BnplRefunds refunds;
+    /** The refund body's acting-party port's answers, by actor id (the key's issuer registered at birth). */
+    final java.util.Map<String, UUID> actingParties = new java.util.concurrent.ConcurrentHashMap<>();
     final UUID party = UUID.randomUUID();
     final Actor customer = new Actor(party.toString(), ActorType.CUSTOMER);
     final UUID merchant = UUID.randomUUID();
@@ -78,9 +80,12 @@ final class BnplConditionWorld {
                 fakes.collectionsOver(closures, IDS, CLOCK), conditions, fakes.outbox, IDS, CLOCK);
         repayments = new BnplRepayments(fakes.repayments, fakes.servicing, fakes.purchases, fakes.terms.store(),
                 fakes.wallets, fakes.book, closures, fakes.outbox, IDS, CLOCK);
+        // Whose party an acting person is: the merchant key's issuer (the Phase 12 -> 13 gate's A5-F1) and any operator a
+        // suite registers in actingParties - every other actor has none, which the doors refuse (fail closed).
+        actingParties.put(BnplKeyIssuer.ID, BnplKeyIssuer.PARTY);
         refunds = new BnplRefunds(fakes.refunds, fakes.servicing, fakes.purchases, fakes.terms.store(), fakes.merchants,
-                fakes.wallets, fakes.book, closures, (uow, actor) -> Optional.empty(), fakes.outbox, fakes.audit, IDS,
-                CLOCK);
+                fakes.wallets, fakes.book, closures, (uow, actor) -> Optional.ofNullable(actingParties.get(actor.id())),
+                fakes.outbox, fakes.audit, IDS, CLOCK);
         fakes.merchants.standings.put(merchant, BnplMerchants.Standing.ENABLED);
         payable = fakes.book.external("payable", IDS.next());
         fakes.merchants.payables.put(merchant, payable);
@@ -168,8 +173,8 @@ final class BnplConditionWorld {
     BnplRefunds.Refunded refundOn(LocalDate date, Agreement agreement, String key, long minor) {
         fakes.now = date.atTime(12, 0).toInstant(ZoneOffset.UTC);
         return fakes.inTransaction(() -> refunds.atMerchant(BnplApplicationFakes.UOW, agreement.purchase(), merchant,
-                new BnplRefunds.Request(key, eur(minor), "the goods came back", Optional.of("merchant-key-1")),
-                merchantActor, CORRELATION));
+                new BnplRefunds.Request(key, eur(minor), "the goods came back", Optional.of("merchant-key-1"),
+                        BnplKeyIssuer.KEY_ISSUER), merchantActor, CORRELATION));
     }
 
     /** The obligation's recorded changes as {@code date kind dpd bucket defaulted [previous]}, in order. */

@@ -118,15 +118,19 @@ class BnplDisputeApiTest {
         Bought bought = bought();
         String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
         BnplApplicationClient.Merchant stranger = world.merchant();
+        // A refund-scoped key: an acceptance refunds, so a scopeless key is refused before the tenant is looked at (the
+        // Phase 12 -> 13 gate's A5-F1/F6) - the tenancy negative needs a key that would otherwise be admitted.
+        String issuer = world.client.refundKeyIssuerSession(authorization);
+        String strangersKey = world.client.refundScopedKey(issuer, stranger.id());
         for (String id : List.of(dispute, UUID.randomUUID().toString(), "not-a-uuid")) {
             HttpResponse<String> refused = world.client.post("/v1/merchant/bnpl-disputes/" + id + "/response", ACCEPT,
-                    stranger.apiKey(), BnplApplicationClient.key());
+                    strangersKey, BnplApplicationClient.key());
             assertThat(refused.statusCode()).as(id + ": " + refused.body()).isEqualTo(404);
         }
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
                 bought.purchase())).isZero();
         HttpResponse<String> accepted = world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response",
-                ACCEPT, bought.merchant().apiKey(), BnplApplicationClient.key());
+                ACCEPT, world.client.refundScopedKey(issuer, bought.merchant().id()), BnplApplicationClient.key());
         assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
         assertThat(accepted.body()).contains("\"status\":\"RESOLVED_REFUND\"").doesNotContain("heldInstalments");
         assertThat(BnplApplicationClient.scalar("SELECT door || '|' || amount_minor FROM bnpl.bnpl_refund"
@@ -180,11 +184,9 @@ class BnplDisputeApiTest {
     void aRefundWhileADisputeIsOpenIsRefused() throws Exception {
         Bought bought = bought();
         open(bought);
-        String operator = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
-        HttpResponse<String> issued = world.client.post("/v1/operator/merchants/" + bought.merchant().id()
-                + "/api-keys?scope=BNPL_REFUND", null, operator, BnplApplicationClient.key());
-        String scoped = BnplApplicationClient.field(issued.body(), "keyId") + "." + BnplApplicationClient.field(
-                issued.body(), "secret");
+        // MERCHANT_ADMINISTER beside PAYMENT_REFUND (the Phase 12 -> 13 gate's A5-F1).
+        String operator = world.client.refundKeyIssuerSession(authorization);
+        String scoped = world.client.refundScopedKey(operator, bought.merchant().id());
         HttpResponse<String> refused = world.client.post("/v1/merchant/bnpl-purchases/" + bought.purchase() + "/refunds",
                 "{\"amount\":\"100.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", scoped,
                 BnplApplicationClient.key());
@@ -298,6 +300,74 @@ class BnplDisputeApiTest {
                 + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ?", bought.purchase())).isEqualTo(1);
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
                 bought.purchase())).isZero();
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F1: an operator who is the purchase's own party and holds both permissions"
+            + " mints a refund-scoped key - and is refused at BOTH merchant doors that move money: the refund and the"
+            + " dispute's acceptance are 403 bnpl.SelfDealingRefused, each recorded FAILED once against the purchase with"
+            + " the key named, no refund written, the dispute still OPEN; a key an outsider issued accepts it")
+    void anInsiderMintedKeyIsSelfDealingAtBothMerchantDoors() throws Exception {
+        Bought bought = bought();
+        world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.MERCHANT_ADMINISTRATOR);
+        String insider = world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.LEDGER_OPERATOR);
+        String insidersKey = world.client.refundScopedKey(insider, bought.merchant().id());
+        String insidersKeyId = insidersKey.substring(0, insidersKey.indexOf('.'));
+
+        HttpResponse<String> refund = world.client.post("/v1/merchant/bnpl-purchases/" + bought.purchase() + "/refunds",
+                "{\"amount\":\"100.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", insidersKey,
+                BnplApplicationClient.key());
+        assertThat(refund.statusCode()).as(refund.body()).isEqualTo(403);
+        assertThat(refund.body()).contains("bnpl.SelfDealingRefused").doesNotContain(bought.owner().login());
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ? AND change_summary LIKE ?",
+                bought.purchase(), "%act=refund refused%key=" + insidersKeyId + "%")).isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        HttpResponse<String> accepted = world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", ACCEPT,
+                insidersKey, BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(403);
+        assertThat(accepted.body()).contains("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ? AND change_summary LIKE ?",
+                bought.purchase(), "%act=acceptance refused%key=" + insidersKeyId + "%")).isEqualTo(1);
+        assertThat(BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_dispute WHERE id = ?::uuid", dispute))
+                .isEqualTo("OPEN");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+
+        String outsidersKey = world.client.refundScopedKey(world.client.refundKeyIssuerSession(authorization),
+                bought.merchant().id());
+        HttpResponse<String> admitted = world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", ACCEPT,
+                outsidersKey, BnplApplicationClient.key());
+        assertThat(admitted.statusCode()).as(admitted.body()).isEqualTo(200);
+        assertThat(admitted.body()).contains("\"status\":\"RESOLVED_REFUND\"");
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F6: a key without the BNPL_REFUND scope cannot ACCEPT - 403"
+            + " bnpl.RefundScopeRequired before anything is read, recorded FAILED once against the dispute, nothing"
+            + " refunded, the dispute still OPEN - and CONTESTs with any key")
+    void aKeyWithoutTheScopeCannotAccept() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        HttpResponse<String> refused = world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", ACCEPT,
+                bought.merchant().apiKey(), BnplApplicationClient.key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("bnpl.RefundScopeRequired");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.RefundScopeRefused' AND outcome = 'FAILED' AND target_type = 'bnpl_dispute' AND target_id = ?",
+                dispute)).isEqualTo(1);
+        assertThat(BnplApplicationClient.scalar("SELECT status FROM bnpl.bnpl_dispute WHERE id = ?::uuid", dispute))
+                .isEqualTo("OPEN");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid",
+                bought.purchase())).isZero();
+        HttpResponse<String> contested = world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response",
+                CONTEST, bought.merchant().apiKey(), BnplApplicationClient.key());
+        assertThat(contested.statusCode()).as(contested.body()).isEqualTo(200);
+        assertThat(contested.body()).contains("\"status\":\"MERCHANT_RESPONDED\"");
     }
 
     // ------------------------------------------------------------------ plumbing

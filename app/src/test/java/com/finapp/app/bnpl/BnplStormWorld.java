@@ -731,7 +731,8 @@ final class BnplStormWorld {
                         + " merchant.merchant_bnpl_fee_schedule s JOIN merchant.fee_schedule_version v ON"
                         + " v.fee_schedule_id = s.fee_schedule_id WHERE s.merchant_id = ?::uuid",
                 UUID.fromString(merchant.id()));
-        String administrator = client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
+        // MERCHANT_ADMINISTER beside PAYMENT_REFUND issues the refund-scoped key (the Phase 12 -> 13 gate's A5-F1).
+        String administrator = client.refundKeyIssuerSession(authorization);
         HttpResponse<String> issued = client.post("/v1/operator/merchants/" + merchant.id()
                 + "/api-keys?scope=BNPL_REFUND", null, administrator, key());
         assertThat(issued.statusCode()).as("the refund-scoped key issued").isEqualTo(201);

@@ -43,8 +43,11 @@ import lombok.RequiredArgsConstructor;
  *
  * <h2>The pin and the split from one version, read once</h2>
  *
- * <p>{@link #pin} resolves the version in force <em>after</em> those locks, on the application clock (the fee schedules'
- * own time basis, V004), prices the gross with it, refuses a sale that does not cover its fee (ADR-0058,
+ * <p>{@link #pin} resolves the version in force <em>after</em> those locks, on the database's clock read there
+ * ({@code clock_timestamp()} - <em>corrected by the Phase 12 -> 13 gate's A3-M1: it read the application clock, so an
+ * instance whose clock ran ahead priced with a version not yet in force and stamped the pin with its own instant; a
+ * version's {@code effective_from} is a declared instant, judged on the one clock every instance shares</em>), prices the
+ * gross with it, refuses a sale that does not cover its fee (ADR-0058,
  * {@link SaleBelowFeeException}) and records the pin - all before anything else is written, in the purchase's own
  * transaction, so a rollback leaves no pin. The primary key refuses a second pin for the purchase ({@link AlreadyPinned}),
  * never a second version.
@@ -281,8 +284,11 @@ public final class BnplPricing {
             return new Judged(Standing.NOT_ENABLED, Optional.empty(), clock.instant());
         }
         Optional<FeeScheduleId> schedule = pricing.findAssignment(unitOfWork, merchantId, product);
-        // The instant the version is resolved at: read after both share locks were granted.
-        Instant at = clock.instant();
+        // The instant the version is resolved at and the pin stamped with: the DATABASE's clock_timestamp(), read after
+        // both share locks were granted - never this instance's clock (the Phase 12 -> 13 gate's A3-M1). Ten instances
+        // with ten skewed clocks resolve one version for one instant; `V012`'s pin trigger refuses an instant outside the
+        // pinning transaction's own span on that clock, for every writer.
+        Instant at = pricing.databaseNow(unitOfWork);
         Optional<FeeScheduleVersion> version = schedule.flatMap(id -> schedules.findEffectiveVersion(unitOfWork, id, at))
                 .filter(inForce -> inForce.refundFeePolicy() == RefundFeePolicy.RETURNED);
         return version.isPresent()

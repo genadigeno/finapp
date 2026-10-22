@@ -1,5 +1,8 @@
 package com.finapp.app.merchant;
 
+import com.finapp.identity.Authorization;
+import com.finapp.identity.IdentityId;
+import com.finapp.identity.PermissionName;
 import com.finapp.merchant.MerchantApiKey;
 import com.finapp.merchant.MerchantApiKeyId;
 import com.finapp.merchant.MerchantApiKeys;
@@ -48,9 +51,20 @@ public class MerchantApiKeyOperations {
     /** A key as the operator lists it: metadata only — no secret, and no hash. */
     public record KeyView(String keyId, String status, String issuedAt, String revokedAt, List<String> scopes) {}
 
+    /**
+     * The permission each scope asks of its issuer BESIDE the route's {@code MERCHANT_ADMINISTER} (the Phase 12 -> 13
+     * gate's A5-F1) - the conditional half of the route's register ({@code RoutePermissionRegisterTest} pins it). A key
+     * carrying {@code BNPL_REFUND} refunds the merchant's BNPL purchases and accepts its disputes, and its issuer sees the
+     * secret once: so issuing it is a money-operating act, {@code PAYMENT_REFUND}'s - the operator refund door's own
+     * permission. A {@code MERCHANT_ADMINISTER} holder alone could otherwise mint the power to refund their own purchase.
+     */
+    public static final java.util.Map<com.finapp.merchant.MerchantApiKeyScope, PermissionName> SCOPE_PERMISSIONS =
+            java.util.Map.of(com.finapp.merchant.MerchantApiKeyScope.BNPL_REFUND, PermissionName.PAYMENT_REFUND);
+
     @NonNull private final MerchantApiKeys keys;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final Authorization authorization;
 
     /** Issues a key with no scope, or converges on the one a retried request already minted. */
     public IssuedKeyView issue(String rawMerchantId, String idempotencyKey) {
@@ -58,12 +72,20 @@ public class MerchantApiKeyOperations {
     }
 
     /**
-     * Issues a key carrying the named scopes (`P12-TSK-021`) - an unknown name is {@code 422} before anything - or
+     * Issues a key carrying the named scopes (`P12-TSK-021`) - an unknown name is {@code 422} before anything; a scope
+     * whose permission the operator does not hold ({@link #SCOPE_PERMISSIONS}) is {@code 403 api.Forbidden}, the denial
+     * recorded {@code FAILED} ({@code identity.AuthorizationDenied}) in a transaction of its own and nothing minted - or
      * converges on the one a retried request already minted.
      */
     public IssuedKeyView issue(String rawMerchantId, String idempotencyKey, List<String> rawScopes) {
         MerchantId merchant = parsedMerchantOrAbsent(rawMerchantId);
         java.util.Set<com.finapp.merchant.MerchantApiKeyScope> scopes = scopes(rawScopes);
+        for (com.finapp.merchant.MerchantApiKeyScope scope : scopes) {
+            PermissionName required = SCOPE_PERMISSIONS.get(scope);
+            if (required != null) {
+                requirePermission(required);
+            }
+        }
         try {
             MerchantApiKeys.IssuedKey issued =
                     inOneTransaction(
@@ -135,6 +157,38 @@ public class MerchantApiKeyOperations {
             }
         }
         return scopes;
+    }
+
+    /**
+     * Refuses an operator who does not hold {@code permission} - read from the roles they hold NOW, on this request
+     * ({@code SessionAuthenticationInterceptor}'s rule: never from the session), the denial audited in the transaction
+     * that read the roles and committed before the refusal is thrown (the interceptor's shape: a refused privileged
+     * attempt is the only trace an attacker leaves, {@code INV-AUD-03}). An actor the platform cannot read as an identity
+     * holds nothing: refused.
+     */
+    private void requirePermission(PermissionName permission) {
+        com.finapp.platform.security.Actor actor = com.finapp.platform.security.SecurityContext.require();
+        IdentityId identity;
+        try {
+            identity = IdentityId.of(UUID.fromString(actor.id()));
+        } catch (IllegalArgumentException notAnIdentity) {
+            throw forbidden(permission);
+        }
+        boolean permitted = Boolean.TRUE.equals(inOneTransaction(unitOfWork -> {
+            if (authorization.permits(unitOfWork, identity, permission)) {
+                return true;
+            }
+            authorization.recordDenial(unitOfWork, identity, permission);
+            return false;
+        }));
+        if (!permitted) {
+            throw forbidden(permission);
+        }
+    }
+
+    private static ApiException forbidden(PermissionName permission) {
+        return new ApiException(PlatformErrorCode.FORBIDDEN, "A session without " + permission + " asked for a scope"
+                + " that requires it");
     }
 
     private static MerchantId parsedMerchantOrAbsent(String raw) {

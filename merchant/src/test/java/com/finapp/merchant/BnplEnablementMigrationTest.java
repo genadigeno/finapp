@@ -123,9 +123,47 @@ class BnplEnablementMigrationTest {
                 .contains("IF pinned.effective_from > NEW.pinned_at THEN");
     }
 
+    @Test
+    @DisplayName("V012 (the Phase 12 -> 13 gate's A5-F5): the twin masks exactly InstrumentShapes' platform identifiers and"
+            + " scans its runs and tokens, and every BNPL reason column carries its CHECK")
+    void v012IsTheInstrumentScreensTwin() {
+        String sql = migration(V012);
+        assertThat(sql)
+                .contains("'" + com.finapp.sharedkernel.security.InstrumentShapes.PLATFORM_IDENTIFIER_REGEX + "'")
+                .contains("'" + com.finapp.sharedkernel.security.InstrumentShapes.DIGIT_RUN_REGEX + "'")
+                .contains("'" + com.finapp.sharedkernel.security.InstrumentShapes.ALPHANUMERIC_RUN_REGEX + "'");
+        for (String column : java.util.List.of("merchant_bnpl_enablement.proposal_reason",
+                "merchant_bnpl_enablement.decision_reason", "merchant_bnpl_enablement.withdrawal_reason",
+                "merchant_bnpl_fee_schedule_event.reason")) {
+            String table = column.substring(0, column.indexOf('.'));
+            String name = column.substring(column.indexOf('.') + 1);
+            assertThat(sql).as(column).contains("ALTER TABLE merchant." + table + "\n    ADD CONSTRAINT "
+                    + column.replace('.', '_') + "_no_instrument_shape CHECK (\n        NOT"
+                    + " merchant.holds_instrument_shape(" + name + "));");
+        }
+    }
+
+    @Test
+    @DisplayName("V012 (the Phase 12 -> 13 gate's A3-M1): the pin's instant is its own transaction's on the database clock,"
+            + " for every writer - V010's checks kept")
+    void v012BindsThePinsInstantToTheDatabaseClock() {
+        assertThat(migration(V012))
+                .contains("IF NEW.pinned_at < transaction_timestamp() OR NEW.pinned_at > clock_timestamp() THEN")
+                .contains("IF pinned.refund_fee_policy <> 'RETURNED' THEN")
+                .contains("IF pinned.effective_from > NEW.pinned_at THEN")
+                .contains("CREATE OR REPLACE FUNCTION merchant.bnpl_fee_pin_names_a_returning_version_in_force()");
+    }
+
+    private static final String V012 =
+            "db/migration/merchant/V012__bnpl_reasons_screened_and_the_pin_on_the_database_clock.sql";
+
     private static String migration() {
-        try (InputStream in = BnplEnablementMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
-            assertThat(in).as("the migration is on the classpath: %s", MIGRATION).isNotNull();
+        return migration(MIGRATION);
+    }
+
+    private static String migration(String path) {
+        try (InputStream in = BnplEnablementMigrationTest.class.getClassLoader().getResourceAsStream(path)) {
+            assertThat(in).as("the migration is on the classpath: %s", path).isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
