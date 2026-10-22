@@ -22304,7 +22304,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 `-016`; `-024` after `-023`; `-025` after `-016`; `TST-002` after `-003` and `-004`; `TST-001` after `-001`…`-024`
 (never `-025`, the cut candidate); `DOC-001` after both exit tests.
 
-**P13-TSK-001 — The `risk` module boundary, floors, vocabularies and roles** — `IN_PROGRESS` (2026-10-22; marked `READY` by the Phase 12 → 13 transition; implemented 2026-10-22, gate pending)
+**P13-TSK-001 — The `risk` module boundary, floors, vocabularies and roles** — `COMPLETE` (2026-10-22; marked `READY` by the Phase 12 → 13 transition)
 - **Objective**: make `risk` a build-graph fact with a privilege floor, its closed vocabularies, its ports declared
   and empty, its guards green, and the three roles with their six permissions — before any table, rule or evaluation
   exists — so that every later task writes into this schema and composes through these ports, and the role split (the
@@ -22416,9 +22416,9 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   probed), `RoleNameTest` (three exact-grant cases; the pairwise case the disjointness probe's target),
   `NoCustomerSurfaceReadsRiskTest` (the rule over the production surface, the coverage guard, the surface's non-vacuity,
   four planted probes incl. the operator lookalike), every sibling isolation test; owed under C5: `RiskMigrationTest`
-  and the three roles' case in `IdentityAdministrationDatabaseTest`.
+  and the three roles' case in `IdentityAdministrationDatabaseTest`. (7) `RiskInputs` and `CaseOpener` (Scope's "source ports" and the case hook) are T-eval's own and land with `-004`, which names them; the source ports declared here are `RiskActingParty`, `SessionAssurance` and `ScreeningClearances`. **Gate (2026-10-22):** 0 CRITICAL, 0 IMPORTANT, 2 MINOR (`AlertKind.firstFor` is a fixture helper in main, kept; the ports' signatures are provisional until their implementing tasks, said so in each); the ten-instance question `PASS` vacuously - no process state, no scheduler, Flyway serialising the two migrations; three probes recorded in `MUTATION_TESTING.md` §2 (`INV-AUD-03` a `RISK_OVERRIDE` granted to `BNPL_OFFICER`, `INV-RSK-02` a `ledger` edge, `INV-RSK-08` a `/me` controller holding a risk type - each caught by its intended case, every file restored byte-identical). Fresh at the gate: the risk, identity and every module's architecture tier, app's architecture tier and its register, route, meter and glossary guards, all green. **Owed under C5** (the Docker daemon was down): `RiskMigrationTest` and `IdentityAdministrationDatabaseTest`'s three-roles case - written, compiled, not run.
 
-**P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `PLANNED`
+**P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `READY` (2026-10-22; marked by `P13-TSK-001`'s completion gate)
 - **Objective**: a policy version per operation as versioned data under four eyes — rules of closed kinds with validated
   typed parameters, a weight and/or a hard decision, in a declared order; score bands over [0, 1000]; fail-safe bands by
   amount (C1); the challenge assurance (`MULTI_FACTOR`); the override threshold (C7); effective-from — proposed,

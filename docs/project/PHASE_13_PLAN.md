@@ -848,7 +848,7 @@ Mirrors `P12-TSK-002`: the module with its `V001` floor (`REVOKE ALL FROM PUBLIC
 `RISK_ANALYST`, `RISK_OFFICER` and `AML_OFFICER` with the six permissions, `NoCustomerSurfaceReadsRiskTest`, the
 `RiskFlowScope` and the sweeper property names, and the ports' interfaces declared empty of implementation. It is first
 because every other task writes into this schema and composes through these ports, and the role split is the trust
-decision the whole phase rests on. `P13-TSK-002` (policy versions) follows.
+decision the whole phase rests on. `P13-TSK-002` (policy versions) follows. *(Built 2026-10-22, `COMPLETE`: as written, with the roles a partition (§11's erratum), `RiskAuditAction` and `RiskErrorCode` grown per task rather than declared whole, and the ports `RiskActingParty`, `SessionAssurance`, `MonitoredLedger`, `RegulatoryFilingProvider`, `ScreeningClearances`, `PartyRescreening` and the six action ports; `RiskInputs` and `CaseOpener` are `-004`'s.)*
 
 ---
 
