@@ -1695,6 +1695,21 @@ no single-poster rule binds the wallet, so no guard changes, and `BnplBooksHaveO
 (`bnpl_refund_request_unique`, `bnpl V012`), the requester the merchant's `MERCHANT:<id>` or an operator's, so a merchant's key
 and an operator's never collide; a merchant's retry under one key is still one refund.)*
 
+*Status (the Phase 12 → 13 transition gate, 2026-10-22,
+[`reviews/PHASE_12_TO_13_TRANSITION.md`](reviews/PHASE_12_TO_13_TRANSITION.md)): **Phase 12 `COMPLETE`, confirmed after
+repair.** Seven independent audits re-read the gate against the code and found no CRITICAL and ten IMPORTANT findings the
+exit review had not, each against a block above: **Refunds** and **Security** (an insider could mint a
+refund-capable merchant key and refund their own purchase; a dispute ACCEPT needed no scope); **Disputes**, **Delinquency**
+and **Observability** (a lapse that could never post, unalerted; a contested dispute with no deadline, queue, gauge or alert;
+a dispute loop that kept a customer from ever defaulting); **Purchase and origination** and **Multi-instance** (a terms pin
+that read "neither" during an activation and closed approved applications for good); **Testing** (`V015`'s hold triggers
+never run on PostgreSQL, refusal assertions that could not tell which rule refused, fakes blind to wallet holds, two money
+paths proven only hermetically, 123 register rows owing their live database half). Every one was repaired, tested and probed
+in R1–R4 (bnpl `V018`, `V019`; merchant `V012`; lending `V031`), and the blocks above now hold on master `27bd7e1f` -
+**except Universal criterion 7, still the standing deviation, now joined by the owner's three gate decisions**: no post-merge
+full re-gate and no independent verifier, no database checks after R2's merge, and the storm not re-run after the repairs.
+107 register rows still owe their live database half (`MUTATION_TESTING.md` §3, a `CURRENT_STATE.md` debt row).*
+
 ### Phase 13 — Risk, Fraud and AML
 - Fail-safe behaviour on risk-service unavailability is explicit per operation and value
   band, and is tested.
