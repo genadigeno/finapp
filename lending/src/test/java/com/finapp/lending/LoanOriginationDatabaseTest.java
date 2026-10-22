@@ -261,6 +261,39 @@ class LoanOriginationDatabaseTest {
     }
 
     @Test
+    @DisplayName("an approval with no terms version ACTIVE to pin WAITS - nothing written, no offer, no closure (the Phase"
+            + " 12 transition gate's A3-I1; credit's DecisionProgress) - and a later step offers it")
+    void anEmptyPinWaits() throws Exception {
+        activate(LOAN, "0.0818");
+        Application application = application(LOAN, 5);
+        approve(application, 2_000_00, Optional.of(12), Duration.ofDays(30));
+        // The moment the race exposed, planted inside one owner transaction that is rolled back: the edge trigger disabled
+        // and the ACTIVE row retired with no successor - the step, on that connection, finds nothing to pin.
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (Statement plant = owner.createStatement()) {
+                plant.execute("ALTER TABLE lending.loan_terms_version DISABLE TRIGGER"
+                        + " loan_terms_version_permits_only_machine_edges");
+                plant.execute("UPDATE lending.loan_terms_version SET status = 'RETIRED',"
+                        + " effective_to = effective_from + interval '1 microsecond'"
+                        + " WHERE product = 'PERSONAL_LOAN' AND status = 'ACTIVE'");
+                LoanOrigination.Outcome step = ORIGINATION.originate(owner, application.id(), SYSTEM);
+                assertThat(step.kind()).as("never a terminal closure").isEqualTo(LoanOrigination.Outcome.Kind.WAITING);
+                try (ResultSet row = plant.executeQuery("SELECT a.status || '|' || (SELECT count(*) FROM"
+                        + " lending.loan_application_event e WHERE e.application_id = a.id) || '|' || (SELECT count(*)"
+                        + " FROM lending.loan_offer o WHERE o.application_id = a.id) FROM lending.loan_application a"
+                        + " WHERE a.id = '" + application.id().value() + "'")) {
+                    row.next();
+                    assertThat(row.getString(1)).as("nothing written").isEqualTo("AWAITING_DECISION|2|0");
+                }
+            } finally {
+                owner.rollback();
+            }
+        }
+        assertThat(originate(application.id()).kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+    }
+
+    @Test
     @DisplayName("a specific offer whose own schedule would not amortise - a term beyond the bounds the terms door judged"
             + " (credit's product widened after the terms were proposed) - closes the application CLOSED_UNDECIDED"
             + " (TERMS_NOT_AMORTISING), no offer")

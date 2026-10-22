@@ -282,14 +282,41 @@ public final class JdbcLoanTermsStore implements LoanTermsStore {
         }
     }
 
+    /**
+     * The {@code ACTIVE} row {@code FOR SHARE}; read again after A0 in shared mode when the first read finds none (the
+     * Phase 12 transition gate's A3-I1, bnpl's {@code JdbcBnplTermsStore#shareActive} in lending's namespace). Under
+     * {@code READ COMMITTED} a {@code FOR SHARE} that waited on an activation's lock re-checks only the row it waited on: it
+     * finds the predecessor {@code RETIRED} and never sees the successor, born after its snapshot - "neither". The second
+     * read is a statement begun after A0 is granted shared, so no activation is in flight (each holds A0 exclusively to its
+     * commit) and a committed successor is in its snapshot: a retirement commits only beside its successor, so an empty
+     * second read is genuine. The common path takes nothing of the administration's (an activation still waits on the pin
+     * at A2); the shared A0 is held only by a pin that found none, holding no terms row an administration act waits on.
+     */
     @Override
     public Optional<LoanTermsVersionId> shareActive(Connection unitOfWork, LoanProduct product) {
+        try {
+            Optional<LoanTermsVersionId> pinned = shareActiveOnce(unitOfWork, product);
+            if (pinned.isPresent()) {
+                return pinned;
+            }
+            try (PreparedStatement lock =
+                    unitOfWork.prepareStatement("SELECT pg_advisory_xact_lock_shared(?, hashtext(?))")) {
+                lock.setInt(1, NAMESPACE);
+                lock.setString(2, product.name());
+                lock.execute();
+            }
+            return shareActiveOnce(unitOfWork, product);
+        } catch (SQLException failure) {
+            throw failed("pinning the active terms version", failure);
+        }
+    }
+
+    private static Optional<LoanTermsVersionId> shareActiveOnce(Connection unitOfWork, LoanProduct product)
+            throws SQLException {
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT id FROM lending.loan_terms_version WHERE product = ? AND status = 'ACTIVE' FOR SHARE")) {
             select.setString(1, product.name());
             return single(select, "two ACTIVE terms versions for one product");
-        } catch (SQLException failure) {
-            throw failed("pinning the active terms version", failure);
         }
     }
 

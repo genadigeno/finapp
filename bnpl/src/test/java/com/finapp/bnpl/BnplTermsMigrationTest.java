@@ -109,6 +109,9 @@ class BnplTermsMigrationTest {
     void namespaceTwelveIsPinned() {
         assertThat(JdbcBnplTermsStore.NAMESPACE).isEqualTo(12);
         assertThat(JdbcBnplTermsStore.LOCK_SQL).isEqualTo("SELECT pg_advisory_xact_lock(12, hashtext(?))");
+        // The pin's re-read after an empty first read (the Phase 12 transition gate's A3-I1): A0 in shared mode, the same
+        // key - never another namespace.
+        assertThat(JdbcBnplTermsStore.SHARED_LOCK_SQL).isEqualTo("SELECT pg_advisory_xact_lock_shared(12, hashtext(?))");
     }
 
     // -----------------------------------------------------------------

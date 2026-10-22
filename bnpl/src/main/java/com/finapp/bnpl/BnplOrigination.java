@@ -38,8 +38,9 @@ import lombok.RequiredArgsConstructor;
  * otherwise nothing (the claim's permit lapses and a later sweep asks again); closed without a decision:
  * {@code CLOSED_UNDECIDED (CREDIT_REQUEST_*)}; declined: {@code DECLINED}; approved: the session still open and unexpired,
  * the approval EXACTLY the session's gross (below it: {@code CLOSED_UNDECIDED (APPROVED_BELOW_PURCHASE)} - the price is
- * fixed), the product's {@code ACTIVE} terms version pinned {@code FOR SHARE} and offering the plan (else
- * {@code PRODUCT_NOT_OFFERED} - the version recorded on the application is informational), the database clock read after
+ * fixed), the product's {@code ACTIVE} terms version pinned {@code FOR SHARE} (none to pin: the step waits, nothing
+ * written - the Phase 12 transition gate's A3-I1) and offering the plan (else {@code PRODUCT_NOT_OFFERED} - the version
+ * recorded on the application is informational), the database clock read after
  * the pin (a lapsed approval: {@code DECISION_LAPSED}), the illustrative schedule from the pinned engine, and the offer
  * born with its canonical terms and their hash, the application {@code OFFERED} beside it. The offering instant and the
  * expiry are the insert's own database stamps - {@code LEAST(the decision's validity, the session's expiry, offered_at +
@@ -110,7 +111,10 @@ public final class BnplOrigination {
         public enum Kind {
             /** The application had already left {@code AWAITING_DECISION} - another step, or the customer, moved it. */
             NOTHING,
-            /** Credit's request is still open and the session still open. */
+            /**
+             * Credit's request is still open and the session still open - or credit approved and no terms version is
+             * {@code ACTIVE} to pin (A3-I1): a later step reads again.
+             */
             WAITING,
             /** The offer was born and the application {@code OFFERED}. */
             OFFERED,
@@ -239,8 +243,11 @@ public final class BnplOrigination {
         try {
             version = terms.pinActive(unitOfWork, application.product());
         } catch (BnplTermsAdministration.ProductNotOffered none) {
-            return close(unitOfWork, application, BnplApplicationStatus.CLOSED_UNDECIDED,
-                    Optional.of(BnplApplicationClosureReason.PRODUCT_NOT_OFFERED), actor);
+            // Nothing in force to pin (the Phase 12 transition gate's A3-I1; credit's DecisionProgress#collect): the step
+            // waits - nothing written, the claim's permit lapses and a later sweep reads again - never a terminal closure.
+            // The application was submitted under an ACTIVE version and a retirement commits only beside its successor,
+            // so this is never the product's last word; the session's deadline above still closes it.
+            return Outcome.waiting(application.product());
         }
         BnplTerms pinned = version.terms();
         if (!BnplApplications.offers(pinned, application.plan())) {

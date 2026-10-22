@@ -45,6 +45,16 @@ public final class JdbcBnplTermsStore implements BnplTermsStore {
     /** A0's statement, pinned by {@code BnplTermsNamespaceIsPinnedTest}. */
     static final String LOCK_SQL = "SELECT pg_advisory_xact_lock(" + NAMESPACE + ", hashtext(?))";
 
+    /**
+     * A0 in SHARED mode - taken only by a pin whose first read found no {@code ACTIVE} version (the Phase 12 transition
+     * gate's A3-I1): every administration act holds A0 exclusively to its commit, so once this is granted no activation is
+     * in flight, and the statement after it reads every committed one. Pinned beside {@link #LOCK_SQL}.
+     */
+    static final String SHARED_LOCK_SQL = "SELECT pg_advisory_xact_lock_shared(" + NAMESPACE + ", hashtext(?))";
+
+    private static final String SHARE_ACTIVE_SQL =
+            "SELECT id FROM bnpl.bnpl_terms_version WHERE product = ? AND status = 'ACTIVE' FOR SHARE";
+
     private static final String ROW_COLUMNS =
             "id, product, version, status, proposed_by, proposed_at, decided_by, decided_at, effective_from, effective_to";
 
@@ -298,14 +308,39 @@ public final class JdbcBnplTermsStore implements BnplTermsStore {
         }
     }
 
+    /**
+     * The {@code ACTIVE} row {@code FOR SHARE}; read again after A0 in shared mode when the first read finds none (the
+     * Phase 12 transition gate's A3-I1, the class of {@code P12-TST-001}'s B4 finding). Under {@code READ COMMITTED} a
+     * {@code FOR SHARE} that waited on an activation's lock re-checks only the row it waited on: it finds the predecessor
+     * {@code RETIRED} and never sees the successor, born after its snapshot - "neither". The second read is a statement
+     * begun after A0 is granted shared, so no activation is in flight (each holds A0 exclusively to its commit) and the
+     * successor, if one committed, is in its snapshot: a retirement commits only beside its successor, so an empty second
+     * read is genuine - no version of the product is {@code ACTIVE}. The common path takes nothing of the administration's,
+     * so an activation still waits on the pin at A2; the shared A0 is held only by a pin that found none, which holds no
+     * terms row an administration act waits on - one-way.
+     */
     @Override
     public Optional<BnplTermsVersionId> shareActive(Connection unitOfWork, BnplProduct product) {
-        try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT id FROM bnpl.bnpl_terms_version WHERE product = ? AND status = 'ACTIVE' FOR SHARE")) {
-            select.setString(1, product.name());
-            return single(select, "two ACTIVE terms versions for one product");
+        try {
+            Optional<BnplTermsVersionId> pinned = shareActiveOnce(unitOfWork, product);
+            if (pinned.isPresent()) {
+                return pinned;
+            }
+            try (PreparedStatement lock = unitOfWork.prepareStatement(SHARED_LOCK_SQL)) {
+                lock.setString(1, product.name());
+                lock.execute();
+            }
+            return shareActiveOnce(unitOfWork, product);
         } catch (SQLException failure) {
             throw failed("pinning the active terms version", failure);
+        }
+    }
+
+    private static Optional<BnplTermsVersionId> shareActiveOnce(Connection unitOfWork, BnplProduct product)
+            throws SQLException {
+        try (PreparedStatement select = unitOfWork.prepareStatement(SHARE_ACTIVE_SQL)) {
+            select.setString(1, product.name());
+            return single(select, "two ACTIVE terms versions for one product");
         }
     }
 
