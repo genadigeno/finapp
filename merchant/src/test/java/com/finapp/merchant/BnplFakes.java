@@ -231,8 +231,10 @@ final class BnplFakes {
         @Override
         public Optional<FeeScheduleVersion> findEffectiveVersion(
                 Connection unitOfWork, FeeScheduleId scheduleId, Instant instant) {
+            // An immediate version (effective_from = created_at) is in force from its commit - the SQL's rule (A3-M1).
             return versions.values().stream()
-                    .filter(v -> v.scheduleId().equals(scheduleId) && !v.effectiveFrom().isAfter(instant))
+                    .filter(v -> v.scheduleId().equals(scheduleId) && (!v.effectiveFrom().isAfter(instant)
+                            || v.effectiveFrom().equals(v.createdAt())))
                     .max(Comparator.comparing(FeeScheduleVersion::effectiveFrom)
                             .thenComparingInt(FeeScheduleVersion::version));
         }

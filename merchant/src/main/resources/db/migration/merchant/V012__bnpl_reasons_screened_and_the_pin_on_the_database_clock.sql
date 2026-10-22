@@ -20,7 +20,11 @@
 -- clock_timestamp() after the standing's share locks and resolves and stamps with it; this rank binds every writer to that
 -- clock: a pin's instant lies within its own transaction's span - no earlier than the transaction's start
 -- (transaction_timestamp()), no later than the database's clock at the insert (clock_timestamp()) - so no writer pins a
--- version "in force" by an instant the database never reached. V010's function verbatim but for that one rank.
+-- version "in force" by an instant the database never reached. V010's function verbatim but for that rank and one reading:
+-- a version created to take effect IMMEDIATELY (effective_from = created_at, V004's "empty for immediately") is in force
+-- from its commit, as FeeScheduleStore.findEffectiveVersion reads it - it is stamped with its creating instance's clock,
+-- which may run ahead of the database's, and "immediately" must not wait for the database to catch up. A SCHEDULED version
+-- (effective_from > created_at) is judged on the pin's instant alone.
 
 -- ---------------------------------------------------------------------------------------------
 -- The checksums.
@@ -233,7 +237,7 @@ BEGIN
     IF pinned.fixed_currency <> NEW.gross_currency THEN
         RAISE EXCEPTION 'a BNPL fee pin''s gross is in its version''s currency (P12-TSK-006, INV-MON-04)';
     END IF;
-    IF pinned.effective_from > NEW.pinned_at THEN
+    IF pinned.effective_from > NEW.pinned_at AND pinned.effective_from <> pinned.created_at THEN
         RAISE EXCEPTION 'a BNPL fee pin names a version in force when it was pinned (P12-TSK-006, INV-MER-03)';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM merchant.merchant_bnpl_fee_schedule a

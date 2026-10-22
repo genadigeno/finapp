@@ -163,6 +163,27 @@ class BnplPricingTest {
     }
 
     @Test
+    @DisplayName("A3-M1's other half: a version created to take effect IMMEDIATELY on an instance whose clock runs ahead of"
+            + " the database's is in force from its commit - 'immediately' never waits for the database to catch up -"
+            + " and the pin is still stamped with the database's instant")
+    void anImmediateVersionStampedAheadIsInForceAtOnce() {
+        priced();
+        // Version 2, immediate (effective_from = created_at), stamped by an instance an hour ahead of the database.
+        Instant ahead = CLOCK.instant().plusSeconds(3_600);
+        FeeScheduleVersionId immediate = FeeScheduleVersionId.next(IDS);
+        schedules.insertVersionIfNumberIsFree(UOW, FeeScheduleVersion.rehydrate(immediate, returning.id(), 2,
+                FeeRate.of(new BigDecimal("0.0100")), Money.ofMinorUnits(0, EUR), RoundingPolicy.HALF_EVEN,
+                RefundFeePolicy.RETURNED, ahead, ahead, "operator"));
+        UUID purchase = UUID.randomUUID();
+
+        FeeAssessment split = pin(purchase, 10_000);
+
+        assertThat(split.version()).as("the immediate version, in force from its commit").isEqualTo(immediate);
+        assertThat(split.fee()).isEqualTo(Money.ofMinorUnits(100, EUR));
+        assertThat(pricingStore.pins.get(purchase).pinnedAt()).as("the database's instant").isEqualTo(CLOCK.instant());
+    }
+
+    @Test
     @DisplayName("a sale that does not cover its fee is refused before the pin (ADR-0058)")
     void aSaleBelowItsFeeIsRefused() {
         enable();

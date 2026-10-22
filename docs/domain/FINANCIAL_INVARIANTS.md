@@ -3282,7 +3282,9 @@ a trigger to a returning version of the merchant's BNPL schedule in force by its
 fee and its returns are that version applied to the pinned gross, never stored.)* *(The Phase 12 → 13 transition gate,
 2026-10-22, A3-M1: "in force" is judged on the database's clock - the version resolved and the pin stamped at
 `clock_timestamp()` read after the standing's share locks, never an instance's clock - and merchant `V012`'s trigger
-refuses a pin whose instant lies outside its own transaction's span.)*
+refuses a pin whose instant lies outside its own transaction's span. A version created to take effect immediately
+(`effective_from = created_at`) is in force from its commit - "immediately" never waits for the database's clock to reach
+its creating instance's stamp; a scheduled one is judged on the database's clock alone.)*
 **Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
 proving the pinned version priced the capture.
 **Phase:** 6

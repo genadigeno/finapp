@@ -145,12 +145,13 @@ class BnplEnablementMigrationTest {
 
     @Test
     @DisplayName("V012 (the Phase 12 -> 13 gate's A3-M1): the pin's instant is its own transaction's on the database clock,"
-            + " for every writer - V010's checks kept")
+            + " for every writer - V010's checks kept, an immediate version (effective_from = created_at) in force from"
+            + " its commit")
     void v012BindsThePinsInstantToTheDatabaseClock() {
         assertThat(migration(V012))
                 .contains("IF NEW.pinned_at < transaction_timestamp() OR NEW.pinned_at > clock_timestamp() THEN")
                 .contains("IF pinned.refund_fee_policy <> 'RETURNED' THEN")
-                .contains("IF pinned.effective_from > NEW.pinned_at THEN")
+                .contains("IF pinned.effective_from > NEW.pinned_at AND pinned.effective_from <> pinned.created_at THEN")
                 .contains("CREATE OR REPLACE FUNCTION merchant.bnpl_fee_pin_names_a_returning_version_in_force()");
     }
 

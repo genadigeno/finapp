@@ -440,6 +440,33 @@ class MerchantBnplEnablementDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("A3-M1's other half: a version created to take effect IMMEDIATELY, stamped by an instance an hour ahead of"
+            + " the database, is in force from its commit - the resolution and V012's pin trigger both read it so - and"
+            + " the pin is stamped with the database's instant")
+    void anImmediateVersionStampedAheadIsInForceAtOnce() throws Exception {
+        MerchantId merchant = pricedMerchant();
+        UUID schedule = scalarUuid("SELECT fee_schedule_id FROM merchant.merchant_bnpl_fee_schedule WHERE merchant_id = ?"
+                + " AND product = 'BNPL_PAY_IN_4'", merchant.value());
+        UUID immediate = IDS.next();
+        // Version 2: effective_from = created_at (immediate), both an hour past the database's clock - a fast instance's.
+        rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.fee_schedule_version (id, fee_schedule_id, version, rate,"
+                + " fixed_amount_minor, fixed_currency, fixed_scale, rounding_policy, refund_fee_policy, effective_from,"
+                + " created_at, created_by) SELECT ?, ?, 2, 0.0100, 0, 'EUR', 2, 'HALF_EVEN', 'RETURNED',"
+                + " now() + interval '1 hour', now() + interval '1 hour', 'a fast instance'", immediate, schedule);
+        BnplPurchaseId purchase = BnplPurchaseId.next(IDS);
+
+        MerchantFeeSplit split = act(operator(), uow -> bnplMerchants.pinFee(uow, merchant.value(),
+                BnplProduct.BNPL_PAY_IN_4, purchase, Money.ofMinorUnits(10_000, EUR)));
+
+        assertThat(split.fee()).as("priced by the immediate version's 1.00 %").isEqualTo(Money.ofMinorUnits(100, EUR));
+        assertThat(scalarUuid("SELECT fee_schedule_version_id FROM merchant.bnpl_fee_pin WHERE purchase_id = ?",
+                purchase.value())).isEqualTo(immediate);
+        assertThat(count("SELECT count(*) FROM merchant.bnpl_fee_pin WHERE purchase_id = ?::uuid AND pinned_at"
+                + " < now() + interval '5 minutes'", purchase.value().toString()))
+                .as("stamped with the database's instant, not the version's").isEqualTo(1);
+    }
+
     private static java.time.Instant databaseNow() throws SQLException {
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement select = app.prepareStatement("SELECT clock_timestamp()");
