@@ -210,19 +210,28 @@ class RiskVocabulariesTest {
     }
 
     @Test
-    @DisplayName("the three error codes and two audit actions the role split owns, namespaced risk., the refusals 403")
+    @DisplayName("the error codes and audit actions declared so far, namespaced risk. - the role split's three codes and"
+            + " two refusals (P13-TSK-001), the reprocessing door's two codes and its reasoned act (P13-TSK-019)")
     void theCodesAndActions() {
+        // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
         assertThat(Arrays.stream(RiskErrorCode.values()).map(RiskErrorCode::code))
-                .containsExactly("risk.NotFound", "risk.SelfApprovalRefused", "risk.SelfDealingRefused");
+                .containsExactlyInAnyOrder("risk.NotFound", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
+                        "risk.ReasonRequired", "risk.ReprocessingNotBehind");
         assertThat(RiskErrorCode.NOT_FOUND.status()).isEqualTo(404);
         assertThat(RiskErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
         assertThat(RiskErrorCode.SELF_DEALING_REFUSED.status()).isEqualTo(403);
+        assertThat(RiskErrorCode.REASON_REQUIRED.status()).isEqualTo(422);
+        assertThat(RiskErrorCode.REPROCESSING_NOT_BEHIND.status()).isEqualTo(422);
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
-                .containsExactly("risk.SelfApprovalRefused", "risk.SelfDealingRefused");
+                .containsExactlyInAnyOrder("risk.SelfApprovalRefused", "risk.SelfDealingRefused",
+                        "risk.ReprocessingOrdered");
         for (RiskAuditAction action : RiskAuditAction.values()) {
-            assertThat(action.requiresReason()).as("%s is the platform's refusal, reasoned by the act", action).isFalse();
             assertThat(action.description()).as(action.name()).isNotBlank();
         }
+        // The platform's refusals are reasoned by the act; a person's discretionary order requires a reason.
+        assertThat(RiskAuditAction.SELF_APPROVAL_REFUSED.requiresReason()).isFalse();
+        assertThat(RiskAuditAction.SELF_DEALING_REFUSED.requiresReason()).isFalse();
+        assertThat(RiskAuditAction.REPROCESSING_ORDERED.requiresReason()).isTrue();
     }
 
     @Test

@@ -320,6 +320,15 @@ Both leaderless, `SKIP LOCKED`, off in test contexts, each with its gauge and it
 and `-022` add their legs. The held withdrawal's expiry (§5) is a leg of payments' existing
 `WithdrawalResolutionSchedule`, added by `-009` — not a risk schedule.
 
+*(As built by `P13-TSK-019`, 2026-10-23: `RiskMonitoringSchedule` created in `app` with the intake leg — the 30th
+`LEASE_PROTECTED_SCHEDULERS` entry; `finapp.risk.sweeper.enabled{kind=monitoring}` and
+`finapp.risk.sweeper.claim.failed{kind=monitoring}`. The claim and its batch are ONE transaction: the watermark row
+`FOR UPDATE SKIP LOCKED` on `clock_timestamp()`, the journal read with no lock, the rows inserted born once, the
+position advanced and the permit re-stamped (now after a full batch, the idle cadence after a short one) — so a
+partial batch never advances. One tick takes batches while they come back full, bounded (`batches-per-tick`). The
+watermark's permit is also pulled forward by the hint `MonitoringWatermarkStore.hint`, declared here for `-005`'s
+completion handlers.)*
+
 ### 7.6 The latency budget and what a breach becomes
 
 T-eval runs in-lock, so its cost is paid by every money movement. Budget: **p99 ≤ 50 ms** for the reads and upserts
@@ -578,6 +587,17 @@ over the monitored transactions and the velocity windows (`STRUCTURING`, `RAPID_
 them into the subject's open `AML` case. Reprocessing — re-running from an earlier watermark after a policy change or
 an incident — is idempotent by construction (`INV-RSK-09`); an operator orders it at `POST /v1/operator/risk/monitoring/reprocessing` under `RISK_POLICY_ADMINISTER`, keyed,
 audited `risk.ReprocessingOrdered`.
+
+*(As built by `P13-TSK-019`, 2026-10-23. **The journal has no sequence column**: `MonitoredLedger` reads by the
+entry's UUIDv7 id — the one ordered, indexed path — as a keyset, under a settle horizon on the database clock
+(`finapp.risk.monitoring.horizon`, PT60S) so an entry still in flight is not overtaken; "the sequence" is the id's
+48-bit millisecond prefix, what the watermark's `last_sequence` and the door's `fromSequence` speak in. An entry
+committed later than the horizon after its mint is the design's recorded bound — caught by the census, repaired by
+reprocessing (`DESIGN-019` §0). The namespace register is `MonitoredKind` (forty-four namespaces into twenty-three
+kinds, `REVERSAL` and `ADJUSTMENT` by entry type), guarded by `PostingKeyNamespaceRegisterTest` over every module's
+production source. `UNCLASSIFIED` is recorded and gauged here; the alert row is `-015`'s. The door answers `202
+{source, fromSequence, previousSequence}`, refuses a point ahead of the watermark `422 risk.ReprocessingNotBehind`
+and a missing reason `422 risk.ReasonRequired`, and restarts the intake at the millisecond's floor.)*
 
 ### 12.8 Cases, actions and the owning domains (ADR-0110, ADR-0112)
 

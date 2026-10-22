@@ -245,25 +245,7 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                     postingDate = row.getObject("posting_date", LocalDate.class);
                     valueDate = row.getObject("value_date", LocalDate.class);
                     createdAt = row.getTimestamp("created_at").toInstant();
-                    attribution =
-                            new PostingAttribution(
-                                    JournalEntryType.valueOf(row.getString("entry_type")),
-                                    row.getString("reference"),
-                                    Optional.ofNullable(row.getString("reason")),
-                                    Optional.ofNullable(
-                                                    row.getObject(
-                                                            "reverses_entry_id", UUID.class))
-                                            .map(JournalEntryId::of),
-                                    row.getString("actor_id"),
-                                    Correlation.startingWith(
-                                                    com.finapp.sharedkernel.correlation
-                                                            .CorrelationId.of(
-                                                                    row.getString(
-                                                                            "correlation_id")))
-                                            .causing(
-                                                    CausationId.of(
-                                                            row.getString("causation_id"))),
-                                    row.getString("idempotency_scope"));
+                    attribution = attributionOf(row);
                 }
             }
             List<JournalLine> lines = new ArrayList<>();
@@ -275,21 +257,7 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                 select.setObject(1, entryId.value());
                 try (ResultSet row = select.executeQuery()) {
                     while (row.next()) {
-                        lines.add(
-                                new JournalLine(
-                                        LedgerAccountId.of(
-                                                row.getObject(
-                                                        "ledger_account_id", UUID.class)),
-                                        Direction.valueOf(row.getString("direction")),
-                                        // ofPersisted, exactly: a stored amount reads back
-                                        // as the amount it was, whatever the currency's
-                                        // minor units say today (INV-MON-05).
-                                        Money.ofPersisted(
-                                                row.getLong("amount_minor"),
-                                                com.finapp.sharedkernel.money.CurrencyCode.of(
-                                                        row.getString("currency")
-                                                                .stripTrailing()),
-                                                row.getShort("scale"))));
+                        lines.add(lineOf(row));
                     }
                 }
             }
@@ -304,4 +272,150 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
         }
     }
 
+    /**
+     * The settle horizon's bound, built in SQL from {@code clock_timestamp()} — never an
+     * instance's clock: the lowest UUIDv7 of the millisecond {@code settleHorizon} ago (the
+     * generator's layout, ADR-0013: 48 bits of milliseconds, the version nibble, a zero counter,
+     * the RFC variant, zero randomness), so every id minted at or after that millisecond sorts
+     * at or after it.
+     */
+    private static final String HORIZON_UUID =
+            // An uncorrelated scalar subquery: evaluated once as an initplan, so the bound is a constant and the
+            // planner keeps the primary key's range scan.
+            "(SELECT (substr(h.hex, 1, 8) || '-' || substr(h.hex, 9, 4) || '-7000-8000-000000000000')::uuid"
+                    + " FROM (SELECT lpad(to_hex(floor(extract(epoch FROM (clock_timestamp()"
+                    + " - ? * interval '1 millisecond')) * 1000)::bigint), 12, '0') AS hex) h)";
+
+    @Override
+    public List<PostedEntry> entriesAfter(
+            Connection unitOfWork, UUID after, java.time.Duration settleHorizon, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        Objects.requireNonNull(settleHorizon, "settleHorizon must not be null");
+        if (settleHorizon.isNegative()) {
+            throw new IllegalArgumentException("the settle horizon is not negative");
+        }
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one entry: " + limit);
+        }
+        try {
+            // The entries first: the page's ids in bytewise order, which is time order.
+            record Head(JournalEntryId id, LocalDate postingDate, LocalDate valueDate,
+                    java.time.Instant createdAt, PostingAttribution attribution) {}
+            List<Head> heads = new ArrayList<>();
+            try (PreparedStatement select =
+                    unitOfWork.prepareStatement(
+                            "SELECT e.id, e.posting_date, e.value_date, e.entry_type, e.reference,"
+                                    + " e.reason, e.reverses_entry_id, e.actor_id, e.correlation_id,"
+                                    + " e.causation_id, e.idempotency_scope, e.created_at"
+                                    + " FROM " + ENTRY_TABLE + " e"
+                                    + " WHERE e.id > ? AND e.id < " + HORIZON_UUID
+                                    + " ORDER BY e.id LIMIT ?")) {
+                select.setObject(1, after);
+                select.setLong(2, settleHorizon.toMillis());
+                select.setInt(3, limit);
+                try (ResultSet row = select.executeQuery()) {
+                    while (row.next()) {
+                        heads.add(
+                                new Head(
+                                        JournalEntryId.of(row.getObject("id", UUID.class)),
+                                        row.getObject("posting_date", LocalDate.class),
+                                        row.getObject("value_date", LocalDate.class),
+                                        row.getTimestamp("created_at").toInstant(),
+                                        attributionOf(row)));
+                    }
+                }
+            }
+            if (heads.isEmpty()) {
+                return List.of();
+            }
+            // Then the page's lines in one statement, in each entry's own order.
+            java.util.Map<UUID, List<JournalLine>> lines = new java.util.HashMap<>();
+            try (PreparedStatement select =
+                    unitOfWork.prepareStatement(
+                            "SELECT entry_id, ledger_account_id, direction, amount_minor, currency,"
+                                    + " scale FROM " + LINE_TABLE
+                                    + " WHERE entry_id = ANY (?) ORDER BY entry_id, seq")) {
+                select.setArray(
+                        1,
+                        unitOfWork.createArrayOf(
+                                "uuid", heads.stream().map(head -> head.id().value()).toArray()));
+                try (ResultSet row = select.executeQuery()) {
+                    while (row.next()) {
+                        lines.computeIfAbsent(
+                                        row.getObject("entry_id", UUID.class),
+                                        entry -> new ArrayList<>())
+                                .add(lineOf(row));
+                    }
+                }
+            }
+            List<PostedEntry> page = new ArrayList<>(heads.size());
+            for (Head head : heads) {
+                page.add(
+                        new PostedEntry(
+                                JournalEntry.rehydrate(
+                                        head.id(),
+                                        head.postingDate(),
+                                        head.valueDate(),
+                                        lines.getOrDefault(head.id().value(), List.of()),
+                                        head.createdAt()),
+                                head.attribution()));
+            }
+            return page;
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("walking the journal", failure));
+        }
+    }
+
+    @Override
+    public long countBeyond(Connection unitOfWork, UUID after, long cap) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        if (cap < 1) {
+            throw new IllegalArgumentException("a cap is positive: " + cap);
+        }
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*) FROM (SELECT 1 FROM " + ENTRY_TABLE
+                                + " WHERE id > ? LIMIT ?) beyond")) {
+            select.setObject(1, after);
+            select.setLong(2, cap);
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("counting the journal beyond a position", failure));
+        }
+    }
+
+    private static PostingAttribution attributionOf(ResultSet row) throws SQLException {
+        return new PostingAttribution(
+                JournalEntryType.valueOf(row.getString("entry_type")),
+                row.getString("reference"),
+                Optional.ofNullable(row.getString("reason")),
+                Optional.ofNullable(row.getObject("reverses_entry_id", UUID.class))
+                        .map(JournalEntryId::of),
+                row.getString("actor_id"),
+                Correlation.startingWith(
+                                com.finapp.sharedkernel.correlation.CorrelationId.of(
+                                        row.getString("correlation_id")))
+                        .causing(CausationId.of(row.getString("causation_id"))),
+                row.getString("idempotency_scope"));
+    }
+
+    private static JournalLine lineOf(ResultSet row) throws SQLException {
+        return new JournalLine(
+                LedgerAccountId.of(row.getObject("ledger_account_id", UUID.class)),
+                Direction.valueOf(row.getString("direction")),
+                // ofPersisted, exactly: a stored amount reads back as the amount it was,
+                // whatever the currency's minor units say today (INV-MON-05).
+                Money.ofPersisted(
+                        row.getLong("amount_minor"),
+                        com.finapp.sharedkernel.money.CurrencyCode.of(
+                                row.getString("currency").stripTrailing()),
+                        row.getShort("scale")));
+    }
 }

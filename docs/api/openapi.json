@@ -8977,6 +8977,181 @@
           }
         }
       },
+      "risk.NotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.NotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.NotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No risk record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.ReasonRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.ReasonRequired"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.ReasonRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A reason is required.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.ReprocessingNotBehind": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.ReprocessingNotBehind"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.ReprocessingNotBehind"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip entries. Nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] A proposal is decided by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.SelfDealingRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.SelfDealingRefused"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.SelfDealingRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] A holder never acts on a case, override or report whose subject is their own party; nothing was done.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "settlement.AttestationBySubmitter": {
         "content": {
           "application/problem+json": {
@@ -20820,17 +20995,15 @@
       },
       "ReprocessingReceipt": {
         "properties": {
-          "itemCount": {
-            "format": "int32",
+          "fromSequence": {
+            "format": "int64",
             "type": "integer"
           },
-          "ruleSetId": {
-            "type": "string"
+          "previousSequence": {
+            "format": "int64",
+            "type": "integer"
           },
-          "runId": {
-            "type": "string"
-          },
-          "sourceCode": {
+          "source": {
             "type": "string"
           }
         },
@@ -20838,14 +21011,18 @@
       },
       "ReprocessingRequest": {
         "properties": {
+          "fromSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
           "reason": {
             "maxLength": 1000,
-            "minLength": 1,
+            "minLength": 0,
             "type": "string"
           }
         },
         "required": [
-          "reason"
+          "fromSequence"
         ],
         "type": "object"
       },
@@ -21463,7 +21640,10 @@
               "LENDING_TREASURY_OFFICER",
               "LOAN_SERVICING_AGENT",
               "BNPL_OFFICER",
-              "BNPL_SERVICING_AGENT"
+              "BNPL_SERVICING_AGENT",
+              "RISK_ANALYST",
+              "RISK_OFFICER",
+              "AML_OFFICER"
             ],
             "type": "string"
           }
@@ -32722,6 +32902,43 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/monitoring/reprocessing": {
+      "post": {
+        "operationId": "orderReprocessing",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReprocessingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReprocessingReceipt"
+                }
+              }
+            },
+            "description": "Accepted"
           }
         }
       }

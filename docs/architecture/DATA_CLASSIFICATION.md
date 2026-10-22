@@ -4066,6 +4066,41 @@ identities, `CONFIDENTIAL` as in every register above. Payments' `withdrawal` `H
 failure reasons (payments `V033`, `V034`; `P13-TSK-009`, `-010`) are machine states in payments' own rows, classified
 there by the tasks that add them.
 
+#### `risk` - the monitored transaction and the monitoring watermark - *added by `P13-TSK-019` (`risk V004`)*
+
+The monitored transaction is the journal entry's judged figure read once from the ledger - the `journal_line` rows'
+levels carried over: the amount `RESTRICTED-FINANCIAL` by rule 0, its currency and scale `INTERNAL`, every owner
+reference an identifier of a thing (`ledger_account.owner_ref`'s reasoning) and every date of financial activity
+`CONFIDENTIAL` (`journal_entry.posting_date`'s). Nothing here is a balance, a name, a reason or a score. The watermark
+is the sweep's own position and clock: `INTERNAL` throughout.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `monitored_transaction` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `monitored_transaction` | `journal_entry_id` | `INTERNAL` | The journal entry this row was born from, by value - `journal_entry.id`'s reasoning (`INV-RSK-09`) |
+| `monitored_transaction` | `journal_sequence` | `INTERNAL` | The entry id's millisecond prefix - a position in the journal, derived from the identifier |
+| `monitored_transaction` | `entry_type` | `INTERNAL` | An enumeration of three values - `journal_entry.entry_type`'s |
+| `monitored_transaction` | `posting_namespace` | `INTERNAL` | A posting key's prefix - a closed code the register names (or did not, for an `UNCLASSIFIED` row); never the key's identifier part |
+| `monitored_transaction` | `kind` | `INTERNAL` | An enumeration member (`MonitoredKind`) |
+| `monitored_transaction` | `subject_kind` | `INTERNAL` | An enumeration of two values |
+| `monitored_transaction` | `subject_ref` | `INTERNAL` | The customer account or merchant whose ledger account moved, by value - `ledger_account.owner_ref`'s reasoning: an identifier of a thing, and it must appear in the queries that make a movement investigable |
+| `monitored_transaction` | `direction` | `INTERNAL` | An enumeration of two values |
+| `monitored_transaction` | `counterparty_kind` | `INTERNAL` | An enumeration member - the ledger's owner kinds by value |
+| `monitored_transaction` | `counterparty_ref` | `INTERNAL` | As `subject_ref` |
+| `monitored_transaction` | `counterparty_purpose` | `INTERNAL` | An enumeration member - `ledger_account.purpose`'s |
+| `monitored_transaction` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The amount** - the movement's judged figure as seen from the subject, `journal_line.amount_minor`'s level; never a balance (`INV-RSK-02`) |
+| `monitored_transaction` | `currency` | `INTERNAL` | An ISO 4217 code; the fact lives in the pairing with the amount |
+| `monitored_transaction` | `scale` | `INTERNAL` | Precision metadata of the amount |
+| `monitored_transaction` | `value_date` | `CONFIDENTIAL` | Dates financial activity - `journal_entry.value_date`'s reasoning |
+| `monitored_transaction` | `posted_at` | `CONFIDENTIAL` | The entry's own `created_at` - as `journal_entry.created_at` |
+| `monitored_transaction` | `recorded_at` | `CONFIDENTIAL` | When the monitor saw it - within the settle horizon of the posting, so it dates the activity too |
+| `monitored_transaction` | `reverses_journal_entry_id` | `INTERNAL` | The original a `REVERSAL` compensates, by value - `journal_entry.reverses_entry_id`'s |
+| `monitoring_watermark` | `source` | `INTERNAL` | A closed code - the one source, the ledger journal |
+| `monitoring_watermark` | `last_entry_id` | `INTERNAL` | A position in the journal - an entry identifier or a millisecond's floor; `journal_entry.id`'s reasoning |
+| `monitoring_watermark` | `last_sequence` | `INTERNAL` | The position's millisecond, derived by the database |
+| `monitoring_watermark` | `next_sweep_at` | `INTERNAL` | The sweep's permit - the platform's own clock, dating nothing of a customer |
+| `monitoring_watermark` | `advanced_at` | `INTERNAL` | When the position last moved - as `next_sweep_at` |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

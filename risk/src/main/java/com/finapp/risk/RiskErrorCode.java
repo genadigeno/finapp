@@ -23,7 +23,16 @@ public enum RiskErrorCode implements ErrorCode {
     SELF_DEALING_REFUSED(
             "risk.SelfDealingRefused",
             403,
-            "A holder never acts on a case, override or report whose subject is their own party; nothing was done.");
+            "A holder never acts on a case, override or report whose subject is their own party; nothing was done."),
+
+    /** Declared by `P13-TSK-019` for the reprocessing door; `-002`'s doors raise the same code (the wave's one). */
+    REASON_REQUIRED("risk.ReasonRequired", 422, "A reason is required."),
+
+    REPROCESSING_NOT_BEHIND(
+            "risk.ReprocessingNotBehind",
+            422,
+            "A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip"
+                    + " entries. Nothing was changed.");
 
     private final String code;
     private final int status;

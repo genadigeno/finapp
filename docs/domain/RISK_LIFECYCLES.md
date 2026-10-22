@@ -438,6 +438,21 @@ never runs inside a money transaction (M3's split trigger, watched by the storm)
 monitored transaction; a second row per journal entry; a watermark advanced before its rows are committed; an entry
 skipped for an unknown namespace; a monitored transaction born from an event rather than the journal.
 
+*(As built by `P13-TSK-019`, 2026-10-23 — three readings the code fixes. **"Ordered by its sequence":** the journal has
+no sequence column; its entry id is a UUIDv7 whose first 48 bits are the minting millisecond and whose primary key is
+the journal's one ordered access path, so the intake reads by id as a keyset — `last_entry_id` the exact position,
+`last_sequence` the id's millisecond derived by the database — and only entries minted before `clock_timestamp() −`
+the settle horizon (`finapp.risk.monitoring.horizon`, PT60S), on the database clock, so an entry still in flight is
+not overtaken by a later-minted one that committed first; an entry committed later than the horizon after its mint is
+the design's recorded bound, caught by the census and repaired by reprocessing (`DESIGN-019` §0). **"Commits the claim
+alone":** the claim holds no other row; the claim, the journal read (no lock) and the batch's inserts are ONE
+transaction, so a partial batch never advances and a "crash mid-claim" is a rollback the next claim re-reads from.
+**"Alerted":** the row is recorded `UNCLASSIFIED` and gauged (`finapp.risk.monitoring.unclassified`); the alert row
+is `-015`'s (`AlertKind.UNCLASSIFIED_TRANSACTION`). A row born `UNCLASSIFIED` stays so — `INSERT`-only — when the
+register later learns its namespace; the remedy is the register knowing every namespace on the day
+(`PostingKeyNamespaceRegisterTest`), the owner's open question a later reclassification fact. The reprocessing door
+refuses a point ahead of the watermark (`422 risk.ReprocessingNotBehind`) and restarts at the millisecond's floor.)*
+
 ### 4.12 The consumers' machines, as Phase 13 changes them
 
 **Transfers (`transfers.transfer`) — unchanged.** `TransferExecution` consults both seams after `lockBothInFixedOrder`

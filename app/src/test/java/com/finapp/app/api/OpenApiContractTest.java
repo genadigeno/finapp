@@ -438,6 +438,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution/rejection",
+                        // P13-TSK-019: the risk officer's monitoring door - a reprocessing of the intake ordered from an
+                        // earlier watermark (RISK_POLICY_ADMINISTER, keyed, 202, audited risk.ReprocessingOrdered).
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/monitoring/reprocessing",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

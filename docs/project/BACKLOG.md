@@ -23568,7 +23568,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   guards are green and each proven by its probe; no customer response differs with a case open.
 - **Definition of done**: `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P13-TSK-019 — Monitored transactions: the journal intake, the watermark, reprocessing** — `READY` (2026-10-23; wave B beside `P13-TSK-002`, dependency-free after `P13-TSK-001` — marked by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel)
+**P13-TSK-019 — Monitored transactions: the journal intake, the watermark, reprocessing** — `COMPLETE` (2026-10-23; Phase 13 wave B beside `P13-TSK-002` and `P13-TSK-005`, branch `P13-TSK-019` from master `5238a455`; **M13.6 at 1 of 4**; marks no task `READY` — the wave's coordinator does, after the wave) *(read "`READY` (2026-10-23; wave B beside `P13-TSK-002`, dependency-free after `P13-TSK-001` — marked by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel)" until its gate)*
 - **Objective**: the monitoring intake reads the **ledger journal** — the one financial truth — through
   `MonitoredLedger`, from a watermark, in a leaderless sweep with its own transactions: each journal entry classified
   by its posting-key namespace into a monitored transaction born once per `journal_entry_id`, entries of an unknown
@@ -23638,6 +23638,56 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Definition of done**: `DOD-DOMAIN`, `DOD-FIN` (F2 — the monitored record replayable from the journal; F6, F7, F8
   binding — the census; F1, F3, F4, F5 vacuous — no posting, no command, no external delivery). **Risk**: Medium.
   **Cx**: M.
+- **As built (2026-10-23)**: **The finding that shaped the build — the journal has no sequence column.** Its entry
+  id is a UUIDv7 minted on the application clock per instance (ADR-0013) and `created_at` is application-supplied and
+  unindexed, so nothing in the journal is strictly monotonic across instances and even a database sequence would
+  not be (a lower value can commit after a higher one). The intake therefore reads by **id** — the one ordered,
+  indexed path — as a keyset, bounded above by a **settle horizon on the database clock**
+  (`finapp.risk.monitoring.horizon`, PT60S; the bound built in SQL from `clock_timestamp()`, never an instance
+  clock), so an entry still in flight is not overtaken by a later-minted one that committed first; "the sequence"
+  is the id's 48-bit millisecond prefix — `monitoring_watermark.last_sequence`, derived by trigger from
+  `last_entry_id`, and the door's `fromSequence`. An entry committed later than the horizon after its mint is the
+  recorded bound, caught by the census and repaired by reprocessing (`DESIGN-019` §0; the xid-snapshot alternative
+  rejected as unindexable, the ledger unchanged). **`risk V004`**: `monitored_transaction` (`UNIQUE
+  (journal_entry_id)`, `INSERT`-only by privilege and by trigger, `recorded_at` the database clock's, the ADR-0003
+  money shape verbatim, the closed `kind` `CHECK` held to `MonitoredKind`, subject/direction/reversal `CHECK`s whole)
+  and `monitoring_watermark` (one seeded row `ledger.journal` at the floor, `UPDATE (last_entry_id, next_sweep_at)`
+  the role's only write, no `INSERT`, no `DELETE`, `risk.uuid7_sequence`). **The register** `MonitoredKind`:
+  forty-four namespaces the ledger carries today into twenty-three kinds (`transfer:`, `wallet-withdrawal:`,
+  `payment-capture:`, `payment-execution:`, `payment-refund:`, `unmatched-confirmation:`, `outbound-credit:`,
+  `crossborder-return:`/`-fee:`, `merchant-payout:`/`-return:`, the seven `dispute-*:`, `settlement-batch:`,
+  `recon-suspense:`, `fx-trade:`, `fx-cover:`, the thirteen `lending.*:`, the ten `bnpl.*:`), `REVERSAL` and
+  `ADJUSTMENT` by entry type, `UNCLASSIFIED` for the rest — recorded, gauged, never skipped; guarded by `app`'s
+  `PostingKeyNamespaceRegisterTest` over every module's production source (a key the ledger records only under a
+  reversal named as such). **The classification** (`MonitoringClassification`, pure): the subject the first
+  customer-owned line (else a merchant's), from the ledger's own `owner_kind`/`owner_ref`; direction and net amount in
+  the subject's currency; the counterparty the first other line's owner and purpose; no owned side → no subject,
+  the debit total. **T-mon's intake leg** (`MonitoringIntake`): one batch = one transaction — the claim `FOR UPDATE
+  SKIP LOCKED` on `clock_timestamp()` (R7), the read through `MonitoredLedger` (`app`'s `LedgerMonitoredLedger` over
+  `JournalEntryStore.entriesAfter` + `LedgerAccountStore.findAllById`, `SELECT` only), the port's order checked, `ON
+  CONFLICT DO NOTHING`, the advance with the permit re-stamped (now after a full batch, the idle cadence after a short
+  one) — a partial batch never advances; the hint `MonitoringWatermarkStore.hint` declared for `-005`.
+  **`RiskMonitoringSchedule`** (`app`, leaderless, off in tests, `LEASE_PROTECTED_SCHEDULERS` 29 → 30, bounded
+  batches per tick, a failed batch counted). **The door** `POST /v1/operator/risk/monitoring/reprocessing`
+  (`RISK_POLICY_ADMINISTER`, keyed `risk.reprocess:<type>:<id>`, `202 {source, fromSequence, previousSequence}`,
+  `422 risk.ReasonRequired` — declared here, `-002` raises the same code — `422 risk.ReprocessingNotBehind`, the
+  watermark locked `FOR UPDATE` waiting and moved back to the millisecond's floor, audited
+  `risk.ReprocessingOrdered` with the reason and a summary of the positions only). **Gauges**
+  `finapp.risk.monitoring.lag{source}`, `finapp.risk.monitoring.unclassified`,
+  `finapp.risk.sweeper.enabled{kind=monitoring}`, `finapp.risk.sweeper.claim.failed{kind=monitoring}`. **Deviations
+  from the entry**: the names are `MonitoredKind` (not `MonitoredTransactionKind`/`NamespaceRegister`),
+  `MonitoringClassificationTest` (the register test), `MonitoringIntakeDatabaseTest#aJournalCensusMatches` and
+  `#theHint`; no separate read-only database principal exists (the adapter holds no statement but `SELECT`; a role is
+  a platform change — owner item); the alert on `UNCLASSIFIED` is the gauge until `-015`; `RiskTransactions` is a
+  port with `SpringRiskTransactions` its implementation (so the schedule's hermetic suite names no data source).
+  **Tests**: hermetic `MonitoringClassificationTest` (8), `MonitoringIntakeTest` (8), `MonitoringWatermarkTest` (3),
+  `MonitoringReprocessingTest` (7), `RiskMonitoringScheduleTest` (5), `LedgerMonitoredLedgerTest` (1); architecture
+  `PostingKeyNamespaceRegisterTest` (2), `NoSingleInstanceAssumptionRulesTest` +1, the system-actor enumeration +1,
+  the floating-point exemption +1 (two counts through Micrometer's gauge); database, **written and owed under C5**:
+  `RiskMigrationTest` (rewritten, 11), `MonitoringIntakeDatabaseTest` (`#tenSweepersIngestOnce`,
+  `#reprocessingCreatesNothingNew`, `#aJournalCensusMatches`, `#aCrashMidClaimLapsesAndResumes`,
+  `#anUnknownNamespaceIsUnclassified`, `#theHint`), `RiskMonitoringEndpointDatabaseTest` (2). Three probes recorded in
+  `MUTATION_TESTING.md` §2 (`INV-RSK-09` ×2, `INV-RSK-08`), every file restored byte-identical (sha256-verified).
 
 **P13-TSK-020 — Monitoring rules and AML alerts** — `PLANNED`
 - **Objective**: the monitoring policy version (`RiskOperation.MONITORING`) and T-mon's rule leg — per subject, under
