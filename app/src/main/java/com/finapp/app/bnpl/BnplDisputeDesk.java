@@ -38,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -50,7 +51,9 @@ import lombok.RequiredArgsConstructor;
  * conditional step-up) and withdrawal ({@code POST /v1/me/bnpl-disputes/{id}/withdrawal}); the merchant's list of its open
  * disputes and its response over its API key ({@code POST /v1/merchant/bnpl-disputes/{id}/response}, keyed
  * {@code bnpl.dispute-response:MERCHANT:<merchant>}); the operator's audited read and resolution - with the four-eyes
- * approval and rejection beside it - under {@code BNPL_DISPUTE_RESOLVE}, keyed {@code bnpl.servicing:<actor type>:<id>}.
+ * approval and rejection beside it - under {@code BNPL_DISPUTE_RESOLVE}, keyed {@code bnpl.servicing:<actor type>:<id>};
+ * and, since the Phase 12 to 13 gate (A7-2), the operator's audited queue of the contested ({@code MERCHANT_RESPONDED}) or
+ * open disputes ({@code GET /v1/operator/bnpl-disputes?status=}), paged.
  * Each act runs in one transaction under the {@link IdempotentExecutor} claim: a retried key replays the recorded receipt,
  * and a refusal rolls the claim back with everything the transaction wrote.
  *
@@ -114,6 +117,25 @@ public final class BnplDisputeDesk {
 
     /** The merchant's open disputes. */
     public record BnplMerchantDisputeList(List<BnplMerchantDisputeView> disputes) {}
+
+    /**
+     * A dispute in the operator's queue (the Phase 12 to 13 gate's A7-2): its figures, the instants it was opened and
+     * answered, its deadline and how many instalments it holds - never the customer's reason or the merchant's statement.
+     */
+    public record BnplDisputeQueueItem(
+            String disputeId,
+            String purchaseId,
+            String status,
+            String category,
+            String amount,
+            String currency,
+            String openedAt,
+            String responseDeadline,
+            String merchantRespondedAt,
+            int heldInstalments) {}
+
+    /** A page of the operator's queue, oldest first, and the cursor of the next page ({@code null} when none remains). */
+    public record BnplDisputeQueue(List<BnplDisputeQueueItem> disputes, String next) {}
 
     /**
      * The operator's audited read: the dispute's figures, the customer's reason and the merchant's statement
@@ -187,7 +209,11 @@ public final class BnplDisputeDesk {
 
     // ------------------------------------------------------------------ the operator's doors
 
-    /** The operator's read - recorded every time. */
+    /**
+     * The operator's read - recorded every time; a dispute of the operator's own party (or by an operator the platform
+     * cannot place) is {@code 403 bnpl.SelfDealingRefused}, recorded {@code FAILED} in a transaction of its own after the
+     * read rolled back (the Phase 12 to 13 gate's A5-F4, the corrections' rule).
+     */
     public BnplOperatorDisputeView investigate(String rawDisputeId) {
         BnplDisputeId id = disputeId(rawDisputeId);
         Actor actor = SecurityContext.require();
@@ -202,7 +228,43 @@ public final class BnplDisputeDesk {
                     dispute.resolvedBy().orElse(null), dispute.resolvedAt().map(Object::toString).orElse(null));
         } catch (BnplDisputes.DisputeNotFound absent) {
             throw notFound();
+        } catch (BnplDisputes.SelfDealingRefused selfDealing) {
+            throw selfDealingRecorded(selfDealing, actor, correlation, "The read was refused",
+                    "an employee never reads a BNPL dispute of their own party; nothing was read.");
         }
+    }
+
+    /**
+     * One page of the operator's queue (the gate's A7-2): the disputes in {@code status} - {@code MERCHANT_RESPONDED}, the
+     * contested awaiting an operator, or {@code OPEN} - oldest first, at most {@link BnplDisputes#QUEUE_PAGE}, after the
+     * cursor {@code after}; never the operator's own party's; every page recorded. No free text.
+     */
+    public BnplDisputeQueue queue(String rawStatus, String rawAfter) {
+        BnplDisputeStatus status = queueStatus(rawStatus);
+        Optional<BnplDisputeId> after = rawAfter == null || rawAfter.isBlank() ? Optional.empty()
+                : Optional.of(cursor(rawAfter));
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        try {
+            BnplDisputes.Queue page = transactions.inTransaction(unitOfWork -> disputes.queue(unitOfWork, status, after,
+                    actor, correlation));
+            return new BnplDisputeQueue(page.disputes().stream().map(BnplDisputeDesk::queued).toList(),
+                    page.next().map(next -> next.value().toString()).orElse(null));
+        } catch (BnplDisputes.SelfDealingRefused selfDealing) {
+            throw selfDealingRecorded(selfDealing, actor, correlation, "The queue read was refused",
+                    "an operator the platform cannot place in a party reads no BNPL dispute; nothing was read.");
+        }
+    }
+
+    /** The refusal recorded {@code FAILED} in a transaction of its own, the meter told, the 403 answered. */
+    private ApiException selfDealingRecorded(BnplDisputes.SelfDealingRefused selfDealing, Actor actor,
+            CorrelationId correlation, String title, String detail) {
+        transactions.inTransaction(uow -> {
+            disputes.recordSelfDealing(uow, selfDealing, actor, correlation);
+            return null;
+        });
+        metrics.record(BnplDisputeMetrics.Outcome.SELF_DEALING_REFUSED);
+        return new ApiException(BnplErrorCode.SELF_DEALING_REFUSED, title, detail);
     }
 
     /** An operator resolves - at or below the threshold at once, above it a proposal. */
@@ -313,6 +375,11 @@ public final class BnplDisputeDesk {
                 metrics.record(BnplDisputeMetrics.Outcome.DISPUTE_OPEN);
                 throw new ApiException(BnplErrorCode.DISPUTE_OPEN, "The BNPL purchase has an open dispute",
                         "the purchase already has an open dispute; nothing was written.");
+            } catch (BnplDisputes.DisputeCoolingOff coolingOff) {
+                metrics.record(BnplDisputeMetrics.Outcome.COOLING_OFF);
+                throw new ApiException(BnplErrorCode.DISPUTE_COOLING_OFF, "The BNPL purchase cannot be disputed yet",
+                        "a dispute of this purchase was withdrawn less than "
+                                + BnplDisputes.WITHDRAWAL_COOLDOWN.toDays() + " days ago; nothing was written.");
             } catch (BnplDisputes.DisputeNotActionable notActionable) {
                 metrics.record(BnplDisputeMetrics.Outcome.NOT_ACTIONABLE);
                 throw new ApiException(BnplErrorCode.DISPUTE_NOT_ACTIONABLE, "The BNPL dispute is not open to this act",
@@ -333,6 +400,11 @@ public final class BnplDisputeDesk {
                 metrics.record(BnplDisputeMetrics.Outcome.NOT_POSTABLE);
                 throw new ApiException(BnplErrorCode.REFUND_NOT_POSTABLE, "The dispute's refund cannot be posted now",
                         "the refund outcome cannot be posted now; nothing was written - retry later under the same key.");
+            } catch (BnplDisputes.WalletUnavailable noWallet) {
+                metrics.record(BnplDisputeMetrics.Outcome.WALLET_UNAVAILABLE);
+                throw new ApiException(BnplErrorCode.WALLET_UNAVAILABLE, "The dispute's refund has no wallet to go to",
+                        "the agreement is closed, so a refund of this dispute can only be credited to your wallet, and"
+                                + " you have no active wallet; nothing was written - open a wallet, then dispute again.");
             } catch (AllocationAnomaly anomaly) {
                 refundMetrics.anomaly();
                 throw anomaly;
@@ -360,6 +432,14 @@ public final class BnplDisputeDesk {
                 dispute.holds().size(), dispute.refund().map(UUID::toString).orElse(null),
                 proposal == null ? null : proposal.id().toString(), proposal == null ? null : proposal.status().name(),
                 proposal == null ? null : proposal.outcome().name());
+    }
+
+    static BnplDisputeQueueItem queued(BnplDispute dispute) {
+        return new BnplDisputeQueueItem(dispute.id().value().toString(), dispute.purchase().value().toString(),
+                dispute.status().name(), dispute.category().name(), decimal(dispute.amount()),
+                dispute.amount().currency().code(), dispute.openedAt().map(Object::toString).orElse(null),
+                dispute.responseDeadline().map(Object::toString).orElse(null),
+                dispute.merchantRespondedAt().map(Object::toString).orElse(null), dispute.holds().size());
     }
 
     static BnplMerchantDisputeView merchantView(BnplDispute dispute) {
@@ -456,6 +536,24 @@ public final class BnplDisputeDesk {
             return BnplDisputeStatus.RESOLVED_UPHELD;
         }
         throw invalid("the outcome is REFUND or UPHOLD.");
+    }
+
+    static BnplDisputeStatus queueStatus(String raw) {
+        if ("MERCHANT_RESPONDED".equalsIgnoreCase(raw)) {
+            return BnplDisputeStatus.MERCHANT_RESPONDED;
+        }
+        if ("OPEN".equalsIgnoreCase(raw)) {
+            return BnplDisputeStatus.OPEN;
+        }
+        throw invalid("the status is MERCHANT_RESPONDED or OPEN.");
+    }
+
+    private static BnplDisputeId cursor(String raw) {
+        try {
+            return BnplDisputeId.of(UUID.fromString(raw));
+        } catch (IllegalArgumentException malformed) {
+            throw invalid("the cursor is the next value a page of the queue returned.");
+        }
     }
 
     private static BnplAgreementId agreementId(String raw) {

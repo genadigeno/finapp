@@ -27,9 +27,10 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * The BNPL dispute wiring (`P12-TSK-023`): the store, T-dsp ({@link BnplDisputes} over T-ref's body), whose party an
- * operator is (credit's {@code IdentityActingParty}, one read for credit, lending and bnpl), the meter, the desk, and the
- * leaderless deadline sweep with its eager {@code finapp.bnpl.dispute.sweeper.enabled} gauge. A configuration of its own,
- * so parallel tasks append to no common bean method.
+ * operator is (credit's {@code IdentityActingParty}, one read for credit, lending and bnpl), the meter, the contested-age
+ * gauge (the Phase 12 to 13 gate's A7-2), the desk, and the leaderless deadline sweep with its eager
+ * {@code finapp.bnpl.dispute.sweeper.enabled} gauge. A configuration of its own, so parallel tasks append to no common bean
+ * method.
  */
 @Configuration(proxyBeanMethods = false)
 public class BnplDisputeBeans {
@@ -61,10 +62,30 @@ public class BnplDisputeBeans {
                 idGenerator, clock);
     }
 
+    /**
+     * The BNPL arm of the wallet close's pending-credits question (the Phase 12 to 13 gate's A7-1): a wallet cannot close
+     * while an open dispute of its customer may refund to it.
+     */
+    @Bean
+    BnplWalletCredits bnplWalletCredits(com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.party.PartyStore<Connection> partyStore, BnplDisputes bnplDisputes) {
+        return new BnplWalletCredits(ledgerAccountStore, partyStore, bnplDisputes);
+    }
+
     /** {@code finapp.bnpl.dispute{outcome}} - every series eager. */
     @Bean
     BnplDisputeMetrics bnplDisputeMetrics(MeterRegistry meterRegistry) {
         return new BnplDisputeMetrics(meterRegistry);
+    }
+
+    /**
+     * {@code finapp.bnpl.dispute.contested.age} - the oldest contested dispute's wait for an operator, eager, read behind a
+     * 15 s floor (the Phase 12 to 13 gate's A7-2).
+     */
+    @Bean
+    BnplContestedDisputeMetrics bnplContestedDisputeMetrics(BnplDisputeStore bnplDisputeStore,
+            javax.sql.DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new BnplContestedDisputeMetrics(bnplDisputeStore, dataSource::getConnection, clock, meterRegistry);
     }
 
     @Bean

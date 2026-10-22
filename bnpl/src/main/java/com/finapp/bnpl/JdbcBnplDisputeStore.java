@@ -89,6 +89,22 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
     }
 
     @Override
+    public Optional<Instant> latestWithdrawalOf(Connection unitOfWork, BnplPurchaseId purchase) {
+        Objects.requireNonNull(purchase, "purchase");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT max(resolved_at) FROM bnpl.bnpl_dispute"
+                + " WHERE purchase_id = ? AND status = 'WITHDRAWN'")) {
+            select.setObject(1, purchase.value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                Timestamp withdrawn = row.getTimestamp(1);
+                return Optional.ofNullable(withdrawn).map(Timestamp::toInstant);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a BNPL purchase's latest withdrawn dispute", failure);
+        }
+    }
+
+    @Override
     public BnplDispute insert(Connection unitOfWork, BnplDispute dispute) {
         Objects.requireNonNull(dispute, "dispute");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
@@ -156,6 +172,14 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
         Objects.requireNonNull(moved, "moved");
         Objects.requireNonNull(from, "from");
         int changed;
+        // The deadline's complementary conditionals in the edge's own statement (the Phase 12 -> 13 gate's A3-M2): the
+        // merchant's answer moves only while the deadline is ahead on the database clock, the system's lapse only once it
+        // has come - so a merchant whose acceptance waited at (P) past the deadline gets no row (the domain's 409
+        // bnpl.DisputeNotActionable, nothing written), never bnpl V015's trigger refusing it as a storage failure (a 5xx).
+        String by = moved.resolvedBy().orElse("");
+        String deadline = moved.status() == BnplDisputeStatus.MERCHANT_RESPONDED || by.equals("MERCHANT:" + moved.merchant())
+                ? " AND response_deadline_at > clock_timestamp()"
+                : by.equals(BnplDispute.SYSTEM) ? " AND response_deadline_at <= clock_timestamp()" : "";
         try (PreparedStatement update = unitOfWork.prepareStatement(
                 // The instants and the business date are the trigger's; the edge conditional on its from-state.
                 "UPDATE bnpl.bnpl_dispute SET status = ?, merchant_statement = ?, resolved_by = ?, resolution_reason = ?,"
@@ -163,7 +187,7 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
                         + " merchant_responded_at = CASE WHEN ? THEN clock_timestamp() ELSE merchant_responded_at END,"
                         + " resolved_at = CASE WHEN ? THEN clock_timestamp() ELSE NULL END,"
                         + " resolved_business_date = CASE WHEN ? THEN current_date ELSE NULL END"
-                        + " WHERE id = ? AND status = ?")) {
+                        + " WHERE id = ? AND status = ?" + deadline)) {
             boolean answered = moved.merchantStatement().isPresent() && from == BnplDisputeStatus.OPEN;
             boolean terminal = !moved.open();
             update.setString(1, moved.status().name());
@@ -254,6 +278,63 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
             }
         } catch (SQLException failure) {
             throw failed("reading whether a merchant has an open BNPL dispute", failure);
+        }
+    }
+
+    @Override
+    public boolean anyOpenOfParty(Connection unitOfWork, UUID party, CurrencyCode currency) {
+        Objects.requireNonNull(party, "party");
+        Objects.requireNonNull(currency, "currency");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT EXISTS (SELECT 1 FROM bnpl.bnpl_dispute d"
+                + " JOIN bnpl.bnpl_dispute_claim c ON c.dispute_id = d.id WHERE d.party_id = ? AND c.currency = ?"
+                + " AND d.status IN ('OPEN', 'MERCHANT_RESPONDED'))")) {
+            select.setObject(1, party);
+            select.setString(2, currency.code());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading whether a party has an open BNPL dispute", failure);
+        }
+    }
+
+    @Override
+    public List<BnplDispute> queue(Connection unitOfWork, BnplDisputeStatus status, UUID excludingParty,
+            Optional<BnplDisputeId> after, int limit) {
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(excludingParty, "excludingParty");
+        Objects.requireNonNull(after, "after");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a queue page holds at least one dispute");
+        }
+        // The instant the dispute entered its status - this class's own constant column names, never input.
+        String entered = switch (status) {
+            case OPEN -> "opened_at";
+            case MERCHANT_RESPONDED -> "merchant_responded_at";
+            default -> throw new IllegalArgumentException("the queue is of the open disputes: OPEN or MERCHANT_RESPONDED");
+        };
+        List<Object> parameters = new ArrayList<>(List.of(status.name(), excludingParty));
+        after.ifPresent(cursor -> parameters.add(cursor.value()));
+        parameters.add(limit);
+        // Oldest first, keyset-paged after the cursor's (instant, id); never the reading operator's own party's.
+        return disputes(unitOfWork, "SELECT " + COLUMNS + FROM + " WHERE d.status = ? AND d.party_id <> ?"
+                + (after.isPresent() ? " AND (d." + entered + ", d.id) > (SELECT a." + entered + ", a.id"
+                        + " FROM bnpl.bnpl_dispute a WHERE a.id = ?)" : "")
+                + " ORDER BY d." + entered + ", d.id LIMIT ?", parameters, "reading the BNPL dispute queue");
+    }
+
+    @Override
+    public Optional<Duration> oldestContestedAge(Connection unitOfWork) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT floor(extract(epoch FROM statement_timestamp() - min(merchant_responded_at)) * 1000)::bigint"
+                        + " FROM bnpl.bnpl_dispute WHERE status = 'MERCHANT_RESPONDED'");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            long millis = row.getLong(1);
+            return row.wasNull() ? Optional.empty() : Optional.of(Duration.ofMillis(Math.max(0, millis)));
+        } catch (SQLException failure) {
+            throw failed("reading the oldest contested BNPL dispute", failure);
         }
     }
 

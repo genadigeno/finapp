@@ -143,11 +143,61 @@ class BnplDisputeMigrationTest {
     }
 
     private static String migration() {
-        try (InputStream in = BnplDisputeMigrationTest.class.getClassLoader().getResourceAsStream(V015)) {
-            assertThat(in).as(V015 + " on the classpath").isNotNull();
+        return read(V015);
+    }
+
+    private static String read(String resource) {
+        try (InputStream in = BnplDisputeMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
+            assertThat(in).as(resource + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException unreadable) {
             throw new IllegalStateException(unreadable);
         }
+    }
+
+    // ------------------------------------------------------------------ bnpl V018 (the Phase 12 -> 13 gate's R1)
+
+    private static final String V018 = "db/migration/bnpl/V018__the_dispute_clock_four_eyes_and_queue_repairs.sql";
+
+    @Test
+    @DisplayName("bnpl V018 (the Phase 12 to 13 gate's R1): the clock start excludes a withdrawn dispute's lift (A5-F2); the"
+            + " four-eyes amount is the claim plus every other dispute's refund on the purchase, read by both triggers"
+            + " (A5-F7); the contested queue's index (A7-2); no money written, no column added")
+    void theGateRepairs() {
+        String sql = read(V018).lines().filter(line -> !line.strip().startsWith("--"))
+                .collect(Collectors.joining("\n"));
+        assertThat(sql).contains("CREATE OR REPLACE FUNCTION bnpl.dispute_clock_start(obligation uuid, due date, on_date date)")
+                .contains("AND d.status <> 'WITHDRAWN'\n                                      AND d.resolved_business_date <= on_date), due))")
+                .contains("SELECT c.amount_minor + coalesce((SELECT sum(r.amount_minor)")
+                .contains("WHERE r.purchase_id = d.purchase_id AND r.door = 'DISPUTE'")
+                .contains("AND r.dispute_id IS DISTINCT FROM d.id), 0)")
+                .contains("disputed := bnpl.dispute_four_eyes_amount(OLD.id);")
+                .contains("disputed := bnpl.dispute_four_eyes_amount(NEW.dispute_id);")
+                .contains("IF disputed > terms.dispute_four_eyes_threshold_minor THEN")
+                .contains("OR dispute.status <> 'MERCHANT_RESPONDED' OR disputed <= threshold THEN")
+                .contains("CREATE INDEX bnpl_dispute_contested ON bnpl.bnpl_dispute (merchant_responded_at, id) WHERE status ="
+                        + " 'MERCHANT_RESPONDED';")
+                .doesNotContain("ALTER TABLE").doesNotContain("INSERT INTO").doesNotContain("UPDATE bnpl.")
+                .doesNotContain("GRANT");
+        // The withdrawal's cooldown (the gate's follow-up on A5-F2): one figure, the code's; a BEFORE INSERT rank for every
+        // writer, firing after the edge trigger (names in order) has re-taken B5 and stamped the opening.
+        assertThat(sql).contains("    SELECT interval '" + BnplDisputes.WITHDRAWAL_COOLDOWN.toDays() + " days'")
+                .contains("AND NEW.opened_at < d.resolved_at + bnpl.dispute_withdrawal_cooldown()) THEN")
+                .contains("WHERE d.purchase_id = NEW.purchase_id AND d.status = 'WITHDRAWN'")
+                .contains("CREATE TRIGGER bnpl_dispute_respects_the_withdrawal_cooldown\n    BEFORE INSERT ON bnpl.bnpl_dispute");
+        assertThat("bnpl_dispute_permits_only_machine_edges")
+                .isLessThan("bnpl_dispute_respects_the_withdrawal_cooldown");
+        // The replaced edge function keeps V015's body but for the four-eyes amount: every other rank verbatim.
+        String v015Edges = body("bnpl.bnpl_dispute_permits_only_machine_edges()");
+        int start = sql.indexOf("CREATE OR REPLACE FUNCTION bnpl.bnpl_dispute_permits_only_machine_edges()");
+        String v018Edges = sql.substring(start, sql.indexOf("$$;", sql.indexOf("$$", start) + 2));
+        assertThat(v018Edges.replace("    -- V018 (A5-F7): the cumulative refunded-by-dispute amount of the purchase, this"
+                        + " dispute's claim included.\n", "")
+                .replace("    disputed := bnpl.dispute_four_eyes_amount(OLD.id);",
+                        "    SELECT c.amount_minor INTO disputed FROM bnpl.bnpl_dispute_claim c WHERE c.dispute_id = OLD.id;")
+                .replace("above its four-eyes threshold - its purchase''s refunds by dispute and its own claim - is resolved"
+                        + " by a proposal another operator approved (P12-TSK-023, bnpl V018, INV-AUD-04)",
+                        "above its four-eyes threshold is resolved by a proposal another operator approved (P12-TSK-023,"
+                                + " INV-AUD-04)")).isEqualTo(v015Edges);
     }
 }

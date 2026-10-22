@@ -752,6 +752,41 @@
           }
         }
       },
+      "bnpl.DisputeCoolingOff": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.DisputeCoolingOff"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.DisputeCoolingOff"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A dispute of this BNPL purchase was withdrawn too recently to open another.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "bnpl.DisputeNotActionable": {
         "content": {
           "application/problem+json": {
@@ -10660,6 +10695,56 @@
           "currency",
           "reason"
         ],
+        "type": "object"
+      },
+      "BnplDisputeQueue": {
+        "properties": {
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/BnplDisputeQueueItem"
+            },
+            "type": "array"
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplDisputeQueueItem": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "heldInstalments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "merchantRespondedAt": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "responseDeadline": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "BnplDisputeResolutionBody": {
@@ -27278,6 +27363,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BnplWaiverView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-disputes": {
+      "get": {
+        "operationId": "listBnplDisputes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplDisputeQueue"
                 }
               }
             },
