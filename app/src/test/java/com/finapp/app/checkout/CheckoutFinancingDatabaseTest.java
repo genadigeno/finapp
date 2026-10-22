@@ -320,7 +320,9 @@ class CheckoutFinancingDatabaseTest {
         }
 
         CheckoutSession dead = insertOpen(Duration.ofMillis(200));
-        Thread.sleep(400);
+        // Past the deadline on the database clock - B3's own - never a fixed JVM sleep (G3's sibling, met on the gate's
+        // re-run: a database clock lagging the JVM's by more than 200 ms still found the session payable).
+        awaitPastTheDeadlineOnTheDatabaseClock(dead);
         assertThat(lockForPurchase(dead.id().value()))
                 .as("OPEN by its row, past its deadline on the database clock")
                 .isEqualTo(new BnplCheckoutSessions.NotPayable(BnplCheckoutSessions.Reason.EXPIRED));
