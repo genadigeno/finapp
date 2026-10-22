@@ -190,7 +190,10 @@ Negative:
 - The plan's cut order (§16) cuts the operator resolution first: if cut, `MERCHANT_RESPONDED` has no exit but
   withdrawal, so the cut must also make the response accept-only — recorded for the cut decision.
 
-Operational impact: the dispute meter, the deadline sweeper and its gauge; the dispute report.
+Operational impact: the dispute meter, the deadline sweeper and its gauge; the dispute report. *(The Phase 12 → 13
+transition gate, 2026-10-22: the dispute report was not built by `P12-TSK-023`; it is delivered as the operator's queue -
+`GET /v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED|OPEN`, see the amendment below - with the contested-age gauge and
+two alerts.)*
 Security impact: merchant-key response door; `BNPL_DISPUTE_RESOLVE` with four-eyes above the threshold; evidence
 least-privilege and access-audited; reasons `RESTRICTED-PII`.
 Financial impact: none new — a dispute's only money is a refund's.
@@ -223,3 +226,66 @@ Financial impact: none new — a dispute's only money is a refund's.
 - **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
   (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.
+
+## Amendment — the Phase 12 → 13 transition gate (repair R1, 2026-10-22; `bnpl V018`)
+
+The gate's independent audits found that a dispute could fail to conclude silently, and that three rules were weaker than
+this ADR meant. Each is repaired as below, each with a regression test red before and green after, its probe recorded in
+`MUTATION_TESTING.md` §2. Nothing here changes the bound (`INV-BNPL-07`, `-08`) or the lock order (decision 9).
+
+1. **A lapse whose refund cannot post is never silent, and is not born** (FINDINGS A7-1; decisions 6, 11). On a `CLOSED`
+   obligation - a payoff mid-dispute is allowed - a refund outcome cancels nothing and holds no credit balance
+   (`INV-BNPL-09`), so the whole of D can only be credited to the customer's wallet; with the wallet closed or absent the
+   deadline step retried `not_postable` for ever, the dispute `OPEN`, the merchant unable to close, the refund owed
+   recorded nowhere. Now: (a) `BnplDisputeRefundNotPostable` alerts on the dispute meter's `not_postable` outcome
+   (`OPERATIONS_RUNBOOK.md` §8.9); (b) **a wallet cannot close while an open BNPL dispute of its customer may refund to it**
+   - accounts' close asks its pending-credits port with the closing customer, and the composition root answers it over
+   `BnplDisputes.anyMayRefundToWalletOf` (`BnplWalletCredits`) - accounts never reads a bnpl table; (c) **an opening on a
+   `CLOSED` obligation takes the payable and the wallet as one (P) element** (decision 9's pair, `UUID.compareTo` order)
+   and refuses a customer with no `ACTIVE` wallet `409 bnpl.WalletUnavailable`, nothing written. The close takes the
+   wallet's row `FOR UPDATE` before it asks; the opening and every refund outcome take it at (P): the two are ordered,
+   never beside each other. Residual, recorded: an opening on an `ACTIVE` obligation does not lock the wallet - a close
+   racing it may commit beside it; that dispute's refund then goes to the credit balance (an `ACTIVE` obligation's
+   fallback), and the agreement cannot be paid off from a closed wallet, so no lapse is stranded by it; an off-boarded
+   customer (no live customer, so no wallet) remains the alert's to surface - owner item "a refund on a CLOSED
+   obligation without a wallet".
+2. **A contested dispute is visible** (FINDINGS A7-2; decisions 2, 12). `MERCHANT_RESPONDED` has no deadline - only an
+   operator concludes it - and meanwhile its held instalments are never collected, aged or charged, every refund of its
+   purchase is refused and its merchant cannot close. Now the contest publishes **`bnpl.BnplDisputeContested`** (the
+   dispute, its purchase and obligation, its status and deadline - no amount, statement or party) in its transaction; the
+   eager gauge **`finapp.bnpl.dispute.contested.age`** reads the oldest contested dispute's wait since the merchant
+   answered (NaN when unreadable), alerted by `BnplDisputeContestedTooLong` above `BnplObjectives.CONTESTED_DISPUTE` (a
+   week, ticket); and **the promised dispute report is delivered as the operator's queue**:
+   `GET /v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED|OPEN[&after=<id>]` under `BNPL_DISPUTE_RESOLVE`, oldest first,
+   a hundred a page keyset-paged after the cursor, no free text, never the operator's own party's disputes, every page
+   audited `bnpl.DisputeQueueRead`. **Auto-resolution of a contested dispute at an SLA is the owner's choice and is not
+   built.**
+3. **A withdrawal never restarts the clock** (FINDINGS A5-F2; decision 3). Decision 3's "the later of its due date and the
+   lift's business date" applied to every lift, so open, withdraw and re-open restarted days past due and the late-fee day
+   each time and could keep an unpaid instalment from ever reaching default. Now a **withdrawn** dispute's lift counts for
+   nothing - DPD and the fee day are judged from the due date as if never held (`bnpl.dispute_clock_start` replaced in
+   `bnpl V018`; `BnplDisputeHold.clockFrom` the same rule, read by `BnplDelinquencyState` and `BnplConditions`); a refund
+   or upheld lift keeps decision 3's rule. While a dispute is open its instalments are still held, so a customer who
+   could re-open on the very day of a withdrawal would still hold them for ever; therefore **a customer's withdrawal
+   starts a cooldown**: the purchase takes no new dispute for 30 days from the withdrawal's own stamp
+   (`BnplDisputes.WITHDRAWAL_COOLDOWN`, `bnpl.dispute_withdrawal_cooldown()` - a safe default, **the length the owner's
+   to change**, or later a field of the pinned terms), judged under B5 on the database clock and refused
+   `409 bnpl.DisputeCoolingOff`, nothing written; `bnpl V018`'s `BEFORE INSERT` trigger
+   (`bnpl_dispute_respects_the_withdrawal_cooldown`) holds every writer to it. A dispute a merchant or an operator
+   resolved starts no cooldown. Ten instances opening at once after a withdrawal all meet the same B5 and the same stamp:
+   every one is refused within the cooldown, and after it the one-open-per-purchase unique admits one.
+4. **Four eyes on the purchase's cumulative refunds by dispute** (FINDINGS A5-F7; decision 5). The threshold was compared
+   with each dispute's own D, so a contest split into sequential disputes, each at or below it, was resolved by one
+   operator each time. Now it is compared with **D plus every refund an earlier dispute of the same purchase made**
+   (`bnpl.dispute_four_eyes_amount`, read under B5; the edge and proposal triggers replaced in `bnpl V018`;
+   `BnplDisputes.fourEyesAmount` the same rule) - for either outcome.
+5. **The deadline's conditional in the edge's own statement** (FINDINGS A3-M2; decision 4). The merchant's acceptance
+   judged the deadline after B6, then waited at (P) and L8; when the deadline passed meanwhile, `bnpl V015`'s trigger
+   refused the edge as a storage failure - a `5xx`. Now the merchant's edges carry `response_deadline_at >
+   clock_timestamp()` and the sweep's `<=` in the `UPDATE` itself (`JdbcBnplDisputeStore.move`): no row is
+   `409 bnpl.DisputeNotActionable`, the refund the acceptance wrote rolled back with it, and the sweep lapses the dispute.
+   The trigger stays beneath for every writer; only a microsecond separates its clock read from the statement's.
+6. **Self-dealing fails closed and covers the read** (FINDINGS A7-6/A5-F3, A5-F4; decision 5). An operator the platform
+   cannot place in a party is refused at the resolution, its approval and rejection, the read and the queue, as the
+   corrections' rule does; the read (`GET /v1/operator/bnpl-disputes/{id}`) refuses an operator of the dispute's own party;
+   each refusal `403 bnpl.SelfDealingRefused`, recorded `FAILED` in a transaction of its own.

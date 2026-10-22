@@ -432,6 +432,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-disputes",
                         ApiVersion.CURRENT_PREFIX + "/merchant/bnpl-disputes/{id}/response",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}",
+                        // The Phase 12 -> 13 gate's A7-2: the operator's queue of the contested (or open) disputes,
+                        // BNPL_DISPUTE_RESOLVE, paged, audited per page.
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-disputes/{id}/resolution/rejection",

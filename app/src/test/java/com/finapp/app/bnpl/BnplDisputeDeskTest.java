@@ -24,11 +24,13 @@ import java.lang.reflect.RecordComponent;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -116,6 +118,83 @@ class BnplDisputeDeskTest {
         assertThat(registry.get(BnplDisputeMetrics.DISPUTE).tags("outcome", "self_approval_refused").counter().count())
                 .isEqualTo(1.0);
         assertThat(registry.get(BnplDisputeMetrics.DISPUTE).tags("outcome", "sweep_failed").counter().count()).isZero();
+    }
+
+    @Test
+    @DisplayName("the operator's queue (the Phase 12 to 13 gate's A7-2): an item carries the figures, instants and deadline -"
+            + " never the reason or the statement; its status is MERCHANT_RESPONDED or OPEN and its cursor a dispute id,"
+            + " anything else 422 before anything")
+    void theQueueIsClosed() {
+        assertThat(Arrays.stream(BnplDisputeDesk.BnplDisputeQueueItem.class.getRecordComponents())
+                .map(RecordComponent::getName))
+                .containsExactly("disputeId", "purchaseId", "status", "category", "amount", "currency", "openedAt",
+                        "responseDeadline", "merchantRespondedAt", "heldInstalments");
+        BnplDisputeDesk.BnplDisputeQueueItem item = BnplDisputeDesk.queued(dispute(BnplDisputeStatus.MERCHANT_RESPONDED));
+        assertThat(item.toString()).doesNotContain("it never came").doesNotContain("we shipped it");
+        assertThat(item.merchantRespondedAt()).isEqualTo("2026-10-21T12:00:00Z");
+        assertThat(item.amount()).isEqualTo("300.00");
+        assertThat(BnplDisputeDesk.queueStatus("merchant_responded")).isEqualTo(BnplDisputeStatus.MERCHANT_RESPONDED);
+        assertThat(BnplDisputeDesk.queueStatus("OPEN")).isEqualTo(BnplDisputeStatus.OPEN);
+        for (String refused : List.of("WITHDRAWN", "RESOLVED_REFUND", "", "open;")) {
+            assertThatThrownBy(() -> BnplDisputeDesk.queueStatus(refused)).as(refused).isInstanceOf(ApiException.class);
+        }
+        assertThatThrownBy(() -> BnplDisputeDesk.queueStatus(null)).isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    @DisplayName("finapp.bnpl.dispute.contested.age (the gate's A7-2): eager, untagged, the oldest contested dispute's wait in"
+            + " seconds - 0 when none waits, NaN when unreadable, re-read only past the floor")
+    void theContestedAge() {
+        AtomicReference<Optional<Duration>> oldest = new AtomicReference<>(Optional.of(Duration.ofSeconds(700_000)));
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-10-22T12:00:00Z"));
+        Clock clock = new Clock() {
+            @Override
+            public java.time.ZoneId getZone() {
+                return java.time.ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(java.time.ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now.get();
+            }
+        };
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        new BnplContestedDisputeMetrics(contested(oldest::get), BnplDisputeDeskTest::connection, clock, registry);
+        assertThat(registry.get(BnplContestedDisputeMetrics.CONTESTED_AGE).gauge().value()).isEqualTo(700_000.0);
+        assertThat(registry.get(BnplContestedDisputeMetrics.CONTESTED_AGE).gauge().getId().getTags()).isEmpty();
+        oldest.set(Optional.empty());
+        assertThat(registry.get(BnplContestedDisputeMetrics.CONTESTED_AGE).gauge().value())
+                .as("within the floor: the cached reading").isEqualTo(700_000.0);
+        now.set(now.get().plus(BnplContestedDisputeMetrics.MIN_REFRESH));
+        assertThat(registry.get(BnplContestedDisputeMetrics.CONTESTED_AGE).gauge().value()).as("none waits").isZero();
+
+        SimpleMeterRegistry unreadable = new SimpleMeterRegistry();
+        new BnplContestedDisputeMetrics(contested(oldest::get), () -> {
+            throw new java.sql.SQLException("unreadable");
+        }, Clock.fixed(Instant.parse("2026-10-22T12:00:00Z"), java.time.ZoneOffset.UTC), unreadable);
+        assertThat(unreadable.get(BnplContestedDisputeMetrics.CONTESTED_AGE).gauge().value()).isNaN();
+    }
+
+    /** A dispute store answering the oldest contested wait only. */
+    private static com.finapp.bnpl.BnplDisputeStore contested(java.util.function.Supplier<Optional<Duration>> oldest) {
+        return (com.finapp.bnpl.BnplDisputeStore) java.lang.reflect.Proxy.newProxyInstance(
+                BnplDisputeDeskTest.class.getClassLoader(), new Class<?>[] {com.finapp.bnpl.BnplDisputeStore.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("oldestContestedAge")) {
+                        return oldest.get();
+                    }
+                    throw new UnsupportedOperationException("the gauge reads the oldest contested wait only");
+                });
+    }
+
+    private static java.sql.Connection connection() {
+        return (java.sql.Connection) java.lang.reflect.Proxy.newProxyInstance(BnplDisputeDeskTest.class.getClassLoader(),
+                new Class<?>[] {java.sql.Connection.class}, (proxy, method, args) -> null);
     }
 
     private static BnplDispute dispute(BnplDisputeStatus status) {

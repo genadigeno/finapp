@@ -382,6 +382,11 @@ class NoFloatingPointMoneyRulesTest {
                     "com.finapp.app.bnpl.BnplObligationMetrics$Cached",
                     "com.finapp.app.bnpl.BnplAwaitingDecisionMetrics",
                     "com.finapp.app.bnpl.BnplAwaitingDecisionMetrics$Cached",
+                    // The Phase 12 -> 13 gate's A7-2. The SAME case as BnplAwaitingDecisionMetrics: the oldest contested
+                    // BNPL dispute's wait for an operator in SECONDS, through the ToDoubleFunction a Gauge imposes, NaN
+                    // the sentinel for unreadable - a duration, never an amount (ADR-0072).
+                    "com.finapp.app.bnpl.BnplContestedDisputeMetrics",
+                    "com.finapp.app.bnpl.BnplContestedDisputeMetrics$Cached",
                     // P10-TSK-018. The SAME case again: the oldest open review case's wait in SECONDS,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
                     // unreadable. An age, never an amount.

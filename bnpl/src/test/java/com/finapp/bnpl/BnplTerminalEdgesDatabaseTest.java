@@ -74,9 +74,12 @@ class BnplTerminalEdgesDatabaseTest {
     void nothingLeavesATerminalStateForAnyRole() throws Exception {
         BnplCorrectionDatabaseWorld corrections = new BnplCorrectionDatabaseWorld();
         BnplConditionDatabaseWorld world = corrections.base;
+        // Every operator a party of their own, never a customer's: the dispute's self-dealing judgement fails closed on an
+        // operator the platform cannot place (the Phase 12 -> 13 gate's A7-6).
         BnplDisputes disputes = new BnplDisputes(new JdbcBnplDisputeStore(), REFUNDS, SERVICING, PURCHASES, TERMS_STORE,
-                world.refunds, world.ports, world.book, (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(),
-                new JdbcAuditWriter(), IDS, CLOCK);
+                world.refunds, world.ports, world.book, (uow, actor) -> Optional.of(UUID.nameUUIDFromBytes(
+                        ("operator:" + actor.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8))),
+                new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
         List<Edge> edges = new ArrayList<>();
         Map<String, String> terminal = new LinkedHashMap<>();
 

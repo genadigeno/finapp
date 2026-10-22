@@ -1373,6 +1373,15 @@ writer, with no seed exemption, so no corridor is offered without two named pers
 `CorridorAvailabilityDatabaseTest`, `CorridorAdministrationEndpointDatabaseTest`; the probes in
 `MUTATION_TESTING.md` §2).)*
 
+*(The Phase 12 → 13 transition gate's repair R1, 2026-10-22 - FINDINGS A5-F7, ADR-0106 amendment 4: the BNPL dispute
+resolution's threshold is judged on the purchase's **cumulative** refunds by dispute - the dispute's claim plus every
+earlier dispute's refund (`bnpl.dispute_four_eyes_amount`, `bnpl V018`; `BnplDisputes.fourEyesAmount`) - at the domain and
+at both triggers, so a contest split into sequential disputes each at or below the threshold is not one person's decision
+each time. Verified by `BnplDisputesTest#theFourEyesThresholdIsCumulative` and
+`BnplDisputeDatabaseTest#theFourEyesThresholdIsCumulative` (200 then 100 against 250.00); the raw self-approval's refusal
+is now asserted as the four-eyes `CHECK` by name for both roles (`#selfApprovalRefusedAtBothRanksAndAudited`, FINDINGS
+A6-F11).)*
+
 ---
 
 # Credit and Decisioning — `INV-CRD`
@@ -2313,6 +2322,19 @@ never dated before a recorded change, never on a closed obligation. Verified her
 `BnplDelinquencyStateTest` (run) and by `BnplConditionDatabaseTest` (owed a first run); probes in `MUTATION_TESTING.md`
 section 2.)*
 
+*(The Phase 12 → 13 transition gate's repair R1, 2026-10-22 - FINDINGS A5-F2, `bnpl V018`: BNPL's days past due count
+from the due date, or from the latest lift of a **resolved** dispute that held the instalment (`bnpl.dispute_clock_start`,
+`BnplDisputeHold.clockFrom`) - **never from a withdrawal**, which counts for nothing. Until then any lift restarted the
+clock, so a customer who opened, withdrew and re-opened disputes could keep an unpaid instalment from ever reaching the
+default threshold - the derivation correct to its rule, the rule wrong. Verified by
+`BnplDisputesTest#theOpenWithdrawLoopStillDefaults` and `BnplDisputeDatabaseTest#theOpenWithdrawLoopStillDefaults` (the
+loop across 90 days still defaults; `bnpl.days_past_due` from the due date on every unheld day) and
+`BnplDisputeHoldTest#aWithdrawalNeverMovesTheClock`; probes in `MUTATION_TESTING.md` §2. And a withdrawal starts a
+cooldown - the purchase takes no new dispute for 30 days (`BnplDisputes.WITHDRAWAL_COOLDOWN`, the length the owner's to
+change; `409 bnpl.DisputeCoolingOff`; `bnpl V018`'s trigger for every writer) - so a customer cannot re-open on the day of
+a withdrawal and keep the instalment held for ever (`BnplDisputesTest#aWithdrawalStartsACooldown`,
+`BnplDisputeDatabaseTest#aWithdrawalStartsACooldownForEveryWriter`).)*
+
 ### INV-LND-13 — Lending capital is recognised only from bank evidence and never over-deployed
 **Statement:** The `LENDING_CAPITAL` account of a currency is credited only by bank recognition of a
 statement line matched to a four-eyes capital contribution's expectation; and at every commit, for
@@ -2667,6 +2689,15 @@ database pass, 2026-10-20)*, hermetically `BnplDisputesTest#aRefundThenADisputeS
 `#aDisputeThenARefundShareOneBound`; the probe skipping the purchase lock in a refund turning scenario 10 red
 (`MUTATION_TESTING.md` §2) *(P12-DOC-001, 2026-10-22: **performed live for the first time by the exit review** - B5 skipped in the refund, then also `bnpl V012`'s trigger re-take: caught both times, but by `BnplRefunds.derive`'s position check under B4 (the refunded-before figure read without B5 disagrees with the adjustments), before scenario 10's Σ ≤ G assertion or the trigger's bound; the strengthened suite's staggered rounds alone survived. `MUTATION_TESTING.md` §2, the `P12-DOC-001` rows.)*; disputes and refunds racing on shared purchases in the storm, Σ refunds ≤
 gross at every round (`P12-TST-001`).
+*(The Phase 12 → 13 transition gate's repair R1, 2026-10-22 - FINDINGS A7-1, A3-M2: the dispute's refund outcome is
+never stranded either. On a `CLOSED` obligation it can only be credited to the customer's wallet, so the opening there
+takes the payable and the wallet as one (P) element and refuses a customer with no `ACTIVE` wallet
+(`409 bnpl.WalletUnavailable`), the wallet close refuses while an open dispute of its customer may refund to it
+(`AccountClosing`'s pending-credits arm, `BnplWalletCredits`), and a refund outcome that cannot post is alerted
+(`BnplDisputeRefundNotPostable`). The merchant's acceptance is conditional on the deadline in its edge's own statement, so
+one that waited at (P) past it is `409 bnpl.DisputeNotActionable` and its refund rolls back with it. Verified by
+`BnplDisputeDatabaseTest#aClosedAgreementsDisputeRefundsToTheWallet`, `#anAcceptanceThatWaitsPastTheDeadlineIsNotActionable`,
+`BnplDisputesTest#aDisputeOfAClosedAgreementNeedsAnActiveWallet` and `BnplDisputeApiTest#aWalletCannotCloseWhileADisputeMayRefundToIt`.)*
 **Phase:** 12
 
 ### INV-BNPL-09 — A full refund closes the obligation with nothing stranded

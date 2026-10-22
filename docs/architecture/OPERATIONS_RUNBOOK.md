@@ -774,8 +774,8 @@ meanwhile; **the deadline step is the only way such a dispute concludes** - the 
 (`POST /v1/operator/bnpl-disputes/{id}/resolution`) resolves only a dispute the merchant answered and refuses an `OPEN`
 one `409 bnpl.DisputeNotActionable` - so restore the step. A deadline step whose refund cannot be posted now
 (`finapp_bnpl_dispute_total{outcome="not_postable"}`, the same warn line) is retried by the cadence and is **not** counted
-by `BnplDisputeDeadlineStepFailing`: read that series too when a lapsed dispute's refund is overdue. Open an incident with
-the class name if the failures persist. *(P12-DOC-001, 2026-10-22: this advised resolving a lapsed dispute "by the operator
+by `BnplDisputeDeadlineStepFailing`: it is `BnplDisputeRefundNotPostable`'s, §8.9 *(the Phase 12 → 13 gate's A7-1,
+2026-10-22: until then it was alerted by nothing)*. Open an incident with the class name if the failures persist. *(P12-DOC-001, 2026-10-22: this advised resolving a lapsed dispute "by the operator
 door ... if the failure persists" - the door refuses an unanswered dispute (`BnplDisputes.resolve`); and the warn line of a
 failing offer expiry was missing.)*
 
@@ -790,7 +790,8 @@ version under §8.1 step 5. NaN means the read failed, never "none" (§8.8).
 ### 8.8 Gauges unreadable, the BNPL reports, and the failure scenarios they answer
 
 **`BnplGaugesUnreadable`** (ticket, for 15 min): a BNPL gauge reads NaN - its database read failed - so the proofs, the accrual lag,
-the application queue or the active terms are unwatched until it reads again; NaN is never read as 0 or as the last value
+the application queue, the contested disputes' wait (`finapp_bnpl_dispute_contested_age_seconds`, the Phase 12 → 13 gate's
+A7-2) or the active terms are unwatched until it reads again; NaN is never read as 0 or as the last value
 (the lending precedent - the entry's "reports its last value" refined: a last value would read as healthy). Check the
 instance's database connectivity.
 
@@ -822,10 +823,52 @@ platform has not had is answered empty (`known: false`), recorded; a read that f
 | Settlement late; reconciliation breaks on a BNPL-financed payout | Phase 8's alerts; the agreement is unaffected | Phase 8's |
 | A refund after the merchant was paid out | `MerchantPayableNegative` | §8.5 |
 | A merchant suspended with open BNPL purchases | none - obligations serviced unchanged, new BNPL refused `422 bnpl.MerchantNotEnabled` | - |
-| A customer's wallet closed | none - collection records `WALLET_NOT_POSTABLE`, DPD runs; the delinquency report shows it | §8.8 |
+| A customer's wallet closed | none - collection records `WALLET_NOT_POSTABLE`, DPD runs; the delinquency report shows it. *(The Phase 12 → 13 gate's A7-1: a wallet cannot close while an open BNPL dispute may refund to it, and a dispute is not opened on a `CLOSED` agreement without an `ACTIVE` wallet - `409 bnpl.WalletUnavailable`.)* | §8.8, §8.9 |
+| A dispute's refund cannot be posted (a lapse against a closed payable or wallet) | `BnplDisputeRefundNotPostable` | §8.9 |
+| A contested dispute no operator resolves | `BnplDisputeContestedTooLong` | §8.9 |
 | Capital exhausted | `LendingCapitalHeadroomLow` (shared) | §7.9 |
 | A failed instalment, a late fee, a default at 90 | none - the machines' own; the delinquency report | §8.8 |
 | A repayment reversal or a fee waiver | none - four-eyes acts, recorded | - |
 | An early payoff racing a refund | `BnplAllocationAnomaly`, `BnplSubledgerProofFailing` were an arbiter to fail | §8.4, §8.3 |
 | Clock skew across the accrual boundary | `BnplReplayDiverged` were a date misjudged | §8.3 |
 | A sweeper off, a gauge unreadable, an offered product without terms | the three `…SweeperOff`, `BnplGaugesUnreadable`, `BnplTermsNoneActive` | §8.7, §8.8 |
+
+### 8.9 A dispute that cannot conclude - `BnplDisputeRefundNotPostable`, `BnplDisputeContestedTooLong`
+
+*(Added by the Phase 12 → 13 transition gate's repair R1, 2026-10-22 - FINDINGS A7-1 and A7-2: a lapse whose refund could
+not post was retried for ever with no alert, and a contested dispute had no deadline, queue, event, gauge or alert.)*
+
+**`BnplDisputeRefundNotPostable`** (ticket, `sum(increase(finapp_bnpl_dispute_total{outcome="not_postable"}[1h])) > 0` for
+15 min). A dispute's refund outcome was refused as not postable: the merchant's payable or the customer's wallet cannot take
+it. **Why it matters.** The deadline sweep retries a lapsed dispute every cadence (`finapp.bnpl.dispute.retry`, 15 min) and
+the dispute stays `OPEN` - its held instalments taking no collection, days past due or late fee, the merchant unable to close,
+and the refund owed recorded nowhere but the dispute itself. A door's refusal (the merchant's acceptance, an operator's
+resolution) answered `409 bnpl.RefundNotPostable` and wrote nothing; the caller may retry under the same key. **What a person
+does.**
+1. List the lapsed disputes still waiting: `GET /v1/operator/bnpl-disputes?status=OPEN` (`BNPL_DISPUTE_RESOLVE`, recorded
+   `bnpl.DisputeQueueRead`) - those whose `responseDeadline` has passed are the deadline step's; read one with
+   `GET /v1/operator/bnpl-disputes/{id}` for its purchase (both refuse a dispute of the reader's own party).
+2. Find which account refuses. On an `ACTIVE` agreement the refund needs only the merchant's payable (an excess goes to the
+   wallet or, failing it, to the credit balance); on a `CLOSED` agreement it can go **only to the customer's wallet**
+   (`INV-BNPL-09`: no credit balance after closure). Since this gate a wallet cannot close while one of its customer's
+   disputes is open (`AccountClosing`'s pending-credits arm, `BnplWalletCredits`) and a dispute is not opened on a `CLOSED`
+   agreement without an `ACTIVE` wallet (`409 bnpl.WalletUnavailable`), so a refusal now means the payable is closed or the
+   customer was off-boarded (no live customer, so no wallet) - or a dispute opened before this gate.
+3. Restore what the refund needs - the customer opens a wallet (the refund then posts to it at the next retry), or the
+   merchant's payable is re-opened under merchant's own procedure. Never post the refund by hand and never edit the dispute:
+   the next deadline step posts it once (`UNIQUE (dispute_id)`, ledger key `bnpl.refund:<refund>`) and the alert clears an
+   hour after the last refusal.
+4. If no account can be restored, open an incident: the customer is owed the dispute's amount and the platform has no rail
+   to pay it - an owner decision (FINDINGS P item 3, "a refund on a CLOSED obligation without a wallet").
+
+**`BnplDisputeContestedTooLong`** (ticket, `max(finapp_bnpl_dispute_contested_age_seconds) > 604800` for 30 min,
+`BnplObjectives.CONTESTED_DISPUTE`, a week). A dispute its merchant contested (`MERCHANT_RESPONDED`, announced by
+`bnpl.BnplDisputeContested`) has awaited an operator longer than a week. It has **no deadline** - only an operator concludes
+it (auto-resolution at a deadline is the owner's choice and is not built) - and meanwhile its held instalments are never
+collected, aged or charged, every refund of its purchase is refused `409 bnpl.DisputeOpen` and its merchant cannot close.
+**What a person does.** Work the queue oldest first:
+`GET /v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED` (at most 100 a page; pass the page's `next` as `after` for the
+next), read each (`GET /v1/operator/bnpl-disputes/{id}` - the customer's reason and the merchant's statement) and resolve it
+(`POST /v1/operator/bnpl-disputes/{id}/resolution`, `REFUND` or `UPHOLD`, reasoned; above the pinned four-eyes threshold -
+judged on the purchase's cumulative refunds by dispute since this gate - a second operator approves). A NaN reading is
+`BnplGaugesUnreadable`'s (§8.8).

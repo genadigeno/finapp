@@ -94,6 +94,32 @@ groups:
           summary: "BNPL dispute deadline steps keep failing"
           description: "Steps resolving disputes past their merchant response deadline failed in each of the last fifteen minutes; the customer's refund waits. Read the instances' warn lines for the exception's class (OPERATIONS_RUNBOOK.md section 8.6)."
 
+      - alert: BnplDisputeRefundNotPostable
+        # A dispute's refund outcome that cannot be posted now - the payable or the customer's wallet cannot take it (the
+        # Phase 12 -> 13 gate's A7-1). The deadline step's is retried on its cadence (PT15M) for as long as it lasts, the
+        # dispute staying OPEN with its hold and the refund owed recorded nowhere - so the window spans several retries and
+        # the alert holds while one keeps failing. A door's (the merchant's acceptance, an operator's resolution, an opening
+        # against a closed merchant) is counted too: each is a refund the customer is owed and cannot be paid.
+        expr: sum(increase(finapp_bnpl_dispute_total{outcome="not_postable"}[1h])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A BNPL dispute's refund cannot be posted"
+          description: "A dispute's refund outcome was refused as not postable in the last hour - most often a lapsed dispute's deadline step retrying while the merchant's payable or the customer's wallet is closed. List the lapsed disputes still OPEN and restore the account their refund needs (OPERATIONS_RUNBOOK.md section 8.9)."
+
+      - alert: BnplDisputeContestedTooLong
+        # A dispute the merchant contested (MERCHANT_RESPONDED) has awaited an operator longer than the objective
+        # (BnplObjectives.CONTESTED_DISPUTE, a week): it has no deadline - only an operator concludes it - and meanwhile its
+        # held instalments take no collection, DPD or fee, its purchase no refund and its merchant no close (A7-2).
+        expr: max(finapp_bnpl_dispute_contested_age_seconds) > 604800
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A contested BNPL dispute has waited for an operator for over a week"
+          description: "The oldest MERCHANT_RESPONDED dispute was contested {{ $value | humanizeDuration }} ago. Work the queue - GET /v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED - and resolve it (OPERATIONS_RUNBOOK.md section 8.9)."
+
       - alert: BnplAllocationAnomaly
         # A repayment's, collection's or refund's allocation refused for not conserving its amount - a defect in an engine
         # or its inputs; the act was refused, nothing posted.
@@ -190,12 +216,12 @@ groups:
           description: "finapp.bnpl.dispute.sweeper.enabled is false on a scraped instance. Lapsed disputes are resolved by the others; set it back to true (OPERATIONS_RUNBOOK.md section 8.7)."
 
       - alert: BnplGaugesUnreadable
-        # NaN: a BNPL gauge whose database read failed - an unreadable proof, lag, queue or terms reading must stay visible,
-        # never read as 0 or as its last value.
-        expr: max(finapp_bnpl_threeway_proof != finapp_bnpl_threeway_proof) or max(finapp_bnpl_subledger_proof != finapp_bnpl_subledger_proof) or max(finapp_bnpl_replay != finapp_bnpl_replay) or max(finapp_bnpl_accrual_lag_seconds != finapp_bnpl_accrual_lag_seconds) or max(finapp_bnpl_application_awaiting_age_seconds != finapp_bnpl_application_awaiting_age_seconds) or max(finapp_bnpl_terms_active != finapp_bnpl_terms_active)
+        # NaN: a BNPL gauge whose database read failed - an unreadable proof, lag, queue, contested-dispute age or terms
+        # reading must stay visible, never read as 0 or as its last value.
+        expr: max(finapp_bnpl_threeway_proof != finapp_bnpl_threeway_proof) or max(finapp_bnpl_subledger_proof != finapp_bnpl_subledger_proof) or max(finapp_bnpl_replay != finapp_bnpl_replay) or max(finapp_bnpl_accrual_lag_seconds != finapp_bnpl_accrual_lag_seconds) or max(finapp_bnpl_application_awaiting_age_seconds != finapp_bnpl_application_awaiting_age_seconds) or max(finapp_bnpl_terms_active != finapp_bnpl_terms_active) or max(finapp_bnpl_dispute_contested_age_seconds != finapp_bnpl_dispute_contested_age_seconds)
         for: 15m
         labels:
           severity: ticket
         annotations:
           summary: "A BNPL gauge cannot be read"
-          description: "A BNPL gauge reads NaN - its database read failed. The proofs, the accrual lag, the application queue or the active terms are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 8.8)."
+          description: "A BNPL gauge reads NaN - its database read failed. The proofs, the accrual lag, the application queue, the contested disputes' wait or the active terms are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 8.8)."
