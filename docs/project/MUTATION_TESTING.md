@@ -1831,6 +1831,13 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-AUD-03` | `BnplDisputeApiTest#anInsidersResolutionIsSelfDealing`, `BnplServicingApiTest#anInsidersWaiverIsSelfDealing`, `BnplDisputeApiTest#anInsidersOperatorRefundIsSelfDealing` | Recorded | A `P12-DOC-001` probe (2026-10-22), three: self-dealing through the API at the dispute's operator acts, the waiver and the operator refund door - each door's check removed in turn (`BnplDisputes.refuseSelfDealing`'s throw; `BnplWaivers.propose`'s `judgeSelfDealing`; the operator-door party check in `BnplRefunds.refund`) | All three caught - the insider got `200`, `201` with a waiver, `201` with a refund. Restored (sha256-verified) |
 | `INV-MER-01` | `BnplOriginationTest#theEligibilityEventCarriesExactlyTheSessionAndTheOutcome` | In-suite | A `P12-DOC-001` probe (2026-10-22): no credit data to merchants - the eligibility event's exact key set `{checkoutSessionId, outcome}` for `ELIGIBLE` and `NOT_ELIGIBLE` - a `score` field added in `BnplOrigination.assessed` | Caught - the new test and the existing decline test (2 of 20). Restored (sha256-verified) |
 | `INV-IDEM-01` | `BnplOneKeyRaceDatabaseTest` (eighteen keyed doors, ten requests under one key each) | Recorded | A `P12-DOC-001` probe (2026-10-22), five: the waiver proposal's claim made per-request; the dispute desk's; the repayment desk's; each of the last two with the domain's born-under-this-key check also removed | Waiver caught (`409 bnpl.ProposalPending`); **dispute and repayment SURVIVED alone** - each has two independent guards, the claim and the domain's `findByKey` on the stored request key, either one alone giving one effect and one receipt; both caught with both guards removed (`409 bnpl.DisputeOpen`; `500 api.InternalError`). Restored (sha256-verified) |
+| `INV-BNPL-06` | `BnplRefundDatabaseTest#theRanksHoldForEveryWriter` | Recorded | *(the deferred conservation - `bnpl V012`'s `bnpl_refund_conserves`, the body `V013` replaced)* - A `P12-GATE` probe (the Phase 12 → 13 transition gate, 2026-10-22; R4, A6-F5's first priority probe, owed since `-021`): the deferred constraint trigger `bnpl_refund_conserves` disabled by the migrator inside the case's own transaction (`ALTER TABLE bnpl.bnpl_refund DISABLE TRIGGER`), before its raw refund that claims 10.00 of unbilled principal cancelled with no adjustment naming it | Caught - "Expecting code to raise a throwable": the commit admitted a refund whose Σ adjustments + excess ≠ R (1 test, 1 failed). Restored byte-identical (sha256 `87ddb278…856f`, verified) |
+| `INV-LND-08` | `BnplRepaymentDatabaseTest#aClosedObligationRefuses` | Recorded | *(closed is closed - a repayment only on its ACTIVE obligation, `bnpl V014:461`)* - A `P12-GATE` probe (R4, A6-F2's verified instance): the repayment trigger's ACTIVE rank's `RAISE` turned into a `NOTICE` by in-test DDL (`pg_get_functiondef`, the anchor required) - then the same probe against `master`'s version of the case | Caught on the gate's case - "Expecting code to raise a throwable" at the raw repayment, now dated on the floor with the clock a day past it. **Against `master`'s version (dated `current_date`, below the floor) the probe SURVIVED** (1 test, 0 failed): the floor's rank refused the row instead - the case could not see the rule it named, A6-F2 as found. Restored byte-identical (sha256 `0bbabe1c…970c`, verified, after each run) |
+| `INV-LIFE-04` | `BnplRepaymentDatabaseTest#aClosedObligationRefuses` | Recorded | *(a second closure of a CLOSED obligation, `bnpl V014:520`)* - A `P12-GATE` probe (R4, the closure ranks): the closure trigger's ACTIVE-and-reason rank's `RAISE` turned into a `NOTICE` | Caught - by the SQLSTATE the case now asserts, not by an admission: the second closure met a unique beneath (`23505`, one closure per obligation) and the case expected `P0001` from the named rule - a bare `SQLException` assertion would have survived. Restored byte-identical (sha256 `0bbabe1c…970c`) |
+| `INV-LND-08` | `BnplRepaymentDatabaseTest#theClosuresRanksHoldForEveryWriter` | Recorded | *(closed means settled - `bnpl V014:554`)* - A `P12-GATE` probe (R4, the closure ranks): the closure trigger's "every billed item is paid in full" `RAISE` turned into a `NOTICE` | Caught - "Expecting code to raise a throwable" at the raw closure beside a billed item unpaid. Restored byte-identical (sha256 `0bbabe1c…970c`) |
+| `INV-LND-08` | `BnplRepaymentDatabaseTest#theClosuresRanksHoldForEveryWriter` | Recorded | *(the closure's commit-time rank - `bnpl V010:266`'s deferred `bnpl_obligation_closure_closes_its_obligation`)* - A `P12-GATE` probe (R4, A6-F11: the case's display name claimed this rank and never reached it; it now does, with a raw writer whose every row rank passes): the deferred trigger's `RAISE` turned into a `NOTICE` | Caught - "Expecting code to raise a throwable" at the commit: a closure committed beside an obligation left `ACTIVE`. Restored byte-identical (sha256 `0bbabe1c…970c`) |
+| `INV-LND-08` | `BnplRepaymentDatabaseTest#theClosuresRanksHoldForEveryWriter` | Recorded | *(`ACTIVE → CLOSED` only beside its closure - `bnpl V010:339`)* - A `P12-GATE` probe (R4, the closure ranks): the obligation edge trigger's closure `RAISE` turned into a `NOTICE` | Caught - "Expecting code to raise a throwable" at the raw `UPDATE … status = 'CLOSED'` with no closure row (`BnplBillingDatabaseTest#theObligationMovesOnlyItsPermit` meets the same rank; not run under the probe). Restored byte-identical (sha256 `0bbabe1c…970c`) |
+| `A13` | `BnplLateFeeDatabaseTest#theCapHolds` | Recorded | *(the late-fee cap's database arm - `bnpl V013:390`)* - A `P12-GATE` probe (R4, A1-2): the cap arm (`OR assessed + NEW.amount_minor > terms.late_fee_cap_minor`) removed from the fee trigger by in-test DDL, the fee's own arm kept - against the new raw case, 3.00 on instalment 4 within the pinned 5.00 but past the 2.00 of room | Caught - "Expecting code to raise a throwable" for the application role's raw fee (1 test, 1 failed). Restored byte-identical (sha256 `dfbf7818…ef2a`, verified) |
 
 *The Phase 12 exit review (`P12-DOC-001`, 2026-10-22) on the "written and **not run**" notes below:* every database case they name has since run green - the owner-authorised Phase 12 database pass (2026-10-20: `:bnpl:databaseTest`, `:app:databaseTest` and `:app:ownContainerDatabaseTest`, every failure repaired by `P12-TSK-027` and `-028`, one of them a production defect - `bnpl V012`'s constraint-trigger name collision - the rest test or register defects) and `P12-TST-001`'s app selection. The LIVE PROBES they list as owed were not performed by those passes; the review performed the ones the gate names (the rows above marked `P12-DOC-001`: §13.4's purchase-lock skip, the lock-bypass of every born-once arbiter by `BnplBornOnceArbitersDatabaseTest`, the terminal edges, the crash-and-re-drives, the one-key races) and records the rest as owed, not claimed.
 
@@ -2245,6 +2252,212 @@ no test read the running instance's stage gauge against the real schema.
   `MerchantTenancyBatteryDatabaseTest` and `DisputeResponseDatabaseTest` inside the gate's battery;
   the battery's own `INV-DSP-03` share is the answers' transmission and dispatch records under a
   race, and a refused act's absence from the record.
+
+**What Phase 12's register still owes at the database** (`P12-GATE`, the Phase 12 → 13 transition gate, 2026-10-22;
+the gate's finding A6-F5). Every database case the Phase 12 notes in §2 name has run green since the owner-authorised
+database pass of 2026-10-20, but a green run is not a demonstration: the **live probes** - the database rule broken
+on PostgreSQL and a database test seen to go red - were mostly never performed. Below, one line per §2 row (its line
+on master `993eaec3`), the rule it guards, and what is owed. Two kinds:
+
+- **Owed live half** - the row's own text says the database half (the live rank, the race, the lock-wait, the raw
+  writer) is owed or not run; the row's catch was hermetic only.
+- **Caught by a fake** - the hermetic catch was the in-memory fakes' **copy** of a `bnpl V0xx` trigger, `CHECK` or
+  unique (`BnplApplicationFakes`), not the production rule; or the probe mutated the fake's copy itself. Either way
+  the migration's rule was never mutated live.
+
+*Counts, honestly reconciled with the audit's "123 owed, 27 caught only by a fake".* Over every Phase 12 §2 row
+(376, including the rows keyed `A13`, `OQ-10`, `ADR-0106 …`, `RG-M5`, `R1`, `A2-F1`): **83 owed-live-half rows**
+(the 89 rows whose text says owed / not run / live half, less six false hits - `:1482`, `:1553`, `:1653`, `:1787`
+where "owed" means money owed, `:1789` where `:creditmath:test` was "not run", and `:1588` whose database half is
+declared **unobservable and not claimed**) and **40 fake rows** - 123 in all, the audit's figure by a different
+composition. Of the 40: **29** were caught solely by a fake's rank (24 `INV-`-keyed, 5 not); **3** were caught by a
+fake's rank beside a domain assertion (`:1649`, `:1650`, `:1676`); **7** mutated the fake's copy itself (`:1715`,
+`:1722`, `:1724`, `:1725`, `:1731`, `:1733`, `:1736`); **1** was caught by the fake ledger's posting key before the
+fake unique (`:1700`). The audit's 27 is reproduced exactly as the `INV-`-keyed rows only (24 sole + 3 beside a
+domain assertion), and its 123 as the `INV-`-keyed rows under a looser "owed" match (which also hits "showed" and
+"allowed"); neither figure is forced here. Of the 123: **10** have since been discharged by a later live probe (marked
+**discharged**); **12** are touched by this gate's repairs (marked **P12-GATE**) - **7** discharged by a planned live
+probe (`:1648`, `:1664`, `:1687`, `:1691`, `:1703`, `:1731`, `:1733`) and **5** only conditionally or in part (`:1640`,
+`:1659`, `:1705` depend on which arm is probed; `:1724`, `:1725` gain a database case, not a probe); so **106 remain
+owed** after the gate, **101** if every conditional lands. *As recorded on R4's branch:* R4's probes (the seven
+`P12-GATE` rows at the end of §2) discharge `:1640` (the conditional landed: `V014:461` probed), `:1648`, `:1687`, `:1703`
+and the deferred conservation (no row), and `:1691` in part (`V014:520`; its deferred `:258` stays owed); `:1659` and
+`:1705` stay owed - R4's `bnpl_refund_conserves` probe disabled the whole trigger, not the `V013:463` or `:458` arm;
+`:1724` and `:1725` gained their database case (`BnplWaiverDatabaseTest#aReopenedFeeIsForgivableOnlyToWhatWasNeverForgiven`)
+and still owe a probe. `:1664` (R2) and `:1731`, `:1733` (R1) are theirs to record. So **109** remain owed on this
+branch, **106** once R1's and R2's three land. Line numbers are `master` `993eaec3`'s; the gate removed one §2 row
+(`:1793`, re-filed as a note - A6-F12), so a row below it reads one line earlier on the merged file.
+
+*One shared note for the uniques.* `P12-DOC-001`'s `BnplBornOnceArbitersDatabaseTest` (`:1817`, `:1818`) now proves
+live that every bnpl unique refuses a copy with every trigger off, pinned by name (two uniques dropped or widened,
+both caught). That discharges each **bnpl** unique's own refusal; it does not discharge the recorded ten-racer probes
+(a unique dropped against N sweepers), which the `-015` and `-017` notes predict GREEN under B4 alone - those stay
+owed, marked "(arbiter: :1817)".
+
+**Chart, terms, capital, merchant enablement, checkout (`P12-TSK-003`…`-007`)** - owed live half:
+- `:1479` `INV-BNPL-01` `BnplBookPurposesTest#allTenAreGuardedAndNoneReconciled` - ledger `V027`'s manual-adjustment trigger list - `BNPL_FEES_DUE` out of it against `BnplChartDatabaseTest#aManualAdjustmentCannotTouchABnplAccount`.
+- `:1486` `INV-LED-06` `OperationalChartMigrationTest#theSeededTypesAreThePinnedContract` - ledger `V027`'s seed - against `BnplChartDatabaseTest#theOperationalAccountsAreSeededPerCurrency`.
+- `:1487` `INV-BNPL-01` `LedgerAccountMigrationTest#everyValueListMatchesItsEnum` - ledger `V027` `ledger_account_purpose_is_known` - against `BnplChartDatabaseTest#tenOpenersConvergeOnOneSet`.
+- `:1493` `INV-AUD-04` `BnplTermsAdministrationTest#oneProposalPerProductUnderTheLock` - A0 (namespace-`12` lock) with `V002:290` `bnpl_terms_one_proposed` - ten proposers, `BnplTermsDatabaseTest#oneProposedAndOneActivePerProduct`.
+- `:1494` `INV-LND-05` `BnplTermsMigrationTest#fourEyesAndOnePerProduct` - `V002:290` - the same.
+- `:1495` `INV-AUD-04` `BnplTermsAdministrationTest#theProposerCannotApprove` - `V002:278` `bnpl_terms_version_four_eyes` - raw approver = proposer, `BnplTermsDatabaseTest#theProposerCannotApprove`.
+- `:1496` `INV-AUD-04` `BnplTermsMigrationTest#fourEyesAndOnePerProduct` - `V002:278` - `23514` for both roles.
+- `:1499` `INV-LND-09` `BnplTermsMigrationTest#aPayIn4VersionHoldsNoRate` - `V002:477` `bnpl_terms_kind_coherent` - `BnplTermsDatabaseTest#aPayIn4VersionHoldsNoRate`.
+- `:1501` `INV-HIST-04` `BnplTermsMigrationTest#theTermSetIsNeverUpdatedOrDeletedByAnyRole` - `V002:603-607` grants - `BnplTermsDatabaseTest#theTermSetIsNeverUpdatedOrDeletedByAnyRole`, `BnplSchemaHasNoMutableMoneyTest`.
+- `:1503` `INV-LND-05` `BnplTermsAdministrationTest#withoutAnActiveVersionTheProductIsNotOffered` - the terms pin's `FOR SHARE` (`JdbcBnplTermsStore`; reworked by `P12-GATE` R3, A3-I1) - the lock-wait in `BnplTermsDatabaseTest#withoutAnActiveVersionTheProductIsNotOffered`.
+- `:1506` `INV-LND-13` `LendingCapitalHeadroomTest#bnplPrincipalDueStillCounts` - `LendingCapitalHeadroom.PRINCIPAL` - `LendingCapitalDatabaseTest#bnplPrincipalDueStillCounts`.
+- `:1507` `INV-BNPL-10` `LendingCapitalHeadroomTest#aBnplPrincipalLineLowersTheHeadroom` - the same set - `LendingCapitalDatabaseTest#aBnplPrincipalLineLowersTheHeadroom`.
+- `:1508` `INV-LND-13` `LendingCapitalHeadroomTest#theCapitalProofCountsBnplPrincipal` - `LendingCapitalProof` - `LendingCapitalDatabaseTest#theCapitalProofCountsBnplPrincipal`.
+- `:1509` `INV-LND-13` `LendingBnplCapitalTest#theCapitalRowIsLockedOnBnplsConnectionFirst` - L6 (`atRest` for `underLock`) - **discharged** by `:1800` (the storm, the same mutation, caught live); the named lock-wait case `BnplCapitalDatabaseTest#aBnplJudgementAndALoanAcceptanceSerialiseOnTheCapitalRow` was not itself probed.
+- `:1516` `INV-AUD-04` `BnplEnablementsTest#theProposerCannotApprove` - merchant `V010` `merchant_bnpl_enablement_approver_is_not_proposer` with the domain check - `MerchantBnplEnablementDatabaseTest#theProposerCannotApprove`.
+- `:1517` `INV-AUD-04` `BnplEnablementMigrationTest#fourEyesIsAConstraint` - merchant `V010`, the same `CHECK` - the same case.
+- `:1518` `INV-MER-03` `BnplEnablementMigrationTest#onePinPerPurchase` - merchant `V010` `bnpl_fee_pin_one_per_purchase` - ten pinners, `MerchantBnplEnablementDatabaseTest#theFeePinIsBornOncePerPurchase` (a merchant unique: outside the bnpl arbiter sweep).
+- `:1524` `INV-MER-07` `BnplPricingTest#aRetainedScheduleIsRefusedForBnpl` - merchant `V010`'s assignment trigger - `MerchantBnplEnablementDatabaseTest#aRetainedScheduleIsRefusedForBnpl`.
+- `:1527` `INV-BNPL-03` `CheckoutSessionMigrationTest#theFinancingEdgeRequiresItsEvidence` - checkout `V004`'s edge trigger - `CheckoutFinancingDatabaseTest#theEdgeIsRefusedToEveryRoleWithoutAFinancingRef`.
+- `:1528` `INV-BNPL-03` `CheckoutBnplSessionsTest#theRowIsLockedBeforeTheClockIsRead` - the row lock before the clock - `CheckoutFinancingDatabaseTest#financingAndExpiryLeaveExactlyOne` at the deadline, ±5 s.
+- `:1533` `INV-BNPL-03` `CheckoutSessionMigrationTest#aFinancedSessionIsCompletedWithoutAnIntent` - checkout `V004` `checkout_session_financed_is_completed_without_intent` - `#financedByRefIsSetOnceAndExclusiveWithTheIntent` (`23514`), `#noCompletedLateByFinancing`.
+- `:1534` `INV-BNPL-03` `CheckoutSessionMigrationTest#oneSessionPerPurchase` - checkout `V004` `checkout_session_one_session_per_financing` - `23505` in `#financedByRefIsSetOnceAndExclusiveWithTheIntent`.
+- `:1535` `INV-BNPL-03` `CheckoutConfirmEndpointTest#aFinancedSessionIsNotConfirmable` - the confirmation behind B3 - `CheckoutFinancingDatabaseTest#financingAndACardConfirmationCompleteOnce`, `#financingAndAWalletConfirmationCompleteOnce`.
+- `:1536` `INV-MER-06` `CheckoutSessionMigrationTest#aFinancedSessionCommitsBesideItsOrder` - checkout `V004`'s deferred order check - the orderless edge refused at commit.
+
+**Application, offer, acceptance, exposure, merchant read (`P12-TSK-010`…`-014`)**:
+- `:1566` `INV-BNPL-03` `BnplApplicationMigrationTest#theArbitersArePresent` - `V003:95` `bnpl_application_one_open_per_session` - the index dropped against `BnplApplicationDatabaseTest#tenApplicationsForOneSessionOpenOne` (arbiter: `:1817`).
+- `:1571` `INV-BNPL-03` `BnplOfferMigrationTest#theExpiryNeverOutlivesTheSessionOrTheDecision` - `V004:170` - `BnplOriginationDatabaseTest#theOfferNeverOutlivesTheSessionOrTheDecision`.
+- `:1573` `INV-LIFE-02` `BnplOfferMigrationTest#theClockSidedEdges` - `V004:252`, `:256` - the race `BnplOriginationDatabaseTest#declineAndExpiryLeaveExactlyOne`.
+- `:1578` `INV-HIST-04` `BnplOfferMigrationTest#theTermsAreHashedOverTheirBytes` - `V004:361` - `BnplOriginationDatabaseTest#theTermsAreHashedOverTheirBytes`.
+- `:1581` `INV-LIFE-01` `BnplOriginationTest#aLapsedDecisionIsNotOffered` - **caught by a fake**: the fake's copy of `V004:215` (never born expired) - live: the lapse judged after the pin against `BnplOriginationDatabaseTest`.
+- `:1582` `INV-BNPL-03` `BnplOfferMigrationTest#theArbitersArePresent` - `V004:116` (`-> OFFERED` only beside its offer) - the live raw edge.
+- `:1583` `INV-BNPL-03` `BnplAcceptanceMigrationTest#theArbitersArePresent` - `V006:112` `purchase_checkout_session_unique` - **discharged** by `:1799` (the storm, the unique dropped, caught at C7).
+- `:1584` `INV-BNPL-10` `BnplAcceptancesTest#acceptancesRacingForTheLastCapitalAdmitOne` - L6 - **discharged** by `:1800`.
+- `:1585` `INV-BNPL-02` `BnplAcceptancesTest#thePayableAndTheWalletAreLockedAsOneElementInUuidOrder` - (P) in `UUID` order - **discharged** by `:1801` (caught at the named lock waits; a `40P01` itself was not observed).
+- `:1587` `INV-BNPL-10` `BnplAcceptancesTest#acceptanceAndADecisionSerialiseOnTheProfile` - L0 before credit's consumption - the live L0 lock-wait.
+- `:1589` `INV-BNPL-10` `BnplCreditExposureTest#aClosedObligationCountsItsPrincipal` - `V007`'s view - a principal planted on a `CLOSED` obligation, live (`BnplCreditExposureDatabaseTest`).
+- `:1595` `INV-BNPL-02` `BnplAcceptanceMigrationTest#theFinancingAndTheObligationAreOneFact` - `V006:1042-1054` (the `*_is_financed_at_commit` constraint triggers) - against `BnplAcceptanceDatabaseTest#aFinancingRowWithoutItsObligationIsRefused`.
+- `:1596` `INV-BNPL-05` `BnplAcceptanceMigrationTest#thePrincipalValueFloor` - `V014:295` `principal_value_floor` (the billing's rank `V014:370`) - against `BnplAcceptanceDatabaseTest#aPrincipalFactBeforeTheFloorIsRefused`.
+- `:1597` `INV-BNPL-10` `BnplAcceptanceMigrationTest#theExposureViewIsTheReadsAlone` - `V007:30` - `BnplMigrationTest#theExposureViewIsTheReadsAlone`.
+- `:1600` `INV-MER-01` `OwnershipIsScopedTest#ownerScopedStatementsCarryThePredicate` - the statement's tenant predicate - `BnplMerchantReadDatabaseTest#anotherMerchantsPurchaseIsNotFound`.
+- `:1601` `INV-CRD-04` `BnplMerchantPurchaseDeskTest#theViewIsClosed` - the live needle walk, `BnplMerchantReadDatabaseTest#noCreditDataReachesTheMerchant`.
+- `:1603` `INV-BNPL-04` `BnplMerchantPurchaseDeskTest#theViewIsTheFinancing` - against F1's payable lines, `#theFiguresEqualTheFinancingEntry`.
+- `:1605` `INV-BNPL-02` `MerchantBnplPurchaseViewTest#neverAuthorised` - the all-or-nothing race, `#aReadRacingTheAcceptanceSeesAllOrNothing`.
+
+**Billing and accrual (`P12-TSK-015`, `-017`)**:
+- `:1611` `INV-LND-02` `BnplServicingTest#pnBillsTheAccruedInterestNotTheProjection` - **caught by a fake** (the fake's copy of `V014:409`, the interest rank) - `BnplBillingDatabaseTest#pnBillsTheAccruedInterestNotTheProjection`.
+- `:1612` `INV-LND-04` `BnplServicingTest#heldCreditSettlesWhatIsAlreadyPastDue` - the catch-up (`V008:392`) - `BnplBillingDatabaseTest#heldCreditSettlesWhatIsAlreadyPastDue`.
+- `:1613` `INV-BNPL-05` `BnplServicingTest#noApplicationBelowTheFloor` - `V008:407` - `BnplBillingDatabaseTest#noApplicationBelowTheFloor`.
+- `:1615` `INV-IDEM-02` `BnplServicingTest#tenSweepersBillOnce` - **caught by a fake** (copies of `V006:788` `bnpl_billing_instalment_unique`, `V008:165` `bnpl_billing_due_date_unique`) - the unique dropped against `#tenSweepersBillOnce`, B4 possibly removed beside it (`-015`'s note) (arbiter: `:1817`, which itself widened `bnpl_billing_instalment_unique`).
+- `:1619` `INV-LND-10` `BnplServicingTest#skewNeverBillsEarly` - **caught by a fake** (copy of `V014:370`, never early) - `BnplBillingDatabaseTest#skewNeverBillsEarly`.
+- `:1620` `INV-LND-10` `BnplServicingMigrationTest#theBillingsRulesAreHeldForEveryWriter` - `V014:370` - the same case.
+- `:1622` `INV-BNPL-05` `BnplServicingMigrationTest#theFloorAndItsRanks` - `V008:407` - the raw writer on `#noApplicationBelowTheFloor`.
+- `:1623` `INV-LND-02` `BnplAccrualsTest#accruesOncePerDate` - **caught by a fake** (copy of `V008:70` `bnpl_interest_accrual_date_unique`) - `BnplAccrualDatabaseTest#accruesOncePerDate` (arbiter: `:1817`).
+- `:1624` `INV-IDEM-02` `BnplAccrualsTest#accruesOncePerDate` - `V008:70` - the same (arbiter: `:1817`).
+- `:1626` `INV-LND-02` `BnplAccrualsTest#theAccrualHoldsNoWalletAndServicingNeverAccrues` - no income row across a wallet wait - **discharged** by `:1802` (the storm's A2-F1 scene, caught live).
+- `:1634` `INV-LND-02` `BnplAccrualMigrationTest#theWritersRanks` - `V009`'s trigger re-taking B4 (`FOR UPDATE`) - against `BnplAccrualDatabaseTest#accruesOncePerDate`.
+- `:1635` `INV-LND-02` `BnplAccrualMigrationTest#theWritersRanks` - `V009:86` (the instalment-period rank) - `BnplAccrualDatabaseTest#theSpanEndsAtTheFinalDueDate`.
+
+**Repayment, allocation and closure (`P12-TSK-018`)**:
+- `:1637` `INV-CON-01` `BnplRepaymentsTest#repaymentTakesTheObligationThenTheWallet` - B4 before (P) - the lock-wait `BnplRepaymentDatabaseTest#repaymentTakesTheObligationThenTheWallet` and the `40P01` against a racing collection (`BnplCollectionLedgerDatabaseTest#aRepaymentRacingACollectionNeverDeadlocks`).
+- `:1638` `INV-BNPL-01` `BnplRepaymentsTest#theDueStateIsDerivedFromRowsNotTheProjection` - **discharged** by `:1803` (the storm's projection drift, caught live).
+- `:1639` `INV-IDEM-01` `BnplRepaymentsTest#theSameRepaymentTwiceRepaysOnce` - **caught by a fake** (copy of `V006:874` `bnpl_repayment_request_unique`) - the two-instance race `BnplRepaymentDatabaseTest#theSameRepaymentTwiceRepaysOnce` (arbiter: `:1817`).
+- `:1640` `INV-LIFE-04` `BnplRepaymentsTest#aClosedObligationRefuses` - **caught by a fake** (copy of `V014:461`, the `ACTIVE` rank) - **discharged** by `P12-GATE` R4 (A6-F2): the raw repayment dated inside the floor window, its message asserted, and `V014:461` probed live - caught; the same probe against `master`'s version of the case survived.
+- `:1642` `INV-BNPL-05` `BnplRepaymentsTest#theRepaymentIsFloored` - `V014:483` - the raw writer `BnplRepaymentDatabaseTest#theRepaymentIsFloored`.
+- `:1643` `INV-LND-04` `BnplRepaymentsTest#theAllocationIsHeldToHoldAsCredit` - `V010:101` `bnpl_repayment_allocation_target` (`23514`) - in `BnplRepaymentDatabaseTest#theAllocationsRanksHoldForEveryWriter`.
+- `:1646` `INV-LND-08` `BnplRepaymentsTest#aCreditBalanceThatSettlesTheObligationClosesAtServicing` - T-svc's closure step - against `BnplRepaymentDatabaseTest#aCreditBalanceThatSettlesTheObligationClosesAtServicing`.
+- `:1647` `INV-LND-04` `BnplRepaymentMigrationTest#theAllocationsRanks` - `V010:135` (billed only) - the raw writer (`P0001`) in `#theAllocationsRanksHoldForEveryWriter`.
+- `:1648` `INV-LND-08` `BnplRepaymentMigrationTest#theEdgeAndTheGrants` - `V010:339` (`CLOSED` only beside its closure) - **discharged** by `P12-GATE` R4 (`V010:339` probed live against `#theClosuresRanksHoldForEveryWriter` - caught).
+
+**Auto-collection (`P12-TSK-019`)**:
+- `:1649` `INV-IDEM-02` `BnplCollectionsTest#theSameDateCollectsOnce` - **caught by a fake** beside `#theCandidates` (copy of `V011:51` `bnpl_collection_attempt_instalment_date_unique`) - the unique dropped against `BnplCollectionDatabaseTest#tenSweepersCollectOnce` (arbiter: `:1817`).
+- `:1650` `INV-IDEM-02` `BnplCollectionsTest#collectsOnTheDueDate` - **caught by a fake** beside `#theAttemptsShape` (copy of `V011:152`/`:179`, the repayment named by its attempt) - live: the orphan `AUTO_COLLECTION` repayment in `BnplCollectionDatabaseTest#theRanksHoldForEveryWriter`, probed.
+- `:1651` `INV-IDEM-02` `BnplCollectionMigrationTest#theAttemptsUniquesAndShape` - `V011:51` - `#tenSweepersCollectOnce` (arbiter: `:1817`).
+- `:1652` `INV-IDEM-02` `BnplCollectionMigrationTest#theAttemptsTrigger` - `V011:130` (never back-filled) - the raw writer in `#theRanksHoldForEveryWriter`.
+- `:1655` `INV-BAL-04` `BnplCollectionsTest#partialCollectionWhenAllowed` - the available balance under the wallet's lock - `BnplCollectionLedgerDatabaseTest#twoObligationsOfOneCustomerSerialiseOnTheWallet`.
+
+**Refunds (`P12-TSK-021`)**:
+- `:1658` `INV-IDEM-01` `BnplRefundsTest#theSameRefundTwiceRefundsOnce` - **caught by a fake** (copy of `V012:95` `bnpl_refund_request_unique`) - the two-instance race `BnplRefundDatabaseTest#theSameRefundTwiceRefundsOnce` (arbiter: `:1817`).
+- `:1659` `INV-BNPL-05` `BnplRefundsTest#refundBeforeDuringAfter` - **caught by a fake** (copy of `bnpl_refund_conserves`' schedule-version arm, `V013:463`) - still owed: `P12-GATE` R4's `bnpl_refund_conserves` probe disabled the whole trigger, not this arm.
+- `:1663` `INV-MER-07` `BnplRefundsTest#theFeeTelescopesToExactlyFOverSplitRefunds` - **caught by a fake** (copy of `V012:169`, B7) - **discharged** by `:1804` (the storm's pro-rated fee refused live by `V012`'s refund trigger).
+- `:1664` `INV-BNPL-05` `BnplRefundsTest#theRefundIsFloored` - **caught by a fake** (copy of `V012:178-185`, the floor) - **P12-GATE** R2 (A2-2, the live raw writer for both roles, probed).
+- `:1668` `INV-CON-01` `BnplRefundsTest#refundTakesThePurchaseThenTheObligationThenThePair` - (P) through `BnplAcceptances.lockAsOneElement` - **discharged** by `:1827` (the same helper's order reversed against a real wallet-paid capture, `40P01` caught).
+- `:1670` `INV-BNPL-05` `BnplRefundsTest#refundCancelsLatestFirst` - **caught by a fake** (copy of `V008:165` `bnpl_billing_due_date_unique`) - the carried instalment's second billing refused live (arbiter: `:1817`).
+- `:1673` `INV-IDEM-01` `BnplRefundMigrationTest#theRefundsRow` - `V012:95` - the raw writer in `BnplRefundDatabaseTest#theRanksHoldForEveryWriter` (arbiter: `:1817`).
+- `:1674` `INV-BNPL-07` `BnplRefundMigrationTest#theRefundsTrigger` - `V012:164` (never above the gross) - the raw rank (`P0001`) in `#theRanksHoldForEveryWriter`; the two-instance count was driven by `:1806`'s B5 skip, not by this rank.
+- *(no row; `-021`'s note)* the deferred conservation at commit - `V013:443` (`bnpl_refund_conserves`, deferred) - **discharged** by `P12-GATE` R4 (the trigger disabled in the case's own transaction - caught; §2's `INV-BNPL-06` row).
+
+**Condition, delinquency and late fees (`P12-TSK-020`)**:
+- `:1696` `INV-LND-12` `BnplConditionsTest#reRunningADayWritesNothing` - **caught by a fake** (copy of `V013:97` `bnpl_condition_event_once_a_day`) - the unique dropped against `#tenSweepersOneConditionChange` (arbiter: `:1817`).
+- `:1697` `INV-LND-08` `BnplConditionsTest#noConditionAfterClosure` - **caught by a fake** (copy of `V013:279`, `ACTIVE` only) - live raw writer, probed (`:1810` probed the record-order query on a replica-role plant, not this rank).
+- `:1700` `INV-IDEM-02` `BnplLateFeesTest#tenStepsAssessOnce` - caught by the fake ledger's key before the fake's copy of `V013:147` `bnpl_fee_assessment_once_per_instalment` - the unique dropped against `BnplLateFeeDatabaseTest#tenSweepersAssessOnce` (arbiter: `:1817`).
+- `:1701` `A13` `BnplLateFeesTest#eachInstalmentByItsOwnAge` - **caught by a fake** (copy of `V013:385`, the day) - the raw fee in `BnplLateFeeDatabaseTest`'s ranks case, probed.
+- `:1703` `A13` `BnplLateFeesTest#theCapHolds` - **caught by a fake** (copy of `V013:391`'s cap arm) - **discharged** by `P12-GATE` R4 (A1-2: a raw fee within the fee but beyond the cap room, its message asserted; the cap arm removed live - caught).
+- `:1704` `A2-F1` `BnplLateFeesTest#theFeeIncomeRowIsTakenAfterTheWallet` - the `BNPL_FEE_INCOME` row after (P) - `BnplCollectionLedgerDatabaseTest#theFeeIncomeRowIsTakenAfterTheWallet` (`:1802` was the INTEREST row).
+- `:1705` `INV-BNPL-06` `BnplLateFeesTest#aCancelledInstalmentsLateFeeIsReleased` - **caught by a fake** (copy of `V013:458`, `bnpl_refund_conserves`' OQ-14 arm) - still owed: `P12-GATE` R4's probe disabled the whole trigger, not this arm.
+
+**Early payoff (`P12-TSK-022`)**:
+- `:1676` `INV-LND-02` `BnplPayoffsTest#pnPayoffAccruesFirstAndProjectsToTheGoodThroughDate` - **caught by a fake** beside the missing `BehindAccrual` (copy of `V014:405`, the accrual wait) - live, probed.
+- `:1677` `INV-LND-08` `BnplPayoffsTest#payoffBesideARefundIsStaleOrClosedNeverWrong` - recomputed under B4 - the two-thread race `BnplPayoffDatabaseTest#payoffBesideARefundIsStaleOrClosedNeverWrong`.
+- `:1679` `INV-LND-08` `BnplPayoffsTest#everyPayoffApplicationIsFloored` - **caught by a fake** (copy of `V008:407`, the application floor) - live, probed.
+- `:1680` `INV-LND-08` `BnplPayoffsTest#everyPayoffApplicationIsFloored` - **caught by a fake** (copy of `V014:231`, `max(G, floor)`) - `BnplPayoffDatabaseTest#theRanksHoldForEveryWriter`.
+- `:1683` `INV-IDEM-01` `BnplPayoffsTest#tenExecutionsOneClosure` - the executed payoff's convergence - **discharged** in substance by `:1812` (`findExecution` emptied, caught live); the ten-thread count itself not probed. `V014:186`'s unique is `:1817`'s own probe.
+- `:1684` `INV-LND-08` `BnplPayoffsTest#aQuoteIsExecutableOnlyOnItsDate` - **caught by a fake** (copy of `V014:226`) - live, probed.
+- `:1687` `INV-LIFE-04` `BnplPayoffsTest` (19 cases) - **caught by a fake** (copy of `V014:520`, the closure's reason beside an execution) - **discharged** by `P12-GATE` R4 (`V014:520` probed live against `BnplRepaymentDatabaseTest#aClosedObligationRefuses` - caught by its SQLSTATE).
+- `:1689` `INV-LND-08` `BnplPayoffMigrationTest#theFloor` - `V014:295` (the floor's payoff arm) - `BnplPayoffDatabaseTest#everyPayoffApplicationIsFloored`.
+- `:1690` `INV-LND-08` `BnplPayoffMigrationTest#theExecution` - `V014:231` - `#theRanksHoldForEveryWriter`.
+- `:1691` `INV-LIFE-04` `BnplPayoffMigrationTest#thePayoffsFactsOnlyBesideItsExecution` - `V014:520`, `:258` (deferred) - `V014:520` **discharged** by `P12-GATE` R4; `:258` still owed.
+- `:1692` `INV-AUD-03` `BnplPayoffDeskTest#thePayoffIsMultiFactorAlways` - over HTTP, `BnplPayoffApiTest#theOwnerPaysOffUnderMultiFactor`.
+
+**Repayment reversal and fee waiver (`P12-TSK-024`)**:
+- `:1711` `INV-AUD-04` `BnplRepaymentReversalsTest#selfApprovalRefusedAtBothRanksAndAudited` - **caught by a fake** (copy of `V016:105` `bnpl_repayment_reversal_four_eyes`) - raw SQL in `BnplRepaymentReversalDatabaseTest#selfApprovalRefusedAtBothRanksAndAudited`.
+- `:1712` `INV-AUD-04` `BnplCorrectionMigrationTest#fourEyesByCheck` - `V016:105` - the same case.
+- `:1713` `INV-AUD-04` `BnplCorrectionMigrationTest#fourEyesByCheck` - `V016:375` `bnpl_waiver_decision_four_eyes` - `BnplWaiverDatabaseTest#theDecisionsRanks`.
+- `:1715` `INV-REV-01` `BnplRepaymentReversalsTest#aReversalReopensWhatItPaid` - **the fake's copy mutated** (`V016:419` `billing_component_paid` less the negating rows) - the function itself, live.
+- `:1716` `INV-HIST-01` `BnplRepaymentReversalsTest#aReversalReopensWhatItPaid` - **caught by a fake** (copy of `V016:281`, whole at commit) - live, probed.
+- `:1718` `INV-CRD-09` `BnplRepaymentReversalsTest#reversalTakesTheProfileFirst` - L0 before B4 - `BnplServicingApiTest#reversalTakesTheProfileFirst`.
+- `:1720` `INV-LIFE-04` `BnplRepaymentReversalsTest#aClosingRepaymentIsNotReversible` - **caught by a fake** (copies of `V016:143`, `:153`) - live, probed.
+- `:1722` `INV-IDEM-01` `BnplRepaymentReversalsTest#oneLiveProposalPerRepayment` - **the fake's copy mutated** (`V016:115` `bnpl_repayment_reversal_one_live`) - live (arbiter: `:1817`).
+- `:1724` `INV-BNPL-01` `BnplWaiversTest#aReopenedFeeIsForgivableOnlyToWhatWasNeverForgiven` - **the fake's copy mutated** (`V016:395` `billing_component_billed('FEES')`'s waiver term) - **P12-GATE** R4 (A6-F4) adds the database case (a waiver of a fee re-opened by a reversal, with the bound); the live probe stays owed unless R4 records one.
+- `:1725` `INV-REV-02` `BnplWaiversTest#aReleasedOrRefundedFeeIsNeverWaivedAgain` - **the fake's copy mutated** (`V016:450` `fee_waiver_room`, the bound at `:498`, `:545`) - as `:1724`.
+- `:1727` `INV-IDEM-01` `BnplWaiversTest#selfApprovalRefusedAndOnePendingPerFee` - **caught by a fake** (copy of `V016:504`) - live, probed.
+
+**Disputes and the hold (`P12-TSK-023`)**:
+- `:1730` `INV-BNPL-08` `BnplDisputesTest#theDisputeTakesThePurchaseThenTheObligation` - B5 - **discharged** by `:1806`, `:1807`.
+- `:1731` `ADR-0106 decision 3` `BnplDisputesTest#theHoldSuspendsCollectionDpdAndFees` - **the fake's copy dropped** (`V015:755`, collection on a held instalment) - **P12-GATE** R1 (A1-1, live test and probe).
+- `:1733` `A13` `BnplDisputesTest#theHoldSuspendsCollectionDpdAndFees` - **the fake's copy dropped** (`V015:731`, a fee on a held instalment) - **P12-GATE** R1 (A1-1).
+- `:1736` `INV-BNPL-08` `BnplDisputesTest#aDisputeThenARefundShareOneBound` - **the fake's copy dropped** (`V015:609`, no refund beside an open dispute) - live, probed.
+- `:1738` `INV-AUD-04` `BnplDisputesTest#selfApprovalRefusedAndAudited` - **caught by a fake** (copy of `V015:165` `bnpl_dispute_proposal_four_eyes`) - raw SQL, `BnplDisputeDatabaseTest`.
+- `:1740` `OQ-10` `BnplDisputesTest#aLateAcceptanceAtTheDeadlineResolvesOnce` - **caught by a fake** (copy of `V015:342`) - the ten-racer count `BnplDisputeDatabaseTest#aLateAcceptanceAtTheDeadlineResolvesOnce` (the path R1 reworks for A3-M2).
+- `:1741` `OQ-10` `BnplDisputesTest#merchantSilenceResolvesAsARefundAtTheDeadline` - **caught by a fake** (copy of `V015:347`) - live, probed.
+- `:1745` `INV-AUD-03` `BnplDisputesTest#aWithdrawalLiftsTheHold` - over HTTP, `BnplDisputeApiTest#anotherPartysDisputeIsNotFound`.
+- `:1746` `ADR-0106 decision 1` `BnplDisputesTest#aDisputeThenARefundShareOneBound` - **caught by a fake** (copy of `V015:132` `bnpl_dispute_one_open_per_purchase`) - ten instances, `BnplDisputeDatabaseTest#oneOpenDisputePerPurchase` (arbiter: `:1817`).
+- `:1747` `INV-AUD-04` `BnplDisputeMigrationTest#theFourEyes` - `V015:165` - the raw self-approval.
+- `:1748` `INV-LND-12` `BnplDisputeMigrationTest#theHold` - `V015:695` `days_past_due` - the live derivation (R1's A1-1 runs `#theHoldSuspendsCollectionDpdAndFees` but probes the two triggers, not this function).
+
+**Proofs (`P12-TSK-025`)**:
+- `:1751` `INV-BAL-02` `BnplSubledgerProofTest#aRawPostingFails` - `BnplProofDatabaseTest#aRawProjectionEditLeavesTheProofsGreen`.
+- `:1752` `INV-LND-05` `BnplReplayProofTest#aFlippedAgreementDiverges` - `BnplProofDatabaseTest#aFlippedFactDiverges`.
+- `:1754` `RG-M5` `BnplReplayProofTest#heldCreditBesideAPastDueItemAtAStepsEndDiverges` - `BnplProofDatabaseTest#plantedHeldCreditBesideAPastDueItemDiverges`.
+- `:1756` `R1` `BnplReplayProofTest#aPreFloorRepaymentDiverges` - `BnplProofDatabaseTest#aPlantedPreFloorRepaymentDiverges`.
+- `:1758` `INV-MER-02` `BnplThreeWayProofTest#aRawBnplKeyedPayablePostingFailsTheMerchantLeg` - over the real statement derivation, `BnplProofDatabaseTest#aRawBnplKeyedPayablePostingFailsTheMerchantLeg`.
+- `:1759` `INV-LED-04` `BnplSubledgerProofTest#aRawPostingFails` - over the real ledger, `BnplProofDatabaseTest#aRawPostingToABnplAccountFailsTheSubledger`.
+- `:1765` `INV-AUD-03` `BnplExplanationsTest#selfDealingIsRefusedAndRecorded` - over HTTP, `BnplProofApiTest#selfDealingIsRefusedAndRecorded`.
+
+**Not counted, recorded so the omission is visible.** Eight bnpl text-half rows were probed on the migration's text
+alone and never say "owed", so their live half is owed by the same reading: `:1502` (`V002`'s decision stamp),
+`:1567` (`V003`'s column-scoped grant), `:1568` (`V003`'s submission stamp), `:1621` (the floor's accrual arm),
+`:1636` (`V009`'s pinned-engine rank), `:1708` (`V013`'s `billing_component_billed` FEES join), `:1709` (`V013`'s
+`billing_component_paid` release arm), `:1749` (`V015:609`, the refund beside an open dispute). And the italic
+`P12-TSK-0xx` notes at the end of §2 name owed probes with no row (the `-025` proof's projection read and catch-all
+namespace; `-026`'s `<=` turned `<`, the refund subqueries, the wrong-table lookup and the log needle; `-016`'s
+namespace subquery and the payout race's live order); they stand where they are written.
+
+**Recorded, not rewritten (the gate's A6-F8 and A6-F10).** *A6-F8*: the storm's C1-C5 and C18 judge each reading
+with the production proofs themselves (`BnplProofs`, `LendingCapitalProof`, the three-way proof) - a defect shared by a
+proof and the code it proves would pass both - and an act the storm counts as successful is never reconciled against the
+driver's own tally of what it attempted; the gate added two censuses independent of the engines (C8's latest-first walk,
+C11's per-purchase B7 arm) and left the rest as written. *A6-F10*: the hermetic "ten ..." cases
+(`BnplRepaymentReversalsTest`, `BnplWaiversTest#tenApproversOneWaiver` and their kin) are sequential loops over one
+in-memory world - they prove the convergence of a replay, not a race; every such race has its database case
+(`BnplWaiverDatabaseTest#tenApproversOneWaiver`, `BnplBillingDatabaseTest#tenSweepersBillOnce` - since the gate behind a
+start latch, A6-F9 - and the rest named above).
 
 ---
 
