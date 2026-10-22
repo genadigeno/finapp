@@ -128,7 +128,7 @@ public final class CreditLineStatements {
      */
     public Stated state(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
             LocalDate accruedThrough) {
-        return state(unitOfWork, line, agreement, pinned, today, accruedThrough, false);
+        return state(unitOfWork, line, agreement, pinned, today, accruedThrough, false, today);
     }
 
     /**
@@ -137,14 +137,21 @@ public final class CreditLineStatements {
      * by the same engine, its statement date and due date its own - so the line's accrued interest is all due. On the
      * caller's unit of work, under the caller's L3, after the caller has accrued every elapsed date and beside the line's
      * {@code payoff_execution} (the statement trigger admits an early statement only there). The payoff's repayment then
-     * pays the statements and pays down the principal not yet due.
+     * pays the statements and pays down the principal not yet due. Each statement's credit-balance application is valued
+     * {@code applied} - the caller's {@code max(today, floor)} read under L3, never a date already accrued (the Phase 11
+     * gate's RG-M1, closed by the Phase 12 transition gate's A7-4).
      */
-    Stated stateForPayoff(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today) {
-        return state(unitOfWork, line, agreement, pinned, today, today.minusDays(1), true);
+    Stated stateForPayoff(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
+            LocalDate applied) {
+        Objects.requireNonNull(applied, "applied");
+        if (applied.isBefore(today)) {
+            throw new IllegalArgumentException("an application is valued on or after today - max(today, floor)");
+        }
+        return state(unitOfWork, line, agreement, pinned, today, today.minusDays(1), true, applied);
     }
 
     private Stated state(Connection unitOfWork, Loan line, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
-            LocalDate accruedThrough, boolean currentToo) {
+            LocalDate accruedThrough, boolean currentToo, LocalDate valuedOn) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(line, "line");
         Objects.requireNonNull(agreement, "agreement");
@@ -194,7 +201,7 @@ public final class CreditLineStatements {
             notDueNow = notDueNow.minus(figures.principalBilled());
             stated++;
             Optional<CreditBalanceApplication> application =
-                    applications.apply(unitOfWork, line, agreement, rules, statementId, today, accounts, zero);
+                    applications.apply(unitOfWork, line, agreement, rules, statementId, valuedOn, accounts, zero);
             if (application.isPresent()) {
                 applied++;
             }

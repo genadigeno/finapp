@@ -47,8 +47,9 @@ import org.springframework.transaction.TransactionSystemException;
  * <p><strong>The tenant is the key</strong>: the merchant door's purchase is locked with {@code merchant_id = ?} - another
  * merchant's is the uniform {@code 404 bnpl.NotFound}. A key without the refund scope is {@code 403
  * bnpl.RefundScopeRequired} before anything is read, recorded {@code FAILED} in a transaction of its own; an operator's
- * refund of their own party's purchase is {@code 403 bnpl.SelfDealingRefused}, recorded the same way after the act rolled
- * back. <strong>T-acc first</strong>: a pay-in-N record behind its accrual writes nothing; the door catches it up in its
+ * refund of their own party's purchase - or by an operator the platform cannot place in a party - and a merchant key's
+ * whose issuer is the purchase's party, or cannot be placed in one (the Phase 12 -> 13 gate's A5-F1, A7-6), are
+ * {@code 403 bnpl.SelfDealingRefused}, recorded the same way after the act rolled back. <strong>T-acc first</strong>: a pay-in-N record behind its accrual writes nothing; the door catches it up in its
  * own transaction (no shared income row held across the refund's payable and wallet) and runs the refund again, at most
  * {@link #ACCRUAL_ROUNDS} times. The meter is counted after the transaction - a replay counts nothing.
  *
@@ -123,13 +124,19 @@ public final class BnplRefundDesk {
         BnplPurchaseId purchase = purchaseId(rawPurchaseId);
         Money amount = amount(body);
         UUID tenant = merchant.merchantId().value();
+        // The key's issuer travels with the request (the Phase 12 -> 13 gate's A5-F1): the domain refuses a key whose
+        // issuer is the purchase's own party, or one it cannot place.
         BnplRefunds.Request request = new BnplRefunds.Request(idempotencyKey, amount, body.reason(),
-                Optional.of(merchant.keyId().value().toString()));
-        Keyed keyed = keyed(actor, idempotencyKey, purchase, amount, body,
-                uow -> refunds.atMerchant(uow, purchase, tenant, request, actor, correlation),
-                refunded -> stored(merchantView(refunded)));
-        return keyed.refunded().map(BnplRefundDesk::merchantView)
-                .orElseGet(() -> replayedMerchant(keyed.replayed().orElseThrow()));
+                Optional.of(merchant.keyId().value().toString()), merchant.issuedBy());
+        try {
+            Keyed keyed = keyed(actor, idempotencyKey, purchase, amount, body,
+                    uow -> refunds.atMerchant(uow, purchase, tenant, request, actor, correlation),
+                    refunded -> stored(merchantView(refunded)));
+            return keyed.refunded().map(BnplRefundDesk::merchantView)
+                    .orElseGet(() -> replayedMerchant(keyed.replayed().orElseThrow()));
+        } catch (BnplRefunds.SelfDealingRefused selfDealing) {
+            throw selfDealing(selfDealing, actor, correlation);
+        }
     }
 
     /** An operator refunds a purchase on its merchant's behalf - the door beside the merchant's. */
@@ -147,14 +154,26 @@ public final class BnplRefundDesk {
             return keyed.refunded().map(BnplRefundDesk::operatorView)
                     .orElseGet(() -> replayedOperator(keyed.replayed().orElseThrow()));
         } catch (BnplRefunds.SelfDealingRefused selfDealing) {
-            transactions.inTransaction(uow -> {
-                refunds.recordSelfDealing(uow, selfDealing, actor, correlation);
-                return null;
-            });
-            metrics.record(BnplRefunds.Kind.PARTIAL, BnplRefundMetrics.Outcome.SELF_DEALING_REFUSED);
-            throw new ApiException(BnplErrorCode.SELF_DEALING_REFUSED, "The refund was refused",
-                    "an employee never refunds a BNPL purchase of their own party; nothing was done.");
+            throw selfDealing(selfDealing, actor, correlation);
         }
+    }
+
+    /**
+     * A self-dealing refund - an operator's own party's purchase, or a merchant key issued by the purchase's party (the
+     * Phase 12 -> 13 gate's A5-F1) - recorded {@code FAILED} in a transaction of its own after the act rolled back, counted,
+     * and answered {@code 403 bnpl.SelfDealingRefused}. The merchant's answer never says who issued its key.
+     */
+    private ApiException selfDealing(BnplRefunds.SelfDealingRefused selfDealing, Actor actor,
+            CorrelationId correlation) {
+        transactions.inTransaction(uow -> {
+            refunds.recordSelfDealing(uow, selfDealing, actor, correlation);
+            return null;
+        });
+        metrics.record(BnplRefunds.Kind.PARTIAL, BnplRefundMetrics.Outcome.SELF_DEALING_REFUSED);
+        return new ApiException(BnplErrorCode.SELF_DEALING_REFUSED, "The refund was refused",
+                selfDealing.keyId().isPresent()
+                        ? "this key may not refund this BNPL purchase; nothing was done."
+                        : "an employee never refunds a BNPL purchase of their own party; nothing was done.");
     }
 
     /** What a keyed refund answered: the refund this request committed (or converged on), or a claim's stored receipt. */

@@ -134,6 +134,18 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
    `POST /v1/operator/bnpl-purchases/{id}/refunds` under `PAYMENT_REFUND`, self-dealing refused
    `403 bnpl.SelfDealingRefused` through `BnplActingParty`; the merchant key's scope is `BNPL_REFUND` (merchant `V011`),
    a key without it refused `403 bnpl.RefundScopeRequired` and audited `bnpl.RefundScopeRefused`.)*
+   *(Corrected by the Phase 12 → 13 transition gate, 2026-10-22 — A5-F1, A7-6. The merchant's door judged the key's scope
+   and tenant only, and the scope was issued under `MERCHANT_ADMINISTER` alone, whose operator sees the secret once: an
+   administrator could mint a refund key and refund their own purchase past `PAYMENT_REFUND` and the self-dealing rule.
+   Now (1) issuing a key with `BNPL_REFUND` asks `PAYMENT_REFUND` beside `MERCHANT_ADMINISTER`
+   (`MerchantApiKeyOperations.SCOPE_PERMISSIONS`, pinned by `RoutePermissionRegisterTest`'s conditional register; a
+   refusal is `403 api.Forbidden`, audited `identity.AuthorizationDenied` `FAILED`, nothing minted); (2) the merchant's
+   door refuses a key whose issuer (`merchant_api_key.issued_by`, read in the key's authenticating lookup) is the
+   purchase's own party, or one the platform cannot place in a party - `403 bnpl.SelfDealingRefused`, audited `FAILED`
+   against the purchase with the key named, in a transaction of its own - one rule (`BnplRefunds.refuseIssuersOwn`) for
+   this door and the dispute's accept (ADR-0106 decision 4); (3) the operator's door fails closed too: an operator the
+   platform cannot place in a party is refused as one of the purchase's own. Keys issued with the scope before the
+   correction stay live, judged by (2) at every use.)*
 
 10. **The merchant payable's third bounded negative source** (B7). A BNPL refund is applied, never reserved: it places
     no hold and is not refused for want of payable. It may leave `MERCHANT_PAYABLE` below zero by **at most the

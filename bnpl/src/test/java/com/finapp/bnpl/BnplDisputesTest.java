@@ -488,6 +488,7 @@ class BnplDisputesTest {
         assertThatThrownBy(() -> world.refundOn(LocalDate.of(2026, 10, 21), p4, "refund-1", 100_00))
                 .isInstanceOf(BnplRefunds.DisputeOpen.class);
         world.fakes.now = Instant.parse("2026-10-21T12:00:00Z");
+        world.actingParties.put(OPERATOR_A.id(), UUID.randomUUID()); // a party of their own (the door fails closed)
         assertThatThrownBy(() -> world.fakes.inTransaction(() -> world.refunds.byOperator(BnplApplicationFakes.UOW,
                 p4.purchase(), new BnplRefunds.Request("op-refund", eur(100_00), "on its behalf", Optional.empty()),
                 OPERATOR_A, CORRELATION))).isInstanceOf(BnplRefunds.DisputeOpen.class);
@@ -499,6 +500,38 @@ class BnplDisputesTest {
         assertThatThrownBy(() -> world.refundOn(LocalDate.of(2026, 10, 23), p4, "refund-3", 1))
                 .isInstanceOf(BnplRefunds.PurchaseFullyRefunded.class);
         assertThat(returnedToTheCustomerSide(p4)).isEqualTo(eur(600_00));
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F1: an ACCEPT refunds, so a key its customer's own party issued - or one"
+            + " with no issuer, or one the platform cannot place - is refused before anything is locked, nothing written"
+            + " and the dispute still OPEN; a CONTEST needs no issuer; an outsider's key accepts")
+    void anAcceptanceThroughAKeyTheCustomerIssuedIsSelfDealing() {
+        BnplConditionWorld.Agreement p4 = world.payIn4();
+        BnplDispute dispute = openAt("2026-10-20T12:00:00Z", p4, "open-1", 300_00).dispute();
+        world.actingParties.put("operator-who-is-the-customer", world.party);
+        world.fakes.now = Instant.parse("2026-10-22T09:00:00Z");
+        for (Optional<String> issuer : List.of(Optional.of("operator-who-is-the-customer"), Optional.<String>empty(),
+                Optional.of("nobody-the-platform-knows"))) {
+            assertThatThrownBy(() -> world.fakes.inTransaction(() -> disputes.respond(BnplApplicationFakes.UOW,
+                    dispute.id(), world.merchant, new BnplDisputes.Response(BnplDisputes.Decision.ACCEPT, "refund it",
+                            "merchant-key-9", issuer), world.merchantActor, CORRELATION)))
+                    .as("issuer %s", issuer).isInstanceOfSatisfying(BnplRefunds.SelfDealingRefused.class, refused -> {
+                        assertThat(refused.act()).isEqualTo("acceptance");
+                        assertThat(refused.keyId()).contains("merchant-key-9");
+                        assertThat(refused.purchase()).isEqualTo(p4.purchase());
+                    });
+        }
+        assertThat(world.fakes.refunds.rows).isEmpty();
+        assertThat(world.fakes.disputes.rows.get(dispute.id().value()).status()).isEqualTo(BnplDisputeStatus.OPEN);
+        assertThat(world.fakes.inTransaction(() -> disputes.respond(BnplApplicationFakes.UOW, dispute.id(),
+                world.merchant, new BnplDisputes.Response(BnplDisputes.Decision.CONTEST, "we shipped it",
+                        "merchant-key-9"), world.merchantActor, CORRELATION)).outcome())
+                .as("a contest needs no issuer").isEqualTo(BnplDisputes.Outcome.RESPONDED);
+
+        BnplDispute second = openAt("2026-10-23T12:00:00Z", world.payIn4(), "open-2", 300_00).dispute();
+        assertThat(respondAt("2026-10-24T09:00:00Z", second, BnplDisputes.Decision.ACCEPT).outcome())
+                .as("an outsider's key accepts").isEqualTo(BnplDisputes.Outcome.RESOLVED_REFUND);
     }
 
     @Test
@@ -883,8 +916,8 @@ class BnplDisputesTest {
     private BnplDisputes.Acted respondAt(String instant, BnplDispute dispute, BnplDisputes.Decision decision) {
         world.fakes.now = Instant.parse(instant);
         return world.fakes.inTransaction(() -> disputes.respond(BnplApplicationFakes.UOW, dispute.id(), world.merchant,
-                new BnplDisputes.Response(decision, "we shipped it", "merchant-key-1"), world.merchantActor,
-                CORRELATION));
+                new BnplDisputes.Response(decision, "we shipped it", "merchant-key-1", BnplKeyIssuer.KEY_ISSUER),
+                world.merchantActor, CORRELATION));
     }
 
     private Optional<BnplDisputes.Acted> lapseAt(String instant, BnplDispute dispute) {

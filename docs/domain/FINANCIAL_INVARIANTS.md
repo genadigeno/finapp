@@ -1319,6 +1319,9 @@ outcome.
 never appear in application logs, event payloads or API responses.
 **Why:** `.claude/rules/security.md`; the most common severe fintech incident class.
 **Enforce:** `DOMAIN` — default-deny redaction.
+*(The Phase 12 → 13 transition gate, 2026-10-22, A5-F5: merchant's BNPL reasons - an enablement's proposal, decision
+and withdrawal, the BNPL fee schedule's history - are screened by `InstrumentShapes` in the domain and by merchant
+`V012`'s `CHECK`s for every writer, as bnpl's and credit's reasons already were.)*
 **Verify:** Log redaction tests; event payload review.
 **Phase:** 0
 
@@ -1327,6 +1330,11 @@ never appear in application logs, event payloads or API responses.
 passing negative test.
 **Why:** Least privilege is only real if it is tested from the attacker's direction.
 **Enforce:** `DOMAIN`.
+*(The Phase 12 → 13 transition gate, 2026-10-22, A5-F1: a power is not explicit when another permission can mint it. A
+merchant key carrying `BNPL_REFUND` is now issued only to an operator holding `PAYMENT_REFUND` beside
+`MERCHANT_ADMINISTER`, and the merchant's refund and dispute-accept doors refuse a key whose issuer is the purchase's
+own party, or cannot be placed in one - negatives `MerchantApiKeyDatabaseTest#aRefundScopeAsksPaymentRefundBesideMerchantAdminister`,
+`BnplDisputeApiTest#anInsiderMintedKeyIsSelfDealingAtBothMerchantDoors`, `BnplDisputeApiTest#aKeyWithoutTheScopeCannotAccept`.)*
 **Verify:** Negative authorization tests per endpoint.
 **Phase:** 1 onward
 
@@ -1946,6 +1954,16 @@ born only for a `PROPOSED` version, a version committing only with it). Verified
 application role by privilege and for the owner by trigger, while `PROPOSED` and again once `ACTIVE`), `#fourEyesAtBothRanks`,
 `#oneActivePerProduct`, `#activeAtAnInstantOverAHistory`; the probes are `MUTATION_TESTING.md` §2's `P11-TSK-005` rows.)*
 
+*(The Phase 12 → 13 transition gate's repair R3, 2026-10-22, A3-I1 - the pin, lending's and bnpl's: `pinActive`'s `FOR SHARE`
+read that waited on an activation's A2 re-checked only the predecessor it waited on and, under `READ COMMITTED`, never saw
+the successor - "neither": an approved application closed `PRODUCT_NOT_OFFERED` for good and a submission was refused. The
+store now reads again when its first read is empty, in a statement begun after the administration's A0 is granted in shared
+mode (namespaces `11` and `12`), so the pin is the old version or the new, never neither; the origination step treats an
+empty pin as `WAITING`. `LoanTermsDatabaseTest#aPinBehindAnActivationPinsTheSuccessor`,
+`BnplTermsDatabaseTest#aPinBehindAnActivationPinsTheSuccessor`, `LoanOriginationDatabaseTest#anEmptyPinWaits`,
+`BnplOriginationTest#anEmptyPinWaits`; probes, `MUTATION_TESTING.md` §2. And bnpl's terms door admits only the delinquency
+bounds `(1, 30, 60, 90)` its bucket labels name (A7-5, `BnplTermsTest#theBoundsAreTheOnesTheLabelsName`).)*
+
 ### INV-LND-06 — One decision funds at most one loan or line, and exposure has no gap
 **Statement:** A credit decision is consumed at most once — only while `APPROVED` and before its
 `valid_until`, only through credit's consumption port — in the same transaction and under the same
@@ -2233,6 +2251,21 @@ code to `409 lending.AmendmentLapsed`; no rule changed. Verified by
 `AmendmentDatabaseTest#anAmendmentLapsingWhileTheAcceptanceWaitsIsLapsed`, `#onlyTheLapseIsTheCustomers` and `app`'s
 `LoanAccountDatabaseTest#anAmendmentLapsingWhileTheAcceptanceWaitsIsA409`; two probes, `MUTATION_TESTING.md` §2's
 `P11-TSK-035` rows.)*
+
+*(The Phase 12 → 13 transition gate's repair R3, 2026-10-22 - two value dates the floor alone did not order. **A2-1:** a
+repayment reversal - lending's and bnpl's - was valued `max(today, floor)`, and on a clock stepped back behind the reversed
+repayment (the floor further back) that put the reversal before the repayment: a date between the two carried the re-opened
+amount twice and its accrual charged a day's interest twice, a figure every accrual re-derived identically. Both now value it
+`max(today, floor, the reversed repayment's value date)`; lending `V031` names the date on the reversal row and bnpl `V019`
+re-judges it, each refusing for every writer an approval valued before the repayment; the replays find one (lending
+`REVERSAL`, bnpl `VALUE_DATE`). `BackwardClockDatabaseTest#aReversalSteppedBackBehindItsRepaymentIsValuedOnIt`,
+`BnplRepaymentReversalDatabaseTest#aReversalSteppedBackBehindItsRepaymentIsValuedOnIt`,
+`BnplRepaymentReversalsTest#theReversalIsValuedNeverBeforeItsRepayment`,
+`BnplReplayProofTest#aReversalValuedBeforeItsRepaymentDiverges`. **A7-4 (the Phase 11 gate's RG-M1, closed):** the payoff's
+own billing (and a line's early statement) credit-balance applications were dated by the clock; `Payoffs` now values every
+application it writes `max(today, floor)`, read under L3 after its catch-up -
+`BackwardClockDatabaseTest#everyPayoffApplicationIsFloored`, `#everyLinePayoffApplicationIsFloored`; probes,
+`MUTATION_TESTING.md` §2.)*
 
 ### INV-LND-11 — A servicing correction is a reasoned, four-eyes act that posts
 **Statement:** Fee waivers, interest waivers, repayment reversals and amendments (restructuring)
@@ -2630,6 +2663,16 @@ unbilled cancelled` at the schedule's commit. Hermetic: `BnplRefundsTest#aFullRe
 `#theFeeTelescopesToExactlyFOverSplitRefunds`; database, owed: `BnplRefundDatabaseTest`. The late fee's release (OQ-14) is
 `-020`'s, carried.)*
 *(As built by `P12-TST-002`: `BnplBatteryTest` - every one of 4,657 generated refunds (before, during and after the instalments, after closure, a dispute's outcome) value-preserving and replayed `IDENTICAL`, and `#everyRefundOrderPreservesValueAndTelescopes` running each refunded purchase's refunds in every order and split - 20,106 sequences - through `REFUND_ALLOCATION_ENGINE_V1` bound to merchant's reference arithmetic: latest first exactly as the oracle's walk, the fee telescoping to exactly f at every full refund; probed - earliest first (value preserved, the latest-first census red on 1,159 purchases) and the running clamp (telescoping red on 918), `MUTATION_TESTING.md` §2.)*
+*(The Phase 12 → 13 transition gate's repair R3, 2026-10-22, A7-3 - OQ-14 kept across the two orders: a late fee paid before
+a refund cancelled its instalment whole is not released by the refund, and a repayment reversal re-opening it left it owed,
+though the reversal first and the refund after release it. The approval now releases, in its own transaction, the late fee
+it re-opens on an instalment a refund cancelled whole (F8a, `bnpl V019`'s `bnpl_reversal_fee_release` - exactly the fee due,
+under an entry of its own), and at its commit, for every writer, no such instalment has a fee due; `bnpl_refund_conserves`
+and the waiver room unchanged in rule and counting the release. Both orders reach one end state:
+`BnplReversalFeeReleaseTest#bothOrdersReachOneEndState`,
+`BnplRepaymentReversalDatabaseTest#theReversalFirstThenTheRefundReachesTheSameEndState`,
+`#theReleaseRanksHoldForEveryWriter`; the subledger and replay proofs agree (`BnplReversalFeeReleaseTest`); probes,
+`MUTATION_TESTING.md` §2.)*
 *(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: `-021`'s "database, owed: `BnplRefundDatabaseTest`" is spent. bnpl's `BnplRefundDatabaseTest` - `#refundBeforeDuringAfter`, `#excessGoesToTheCustomerAndAPartialRefundReducesTheLatestInstalments`, `#aRefundRacingACollectionConservesInBothOrders`, `#refundCancelsLatestFirst` and the rest of the suite - and `BnplLateFeeDatabaseTest` (the late fee's release) ran green in the Phase 12 database pass (2026-10-20, `:bnpl:databaseTest` 174 across 17) and in every `:bnpl:databaseTest` since - the exit review's whole tier, 182 across 19 (2026-10-22). That they ran is all this note records: which probes were performed against them is as the `P12-DOC-001` note above says.)*
 **Phase:** 12
 
@@ -3285,7 +3328,12 @@ the capture's entry and announced by `merchant.FeeAssessed` with the version on 
 exist.)* *(Since `P12-TSK-006` a BNPL purchase's version is pinned the same way by
 `merchant.bnpl_fee_pin` - keyed by the purchase, `INSERT`-only, frozen by V004's trigger, and held by
 a trigger to a returning version of the merchant's BNPL schedule in force by its instant; the BNPL
-fee and its returns are that version applied to the pinned gross, never stored.)*
+fee and its returns are that version applied to the pinned gross, never stored.)* *(The Phase 12 → 13 transition gate,
+2026-10-22, A3-M1: "in force" is judged on the database's clock - the version resolved and the pin stamped at
+`clock_timestamp()` read after the standing's share locks, never an instance's clock - and merchant `V012`'s trigger
+refuses a pin whose instant lies outside its own transaction's span. A version created to take effect immediately
+(`effective_from = created_at`) is in force from its commit - "immediately" never waits for the database's clock to reach
+its creating instance's stamp; a scheduled one is judged on the database's clock alone.)*
 **Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
 proving the pinned version priced the capture.
 **Phase:** 6

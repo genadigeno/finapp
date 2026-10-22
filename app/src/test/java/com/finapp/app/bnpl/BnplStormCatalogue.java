@@ -1111,7 +1111,7 @@ final class BnplStormCatalogue {
             storm.reserved().add(dispute);
             List<Object> raced = bothAtOnce(
                     () -> a().door().post(MERCHANT_DISPUTES + "/" + dispute + "/response", "{\"decision\":\"ACCEPT\","
-                            + "\"statement\":\"refund it\"}", one.merchant().apiKey(), key()),
+                            + "\"statement\":\"refund it\"}", one.merchant().refundKey(), key()),
                     () -> refund(b(), one, 300_00, key()));
             judged(tally, "scenario 10 acceptance", answer(raced.get(0)), "409 bnpl.DisputeNotActionable");
             judged(tally, "scenario 10 merchant refund", answer(raced.get(1)), "409 bnpl.DisputeOpen",

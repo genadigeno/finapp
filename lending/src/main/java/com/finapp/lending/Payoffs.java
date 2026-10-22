@@ -69,7 +69,10 @@ import lombok.RequiredArgsConstructor;
  *       billed ({@link InstalmentBillings#billForPayoff}; a line's current cycle stated, {@link
  *       CreditLineStatements#stateForPayoff}), each followed by the credit-balance application - and then rule 6 over what
  *       was already due ({@link InstalmentBillings#applyHeldCredit}, the Phase 11 gate's A4-M1), so a credit balance held
- *       beside a due item none of today's billings met is applied before the wallet is debited;
+ *       beside a due item none of today's billings met is applied before the wallet is debited. Every one of those
+ *       applications is valued as every principal-moving fact is, {@code max(today, floor)} - never a date the record has
+ *       closed (the Phase 11 gate's R1; its residual RG-M1, the billings' and statements' own applications dated by the
+ *       clock, closed by the Phase 12 transition gate's A7-4);
  *   <li><strong>the recomputation</strong>: the outstanding folded again from journal lines under L3 - different from the
  *       quote's, {@code PayoffQuoteStale}, and every write above rolls back with the claim (a repayment, a collection, a
  *       draw, a reversal or a fee that committed first moved it - scenario 7). Never adjusted, never paid approximately;
@@ -319,16 +322,21 @@ public final class Payoffs {
 
         // Rule 2: every elapsed date through G - 1, under the sweep's uniques. Rule 3 (and 6): everything unbilled.
         servicing.catchUp(unitOfWork, loan, agreement, pinned, zone, today);
+        // Every application below is valued as every principal-moving fact is (the Phase 11 gate's R1): max(today, floor),
+        // read under L3 after the catch-up - never a date the record has closed. On a clock stepped back behind an accrued
+        // date, today's applications would pay principal into a day whose accrual already counted it - a day's interest
+        // over-charged (RG-M1, closed by the Phase 12 transition gate's A7-4). The billings themselves move principal only
+        // between not-due and due, so they stand on today.
+        LocalDate open = loans.principalValueDate(unitOfWork, id, today);
         if (loan.kind() == LoanKind.INSTALMENT) {
-            billings.billForPayoff(unitOfWork, loan, agreement, pinned, today);
+            billings.billForPayoff(unitOfWork, loan, agreement, pinned, today, open);
         } else {
-            statements.stateForPayoff(unitOfWork, loan, agreement, pinned, today);
+            statements.stateForPayoff(unitOfWork, loan, agreement, pinned, today, open);
         }
         // Rule 6 over what is already due (the Phase 11 gate's A4-M1): credit still held beside a due item - none billed
         // today to apply it at - settles it first, so the wallet is debited only what the credit does not cover, never the
         // gross receivable with the credit refunded beside it. The outstanding below is unchanged by it (DR credit / CR due).
-        // Valued as every principal-moving fact is (the Phase 11 gate's R1): never a date the record has closed.
-        billings.applyHeldCredit(unitOfWork, loan, agreement, pinned, loans.principalValueDate(unitOfWork, id, today));
+        billings.applyHeldCredit(unitOfWork, loan, agreement, pinned, open);
 
         // The recomputation under L3: anything that moved since the quote makes it stale - never adjusted.
         Money zero = Money.ofPersisted(0, loan.currency(), agreement.amount().scale());

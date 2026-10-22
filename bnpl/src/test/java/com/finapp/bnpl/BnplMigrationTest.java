@@ -102,7 +102,7 @@ class BnplMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021), V013 the condition history and the late fee (P12-TSK-020), V014 the payoff quote and execution (P12-TSK-022), V015 the dispute, its claim, hold, proposal and history (P12-TSK-023), V016 the repayment reversal and the fee waiver (P12-TSK-024)")
+            + " functions its migrations created: V001 the floor alone, V002 the terms versions (P12-TSK-004), V003 the application (P12-TSK-010), V004 the offer (P12-TSK-011), V006 the acceptance (P12-TSK-013), V007 the exposure view (P12-TSK-012), V008 the billing and the application (P12-TSK-015), V010 the closure (P12-TSK-018), V011 the collection attempt (P12-TSK-019), V012 the refund (P12-TSK-021), V013 the condition history and the late fee (P12-TSK-020), V014 the payoff quote and execution (P12-TSK-022), V015 the dispute, its claim, hold, proposal and history (P12-TSK-023), V016 the repayment reversal and the fee waiver (P12-TSK-024), V019 the reversal's fee release (the Phase 12 transition gate's R3)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. The first bnpl tables are
@@ -117,6 +117,8 @@ class BnplMigrationTest {
                 "bnpl_refund", "bnpl_refund_adjustment",
                 "bnpl_repayment", "bnpl_repayment_allocation", "bnpl_repayment_allocation_reversal",
                 "bnpl_repayment_reversal", "bnpl_waiver", "bnpl_waiver_decision",
+                // V019 (the Phase 12 transition gate's R3, A7-3): a reversal's release of the late fee it re-opened.
+                "bnpl_reversal_fee_release",
                 "bnpl_schedule", "bnpl_terms", "bnpl_terms_version", "bnpl_terms_version_event", "flyway_schema_history",
                 "merchant_financing", "purchase", "purchase_event");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'"))
@@ -159,6 +161,9 @@ class BnplMigrationTest {
                 "bnpl_waiver_is_born_once", "fee_waiver_room",
                 // V017 (P12-TST-001): the reversal's decision ordered.
                 "bnpl_repayment_reversal_stamps_its_decided_order",
+                // V019 (the Phase 12 transition gate's R3): the release's born-once trigger and the reversal's commit-time
+                // rank (A7-3); the reversal's edge function, billing_component_paid and fee_waiver_room replaced, listed above.
+                "bnpl_reversal_fee_release_is_born_once", "bnpl_repayment_reversal_releases_refunded_fees",
                 // V015 (P12-TSK-023) - days_past_due replaced, listed above.
                 "bnpl_collection_attempt_respects_the_dispute_hold", "bnpl_dispute_claim_is_born_once",
                 "bnpl_dispute_event_is_append_only", "bnpl_dispute_hold_is_born_once", "bnpl_dispute_is_whole",

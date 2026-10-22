@@ -444,6 +444,22 @@ class BnplRepaymentsTest {
     }
 
     @Test
+    @DisplayName("the Phase 12 -> 13 gate's A6-F3: an active hold is not spendable - posted X, held h, a repayment d with"
+            + " X - h < d <= X is InsufficientFunds and posts nothing; X - h exactly is enough")
+    void anActiveHoldIsNotSpendable() {
+        Agreement p4 = payIn4();
+        serviceAt("2026-10-31T09:00:00Z", p4);
+        int keys = world.book.keys.size();
+        Money posted = world.book.availableUnderLock(BnplApplicationFakes.UOW, wallet);
+        world.book.holds.put(wallet, eur(posted.minorUnits() - 100_00));
+        assertThatThrownBy(() -> repayAt("2026-11-01T10:00:00Z", p4, "held", eur(100_01)))
+                .as("100.01 within the posted %s but beyond the unheld 100.00", posted)
+                .isInstanceOf(BnplRepayments.InsufficientFunds.class);
+        assertThat(world.book.keys).hasSize(keys);
+        assertThat(repayAt("2026-11-01T10:00:01Z", p4, "unheld", eur(100_00)).replayed()).isFalse();
+    }
+
+    @Test
     @DisplayName("a suspended customer may still repay - no standing check")
     void aSuspendedCustomerMayStillRepay() {
         Agreement p4 = payIn4();

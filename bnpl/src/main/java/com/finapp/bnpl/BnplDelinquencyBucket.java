@@ -11,7 +11,9 @@ import java.util.stream.Collectors;
  * lending's {@code DelinquencyBucket}, ADR-0098's shape). A <strong>condition</strong>, never a lifecycle state: derived
  * daily from the billed and settled rows, recorded as an append-only change ({@code bnpl_condition_event}). The names carry
  * the default bounds; the bounds an obligation is judged by are the ones its pinned terms version declares
- * ({@link BnplTerms#delinquencyBounds} - the first 1, the last the default threshold). Declared in ascending order. A
+ * ({@link BnplTerms#delinquencyBounds} - the first 1, the last the default threshold), and the terms door admits only the
+ * bounds the names carry ({@link BnplTerms#DELINQUENCY_BOUNDS}; the Phase 12 transition gate's A7-5) until the labels
+ * derive from the bounds. Declared in ascending order. A
  * {@code CURRENT} obligation has no bucket ({@link #of} answers empty at DPD 0).
  */
 public enum BnplDelinquencyBucket {

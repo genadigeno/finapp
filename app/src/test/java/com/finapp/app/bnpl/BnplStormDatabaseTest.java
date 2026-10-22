@@ -829,7 +829,7 @@ class BnplStormDatabaseTest {
             boolean accept = RANDOMNESS.nextBoolean();
             Answer answered = on.door().post(MERCHANT_DISPUTES + "/" + dispute + "/response", "{\"decision\":\""
                     + (accept ? "ACCEPT" : "CONTEST") + "\",\"statement\":\"" + (accept ? "refund it" : "we shipped it")
-                    + "\"}", merchant.apiKey(), key());
+                    + "\"}", merchant.refundKey(), key());
             judged(tally, "dispute response " + (accept ? "accept" : "contest"), answered,
                     "409 bnpl.DisputeNotActionable", "422 bnpl.RefundExceedsPurchase", "409 bnpl.PurchaseFullyRefunded",
                     "409 bnpl.RefundNotPostable");

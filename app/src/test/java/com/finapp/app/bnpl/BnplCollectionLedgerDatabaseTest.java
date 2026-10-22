@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.database.DateShifted;
@@ -16,6 +17,7 @@ import com.finapp.bnpl.CollectionOutcome;
 import com.finapp.bnpl.ServicingOutcome;
 import com.finapp.identity.Authorization;
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.HoldService;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingService;
@@ -104,6 +106,7 @@ class BnplCollectionLedgerDatabaseTest {
     @Autowired private BnplServicingMetrics servicingMetrics;
     @Autowired private BnplAccrualMetrics accrualMetrics;
     @Autowired private MeterRegistry meterRegistry;
+    @Autowired private HoldService holds;
 
     private BnplPurchaseWorld world;
 
@@ -278,6 +281,91 @@ class BnplCollectionLedgerDatabaseTest {
                 + " ?::uuid AND amount_minor = 500", bought.obligationText())).isEqualTo(1);
         assertThat(BnplPurchaseWorld.obligationBalance(bought.obligationText(), AccountPurpose.BNPL_FEES_DUE))
                 .isEqualTo(500);
+    }
+
+    // ------------------------------------------------------------------ the wallet's active holds (A6-F3)
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A6-F3, the repayment: posted X, an ACTIVE ledger hold h, a repayment d with"
+            + " X - h < d <= X is refused InsufficientFunds and posts nothing - the real AvailableBalance, never the posted"
+            + " balance; X - h exactly is admitted")
+    void aRepaymentNeverSpendsAHeldBalance() throws Exception {
+        Bought bought = purchase(BnplApplicationClient::payIn4, 1_000_00);
+        long posted = BnplPurchaseWorld.creditBalanceOf(bought.wallet().value());
+        hold(bought.wallet(), posted - 100_00);
+        long entries = walletLines(bought.wallet());
+        assertThatThrownBy(() -> repay(bought, "held", 100_01))
+                .as("100.01 within the posted %d but beyond the unheld 100.00", posted)
+                .isInstanceOf(BnplRepayments.InsufficientFunds.class);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = ?::uuid"
+                + " AND kind = 'CUSTOMER'", bought.obligationText())).as("no repayment row").isZero();
+        assertThat(walletLines(bought.wallet())).as("nothing posted").isEqualTo(entries);
+        assertThat(BnplPurchaseWorld.creditBalanceOf(bought.wallet().value())).isEqualTo(posted);
+        assertThat(repay(bought, "unheld", 100_00).repayment().amount()).isEqualTo(eur(100_00));
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A6-F3, the collection: on the due date, posted X >= the bill d and every unit"
+            + " of it held (X - h = 0 < d <= X) - the attempt is INSUFFICIENT_FUNDS, nothing collected, nothing posted")
+    void aCollectionNeverTakesAHeldBalance() throws Exception {
+        Bought bought = purchase(BnplApplicationClient::payIn4, 1_000_00);
+        long posted = BnplPurchaseWorld.creditBalanceOf(bought.wallet().value());
+        assertThat(posted).as("X covers the bill of 150.00").isGreaterThanOrEqualTo(150_00);
+        hold(bought.wallet(), posted);
+        toDueDate(bought, 2);
+        long entries = walletLines(bought.wallet());
+        ServicingOutcome serviced = serviceStep(bought.obligation());
+        assertThat(serviced.collected(CollectionOutcome.INSUFFICIENT_FUNDS)).isEqualTo(1);
+        assertThat(serviced.collected(CollectionOutcome.COLLECTED)).isZero();
+        assertThat(BnplApplicationClient.scalar("SELECT outcome || ':' || collected_minor FROM"
+                + " bnpl.bnpl_collection_attempt WHERE obligation_id = ?::uuid", bought.obligationText()))
+                .isEqualTo("INSUFFICIENT_FUNDS:0");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = ?::uuid"
+                + " AND kind = 'AUTO_COLLECTION'", bought.obligationText())).isZero();
+        assertThat(walletLines(bought.wallet())).as("nothing posted").isEqualTo(entries);
+        assertThat(BnplPurchaseWorld.creditBalanceOf(bought.wallet().value())).isEqualTo(posted);
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A6-F3, instalment 1 at acceptance: posted X = 150.00 = instalment 1, an ACTIVE"
+            + " hold of 100.00 - the acceptance is 422 bnpl.InsufficientFunds, no purchase, nothing posted")
+    void anAcceptanceNeverTakesInstalmentOneFromAHeldBalance() throws Exception {
+        CreditFixtures.Customer owner = world.customers.consentingCustomer();
+        world.topUpWallet(owner.party(), eur(150_00));
+        LedgerAccountId wallet = world.walletOf(owner.party());
+        hold(wallet, 100_00);
+        long entries = walletLines(wallet);
+        BnplPurchaseWorld.Offer offer = world.offered(owner, world.merchant(), GROSS, BnplApplicationClient::payIn4);
+        HttpResponse<String> refused = world.accept(owner.token(), offer, BnplApplicationClient.key());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("bnpl.InsufficientFunds");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM bnpl.purchase WHERE party_id = ?::uuid",
+                owner.party().toString())).as("no purchase").isZero();
+        assertThat(walletLines(wallet)).as("nothing posted").isEqualTo(entries);
+        assertThat(BnplPurchaseWorld.creditBalanceOf(wallet.value())).isEqualTo(150_00);
+    }
+
+    /** An ACTIVE ledger hold of {@code minor} on {@code wallet} - the ledger's own {@link HoldService}, never a fixture's. */
+    private void hold(LedgerAccountId wallet, long minor) {
+        try (SecurityContext.Scope system = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {
+            transactions.inTransaction(uow -> holds.place(uow, wallet, eur(minor)));
+        }
+        assertThatCount("SELECT count(*) FROM ledger.hold WHERE ledger_account_id = ?::uuid AND status = 'ACTIVE'",
+                wallet.value().toString());
+    }
+
+    private static void assertThatCount(String sql, String id) {
+        try {
+            assertThat(BnplApplicationClient.count(sql, id)).as("the hold is ACTIVE").isPositive();
+        } catch (Exception unreadable) {
+            throw new IllegalStateException(unreadable);
+        }
+    }
+
+    private static long walletLines(LedgerAccountId wallet) throws Exception {
+        return BnplApplicationClient.count("SELECT count(*) FROM ledger.journal_line WHERE ledger_account_id = ?::uuid",
+                wallet.value().toString());
     }
 
     // ------------------------------------------------------------------ the world

@@ -399,6 +399,43 @@ class MerchantApiKeyDatabaseTest {
     }
 
     @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F1: a key carrying BNPL_REFUND asks PAYMENT_REFUND beside"
+            + " MERCHANT_ADMINISTER - the administrator alone is 403, the denial recorded FAILED and no key minted;"
+            + " a scopeless key is still theirs; an operator holding both mints it")
+    void aRefundScopeAsksPaymentRefundBesideMerchantAdminister() throws Exception {
+        String adminLogin = registered();
+        String admin = sessionWith(adminLogin, RoleName.MERCHANT_ADMINISTRATOR);
+        Merchant merchant = onboarded(admin);
+        long before = count("SELECT count(*) FROM merchant.merchant_api_key WHERE merchant_id = ?::uuid",
+                merchant.id());
+
+        HttpResponse<String> refused = post("/v1/operator/merchants/" + merchant.id()
+                + "/api-keys?scope=BNPL_REFUND", null, admin, someKey());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("api.Forbidden").doesNotContain("secret\":\"");
+        assertThat(count("SELECT count(*) FROM merchant.merchant_api_key WHERE merchant_id = ?::uuid",
+                merchant.id())).as("nothing minted").isEqualTo(before);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'identity.AuthorizationDenied'"
+                + " AND outcome = 'FAILED' AND change_summary = 'permission=PAYMENT_REFUND' AND actor_id = ? AND"
+                + " target_id = ?", identityOf(adminLogin).toString(), identityOf(adminLogin).toString()))
+                .as("the denial recorded FAILED against the operator").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'merchant.MerchantApiKeyIssued' AND change_summary LIKE ? AND change_summary LIKE '%BNPL_REFUND%'",
+                "%merchant=" + merchant.id() + "%")).as("no issuance recorded").isZero();
+
+        assertThat(issueKey(admin, merchant.id())).as("a scopeless key stays MERCHANT_ADMINISTER's alone").contains(".");
+
+        String login = registered();
+        sessionWith(login, RoleName.MERCHANT_ADMINISTRATOR);
+        String both = sessionWith(login, RoleName.LEDGER_OPERATOR);
+        HttpResponse<String> minted = post("/v1/operator/merchants/" + merchant.id()
+                + "/api-keys?scope=BNPL_REFUND", null, both, someKey());
+        assertThat(minted.statusCode()).as(minted.body()).isEqualTo(201);
+        assertThat(count("SELECT count(*) FROM merchant.merchant_api_key WHERE id = ?::uuid AND scopes ="
+                + " ARRAY['BNPL_REFUND']::text[]", field(minted.body(), "keyId"))).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("another merchant's key id is the SAME 404 as one that does not exist - the"
             + " tenant rides in the statement (INV-MER-01)")
     void anotherMerchantsKeyIsTheSame404() throws Exception {
@@ -535,18 +572,12 @@ class MerchantApiKeyDatabaseTest {
     }
 
     private String sessionWith(RoleName role) throws Exception {
-        String login = registered();
-        UUID identity;
-        try (Connection app = DatabaseRoles.application();
-                PreparedStatement read =
-                        app.prepareStatement(
-                                "SELECT id FROM identity.identity WHERE login_identifier = ?")) {
-            read.setString(1, login);
-            try (ResultSet row = read.executeQuery()) {
-                assertThat(row.next()).isTrue();
-                identity = row.getObject("id", UUID.class);
-            }
-        }
+        return sessionWith(registered(), role);
+    }
+
+    /** {@code role} granted to {@code login}'s identity - a second call grants a second role - and a fresh session. */
+    private String sessionWith(String login, RoleName role) throws Exception {
+        UUID identity = identityOf(login);
         try (CorrelationContext.Scope flow =
                         CorrelationContext.enter(
                                 Correlation.startingWith(CorrelationId.generate(IDS)));
@@ -558,6 +589,19 @@ class MerchantApiKeyDatabaseTest {
             app.commit();
         }
         return tokenFrom(authenticate(login).body());
+    }
+
+    private static UUID identityOf(String login) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id FROM identity.identity WHERE login_identifier = ?")) {
+            read.setString(1, login);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getObject("id", UUID.class);
+            }
+        }
     }
 
     private String registered() throws Exception {

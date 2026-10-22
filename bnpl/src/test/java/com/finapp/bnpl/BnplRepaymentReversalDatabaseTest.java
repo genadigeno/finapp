@@ -15,6 +15,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -331,6 +332,214 @@ class BnplRepaymentReversalDatabaseTest {
                 .isEqualTo("PROPOSED");
         assertThat(count("SELECT count(*) FROM bnpl.bnpl_repayment_allocation_reversal WHERE reversal_id = '"
                 + proposed.id() + "'")).isZero();
+    }
+
+    // ------------------------------------------------------------------ A7-3: OQ-14 kept across the two orders
+
+    /** Instalment 3's late fee paid exactly by R; instalment 2's repayment reversed, so a refund of 300.00 leaves it owing. */
+    private record FeePaid(BnplConditionDatabaseWorld.Purchased bought, BnplPurchaseStore.Repayment fee, LocalDate paid) {}
+
+    private static FeePaid feePaid(BnplCorrectionDatabaseWorld world) {
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        world.base.serviceOn(bought.due(2), bought);
+        BnplPurchaseStore.Repayment second = world.base.repayOn(bought.due(2), bought, "p1", 150_00).repayment();
+        world.base.serviceOn(bought.due(3), bought);
+        world.base.serviceOn(bought.due(3).plusDays(5), bought);
+        assertThat(world.fees(bought)).as("instalment 3's late fee").singleElement()
+                .satisfies(fee -> assertThat(fee.instalment()).isEqualTo(bought.instalment(3)));
+        LocalDate paid = bought.due(3).plusDays(6);
+        BnplPurchaseStore.Repayment fee = world.base.repayOn(paid, bought, "fee", 5_00).repayment();
+        assertThat(fee.allocations()).as("R paid the fee and nothing else").singleElement()
+                .satisfies(line -> assertThat(line.component()).contains("FEES"));
+        reverse(world, paid, bought, second);
+        return new FeePaid(bought, fee, paid);
+    }
+
+    private static BnplRepaymentReversal reverse(BnplCorrectionDatabaseWorld world, LocalDate date,
+            BnplConditionDatabaseWorld.Purchased bought, BnplPurchaseStore.Repayment repayment) {
+        BnplRepaymentReversal proposed = world.propose(date, bought, repayment.id(), world.operator());
+        return world.approve(date, bought, repayment.id(), proposed.id(), world.operator()).reversal();
+    }
+
+    private static BnplRefund refund(BnplCorrectionDatabaseWorld world, FeePaid feePaid, LocalDate date) {
+        BnplRefund refund = world.base.refundOn(date, feePaid.bought(), "refund-" + date, 300_00).refund();
+        assertThat(refund.adjustments()).as("instalments 4 and 3 cancelled whole, latest first")
+                .extracting(BnplRefund.Adjustment::sequence, BnplRefund.Adjustment::whole)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(4, true), org.assertj.core.groups.Tuple.tuple(3, true));
+        return refund;
+    }
+
+    @Test
+    @DisplayName("A7-3 (the Phase 12 transition gate), the refund first: the refund releases nothing of instalment 3's"
+            + " paid fee; R's reversal re-opens it and releases it in its own transaction - one bnpl V019 row, one entry"
+            + " of its own - nothing owed on the wholly cancelled instalment, its waiver room zero")
+    void theRefundFirstThenTheReversalReleasesTheFee() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        FeePaid feePaid = feePaid(world);
+        assertThat(refund(world, feePaid, feePaid.paid().plusDays(1)).lateFeeReleased().isZero()).isTrue();
+        BnplRepaymentReversal reversal = reverse(world, feePaid.paid().plusDays(2), feePaid.bought(), feePaid.fee());
+
+        assertThat(scalar("SELECT instalment_id || '|' || amount_minor FROM bnpl.bnpl_reversal_fee_release"
+                + " WHERE reversal_id = '" + reversal.id() + "'")).isEqualTo(feePaid.bought().instalment(3) + "|500");
+        assertThat(world.base.book.keys()).contains(BnplRepaymentReversals.FEE_RELEASE_KEY_PREFIX + reversal.id());
+        assertThat(endState(world, feePaid)).containsEntry("FEES 3", 0L).containsEntry("room", 0L);
+    }
+
+    @Test
+    @DisplayName("A7-3, the reversal first: R's reversal re-opens the fee and releases nothing (no refund has cancelled"
+            + " instalment 3); the refund then cancels it whole and releases it (OQ-14, bnpl_refund_conserves at its"
+            + " commit) - and both orders reach one end state")
+    void theReversalFirstThenTheRefundReachesTheSameEndState() throws SQLException {
+        BnplCorrectionDatabaseWorld first = new BnplCorrectionDatabaseWorld();
+        FeePaid refundFirst = feePaid(first);
+        refund(first, refundFirst, refundFirst.paid().plusDays(1));
+        reverse(first, refundFirst.paid().plusDays(2), refundFirst.bought(), refundFirst.fee());
+
+        BnplCorrectionDatabaseWorld second = new BnplCorrectionDatabaseWorld();
+        FeePaid reversalFirst = feePaid(second);
+        BnplRepaymentReversal reversal = reverse(second, reversalFirst.paid().plusDays(1), reversalFirst.bought(),
+                reversalFirst.fee());
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_reversal_fee_release WHERE reversal_id = '" + reversal.id()
+                + "'")).as("nothing to release yet").isZero();
+        assertThat(second.due(reversalFirst.bought(), 3, "FEES")).isEqualTo(5_00);
+        assertThat(refund(second, reversalFirst, reversalFirst.paid().plusDays(2)).lateFeeReleased())
+                .isEqualTo(eur(5_00));
+
+        assertThat(endState(first, refundFirst)).isEqualTo(endState(second, reversalFirst))
+                .containsEntry("FEES 3", 0L).containsEntry("PRINCIPAL 2", 150_00L).containsEntry("room", 0L);
+    }
+
+    @Test
+    @DisplayName("A7-3's ranks for every writer: a raw approval re-opening the fee without its release never commits; with"
+            + " the exact release it does (rolled back); a release on an instalment no refund cancelled whole, or of"
+            + " another amount, is refused; the release is INSERT-only for every role")
+    void theReleaseRanksHoldForEveryWriter() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        FeePaid feePaid = feePaid(world);
+        refund(world, feePaid, feePaid.paid().plusDays(1));
+        BnplRepaymentReversal proposed = world.propose(feePaid.paid().plusDays(1), feePaid.bought(), feePaid.fee().id(),
+                world.operator());
+        String approve = "UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED', decided_by = 'other',"
+                + " decided_by_type = 'EMPLOYEE', decision_reason = 'r', journal_entry_id = gen_random_uuid(),"
+                + " value_date = (SELECT GREATEST(r.value_date, bnpl.principal_value_floor(r.obligation_id))"
+                + " FROM bnpl.bnpl_repayment r WHERE r.id = '" + feePaid.fee().id() + "') WHERE id = '" + proposed.id() + "'";
+        String negate = "INSERT INTO bnpl.bnpl_repayment_allocation_reversal (id, reversal_id, allocation_id, currency,"
+                + " scale, amount_minor) SELECT gen_random_uuid(), '" + proposed.id() + "', a.id, a.currency, a.scale,"
+                + " a.amount_minor FROM bnpl.bnpl_repayment_allocation a WHERE a.repayment_id = '" + feePaid.fee().id() + "'";
+        String release = "INSERT INTO bnpl.bnpl_reversal_fee_release (id, reversal_id, obligation_id, instalment_id,"
+                + " currency, scale, amount_minor, journal_entry_id) VALUES (gen_random_uuid(), '" + proposed.id() + "', '"
+                + feePaid.bought().id() + "', '%s', 'EUR', 2, %d, '" + UUID.randomUUID() + "')";
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            try (Statement statement = migrator.createStatement()) {
+                statement.execute(approve);
+                statement.execute(negate);
+            }
+            assertThatThrownBy(migrator::commit).isInstanceOf(SQLException.class)
+                    .hasMessageContaining("leaves no late fee due on an instalment a refund cancelled whole");
+
+            // The release alone, exact: the commit-time rank is met (judged now, rolled back).
+            try (Statement statement = migrator.createStatement()) {
+                statement.execute(approve);
+                statement.execute(negate);
+                statement.execute(String.format(release, feePaid.bought().instalment(3), 5_00));
+                statement.execute("SET CONSTRAINTS ALL IMMEDIATE");
+            }
+            migrator.rollback();
+
+            // Never another amount, never an instalment no refund cancelled whole.
+            for (String[] refusal : List.of(
+                    new String[] {String.format(release, feePaid.bought().instalment(3), 4_99), "exactly the late fee"},
+                    new String[] {String.format(release, feePaid.bought().instalment(2), 5_00), "cancelled whole"})) {
+                try (Statement statement = migrator.createStatement()) {
+                    statement.execute(approve);
+                    statement.execute(negate);
+                }
+                assertThatThrownBy(() -> {
+                            try (Statement statement = migrator.createStatement()) {
+                                statement.execute(refusal[0]);
+                            }
+                        }).as(refusal[1]).isInstanceOf(SQLException.class)
+                        .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).isEqualTo("P0001"))
+                        .hasMessageContaining(refusal[1]);
+                migrator.rollback();
+            }
+        }
+        // INSERT-only: a domain release, then neither UPDATE nor DELETE - the application role holds no privilege, the
+        // owner meets the trigger.
+        world.approve(feePaid.paid().plusDays(2), feePaid.bought(), feePaid.fee().id(), proposed.id(), world.operator());
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_reversal_fee_release WHERE reversal_id = '" + proposed.id() + "'"))
+                .isEqualTo(1);
+        try (Connection application = DatabaseRoles.application()) {
+            refused(application, "UPDATE bnpl.bnpl_reversal_fee_release SET amount_minor = 1", "42501");
+            refused(application, "DELETE FROM bnpl.bnpl_reversal_fee_release", "42501");
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            refused(migrator, "UPDATE bnpl.bnpl_reversal_fee_release SET amount_minor = 1 WHERE obligation_id = '"
+                    + feePaid.bought().id() + "'", "P0001");
+            migrator.rollback();
+        }
+    }
+
+    /** What both orders must agree on: the due components of instalments 2 and 3, the fee's room, the six balances. */
+    private static Map<String, Long> endState(BnplCorrectionDatabaseWorld world, FeePaid feePaid) throws SQLException {
+        Map<String, Long> state = new java.util.LinkedHashMap<>();
+        for (int sequence = 2; sequence <= 3; sequence++) {
+            for (String component : List.of("FEES", "INTEREST", "PRINCIPAL")) {
+                state.put(component + " " + sequence, world.due(feePaid.bought(), sequence, component));
+            }
+        }
+        state.put("room", Long.parseLong(scalar("SELECT bnpl.fee_waiver_room(f.id)::text FROM bnpl.bnpl_fee_assessment f"
+                + " WHERE f.instalment_id = '" + feePaid.bought().instalment(3) + "'")));
+        for (AccountPurpose purpose : BnplSubledgerProof.PURPOSES) {
+            state.put(purpose.name(), world.base.balance(feePaid.bought(), purpose).minorUnits());
+        }
+        state.put("status " + scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + feePaid.bought().id() + "'"),
+                1L);
+        return state;
+    }
+
+    @Test
+    @DisplayName("A2-1 (the Phase 12 transition gate): approved on a clock frame stepped back behind the repayment it"
+            + " reverses - the floor further back - the reversal is valued the repayment's own date, its F8 entry with it;"
+            + " beneath, bnpl V019 refuses a raw approval valued between the floor and the repayment, for every writer")
+    void aReversalSteppedBackBehindItsRepaymentIsValuedOnIt() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.plain();
+        world.base.serviceOn(bought.due(2), bought);
+        LocalDate paidOn = bought.due(2).plusDays(4);
+        BnplPurchaseStore.Repayment late = world.base.repayOn(paidOn, bought, "late", 150_00).repayment();
+        assertThat(late.valueDate()).isEqualTo(paidOn);
+        assertThat(LocalDate.parse(scalar("SELECT bnpl.principal_value_floor('" + bought.id() + "')::text")))
+                .as("the floor stands before the day the clock steps back to").isBefore(paidOn.minusDays(1));
+
+        // The rank alone, first: a raw approval valued the day before the repayment - on or after the floor, inside the
+        // ceiling - is refused by V019's own arm, for the owner too.
+        BnplRepaymentReversal raw = world.propose(paidOn, bought, late.id(), world.operator());
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            assertThatThrownBy(() -> {
+                        try (Statement statement = migrator.createStatement()) {
+                            statement.execute("UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED',"
+                                    + " decided_by = 'other', decided_by_type = 'EMPLOYEE', decision_reason = 'r',"
+                                    + " journal_entry_id = gen_random_uuid(), value_date = DATE '" + paidOn.minusDays(1)
+                                    + "' WHERE id = '" + raw.id() + "'");
+                        }
+                    }).isInstanceOf(SQLException.class)
+                    .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).isEqualTo("P0001"))
+                    .hasMessageContaining("never valued before the repayment it reverses");
+            migrator.rollback();
+        }
+
+        // The domain, on the clock stepped back to the day before the repayment.
+        BnplRepaymentReversal approved = world.approve(paidOn.minusDays(1), bought, late.id(), raw.id(),
+                world.operator()).reversal();
+        assertThat(approved.valueDate()).contains(paidOn);
+        assertThat(LocalDate.parse(scalar("SELECT value_date::text FROM bnpl.bnpl_repayment_reversal WHERE id = '"
+                + approved.id() + "'"))).isEqualTo(paidOn);
+        assertThat(world.base.book.entryLines(null, approved.entry().orElseThrow())).isNotEmpty();
+        assertThat(world.due(bought, 2, "PRINCIPAL")).as("what it paid is due again").isEqualTo(150_00);
     }
 
     @Test

@@ -196,6 +196,27 @@ final class BnplApplicationClient {
                 "sessionToken");
     }
 
+    /**
+     * A session of a fresh operator holding {@code MERCHANT_ADMINISTRATOR} AND {@code LEDGER_OPERATOR} - the population that
+     * may issue a merchant key carrying the {@code BNPL_REFUND} scope ({@code MERCHANT_ADMINISTER} beside
+     * {@code PAYMENT_REFUND}, the Phase 12 -> 13 gate's A5-F1); a party of their own, nobody's customer.
+     */
+    String refundKeyIssuerSession(Authorization authorization) throws Exception {
+        String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
+                + "\"password\":\"" + PASSWORD + "\"}", null, key()).statusCode()).isEqualTo(201);
+        sessionWithRole(authorization, login, RoleName.MERCHANT_ADMINISTRATOR);
+        return sessionWithRole(authorization, login, RoleName.LEDGER_OPERATOR);
+    }
+
+    /** A key issued to {@code merchantId} with the {@code BNPL_REFUND} scope by {@code issuer}'s session: {@code id.secret}. */
+    String refundScopedKey(String issuer, String merchantId) throws Exception {
+        HttpResponse<String> issued = post("/v1/operator/merchants/" + merchantId + "/api-keys?scope=BNPL_REFUND", null,
+                issuer, key());
+        assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);
+        return field(issued.body(), "keyId") + "." + field(issued.body(), "secret");
+    }
+
     String operatorSession(Authorization authorization, RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","

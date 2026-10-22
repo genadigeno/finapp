@@ -348,10 +348,34 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/bnpl-disputes/{id}/resolution/rejection",
                             PermissionName.BNPL_DISPUTE_RESOLVE)));
 
+    /**
+     * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the
+     * request names what needs it - here a merchant key's scope. An annotation cannot carry a condition, so the register
+     * pins the mapping the route's operations apply ({@code MerchantApiKeyOperations.SCOPE_PERMISSIONS}); the negatives
+     * over HTTP are {@code MerchantApiKeyDatabaseTest#aRefundScopeAsksPaymentRefundBesideMerchantAdminister}'s.
+     */
+    private static final Map<String, PermissionName> CONDITIONAL_REGISTER = new TreeMap<>(Map.ofEntries(
+            // Issuing a key that refunds the merchant's BNPL purchases and accepts its disputes is a money-operating act.
+            entry("POST /v1/operator/merchants/{id}/api-keys?scope=BNPL_REFUND", PermissionName.PAYMENT_REFUND)));
+
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
     private RequestMappingHandlerMapping mappings;
+
+    @Test
+    @DisplayName("the conditional permissions are exactly the register: a BNPL_REFUND-scoped key's issuance asks"
+            + " PAYMENT_REFUND beside the route's MERCHANT_ADMINISTER (the Phase 12 -> 13 gate's A5-F1)")
+    void everyConditionalPermissionIsRegistered() {
+        Map<String, PermissionName> applied = new TreeMap<>();
+        com.finapp.app.merchant.MerchantApiKeyOperations.SCOPE_PERMISSIONS.forEach((scope, permission) -> applied.put(
+                "POST /v1/operator/merchants/{id}/api-keys?scope=" + scope.name(), permission));
+        assertThat(applied).as("a conditional permission is a reviewed decision too").isEqualTo(CONDITIONAL_REGISTER);
+        for (String route : CONDITIONAL_REGISTER.keySet()) {
+            assertThat(REGISTER).as("the conditional route's declared permission stays registered")
+                    .containsKey(route.substring(0, route.indexOf('?')));
+        }
+    }
 
     @Test
     @DisplayName("the declared permissions are exactly the register, route by route")

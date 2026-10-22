@@ -166,6 +166,8 @@ class BnplRefundApiTest {
         BnplApplicationClient.Merchant stranger = world.merchant();
         HttpResponse<String> theirs = world.client.get("/v1/merchant/transactions?from=" + today + "&to=" + today,
                 stranger.apiKey());
+        // The stranger's report was served (the Phase 12 -> 13 gate's A6-F11): an error body also "contains no refund".
+        assertThat(theirs.statusCode()).as(theirs.body()).isEqualTo(200);
         assertThat(theirs.body()).doesNotContain(refund).doesNotContain("BNPL_REFUND");
     }
 
@@ -288,7 +290,8 @@ class BnplRefundApiTest {
 
     /** A key issued to {@code merchant} with the BNPL_REFUND scope, by the operator who administers its keys. */
     private String scopedKey(BnplApplicationClient.Merchant merchant) throws Exception {
-        String operator = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
+        // MERCHANT_ADMINISTER beside PAYMENT_REFUND (the Phase 12 -> 13 gate's A5-F1).
+        String operator = world.client.refundKeyIssuerSession(authorization);
         HttpResponse<String> issued = world.client.post("/v1/operator/merchants/" + merchant.id()
                 + "/api-keys?scope=BNPL_REFUND", null, operator, BnplApplicationClient.key());
         assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);

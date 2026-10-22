@@ -31,7 +31,8 @@ import org.junit.jupiter.api.Test;
  * equals a closed-form oracle with no memory at all: defaulted on a date exactly when some date up to it reached the
  * threshold and DPD stayed above zero on every date since (A14, no probation).
  *
- * <p>The terms vary within what {@link BnplTerms} admits. Seeded, so a failure reproduces; named {@code ...PropertiesTest}
+ * <p>The terms are what {@link BnplTerms} admits - since the Phase 12 transition gate's A7-5 one set of bounds,
+ * {@link BnplTerms#DELINQUENCY_BOUNDS}, and the threshold 90. Seeded, so a failure reproduces; named {@code ...PropertiesTest}
  * (the {@code TestTaxonomyTest} convention). Hermetic: nothing beyond the JVM.
  */
 @DisplayName("BNPL's delinquency derivation's properties over generated histories, dispute holds and lifts included")
@@ -281,17 +282,11 @@ class BnplDelinquencyStatePropertiesTest {
                 }
             }
 
-            int threshold = r.nextInt(3) == 0 ? 90
-                    : BnplTerms.MINIMUM_DEFAULT_THRESHOLD_DAYS + r.nextInt(
-                            BnplTerms.MAXIMUM_DEFAULT_THRESHOLD_DAYS - BnplTerms.MINIMUM_DEFAULT_THRESHOLD_DAYS + 1);
-            List<Integer> bounds;
-            if (threshold == 90 && r.nextBoolean()) {
-                bounds = List.of(1, 30, 60, 90);
-            } else {
-                int second = 2 + r.nextInt(threshold - 3);
-                int third = second + 1 + r.nextInt(threshold - second - 1);
-                bounds = List.of(1, second, third, threshold);
-            }
+            // The bounds and the threshold BnplTerms admits: since the Phase 12 transition gate's A7-5 exactly
+            // (1, 30, 60, 90) and 90 - the buckets' labels name them. This drew any rising bounds and any threshold in
+            // [30, 180] until then; deriving the labels from the bounds (the owner's choice) would bring them back.
+            List<Integer> bounds = BnplTerms.DELINQUENCY_BOUNDS;
+            int threshold = bounds.get(bounds.size() - 1);
             BnplTerms terms = BnplTermsFixtures.payIn4().delinquencyBounds(bounds).defaultThresholdDays(threshold)
                     .build();
             return new History(terms, List.copyOf(dues), List.copyOf(billed), List.copyOf(ids), first, unpaidByDay,

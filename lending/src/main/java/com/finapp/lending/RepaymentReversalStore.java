@@ -78,9 +78,12 @@ public interface RepaymentReversalStore {
         }
     }
 
-    /** A decision: {@code APPROVED} with rule 10's entry, or {@code REJECTED} with none. */
+    /**
+     * A decision: {@code APPROVED} with rule 10's entry and the date it is valued ({@code lending V031}, the Phase 12
+     * transition gate's A2-1), or {@code REJECTED} with neither.
+     */
     record Decision(UUID reversal, RepaymentReversalStatus status, Actor decider, String reason,
-            Optional<JournalEntryId> journalEntry) {
+            Optional<JournalEntryId> journalEntry, Optional<java.time.LocalDate> valueDate) {
 
         public Decision {
             Objects.requireNonNull(reversal, "reversal must not be null");
@@ -88,9 +91,12 @@ public interface RepaymentReversalStore {
             Objects.requireNonNull(decider, "decider must not be null");
             Objects.requireNonNull(reason, "reason must not be null");
             Objects.requireNonNull(journalEntry, "journalEntry must not be null");
+            Objects.requireNonNull(valueDate, "valueDate must not be null");
             if (status == RepaymentReversalStatus.PROPOSED
-                    || (status == RepaymentReversalStatus.APPROVED) != journalEntry.isPresent()) {
-                throw new IllegalArgumentException("a decision approves with its entry or rejects with none");
+                    || (status == RepaymentReversalStatus.APPROVED) != journalEntry.isPresent()
+                    || journalEntry.isPresent() != valueDate.isPresent()) {
+                throw new IllegalArgumentException("a decision approves with its entry and its value date or rejects with"
+                        + " neither");
             }
         }
 

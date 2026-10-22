@@ -90,6 +90,14 @@ and §24 (OQ-9, OQ-10).
    `P12-DOC-001`, 2026-10-22): no evidence documents are stored — the merchant's evidence is a bounded text statement
    on the dispute row (`merchant_statement`, 1–1,000 characters, `RESTRICTED-PII`, refused if it holds an instrument's
    shape), every operator read of a dispute audited `bnpl.DisputeRead`. A document store is not built.)*
+   *(Corrected by the Phase 12 → 13 transition gate, 2026-10-22 — A5-F1/F6: **accept** refunds the disputed amount at
+   once, so it is held to the refund door's two rules. It needs a key carrying the `BNPL_REFUND` scope — a key without
+   it is `403 bnpl.RefundScopeRequired` before anything is read, audited `bnpl.RefundScopeRefused` `FAILED` against the
+   dispute in a transaction of its own — and it is refused `403 bnpl.SelfDealingRefused` (audited `FAILED` against the
+   purchase, the key named) when the key's issuer (`merchant_api_key.issued_by`) is the purchase's own party, or one the
+   platform cannot place in a party (fail closed). **Contest** still needs any key of the merchant's. Before this
+   correction an accept moved money over a scope-less key, and an operator who minted a key could accept a dispute of
+   their own purchase.)*
 
 5. **The operator's resolution** (`POST /v1/operator/bnpl-disputes/{id}/resolution`, `BNPL_DISPUTE_RESOLVE`, keyed
    `bnpl.servicing:EMPLOYEE:<id>` *(as built: `bnpl.servicing:<actor type>:<id>` — `BnplDisputeDesk` keys by the
@@ -220,7 +228,9 @@ Financial impact: none new — a dispute's only money is a refund's.
   dry run is held whole (collection, DPD, fee), its clock after any lift restarting at the lift's business date; the
   proposal is `bnpl_dispute_proposal`, its four-eyes a `CHECK`; the machine row is money-free (the claim INSERT-only); the
   merchant close's rule is the opening taking the payable at (P) and the close's settled-payable port asking
-  `BnplDisputeStore.anyOpenAtMerchant`; the merchant's response needs its key, not the refund scope. Payoff and voluntary
+  `BnplDisputeStore.anyOpenAtMerchant`; the merchant's response needs its key, not the refund scope *(superseded by the
+  Phase 12 → 13 transition gate, 2026-10-22, A5-F1/F6: an accept needs the `BNPL_REFUND` scope and a key its customer's
+  party did not issue - decision 4's note; a contest needs any key)*. Payoff and voluntary
   repayment are not paused by a dispute (the customer's own acts; what they pay on held instalments returns as excess on a
   refund outcome). `bnpl.days_past_due` replaced; the fee, collection and refund ranks are new triggers beside the old.
 - **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition

@@ -323,6 +323,37 @@ class BnplTermsDatabaseTest {
     }
 
     @Test
+    @DisplayName("the activation first (the Phase 12 transition gate's A3-I1): a pin begun while an activation's transaction"
+            + " holds the predecessor retired and the successor activated waits on it, and once it commits pins the"
+            + " successor - never neither, so no approved application closes PRODUCT_NOT_OFFERED and no submission 422s")
+    void aPinBehindAnActivationPinsTheSuccessor() throws Exception {
+        BnplTermsVersionId predecessor = activate(P4);
+        BnplTermsAdministration.Proposed successor = propose(P4, employee());
+        try (Connection activation = DatabaseRoles.application()) {
+            activation.setAutoCommit(false);
+            BnplTermsAdministration.Decided decided =
+                    ADMINISTRATION.approve(activation, successor.id(), employee(), "held past the retirement", correlation());
+            assertThat(decided.retired()).as("the predecessor retired in the open transaction").contains(predecessor);
+            int activationPid;
+            try (Statement pid = activation.createStatement();
+                    ResultSet row = pid.executeQuery("SELECT pg_backend_pid()")) {
+                row.next();
+                activationPid = row.getInt(1);
+            }
+            CompletableFuture<BnplTermsVersionId> pin =
+                    CompletableFuture.supplyAsync(() -> inOneTransaction(uow -> ADMINISTRATION.pinActive(uow, P4).id()));
+            String waiting = awaitAStatementBlockedBy(activationPid);
+            assertThat(waiting).as("the pin waits on the retiring row's lock").contains("FOR SHARE")
+                    .contains("status = 'ACTIVE'");
+            assertThat(pin).as("blocked behind the activation").isNotDone();
+            activation.commit();
+            assertThat(pin.get(30, TimeUnit.SECONDS)).as("the successor - never neither").isEqualTo(successor.id());
+        }
+        assertThat(status(predecessor)).isEqualTo("RETIRED");
+        assertThat(status(successor.id())).isEqualTo("ACTIVE");
+    }
+
+    @Test
     @DisplayName("an activation on a database clock behind its predecessor's start commits: the predecessor ends one"
             + " microsecond after it began, the successor starts exactly there (credit V014's lesson)")
     void aBackwardClockIsClamped() throws SQLException {

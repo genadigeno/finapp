@@ -235,7 +235,11 @@ public final class RepaymentReversals {
         LocalDate today = LocalDate.ofInstant(now, ZoneId.of(pinned.servicingZone()));
         // The value date: today, or - on a clock stepped back behind the record - the first date it leaves open (the Phase
         // 11 gate's R1): principal re-instated never joins a date already accrued, whose base read the principal without it.
-        LocalDate valueDate = loans.principalValueDate(unitOfWork, loan, today);
+        // And never before the repayment it reverses (the Phase 12 transition gate's A2-1): on a clock stepped back behind
+        // that repayment, a date between the two would carry the re-opened amount twice - the repayment's credit not yet
+        // valued, the reversal's debit already - and over-charge its day's interest (lending V031 holds it for every writer).
+        LocalDate open = loans.principalValueDate(unitOfWork, loan, today);
+        LocalDate valueDate = reversed.valueDate().isAfter(open) ? reversed.valueDate() : open;
 
         // (L6) The capital row, when principal is re-instated: headroom judged under it (INV-LND-13).
         Money reinstated = reversed.paid(AllocationComponent.PRINCIPAL)
@@ -252,7 +256,7 @@ public final class RepaymentReversals {
         // Rule 10: the exact swap of rule 5's entry, bounded by it (INV-REV-01, INV-REV-02).
         JournalEntryId entry = reverse(unitOfWork, reversal, reversed, swapped, loan, valueDate);
         if (!reversals.decide(unitOfWork, new RepaymentReversalStore.Decision(reversal, RepaymentReversalStatus.APPROVED,
-                actor, reasoned, Optional.of(entry)))) {
+                actor, reasoned, Optional.of(entry), Optional.of(valueDate)))) {
             throw new IllegalStateException("a PROPOSED reversal locked under its loan did not move: the lock protocol was"
                     + " bypassed");
         }
@@ -297,7 +301,7 @@ public final class RepaymentReversals {
             throw new ProposalNotPending(proposal.status());
         }
         if (!reversals.decide(unitOfWork, new RepaymentReversalStore.Decision(reversal, RepaymentReversalStatus.REJECTED,
-                actor, reasoned, Optional.empty()))) {
+                actor, reasoned, Optional.empty(), Optional.empty()))) {
             throw new IllegalStateException("a PROPOSED reversal locked under its loan did not move: the lock protocol was"
                     + " bypassed");
         }

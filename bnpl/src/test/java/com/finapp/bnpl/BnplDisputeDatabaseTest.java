@@ -566,7 +566,7 @@ class BnplDisputeDatabaseTest {
                     }
                 });
         BnplRefunds waitingRefunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, world.ports, world.ports,
-                heldPayable, world.closures, (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(),
+                heldPayable, world.closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(),
                 new JdbcAuditWriter(), IDS, CLOCK);
         BnplDisputes waiting = new BnplDisputes(DISPUTES, REFUNDS, SERVICING, PURCHASES, TERMS_STORE, waitingRefunds,
                 world.ports, heldPayable, actingParties, new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
@@ -577,7 +577,7 @@ class BnplDisputeDatabaseTest {
                 try {
                     return BnplClockFrame.inOneTransaction(twoSecondsBefore, uow -> waiting.respond(uow, dispute.id(),
                             bought.merchant(), new BnplDisputes.Response(BnplDisputes.Decision.ACCEPT, "refund it",
-                                    "key-under-test"), new Actor(bought.merchant().toString(), ActorType.MERCHANT),
+                                    "key-under-test", BnplKeyIssuer.KEY_ISSUER), new Actor(bought.merchant().toString(), ActorType.MERCHANT),
                             correlation()));
                 } catch (RuntimeException refused) {
                     return refused;
@@ -847,8 +847,9 @@ class BnplDisputeDatabaseTest {
     private BnplDisputes.Acted respondOn(LocalDate date, BnplDispute dispute, BnplConditionDatabaseWorld.Purchased bought,
             BnplDisputes.Decision decision) {
         return BnplClockFrame.inOneTransaction(world.frameOn(date), uow -> disputes.respond(uow, dispute.id(),
-                bought.merchant(), new BnplDisputes.Response(decision, "we shipped it", "key-under-test"),
-                new Actor(bought.merchant().toString(), ActorType.MERCHANT), correlation()));
+                bought.merchant(), new BnplDisputes.Response(decision, "we shipped it", "key-under-test",
+                        BnplKeyIssuer.KEY_ISSUER), new Actor(bought.merchant().toString(), ActorType.MERCHANT),
+                correlation()));
     }
 
     private Optional<BnplDisputes.Acted> lapseOn(LocalDate date, BnplDispute dispute) {
