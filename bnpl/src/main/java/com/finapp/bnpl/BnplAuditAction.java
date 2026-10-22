@@ -144,12 +144,14 @@ public enum BnplAuditAction implements AuditableAction {
                     + " own party - or to resolve, propose, approve or reject the resolution of a BNPL dispute of their own"
                     + " party (P12-TSK-023) - or to propose, approve or reject a repayment reversal or a waiver on an"
                     + " agreement of their own party, or as an operator the platform cannot place in a party (fail closed;"
-                    + " P12-TSK-024) - and was refused 403 bnpl.SelfDealingRefused with nothing written; recorded FAILED in"
-                    + " a transaction of its own after the act rolled back. Its target the purchase, the dispute or the"
-                    + " agreement; the summary names it and the act - never an amount. Since the Phase 12 -> 13 gate: the"
-                    + " operator refund door fails closed too (A7-6), and a merchant key whose issuer is the purchase's own"
-                    + " party, or cannot be placed in one, refunding or accepting a dispute (A5-F1) - its actor the merchant,"
-                    + " its target the purchase, the summary the act and the key id, never the issuer.",
+                    + " P12-TSK-024; for the dispute's acts since the Phase 12 to 13 gate, A7-6) - or to read a dispute of"
+                    + " their own party or the dispute queue unplaced (the gate's A5-F4, A7-2) - and was refused 403"
+                    + " bnpl.SelfDealingRefused with nothing written; recorded FAILED in a transaction of its own after the"
+                    + " act rolled back. Its target the purchase, the dispute, the agreement or the queue's status; the"
+                    + " summary names it and the act - never an amount. Since the Phase 12 -> 13 gate the operator refund door"
+                    + " fails closed too (A7-6), and a merchant key whose issuer is the purchase's own party, or cannot be placed in"
+                    + " one, refunding or accepting a dispute (A5-F1) - its actor the merchant, its target the purchase, the"
+                    + " summary the act and the key id, never the issuer.",
             false),
 
     /** A BNPL servicing agent proposed the reversal of a repayment (`P12-TSK-024`). */
@@ -250,8 +252,8 @@ public enum BnplAuditAction implements AuditableAction {
             "bnpl.DisputeWithdrawn",
             "A customer withdrew their own open BNPL dispute (POST /v1/me/bnpl-disputes/{id}/withdrawal, keyed"
                     + " bnpl.dispute-withdrawal:CUSTOMER:<id>): the hold lifted - each held instalment's days past due and"
-                    + " late-fee day counting from the withdrawal's business date - and nothing posted. Its target the"
-                    + " dispute.",
+                    + " late-fee day counting from its due date as if never held (bnpl V018, the Phase 12 to 13 gate's"
+                    + " A5-F2: a withdrawal never restarts the clock) - and nothing posted. Its target the dispute.",
             false),
 
     /** An operator proposed a BNPL dispute's resolution above the four-eyes threshold (`P12-TSK-023`). */
@@ -277,7 +279,21 @@ public enum BnplAuditAction implements AuditableAction {
             "bnpl.DisputeRead",
             "An operator holding BNPL_DISPUTE_RESOLVE read a BNPL dispute (GET /v1/operator/bnpl-disputes/{id}): the"
                     + " customer's reason and the merchant's statement (RESTRICTED-PII), the amount, the hold and any"
-                    + " proposal - every access recorded (INV-DSP-03 by analogy). Its target the dispute.",
+                    + " proposal - every access recorded (INV-DSP-03 by analogy). Its target the dispute. Never a dispute of"
+                    + " the operator's own party, nor by an operator the platform cannot place in a party (fail closed;"
+                    + " the Phase 12 to 13 gate's A5-F4): refused bnpl.SelfDealingRefused, recorded FAILED.",
+            false),
+
+    /** An operator read a page of the BNPL dispute queue - the contested disputes awaiting them (the gate's A7-2). */
+    DISPUTE_QUEUE_READ(
+            "bnpl.DisputeQueueRead",
+            "An operator holding BNPL_DISPUTE_RESOLVE read a page of the BNPL dispute queue (GET"
+                    + " /v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED|OPEN, the Phase 12 to 13 gate's A7-2): at most"
+                    + " a hundred disputes in the status, oldest first, after the cursor named - their figures and"
+                    + " deadlines, never the customer's reason or the merchant's statement, and never a dispute of the"
+                    + " operator's own party (an operator the platform cannot place in a party is refused"
+                    + " bnpl.SelfDealingRefused, fail closed). Written in the read's own transaction. Its target the status"
+                    + " read; the summary counts the disputes served and whether more remain - never an amount.",
             false),
 
     /** An investigator read a BNPL agreement (`P12-TSK-025`). */

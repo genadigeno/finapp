@@ -1237,6 +1237,12 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
                                     "P12-TSK-023. The purchase id is the one this transaction holds FOR UPDATE (B5) - its open dispute, read under it; never a request value unscoped.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.latestWithdrawalOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplRefundStore.lockAtMerchant",
+                                    "The Phase 12 -> 13 gate's A5-F2 cooldown. The purchase id is the one the opening holds FOR UPDATE (B5) after its owner-scoped agreement read - when its latest withdrawal was, read under it; an instant leaves, never a row; never a request value unscoped.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplDisputeStore.holds",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -1259,6 +1265,17 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.ADMINISTERED,
                                     "P12-TSK-023 (ADR-0106 decision 11). The merchant close's question, asked by MerchantAdministration under MERCHANT_ADMINISTER for the payable it holds FOR UPDATE - the merchant its owner; no merchant door names it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.anyOpenOfParty",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                                    "The Phase 12 -> 13 gate's A7-1, JdbcDisputeStore.anyRestorableTo's twin: the wallet close asks whether an open BNPL dispute may still refund to the wallet, under the close's lock. The party is the one behind the customer whose agreement lockOwnedBy's owner predicate locked (PartyStore.partyOfCustomer, BnplWalletCredits). A boolean leaves, and no row of anybody's.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplDisputeStore.queue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "The Phase 12 -> 13 gate's A7-2. GET /v1/operator/bnpl-disputes?status= - the operator's queue by permission (BNPL_DISPUTE_RESOLVE at the boundary), every page recorded bnpl.DisputeQueueRead; the party bound is the reading operator's OWN (BnplActingParty), excluded in the statement (d.party_id <> ?) so an operator never sees a dispute of their own party - an unplaced operator is refused before any read. The cursor is a dispute id the previous page returned; it orders the page, it selects no one's row. No free text leaves.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.disputeHold",
                             new Entry(

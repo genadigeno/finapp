@@ -340,6 +340,8 @@ class RoutePermissionRegisterTest {
                     // BNPL_SERVICING_AGENT) - four-eyes is inside the permission, two distinct holders, never between
                     // roles; the read audited. The negatives are BnplDisputeDeskTest's.
                     entry("GET /v1/operator/bnpl-disputes/{id}", PermissionName.BNPL_DISPUTE_RESOLVE),
+                    // The Phase 12 -> 13 gate's A7-2: the queue of contested (or open) disputes, audited per page.
+                    entry("GET /v1/operator/bnpl-disputes", PermissionName.BNPL_DISPUTE_RESOLVE),
                     entry("POST /v1/operator/bnpl-disputes/{id}/resolution", PermissionName.BNPL_DISPUTE_RESOLVE),
                     entry("POST /v1/operator/bnpl-disputes/{id}/resolution/approval",
                             PermissionName.BNPL_DISPUTE_RESOLVE),

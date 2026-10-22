@@ -2819,6 +2819,13 @@ final class BnplApplicationFakes {
         final List<UUID> locked = new ArrayList<>();
         /** The four-eyes CHECK dropped - the probe's database half, which only a live database can show. */
         boolean fourEyesDropped;
+        /**
+         * The store's deadline conditionals dropped (the gate's A3-M2) - a merchant's edge past the deadline then meets the
+         * trigger's rank beneath, a storage failure.
+         */
+        boolean deadlineConditionDropped;
+        /** {@code bnpl V018}'s withdrawal-cooldown trigger dropped - the domain's check alone (the gate's A5-F2). */
+        boolean cooldownRankDropped;
 
         record State(Map<UUID, BnplDispute> rows, Map<UUID, Instant> permits, List<Event> history,
                 Map<UUID, BnplDisputeProposal> proposals) {}
@@ -2844,8 +2851,9 @@ final class BnplApplicationFakes {
                     continue;
                 }
                 for (BnplDispute.Held held : dispute.holds()) {
+                    // bnpl V018's dispute_clock_start: a withdrawal's lift never moves the clock (A5-F2).
                     windows.add(new BnplDisputeHold.Window(dispute.id(), held.dueDate(), dispute.openedOn().orElseThrow(),
-                            dispute.resolvedOn()));
+                            dispute.resolvedOn(), dispute.status() == BnplDisputeStatus.WITHDRAWN));
                 }
             }
             return new BnplDisputeHold(windows);
@@ -2892,10 +2900,23 @@ final class BnplApplicationFakes {
         }
 
         @Override
+        public Optional<Instant> latestWithdrawalOf(Connection unitOfWork, BnplPurchaseId purchase) {
+            return rows.values().stream().filter(row -> row.purchase().equals(purchase)
+                    && row.status() == BnplDisputeStatus.WITHDRAWN).map(row -> row.resolvedAt().orElseThrow())
+                    .max(Instant::compareTo);
+        }
+
+        @Override
         public BnplDispute insert(Connection unitOfWork, BnplDispute dispute) {
             step("dispute insert");
             if (rows.values().stream().anyMatch(row -> row.purchase().equals(dispute.purchase()) && row.open())) {
                 throw new BnplStorageException("bnpl_dispute_one_open_per_purchase: SQLSTATE 23505");
+            }
+            // bnpl V018's bnpl_dispute_respects_the_withdrawal_cooldown (the gate's A5-F2), for every writer.
+            if (!cooldownRankDropped && latestWithdrawalOf(unitOfWork, dispute.purchase())
+                    .filter(withdrawn -> now.isBefore(withdrawn.plus(BnplDisputes.WITHDRAWAL_COOLDOWN))).isPresent()) {
+                throw new BnplStorageException("a BNPL purchase whose dispute its customer withdrew is not disputed again"
+                        + " within the cooldown: P0001");
             }
             if (findByKey(unitOfWork, dispute.party(), dispute.requestKey()).isPresent()) {
                 throw new BnplStorageException("bnpl_dispute_request_unique: SQLSTATE 23505");
@@ -2955,9 +2976,15 @@ final class BnplApplicationFakes {
             boolean merchantActs = moved.status() == BnplDisputeStatus.MERCHANT_RESPONDED
                     || by.equals("MERCHANT:" + old.merchant());
             if (merchantActs && !deadline.isAfter(now)) {
+                if (!deadlineConditionDropped) {
+                    return Optional.empty(); // the store's conditional edge (the gate's A3-M2): no row, never a failure
+                }
                 throw new BnplStorageException("a merchant answers a BNPL dispute only before the response deadline: P0001");
             }
             if (by.equals(BnplDispute.SYSTEM) && deadline.isAfter(now)) {
+                if (!deadlineConditionDropped) {
+                    return Optional.empty();
+                }
                 throw new BnplStorageException("a BNPL dispute lapses to a refund only once its deadline has passed: P0001");
             }
             if (moved.status() == BnplDisputeStatus.RESOLVED_REFUND) {
@@ -2970,7 +2997,7 @@ final class BnplApplicationFakes {
             }
             if (from == BnplDisputeStatus.MERCHANT_RESPONDED && moved.status() != BnplDisputeStatus.WITHDRAWN) {
                 BnplTerms pinned = terms.versions.get(old.termsVersion()).terms();
-                if (old.amount().compareTo(pinned.disputeFourEyesThreshold()) > 0) {
+                if (fourEyesAmount(old).compareTo(pinned.disputeFourEyesThreshold()) > 0) {
                     BnplDisputeProposal approved = moved.proposal().map(proposals::get).orElse(null);
                     if (approved == null || approved.status() != BnplDisputeProposal.Status.APPROVED
                             || approved.outcome() != moved.status()
@@ -3033,6 +3060,49 @@ final class BnplApplicationFakes {
         }
 
         @Override
+        public boolean anyOpenOfParty(Connection unitOfWork, UUID party,
+                com.finapp.sharedkernel.money.CurrencyCode currency) {
+            return rows.values().stream().anyMatch(row -> row.party().equals(party) && row.open()
+                    && row.amount().currency().equals(currency));
+        }
+
+        @Override
+        public List<BnplDispute> queue(Connection unitOfWork, BnplDisputeStatus status, UUID excludingParty,
+                Optional<BnplDisputeId> after, int limit) {
+            java.util.function.Function<BnplDispute, Instant> entered = row -> status == BnplDisputeStatus.OPEN
+                    ? row.openedAt().orElseThrow() : row.merchantRespondedAt().orElseThrow();
+            java.util.Comparator<BnplDispute> order = java.util.Comparator.comparing(entered)
+                    .thenComparing(row -> row.id().value());
+            List<BnplDispute> sorted = rows.values().stream()
+                    .filter(row -> row.status() == status && !row.party().equals(excludingParty)).sorted(order).toList();
+            Optional<BnplDispute> cursor = after.map(id -> rows.get(id.value()));
+            return sorted.stream().filter(row -> cursor.map(from -> order.compare(row, from) > 0).orElse(true))
+                    .limit(limit).toList();
+        }
+
+        @Override
+        public Optional<java.time.Duration> oldestContestedAge(Connection unitOfWork) {
+            return rows.values().stream().filter(row -> row.status() == BnplDisputeStatus.MERCHANT_RESPONDED)
+                    .map(row -> row.merchantRespondedAt().orElseThrow()).min(Instant::compareTo)
+                    .map(oldest -> java.time.Duration.between(oldest, now));
+        }
+
+        /**
+         * {@code bnpl V018}'s {@code dispute_four_eyes_amount}: the dispute's claim and every other dispute's refund on its
+         * purchase (A5-F7).
+         */
+        Money fourEyesAmount(BnplDispute dispute) {
+            Money cumulative = dispute.amount();
+            for (BnplRefund refund : refunds.rows.values()) {
+                if (refund.purchase().equals(dispute.purchase()) && refund.door() == BnplRefund.Door.DISPUTE
+                        && !refund.dispute().equals(Optional.of(dispute.id().value()))) {
+                    cumulative = cumulative.plus(refund.amount());
+                }
+            }
+            return cumulative;
+        }
+
+        @Override
         public Optional<BnplDisputeProposal> liveProposal(Connection unitOfWork, BnplDisputeId dispute) {
             return proposals.values().stream().filter(row -> row.dispute().equals(dispute)
                     && row.status() != BnplDisputeProposal.Status.REJECTED).findFirst();
@@ -3047,7 +3117,7 @@ final class BnplApplicationFakes {
             BnplDispute dispute = rows.get(proposal.dispute().value());
             BnplTerms pinned = terms.versions.get(dispute.termsVersion()).terms();
             if (dispute.status() != BnplDisputeStatus.MERCHANT_RESPONDED
-                    || dispute.amount().compareTo(pinned.disputeFourEyesThreshold()) <= 0) {
+                    || fourEyesAmount(dispute).compareTo(pinned.disputeFourEyesThreshold()) <= 0) {
                 throw new BnplStorageException("a BNPL dispute proposal is for an answered dispute above its threshold:"
                         + " P0001");
             }

@@ -1,6 +1,7 @@
 package com.finapp.bnpl;
 
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.List;
@@ -34,6 +35,12 @@ public interface BnplDisputeStore {
     Optional<BnplDispute> openOf(Connection unitOfWork, BnplPurchaseId purchase);
 
     /**
+     * When the purchase's latest {@code WITHDRAWN} dispute was withdrawn (its database-stamped {@code resolved_at}) - read
+     * under the caller's B5, the withdrawal's cooldown's input (the Phase 12 to 13 gate's A5-F2); empty when none was.
+     */
+    Optional<java.time.Instant> latestWithdrawalOf(Connection unitOfWork, BnplPurchaseId purchase);
+
+    /**
      * Births the dispute, its claim and its hold; the database stamps the opening, its business date, the response deadline
      * and the sweep's permit - the dispute answered as stamped.
      */
@@ -42,7 +49,9 @@ public interface BnplDisputeStore {
     /**
      * The edge to {@code moved}'s state, conditional on {@code from} - the dispute answered as stamped, or empty when it was
      * not in {@code from} (another act committed first); {@code bnpl V015}'s edge function re-judges the deadline and the
-     * four-eyes rule.
+     * four-eyes rule ({@code bnpl V018}: on the purchase's cumulative refunds by dispute). The merchant's edges are also
+     * conditional on the deadline being ahead on the database clock and the system's lapse on its having come, in the same
+     * statement (the Phase 12 to 13 gate's A3-M2) - empty, never a storage failure, when the deadline passed meanwhile.
      */
     Optional<BnplDispute> move(Connection unitOfWork, BnplDispute moved, BnplDisputeStatus from);
 
@@ -60,6 +69,26 @@ public interface BnplDisputeStore {
 
     /** Whether {@code merchant} has any open dispute - the merchant close's question (ADR-0106 decision 11). */
     boolean anyOpenAtMerchant(Connection unitOfWork, UUID merchant);
+
+    /**
+     * Whether {@code party} has an open ({@code OPEN} or {@code MERCHANT_RESPONDED}) dispute in {@code currency} - the
+     * wallet close's question (the Phase 12 to 13 gate's A7-1): its refund outcome may credit the party's wallet.
+     */
+    boolean anyOpenOfParty(Connection unitOfWork, UUID party, CurrencyCode currency);
+
+    /**
+     * The operator's queue (the gate's A7-2): at most {@code limit} disputes in {@code status} ({@code OPEN} or
+     * {@code MERCHANT_RESPONDED}), oldest first by the instant each entered it, after the cursor dispute when given - never
+     * one of {@code excludingParty}'s, the reading operator's own party.
+     */
+    List<BnplDispute> queue(Connection unitOfWork, BnplDisputeStatus status, UUID excludingParty,
+            Optional<BnplDisputeId> after, int limit);
+
+    /**
+     * How long the oldest {@code MERCHANT_RESPONDED} dispute has awaited an operator since the merchant answered, on the
+     * database clock - empty when none does (the gate's A7-2 gauge).
+     */
+    Optional<Duration> oldestContestedAge(Connection unitOfWork);
 
     /** The dispute's live ({@code PROPOSED} or {@code APPROVED}) proposal. */
     Optional<BnplDisputeProposal> liveProposal(Connection unitOfWork, BnplDisputeId dispute);

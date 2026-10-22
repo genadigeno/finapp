@@ -164,7 +164,11 @@ class BnplMigrationTest {
                 "bnpl_dispute_event_is_append_only", "bnpl_dispute_hold_is_born_once", "bnpl_dispute_is_whole",
                 "bnpl_dispute_permits_only_machine_edges", "bnpl_dispute_proposal_permits_only_machine_edges",
                 "bnpl_fee_assessment_respects_the_dispute_hold", "bnpl_refund_is_not_beside_an_open_dispute",
-                "dispute_clock_start", "dispute_holds");
+                "dispute_clock_start", "dispute_holds",
+                // V018 (the Phase 12 -> 13 gate's R1): the four-eyes amount and the withdrawal's cooldown;
+                // dispute_clock_start and the two dispute trigger functions replaced, listed above.
+                "dispute_four_eyes_amount", "dispute_withdrawal_cooldown",
+                "bnpl_dispute_respects_the_withdrawal_cooldown");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

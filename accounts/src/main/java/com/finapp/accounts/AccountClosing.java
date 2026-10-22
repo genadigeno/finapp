@@ -154,7 +154,9 @@ public final class AccountClosing {
             // a customer could close the wallet an open top-up credits and then confirm, and the
             // provider captured the card while the ledger refused the capture's posting. Asked
             // under this lock; a confirmation's FOR SHARE on the row is the rank beneath it.
-            if (pendingCredits.anyFor(unitOfWork, ledgerAccount.id())) {
+            // With the closing customer (the Phase 12 -> 13 gate's A7-1): an open BNPL dispute's
+            // refund is credited to the customer's wallet, and bnpl knows it by the party.
+            if (pendingCredits.anyFor(unitOfWork, ledgerAccount.id(), customerId)) {
                 throw new AccountNotEmptyException(accountId, ledgerAccount.currency());
             }
         }

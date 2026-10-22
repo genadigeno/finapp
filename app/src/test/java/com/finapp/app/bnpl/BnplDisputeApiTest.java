@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import static com.finapp.app.bnpl.BnplPurchaseWorld.eur;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.credit.CreditFixtures;
 import com.finapp.app.database.DateShifted;
@@ -64,6 +65,9 @@ class BnplDisputeApiTest {
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private LendingCapitalHeadroom headroom;
     @Autowired private LoanWallets loanWallets;
+    @Autowired private com.finapp.accounts.AccountClosing accountClosing;
+    @Autowired private com.finapp.party.PartyStore<Connection> partyStore;
+    @Autowired private com.finapp.accounts.CustomerAccountStore<Connection> customerAccountStore;
 
     private BnplPurchaseWorld world;
 
@@ -108,6 +112,11 @@ class BnplDisputeApiTest {
                 bought.owner().token(), BnplApplicationClient.key());
         assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
         assertThat(withdrawn.body()).contains("\"status\":\"WITHDRAWN\"");
+        // The Phase 12 -> 13 gate's A5-F2 follow-up: the withdrawn purchase cools off - a re-opening is 409, nothing written.
+        HttpResponse<String> again = open(bought);
+        assertThat(again.statusCode()).as(again.body()).isEqualTo(409);
+        assertThat(again.body()).contains("bnpl.DisputeCoolingOff");
+        assertThat(disputes(bought.purchase())).isEqualTo(1);
     }
 
     @Test
@@ -368,6 +377,98 @@ class BnplDisputeApiTest {
                 CONTEST, bought.merchant().apiKey(), BnplApplicationClient.key());
         assertThat(contested.statusCode()).as(contested.body()).isEqualTo(200);
         assertThat(contested.body()).contains("\"status\":\"MERCHANT_RESPONDED\"");
+    }
+
+    // ------------------------------------------------------------------ the Phase 12 -> 13 gate's repairs (R1)
+
+    @Test
+    @DisplayName("a wallet cannot close while an open BNPL dispute may refund to it (the gate's A7-1): the customer's wallet"
+            + " emptied by the purchase's first instalment, the close is refused AccountNotEmpty while the dispute is open"
+            + " - accounts' real close, the composition root's BNPL arm - and closes once it is withdrawn")
+    void aWalletCannotCloseWhileADisputeMayRefundToIt() throws Exception {
+        CreditFixtures.Customer owner = world.customers.consentingCustomer();
+        world.topUpWallet(owner.party(), eur(150_00)); // exactly the first instalment: the wallet ends at zero
+        BnplApplicationClient.Merchant merchant = world.merchant();
+        BnplPurchaseWorld.Offer offer = world.offered(owner, merchant, GROSS, BnplApplicationClient::payIn4);
+        HttpResponse<String> accepted = world.accept(owner.token(), offer, BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        Bought bought = new Bought(BnplApplicationClient.field(accepted.body(), "purchaseId"),
+                BnplApplicationClient.field(accepted.body(), "agreementId"), merchant, owner);
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+
+        assertThatThrownBy(() -> closeWallet(owner)).as("an open dispute may still refund to it")
+                .isInstanceOf(com.finapp.accounts.AccountNotEmptyException.class);
+        HttpResponse<String> withdrawn = world.client.post("/v1/me/bnpl-disputes/" + dispute + "/withdrawal", null,
+                owner.token(), BnplApplicationClient.key());
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
+        assertThat(closeWallet(owner)).as("nothing may refund to it any more").isTrue();
+    }
+
+    @Test
+    @DisplayName("the operator's queue over HTTP (the gate's A7-2): a contest publishes bnpl.BnplDisputeContested; the queue"
+            + " needs BNPL_DISPUTE_RESOLVE (403 otherwise), lists the contested dispute with no free text, refuses an"
+            + " unknown status 422, never shows an insider their own party's dispute, and records every page")
+    void theContestedQueue() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        assertThat(world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", CONTEST,
+                bought.merchant().apiKey(), BnplApplicationClient.key()).statusCode()).isEqualTo(200);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                + " 'bnpl.BnplDisputeContested' AND aggregate_id = ?::uuid", dispute)).isEqualTo(1);
+
+        String queue = "/v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED";
+        String outsider = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
+        assertThat(world.client.get(queue, outsider).statusCode()).isEqualTo(403);
+        String agent = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> page = world.client.get(queue, agent);
+        assertThat(page.statusCode()).as(page.body()).isEqualTo(200);
+        assertThat(page.body()).contains(dispute, "\"status\":\"MERCHANT_RESPONDED\"", "merchantRespondedAt")
+                .doesNotContain("it never came").doesNotContain("we shipped it");
+        assertThat(world.client.get("/v1/operator/bnpl-disputes?status=WITHDRAWN", agent).statusCode()).isEqualTo(422);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.DisputeQueueRead' AND target_id = 'MERCHANT_RESPONDED'")).isPositive();
+
+        String insider = world.client.sessionWithRole(authorization, bought.owner().login(),
+                RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> theirs = world.client.get(queue, insider);
+        assertThat(theirs.statusCode()).as(theirs.body()).isEqualTo(200);
+        assertThat(theirs.body()).as("never one's own party's").doesNotContain(dispute);
+    }
+
+    @Test
+    @DisplayName("self-dealing at the operator's read (the gate's A5-F4): an operator whose identity is the dispute's own"
+            + " party is 403 bnpl.SelfDealingRefused at GET /v1/operator/bnpl-disputes/{id}, recorded FAILED against the"
+            + " dispute, nothing read (no bnpl.DisputeRead)")
+    void anInsidersReadIsSelfDealing() throws Exception {
+        Bought bought = bought();
+        String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
+        String insider = world.client.sessionWithRole(authorization, bought.owner().login(),
+                RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> refused = world.client.get("/v1/operator/bnpl-disputes/" + dispute, insider);
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("bnpl.SelfDealingRefused").doesNotContain("it never came");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ?", dispute)).isEqualTo(1);
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.DisputeRead' AND target_id = ?", dispute)).isZero();
+    }
+
+    /** The owner's wallet agreement closed by accounts' real close, as the owner - true when this call ended it. */
+    @SuppressWarnings("try") // The scopes are used for their close side effect (the established idiom).
+    private boolean closeWallet(CreditFixtures.Customer owner) {
+        try (com.finapp.platform.security.SecurityContext.Scope actor = com.finapp.platform.security.SecurityContext
+                .enter(new com.finapp.platform.security.Actor(owner.party().toString(),
+                        com.finapp.platform.security.ActorType.CUSTOMER));
+                com.finapp.platform.correlation.CorrelationContext.Scope flow = com.finapp.platform.correlation
+                        .CorrelationContext.enter(BnplPurchaseWorld.flow())) {
+            return transactions.inTransaction(uow -> {
+                java.util.UUID customer = partyStore.findLiveCustomerFor(uow, com.finapp.party.PartyId.of(owner.party()))
+                        .orElseThrow().id().value();
+                com.finapp.accounts.CustomerAccount wallet = customerAccountStore.findLive(uow, customer,
+                        com.finapp.accounts.ProductType.WALLET).orElseThrow();
+                return accountClosing.close(uow, customer, wallet.id()).orElseThrow().closed();
+            });
+        }
     }
 
     // ------------------------------------------------------------------ plumbing
