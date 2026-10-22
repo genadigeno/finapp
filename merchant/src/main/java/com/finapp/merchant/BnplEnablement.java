@@ -51,19 +51,38 @@ public record BnplEnablement(
     }
 
     /**
-     * A reason as the domain admits it: present, not blank, within {@link #MAX_REASON_LENGTH} - judged before anything is
-     * locked or written; `V010`'s CHECK holds the bound for every writer.
+     * A reason as the domain admits it: present, not blank, within {@link #MAX_REASON_LENGTH} and holding no card-number or
+     * bank-account shape ({@link com.finapp.sharedkernel.security.InstrumentShapes}, the platform's one screen - bnpl's
+     * {@code BnplReasons} precedent; the Phase 12 -> 13 gate's A5-F5) - judged before anything is locked or written.
+     * `V010`'s CHECK holds the bound for every writer, `V012`'s {@code merchant.holds_instrument_shape} twin the screen.
      *
-     * @throws IllegalArgumentException for a missing, blank or unbounded reason
+     * @throws ReasonRefused (an {@link IllegalArgumentException}) for a missing, blank, unbounded or instrument-bearing
+     *     reason
      */
     public static String reasoned(String reason) {
         if (reason == null || reason.isBlank()) {
-            throw new IllegalArgumentException("a BNPL enablement act is reasoned");
+            throw new ReasonRefused("a BNPL enablement act is reasoned");
         }
         if (reason.length() > MAX_REASON_LENGTH) {
-            throw new IllegalArgumentException("a reason is at most " + MAX_REASON_LENGTH + " characters");
+            throw new ReasonRefused("a reason is at most " + MAX_REASON_LENGTH + " characters");
+        }
+        if (com.finapp.sharedkernel.security.InstrumentShapes.holdsAny(reason)) {
+            throw new ReasonRefused("a reason must not hold a card-number or bank-account shape");
         }
         return reason;
+    }
+
+    /**
+     * A reason the domain does not admit - missing, blank, past the bound or holding an instrument shape. An
+     * {@link IllegalArgumentException}, as every refusal of {@link #reasoned} always was; the door answers it
+     * {@code 422 api.ValidationFailed}. Its message never repeats the reason ({@code INV-AUD-02}).
+     */
+    public static final class ReasonRefused extends IllegalArgumentException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        ReasonRefused(String detail) {
+            super(detail);
+        }
     }
 
     /** Identifiers and the state only - never a reason or a person ({@code INV-AUD-02}). */

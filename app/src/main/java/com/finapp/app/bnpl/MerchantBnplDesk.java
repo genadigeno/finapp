@@ -182,6 +182,12 @@ public final class MerchantBnplDesk {
             throw new ApiException(MerchantErrorCode.FEE_CURRENCY_MISMATCH,
                     "A fee schedule was used for a currency it does not price",
                     "the fee schedule's currency does not match.");
+        } catch (com.finapp.merchant.BnplEnablement.ReasonRefused reason) {
+            // The Phase 12 -> 13 gate's A5-F5: a reason the bean bounds admit but the instrument screen refuses - 422,
+            // never a 5xx; the detail never repeats the reason (INV-AUD-02).
+            throw new ApiException(com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED, "A reason was refused",
+                    "a reason of 1 to " + com.finapp.merchant.BnplEnablement.MAX_REASON_LENGTH + " characters, holding"
+                            + " no card or account number, is required.");
         }
     }
 

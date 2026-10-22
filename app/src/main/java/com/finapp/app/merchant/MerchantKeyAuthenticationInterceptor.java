@@ -150,8 +150,10 @@ public final class MerchantKeyAuthenticationInterceptor implements HandlerInterc
     }
 
     private static AuthenticatedMerchant tenantOf(MerchantApiKey key) {
-        // The key's scopes from the same authoritative row (P12-TSK-021): what it was issued to do.
-        return new AuthenticatedMerchant(key.merchantId(), key.id(), key.scopes());
+        // The key's scopes from the same authoritative row (P12-TSK-021): what it was issued to do - and by whom (the
+        // Phase 12 -> 13 gate's A5-F1: a money-moving merchant door refuses a key whose issuer is the customer's party).
+        return new AuthenticatedMerchant(key.merchantId(), key.id(), key.scopes(),
+                java.util.Optional.of(key.issuedBy()));
     }
 
     /**

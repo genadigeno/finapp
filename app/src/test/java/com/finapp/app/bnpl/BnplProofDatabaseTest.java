@@ -530,11 +530,19 @@ class BnplProofDatabaseTest {
     /** The refund, {@code beforeCommit} run inside its transaction after its last write - its locks still held. */
     private BnplRefunds.Refunded refund(Bought bought, String key, long minor, Runnable beforeCommit) {
         Actor merchant = new Actor(bought.merchant().id(), ActorType.MERCHANT);
+        // The merchant's key's issuer - the operator who administers its keys, a party of their own (A5-F1).
+        Optional<String> issuer;
+        try {
+            issuer = Optional.of(BnplApplicationClient.scalar("SELECT issued_by FROM merchant.merchant_api_key WHERE"
+                    + " merchant_id = ?::uuid ORDER BY issued_at LIMIT 1", bought.merchant().id()));
+        } catch (Exception unreadable) {
+            throw new IllegalStateException(unreadable);
+        }
         try (SecurityContext.Scope actor = SecurityContext.enter(merchant);
                 CorrelationContext.Scope flow = CorrelationContext.enter(BnplPurchaseWorld.flow())) {
             return transactions.inTransaction(uow -> {
                 BnplRefunds.Refunded refunded = refunds.atMerchant(uow, bought.purchase(), bought.merchant().ref(),
-                        new BnplRefunds.Request(key, eur(minor), "goods returned", Optional.of("key-under-test")),
+                        new BnplRefunds.Request(key, eur(minor), "goods returned", Optional.of("key-under-test"), issuer),
                         merchant, BnplApplicationClient.correlation());
                 beforeCommit.run();
                 return refunded;

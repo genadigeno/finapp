@@ -822,7 +822,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_api_key` | `algorithm` | `INTERNAL` | What produced the hash (`INV-IDN-02`) — a fixed vocabulary, and publishing it tells an attacker only what the code already says |
 | `merchant_api_key` | `status` | `CONFIDENTIAL` | Whether a counterparty's integration is live |
 | `merchant_api_key` | `issued_at` | `CONFIDENTIAL` | Dates a credential's life — correlates with an integration going live |
-| `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model. *(The Phase 12 → 13 transition gate, 2026-10-22, A5-F1: read in the key's authenticating lookup onto `AuthenticatedMerchant.issuedBy` - in memory, never printed (its `toString` omits it), never in a response or an audit summary - so the BNPL refund and dispute-accept doors refuse a key its customer's own party issued)* |
 | `merchant_api_key` | `revoked_at` | `CONFIDENTIAL` | Dates a security judgement |
 | `merchant_api_key` | `scopes` | `CONFIDENTIAL` | What the key may do beyond reads and payouts (`BNPL_REFUND`, `P12-TSK-021`) - an insert-time fact; tells an attacker which credential moves money |
 | `merchant_api_key_event` | `id` | `INTERNAL` | A server-assigned ordinal |
@@ -940,7 +940,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_bnpl_enablement` | `status` | `CONFIDENTIAL` | Whether a counterparty may offer credit to its customers - a commercial standing decision, `payout_destination.status`'s reasoning |
 | `merchant_bnpl_enablement` | `proposed_by` | `RESTRICTED-PII` | The acting operator's identity - `audit_record.actor_id`'s model |
 | `merchant_bnpl_enablement` | `proposed_at` | `CONFIDENTIAL` | Dates a standing decision |
-| `merchant_bnpl_enablement` | `proposal_reason` | `RESTRICTED-PII` | **Free text written by a person** - `audit_record.reason`'s ceiling; never returned by the API |
+| `merchant_bnpl_enablement` | `proposal_reason` | `RESTRICTED-PII` | **Free text written by a person** - `audit_record.reason`'s ceiling; never returned by the API; screened for instrument shapes by the domain and by merchant `V012`'s CHECK on this column, `decision_reason`, `withdrawal_reason` and `merchant_bnpl_fee_schedule_event.reason` (the Phase 12 → 13 gate's A5-F5, 2026-10-22) |
 | `merchant_bnpl_enablement` | `decided_by` | `RESTRICTED-PII` | The second operator's identity (or a rejecter's) |
 | `merchant_bnpl_enablement` | `decided_at` | `CONFIDENTIAL` | Dates the decision - the database's instant, after the lock |
 | `merchant_bnpl_enablement` | `decision_reason` | `RESTRICTED-PII` | As `proposal_reason` |
@@ -968,7 +968,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `bnpl_fee_pin` | `gross_amount_minor` | `RESTRICTED-FINANCIAL` | An amount - what was financed, never what is owed (`INV-MER-02`) |
 | `bnpl_fee_pin` | `gross_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
 | `bnpl_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
-| `bnpl_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was fixed - with `pinned_by`, the provenance of a money decision |
+| `bnpl_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was fixed - with `pinned_by`, the provenance of a money decision - the database's instant in the pinning transaction (merchant `V012`, the gate's A3-M1) |
 | `bnpl_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity (the customer whose acceptance made the purchase) - `audit_record.actor_id`'s model |
 
 ### `checkout` — *added by `P6-TSK-006`*

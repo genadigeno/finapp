@@ -79,6 +79,7 @@ class MerchantBnplEnablementDatabaseTest {
     @Autowired private FeeSchedules feeSchedules;
     @Autowired private MerchantAdministration administration;
     @Autowired private MerchantBnplDesk desk;
+    @Autowired private com.finapp.platform.audit.AuditWriter<Connection> auditWriter;
 
     @Test
     @DisplayName("a merchant is BNPL-enabled only by two people: proposed, then approved by a second operator")
@@ -320,6 +321,159 @@ class MerchantBnplEnablementDatabaseTest {
                         refused -> assertThat(refused.standing()).isEqualTo(BnplMerchants.Standing.NOT_ENABLED));
         assertThat(rawCount("SELECT count(*) FROM merchant.bnpl_fee_pin WHERE merchant_id = ?", merchant.value()))
                 .isZero();
+    }
+
+    // ------------------------------------------------------------------ the Phase 12 -> 13 gate (A5-F5, A3-M1)
+
+    private static final String CARD = "card 4111 1111 1111 1111 on file";
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F5: merchant V012's twin agrees with InstrumentShapes over a corpus; every"
+            + " BNPL reason column refuses an instrument shape for a raw writer past the domain - the proposal, the"
+            + " decision, the withdrawal and the fee schedule's history; the door answers 422, never a 5xx")
+    void everyBnplReasonColumnRefusesAnInstrumentShape() throws Exception {
+        List<String> corpus = List.of(CARD, "card 4111-1111-1111-1111", "4111111111111111", "4111 1111 1111 1112",
+                "pay to GB82 WEST 1234 5698 7654 32", "GB82WEST12345698765432", "GB82 WEST 1234 5698 7654 33",
+                "contract 0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b signed", "FY26 plan 2027 will need more",
+                "invoice 2026-10-22 order 12345", "merchant contract signed");
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement verdict = app.prepareStatement("SELECT merchant.holds_card_number_shape(?),"
+                        + " merchant.holds_account_identifier_shape(?), merchant.holds_instrument_shape(?)")) {
+            for (String text : corpus) {
+                verdict.setString(1, text);
+                verdict.setString(2, text);
+                verdict.setString(3, text);
+                try (ResultSet row = verdict.executeQuery()) {
+                    row.next();
+                    boolean card = com.finapp.sharedkernel.security.InstrumentShapes.holdsCardNumber(text);
+                    boolean account = com.finapp.sharedkernel.security.InstrumentShapes.holdsAccountIdentifier(text);
+                    assertThat(row.getBoolean(1)).as("card verdict for [%s]", text).isEqualTo(card);
+                    assertThat(row.getBoolean(2)).as("account verdict for [%s]", text).isEqualTo(account);
+                    assertThat(row.getBoolean(3)).isEqualTo(card || account);
+                }
+            }
+        }
+
+        MerchantId merchant = merchant();
+        assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.merchant_bnpl_enablement"
+                + " (id, merchant_id, status, proposed_by, proposed_at, proposal_reason) VALUES (?, ?, 'PROPOSED', 'raw',"
+                + " now(), ?)", UUID.randomUUID(), merchant.value(), CARD))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("merchant_bnpl_enablement_proposal_reason_no_instrument_shape");
+        Actor proposer = operator();
+        BnplEnablement proposed = act(proposer, uow -> enablements.propose(uow, merchant, "contract", proposer,
+                correlation()));
+        assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "UPDATE merchant.merchant_bnpl_enablement SET"
+                + " status = 'REJECTED', decided_by = 'raw', decision_reason = ? WHERE id = ?", CARD,
+                proposed.id().value()))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("merchant_bnpl_enablement_decision_reason_no_instrument_shape");
+        Actor approver = operator();
+        act(approver, uow -> enablements.approve(uow, merchant, proposed.id(), "reviewed", approver, correlation()));
+        assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "UPDATE merchant.merchant_bnpl_enablement SET"
+                + " status = 'WITHDRAWN', withdrawn_by = 'raw', withdrawal_reason = ? WHERE id = ?", CARD,
+                proposed.id().value()))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("merchant_bnpl_enablement_withdrawal_reason_no_instrument_shape");
+        FeeSchedule schedule = schedule(operator(), RefundFeePolicy.RETURNED);
+        assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "INSERT INTO"
+                + " merchant.merchant_bnpl_fee_schedule_event (merchant_id, product, to_fee_schedule_id, reason, actor_id,"
+                + " actor_type, occurred_at) VALUES (?, 'BNPL_PAY_IN_4', ?, ?, 'raw', 'EMPLOYEE', now())",
+                merchant.value(), schedule.id().value(), "pay to GB82 WEST 1234 5698 7654 32"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("merchant_bnpl_fee_schedule_event_reason_no_instrument_shape");
+        assertThat(status(proposed)).as("the raw writers changed nothing").isEqualTo("ACTIVE");
+
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()));
+                SecurityContext.Scope who = SecurityContext.enter(operator())) {
+            assertThatThrownBy(() -> desk.propose(UUID.randomUUID().toString(), merchant().value().toString(), CARD))
+                    .isInstanceOfSatisfying(com.finapp.platform.api.ApiException.class, refused -> {
+                        assertThat(refused.errorCode())
+                                .isEqualTo(com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED);
+                        assertThat(refused.clientDetail().orElseThrow()).doesNotContain("4111");
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A3-M1: an instance whose JVM clock runs two hours past a version's"
+            + " effective_from still pins the version in force on the DATABASE's clock, stamped with the database's"
+            + " instant; and V012 refuses, for every writer, a pin whose instant is outside its own transaction's span")
+    void thePinIsResolvedAndStampedOnTheDatabaseClock() throws Exception {
+        MerchantId merchant = enabledMerchant();
+        Actor operator = operator();
+        FeeSchedule schedule = schedule(operator, RefundFeePolicy.RETURNED);
+        act(operator, uow -> pricing.assign(uow, merchant, MerchantBnplProduct.BNPL_PAY_IN_4, schedule.id(),
+                "contract", operator, correlation()));
+        java.time.Instant databaseNow = databaseNow();
+        // Version 2: a lower rate, in force an hour from the database's now.
+        act(operator, uow -> feeSchedules.addVersion(uow, schedule.id(), new FeeSchedules.NewVersion(
+                FeeRate.of(new BigDecimal("0.0100")), Money.ofMinorUnits(0, EUR), RoundingPolicy.HALF_EVEN,
+                RefundFeePolicy.RETURNED, Optional.of(databaseNow.plusSeconds(3_600)), "the next rate")));
+        UUID inForce = scalarUuid("SELECT id FROM merchant.fee_schedule_version WHERE fee_schedule_id = ? AND version"
+                + " = 1", schedule.id().value());
+        Clock skewed = Clock.offset(Clock.systemUTC(), java.time.Duration.ofHours(2));
+        BnplPricing onASkewedInstance = new BnplPricing(new com.finapp.merchant.JdbcBnplPricingStore(),
+                new com.finapp.merchant.JdbcBnplEnablementStore(), new com.finapp.merchant.JdbcMerchantStore(),
+                new com.finapp.merchant.JdbcFeeScheduleStore(), auditWriter, IDS, skewed);
+        UUID purchase = UUID.randomUUID();
+        Actor customer = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+
+        com.finapp.merchant.FeeAssessment split = act(customer, uow -> onASkewedInstance.pin(uow, merchant,
+                MerchantBnplProduct.BNPL_PAY_IN_4, purchase, Money.ofMinorUnits(10_000, EUR), customer));
+
+        assertThat(split.version().value()).as("version 1, in force on the database's clock").isEqualTo(inForce);
+        assertThat(split.fee()).isEqualTo(Money.ofMinorUnits(299, EUR));
+        assertThat(scalarUuid("SELECT fee_schedule_version_id FROM merchant.bnpl_fee_pin WHERE purchase_id = ?",
+                purchase)).isEqualTo(inForce);
+        assertThat(count("SELECT count(*) FROM merchant.bnpl_fee_pin WHERE purchase_id = ?::uuid AND pinned_at"
+                + " BETWEEN now() - interval '5 minutes' AND now() + interval '5 minutes'", purchase.toString()))
+                .as("stamped with the database's instant, not the skewed instance's").isEqualTo(1);
+
+        for (String instant : List.of("now() + interval '1 hour'", "now() - interval '1 hour'")) {
+            assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.bnpl_fee_pin"
+                    + " (purchase_id, merchant_id, product, fee_schedule_version_id, gross_amount_minor, gross_currency,"
+                    + " gross_scale, pinned_at, pinned_by) VALUES (?, ?, 'BNPL_PAY_IN_4', ?, 10000, 'EUR', 2, " + instant
+                    + ", 'raw')", UUID.randomUUID(), merchant.value(), inForce))
+                    .as(instant).isInstanceOf(SQLException.class)
+                    .hasMessageContaining("its own transaction's on the database clock");
+        }
+    }
+
+    @Test
+    @DisplayName("A3-M1's other half: a version created to take effect IMMEDIATELY, stamped by an instance an hour ahead of"
+            + " the database, is in force from its commit - the resolution and V012's pin trigger both read it so - and"
+            + " the pin is stamped with the database's instant")
+    void anImmediateVersionStampedAheadIsInForceAtOnce() throws Exception {
+        MerchantId merchant = pricedMerchant();
+        UUID schedule = scalarUuid("SELECT fee_schedule_id FROM merchant.merchant_bnpl_fee_schedule WHERE merchant_id = ?"
+                + " AND product = 'BNPL_PAY_IN_4'", merchant.value());
+        UUID immediate = IDS.next();
+        // Version 2: effective_from = created_at (immediate), both an hour past the database's clock - a fast instance's.
+        rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.fee_schedule_version (id, fee_schedule_id, version, rate,"
+                + " fixed_amount_minor, fixed_currency, fixed_scale, rounding_policy, refund_fee_policy, effective_from,"
+                + " created_at, created_by) SELECT ?, ?, 2, 0.0100, 0, 'EUR', 2, 'HALF_EVEN', 'RETURNED',"
+                + " now() + interval '1 hour', now() + interval '1 hour', 'a fast instance'", immediate, schedule);
+        BnplPurchaseId purchase = BnplPurchaseId.next(IDS);
+
+        MerchantFeeSplit split = act(operator(), uow -> bnplMerchants.pinFee(uow, merchant.value(),
+                BnplProduct.BNPL_PAY_IN_4, purchase, Money.ofMinorUnits(10_000, EUR)));
+
+        assertThat(split.fee()).as("priced by the immediate version's 1.00 %").isEqualTo(Money.ofMinorUnits(100, EUR));
+        assertThat(scalarUuid("SELECT fee_schedule_version_id FROM merchant.bnpl_fee_pin WHERE purchase_id = ?",
+                purchase.value())).isEqualTo(immediate);
+        assertThat(count("SELECT count(*) FROM merchant.bnpl_fee_pin WHERE purchase_id = ?::uuid AND pinned_at"
+                + " < now() + interval '5 minutes'", purchase.value().toString()))
+                .as("stamped with the database's instant, not the version's").isEqualTo(1);
+    }
+
+    private static java.time.Instant databaseNow() throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement("SELECT clock_timestamp()");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            return row.getObject(1, java.time.OffsetDateTime.class).toInstant();
+        }
     }
 
     // ------------------------------------------------------------------ fixtures

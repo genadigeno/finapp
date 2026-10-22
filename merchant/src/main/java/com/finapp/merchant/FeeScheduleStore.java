@@ -73,7 +73,14 @@ public interface FeeScheduleStore<T> {
 
     /**
      * The version effective at {@code instant}: the greatest {@code effective_from <= instant},
-     * ties broken by the greater version number.
+     * ties broken by the greater version number - <strong>and a version created to take effect
+     * immediately ({@code effective_from = created_at}) is in force from its commit</strong>,
+     * whatever {@code instant} says (the Phase 12 -> 13 gate's A3-M1). {@code BnplPricing} asks
+     * at the database's clock, while an immediate version is stamped with its creating instance's
+     * clock: an instance running ahead of the database would otherwise leave the version it has
+     * just created out of force until the database's clock caught up. A scheduled version
+     * ({@code effective_from > created_at}) is judged on {@code instant} alone - the case A3-M1
+     * is about. BNPL's resolution only; the card side's is {@link #findEffectiveVersionFor}.
      *
      * <p>No lock. The rows are immutable, so there is nothing to serialize against; a version
      * committed concurrently with {@code effective_from = instant} may or may not be seen, and

@@ -129,8 +129,8 @@ final class BnplProofWorld {
                 BnplConditionWorld.CORRELATION)).dispute();
         fakes.now = date.atTime(13, 0).toInstant(ZoneOffset.UTC);
         return fakes.inTransaction(() -> disputes.respond(BnplApplicationFakes.UOW, dispute.id(), base.merchant,
-                new BnplDisputes.Response(BnplDisputes.Decision.ACCEPT, "we accept", "merchant-key-1"), base.merchantActor,
-                BnplConditionWorld.CORRELATION));
+                new BnplDisputes.Response(BnplDisputes.Decision.ACCEPT, "we accept", "merchant-key-1",
+                        BnplKeyIssuer.KEY_ISSUER), base.merchantActor, BnplConditionWorld.CORRELATION));
     }
 
     // ------------------------------------------------------------------ readings

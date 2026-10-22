@@ -17,8 +17,15 @@ public enum MerchantApiKeyScope {
 
     /**
      * Refund a BNPL purchase made at the merchant - {@code POST /v1/merchant/bnpl-purchases/{id}/refunds}, the platform's
-     * first merchant-key refund door. A refund moves money out of the merchant's payable, so a read-and-payout key must
-     * not reach it by default.
+     * first merchant-key refund door - <em>and accept a BNPL dispute</em>, {@code POST
+     * /v1/merchant/bnpl-disputes/{id}/response} with {@code ACCEPT}, which is a refund of the disputed amount at once (the
+     * Phase 12 -> 13 gate's A5-F1/F6; contesting needs no scope). A refund moves money out of the merchant's payable, so a
+     * read-and-payout key must not reach it by default.
+     *
+     * <p><strong>Issuing it is a money-operating act</strong> (A5-F1): the operator who issues a key carrying this scope
+     * sees its secret once, so issuance asks {@code PAYMENT_REFUND} beside {@code MERCHANT_ADMINISTER} - an operator
+     * holding only the latter could otherwise mint their own refund power - and both refund doors refuse a key whose
+     * issuer is the purchase's own party, or one the platform cannot place in a party ({@code bnpl.SelfDealingRefused}).
      */
     BNPL_REFUND;
 

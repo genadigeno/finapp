@@ -153,9 +153,11 @@ public class MerchantBeans {
     MerchantApiKeyOperations merchantApiKeyOperations(
             com.finapp.merchant.MerchantApiKeys merchantApiKeys,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.identity.Authorization authorization) {
+        // Authorization: a scope's own permission beside the route's (the Phase 12 -> 13 gate's A5-F1).
         return new MerchantApiKeyOperations(
-                merchantApiKeys, new TransactionTemplate(transactionManager), dataSource);
+                merchantApiKeys, new TransactionTemplate(transactionManager), dataSource, authorization);
     }
 
     @Bean

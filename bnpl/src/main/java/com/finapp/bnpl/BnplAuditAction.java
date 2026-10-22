@@ -132,7 +132,9 @@ public enum BnplAuditAction implements AuditableAction {
             "A merchant's API key that was not issued with the BNPL_REFUND scope tried to refund a BNPL purchase and was"
                     + " refused 403 bnpl.RefundScopeRequired before anything was locked or written; recorded FAILED in a"
                     + " transaction of its own so the attempt survives. Its target the purchase named in the path (not"
-                    + " confirmed to be the merchant's - nothing was read); the summary names the key id.",
+                    + " confirmed to be the merchant's - nothing was read); the summary names the key id. Since the Phase"
+                    + " 12 -> 13 gate (A5-F1/F6) also a scope-less key's ACCEPT of a BNPL dispute, which refunds: its target"
+                    + " the dispute named (bnpl_dispute), the summary the act and the key id.",
             false),
 
     /** An operator tried to act on a BNPL purchase, dispute or agreement of their own party (`P12-TSK-021`, `-023`, `-024`). */
@@ -146,7 +148,10 @@ public enum BnplAuditAction implements AuditableAction {
                     + " their own party or the dispute queue unplaced (the gate's A5-F4, A7-2) - and was refused 403"
                     + " bnpl.SelfDealingRefused with nothing written; recorded FAILED in a transaction of its own after the"
                     + " act rolled back. Its target the purchase, the dispute, the agreement or the queue's status; the"
-                    + " summary names it and the act - never an amount.",
+                    + " summary names it and the act - never an amount. Since the Phase 12 -> 13 gate the operator refund door"
+                    + " fails closed too (A7-6), and a merchant key whose issuer is the purchase's own party, or cannot be placed in"
+                    + " one, refunding or accepting a dispute (A5-F1) - its actor the merchant, its target the purchase, the"
+                    + " summary the act and the key id, never the issuer.",
             false),
 
     /** A BNPL servicing agent proposed the reversal of a repayment (`P12-TSK-024`). */

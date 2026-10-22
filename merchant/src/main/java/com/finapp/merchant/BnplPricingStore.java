@@ -39,4 +39,11 @@ public interface BnplPricingStore<T> {
 
     /** The purchase's pin, or empty. */
     Optional<BnplFeePin> findPin(T unitOfWork, UUID purchaseRef);
+
+    /**
+     * The database's clock now - {@code clock_timestamp()}, read on the caller's transaction (the Phase 12 -> 13 gate's
+     * A3-M1): the one instant every instance shares, at which the fee version in force is resolved and the pin stamped,
+     * read after the standing's share locks were granted. Never an instance's own clock.
+     */
+    java.time.Instant databaseNow(T unitOfWork);
 }

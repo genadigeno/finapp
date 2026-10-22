@@ -924,7 +924,8 @@ class BnplPurchaseDatabaseTest {
 
     /** A key issued to {@code merchant} with the BNPL_REFUND scope, by the operator who administers its keys. */
     private String refundScopedKey(BnplApplicationClient.Merchant merchant) throws Exception {
-        String operator = world.client.operatorSession(authorization, com.finapp.identity.RoleName.MERCHANT_ADMINISTRATOR);
+        // MERCHANT_ADMINISTER beside PAYMENT_REFUND (the Phase 12 -> 13 gate's A5-F1).
+        String operator = world.client.refundKeyIssuerSession(authorization);
         HttpResponse<String> issued = world.client.post("/v1/operator/merchants/" + merchant.id()
                 + "/api-keys?scope=BNPL_REFUND", null, operator, BnplApplicationClient.key());
         assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);

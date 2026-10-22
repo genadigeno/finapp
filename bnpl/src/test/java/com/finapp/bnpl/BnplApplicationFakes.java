@@ -1342,6 +1342,11 @@ final class BnplApplicationFakes {
                 new LinkedHashMap<>();
         /** A wallet's funds before any line here. */
         final Map<com.finapp.ledger.LedgerAccountId, Money> funds = new LinkedHashMap<>();
+        /**
+         * A wallet's ACTIVE holds' total (the Phase 12 -> 13 gate's A6-F3): the ledger's {@code AvailableBalance} is the
+         * posted balance LESS the active holds, and {@link #availableUnderLock} is that - never the posted balance alone.
+         */
+        final Map<com.finapp.ledger.LedgerAccountId, Money> holds = new LinkedHashMap<>();
         final Map<com.finapp.ledger.AccountPurpose, com.finapp.ledger.LedgerAccountId> operational =
                 new EnumMap<>(com.finapp.ledger.AccountPurpose.class);
         final List<Line> lines = new ArrayList<>();
@@ -1431,7 +1436,9 @@ final class BnplApplicationFakes {
                             : available.minus(line.amount());
                 }
             }
-            return available;
+            // Posted less the active holds - the ledger's AvailableBalance (A6-F3).
+            Money held = holds.get(account);
+            return held == null ? available : available.minus(held);
         }
 
         @Override

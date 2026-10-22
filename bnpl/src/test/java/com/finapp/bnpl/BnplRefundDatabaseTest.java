@@ -324,6 +324,49 @@ class BnplRefundDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A2-2: V012's value-date floor rank, live - a raw refund valued the day before"
+            + " its ACTIVE obligation's floor is refused for the migrator and the application role alike, P0001 with the"
+            + " floor's own message (the rank that refused, not another)")
+    void aRefundValuedBeforeTheFloorIsRefusedForEveryWriter() throws SQLException {
+        World world = new World();
+        Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        String beforeTheFloor = rawRefund(bought, 18000, 0, 0, 18000, 18000, 0, "NONE", 0,
+                "(SELECT bnpl.principal_value_floor(o.id)) - 1");
+        for (java.util.function.Supplier<Connection> role : List.<java.util.function.Supplier<Connection>>of(
+                BnplRefundDatabaseTest::migrator, BnplRefundDatabaseTest::application)) {
+            try (Connection writer = BnplClockFrame.framed(role.get(), world.frameOn(bought.purchaseDate().plusDays(1)))) {
+                assertThatThrownBy(() -> {
+                            try (Statement insert = writer.createStatement()) {
+                                insert.execute(beforeTheFloor);
+                            }
+                        })
+                        .isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState())
+                                .isEqualTo("P0001"))
+                        .hasMessageContaining("a BNPL refund is value-dated on or after its obligation's floor");
+                writer.rollback();
+            }
+        }
+        assertThat(scalar("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + bought.purchase().value() + "'"))
+                .isEqualTo("0");
+    }
+
+    private static Connection migrator() {
+        try {
+            return DatabaseRoles.migrator();
+        } catch (SQLException unavailable) {
+            throw new IllegalStateException(unavailable);
+        }
+    }
+
+    private static Connection application() {
+        try {
+            return DatabaseRoles.application();
+        } catch (SQLException unavailable) {
+            throw new IllegalStateException(unavailable);
+        }
+    }
+
     // ------------------------------------------------------------------ pay-in-N
 
     @Test
@@ -429,6 +472,13 @@ class BnplRefundDatabaseTest {
     /** A raw refund row (the migrator's) - the trigger's ranks judge it for every writer. */
     private static String rawRefund(Purchased bought, long amount, long before, long fee, long debit, long unbilled,
             long billed, String excessTo, long excess) {
+        return rawRefund(bought, amount, before, fee, debit, unbilled, billed, excessTo, excess,
+                "(SELECT bnpl.principal_value_floor(o.id))");
+    }
+
+    /** The raw refund row valued at {@code valueDate}, a SQL expression over the obligation {@code o}. */
+    private static String rawRefund(Purchased bought, long amount, long before, long fee, long debit, long unbilled,
+            long billed, String excessTo, long excess, String valueDate) {
         return "INSERT INTO bnpl.bnpl_refund (id, purchase_id, obligation_id, merchant_id, door, requested_by, refund_key,"
                 + " currency, scale, amount_minor, refunded_before_minor, fee_returned_minor, payable_debit_minor,"
                 + " cancelled_unbilled_minor, cancelled_billed_minor, excess_minor, excess_to,"
@@ -439,7 +489,7 @@ class BnplRefundDatabaseTest {
                 + unbilled + ", " + billed + ", " + excess + ", '" + excessTo + "', 0, 0, 'REFUND_ALLOCATION_ENGINE_V1',"
                 + " o.agreement_id, (SELECT max(version) FROM bnpl.bnpl_agreement WHERE obligation_id = o.id),"
                 + " (SELECT max(schedule_version) FROM bnpl.bnpl_schedule WHERE obligation_id = o.id), 'raw',"
-                + " gen_random_uuid(), (SELECT bnpl.principal_value_floor(o.id)), clock_timestamp(), 'raw'"
+                + " gen_random_uuid(), " + valueDate + ", clock_timestamp(), 'raw'"
                 + " FROM bnpl.purchase p JOIN bnpl.bnpl_obligation o ON o.purchase_id = p.id WHERE p.id = '"
                 + bought.purchase().value() + "'";
     }
@@ -477,7 +527,8 @@ class BnplRefundDatabaseTest {
                         IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
-                closures, (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
+                closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS,
+                CLOCK);
         private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
                 (uow, party) -> true, ports, ports, ports, ports, book, new JdbcOutboxWriter(), new JdbcAuditWriter(),
                 IDS, CLOCK);
@@ -542,7 +593,7 @@ class BnplRefundDatabaseTest {
             Actor merchant = new Actor(bought.merchant().toString(), ActorType.MERCHANT);
             return BnplClockFrame.inOneTransaction(frameOn(date), uow -> refunds.atMerchant(uow, bought.purchase(),
                     bought.merchant(), new BnplRefunds.Request(key, Money.ofMinorUnits(minor, EUR), "goods returned",
-                            Optional.of("key-under-test")), merchant, correlation()));
+                            Optional.of("key-under-test"), BnplKeyIssuer.KEY_ISSUER), merchant, correlation()));
         }
 
         <R> List<R> concurrently(int racers, Racer<R> racer) throws Exception {
