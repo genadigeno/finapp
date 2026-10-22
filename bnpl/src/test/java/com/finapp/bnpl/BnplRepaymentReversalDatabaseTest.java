@@ -309,6 +309,48 @@ class BnplRepaymentReversalDatabaseTest {
     }
 
     @Test
+    @DisplayName("A2-1 (the Phase 12 transition gate): approved on a clock frame stepped back behind the repayment it"
+            + " reverses - the floor further back - the reversal is valued the repayment's own date, its F8 entry with it;"
+            + " beneath, bnpl V020 refuses a raw approval valued between the floor and the repayment, for every writer")
+    void aReversalSteppedBackBehindItsRepaymentIsValuedOnIt() throws SQLException {
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.plain();
+        world.base.serviceOn(bought.due(2), bought);
+        LocalDate paidOn = bought.due(2).plusDays(4);
+        BnplPurchaseStore.Repayment late = world.base.repayOn(paidOn, bought, "late", 150_00).repayment();
+        assertThat(late.valueDate()).isEqualTo(paidOn);
+        assertThat(LocalDate.parse(scalar("SELECT bnpl.principal_value_floor('" + bought.id() + "')::text")))
+                .as("the floor stands before the day the clock steps back to").isBefore(paidOn.minusDays(1));
+
+        // The rank alone, first: a raw approval valued the day before the repayment - on or after the floor, inside the
+        // ceiling - is refused by V020's own arm, for the owner too.
+        BnplRepaymentReversal raw = world.propose(paidOn, bought, late.id(), world.operator());
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            assertThatThrownBy(() -> {
+                        try (Statement statement = migrator.createStatement()) {
+                            statement.execute("UPDATE bnpl.bnpl_repayment_reversal SET status = 'APPROVED',"
+                                    + " decided_by = 'other', decided_by_type = 'EMPLOYEE', decision_reason = 'r',"
+                                    + " journal_entry_id = gen_random_uuid(), value_date = DATE '" + paidOn.minusDays(1)
+                                    + "' WHERE id = '" + raw.id() + "'");
+                        }
+                    }).isInstanceOf(SQLException.class)
+                    .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).isEqualTo("P0001"))
+                    .hasMessageContaining("never valued before the repayment it reverses");
+            migrator.rollback();
+        }
+
+        // The domain, on the clock stepped back to the day before the repayment.
+        BnplRepaymentReversal approved = world.approve(paidOn.minusDays(1), bought, late.id(), raw.id(),
+                world.operator()).reversal();
+        assertThat(approved.valueDate()).contains(paidOn);
+        assertThat(LocalDate.parse(scalar("SELECT value_date::text FROM bnpl.bnpl_repayment_reversal WHERE id = '"
+                + approved.id() + "'"))).isEqualTo(paidOn);
+        assertThat(world.base.book.entryLines(null, approved.entry().orElseThrow())).isNotEmpty();
+        assertThat(world.due(bought, 2, "PRINCIPAL")).as("what it paid is due again").isEqualTo(150_00);
+    }
+
+    @Test
     @DisplayName("the trigger values a reversal never before the floor, and an approval negating nothing fails at commit")
     void theTriggersRanks() throws SQLException {
         BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();

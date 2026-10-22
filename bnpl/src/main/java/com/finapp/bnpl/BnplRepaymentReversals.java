@@ -73,8 +73,10 @@ import lombok.RequiredArgsConstructor;
  *       ({@link RepaymentNotReversible} - the exact swap must never drive it below zero; later allocations are never
  *       re-cut); F3's entry exactly the repayment's (one wallet debit of its amount; its credits its allocation's per
  *       account) - else an {@link AllocationAnomaly};
- *   <li>the database clock after the locks: posted today, valued {@code max(today, floor)} - the floor read under B4, so
- *       the principal re-instated never joins a date already accrued (the Phase 11 gate's R1);
+ *   <li>the database clock after the locks: posted today, valued {@code max(today, floor, the repayment's value date)} -
+ *       the floor read under B4, so the principal re-instated never joins a date already accrued (the Phase 11 gate's R1),
+ *       and never before the repayment it reverses, so no date counts the amount twice (the Phase 12 transition gate's
+ *       A2-1);
  *   <li><strong>(L6)</strong> when the repayment paid principal, the currency's capital row and headroom at least the
  *       principal re-instated ({@link CapitalUnavailable}, {@code INV-LND-13}, {@code INV-BNPL-10});
  *   <li><strong>(P)</strong> the wallet the repayment debited - read from F3's entry, its ledger row {@code FOR UPDATE},
@@ -234,11 +236,14 @@ public final class BnplRepaymentReversals {
         List<JournalLine> swapped = swapped(unitOfWork, reversed, accounts);
         LedgerAccountId wallet = walletOf(swapped);
 
-        // The database clock, read after the locks, in the pinned zone: posted today, valued never before the floor.
+        // The database clock, read after the locks, in the pinned zone: posted today, valued never before the floor - and
+        // never before the repayment it reverses (the Phase 12 transition gate's A2-1): on a clock stepped back, a date
+        // between the two would carry the re-opened amount twice (the repayment's credit not yet valued, the reversal's
+        // debit already) and over-charge its day's pay-in-N interest, a figure the replay re-derives identically.
         Instant now = servicing.databaseNow(unitOfWork);
         LocalDate today = LocalDate.ofInstant(now, ZoneId.of(locked.servicingZone()));
         LocalDate floor = servicing.principalValueFloor(unitOfWork, obligation.id());
-        LocalDate valueDate = floor.isAfter(today) ? floor : today;
+        LocalDate valueDate = valuedOn(today, floor, reversed.valueDate());
 
         // (L6) The capital row, when principal is re-instated: headroom judged under it (INV-LND-13, INV-BNPL-10).
         Money reinstated = paid(reversed, AllocationComponent.PRINCIPAL);
@@ -393,6 +398,16 @@ public final class BnplRepaymentReversals {
         return store.lockReversal(unitOfWork, reversal)
                 .filter(found -> found.obligation().equals(obligation) && found.repayment().equals(repayment))
                 .orElseThrow(NotFound::new);
+    }
+
+    /**
+     * A reversal's value date: {@code max(today, floor, the reversed repayment's value date)} - never before the floor (the
+     * Phase 11 gate's R1) and never before the repayment it undoes (the Phase 12 transition gate's A2-1); {@code bnpl V020}'s
+     * edge trigger holds both for every writer.
+     */
+    static LocalDate valuedOn(LocalDate today, LocalDate floor, LocalDate original) {
+        LocalDate valued = floor.isAfter(today) ? floor : today;
+        return original.isAfter(valued) ? original : valued;
     }
 
     private static void notAPayoff(BnplPurchaseStore.Repayment reversed) {

@@ -75,7 +75,9 @@ import java.util.UUID;
  *   <li><strong>R1's arm</strong> ({@link Check#VALUE_DATE}, {@link Check#ACCRUAL}): no principal fact - a repayment, an
  *       application, a refund, a reversal - valued before the obligation's floor as it stood when the fact was written
  *       ({@code bnpl.principal_value_floor}'s rule replayed from the rows); and every accrual's base is still the final
- *       ledger's principal valued through its date, so a principal line dated back into an accrued date is found.
+ *       ledger's principal valued through its date, so a principal line dated back into an accrued date is found. And a
+ *       reversal never valued before the repayment it reverses (the Phase 12 transition gate's A2-1) - which no accrual
+ *       finds, each reading the same lines.
  *   <li><strong>RG-M5</strong> ({@link Check#CATCH_UP_MISSING}): held credit standing beside a billed item still due at a
  *       servicing STEP's end - judged where a step's later slots write (its collection attempts, its condition changes,
  *       its late fees), after the step's catch-up application: never between steps, where a reversal may legitimately
@@ -123,7 +125,10 @@ public final class BnplReplayProof {
         CATCH_UP_MISSING,
         /** A repayment's allocation does not re-derive. */
         ALLOCATION,
-        /** A principal fact is valued before its floor, or a payoff fact away from the payoff's date (R1, RG-M1). */
+        /**
+         * A principal fact is valued before its floor, or a payoff fact away from the payoff's date (R1, RG-M1) - or a
+         * reversal before the repayment it reverses (the Phase 12 transition gate's A2-1).
+         */
         VALUE_DATE,
         /** A refund does not re-derive. */
         REFUND,
@@ -1023,6 +1028,10 @@ public final class BnplReplayProof {
                 principalFactValued(reversal.id(), value, at);
                 reversal.entry().filter(entry -> !valuedOn(entry, value))
                         .ifPresent(entry -> diverged(Check.VALUE_DATE, reversal.id()));
+                // Never before the repayment it reverses (the Phase 12 transition gate's A2-1): a date between the two counts
+                // the re-opened amount twice, and every accrual reads the same lines - so ACCRUAL alone re-derives it.
+                reversed.filter(original -> value.isBefore(original.valueDate()))
+                        .ifPresent(original -> diverged(Check.VALUE_DATE, reversal.id()));
             });
             for (BnplRecord.Negation negation : stamped.negations()) {
                 BnplPurchaseStore.Allocation line = allocations.get(negation.allocation());

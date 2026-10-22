@@ -3103,6 +3103,8 @@ final class BnplApplicationFakes {
         boolean waiverTermDropped;
         /** Drop the waiver triggers' bound - for a probe only. */
         boolean waiverRoomDropped;
+        /** Drop {@code bnpl V020}'s rank - a reversal never valued before its repayment (A2-1) - for a probe only. */
+        boolean reversalOriginalRankDropped;
 
         record State(Map<UUID, BnplRepaymentReversal> reversals, Map<UUID, UUID> negations,
                 Map<UUID, BnplWaiver> waiverRows, Map<UUID, String> decisionProposers) {}
@@ -3226,10 +3228,18 @@ final class BnplApplicationFakes {
                 }
                 java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, row.obligation());
                 java.time.LocalDate value = decision.valueDate().orElseThrow();
+                // bnpl V020 (the Phase 12 transition gate's A2-1): the ceiling raised by the repayment's own date, and
+                // never valued before it.
+                java.time.LocalDate original = purchases.repayments.get(row.repayment()).valueDate();
                 java.time.LocalDate ceiling = today().isAfter(floor) ? today() : floor;
+                ceiling = original.isAfter(ceiling) ? original : ceiling;
                 if (value.isBefore(floor) || value.isAfter(ceiling)) {
                     throw new BnplStorageException("a BNPL repayment reversal is valued on or after its obligation's"
                             + " floor and never after today: P0001");
+                }
+                if (!reversalOriginalRankDropped && value.isBefore(original)) {
+                    throw new BnplStorageException("a BNPL repayment reversal is never valued before the repayment it"
+                            + " reverses: P0001");
                 }
             }
             reversals.put(row.id(), new BnplRepaymentReversal(row.id(), row.obligation(), row.repayment(),
