@@ -430,7 +430,11 @@ class CheckoutFinancingDatabaseTest {
                         .isInstanceOf(SQLException.class);
 
                 CheckoutSession dead = insertOpen(Duration.ofMillis(200));
-                Thread.sleep(400);
+                // Past the deadline on the DATABASE clock - the rule's own (statement_timestamp()), never the JVM's: the
+                // deadline is stamped from the JVM clock, so a fixed 400 ms sleep left a database clock lagging the JVM's
+                // by more than 200 ms before the deadline, the edge admitted and the deferred order rule refusing at
+                // commit instead (the Phase 12 -> 13 transition gate's baseline, G3 - a test defect, not production's).
+                awaitPastTheDeadlineOnTheDatabaseClock(dead);
                 assertThatThrownBy(() -> execute(writer,
                         "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                                 + " financed_by_ref = ? WHERE id = ?", IDS.next(), dead.id().value()))
@@ -867,6 +871,21 @@ class CheckoutFinancingDatabaseTest {
                 statement.setObject(i + 1, parameters[i]);
             }
             statement.executeUpdate();
+        }
+    }
+
+    /**
+     * Waits - at most 30 s - until {@code session}'s deadline has passed on the database clock, the instant the financing
+     * edge's trigger judges ({@code OLD.expires_at <= statement_timestamp()}, checkout V004), whatever the JVM clock says.
+     */
+    private static void awaitPastTheDeadlineOnTheDatabaseClock(CheckoutSession session) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        try (Connection observer = DatabaseRoles.application()) {
+            while (!"true".equals(one(observer, "SELECT (expires_at <= statement_timestamp())::text FROM"
+                    + " checkout.checkout_session WHERE id = ?", session.id().value()))) {
+                assertThat(System.nanoTime()).as("the deadline passes on the database clock").isLessThan(deadline);
+                Thread.sleep(50);
+            }
         }
     }
 
