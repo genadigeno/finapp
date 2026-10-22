@@ -61,6 +61,7 @@ class BnplAlertRulesTest {
 
     private static final String ACCRUAL_LAG = "finapp_bnpl_accrual_lag_seconds";
     private static final String AWAITING_AGE = "finapp_bnpl_application_awaiting_age_seconds";
+    private static final String CONTESTED_AGE = "finapp_bnpl_dispute_contested_age_seconds";
     private static final String ACCRUAL = "finapp_bnpl_accrual_total";
     private static final String ORIGINATION = "finapp_bnpl_origination_total";
     private static final String SERVICING = "finapp_bnpl_servicing_total";
@@ -83,6 +84,8 @@ class BnplAlertRulesTest {
     void theRulesSeriesAreTheCodesNames() {
         assertThat(prometheusName(BnplAccrualMetrics.LAG) + "_seconds").isEqualTo(ACCRUAL_LAG);
         assertThat(prometheusName(BnplAwaitingDecisionMetrics.AWAITING_AGE) + "_seconds").isEqualTo(AWAITING_AGE);
+        assertThat(prometheusName(com.finapp.app.bnpl.BnplContestedDisputeMetrics.CONTESTED_AGE) + "_seconds")
+                .isEqualTo(CONTESTED_AGE);
         assertThat(prometheusName(BnplAccrualMetrics.ACCRUAL) + "_total").isEqualTo(ACCRUAL);
         assertThat(prometheusName(BnplOriginationMetrics.ORIGINATION) + "_total").isEqualTo(ORIGINATION);
         assertThat(prometheusName(BnplServicingMetrics.SERVICING) + "_total").isEqualTo(SERVICING);
@@ -117,6 +120,9 @@ class BnplAlertRulesTest {
         threshold(rules, covered, "BnplAccrualLagging", healthy, named(ACCRUAL_LAG), BnplObjectives.ACCRUAL_LAG.toSeconds());
         threshold(rules, covered, "BnplApplicationAwaitingTooLong", healthy, named(AWAITING_AGE),
                 BnplObjectives.awaitingDecision().toSeconds());
+        // The Phase 12 -> 13 gate's A7-2: a contested dispute awaiting an operator longer than the objective.
+        threshold(rules, covered, "BnplDisputeContestedTooLong", healthy, named(CONTESTED_AGE),
+                BnplObjectives.CONTESTED_DISPUTE.toSeconds());
         threshold(rules, covered, "BnplThreeWayProofFailing", healthy, verdict(THREE_WAY, "FAILS"), 0);
         threshold(rules, covered, "BnplSubledgerProofFailing", healthy, verdict(SUBLEDGER, "FAILS"), 0);
         threshold(rules, covered, "BnplReplayDiverged", healthy, verdict(REPLAY, "DIVERGED"), 0);
@@ -143,6 +149,10 @@ class BnplAlertRulesTest {
         assertThat(firing(rules, healthy, set(healthy, outcome(SERVICING, "serviced"), value -> value + 1))).isEmpty();
         counter(rules, covered, "BnplDisputeDeadlineStepFailing", healthy, outcome(DISPUTE, "sweep_failed"));
         assertThat(firing(rules, healthy, set(healthy, outcome(DISPUTE, "opened"), value -> value + 1))).isEmpty();
+        // The Phase 12 -> 13 gate's A7-1: a dispute's refund that cannot post - its own alert, never the step-failure one.
+        counter(rules, covered, "BnplDisputeRefundNotPostable", healthy, outcome(DISPUTE, "not_postable"));
+        assertThat(firing(rules, healthy, set(healthy, outcome(DISPUTE, "wallet_unavailable"), value -> value + 1)))
+                .as("an opening refused for want of a wallet posts nothing and is owed nothing").isEmpty();
 
         // The terms: a product with none ACTIVE fires where the target offers BNPL - and never where it does not.
         for (BnplProduct product : BnplProduct.values()) {
@@ -164,7 +174,7 @@ class BnplAlertRulesTest {
         }
 
         // Every gauge read from the database, unreadable: the unreadable rule alone - no threshold rule reads NaN.
-        for (String gauge : List.of(THREE_WAY, SUBLEDGER, REPLAY, ACCRUAL_LAG, AWAITING_AGE)) {
+        for (String gauge : List.of(THREE_WAY, SUBLEDGER, REPLAY, ACCRUAL_LAG, AWAITING_AGE, CONTESTED_AGE)) {
             List<RuleEvaluator.Sample> unreadable = set(healthy, named(gauge), value -> Double.NaN);
             assertThat(firing(rules, unreadable, unreadable)).as(gauge).containsExactly("BnplGaugesUnreadable");
         }
@@ -198,7 +208,7 @@ class BnplAlertRulesTest {
             + " names no figure")
     void everyRuleIsWellFormed() {
         List<Map<String, Object>> rules = ruleList(RULES, "bnpl");
-        assertThat(rules).hasSize(rules(RULES, "bnpl").size()).hasSize(16);
+        assertThat(rules).hasSize(rules(RULES, "bnpl").size()).hasSize(18);
         assertThat(rules).allSatisfy(rule -> {
             assertThat(String.valueOf(rule.get("for"))).matches("\\d+[smhd]");
             assertThat(map(rule.get("labels")).get("severity")).isIn("page", "ticket");

@@ -54,6 +54,26 @@ class BnplDisputeHoldTest {
     }
 
     @Test
+    @DisplayName("a withdrawal's lift never moves the clock (the Phase 12 to 13 gate's A5-F2): the instalment counts from its"
+            + " due date as if never held; a resolved dispute's lift still does, and the hold itself is unchanged")
+    void aWithdrawalNeverMovesTheClock() {
+        BnplDisputeHold.Window withdrawn = new BnplDisputeHold.Window(BnplDisputeId.next(IDS), DUE, OPENED,
+                Optional.of(LIFTED), true);
+        BnplDisputeHold hold = new BnplDisputeHold(List.of(withdrawn));
+        assertThat(hold.clockFrom(DUE, LIFTED.plusDays(3))).isEqualTo(DUE);
+        assertThat(hold.heldOn(DUE, LIFTED.minusDays(1))).as("held while it was open").isTrue();
+        assertThat(hold.heldOn(DUE, LIFTED)).isFalse();
+        BnplDisputeHold both = new BnplDisputeHold(List.of(withdrawn, window(DUE, OPENED, Optional.of(LIFTED.minusDays(4)))));
+        assertThat(both.clockFrom(DUE, LIFTED.plusDays(3))).as("the resolved one's lift, never the withdrawal's")
+                .isEqualTo(LIFTED.minusDays(4));
+        BnplTerms terms = BnplTermsFixtures.payIn4().build();
+        BnplPurchaseStore.BilledItem unpaid = new BnplPurchaseStore.BilledItem(UUID.randomUUID(), UUID.randomUUID(), DUE,
+                eur(0), eur(0), eur(150_00), eur(0), eur(0), eur(0));
+        assertThat(BnplDelinquencyState.derive(List.of(unpaid), LIFTED.plusDays(7), terms, false, hold).daysPastDue())
+                .as("27 days past its due date, the withdrawal ignored").isEqualTo(27);
+    }
+
+    @Test
     @DisplayName("a lift before its opening is refused")
     void aLiftIsNeverBeforeItsOpening() {
         assertThatThrownBy(() -> window(DUE, OPENED, Optional.of(OPENED.minusDays(1))))

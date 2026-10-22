@@ -85,7 +85,8 @@ class AccountsBeans {
             IdGenerator ids,
             Clock clock,
             com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore,
-            com.finapp.payments.DisputeStore<Connection> disputeStore) {
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.app.bnpl.BnplWalletCredits bnplWalletCredits) {
         return new AccountClosing(
                 customerAccountStore,
                 ledgerAccountStore,
@@ -99,9 +100,28 @@ class AccountsBeans {
                 // posted to the account and that the network may still RETURN would credit
                 // it back on a win, and a closed account refuses that credit (V007). So the
                 // account stays open until the dispute can no longer be won.
-                (unitOfWork, account) ->
-                        paymentIntentStore.anyInFlightCrediting(unitOfWork, account)
-                                || disputeStore.anyRestorableTo(unitOfWork, account),
+                //
+                // And since the Phase 12 -> 13 gate (A7-1), over the closing customer's open
+                // BNPL disputes: a dispute's refund outcome is credited to the customer's
+                // wallet - on a CLOSED obligation nowhere else - so a wallet stays open while
+                // one may still refund to it. bnpl knows the dispute by the customer's party,
+                // so this arm is asked with the closing customer (BnplWalletCredits).
+                new com.finapp.accounts.PendingCredits<Connection>() {
+                    @Override
+                    public boolean anyFor(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+                        return paymentIntentStore.anyInFlightCrediting(unitOfWork, account)
+                                || disputeStore.anyRestorableTo(unitOfWork, account);
+                    }
+
+                    @Override
+                    public boolean anyFor(
+                            Connection unitOfWork,
+                            com.finapp.ledger.LedgerAccountId account,
+                            java.util.UUID customerId) {
+                        return anyFor(unitOfWork, account)
+                                || bnplWalletCredits.anyFor(unitOfWork, account, customerId);
+                    }
+                },
                 auditWriter,
                 outboxWriter,
                 ids,

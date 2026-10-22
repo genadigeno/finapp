@@ -236,8 +236,11 @@ public record BnplRecord(
             }
             Optional<java.time.LocalDate> lifted = dispute.resolvedAt().filter(resolved -> resolved.isBefore(at))
                     .flatMap(resolved -> dispute.resolvedOn());
+            // A withdrawal's lift never moves the clock (the Phase 12 -> 13 gate's A5-F2; bnpl V018's rule).
+            boolean withdrawn = dispute.status() == BnplDisputeStatus.WITHDRAWN;
             for (BnplDispute.Held held : dispute.holds()) {
-                windows.add(new BnplDisputeHold.Window(dispute.id(), held.dueDate(), dispute.openedOn().get(), lifted));
+                windows.add(new BnplDisputeHold.Window(dispute.id(), held.dueDate(), dispute.openedOn().get(), lifted,
+                        withdrawn));
             }
         }
         return new BnplDisputeHold(windows);

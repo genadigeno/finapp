@@ -22,6 +22,9 @@ import java.time.Duration;
  *       {@code INV-MER-07} bound (a refund after payout, B7) and recovered from later captures and financings before any
  *       payout ({@code INV-MER-05}) - is a ticket once it has stood an hour, never a page: it is a debt to collect, not
  *       a defect.
+ *   <li><strong>The contested dispute's wait</strong> (the Phase 12 to 13 gate's A7-2): a dispute its merchant contested
+ *       has no deadline - only an operator concludes it - so one awaiting an operator longer than a week is ticketed
+ *       ({@link #CONTESTED_DISPUTE}, {@code BnplContestedDisputeMetrics}).
  * </ul>
  */
 public final class BnplObjectives {
@@ -31,6 +34,14 @@ public final class BnplObjectives {
 
     /** How long a negative merchant payable stands before it is ticketed. */
     public static final Duration NEGATIVE_PAYABLE_GRACE = Duration.ofHours(1);
+
+    /**
+     * How long a contested ({@code MERCHANT_RESPONDED}) BNPL dispute may await an operator before it is ticketed (the Phase
+     * 12 to 13 gate's A7-2): a week - five working days - in which its held instalments take no collection, days past due or
+     * fee, its purchase no refund and its merchant no close. An operational objective, not an SLA: auto-resolution at a
+     * deadline is the owner's choice and is not built.
+     */
+    public static final Duration CONTESTED_DISPUTE = Duration.ofDays(7);
 
     private BnplObjectives() {}
 

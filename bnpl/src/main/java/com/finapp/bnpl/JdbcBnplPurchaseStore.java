@@ -441,7 +441,7 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
     public BnplDisputeHold disputeHold(Connection unitOfWork, BnplObligationId obligation) {
         Objects.requireNonNull(obligation, "obligation");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT h.dispute_id, h.due_date, d.opened_business_date, d.resolved_business_date"
+                "SELECT h.dispute_id, h.due_date, d.opened_business_date, d.resolved_business_date, d.status"
                         + " FROM bnpl.bnpl_dispute_hold h JOIN bnpl.bnpl_dispute d ON d.id = h.dispute_id"
                         + " WHERE h.obligation_id = ? ORDER BY h.due_date, h.dispute_id")) {
             select.setObject(1, obligation.value());
@@ -449,9 +449,11 @@ public final class JdbcBnplPurchaseStore implements BnplPurchaseStore {
             try (ResultSet rows = select.executeQuery()) {
                 while (rows.next()) {
                     Date lifted = rows.getDate("resolved_business_date");
+                    // A withdrawal's lift never moves the clock (the Phase 12 -> 13 gate's A5-F2; bnpl V018).
                     windows.add(new BnplDisputeHold.Window(BnplDisputeId.of(rows.getObject("dispute_id", UUID.class)),
                             rows.getDate("due_date").toLocalDate(), rows.getDate("opened_business_date").toLocalDate(),
-                            Optional.ofNullable(lifted).map(Date::toLocalDate)));
+                            Optional.ofNullable(lifted).map(Date::toLocalDate),
+                            BnplDisputeStatus.WITHDRAWN.name().equals(rows.getString("status"))));
                 }
             }
             return new BnplDisputeHold(windows);

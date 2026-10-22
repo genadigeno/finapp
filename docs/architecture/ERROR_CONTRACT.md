@@ -1269,6 +1269,7 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.WalletUnavailable` | 409 | The customer's wallet cannot be credited now; nothing was posted. |
 | `bnpl.DisputeOpen` | 409 | The BNPL purchase has an open dispute. |
 | `bnpl.DisputeNotActionable` | 409 | The BNPL dispute is not open to this act. |
+| `bnpl.DisputeCoolingOff` | 409 | A dispute of this BNPL purchase was withdrawn too recently to open another. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its
@@ -1352,6 +1353,29 @@ remainder, never what was paid, released by a refund or already waived (the Phas
 and again at the approval; `NotFound` an unknown or malformed agreement, a repayment, fee or proposal not of that agreement;
 `422 api.ValidationFailed` a waiver amount not positive or not at the fee's currency and minor units. Every refusal writes
 nothing and rolls the key back; the proposal of a refused approval stays `PROPOSED`.
+
+The dispute doors (`P12-TSK-023`, ADR-0106; recorded by the Phase 12 → 13 transition gate's repair R1, 2026-10-22, with
+its changes): the customer's opening `POST /v1/me/bnpl-agreements/{id}/disputes` (`201`) and withdrawal, the merchant's
+response over its key, the operator's queue, read and resolution under `BNPL_DISPUTE_RESOLVE`. `DisputeOpen` a second
+open dispute of the purchase, or a merchant's or operator's refund beside one; **`DisputeCoolingOff` (new, the gate's
+A5-F2 follow-up) an opening less than 30 days (`BnplDisputes.WITHDRAWAL_COOLDOWN`, the owner's to change) after its
+customer withdrew a dispute of the same purchase** - judged under the purchase's lock on the database clock from the
+withdrawal's stamp and by `bnpl V018`'s trigger for every writer, nothing written; a dispute a merchant or an operator
+resolved starts no cooldown; `PurchaseFullyRefunded`,
+`RefundExceedsPurchase` the opening's bound; `RefundNotPostable` an opening against a merchant whose payable cannot be
+debited, or a refund outcome that cannot post now; **`WalletUnavailable` (reused, the gate's A7-1) an opening on a
+`CLOSED` agreement whose customer has no `ACTIVE` wallet** - the only account its refund outcome could be credited to
+(no credit balance after closure, `INV-BNPL-09`), so the opening is refused rather than left to lapse into a refund that
+posts nowhere; open a wallet, then dispute. `DisputeNotActionable` an act from the wrong state - and, for the merchant's
+response, a deadline that has passed on the database clock, **judged by the edge's own statement too** (the gate's
+A3-M2): an acceptance that waited at (P) while the deadline passed is this `409`, never a `5xx` storage failure, and
+writes nothing. `ProposalPending`, `SelfApprovalRefused` the four-eyes acts above the pinned threshold - **judged on the
+purchase's cumulative refunds by dispute, this dispute included** (the gate's A5-F7). `SelfDealingRefused` an operator of
+the dispute's own party at the resolution, its approval or rejection **and the read** (the gate's A5-F4), or an operator
+the platform cannot place in a party at any of them and at the queue (fail closed, the gate's A7-6), recorded `FAILED` in a
+transaction of its own. The queue (`GET /v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED|OPEN[&after=<id>]`, the
+gate's A7-2): `422 api.ValidationFailed` a status other than the two, or a malformed cursor. `NotFound` another party's or
+merchant's dispute exactly as an unknown or malformed id.
 
 The merchant's purchase read (`P12-TSK-014`; `GET /v1/merchant/bnpl-purchases/{id}`, the merchant's own key): `NotFound`
 answers another merchant's purchase exactly as an unknown or malformed id - one body, never `403`, so existence is not
