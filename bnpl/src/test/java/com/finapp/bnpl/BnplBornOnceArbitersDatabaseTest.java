@@ -61,7 +61,7 @@ class BnplBornOnceArbitersDatabaseTest {
             "bnpl_repayment_allocation_reversal_allocation_unique", "bnpl_repayment_allocation_sequence_unique",
             "bnpl_repayment_journal_entry_unique", "bnpl_repayment_request_unique",
             "bnpl_repayment_reversal_entry_unique", "bnpl_repayment_reversal_one_live", "bnpl_schedule_identity",
-            // bnpl V020 (the Phase 12 transition gate's A7-3): a reversal releases each instalment's re-opened fee once.
+            // bnpl V019 (the Phase 12 transition gate's A7-3): a reversal releases each instalment's re-opened fee once.
             "bnpl_reversal_fee_release_once",
             "bnpl_schedule_refund_unique", "bnpl_schedule_version_unique", "bnpl_terms_one_active",
             "bnpl_terms_one_proposed", "bnpl_terms_version_number_unique", "bnpl_terms_version_product_pinned",

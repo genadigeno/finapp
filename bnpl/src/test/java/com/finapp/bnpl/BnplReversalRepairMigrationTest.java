@@ -10,17 +10,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code bnpl V020}'s text held to the code (the Phase 12 -> 13 transition gate's repair R3; {@code BnplCorrectionMigrationTest}'s
+ * {@code bnpl V019}'s text held to the code (the Phase 12 -> 13 transition gate's repair R3; {@code BnplCorrectionMigrationTest}'s
  * idiom - hermetic, so it runs on every build, while the live ranks are {@code BnplRepaymentReversalDatabaseTest}'s): A2-1's
  * rank - a reversal never valued before the repayment it reverses, its ceiling raised by exactly that date - and A7-3's
  * release - INSERT-only, under B4, beside an APPROVED reversal, only on an instalment a refund cancelled whole, exactly
  * the fee due - counted by the two shared sums and judged at the reversal's commit for every writer.
  */
-@DisplayName("bnpl V020 holds the reversal after its original and its released fee as the code declares them (the Phase 12"
+@DisplayName("bnpl V019 holds the reversal after its original and its released fee as the code declares them (the Phase 12"
         + " transition gate's R3)")
 class BnplReversalRepairMigrationTest {
 
-    private static final String V020 = "db/migration/bnpl/V020__the_reversal_after_its_original_and_its_released_fee.sql";
+    private static final String V019 = "db/migration/bnpl/V019__the_reversal_after_its_original_and_its_released_fee.sql";
 
     @Test
     @DisplayName("A2-1: the approval valued never before the repayment it reverses, the ceiling raised by that date - and"
@@ -104,8 +104,8 @@ class BnplReversalRepairMigrationTest {
     }
 
     private static String migration() {
-        try (InputStream in = BnplReversalRepairMigrationTest.class.getClassLoader().getResourceAsStream(V020)) {
-            assertThat(in).as(V020 + " on the classpath").isNotNull();
+        try (InputStream in = BnplReversalRepairMigrationTest.class.getClassLoader().getResourceAsStream(V019)) {
+            assertThat(in).as(V019 + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException unreadable) {
             throw new IllegalStateException(unreadable);

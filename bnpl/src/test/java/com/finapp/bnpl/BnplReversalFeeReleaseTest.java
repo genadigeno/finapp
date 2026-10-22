@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A reversal releases the late fee it re-opens on an instalment a refund cancelled whole - OQ-14 kept whichever of the two
- * acts comes first (the Phase 12 transition gate's A7-3; {@code bnpl V020}; {@code INV-BNPL-06}, {@code INV-BNPL-01},
+ * acts comes first (the Phase 12 transition gate's A7-3; {@code bnpl V019}; {@code INV-BNPL-06}, {@code INV-BNPL-01},
  * {@code INV-REV-01}). A fee already PAID when a refund cancels its instalment whole is not released by the refund; a
  * reversal of the payment re-opens it exactly (F8) - and before the repair left it owed, though the two acts in the other
  * order release it. Over {@link BnplProofWorld}: T-ref, T-rev and both proofs; the database's own ranks are

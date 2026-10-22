@@ -1287,7 +1287,7 @@ final class BnplApplicationFakes {
                     }
                 }
             }
-            // bnpl V020: a reversal's release of a late fee it re-opened on an instalment a refund cancelled whole (A7-3).
+            // bnpl V019: a reversal's release of a late fee it re-opened on an instalment a refund cancelled whole (A7-3).
             if (component.equals("FEES")) {
                 paid = paid.plus(corrections.reversalReleasedOn(billing.instalment(), zero));
             }
@@ -3107,14 +3107,14 @@ final class BnplApplicationFakes {
         boolean waiverTermDropped;
         /** Drop the waiver triggers' bound - for a probe only. */
         boolean waiverRoomDropped;
-        /** Drop {@code bnpl V020}'s rank - a reversal never valued before its repayment (A2-1) - for a probe only. */
+        /** Drop {@code bnpl V019}'s rank - a reversal never valued before its repayment (A2-1) - for a probe only. */
         boolean reversalOriginalRankDropped;
 
-        /** {@code bnpl V020}'s {@code bnpl_reversal_fee_release} rows (the Phase 12 transition gate's A7-3). */
+        /** {@code bnpl V019}'s {@code bnpl_reversal_fee_release} rows (the Phase 12 transition gate's A7-3). */
         final List<FeeReleaseRow> feeReleases = new ArrayList<>();
-        /** The reversals approved in the open transaction - V020's commit-time rank judges each. */
+        /** The reversals approved in the open transaction - V019's commit-time rank judges each. */
         final Set<UUID> approvedNow = new java.util.LinkedHashSet<>();
-        /** Drop {@code bnpl V020}'s commit-time rank - an approved reversal leaving a released fee due - for a probe only. */
+        /** Drop {@code bnpl V019}'s commit-time rank - an approved reversal leaving a released fee due - for a probe only. */
         boolean releaseRankDropped;
 
         /** One reversal's release of a late fee it re-opened on an instalment a refund cancelled whole. */
@@ -3134,13 +3134,13 @@ final class BnplApplicationFakes {
             reset(negations, state.negations());
             reset(waiverRows, state.waiverRows());
             reset(decisionProposers, state.decisionProposers());
-            // V020's rows: whatever the rolled-back transaction released is gone with it.
+            // V019's rows: whatever the rolled-back transaction released is gone with it.
             feeReleases.removeIf(row -> !state.reversals().containsKey(row.reversal())
                     || state.reversals().get(row.reversal()).status() != BnplCorrectionStatus.APPROVED);
             approvedNow.clear();
         }
 
-        /** The late fees reversals released on {@code instalment} (V020) - {@code bnpl.billing_component_paid}'s term. */
+        /** The late fees reversals released on {@code instalment} (V019) - {@code bnpl.billing_component_paid}'s term. */
         Money reversalReleasedOn(UUID instalment, Money zero) {
             Money released = zero;
             for (FeeReleaseRow row : feeReleases) {
@@ -3189,7 +3189,7 @@ final class BnplApplicationFakes {
                     }
                 }
             }
-            // bnpl V020 (the Phase 12 transition gate's A7-3): an approved reversal leaves no late fee due on an instalment a
+            // bnpl V019 (the Phase 12 transition gate's A7-3): an approved reversal leaves no late fee due on an instalment a
             // refund of its obligation cancelled whole.
             for (UUID approved : approvedNow) {
                 BnplObligationId obligation = reversals.get(approved).obligation();
@@ -3289,7 +3289,7 @@ final class BnplApplicationFakes {
                 }
                 java.time.LocalDate floor = servicing.principalValueFloor(unitOfWork, row.obligation());
                 java.time.LocalDate value = decision.valueDate().orElseThrow();
-                // bnpl V020 (the Phase 12 transition gate's A2-1): the ceiling raised by the repayment's own date, and
+                // bnpl V019 (the Phase 12 transition gate's A2-1): the ceiling raised by the repayment's own date, and
                 // never valued before it.
                 java.time.LocalDate original = purchases.repayments.get(row.repayment()).valueDate();
                 java.time.LocalDate ceiling = today().isAfter(floor) ? today() : floor;
@@ -3413,7 +3413,7 @@ final class BnplApplicationFakes {
                     }
                 }
             }
-            // bnpl V020: and every reversal's release of a fee it re-opened there (A7-3).
+            // bnpl V019: and every reversal's release of a fee it re-opened there (A7-3).
             return released.plus(reversalReleasedOn(instalment, zero));
         }
 

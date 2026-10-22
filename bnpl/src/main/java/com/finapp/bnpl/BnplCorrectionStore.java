@@ -67,7 +67,7 @@ public interface BnplCorrectionStore {
 
     /**
      * The reversal's releases of the late fees it re-opened on instalments a refund cancelled whole, one row per instalment,
-     * under its one release entry ({@code bnpl V020}'s {@code bnpl_reversal_fee_release}) - INSERT-only.
+     * under its one release entry ({@code bnpl V019}'s {@code bnpl_reversal_fee_release}) - INSERT-only.
      */
     void insertFeeReleases(Connection unitOfWork, UUID reversal, BnplObligationId obligation, JournalEntryId entry,
             Map<UUID, Money> released, Supplier<UUID> ids);

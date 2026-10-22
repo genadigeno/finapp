@@ -1,6 +1,7 @@
 -- The Phase 12 -> 13 transition gate's repair R3 (A2-1, A7-3; ADR-0104, BNPL_LIFECYCLES.md section 4.11; INV-LND-10 and
--- INV-LND-11 by analogy, INV-BNPL-01, INV-BNPL-06, OQ-14). The number is V020: the repair board reserves V018 for R1 and V019
--- for R2, and merges R1 -> R2 -> R3 (Flyway runs with out-of-order off). Nothing here replaces a function V018 or V019 does.
+-- INV-LND-11 by analogy, INV-BNPL-01, INV-BNPL-06, OQ-14). The number is V019: the repair board reserved V018 for R1 and V019
+-- for R2, which used none (merchant V012 alone), so the coordinator gave V019 to this repair, merged last (R1 -> R2 -> R3; Flyway
+-- runs with out-of-order off). Nothing here replaces a function V018 does.
 --
 -- 1. A REVERSAL IS NEVER VALUED BEFORE THE REPAYMENT IT REVERSES (A2-1). V016 judged an approval's value date against the
 --    obligation's floor alone: [floor, max(latest date the clock showed, floor)]. The floor has no arm for the reversed
@@ -115,7 +116,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION bnpl.bnpl_repayment_reversal_permits_only_machine_edges() IS
-    'A BNPL repayment reversal''s machine for every writer (P12-TSK-024, V016; the Phase 12 transition gate''s A2-1, V020): born PROPOSED and undecided on an ACTIVE obligation for a non-PAYOFF repayment of it under its agreement version; identity frozen; PROPOSED -> APPROVED | REJECTED only; an approval only while ACTIVE, valued in [max(floor, the repayment''s value date), max(latest date the clock showed, floor, the repayment''s value date)] - never before the floor (R1) and never before the repayment it reverses (A2-1).';
+    'A BNPL repayment reversal''s machine for every writer (P12-TSK-024, V016; the Phase 12 transition gate''s A2-1, V019): born PROPOSED and undecided on an ACTIVE obligation for a non-PAYOFF repayment of it under its agreement version; identity frozen; PROPOSED -> APPROVED | REJECTED only; an approval only while ACTIVE, valued in [max(floor, the repayment''s value date), max(latest date the clock showed, floor, the repayment''s value date)] - never before the floor (R1) and never before the repayment it reverses (A2-1).';
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. The reversal's release of a fee OQ-14 releases (A7-3).
@@ -141,7 +142,7 @@ CREATE TABLE bnpl.bnpl_reversal_fee_release (
 );
 
 COMMENT ON TABLE bnpl.bnpl_reversal_fee_release IS
-    'A BNPL repayment reversal''s release of a late fee it re-opened (the Phase 12 transition gate''s A7-3, V020; OQ-14, INV-BNPL-06): on an instalment an earlier refund cancelled whole, the fee its negating rows made due again - exactly what is due of the instalment''s FEES once they are written - released in the reversal''s own transaction under one entry of its own (DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE, bnpl.reversal-fee-release:<reversal>). bnpl.billing_component_paid counts it as FEES settled, bnpl.fee_waiver_room as forgiven. INSERT-only for every role (RESTRICTED-FINANCIAL).';
+    'A BNPL repayment reversal''s release of a late fee it re-opened (the Phase 12 transition gate''s A7-3, V019; OQ-14, INV-BNPL-06): on an instalment an earlier refund cancelled whole, the fee its negating rows made due again - exactly what is due of the instalment''s FEES once they are written - released in the reversal''s own transaction under one entry of its own (DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE, bnpl.reversal-fee-release:<reversal>). bnpl.billing_component_paid counts it as FEES settled, bnpl.fee_waiver_room as forgiven. INSERT-only for every role (RESTRICTED-FINANCIAL).';
 
 CREATE INDEX bnpl_reversal_fee_release_by_instalment ON bnpl.bnpl_reversal_fee_release (instalment_id);
 CREATE INDEX bnpl_reversal_fee_release_by_obligation ON bnpl.bnpl_reversal_fee_release (obligation_id, reversal_id);
@@ -189,7 +190,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION bnpl.bnpl_reversal_fee_release_is_born_once() IS
-    'A BNPL reversal''s fee release, for every writer (the Phase 12 transition gate''s A7-3, V020): INSERT-only; under B4 on an ACTIVE obligation; beside an APPROVED reversal of it, under one entry of its own; only on an instalment a refund cancelled whole; exactly the FEES due on it.';
+    'A BNPL reversal''s fee release, for every writer (the Phase 12 transition gate''s A7-3, V019): INSERT-only; under B4 on an ACTIVE obligation; beside an APPROVED reversal of it, under one entry of its own; only on an instalment a refund cancelled whole; exactly the FEES due on it.';
 
 CREATE TRIGGER bnpl_reversal_fee_release_is_born_once
     BEFORE INSERT OR UPDATE OR DELETE ON bnpl.bnpl_reversal_fee_release
@@ -231,7 +232,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION bnpl.billing_component_paid(uuid, text) IS
-    'What a billing''s component (FEES, INTEREST, PRINCIPAL) has had settled - by every payer (credit-balance applications, P12-TSK-015; repayments, P12-TSK-018) less what an approved reversal un-paid (the negating rows, P12-TSK-024), by every refund''s cancellation of its principal, release of its interest (P12-TSK-021) and release of its late fees (OQ-14, P12-TSK-020), and by a reversal''s release of a late fee it re-opened on an instalment a refund cancelled whole (the Phase 12 transition gate''s A7-3, V020). What is still due is billed less this.';
+    'What a billing''s component (FEES, INTEREST, PRINCIPAL) has had settled - by every payer (credit-balance applications, P12-TSK-015; repayments, P12-TSK-018) less what an approved reversal un-paid (the negating rows, P12-TSK-024), by every refund''s cancellation of its principal, release of its interest (P12-TSK-021) and release of its late fees (OQ-14, P12-TSK-020), and by a reversal''s release of a late fee it re-opened on an instalment a refund cancelled whole (the Phase 12 transition gate''s A7-3, V019). What is still due is billed less this.';
 
 -- ---------------------------------------------------------------------------------------------
 -- What of an assessment may still be forgiven, replaced: V016's body, the reversals' releases never forgiven again.
@@ -257,7 +258,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION bnpl.fee_waiver_room(uuid) IS
-    'What of a BNPL fee assessment may still be waived (P12-TSK-024; the Phase 11 gate''s R3; the Phase 12 transition gate''s A7-3, V020): least(its instalment''s FEES billed less settled, the assessment less its approved waivers less the refunds'' and the reversals'' releases on its instalment) - so nothing released, paid or waived is ever forgiven again. Read under B4.';
+    'What of a BNPL fee assessment may still be waived (P12-TSK-024; the Phase 11 gate''s R3; the Phase 12 transition gate''s A7-3, V019): least(its instalment''s FEES billed less settled, the assessment less its approved waivers less the refunds'' and the reversals'' releases on its instalment) - so nothing released, paid or waived is ever forgiven again. Read under B4.';
 
 -- ---------------------------------------------------------------------------------------------
 -- At commit, for every writer: an approved reversal leaves no late fee due on an instalment a refund cancelled whole.
@@ -279,7 +280,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION bnpl.bnpl_repayment_reversal_releases_refunded_fees() IS
-    'At the commit of an APPROVED BNPL repayment reversal, for every writer (the Phase 12 transition gate''s A7-3, V020): no instalment a refund of its obligation cancelled whole has any FEES due - the fee the reversal re-opened there is released beside it (bnpl_reversal_fee_release), as the refund would have released it (OQ-14).';
+    'At the commit of an APPROVED BNPL repayment reversal, for every writer (the Phase 12 transition gate''s A7-3, V019): no instalment a refund of its obligation cancelled whole has any FEES due - the fee the reversal re-opened there is released beside it (bnpl_reversal_fee_release), as the refund would have released it (OQ-14).';
 
 CREATE CONSTRAINT TRIGGER bnpl_repayment_reversal_releases_refunded_fees
     AFTER UPDATE ON bnpl.bnpl_repayment_reversal

@@ -320,7 +320,7 @@ public final class JdbcBnplCorrectionStore implements BnplCorrectionStore {
         Objects.requireNonNull(instalment, "instalment");
         Objects.requireNonNull(zero, "zero");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                // The refunds' releases (OQ-14) and the reversals' (the Phase 12 transition gate's A7-3, bnpl V020) - the
+                // The refunds' releases (OQ-14) and the reversals' (the Phase 12 transition gate's A7-3, bnpl V019) - the
                 // never-forgiven arm of bnpl.fee_waiver_room, the same two sums.
                 "SELECT (SELECT coalesce(sum(late_fee_released_minor), 0) FROM bnpl.bnpl_refund_adjustment"
                         + " WHERE instalment_id = ? AND kind = 'BILLED_UNPAID')"

@@ -313,7 +313,7 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   the repayment, never after the later of the clock's latest date, the floor and the repayment's own date. That the entry
   is valued on that date is the replay's: `LoanReplayProof`'s reversal arm reads the entry's lines and finds one valued
   before its repayment `REVERSAL`. `BackwardClockDatabaseTest#aReversalSteppedBackBehindItsRepaymentIsValuedOnIt`. bnpl's
-  T-rev alike (`bnpl V020`, `BnplReplayProof`'s `VALUE_DATE` arm).
+  T-rev alike (`bnpl V019`, `BnplReplayProof`'s `VALUE_DATE` arm).
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

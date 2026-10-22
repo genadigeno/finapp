@@ -321,7 +321,7 @@ through `PostingService` or `ReversalService` on the caller's connection, its ke
 | F6 payoff | `-022` (T-pay) | each rule's own | F2a in T-acc before it, then F2, F3a, F3 (`PAYOFF`) and the closure refund in T-pay |
 | F7 fee waived | `-024` | `bnpl.waiver:<…>` | the exact reversal of F4's entry through `ReversalService` (DR `BNPL_FEE_INCOME` / CR `BNPL_FEES_DUE`), bounded |
 | F8 repayment reversed | `-024` | `bnpl.repayment-reversal:<…>` | the exact reversal of F3's entry through `ReversalService` |
-| F8a late fee a reversal re-opened, released | the Phase 12 → 13 transition gate's A7-3 (`bnpl V020`) | `bnpl.reversal-fee-release:<reversal>` | DR `BNPL_FEE_INCOME` / CR `BNPL_FEES_DUE` - exactly the fee F8 re-opened on an instalment a refund cancelled whole (OQ-14), beside F8 in T-rev |
+| F8a late fee a reversal re-opened, released | the Phase 12 → 13 transition gate's A7-3 (`bnpl V019`) | `bnpl.reversal-fee-release:<reversal>` | DR `BNPL_FEE_INCOME` / CR `BNPL_FEES_DUE` - exactly the fee F8 re-opened on an instalment a refund cancelled whole (OQ-14), beside F8 in T-rev |
 | F9 dispute refunded | `-023` | `bnpl.refund:<refund>` | F5 exactly, under the same bound |
 | F10 merchant payout | merchant's, unchanged (`P12-TSK-016` proved it over BNPL-financed money) | merchant's | DR `MERCHANT_PAYABLE` / CR `PAYOUT_CLEARING` |
 | F11 write-off | **deferred to Phase 14** | — | none |

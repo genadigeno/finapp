@@ -228,7 +228,7 @@ public final class BnplSubledgerProof {
                 }
             }
         }
-        // A reversal's release of a late fee it re-opened on an instalment a refund cancelled whole (A7-3, bnpl V020).
+        // A reversal's release of a late fee it re-opened on an instalment a refund cancelled whole (A7-3, bnpl V019).
         for (BnplRecord.Reversal reversal : record.reversals()) {
             for (BnplRecord.FeeRelease release : reversal.releases()) {
                 feesDue = feesDue.minus(release.amount());

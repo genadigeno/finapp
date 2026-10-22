@@ -238,7 +238,7 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                                     money(row, "amount_minor")));
                     return row;
                 });
-        // Each reversal's releases of the late fees it re-opened (the Phase 12 transition gate's A7-3, bnpl V020) - part of
+        // Each reversal's releases of the late fees it re-opened (the Phase 12 transition gate's A7-3, bnpl V019) - part of
         // its own act, in its decision's place in the order.
         Map<UUID, List<BnplRecord.FeeRelease>> releases = new HashMap<>();
         query(c, "SELECT f.reversal_id, f.instalment_id, f.currency, f.scale, f.amount_minor, f.journal_entry_id"

@@ -2239,7 +2239,7 @@ code to `409 lending.AmendmentLapsed`; no rule changed. Verified by
 repayment reversal - lending's and bnpl's - was valued `max(today, floor)`, and on a clock stepped back behind the reversed
 repayment (the floor further back) that put the reversal before the repayment: a date between the two carried the re-opened
 amount twice and its accrual charged a day's interest twice, a figure every accrual re-derived identically. Both now value it
-`max(today, floor, the reversed repayment's value date)`; lending `V031` names the date on the reversal row and bnpl `V020`
+`max(today, floor, the reversed repayment's value date)`; lending `V031` names the date on the reversal row and bnpl `V019`
 re-judges it, each refusing for every writer an approval valued before the repayment; the replays find one (lending
 `REVERSAL`, bnpl `VALUE_DATE`). `BackwardClockDatabaseTest#aReversalSteppedBackBehindItsRepaymentIsValuedOnIt`,
 `BnplRepaymentReversalDatabaseTest#aReversalSteppedBackBehindItsRepaymentIsValuedOnIt`,
@@ -2633,7 +2633,7 @@ unbilled cancelled` at the schedule's commit. Hermetic: `BnplRefundsTest#aFullRe
 *(The Phase 12 → 13 transition gate's repair R3, 2026-10-22, A7-3 - OQ-14 kept across the two orders: a late fee paid before
 a refund cancelled its instalment whole is not released by the refund, and a repayment reversal re-opening it left it owed,
 though the reversal first and the refund after release it. The approval now releases, in its own transaction, the late fee
-it re-opens on an instalment a refund cancelled whole (F8a, `bnpl V020`'s `bnpl_reversal_fee_release` - exactly the fee due,
+it re-opens on an instalment a refund cancelled whole (F8a, `bnpl V019`'s `bnpl_reversal_fee_release` - exactly the fee due,
 under an entry of its own), and at its commit, for every writer, no such instalment has a fee due; `bnpl_refund_conserves`
 and the waiver room unchanged in rule and counting the release. Both orders reach one end state:
 `BnplReversalFeeReleaseTest#bothOrdersReachOneEndState`,

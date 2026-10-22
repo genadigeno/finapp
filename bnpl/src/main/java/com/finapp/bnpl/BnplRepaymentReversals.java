@@ -311,7 +311,7 @@ public final class BnplRepaymentReversals {
      * The late fees a reversal releases (OQ-14; the Phase 12 transition gate's A7-3), by instalment: what the reversed
      * repayment paid of the {@code FEES} of an instalment in {@code wholeCancelled} - an earlier refund cancelled it whole
      * and released its unpaid fee then, so the fee this payment covered is the one the swap makes due again. Exactly what is
-     * due of its {@code FEES} once the negating rows stand ({@code bnpl V020}'s trigger holds it, for every writer).
+     * due of its {@code FEES} once the negating rows stand ({@code bnpl V019}'s trigger holds it, for every writer).
      */
     static Map<UUID, Money> feesReleased(BnplPurchaseStore.Repayment reversed, Set<UUID> wholeCancelled) {
         Map<UUID, Money> released = new java.util.TreeMap<>();
@@ -449,7 +449,7 @@ public final class BnplRepaymentReversals {
 
     /**
      * A reversal's value date: {@code max(today, floor, the reversed repayment's value date)} - never before the floor (the
-     * Phase 11 gate's R1) and never before the repayment it undoes (the Phase 12 transition gate's A2-1); {@code bnpl V020}'s
+     * Phase 11 gate's R1) and never before the repayment it undoes (the Phase 12 transition gate's A2-1); {@code bnpl V019}'s
      * edge trigger holds both for every writer.
      */
     static LocalDate valuedOn(LocalDate today, LocalDate floor, LocalDate original) {

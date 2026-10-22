@@ -1096,7 +1096,7 @@ class OwnershipIsScopedTest {
                             "com.finapp.bnpl.JdbcBnplCorrectionStore.insertFeeReleases",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "The Phase 12 transition gate's A7-3. The releases of the reversal this transaction approved under B4 and B6, of its own obligation - bnpl V020's trigger holds each to an APPROVED reversal of that obligation, an instalment a refund cancelled whole and exactly the fee due, for every writer.")),
+                                    "The Phase 12 transition gate's A7-3. The releases of the reversal this transaction approved under B4 and B6, of its own obligation - bnpl V019's trigger holds each to an APPROVED reversal of that obligation, an instalment a refund cancelled whole and exactly the fee due, for every writer.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplCorrectionStore.waiversOf",
                             new Entry(

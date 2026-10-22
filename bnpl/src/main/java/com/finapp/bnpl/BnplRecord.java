@@ -131,7 +131,7 @@ public record BnplRecord(
     /**
      * A repayment reversal, its negating rows - one per allocation row of the repayment, with the amount it negates - and
      * its releases of the late fees it re-opened on instalments a refund cancelled whole (the Phase 12 transition gate's
-     * A7-3, {@code bnpl V020}).
+     * A7-3, {@code bnpl V019}).
      */
     public record Reversal(BnplRepaymentReversal row, List<Negation> negations, List<FeeRelease> releases) {
 

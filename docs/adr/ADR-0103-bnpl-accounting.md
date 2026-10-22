@@ -101,7 +101,7 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    | F6 | Payoff | rules F2 (early), F3a, F3 (`PAYOFF`); then `BNPL_CREDIT_BALANCE` | … `CUSTOMER_WALLET` (refund) | every receivable to zero | each rule's own key; the refund `bnpl.closure-refund:<obligation>` *(corrected by `P12-DOC-001`, 2026-10-22: this read "rules F2a, F2, F3"; T-pay posts no F2a — pay-in-N must be caught up by T-acc in its own transaction first, else `BehindAccrual` with nothing written — and applies the held credit (F3a) before the wallet's F3)* |
    | F7 | Fee waived (four-eyes) | `BNPL_FEE_INCOME` | `BNPL_FEES_DUE` | `ReversalService` of F4's entry, bounded | `bnpl.waiver:<waiver>` *(corrected by `P12-DOC-001`, 2026-10-22: this read "scope `ledger.reverse`"; `BnplWaivers` reverses under its own key)* |
    | F8 | Repayment reversed (four-eyes) | F3's credits | `CUSTOMER_WALLET` | the exact swap through `ReversalService`; re-instated principal consumes headroom (ADR-0104) | `bnpl.repayment-reversal:<id>` |
-   | F8a | Late fee a reversal re-opened, released *(the Phase 12 → 13 transition gate's A7-3, `bnpl V020`, 2026-10-22)* | `BNPL_FEE_INCOME` | `BNPL_FEES_DUE` | F8 re-opened a fee paid before a refund cancelled its instalment whole; released by F5a's rule in the reversal's transaction, so OQ-14 holds whichever act came first; one row per instalment in `bnpl_reversal_fee_release` | `bnpl.reversal-fee-release:<reversal>` |
+   | F8a | Late fee a reversal re-opened, released *(the Phase 12 → 13 transition gate's A7-3, `bnpl V019`, 2026-10-22)* | `BNPL_FEE_INCOME` | `BNPL_FEES_DUE` | F8 re-opened a fee paid before a refund cancelled its instalment whole; released by F5a's rule in the reversal's transaction, so OQ-14 holds whichever act came first; one row per instalment in `bnpl_reversal_fee_release` | `bnpl.reversal-fee-release:<reversal>` |
    | F9 | Dispute resolved as a refund | = F5 | = F5 | a refund under the same bound (ADR-0106, `INV-BNPL-08`) | `bnpl.refund:<refund>` |
    | F10 | Merchant payout | `MERCHANT_PAYABLE` | `PAYOUT_CLEARING` | merchant's own entry, unchanged — BNPL never pays a merchant | merchant's keys |
    | F11 | Write-off (deferred, Phase 14) | `BNPL_WRITE_OFF_EXPENSE` | every BNPL asset account | loss | — |
@@ -275,7 +275,7 @@ ADR-0058, ADR-0096.
     date **itself**, not the day after (a billing beside a payoff execution counted at most at the
     execution's value date); the accrual arm the day after the latest accrual; never before the
     purchase's business date (`bnpl.principal_value_floor`, last replaced by `bnpl V014`).
-- **F8a, and F8's value date (the Phase 12 → 13 transition gate's repair R3, 2026-10-22; `bnpl V020`).** (A7-3) F8 is the
+- **F8a, and F8's value date (the Phase 12 → 13 transition gate's repair R3, 2026-10-22; `bnpl V019`).** (A7-3) F8 is the
   exact swap of F3, so a reversal of a repayment that paid a late fee re-opens it - and where a refund had cancelled that
   instalment whole after the payment (releasing nothing: the fee was paid), the fee stood owed, though the same two acts in
   the other order release it (F5a, OQ-14). The approval now posts F8a beside F8 - `DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE`,

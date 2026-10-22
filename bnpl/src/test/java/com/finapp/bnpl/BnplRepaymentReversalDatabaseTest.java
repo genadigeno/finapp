@@ -346,7 +346,7 @@ class BnplRepaymentReversalDatabaseTest {
 
     @Test
     @DisplayName("A7-3 (the Phase 12 transition gate), the refund first: the refund releases nothing of instalment 3's"
-            + " paid fee; R's reversal re-opens it and releases it in its own transaction - one bnpl V020 row, one entry"
+            + " paid fee; R's reversal re-opens it and releases it in its own transaction - one bnpl V019 row, one entry"
             + " of its own - nothing owed on the wholly cancelled instalment, its waiver room zero")
     void theRefundFirstThenTheReversalReleasesTheFee() throws SQLException {
         BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
@@ -478,7 +478,7 @@ class BnplRepaymentReversalDatabaseTest {
     @Test
     @DisplayName("A2-1 (the Phase 12 transition gate): approved on a clock frame stepped back behind the repayment it"
             + " reverses - the floor further back - the reversal is valued the repayment's own date, its F8 entry with it;"
-            + " beneath, bnpl V020 refuses a raw approval valued between the floor and the repayment, for every writer")
+            + " beneath, bnpl V019 refuses a raw approval valued between the floor and the repayment, for every writer")
     void aReversalSteppedBackBehindItsRepaymentIsValuedOnIt() throws SQLException {
         BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
         BnplConditionDatabaseWorld.Purchased bought = world.base.plain();
@@ -490,7 +490,7 @@ class BnplRepaymentReversalDatabaseTest {
                 .as("the floor stands before the day the clock steps back to").isBefore(paidOn.minusDays(1));
 
         // The rank alone, first: a raw approval valued the day before the repayment - on or after the floor, inside the
-        // ceiling - is refused by V020's own arm, for the owner too.
+        // ceiling - is refused by V019's own arm, for the owner too.
         BnplRepaymentReversal raw = world.propose(paidOn, bought, late.id(), world.operator());
         try (Connection migrator = DatabaseRoles.migrator()) {
             migrator.setAutoCommit(false);
