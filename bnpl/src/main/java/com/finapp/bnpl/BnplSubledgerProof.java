@@ -33,7 +33,9 @@ import java.util.UUID;
  *   <li>{@code BNPL_PRINCIPAL_DUE} = billed principal - paid + negated - applied - billed principal a refund cancelled;
  *   <li>{@code BNPL_INTEREST_ACCRUED} = Σ accruals' posted - billed interest - accrued interest a refund released;
  *   <li>{@code BNPL_INTEREST_DUE} = billed interest - paid + negated - applied - due interest a refund released;
- *   <li>{@code BNPL_FEES_DUE} = assessed - paid + negated - applied - released by a refund (OQ-14) - approved waivers;
+ *   <li>{@code BNPL_FEES_DUE} = assessed - paid + negated - applied - released by a refund (OQ-14) - released by a
+ *       reversal it re-opened on an instalment a refund cancelled whole (the Phase 12 transition gate's A7-3) - approved
+ *       waivers;
  *   <li>{@code BNPL_CREDIT_BALANCE} = held by repayments - their negated holds + a refund's excess held (OQ-13) -
  *       applied - refunded at the closure.
  * </ul>
@@ -41,7 +43,7 @@ import java.util.UUID;
  * the obligation even where amounts net); the six accounts are exactly the obligation's, one each in its currency; no
  * balance on the wrong side ("no due account negative"); a {@code CLOSED} obligation's six balances zero; and no late fee
  * earns the platform less than nothing (the Phase 11 gate's R3) - each assessment less its approved waivers and the
- * refunds' releases on its instalment is never negative.
+ * refunds' and the reversals' releases on its instalment is never negative.
  *
  * <p>Pure: a function of one {@link BnplRecord} read in one {@code REPEATABLE READ} snapshot - the same verdict on every
  * instance for the same snapshot, whatever commits concurrently. Amounts fold through {@link Money}; nothing is repaired.
@@ -226,6 +228,12 @@ public final class BnplSubledgerProof {
                 }
             }
         }
+        // A reversal's release of a late fee it re-opened on an instalment a refund cancelled whole (A7-3, bnpl V020).
+        for (BnplRecord.Reversal reversal : record.reversals()) {
+            for (BnplRecord.FeeRelease release : reversal.releases()) {
+                feesDue = feesDue.minus(release.amount());
+            }
+        }
         // Paid, and re-opened by an approved reversal's negating rows (F8: the exact swap of F3's credits).
         Map<UUID, Money> negated = negated(record);
         for (BnplRecord.Stamped<BnplPurchaseStore.Repayment> stamped : record.repayments()) {
@@ -296,6 +304,15 @@ public final class BnplSubledgerProof {
                 }
             }
         }
+        for (BnplRecord.Reversal reversal : record.reversals()) {
+            for (BnplRecord.FeeRelease release : reversal.releases()) {
+                UUID assessment = assessmentOf.get(release.instalment());
+                if (assessment == null) {
+                    return false; // a release of a fee no assessment of the instalment carries
+                }
+                income.merge(assessment, release.amount().negated(), Money::plus);
+            }
+        }
         return income.values().stream().noneMatch(Money::isNegative);
     }
 
@@ -342,6 +359,9 @@ public final class BnplSubledgerProof {
         record.fees().forEach(fee -> named.put(fee.row().entry(), new Namer("FEE", fee.row().id(), fee.at())));
         record.reversals().forEach(reversal -> reversal.row().entry().ifPresent(entry -> named.put(entry,
                 new Namer("REPAYMENT_REVERSAL", reversal.row().id(),
+                        reversal.row().decidedAt().orElse(reversal.row().proposedAt())))));
+        record.reversals().forEach(reversal -> reversal.releases().forEach(release -> named.put(release.entry(),
+                new Namer("REVERSAL_FEE_RELEASE", reversal.row().id(),
                         reversal.row().decidedAt().orElse(reversal.row().proposedAt())))));
         record.waivers().forEach(waiver -> waiver.entry().ifPresent(entry -> named.put(entry,
                 new Namer("WAIVER", waiver.id(), waiver.decidedAt().orElse(waiver.proposedAt())))));

@@ -1287,6 +1287,10 @@ final class BnplApplicationFakes {
                     }
                 }
             }
+            // bnpl V020: a reversal's release of a late fee it re-opened on an instalment a refund cancelled whole (A7-3).
+            if (component.equals("FEES")) {
+                paid = paid.plus(corrections.reversalReleasedOn(billing.instalment(), zero));
+            }
             return paid;
         }
 
@@ -3106,6 +3110,17 @@ final class BnplApplicationFakes {
         /** Drop {@code bnpl V020}'s rank - a reversal never valued before its repayment (A2-1) - for a probe only. */
         boolean reversalOriginalRankDropped;
 
+        /** {@code bnpl V020}'s {@code bnpl_reversal_fee_release} rows (the Phase 12 transition gate's A7-3). */
+        final List<FeeReleaseRow> feeReleases = new ArrayList<>();
+        /** The reversals approved in the open transaction - V020's commit-time rank judges each. */
+        final Set<UUID> approvedNow = new java.util.LinkedHashSet<>();
+        /** Drop {@code bnpl V020}'s commit-time rank - an approved reversal leaving a released fee due - for a probe only. */
+        boolean releaseRankDropped;
+
+        /** One reversal's release of a late fee it re-opened on an instalment a refund cancelled whole. */
+        record FeeReleaseRow(UUID reversal, BnplObligationId obligation, UUID instalment, Money amount,
+                com.finapp.ledger.JournalEntryId entry) {}
+
         record State(Map<UUID, BnplRepaymentReversal> reversals, Map<UUID, UUID> negations,
                 Map<UUID, BnplWaiver> waiverRows, Map<UUID, String> decisionProposers) {}
 
@@ -3119,6 +3134,37 @@ final class BnplApplicationFakes {
             reset(negations, state.negations());
             reset(waiverRows, state.waiverRows());
             reset(decisionProposers, state.decisionProposers());
+            // V020's rows: whatever the rolled-back transaction released is gone with it.
+            feeReleases.removeIf(row -> !state.reversals().containsKey(row.reversal())
+                    || state.reversals().get(row.reversal()).status() != BnplCorrectionStatus.APPROVED);
+            approvedNow.clear();
+        }
+
+        /** The late fees reversals released on {@code instalment} (V020) - {@code bnpl.billing_component_paid}'s term. */
+        Money reversalReleasedOn(UUID instalment, Money zero) {
+            Money released = zero;
+            for (FeeReleaseRow row : feeReleases) {
+                if (row.instalment().equals(instalment)) {
+                    released = released.plus(row.amount());
+                }
+            }
+            return released;
+        }
+
+        /** The instalments of {@code obligation} a refund cancelled whole - a whole {@code BILLED_UNPAID} adjustment. */
+        Set<UUID> wholeCancelled(BnplObligationId obligation) {
+            Set<UUID> whole = new java.util.LinkedHashSet<>();
+            for (BnplRefund refund : refunds.rows.values()) {
+                if (!refund.obligation().equals(obligation)) {
+                    continue;
+                }
+                for (BnplRefund.Adjustment adjustment : refund.adjustments()) {
+                    if (adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID && adjustment.whole()) {
+                        whole.add(adjustment.instalment());
+                    }
+                }
+            }
+            return whole;
         }
 
         /** Whether an approved reversal's negating row undid allocation {@code allocation}. */
@@ -3143,6 +3189,21 @@ final class BnplApplicationFakes {
                     }
                 }
             }
+            // bnpl V020 (the Phase 12 transition gate's A7-3): an approved reversal leaves no late fee due on an instalment a
+            // refund of its obligation cancelled whole.
+            for (UUID approved : approvedNow) {
+                BnplObligationId obligation = reversals.get(approved).obligation();
+                for (UUID instalment : wholeCancelled(obligation)) {
+                    BnplBilling billing = purchases.billings.get(instalment);
+                    Money zero = Money.ofPersisted(0, billing.principal().currency(), billing.principal().scale());
+                    if (!releaseRankDropped && purchases.billedFees(billing, zero)
+                            .compareTo(purchases.paid(billing, "FEES", zero)) > 0) {
+                        throw new BnplStorageException("an approved BNPL repayment reversal leaves no late fee due on an"
+                                + " instalment a refund cancelled whole: P0001");
+                    }
+                }
+            }
+            approvedNow.clear();
         }
 
         private java.time.LocalDate today() {
@@ -3246,7 +3307,49 @@ final class BnplApplicationFakes {
                     row.agreement(), row.agreementVersion(), decision.outcome(), row.proposedBy(), row.proposedAt(),
                     row.proposalReason(), Optional.of(decision.decider().id()), Optional.of(now),
                     Optional.of(decision.reason()), decision.entry(), decision.valueDate()));
+            if (decision.outcome() == BnplCorrectionStatus.APPROVED) {
+                approvedNow.add(row.id());
+            }
             return true;
+        }
+
+        @Override
+        public Set<UUID> wholeCancelledInstalments(Connection unitOfWork, BnplObligationId obligation) {
+            log.add("whole-cancelled read");
+            return Set.copyOf(wholeCancelled(obligation));
+        }
+
+        @Override
+        public void insertFeeReleases(Connection unitOfWork, UUID reversal, BnplObligationId obligation,
+                com.finapp.ledger.JournalEntryId entry, Map<UUID, Money> released, java.util.function.Supplier<UUID> ids) {
+            step("fee releases insert");
+            BnplRepaymentReversal row = reversals.get(reversal);
+            if (!active(obligation) || row == null || row.status() != BnplCorrectionStatus.APPROVED
+                    || !row.obligation().equals(obligation) || row.entry().filter(entry::equals).isPresent()
+                    || feeReleases.stream().anyMatch(own -> own.reversal().equals(reversal)
+                            && !own.entry().equals(entry))) {
+                throw new BnplStorageException("a BNPL fee release belongs to an APPROVED reversal of its own obligation,"
+                        + " under one entry of its own: P0001");
+            }
+            for (Map.Entry<UUID, Money> release : released.entrySet()) {
+                if (!wholeCancelled(obligation).contains(release.getKey())) {
+                    throw new BnplStorageException("a reversal releases a late fee only on an instalment a refund"
+                            + " cancelled whole: P0001");
+                }
+                BnplBilling billing = purchases.billings.get(release.getKey());
+                Money zero = Money.ofPersisted(0, release.getValue().currency(), release.getValue().scale());
+                if (billing == null || !release.getValue().isPositive() || !release.getValue().equals(
+                        purchases.billedFees(billing, zero).minus(purchases.paid(billing, "FEES", zero)))) {
+                    throw new BnplStorageException("a reversal releases exactly the late fee still due on its instalment:"
+                            + " P0001");
+                }
+                if (feeReleases.stream().anyMatch(own -> own.reversal().equals(reversal)
+                        && own.instalment().equals(release.getKey()))) {
+                    throw new BnplStorageException("bnpl_reversal_fee_release_once: SQLSTATE 23505");
+                }
+                ids.get();
+                feeReleases.add(new FeeReleaseRow(reversal, obligation, release.getKey(), release.getValue(), entry));
+            }
         }
 
         @Override
@@ -3310,7 +3413,8 @@ final class BnplApplicationFakes {
                     }
                 }
             }
-            return released;
+            // bnpl V020: and every reversal's release of a fee it re-opened there (A7-3).
+            return released.plus(reversalReleasedOn(instalment, zero));
         }
 
         /** {@code bnpl.fee_waiver_room}: least(FEES billed less settled, assessed less approved waivers less released). */

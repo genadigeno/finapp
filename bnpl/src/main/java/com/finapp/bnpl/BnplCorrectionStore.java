@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -57,6 +58,20 @@ public interface BnplCorrectionStore {
     void insertNegations(Connection unitOfWork, UUID reversal, List<BnplPurchaseStore.Allocation> allocations,
             Supplier<UUID> ids);
 
+    /**
+     * The instalments of {@code obligation} a refund cancelled whole - a {@code BILLED_UNPAID} adjustment with
+     * {@code whole} (OQ-14): where a late fee a reversal re-opens is released beside it (the Phase 12 transition gate's
+     * A7-3). Read under B4.
+     */
+    Set<UUID> wholeCancelledInstalments(Connection unitOfWork, BnplObligationId obligation);
+
+    /**
+     * The reversal's releases of the late fees it re-opened on instalments a refund cancelled whole, one row per instalment,
+     * under its one release entry ({@code bnpl V020}'s {@code bnpl_reversal_fee_release}) - INSERT-only.
+     */
+    void insertFeeReleases(Connection unitOfWork, UUID reversal, BnplObligationId obligation, JournalEntryId entry,
+            Map<UUID, Money> released, Supplier<UUID> ids);
+
     /** The obligation's reversals, newest first, at most {@code limit}. */
     List<BnplRepaymentReversal> reversalsOf(Connection unitOfWork, BnplObligationId obligation, int limit);
 
@@ -71,7 +86,10 @@ public interface BnplCorrectionStore {
     /** Every waiver of the assessment, decided or not. */
     List<BnplWaiver> waiversOf(Connection unitOfWork, UUID assessment);
 
-    /** Σ the late fees every refund released on {@code instalment} (OQ-14) - {@code zero} when none. */
+    /**
+     * Σ the late fees every refund released on {@code instalment} (OQ-14), and every reversal that re-opened one there (the
+     * Phase 12 transition gate's A7-3) - {@code zero} when none.
+     */
     Money releasedOn(Connection unitOfWork, UUID instalment, Money zero);
 
     /** Births a waiver's proposal; the instant the database stamped. */

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -186,6 +187,54 @@ public final class JdbcBnplCorrectionStore implements BnplCorrectionStore {
     }
 
     @Override
+    public Set<UUID> wholeCancelledInstalments(Connection unitOfWork, BnplObligationId obligation) {
+        Objects.requireNonNull(obligation, "obligation");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT DISTINCT instalment_id FROM bnpl.bnpl_refund_adjustment"
+                        + " WHERE obligation_id = ? AND kind = 'BILLED_UNPAID' AND whole")) {
+            select.setObject(1, obligation.value());
+            Set<UUID> instalments = new HashSet<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    instalments.add(row.getObject(1, UUID.class));
+                }
+            }
+            return Set.copyOf(instalments);
+        } catch (SQLException failure) {
+            throw failed("reading a BNPL obligation's instalments a refund cancelled whole", failure);
+        }
+    }
+
+    @Override
+    public void insertFeeReleases(Connection unitOfWork, UUID reversal, BnplObligationId obligation,
+            JournalEntryId entry, Map<UUID, Money> released, Supplier<UUID> ids) {
+        Objects.requireNonNull(reversal, "reversal");
+        Objects.requireNonNull(obligation, "obligation");
+        Objects.requireNonNull(entry, "entry");
+        Objects.requireNonNull(released, "released");
+        Objects.requireNonNull(ids, "ids");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO bnpl.bnpl_reversal_fee_release (id, reversal_id, obligation_id, instalment_id, currency,"
+                        + " scale, amount_minor, journal_entry_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+            for (Map.Entry<UUID, Money> release : released.entrySet()) {
+                int i = 0;
+                insert.setObject(++i, ids.get());
+                insert.setObject(++i, reversal);
+                insert.setObject(++i, obligation.value());
+                insert.setObject(++i, release.getKey());
+                insert.setString(++i, release.getValue().currency().code());
+                insert.setInt(++i, release.getValue().scale());
+                insert.setLong(++i, release.getValue().minorUnits());
+                insert.setObject(++i, entry.value());
+                insert.addBatch();
+            }
+            insert.executeBatch();
+        } catch (SQLException failure) {
+            throw failed("releasing a late fee a BNPL reversal re-opened", failure);
+        }
+    }
+
+    @Override
     public List<BnplRepaymentReversal> reversalsOf(Connection unitOfWork, BnplObligationId obligation, int limit) {
         Objects.requireNonNull(obligation, "obligation");
         if (limit < 1) {
@@ -271,9 +320,14 @@ public final class JdbcBnplCorrectionStore implements BnplCorrectionStore {
         Objects.requireNonNull(instalment, "instalment");
         Objects.requireNonNull(zero, "zero");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT coalesce(sum(late_fee_released_minor), 0) FROM bnpl.bnpl_refund_adjustment"
-                        + " WHERE instalment_id = ? AND kind = 'BILLED_UNPAID'")) {
+                // The refunds' releases (OQ-14) and the reversals' (the Phase 12 transition gate's A7-3, bnpl V020) - the
+                // never-forgiven arm of bnpl.fee_waiver_room, the same two sums.
+                "SELECT (SELECT coalesce(sum(late_fee_released_minor), 0) FROM bnpl.bnpl_refund_adjustment"
+                        + " WHERE instalment_id = ? AND kind = 'BILLED_UNPAID')"
+                        + " + (SELECT coalesce(sum(amount_minor), 0) FROM bnpl.bnpl_reversal_fee_release"
+                        + " WHERE instalment_id = ?)")) {
             select.setObject(1, instalment);
+            select.setObject(2, instalment);
             try (ResultSet row = select.executeQuery()) {
                 row.next();
                 return Money.ofPersisted(row.getLong(1), zero.currency(), zero.scale());

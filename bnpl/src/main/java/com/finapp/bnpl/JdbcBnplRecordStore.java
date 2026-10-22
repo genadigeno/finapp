@@ -238,10 +238,22 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                                     money(row, "amount_minor")));
                     return row;
                 });
+        // Each reversal's releases of the late fees it re-opened (the Phase 12 transition gate's A7-3, bnpl V020) - part of
+        // its own act, in its decision's place in the order.
+        Map<UUID, List<BnplRecord.FeeRelease>> releases = new HashMap<>();
+        query(c, "SELECT f.reversal_id, f.instalment_id, f.currency, f.scale, f.amount_minor, f.journal_entry_id"
+                + " FROM bnpl.bnpl_reversal_fee_release f WHERE f.obligation_id = ? ORDER BY f.reversal_id,"
+                + " f.instalment_id", id, row -> {
+                    releases.computeIfAbsent(row.getObject("reversal_id", UUID.class), any -> new ArrayList<>())
+                            .add(new BnplRecord.FeeRelease(row.getObject("instalment_id", UUID.class),
+                                    money(row, "amount_minor"),
+                                    JournalEntryId.of(row.getObject("journal_entry_id", UUID.class))));
+                    return row;
+                });
         List<BnplRecord.Reversal> reversals = new ArrayList<>();
         for (BnplRepaymentReversal reversal : corrections.reversalsOf(c, obligationId, EVERY_ROW)) {
             reversals.add(new BnplRecord.Reversal(restamped(reversal, at), negations.getOrDefault(reversal.id(),
-                    List.of())));
+                    List.of()), releases.getOrDefault(reversal.id(), List.of())));
         }
         List<BnplWaiver> waivers = corrections.waiversOfObligation(c, obligationId, EVERY_ROW).stream()
                 .map(waiver -> restamped(waiver, at)).toList();

@@ -1,12 +1,14 @@
 package com.finapp.bnpl;
 
 import com.finapp.creditmath.AllocationComponent;
+import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountNotPostableException;
 import com.finapp.ledger.LedgerAccountStatus;
+import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.ReversalCommand;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
@@ -102,6 +104,12 @@ public final class BnplRepaymentReversals {
 
     /** F8's key prefix, within the ledger's reversal scope: one entry per reversal. */
     public static final String REVERSAL_KEY_PREFIX = "bnpl.repayment-reversal:";
+
+    /**
+     * The key prefix of a reversal's release of the late fees it re-opened on instalments a refund cancelled whole (the
+     * Phase 12 transition gate's A7-3): one entry per reversal, never F8's.
+     */
+    public static final String FEE_RELEASE_KEY_PREFIX = "bnpl.reversal-fee-release:";
 
     /** The audit records' target type. */
     static final String TARGET_TYPE = "bnpl_repayment_reversal";
@@ -255,9 +263,21 @@ public final class BnplRepaymentReversals {
         if (walletStatus.filter(LedgerAccountStatus.ACTIVE::equals).isEmpty()) {
             throw new WalletUnavailable();
         }
-        // (L8) Every projection row the swap posts to, in the ledger's one order - the wallet and the obligation's own.
+        // OQ-14 kept across the two orders (the Phase 12 transition gate's A7-3): the late fees the swap re-opens on an
+        // instalment a refund cancelled whole - read under B4 - are released in this transaction, as that refund would have
+        // released them had the payment never happened.
+        Map<UUID, Money> released = feesReleased(reversed, store.wholeCancelledInstalments(unitOfWork, obligation.id()));
+        Optional<LedgerAccountId> feeIncome = released.isEmpty() ? Optional.empty()
+                : Optional.of(book.operational(unitOfWork, AccountPurpose.BNPL_FEE_INCOME, obligation.currency()));
+        // (L8) Every projection row the swap posts to, in the ledger's one order - the wallet and the obligation's own; and
+        // with a release, the obligation's fees-due row and the currency's BNPL_FEE_INCOME row in the same one call, after
+        // (P) - no shared income row is ever held while waiting on a wallet.
         Set<LedgerAccountId> touched = new LinkedHashSet<>();
         swapped.forEach(line -> touched.add(line.account()));
+        feeIncome.ifPresent(income -> {
+            touched.add(accounts.feesDue().id());
+            touched.add(income);
+        });
         book.lockBalancesInOrder(unitOfWork, touched);
 
         // F8: the exact swap of F3's entry, bounded by it (INV-REV-01, INV-REV-02).
@@ -268,13 +288,40 @@ public final class BnplRepaymentReversals {
                     + " protocol was bypassed");
         }
         store.insertNegations(unitOfWork, reversal, reversed.allocations(), ids::next);
+        // F5a's lines, under an entry of the reversal's own - never F8's, which stays the exact swap.
+        Optional<JournalEntryId> releaseEntry = feeIncome.map(income -> {
+            Money total = released.values().stream().reduce(Money::plus).orElseThrow();
+            JournalEntryId posted = book.post(unitOfWork, new PostingCommand(FEE_RELEASE_KEY_PREFIX + reversal, today,
+                    valueDate, reversal.toString(), List.of(new JournalLine(income, Direction.DEBIT, total),
+                            new JournalLine(accounts.feesDue().id(), Direction.CREDIT, total))));
+            store.insertFeeReleases(unitOfWork, reversal, obligation.id(), posted, released, ids::next);
+            return posted;
+        });
         BnplRepaymentReversal approved = store.reversal(unitOfWork, reversal)
                 .orElseThrow(() -> new IllegalStateException("a reversal decided in this transaction is readable in it"));
-        publish(unitOfWork, locked, approved, reversed, entry, valueDate, correlation);
+        publish(unitOfWork, locked, approved, reversed, entry, valueDate, released, correlation);
         audit(unitOfWork, actor, BnplAuditAction.REPAYMENT_REVERSAL_APPROVED, reversal, reasoned,
                 "agreement=" + agreement.value() + ", repayment=" + repayment + ", entry=" + entry.value()
-                        + ", reverses=" + reversed.entry().value(), correlation);
+                        + ", reverses=" + reversed.entry().value()
+                        + releaseEntry.map(posted -> ", feeRelease=" + posted.value()).orElse(""), correlation);
         return new Decided(approved, false);
+    }
+
+    /**
+     * The late fees a reversal releases (OQ-14; the Phase 12 transition gate's A7-3), by instalment: what the reversed
+     * repayment paid of the {@code FEES} of an instalment in {@code wholeCancelled} - an earlier refund cancelled it whole
+     * and released its unpaid fee then, so the fee this payment covered is the one the swap makes due again. Exactly what is
+     * due of its {@code FEES} once the negating rows stand ({@code bnpl V020}'s trigger holds it, for every writer).
+     */
+    static Map<UUID, Money> feesReleased(BnplPurchaseStore.Repayment reversed, Set<UUID> wholeCancelled) {
+        Map<UUID, Money> released = new java.util.TreeMap<>();
+        for (BnplPurchaseStore.Allocation line : reversed.allocations()) {
+            if ("DUE_ITEM".equals(line.target()) && line.component().filter("FEES"::equals).isPresent()
+                    && line.instalment().filter(wholeCancelled::contains).isPresent()) {
+                released.merge(line.instalment().get(), line.amount(), Money::plus);
+            }
+        }
+        return released;
     }
 
     // ------------------------------------------------------------------ reject
@@ -514,7 +561,8 @@ public final class BnplRepaymentReversals {
      * component and the credit it took back, the value date and the agreement version; never the wallet, a party or a reason.
      */
     private void publish(Connection unitOfWork, BnplServicingStore.Locked locked, BnplRepaymentReversal reversal,
-            BnplPurchaseStore.Repayment reversed, JournalEntryId entry, LocalDate valueDate, CorrelationId correlation) {
+            BnplPurchaseStore.Repayment reversed, JournalEntryId entry, LocalDate valueDate, Map<UUID, Money> released,
+            CorrelationId correlation) {
         Money amount = reversed.amount();
         EventPayload payload = EventPayload.of()
                 .with("obligationId", locked.obligation().id().value().toString())
@@ -530,6 +578,8 @@ public final class BnplRepaymentReversals {
                 .with("interestReopenedMinor", Long.toString(paid(reversed, AllocationComponent.INTEREST).minorUnits()))
                 .with("principalReopenedMinor", Long.toString(paid(reversed, AllocationComponent.PRINCIPAL).minorUnits()))
                 .with("creditReversedMinor", Long.toString(held(reversed).minorUnits()))
+                // OQ-14 kept across the two orders (A7-3): the re-opened late fees released beside it.
+                .with("lateFeeReleasedMinor", Long.toString(released.values().stream().mapToLong(Money::minorUnits).sum()))
                 .with("scale", Integer.toString(amount.scale()))
                 .with("currency", amount.currency().code())
                 .with("agreementVersion", Integer.toString(reversal.agreementVersion()));

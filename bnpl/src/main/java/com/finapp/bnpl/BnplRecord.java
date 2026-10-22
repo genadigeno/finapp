@@ -128,12 +128,32 @@ public record BnplRecord(
         }
     }
 
-    /** A repayment reversal and its negating rows - one per allocation row of the repayment, with the amount it negates. */
-    public record Reversal(BnplRepaymentReversal row, List<Negation> negations) {
+    /**
+     * A repayment reversal, its negating rows - one per allocation row of the repayment, with the amount it negates - and
+     * its releases of the late fees it re-opened on instalments a refund cancelled whole (the Phase 12 transition gate's
+     * A7-3, {@code bnpl V020}).
+     */
+    public record Reversal(BnplRepaymentReversal row, List<Negation> negations, List<FeeRelease> releases) {
 
         public Reversal {
             Objects.requireNonNull(row, "row must not be null");
             negations = List.copyOf(negations);
+            releases = List.copyOf(releases);
+        }
+
+        /** A reversal that released nothing. */
+        public Reversal(BnplRepaymentReversal row, List<Negation> negations) {
+            this(row, negations, List.of());
+        }
+    }
+
+    /** One late fee a reversal released ({@code bnpl_reversal_fee_release}): its instalment, the amount, its entry. */
+    public record FeeRelease(UUID instalment, Money amount, JournalEntryId entry) {
+
+        public FeeRelease {
+            Objects.requireNonNull(instalment, "instalment must not be null");
+            Objects.requireNonNull(amount, "amount must not be null");
+            Objects.requireNonNull(entry, "entry must not be null");
         }
     }
 

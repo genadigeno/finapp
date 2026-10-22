@@ -66,7 +66,8 @@ import java.util.UUID;
  *       covers), every refund (the position, {@link RefundAllocationEngineV1}, the releases, the adjustments, the schedule
  *       it made), every late fee (the pinned fee within the cap, on its instalment's own day), the payoff (its quote's
  *       balances, every fact dated its execution's value date - `-022`'s hand-off), every approved reversal (an exact
- *       negation) and waiver (within its room) and the closure's refund.
+ *       negation, and its release of the late fees it re-opened where a refund cancelled whole - A7-3) and waiver (within
+ *       its room) and the closure's refund.
  * </ul>
  *
  * <h2>The two arms the Phase 11 gate taught</h2>
@@ -136,7 +137,10 @@ public final class BnplReplayProof {
         FEE,
         /** The payoff's quote or execution does not re-derive. */
         PAYOFF,
-        /** A reversal does not negate its repayment exactly. */
+        /**
+         * A reversal does not negate its repayment exactly - or does not release, exactly, the late fees it re-opened on
+         * instalments a refund cancelled whole (the Phase 12 transition gate's A7-3).
+         */
         REVERSAL,
         /** A waiver exceeds what its fee still had to forgive. */
         WAIVER,
@@ -1039,6 +1043,24 @@ public final class BnplReplayProof {
                     item(line.instalment().orElseThrow()).ifPresent(due -> due.pay(
                             AllocationComponent.valueOf(line.component().orElseThrow()), negation.amount().negated()));
                 }
+            }
+            // OQ-14 across the two orders (the Phase 12 transition gate's A7-3): the late fees the swap re-opened on an
+            // instalment a refund BEFORE it cancelled whole, released beside it - re-derived by the domain's own rule from
+            // the refunds the walk has met, exactly, else REVERSAL; then settled on their items and counted as forgiven.
+            java.util.Set<UUID> wholeCancelled = new java.util.HashSet<>();
+            adjustments.stream().filter(adjustment -> adjustment.kind() == RefundAllocation.Cancellation.Kind.BILLED_UNPAID
+                    && adjustment.whole()).forEach(adjustment -> wholeCancelled.add(adjustment.instalment()));
+            Map<UUID, Money> expected = reversed.map(original -> BnplRepaymentReversals.feesReleased(original,
+                    wholeCancelled)).orElse(Map.of());
+            Map<UUID, Money> recorded = new HashMap<>();
+            stamped.releases().forEach(release -> recorded.merge(release.instalment(), release.amount(), Money::plus));
+            if (!new HashMap<>(expected).equals(recorded)
+                    || stamped.releases().stream().map(BnplRecord.FeeRelease::entry).distinct().count() > 1) {
+                diverged(Check.REVERSAL, reversal.id());
+            }
+            for (BnplRecord.FeeRelease release : stamped.releases()) {
+                item(release.instalment()).ifPresent(due -> due.pay(AllocationComponent.FEES, release.amount()));
+                releasedOn.merge(release.instalment(), release.amount(), Money::plus);
             }
         }
 
