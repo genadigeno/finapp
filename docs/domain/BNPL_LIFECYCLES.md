@@ -198,6 +198,19 @@ kind, OQ-4); the servicing zone is `UTC` only (A22); pay-in-N's plans are an asc
 first-period floor 1-28 days (A6). The reader the application and the offer pin is `BnplTermsAdministration#pinActive`
 (the `ACTIVE` row `FOR SHARE`; none → `422 bnpl.ProductNotOffered`).
 
+*The Phase 12 → 13 transition gate's repair R3 (2026-10-22):* **the pin is never "neither" (A3-I1).** Under `READ
+COMMITTED` the pin's `FOR SHARE` that waited on an activation's A2 re-checked only the predecessor it waited on - found it
+`RETIRED` - and never saw the successor born after its snapshot: an approved application closed `CLOSED_UNDECIDED
+(PRODUCT_NOT_OFFERED)` for good and a submission answered a spurious `422` (the class of `P12-TST-001`'s B4 finding).
+`JdbcBnplTermsStore#shareActive` now reads again when its first read is empty, in a statement begun after A0 is granted in
+**shared** mode (`pg_advisory_xact_lock_shared(12, hashtext(product))`): no activation is then in flight (each holds A0
+exclusively to its commit), and a retirement commits only beside its successor, so a second empty read is genuine. The
+common path takes nothing of the administration's - an activation still waits on the pin at A2. And T-off treats an empty
+pin as **WAITING** (§4.2's note), never a terminal closure. **The delinquency bounds (A7-5):** the terms door refuses any
+bounds but `(1, 30, 60, 90)` - and so any default threshold but 90 - with `422 bnpl.TermsInvalid`, because the buckets'
+recorded labels (`B1_1_29` … `B4_90_PLUS`) carry those bounds in their names; deriving the labels from the pinned bounds
+would lift it (ADR-0102's note - an owner's choice).
+
 ### 4.2 BNPL application (`bnpl.bnpl_application`) — built by `P12-TSK-010` (`bnpl V003`), offered `-011`
 
 ```
@@ -248,6 +261,13 @@ is asked), the merchant's standing and the sale covering its fee (`BnplMerchants
 origin for exactly the gross, P4 no term, PN the plan's months. Audited (`bnpl.ApplicationSubmitted`,
 `bnpl.ApplicationWithdrawn`) though the table above reads "—": every customer act that opens credit is audited. The
 withdrawal takes the platform's conditional step-up; its credit cancellation is asked from the BNPL origin.
+
+*The Phase 12 → 13 transition gate's repair R3 (2026-10-22, A3-I1):* an approval that finds **no terms version `ACTIVE` to
+pin** no longer closes `CLOSED_UNDECIDED (PRODUCT_NOT_OFFERED)`: the step **waits** - nothing written, the claim's permit
+lapses and a later sweep reads again (credit's `DecisionProgress#collect` rule). The application was submitted under an
+`ACTIVE` version and a retirement commits only beside its successor, so the empty pin was only ever the activation race
+(§4.1's note); the session's deadline, judged before the pin, still closes the application. `PRODUCT_NOT_OFFERED` remains the
+reason when the pinned version does not offer the plan.
 
 ### 4.3 BNPL offer (`bnpl.bnpl_offer`) — built by `P12-TSK-011` (`bnpl V004`), accepted `-013`
 
@@ -576,6 +596,26 @@ through these acts, each a reasoned posting. **Invalid:** anything out of `APPRO
 `APPROVED → REJECTED`; approval by the proposer (`CHECK`).
 
 *As built by `P12-TSK-024` (`bnpl V016`, `BnplRepaymentReversals`, `BnplWaivers`):* the key is the session actor's type, `bnpl.servicing:<actor type>:<id>` (CUSTOMER-typed for an operator session today, §7); the reversal row is money-free with a column-scoped decision (the terms version's split), the waiver INSERT-only with a born-once `bnpl_waiver_decision` (`UNIQUE (waiver_id)`, the proposer copied and pinned for the four-eyes `CHECK`); both `CHECK`s hold for every writer. **What is reversible:** `CUSTOMER`, `AUTO_COLLECTION` and pay-in-4's `AT_PURCHASE` repayments while the obligation is `ACTIVE`; never a `PAYOFF` (`-022`: it closed its obligation - the domain's `RepaymentNotReversible` and the trigger beneath) and never anything of a `CLOSED` obligation (`409 bnpl.ObligationClosed`; a standing proposal may still be rejected) - lending's A12. The reversal posts F8 valued `max(today, floor)` (the trigger re-judges the floor), so no accrued date's base moves; the days between the repayment and its reversal accrue on the reduced base and are not recomputed (ADR-0099 point 4); the re-opened instalment is past due again from the next derivation and, its own age past the pinned day, assessed its late fee by the next step. The money returns to the wallet F3 debited (`409 bnpl.WalletUnavailable` when it cannot be credited - no balance can be short); a repayment whose held credit was applied since is `409 bnpl.RepaymentNotReversible`. A waiver forgives at most `least(FEES billed - settled, assessed - waived - released)` (`bnpl.fee_waiver_room`; the Phase 11 gate's R3), judged at the proposal and again at the approval; a waiver of the last receivable closes the obligation `REPAID` in its transaction, the wallet taken at (P) before the income row whenever a credit balance stands. `409 bnpl.ProposalNotPending` answers a decision of a decided proposal; the same decider's retry converges.
+
+*The Phase 12 → 13 transition gate's repair R3 (2026-10-22, `bnpl V020`):* **(A2-1)** the reversal is valued
+`max(today, floor, the reversed repayment's value date)`: on a clock stepped back behind the repayment - the floor further
+back - `max(today, floor)` valued it before the repayment, so a date between the two carried the re-opened amount twice and
+pay-in-N's accrual charged its day's interest twice, a figure every accrual re-derived identically. `V020`'s edge trigger
+refuses an approval valued before the repayment, for every writer, its ceiling raised by exactly that date; the replay's
+`VALUE_DATE` arm finds one. **(A7-3, OQ-14 across the two orders)** a late fee already paid when a refund cancelled its
+instalment whole is not released by the refund; the reversal of the repayment that paid it re-opens it exactly - and left it
+owed, though the same two acts the other way round release it. The approval now releases, in its own transaction, every late
+fee the swap re-opens on an instalment a refund cancelled whole (the refund's rule, `BnplRefunds#lateFeesReleased`'s first
+arm; its second - a refund leaving no principal unpaid - closes the obligation, and nothing of a `CLOSED` obligation is
+reversed): one `bnpl_reversal_fee_release` row per instalment, exactly the `FEES` due once the negating rows stand, posted
+`DR BNPL_FEE_INCOME / CR BNPL_FEES_DUE` under one entry of its own (`bnpl.reversal-fee-release:<reversal>` - F8 stays the
+exact swap), the currency's income row taken inside T-rev's one L8 call after (P); `bnpl.billing_component_paid` counts it as
+`FEES` settled and `bnpl.fee_waiver_room` as forgiven; `BnplRepaymentReversed` carries `lateFeeReleasedMinor`. At the
+reversal's commit, for every writer, no instalment a refund of its obligation cancelled whole has any `FEES` due. Both orders
+reach one end state (`BnplReversalFeeReleaseTest`, `BnplRepaymentReversalDatabaseTest`); the subledger and replay proofs
+count the release (`REVERSAL` when it is not the rule's, exactly). *Read one way here, for the owner:* the rule is the
+refund's - "an instalment a refund cancelled whole" - so a reversal that also re-opens part of such an instalment's principal
+(a repayment that paid its fee and some principal before the refund) leaves that principal due and its fee released.
 
 ### 4.12 Payoff quote and execution — `P12-TSK-022`
 

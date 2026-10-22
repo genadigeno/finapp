@@ -301,6 +301,19 @@ Financial impact: rules 8, 8a, 9, 10 and 13; income forgone is visible as revers
   point 5's catch-up application, at the next servicing step - so the books end where a waiver alone would have left
   them. The subledger proof gained an income arm: each fee assessment's income (assessed less approved fee waivers and
   refunds) is never negative, `FEE_INCOME_NEGATIVE` (`FeeAndWaiverDatabaseTest#aRefundedFeeIsNeverForgivenTwice`).
+- **A reversal is never valued before the repayment it reverses (the Phase 12 → 13 transition gate's A2-1, repair R3,
+  2026-10-22; lending `V031`).** Point 4's value date was `max(today, floor)` - the floor (the Phase 11 gate's R1) has no arm
+  for the reversed repayment's own date - so on a clock stepped back behind the repayment, the floor further back, the
+  reversal was valued before it: a date between the two carried the re-opened amount twice (the repayment's credit not yet
+  valued, the reversal's debit already) and the accrual charged its day's interest twice, a figure every accrual re-derived
+  identically (`IDENTICAL`). `RepaymentReversals` now values it `max(today, floor, the repayment's value date)`; lending's
+  triggers never read the ledger, so `V031` gives the reversal row the value date of its entry (`value_date`, written beside
+  the entry it names; `NULL` while `PROPOSED`, when `REJECTED`, and on rows decided before it) and the edge function holds it
+  for every writer - an approval names it, never before the floor (R1's rank, now held for the reversal too), never before
+  the repayment, never after the later of the clock's latest date, the floor and the repayment's own date. That the entry
+  is valued on that date is the replay's: `LoanReplayProof`'s reversal arm reads the entry's lines and finds one valued
+  before its repayment `REVERSAL`. `BackwardClockDatabaseTest#aReversalSteppedBackBehindItsRepaymentIsValuedOnIt`. bnpl's
+  T-rev alike (`bnpl V020`, `BnplReplayProof`'s `VALUE_DATE` arm).
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

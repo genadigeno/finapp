@@ -304,6 +304,26 @@ ADR-0087 §2, ADR-0092.
   version n, and the repayment's trigger refused it as a `500`. The lock is now its own statement and the version is read
   by the next (`BnplProofDatabaseTest#aRepaymentBehindARefundReadsTheVersionItCommitted`). Neither changed a figure: the
   first was a false alarm of the proof, the second a refusal of a valid act.
+- **Two corrections by the Phase 12 → 13 transition gate (repair R3, 2026-10-22).** (c) **The pin re-reads after A0
+  shared - never "neither" (A3-I1, the class of (b)).** `pinActive`'s `SELECT … status = 'ACTIVE' FOR SHARE` that waited on
+  an activation's A2 re-checked only the predecessor it waited on - `RETIRED` - and never saw the successor born after its
+  snapshot: an approved application closed `CLOSED_UNDECIDED (PRODUCT_NOT_OFFERED)` for good, and a submission answered a
+  spurious `422 bnpl.ProductNotOffered`. `JdbcBnplTermsStore#shareActive` now reads again when its first read is empty, in a
+  statement begun after `pg_advisory_xact_lock_shared(12, hashtext(product))` - A0 in shared mode, so no activation (A0
+  exclusive to its commit) is in flight and its committed successor is in the snapshot; a retirement commits only beside
+  its successor, so a second empty read is genuine. The common path takes nothing of the administration's (an activation
+  still waits on the pin at A2); and T-off treats an empty pin as `WAITING` - nothing written, a later sweep reads again -
+  never a terminal closure (credit's `DecisionProgress` rule). Lending's pin, the same shape, fixed alike (ADR-0092's
+  follow-up). `BnplTermsDatabaseTest#aPinBehindAnActivationPinsTheSuccessor` (the activation first: its transaction held
+  past the retirement and the activation, the pin started, the commit - the successor pinned),
+  `BnplOriginationTest#anEmptyPinWaits`. (d) **The delinquency bounds are the labels' (A7-5).** The bucket labels
+  (`BnplDelinquencyBucket`: `B1_1_29` … `B4_90_PLUS`) carry the bounds `(1, 30, 60, 90)` in their names while decision 4's
+  term set admitted any four rising bounds ending at a default threshold of 30-180 days - a version with others would have
+  recorded a band under a label that misnames it. The terms door now refuses any bounds but `(1, 30, 60, 90)`
+  (`BnplTerms.DELINQUENCY_BOUNDS`), and so any default threshold but 90, with `422 bnpl.TermsInvalid`
+  (`BnplTermsTest#theBoundsAreTheOnesTheLabelsName`). **Open for the owner:** derive the labels from the pinned bounds (the
+  recorded bucket an index, its band read from the version) and lift the restriction - the `bnpl V002` `CHECK` already
+  admits other bounds, so only the door and the labels would change.
 - **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
   (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.
