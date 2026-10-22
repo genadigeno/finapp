@@ -77,6 +77,12 @@ keys, `INV-MER-01`), ADR-0043 and `INV-HIST-01` (corrections post, never edit) a
    refunds totalling G returns exactly f. Unlike a card refund (ADR-0054's least-share reservation over every
    completion order) it is computed **exactly**: `refunded_before` is the committed sum read under B5, and no sibling
    refund can be in flight. `FeeCalculation`'s arithmetic, through `BnplMerchants`; one fee arithmetic in the platform.
+   *(Corrected by the Phase 12 → 13 transition gate, 2026-10-22: "(A8: `HALF_EVEN`)" names the default, not the
+   rule. As built `cum_fee` is rounded under the **pinned fee schedule version's own `rounding_policy`** (merchant
+   `V004`, a required named attribute, `INV-MON-03`), which `FeeCalculation.returnedFee` reads from the version;
+   `HALF_EVEN` is A8's accepted default and the bnpl suites' reference arithmetic
+   (`ReferenceMerchantFeeReturn.halfEven`), not a policy the code imposes. Order-independence and the telescoping to
+   exactly f hold under any of the six policies.)*
 
 4. **The entry** (F5 with F5a, ADR-0103), one entry keyed `bnpl.refund:<refund>`, balanced:
    `DR MERCHANT_PAYABLE R; DR BNPL_MERCHANT_FEE_INCOME r_f` / `CR BNPL_PRINCIPAL (unbilled cancelled); CR

@@ -1685,6 +1685,16 @@ trigger, the session's lapse, the acceptance evidence, the payout against a refu
 against a real refund, scenarios 10, 11 and 13, the DPD census and properties, the one-key races, the four-eyes and self-dealing
 doors through the API, the crash-and-re-drives - are each recorded in the review with its probe.*
 
+*(The Phase 12 → 13 transition gate, 2026-10-22 - two more clauses met in a form their words did not anticipate, recorded
+rather than re-worded: **Ledger**'s "bnpl added as a poster of `MERCHANT_PAYABLE` and of nothing else outside its purposes" -
+bnpl also posts to the customer's `CUSTOMER_WALLET` (repayments, collections and the payoff debit it; a refund's excess, the
+closure's credit-balance refund and a repayment reversal credit it), reached only by account id through its `BnplWallets` port;
+no single-poster rule binds the wallet, so no guard changes, and `BnplBooksHaveOnePosterTest`'s class comment, which named only
+`MERCHANT_PAYABLE`, now names the wallet too. **Idempotency**'s "a merchant refund under a lapsed claim stopped by `UNIQUE
+(merchant_id, refund_key)`" - the refund's arbiter has three columns, `UNIQUE (merchant_id, requested_by, refund_key)`
+(`bnpl_refund_request_unique`, `bnpl V012`), the requester the merchant's `MERCHANT:<id>` or an operator's, so a merchant's key
+and an operator's never collide; a merchant's retry under one key is still one refund.)*
+
 ### Phase 13 — Risk, Fraud and AML
 - Fail-safe behaviour on risk-service unavailability is explicit per operation and value
   band, and is tested.

@@ -37,7 +37,11 @@ import org.junit.jupiter.api.Test;
  *
  * <p>{@code MERCHANT_PAYABLE} gains bnpl as a poster (F1, F5 - the financing and a refund), beside merchant
  * settlement's capture and refunds and merchant's payouts; no single-poster rule binds that purpose
- * ({@code LEDGER_MODEL.md} section 11), so nothing here names it.
+ * ({@code LEDGER_MODEL.md} section 11), so nothing here names it. <em>(The Phase 12 → 13 transition gate,
+ * 2026-10-22: so does {@code CUSTOMER_WALLET} - repayments, collections and the payoff debit it; a refund's excess
+ * (F5) and the closure's credit-balance refund credit it, and a repayment reversal re-credits it - beside
+ * the wallet's other posters; bnpl reaches it only by account id through its {@code BnplWallets} port and never
+ * names the purpose, and no single-poster rule binds it either, so nothing here names it.)</em>
  *
  * <p>Read from the code with comments stripped and from the string literals; planted posters prove the rule
  * bites. The every-writer half - a raw SQL poster no Java scan can see - is bnpl's subledger and three-way

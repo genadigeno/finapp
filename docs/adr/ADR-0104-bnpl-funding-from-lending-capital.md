@@ -139,6 +139,11 @@ Rests on `PHASE_12_PLAN.md` §1, §2.2 (B2), §3.2, §3.3, §6 (`INV-BNPL-02`, `
    **one statement** over lending's definer view, bnpl's definer view (`bnpl V007`: obligation → party, currency,
    status, account ids; no money column, `INV-BNPL-01`) and the journal lines — the v2 precedent, one snapshot, credit
    reading no bnpl table and depending on no bnpl type (no module depends on `bnpl`). Credit keeps the judgement.
+   *(Corrected by the Phase 12 → 13 transition gate, 2026-10-22: `bnpl V007`'s view carries **no account ids** — its
+   columns are the obligation's id, party, consumed decision, product, status and currency, nothing else (no ledger
+   table is named in a bnpl migration, the `P11-TSK-013` refinement). `app`'s one statement finds the principal
+   accounts itself, `ledger.ledger_account` by `owner_kind = BNPL_OBLIGATION` and `owner_ref` = the view's
+   `obligation_id` in its currency, and sums their journal lines. Still no money column, `INV-BNPL-01`.)*
    - **No gap:** T-pur takes L0 first and commits the consumption (reservation ends) and F1 (outstanding begins)
      together; credit's deciding transaction takes L0 and reads v3, so it sees the reservation or the outstanding,
      never neither and never both. T-rev, the only act that raises a party's BNPL outstanding afterwards, takes L0 first.
