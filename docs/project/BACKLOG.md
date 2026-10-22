@@ -22639,7 +22639,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: High (in every money transaction once the seams
   land). **Cx**: H.
 
-**P13-TSK-005 — Signal ingestion from the platform's events** — `PLANNED`
+**P13-TSK-005 — Signal ingestion from the platform's events** — `READY` (2026-10-23; wave B beside `P13-TSK-002`, dependency-free after `P13-TSK-001` — marked by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel)
 - **Objective**: risk signals born once per source event — from identity, kyc, accounts, merchant, crossborder, lending,
   bnpl and payments events — recorded by inbox handlers in their own transaction with the attributes the event carries
   and nothing read from the source's tables; the device description hashed at the source handler and never stored
@@ -23568,7 +23568,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   guards are green and each proven by its probe; no customer response differs with a case open.
 - **Definition of done**: `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P13-TSK-019 — Monitored transactions: the journal intake, the watermark, reprocessing** — `PLANNED`
+**P13-TSK-019 — Monitored transactions: the journal intake, the watermark, reprocessing** — `READY` (2026-10-23; wave B beside `P13-TSK-002`, dependency-free after `P13-TSK-001` — marked by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel)
 - **Objective**: the monitoring intake reads the **ledger journal** — the one financial truth — through
   `MonitoredLedger`, from a watermark, in a leaderless sweep with its own transactions: each journal entry classified
   by its posting-key namespace into a monitored transaction born once per `journal_entry_id`, entries of an unknown
