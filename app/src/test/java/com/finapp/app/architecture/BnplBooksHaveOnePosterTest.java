@@ -59,7 +59,10 @@ class BnplBooksHaveOnePosterTest {
     /**
      * Every file outside {@code bnpl} permitted to name the BNPL book, READ-only, with its role. *(Empty until
      * `P12-TSK-005`.)* Lending's capital headroom is the first (ADR-0104 decision 2): it names the two BNPL principal
-     * purposes to sum them by ledger purpose, and is held below never to reach a poster.
+     * purposes to sum them by ledger purpose, and is held below never to reach a poster. The operations reports'
+     * two files (`P12-TSK-026`) shipped naming the book without a permit - this suite, never run by that task's
+     * selection, went red on the fleet's hermetic tier; permitted by the Phase 12 &rarr; 13 transition gate (G1) as
+     * the readers they are, held like the others never to reach a poster.
      */
     static final Map<String, String> READERS =
             Map.of(
@@ -71,7 +74,18 @@ class BnplBooksHaveOnePosterTest {
                     "READER (P12-TSK-016, permitted by P12-TSK-025): the payable's drill-down names BNPL_PRINCIPAL,"
                             + " BNPL_PRINCIPAL_DUE and BNPL_MERCHANT_FEE_INCOME as descriptive counterparties of F1 and F5"
                             + " (its BNPL lines are classified by their posting-key namespace first); it reads the"
-                            + " ledger's position breakdown and posts nothing");
+                            + " ledger's position breakdown and posts nothing",
+                    "BnplReports.java",
+                    "READER (P12-TSK-026, permitted by the Phase 12 -> 13 transition gate, G1): the operations"
+                            + " reports' assembly names the five receivable purposes and BNPL_CREDIT_BALANCE to lay the"
+                            + " ledger's balances out by column (portfolio, book tie, delinquency) - figures read in"
+                            + " one snapshot through BnplReportReads, never a balance kept; it posts nothing",
+                    "JdbcBnplReportReads.java",
+                    "READER (P12-TSK-026, permitted by the Phase 12 -> 13 transition gate, G1): the reports'"
+                            + " read-only statements name the receivable purposes in their WHERE clauses to sum the"
+                            + " obligations' journal lines by value date (the refunds' receivable and fee shares, the"
+                            + " dues by bucket); every statement runs on the caller's read-only snapshot and none"
+                            + " writes");
 
     /** Every BNPL_* purpose, derived from the declaration. */
     static final List<String> BNPL_BOOK =
