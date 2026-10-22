@@ -114,6 +114,7 @@ class BnplRefundsTest {
         world.terms.activate(BnplTermsFixtures.payIn4().build(), 1);
         world.terms.activate(BnplTermsFixtures.payInN("0.1999").build(), 3);
         operatorParties.clear();
+        operatorParties.put(BnplKeyIssuer.ID, BnplKeyIssuer.PARTY); // the merchant key's issuer (A5-F1)
     }
 
     // ------------------------------------------------------------------ before, during, after (scenario 9)
@@ -469,6 +470,73 @@ class BnplRefundsTest {
     }
 
     @Test
+    @DisplayName("the Phase 12 -> 13 gate's A7-6: the operator's door fails CLOSED - an operator the platform cannot place"
+            + " in a party is refused as self-dealing, nothing written, and the record says so")
+    void theOperatorsDoorFailsClosed() {
+        Agreement p4 = payIn4();
+        world.now = Instant.parse("2026-10-20T10:00:00Z");
+        // OPERATOR has no party in the port (setUp cleared it): unplaceable.
+        BnplRefunds.SelfDealingRefused refused = (BnplRefunds.SelfDealingRefused) org.assertj.core.api.Assertions
+                .catchThrowable(() -> world.inTransaction(() -> refunds.byOperator(BnplApplicationFakes.UOW,
+                        p4.purchase(), request("op", eur(100_00)), OPERATOR, CORRELATION)));
+        assertThat(refused).isNotNull();
+        assertThat(refused.keyId()).isEmpty();
+        assertThat(world.refunds.rows).isEmpty();
+        world.inTransaction(() -> {
+            refunds.recordSelfDealing(BnplApplicationFakes.UOW, refused, OPERATOR, CORRELATION);
+            return null;
+        });
+        assertThat(world.audited).last().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(BnplAuditAction.SELF_DEALING_REFUSED);
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary)
+                    .contains("act=refund refused", "cannot place"));
+        });
+    }
+
+    @Test
+    @DisplayName("the Phase 12 -> 13 gate's A5-F1: the merchant's door refuses a key whose issuer is the purchase's own"
+            + " party - and, failing closed, one with no issuer named or one the platform cannot place - with nothing"
+            + " written, the refusal recordable FAILED naming the key; a key an outsider issued refunds")
+    void theMerchantsDoorRefusesAKeyItsCustomersPartyIssued() {
+        Agreement p4 = payIn4();
+        world.now = Instant.parse("2026-10-20T10:00:00Z");
+        operatorParties.put("operator-who-is-the-customer", party);
+        for (Optional<String> issuer : List.of(Optional.of("operator-who-is-the-customer"), Optional.<String>empty(),
+                Optional.of("nobody-the-platform-knows"))) {
+            BnplRefunds.SelfDealingRefused refused = (BnplRefunds.SelfDealingRefused) org.assertj.core.api.Assertions
+                    .catchThrowable(() -> world.inTransaction(() -> refunds.atMerchant(BnplApplicationFakes.UOW,
+                            p4.purchase(), merchant, new BnplRefunds.Request("insider", eur(100_00),
+                                    "the goods came back", Optional.of("merchant-key-9"), issuer), merchantActor,
+                            CORRELATION)));
+            assertThat(refused).as("issuer %s", issuer).isNotNull();
+            assertThat(refused.keyId()).contains("merchant-key-9");
+            assertThat(refused.act()).isEqualTo("refund");
+        }
+        assertThat(world.refunds.rows).isEmpty();
+        assertThat(world.book.linesOf("bnpl.refund:")).isEmpty();
+        BnplRefunds.SelfDealingRefused refused = (BnplRefunds.SelfDealingRefused) org.assertj.core.api.Assertions
+                .catchThrowable(() -> world.inTransaction(() -> refunds.atMerchant(BnplApplicationFakes.UOW,
+                        p4.purchase(), merchant, new BnplRefunds.Request("insider", eur(100_00), "the goods came back",
+                                Optional.of("merchant-key-9"), Optional.of("operator-who-is-the-customer")),
+                        merchantActor, CORRELATION)));
+        world.inTransaction(() -> {
+            refunds.recordSelfDealing(BnplApplicationFakes.UOW, refused, merchantActor, CORRELATION);
+            return null;
+        });
+        assertThat(world.audited).last().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(BnplAuditAction.SELF_DEALING_REFUSED);
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.targetId()).isEqualTo(p4.purchase().value().toString());
+            assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary)
+                    .contains("act=refund refused", "key's issuer", "key=merchant-key-9"));
+        });
+
+        BnplRefund refund = refundAt("2026-10-20T10:00:00Z", p4, "outsider", eur(100_00)).refund();
+        assertThat(refund.door()).isEqualTo(BnplRefund.Door.MERCHANT);
+    }
+
+    @Test
     @DisplayName("a merchant key without the refund scope is recorded FAILED - the purchase named, the key id, nothing else")
     void aScopeRefusalIsRecorded() {
         world.inTransaction(() -> {
@@ -774,7 +842,8 @@ class BnplRefundsTest {
     record Agreement(BnplPurchaseId purchase, BnplAgreementId agreement, BnplObligationId obligation) {}
 
     private BnplRefunds.Request request(String key, Money amount) {
-        return new BnplRefunds.Request(key, amount, "the goods came back", Optional.of("merchant-key-1"));
+        return new BnplRefunds.Request(key, amount, "the goods came back", Optional.of("merchant-key-1"),
+                BnplKeyIssuer.KEY_ISSUER);
     }
 
     private BnplRefunds.Refunded refundAt(String instant, Agreement agreement, String key, Money amount) {

@@ -142,12 +142,23 @@ final class BnplFakes {
         }
     }
 
-    /** The BNPL assignment and the pin; the pin's primary key held. */
+    /** The BNPL assignment and the pin; the pin's primary key held; the database's clock, apart from the JVM's. */
     static final class Pricing implements BnplPricingStore<Connection> {
 
         final Map<String, FeeScheduleId> assignments = new HashMap<>();
         final List<String> history = new ArrayList<>();
         final Map<UUID, BnplFeePin> pins = new LinkedHashMap<>();
+        /** The database's clock ({@code clock_timestamp()}) - a test skews the JVM's beside it (A3-M1). */
+        Clock database;
+
+        Pricing(Clock database) {
+            this.database = database;
+        }
+
+        @Override
+        public Instant databaseNow(Connection unitOfWork) {
+            return database.instant();
+        }
 
         @Override
         public Optional<FeeScheduleId> findAssignment(
@@ -220,8 +231,10 @@ final class BnplFakes {
         @Override
         public Optional<FeeScheduleVersion> findEffectiveVersion(
                 Connection unitOfWork, FeeScheduleId scheduleId, Instant instant) {
+            // An immediate version (effective_from = created_at) is in force from its commit - the SQL's rule (A3-M1).
             return versions.values().stream()
-                    .filter(v -> v.scheduleId().equals(scheduleId) && !v.effectiveFrom().isAfter(instant))
+                    .filter(v -> v.scheduleId().equals(scheduleId) && (!v.effectiveFrom().isAfter(instant)
+                            || v.effectiveFrom().equals(v.createdAt())))
                     .max(Comparator.comparing(FeeScheduleVersion::effectiveFrom)
                             .thenComparingInt(FeeScheduleVersion::version));
         }

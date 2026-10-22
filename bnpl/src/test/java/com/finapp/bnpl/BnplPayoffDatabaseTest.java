@@ -521,7 +521,8 @@ class BnplPayoffDatabaseTest {
                         IDS, CLOCK),
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
-                closures, (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
+                closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS,
+                CLOCK);
         final BnplAccruals accruals = new BnplAccruals(SERVICING, ACCRUALS, PURCHASES, TERMS_STORE, book, IDS);
         final BnplPayoffs payoffs = new BnplPayoffs(REPAYMENTS, PAYOFFS, SERVICING, PURCHASES, TERMS_STORE, ACCRUALS,
                 ports, book, servicing, repayments, closures, IDS);
@@ -601,7 +602,7 @@ class BnplPayoffDatabaseTest {
             Actor merchant = new Actor(bought.merchant().toString(), ActorType.MERCHANT);
             return BnplClockFrame.inOneTransaction(frameOn(date), uow -> refunds.atMerchant(uow, bought.purchase(),
                     bought.merchant(), new BnplRefunds.Request(key, Money.ofMinorUnits(minor, EUR), "goods returned",
-                            Optional.of("key-under-test")), merchant, correlation()));
+                            Optional.of("key-under-test"), BnplKeyIssuer.KEY_ISSUER), merchant, correlation()));
         }
 
         <R> List<R> concurrently(int racers, Racer<R> racer) throws Exception {

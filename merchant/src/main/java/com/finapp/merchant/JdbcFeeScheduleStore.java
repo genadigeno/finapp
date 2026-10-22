@@ -217,7 +217,10 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         "SELECT " + VERSION_COLUMNS + " FROM merchant.fee_schedule_version"
-                                + " WHERE fee_schedule_id = ? AND effective_from <= ?"
+                                // An immediate version is in force from its commit (the
+                                // interface's note; the Phase 12 -> 13 gate's A3-M1).
+                                + " WHERE fee_schedule_id = ? AND (effective_from <= ?"
+                                + " OR effective_from = created_at)"
                                 + EFFECTIVE_ORDER + " LIMIT 1")) {
             select.setObject(1, scheduleId.value());
             select.setTimestamp(2, Timestamp.from(instant));

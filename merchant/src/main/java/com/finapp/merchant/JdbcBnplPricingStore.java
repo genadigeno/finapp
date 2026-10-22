@@ -151,4 +151,16 @@ public final class JdbcBnplPricingStore implements BnplPricingStore<Connection> 
             throw new MerchantStorageException(DatabaseFailure.describe("reading a BNPL purchase's fee pin", failure));
         }
     }
+
+    @Override
+    public Instant databaseNow(Connection unitOfWork) {
+        // clock_timestamp(), not now(): the instant after the locks this transaction waited on, never its start.
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT clock_timestamp()");
+                ResultSet rows = select.executeQuery()) {
+            rows.next();
+            return rows.getObject(1, java.time.OffsetDateTime.class).toInstant();
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(DatabaseFailure.describe("reading the database clock", failure));
+        }
+    }
 }

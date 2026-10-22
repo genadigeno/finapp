@@ -20,6 +20,7 @@ import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.merchant.AuthenticatedMerchant;
+import com.finapp.merchant.MerchantApiKeyScope;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -82,6 +83,8 @@ public final class BnplDisputeDesk {
     @NonNull private final BnplTransactions transactions;
     @NonNull private final BnplDisputeMetrics metrics;
     @NonNull private final BnplRefundMetrics refundMetrics;
+    /** The refund body's refusal records - an acceptance is a refund (the Phase 12 -> 13 gate's A5-F1/F6). */
+    @NonNull private final BnplRefunds refunds;
 
     /**
      * A dispute as its customer and an operator's act see it - no free text: its status, category, the amount disputed, the
@@ -189,20 +192,49 @@ public final class BnplDisputeDesk {
                 tenant)).stream().map(BnplDisputeDesk::merchantView).toList());
     }
 
-    /** The merchant answers its purchase's dispute over its key: contests with a statement, or accepts liability. */
+    /**
+     * The merchant answers its purchase's dispute over its key: contests with a statement (any key), or accepts liability
+     * - a refund at once, so only over a key carrying the {@code BNPL_REFUND} scope, refused {@code 403
+     * bnpl.RefundScopeRequired} before anything is read and recorded {@code FAILED} in a transaction of its own; and never
+     * through a key its customer's own party issued ({@code 403 bnpl.SelfDealingRefused}, recorded the same way) - the
+     * refund door's two rules (the Phase 12 -> 13 gate's A5-F1/F6).
+     */
     public BnplMerchantDisputeView respond(AuthenticatedMerchant merchant, String rawDisputeId, String idempotencyKey,
             BnplMerchantDisputeController.BnplDisputeResponseBody body) {
-        BnplDisputeId id = disputeId(rawDisputeId);
         BnplDisputes.Decision decision = decision(body.decision());
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
+        if (decision == BnplDisputes.Decision.ACCEPT && !merchant.holds(MerchantApiKeyScope.BNPL_REFUND)) {
+            // The target only when the path names a dispute identifier - never a caller's free text in the record.
+            String target = BnplRefundDesk.parsedOrMalformed(rawDisputeId);
+            transactions.inTransaction(uow -> {
+                refunds.recordScopeRefusal(uow, BnplDisputes.DISPUTE_TARGET, target, "dispute acceptance",
+                        merchant.keyId().value().toString(), actor, correlation);
+                return null;
+            });
+            throw new ApiException(BnplErrorCode.REFUND_SCOPE_REQUIRED, "The API key may not accept BNPL disputes",
+                    "accepting a dispute refunds the purchase; this key was not issued with the BNPL_REFUND scope."
+                            + " Nothing was done.");
+        }
+        BnplDisputeId id = disputeId(rawDisputeId);
         UUID tenant = merchant.merchantId().value();
         BnplDisputes.Response response = new BnplDisputes.Response(decision, body.statement(),
-                merchant.keyId().value().toString());
-        BnplDisputeView view = keyed(RESPONSE_SCOPE, actor, idempotencyKey, fingerprint("bnpl.dispute-response",
-                        id.value().toString(), decision.name(), body.statement() == null ? "" : body.statement()),
-                unitOfWork -> tenant, (unitOfWork, merchantId) -> disputes.respond(unitOfWork, id, merchantId, response,
-                        actor, correlation));
+                merchant.keyId().value().toString(), merchant.issuedBy());
+        BnplDisputeView view;
+        try {
+            view = keyed(RESPONSE_SCOPE, actor, idempotencyKey, fingerprint("bnpl.dispute-response",
+                            id.value().toString(), decision.name(), body.statement() == null ? "" : body.statement()),
+                    unitOfWork -> tenant, (unitOfWork, merchantId) -> disputes.respond(unitOfWork, id, merchantId,
+                            response, actor, correlation));
+        } catch (BnplRefunds.SelfDealingRefused selfDealing) {
+            transactions.inTransaction(uow -> {
+                refunds.recordSelfDealing(uow, selfDealing, actor, correlation);
+                return null;
+            });
+            metrics.record(BnplDisputeMetrics.Outcome.SELF_DEALING_REFUSED);
+            throw new ApiException(BnplErrorCode.SELF_DEALING_REFUSED, "The acceptance was refused",
+                    "this key may not accept this BNPL dispute; nothing was done.");
+        }
         return new BnplMerchantDisputeView(view.disputeId(), view.purchaseId(), view.status(), view.category(),
                 view.amount(), view.currency(), view.responseDeadline(), view.refundId());
     }

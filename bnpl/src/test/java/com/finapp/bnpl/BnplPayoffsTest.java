@@ -87,8 +87,8 @@ class BnplPayoffsTest {
         repayments = new BnplRepayments(world.repayments, world.servicing, world.purchases, world.terms.store(),
                 world.wallets, world.book, closures, world.outbox, IDS, CLOCK);
         refunds = new BnplRefunds(world.refunds, world.servicing, world.purchases, world.terms.store(), world.merchants,
-                world.wallets, world.book, closures, (uow, actor) -> Optional.empty(), world.outbox, world.audit, IDS,
-                CLOCK);
+                world.wallets, world.book, closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), world.outbox, world.audit,
+                IDS, CLOCK);
         accruals = new BnplAccruals(world.servicing, world.accruals, world.purchases, world.terms.store(), world.book,
                 IDS);
         payoffs = world.payoffsOver(servicing, repayments, closures, IDS);
@@ -764,8 +764,8 @@ class BnplPayoffsTest {
     private BnplRefunds.Refunded refundAt(String instant, Agreement agreement, String key, Money amount) {
         world.now = Instant.parse(instant);
         return world.inTransaction(() -> refunds.atMerchant(BnplApplicationFakes.UOW, agreement.purchase(), merchant,
-                new BnplRefunds.Request(key, amount, "the goods came back", Optional.of("merchant-key-1")),
-                merchantActor, CORRELATION));
+                new BnplRefunds.Request(key, amount, "the goods came back", Optional.of("merchant-key-1"),
+                BnplKeyIssuer.KEY_ISSUER), merchantActor, CORRELATION));
     }
 
     private ServicingOutcome serviceAt(String instant, Agreement agreement) {

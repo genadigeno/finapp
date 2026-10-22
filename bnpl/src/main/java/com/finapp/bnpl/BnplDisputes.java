@@ -163,12 +163,22 @@ public final class BnplDisputes {
         }
     }
 
-    /** The merchant's response - the key id that acted is public (ADR-0052), for the audit record. */
-    public record Response(Decision decision, String statement, String keyId) {
+    /**
+     * The merchant's response - the key id that acted is public (ADR-0052), for the audit record - and who issued that key
+     * ({@code keyIssuer}, the Phase 12 -> 13 gate's A5-F1: an {@code ACCEPT} refunds, so it is refused when the issuer is
+     * the purchase's party or cannot be placed in one, absent included; a {@code CONTEST} needs none).
+     */
+    public record Response(Decision decision, String statement, String keyId, Optional<String> keyIssuer) {
 
         public Response {
             Objects.requireNonNull(decision, "decision must not be null");
             Objects.requireNonNull(keyId, "keyId must not be null");
+            Objects.requireNonNull(keyIssuer, "keyIssuer must not be null");
+        }
+
+        /** A response with no key issuer named - a {@code CONTEST}'s; an {@code ACCEPT} so made is refused. */
+        public Response(Decision decision, String statement, String keyId) {
+            this(decision, statement, keyId, Optional.empty());
         }
 
         @Override
@@ -346,11 +356,15 @@ public final class BnplDisputes {
 
     /**
      * {@code merchant} answers its purchase's dispute before the deadline - contesting it (an operator resolves) or
-     * accepting it (a refund of the disputed amount, at once).
+     * accepting it (a refund of the disputed amount, at once). An {@code ACCEPT}'s caller holds the key's
+     * {@code BNPL_REFUND} scope (the door judges it, as the refund door does - the Phase 12 -> 13 gate's A5-F1/F6);
+     * a {@code CONTEST} needs any key.
      *
      * @throws DisputeNotFound no dispute of {@code merchant}'s has the id (another merchant's included)
      * @throws DisputeNotActionable it is not {@code OPEN}, or its deadline has passed on the database clock - judged after
      *     the locks, and again by the edge's own statement after any wait at (P) (the gate's A3-M2: never a 5xx)
+     * @throws BnplRefunds.SelfDealingRefused an {@code ACCEPT} through a key whose issuer is the purchase's party, or one
+     *     the platform cannot place in a party
      */
     public Acted respond(Connection unitOfWork, BnplDisputeId id, UUID merchant, Response response, Actor actor,
             CorrelationId correlation) {
@@ -360,6 +374,12 @@ public final class BnplDisputes {
         Objects.requireNonNull(response, "response");
         String statement = BnplReasons.reasoned(response.statement());
         BnplDispute found = store.findAtMerchant(unitOfWork, id, merchant).orElseThrow(DisputeNotFound::new);
+        if (response.decision() == Decision.ACCEPT) {
+            // An acceptance refunds: never through a key its customer's own party issued (the Phase 12 -> 13 gate's
+            // A5-F1/F6; the party is frozen, so judged before any lock - the refund door's one rule, fail closed).
+            refunds.refuseIssuersOwn(unitOfWork, found.purchase(), found.party(), response.keyIssuer(),
+                    Optional.of(response.keyId()), "acceptance");
+        }
         BnplRefundStore.LockedPurchase locked = lockAll(unitOfWork, found, Optional.of(merchant));
         BnplDispute dispute = lockDispute(unitOfWork, id);
         String by = "MERCHANT:" + merchant;

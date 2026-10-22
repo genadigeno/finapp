@@ -97,9 +97,12 @@ public class BnplDisputeBeans {
             IdempotentExecutor idempotentExecutor,
             BnplTransactions bnplTransactions,
             BnplDisputeMetrics bnplDisputeMetrics,
-            BnplRefundMetrics bnplRefundMetrics) {
+            BnplRefundMetrics bnplRefundMetrics,
+            BnplRefunds bnplRefunds) {
+        // BnplRefunds: an acceptance is a refund - its scope and issuer refusals recorded by the refund body (the Phase
+        // 12 -> 13 gate's A5-F1/F6).
         return new BnplDisputeDesk(bnplDisputes, bnplAccruals, identityStore, mfaEnrolmentStore, idempotentExecutor,
-                bnplTransactions, bnplDisputeMetrics, bnplRefundMetrics);
+                bnplTransactions, bnplDisputeMetrics, bnplRefundMetrics, bnplRefunds);
     }
 
     /** The dispute deadline sweep - every instance, no lease, off in test contexts. */

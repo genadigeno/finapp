@@ -86,8 +86,9 @@ final class BnplConditionDatabaseWorld {
             new BnplCollections(new JdbcBnplCollectionStore(), repayments, PURCHASES, ports, book, new JdbcOutboxWriter(),
                     IDS, CLOCK),
             conditions, new JdbcOutboxWriter(), IDS, CLOCK);
+    /** The merchant key's issuer has a party of their own (the Phase 12 -> 13 gate's A5-F1); nobody else is placed. */
     final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book, closures,
-            (uow, actor) -> Optional.empty(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
+            (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
     /** T-pay (`P12-TSK-022`): the quote and the execution over the same stores - scenario 13's payoff during the worker. */
     /** T-acc (`P12-TSK-017`) over the same stores and book - a pay-in-N obligation is serviced only caught up. */
     final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE, book,
@@ -192,7 +193,7 @@ final class BnplConditionDatabaseWorld {
         Actor merchant = new Actor(bought.merchant().toString(), ActorType.MERCHANT);
         return BnplClockFrame.inOneTransaction(frameOn(date), uow -> refunds.atMerchant(uow, bought.purchase(),
                 bought.merchant(), new BnplRefunds.Request(key, eur(minor), "goods returned",
-                        Optional.of("key-under-test")), merchant, correlation()));
+                        Optional.of("key-under-test"), BnplKeyIssuer.KEY_ISSUER), merchant, correlation()));
     }
 
     Money balance(Purchased bought, com.finapp.ledger.AccountPurpose purpose) {

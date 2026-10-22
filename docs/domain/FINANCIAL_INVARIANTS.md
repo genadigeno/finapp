@@ -1319,6 +1319,9 @@ outcome.
 never appear in application logs, event payloads or API responses.
 **Why:** `.claude/rules/security.md`; the most common severe fintech incident class.
 **Enforce:** `DOMAIN` — default-deny redaction.
+*(The Phase 12 → 13 transition gate, 2026-10-22, A5-F5: merchant's BNPL reasons - an enablement's proposal, decision
+and withdrawal, the BNPL fee schedule's history - are screened by `InstrumentShapes` in the domain and by merchant
+`V012`'s `CHECK`s for every writer, as bnpl's and credit's reasons already were.)*
 **Verify:** Log redaction tests; event payload review.
 **Phase:** 0
 
@@ -1327,6 +1330,11 @@ never appear in application logs, event payloads or API responses.
 passing negative test.
 **Why:** Least privilege is only real if it is tested from the attacker's direction.
 **Enforce:** `DOMAIN`.
+*(The Phase 12 → 13 transition gate, 2026-10-22, A5-F1: a power is not explicit when another permission can mint it. A
+merchant key carrying `BNPL_REFUND` is now issued only to an operator holding `PAYMENT_REFUND` beside
+`MERCHANT_ADMINISTER`, and the merchant's refund and dispute-accept doors refuse a key whose issuer is the purchase's
+own party, or cannot be placed in one - negatives `MerchantApiKeyDatabaseTest#aRefundScopeAsksPaymentRefundBesideMerchantAdminister`,
+`BnplDisputeApiTest#anInsiderMintedKeyIsSelfDealingAtBothMerchantDoors`, `BnplDisputeApiTest#aKeyWithoutTheScopeCannotAccept`.)*
 **Verify:** Negative authorization tests per endpoint.
 **Phase:** 1 onward
 
@@ -3271,7 +3279,12 @@ the capture's entry and announced by `merchant.FeeAssessed` with the version on 
 exist.)* *(Since `P12-TSK-006` a BNPL purchase's version is pinned the same way by
 `merchant.bnpl_fee_pin` - keyed by the purchase, `INSERT`-only, frozen by V004's trigger, and held by
 a trigger to a returning version of the merchant's BNPL schedule in force by its instant; the BNPL
-fee and its returns are that version applied to the pinned gross, never stored.)*
+fee and its returns are that version applied to the pinned gross, never stored.)* *(The Phase 12 → 13 transition gate,
+2026-10-22, A3-M1: "in force" is judged on the database's clock - the version resolved and the pin stamped at
+`clock_timestamp()` read after the standing's share locks, never an instance's clock - and merchant `V012`'s trigger
+refuses a pin whose instant lies outside its own transaction's span. A version created to take effect immediately
+(`effective_from = created_at`) is in force from its commit - "immediately" never waits for the database's clock to reach
+its creating instance's stamp; a scheduled one is judged on the database's clock alone.)*
 **Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
 proving the pinned version priced the capture.
 **Phase:** 6

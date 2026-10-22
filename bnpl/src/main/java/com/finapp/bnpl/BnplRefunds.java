@@ -63,7 +63,9 @@ import lombok.RequiredArgsConstructor;
  *       another merchant's purchase is the same {@code 404} as an absent one ({@code INV-MER-01});
  *   <li>a refund born under the requester's key converges - the same purchase and amount replay it, another is the key
  *       reused ({@code UNIQUE (merchant_id, requested_by, refund_key)}, the arbiter behind a lapsed claim); at the
- *       operator's door an operator of the purchase's own party is refused ({@link SelfDealingRefused});
+ *       operator's door an operator of the purchase's own party - or one the platform cannot place in a party - is refused
+ *       ({@link SelfDealingRefused}); at the merchant's door so is a key whose issuer is the purchase's party, or cannot be
+ *       placed in one (the Phase 12 -> 13 gate's A5-F1, A7-6 - both fail closed);
  *   <li>the bound, judged under B5 over the purchase's committed refunds: a {@code FULLY_REFUNDED} purchase is
  *       {@link PurchaseFullyRefunded}; {@code R > G - refunded} is {@link RefundExceedsPurchase} ({@code INV-BNPL-07});
  *   <li><strong>(B4)</strong> the obligation {@code FOR UPDATE}; the database clock read after it; pay-in-N on an
@@ -149,17 +151,26 @@ public final class BnplRefunds {
 
     /**
      * What a door asks: an amount, under the requester's own key, with a reason - and, at the merchant's door, the key id
-     * that acted ({@code keyId} - public, ADR-0052 - for the audit record; never the secret).
+     * that acted ({@code keyId} - public, ADR-0052 - for the audit record; never the secret) and who issued that key
+     * ({@code keyIssuer}, merchant {@code V003}'s {@code issued_by}: the Phase 12 -> 13 gate's A5-F1 - the merchant's door
+     * refuses a key whose issuer is the purchase's own party, or one it cannot place; absent, it refuses: fail closed).
      */
-    public record Request(String requestKey, Money amount, String reason, Optional<String> keyId) {
+    public record Request(String requestKey, Money amount, String reason, Optional<String> keyId,
+            Optional<String> keyIssuer) {
 
         public Request {
             Objects.requireNonNull(requestKey, "requestKey must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
             Objects.requireNonNull(keyId, "keyId must not be null");
+            Objects.requireNonNull(keyIssuer, "keyIssuer must not be null");
             if (requestKey.isEmpty() || requestKey.length() > MAX_REQUEST_KEY_LENGTH) {
                 throw new IllegalArgumentException("a refund key is 1 to " + MAX_REQUEST_KEY_LENGTH + " characters");
             }
+        }
+
+        /** A request with no key issuer - the operator's door and a dispute's; at the merchant's door it is refused. */
+        public Request(String requestKey, Money amount, String reason, Optional<String> keyId) {
+            this(requestKey, amount, reason, keyId, Optional.empty());
         }
 
         /** Never the key, the amount or the reason ({@code INV-AUD-02}). */
@@ -182,9 +193,11 @@ public final class BnplRefunds {
     // ------------------------------------------------------------------ the doors
 
     /**
-     * {@code merchant} refunds its purchase {@code purchase} - the merchant's door; the caller holds the key's scope.
+     * {@code merchant} refunds its purchase {@code purchase} - the merchant's door; the caller holds the key's scope and
+     * names the key's issuer in the request ({@link Request#keyIssuer}).
      *
      * @throws PurchaseNotFound no purchase of this merchant has the id (another merchant's included)
+     * @throws SelfDealingRefused the key's issuer is the purchase's party, or cannot be placed in one (A5-F1)
      */
     public Refunded atMerchant(Connection unitOfWork, BnplPurchaseId purchase, UUID merchant, Request request, Actor actor,
             CorrelationId correlation) {
@@ -207,7 +220,8 @@ public final class BnplRefunds {
      * holds {@code PAYMENT_REFUND}.
      *
      * @throws PurchaseNotFound no purchase has the id
-     * @throws SelfDealingRefused the purchase is the operator's own party's
+     * @throws SelfDealingRefused the purchase is the operator's own party's, or the operator has no party the platform
+     *     knows (fail closed - the Phase 12 -> 13 gate's A7-6)
      */
     public Refunded byOperator(Connection unitOfWork, BnplPurchaseId purchase, Request request, Actor actor,
             CorrelationId correlation) {
@@ -324,9 +338,17 @@ public final class BnplRefunds {
                     : Kind.PARTIAL;
             return new Refunded(born.get(), Optional.empty(), true, replayedKind);
         }
-        if (door == BnplRefund.Door.OPERATOR
-                && actingParties.partyOf(unitOfWork, actor).filter(purchase.party()::equals).isPresent()) {
-            throw new SelfDealingRefused(purchase.id());
+        if (door == BnplRefund.Door.OPERATOR) {
+            // Fails CLOSED (the Phase 12 -> 13 gate's A7-6 / A5-F3): an operator the platform cannot place in a party is
+            // refused as one of the purchase's own - BnplRepaymentReversals.judgeSelfDealing's shape.
+            Optional<UUID> operatorsParty = actingParties.partyOf(unitOfWork, actor);
+            if (operatorsParty.isEmpty() || operatorsParty.get().equals(purchase.party())) {
+                throw new SelfDealingRefused(purchase.id());
+            }
+        }
+        if (door == BnplRefund.Door.MERCHANT) {
+            refuseIssuersOwn(unitOfWork, purchase.id(), purchase.party(), request.keyIssuer(), request.keyId(),
+                    "refund");
         }
         Money amount = request.amount();
         Money gross = locked.gross();
@@ -525,6 +547,27 @@ public final class BnplRefunds {
         return new Refunded(refund, closure, false, kind);
     }
 
+    // ------------------------------------------------------------------ the merchant key's issuer (A5-F1)
+
+    /**
+     * Refuses a merchant key's money-moving act on {@code purchase} when the key's issuer is the purchase's own party - the
+     * operator who issued the key and saw its secret once never refunds their own purchase through it (the Phase 12 -> 13
+     * gate's A5-F1: the merchant doors judged scope and tenant only, so an operator could mint a refund key and bypass the
+     * operator door's self-dealing rule). Fails CLOSED: no issuer named, or one the platform cannot place in a party, is
+     * refused too. One rule for both merchant doors that move money - the refund ({@link #atMerchant}) and the dispute's
+     * acceptance ({@code BnplDisputes.respond}, {@code ACCEPT}); the issuer's party is a frozen fact, so it is judged
+     * before anything is written, wherever the caller holds it.
+     *
+     * @throws SelfDealingRefused the issuer is the purchase's party, or cannot be placed in one
+     */
+    void refuseIssuersOwn(Connection unitOfWork, BnplPurchaseId purchase, UUID purchaseParty, Optional<String> issuer,
+            Optional<String> keyId, String act) {
+        Optional<UUID> issuersParty = issuer.flatMap(issuedBy -> actingParties.partyOfIssuer(unitOfWork, issuedBy));
+        if (issuersParty.isEmpty() || issuersParty.get().equals(purchaseParty)) {
+            throw new SelfDealingRefused(purchase, act, keyId.orElse("unknown"));
+        }
+    }
+
     // ------------------------------------------------------------------ the refusals' records
 
     /**
@@ -534,22 +577,41 @@ public final class BnplRefunds {
      */
     public void recordScopeRefusal(Connection unitOfWork, String purchase, String keyId, Actor actor,
             CorrelationId correlation) {
-        Objects.requireNonNull(purchase, "purchase");
+        recordScopeRefusal(unitOfWork, PURCHASE_TARGET, purchase, "refund", keyId, actor, correlation);
+    }
+
+    /**
+     * A merchant key without the BNPL refund scope tried {@code act} on {@code target} - a refund of a purchase, or the
+     * acceptance of a dispute, which refunds it (the Phase 12 -> 13 gate's A5-F1/F6) - recorded {@code FAILED} on the
+     * caller's unit of work, a transaction of its own: its target what the path named, its summary the act and the key id.
+     */
+    public void recordScopeRefusal(Connection unitOfWork, String targetType, String target, String act, String keyId,
+            Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(targetType, "targetType");
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(act, "act");
         Objects.requireNonNull(keyId, "keyId");
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
-                BnplAuditAction.REFUND_SCOPE_REFUSED, PURCHASE_TARGET, bounded(purchase), Optional.empty(),
-                AuditOutcome.FAILED, correlation, Optional.of("refund refused - key=" + keyId
+                BnplAuditAction.REFUND_SCOPE_REFUSED, targetType, bounded(target), Optional.empty(),
+                AuditOutcome.FAILED, correlation, Optional.of(act + " refused - key=" + keyId
                         + " carries no BNPL_REFUND scope")));
     }
 
-    /** An operator's self-dealing refund - recorded {@code FAILED} in a transaction of its own after the act rolled back. */
+    /**
+     * A self-dealing refund - an operator's of their own party's purchase, or a merchant key's whose issuer is the
+     * purchase's party (A5-F1) - recorded {@code FAILED} in a transaction of its own after the act rolled back.
+     */
     public void recordSelfDealing(Connection unitOfWork, SelfDealingRefused refused, Actor actor,
             CorrelationId correlation) {
         Objects.requireNonNull(refused, "refused");
+        String why = refused.keyId().isPresent()
+                ? "the key's issuer is the purchase's own party, or one the platform cannot place in a party, key="
+                        + refused.keyId().get()
+                : "the operator's own party, or an operator the platform cannot place in a party";
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
                 BnplAuditAction.SELF_DEALING_REFUSED, PURCHASE_TARGET, refused.purchase().value().toString(),
                 Optional.empty(), AuditOutcome.FAILED, correlation,
-                Optional.of("purchase=" + refused.purchase().value() + ", act=refund refused - the operator's own party")));
+                Optional.of("purchase=" + refused.purchase().value() + ", act=" + refused.act() + " refused - " + why)));
     }
 
     private static String bounded(String raw) {
@@ -1071,20 +1133,45 @@ public final class BnplRefunds {
         }
     }
 
-    /** An operator's refund of a purchase of their own party. */
+    /**
+     * An operator's refund of a purchase of their own party - or of one the platform cannot place in a party (fail closed)
+     * - or a merchant key's money-moving act whose issuer is the purchase's party, or cannot be placed (A5-F1).
+     */
     public static final class SelfDealingRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         private final transient BnplPurchaseId purchase;
+        private final String act;
+        private final String keyId;
 
         SelfDealingRefused(BnplPurchaseId purchase) {
             super("an employee never refunds a BNPL purchase of their own party");
             this.purchase = purchase;
+            this.act = "refund";
+            this.keyId = null;
         }
 
-        /** The purchase the operator named - the refusal's audit target. */
+        /** A merchant key's {@code act} refused: its issuer is the purchase's party, or cannot be placed in one. */
+        SelfDealingRefused(BnplPurchaseId purchase, String act, String keyId) {
+            super("a merchant key never refunds a BNPL purchase of its issuer's own party");
+            this.purchase = purchase;
+            this.act = Objects.requireNonNull(act, "act");
+            this.keyId = Objects.requireNonNull(keyId, "keyId");
+        }
+
+        /** The purchase the operator or the key named - the refusal's audit target. */
         public BnplPurchaseId purchase() {
             return purchase;
+        }
+
+        /** What was refused - {@code refund}, or a dispute's {@code acceptance}. */
+        public String act() {
+            return act;
+        }
+
+        /** The merchant key that acted (public, ADR-0052) - empty at the operator's door. */
+        public Optional<String> keyId() {
+            return Optional.ofNullable(keyId);
         }
     }
 
