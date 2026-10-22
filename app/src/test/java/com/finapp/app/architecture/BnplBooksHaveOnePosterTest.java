@@ -37,7 +37,11 @@ import org.junit.jupiter.api.Test;
  *
  * <p>{@code MERCHANT_PAYABLE} gains bnpl as a poster (F1, F5 - the financing and a refund), beside merchant
  * settlement's capture and refunds and merchant's payouts; no single-poster rule binds that purpose
- * ({@code LEDGER_MODEL.md} section 11), so nothing here names it.
+ * ({@code LEDGER_MODEL.md} section 11), so nothing here names it. <em>(The Phase 12 → 13 transition gate,
+ * 2026-10-22: so does {@code CUSTOMER_WALLET} - repayments, collections and the payoff debit it; a refund's excess
+ * (F5) and the closure's credit-balance refund credit it, and a repayment reversal re-credits it - beside
+ * the wallet's other posters; bnpl reaches it only by account id through its {@code BnplWallets} port and never
+ * names the purpose, and no single-poster rule binds it either, so nothing here names it.)</em>
  *
  * <p>Read from the code with comments stripped and from the string literals; planted posters prove the rule
  * bites. The every-writer half - a raw SQL poster no Java scan can see - is bnpl's subledger and three-way
@@ -55,7 +59,10 @@ class BnplBooksHaveOnePosterTest {
     /**
      * Every file outside {@code bnpl} permitted to name the BNPL book, READ-only, with its role. *(Empty until
      * `P12-TSK-005`.)* Lending's capital headroom is the first (ADR-0104 decision 2): it names the two BNPL principal
-     * purposes to sum them by ledger purpose, and is held below never to reach a poster.
+     * purposes to sum them by ledger purpose, and is held below never to reach a poster. The operations reports'
+     * two files (`P12-TSK-026`) shipped naming the book without a permit - this suite, never run by that task's
+     * selection, went red on the fleet's hermetic tier; permitted by the Phase 12 &rarr; 13 transition gate (G1) as
+     * the readers they are, held like the others never to reach a poster.
      */
     static final Map<String, String> READERS =
             Map.of(
@@ -67,7 +74,18 @@ class BnplBooksHaveOnePosterTest {
                     "READER (P12-TSK-016, permitted by P12-TSK-025): the payable's drill-down names BNPL_PRINCIPAL,"
                             + " BNPL_PRINCIPAL_DUE and BNPL_MERCHANT_FEE_INCOME as descriptive counterparties of F1 and F5"
                             + " (its BNPL lines are classified by their posting-key namespace first); it reads the"
-                            + " ledger's position breakdown and posts nothing");
+                            + " ledger's position breakdown and posts nothing",
+                    "BnplReports.java",
+                    "READER (P12-TSK-026, permitted by the Phase 12 -> 13 transition gate, G1): the operations"
+                            + " reports' assembly names the five receivable purposes and BNPL_CREDIT_BALANCE to lay the"
+                            + " ledger's balances out by column (portfolio, book tie, delinquency) - figures read in"
+                            + " one snapshot through BnplReportReads, never a balance kept; it posts nothing",
+                    "JdbcBnplReportReads.java",
+                    "READER (P12-TSK-026, permitted by the Phase 12 -> 13 transition gate, G1): the reports'"
+                            + " read-only statements name the receivable purposes in their WHERE clauses to sum the"
+                            + " obligations' journal lines by value date (the refunds' receivable and fee shares, the"
+                            + " dues by bucket); every statement runs on the caller's read-only snapshot and none"
+                            + " writes");
 
     /** Every BNPL_* purpose, derived from the declaration. */
     static final List<String> BNPL_BOOK =

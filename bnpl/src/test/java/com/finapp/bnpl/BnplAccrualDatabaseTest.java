@@ -141,7 +141,8 @@ class BnplAccrualDatabaseTest {
         assertThat(rows(bought)).isZero();
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(), before)) {
             refused(migrator, rawAccrual(bought, bought.purchaseDate(), bought.purchaseDate(),
-                    bought.schedule().instalments().get(0).dueDate()), "P0001");
+                    bought.schedule().instalments().get(0).dueDate()), "P0001",
+                    "a date accrues only once it has ended on the database clock");
         }
         Duration after = BnplClockFrame.frameTo(midnight.plusSeconds(5));
         assertThat(BnplClockFrame.inOneTransaction(after, uow -> accruals.accrue(uow, bought.obligation())).posted())
@@ -214,7 +215,8 @@ class BnplAccrualDatabaseTest {
         assertThat(rows(bought)).isZero();
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(), frame)) {
             refused(migrator, rawAccrual(bought, bought.purchaseDate(), bought.purchaseDate(),
-                    bought.purchaseDate().plusDays(14)), "P0001");
+                    bought.purchaseDate().plusDays(14)), "P0001",
+                    "interest accrues only on an ACTIVE pay-in-N obligation");
         }
     }
 
@@ -234,7 +236,14 @@ class BnplAccrualDatabaseTest {
         assertThat(scalar("SELECT max(accrual_date)::text FROM bnpl.bnpl_interest_accrual WHERE obligation_id = '"
                 + bought.id() + "'")).isEqualTo(last.minusDays(1).toString());
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(), frame)) {
-            refused(migrator, rawAccrual(bought, last, last, last.plusMonths(1)), "P0001");
+            refused(migrator, rawAccrual(bought, last, last, last.plusMonths(1)), "P0001",
+                    "never at or after the final due date");
+            // Under another engine: a date inside the last instalment's period - the engine's rank, ahead of every date
+            // rank, is what refuses it (the 12 -> 13 transition gate, A6-F2: the display name's second half, untested).
+            LocalDate before = instalments.get(instalments.size() - 2).dueDate();
+            refused(migrator, rawAccrual(bought, last.minusDays(1), before, last, 33, "gen_random_uuid()")
+                    .replace("'ACCRUAL_ENGINE_V1'", "'ACCRUAL_ENGINE_V2'"), "P0001",
+                    "an accrual names its obligation's agreement version in force and the accrual engine it pins");
         }
     }
 

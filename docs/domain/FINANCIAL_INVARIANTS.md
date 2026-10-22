@@ -2524,6 +2524,7 @@ gauged `finapp.bnpl.threeway.proof{verdict}` (`P12-TSK-025`), at rest in every s
 (`P12-TST-001`).
 *(As built by `P12-TSK-013` (2026-10-18): `BnplAcceptances` (T-pur) - one transaction in the Phase 12 lock order; `bnpl V006`'s three deferred constraint triggers on `purchase_is_financed_at_commit` (a purchase, its financing and its obligation commit together, the purchase `FINANCED` beside its `ACCEPTED` offer, agreement version 1, its evidence and schedule version 1). Refined: the financing entry is named by id (`NOT NULL`, `UNIQUE`) - no bnpl trigger reads a ledger table (each module migrates its own schema in no guaranteed order, the `P11-TSK-013` refinement), so the entry's existence and lines are the one transaction's and the three-way proof's (`-025`). Hermetic: `BnplAcceptancesTest#aFailureAtEveryStepLeavesNothing` (23 steps), `BnplAcceptanceMigrationTest`. Database, written and owed a first run: `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing`, `BnplAcceptanceDatabaseTest#aFinancingRowWithoutItsObligationIsRefused`, `BnplOutboxAtomicityDatabaseTest`.)*
 *(P12-DOC-001, 2026-10-22: the Enforce line's deferred trigger is `bnpl V006`'s three constraint triggers - `purchase_is_financed_at_commit`, `merchant_financing_is_financed_at_commit` and `bnpl_obligation_is_financed_at_commit`, all executing `bnpl.purchase_is_financed_at_commit()`. The journal entry is not among what they check: no bnpl trigger reads a ledger table, so the entry is named by id, `NOT NULL`, `UNIQUE (journal_entry_id)`. `merchant_financing`'s `UNIQUE (purchase_id)` is its primary key. The database cases above ran green in the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest`, `:app:databaseTest` and `:app:ownContainerDatabaseTest`; every failure a test or register defect repaired by `P12-TSK-027`/`-028`, the one production defect the pass exposed - `bnpl V012`'s `CHECK`/constraint-trigger name collision - corrected in place, `P12-TSK-027` finding 1).)*
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: the as-built note's "Database, written and owed a first run" is spent. `app`'s `BnplPurchaseDatabaseTest#aFailureAtEveryStepLeavesNothing` and `BnplOutboxAtomicityDatabaseTest` (own-container) and bnpl's `BnplAcceptanceDatabaseTest#aFinancingRowWithoutItsObligationIsRefused` ran green in the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest` 174 across 17, the `app` selection through `:app:databaseTest` and `:app:ownContainerDatabaseTest`) and in the Phase 12 database runs since - `P12-TST-001`'s app selection (2026-10-21) and the exit review's `:bnpl:databaseTest` whole, 182 across 19 (2026-10-22).)*
 **Phase:** 12
 
 ### INV-BNPL-03 — One decision, one agreement; one session, one purchase; one purchase, one financing
@@ -2585,6 +2586,7 @@ three-way proof's merchant leg — Σ (gross − fee) over purchases less refund
 the BNPL lines on `MERCHANT_PAYABLE`, per merchant — and its identity leg per purchase (`P12-TSK-025`);
 the battery (`P12-TST-002`).
 *(As built by `P12-TSK-013`: F1 `DR BNPL_PRINCIPAL G; DR MERCHANT_PAYABLE f / CR MERCHANT_PAYABLE G; CR BNPL_MERCHANT_FEE_INCOME f` (a zero fee two lines) from merchant's pinned split; `merchant_financing CHECK (gross = fee + net)`. Refined: no trigger holds the entry's lines to the row (no bnpl trigger reads the ledger) - one code path builds both from one `MerchantFeeSplit`, proven by `BnplAcceptancesTest#theFinancingConservesThePurchase`; database, owed: `BnplPurchaseDatabaseTest#theFinancingConservesThePurchase`.)*
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: "database, owed" is spent. `app`'s `BnplPurchaseDatabaseTest#theFinancingConservesThePurchase` (own-container) ran green in the Phase 12 database pass (2026-10-20, the `app` selection through `:app:ownContainerDatabaseTest`) and again in `P12-TST-001`'s app selection (2026-10-21).)*
 **Phase:** 12
 
 ### INV-BNPL-05 — A schedule conserves principal exactly
@@ -2613,6 +2615,7 @@ re-running the pinned engine over every schedule version (`P12-TSK-025`).
 *(As built by `P12-TSK-013`: schedule version 1 stored (`bnpl_schedule`, `bnpl_instalment`) from the pinned engine over the purchase's business date; `bnpl_schedule_conserves`, deferred, holds Σ instalment principal = the schedule's principal = the financed gross and the numbering 1..n; pay-in-4's 14-day dates ranked at insert. Hermetic: `BnplAcceptanceMigrationTest#theScheduleConserves`; database, owed: `BnplAcceptanceDatabaseTest#aScheduleThatDoesNotConserveIsRefused`.)*
 *(As built by `P12-TSK-015`: billing conserves the schedule over the obligation's life - `bnpl V008`'s billing trigger holds every instalment's principal to `least(remaining, max(0, amount - interest))` and the last instalment's to the remainder, so Σ billed principal = the version's principal; pay-in-N's billed interest is exactly the period's posted accruals. Hermetic: `BnplServicingTest#theLastInstalmentBillsTheRemainder`, `#theLastInstalmentBillsTheRemainderWhateverTheInterest`, `#pnBillsTheAccruedInterestNotTheProjection`; database, owed: `BnplBillingDatabaseTest#theLastInstalmentBillsTheRemainder`.)*
 *(As built by `P12-TST-002`: `BnplBatteryTest` over 10,000 generated purchases - every schedule version the battery's own oracle wrote (`BnplBatteryOracles`: `floor(P / 4)` and the remainder first; the pay-in-N annuity and a refund's re-amortisation at the kept level) conserving exactly, re-projected `IDENTICAL` by the pinned engines in two JVMs, `#theSplitsConserve` holding A4 per purchase; probed - the remainder on instalment 4 `DIVERGED` exactly the 3,701 non-divisible pay-in-4 grosses, `MUTATION_TESTING.md` §2.)*
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: both "database, owed" above are spent. bnpl's `BnplAcceptanceDatabaseTest#aScheduleThatDoesNotConserveIsRefused` (the deferred `bnpl_schedule_conserves` alone, its reason `INV-BNPL-05` asserted) and `BnplBillingDatabaseTest#theLastInstalmentBillsTheRemainder` ran green in the Phase 12 database pass (2026-10-20, `:bnpl:databaseTest` 174 across 17) and in every `:bnpl:databaseTest` since - the exit review's whole tier, 182 across 19 (2026-10-22).)*
 **Phase:** 12
 
 ### INV-BNPL-06 — A refund preserves value
@@ -2670,6 +2673,7 @@ and the waiver room unchanged in rule and counting the release. Both orders reac
 `BnplRepaymentReversalDatabaseTest#theReversalFirstThenTheRefundReachesTheSameEndState`,
 `#theReleaseRanksHoldForEveryWriter`; the subledger and replay proofs agree (`BnplReversalFeeReleaseTest`); probes,
 `MUTATION_TESTING.md` §2.)*
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: `-021`'s "database, owed: `BnplRefundDatabaseTest`" is spent. bnpl's `BnplRefundDatabaseTest` - `#refundBeforeDuringAfter`, `#excessGoesToTheCustomerAndAPartialRefundReducesTheLatestInstalments`, `#aRefundRacingACollectionConservesInBothOrders`, `#refundCancelsLatestFirst` and the rest of the suite - and `BnplLateFeeDatabaseTest` (the late fee's release) ran green in the Phase 12 database pass (2026-10-20, `:bnpl:databaseTest` 174 across 17) and in every `:bnpl:databaseTest` since - the exit review's whole tier, 182 across 19 (2026-10-22). That they ran is all this note records: which probes were performed against them is as the `P12-DOC-001` note above says.)*
 **Phase:** 12
 
 ### INV-BNPL-07 — Refunds never exceed the purchase
@@ -2699,6 +2703,10 @@ V012`'s refund trigger re-takes B5 and refuses Σ refunds above the gross for ev
 FULLY_REFUNDED` only at the gross and nothing out of it. Hermetic: `BnplRefundsTest#refundsNeverExceedTheGross`,
 `#theSameRefundTwiceRefundsOnce`; database, owed: `BnplRefundDatabaseTest#twoRefundsOnTwoInstancesNeverExceedTheGross`,
 `#theSameRefundTwiceRefundsOnce`.)*
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: "database, owed" is spent. bnpl's
+`BnplRefundDatabaseTest#twoRefundsOnTwoInstancesNeverExceedTheGross` and `#theSameRefundTwiceRefundsOnce` ran green in the
+Phase 12 database pass (2026-10-20, `:bnpl:databaseTest` 174 across 17) and in every `:bnpl:databaseTest` since - the exit
+review's whole tier, 182 across 19 (2026-10-22).)*
 **Phase:** 12
 
 ### INV-BNPL-08 — Refund and dispute never double-credit
@@ -2779,6 +2787,11 @@ is dated `max(G, floor)`, the floor read before it writes (the Phase 11 gate's R
 `#aCreditBeyondEverythingIsRefunded`, `#everyPayoffApplicationIsFloored`, `#payoffBesideARefundIsStaleOrClosedNeverWrong`;
 database: `BnplPayoffDatabaseTest` (owed a first run).)*
 
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: `BnplPayoffDatabaseTest`'s "owed a first run" is spent. It ran in
+the Phase 12 database pass (2026-10-20; red there on a test defect - insufficient funds appeared to leave billings - classified
+and repaired by `P12-TSK-027`, no production defect) and green in every `:bnpl:databaseTest` since -
+the exit review's whole tier, 182 across 19 (2026-10-22) - beside scenario 9's and 16's `BnplRefundDatabaseTest` cases above.)*
+
 ### INV-BNPL-10 — BNPL principal counts in capital headroom and credit exposure from the purchase's commit
 **Statement:** From the commit of the purchase that creates it, BNPL principal outstanding
 (`BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE` of every obligation not `CLOSED`) is counted (a) in its
@@ -2815,6 +2828,7 @@ reader permit. Database, written and owed a first run: `LendingCapitalDatabaseTe
 The `422 bnpl.CapitalUnavailable` refusal, (b) and the real purchase are `-012`/`-013`'s.)*
 *(As built by the pair (2026-10-18), part (b) and the purchase: `app`'s `BnplCreditExposure` (credit's `PlatformCreditExposure` version 3) over `bnpl V007`'s view - one statement with lending's arm; T-pur takes L0 first and judges L6 for the gross after the consumption. Hermetic: `BnplCreditExposureTest`, `BnplAcceptancesTest#acceptanceAndADecisionSerialiseOnTheProfile`, `#acceptancesRacingForTheLastCapitalAdmitOne`; database, owed: `BnplCreditExposureDatabaseTest`, `BnplPurchaseDatabaseTest#acceptanceAndADecisionSerialiseOnTheProfile`, `#acceptancesRacingForTheLastCapitalAdmitOne`.)*
 *(As built by `P12-TSK-024` (2026-10-19), the reversal arm: T-rev's approval takes L0 first (always) and, when the reversed repayment paid principal, L6 with headroom at least that principal before the wallet; a shortfall is `422 bnpl.CapitalUnavailable`, nothing posted, the proposal still `PROPOSED`. Hermetic: `BnplRepaymentReversalsTest#reversalTakesTheProfileFirst`, `#exposureRisesByThePrincipalReopened`, `#aReversalNeverOverDeploysCapital`, `#aHeldCreditRepaymentIsReversedWithoutCapital`; database, owed: `BnplRepaymentReversalDatabaseTest`'s, and `app`'s own-container `BnplServicingApiTest#reversalTakesTheProfileFirst` on the real credit profile.)*
+*(The Phase 12 → 13 transition gate, 2026-10-22 - discharge: every "written and owed a first run" and "database, owed" above is spent. `app`'s own-container `LendingCapitalDatabaseTest` (orders 15 to 20 among its cases), `lending.BnplCapitalDatabaseTest`, `BnplCreditExposureDatabaseTest`, `BnplPurchaseDatabaseTest#acceptanceAndADecisionSerialiseOnTheProfile` and `#acceptancesRacingForTheLastCapitalAdmitOne` and `BnplServicingApiTest#reversalTakesTheProfileFirst`, and bnpl's `BnplRepaymentReversalDatabaseTest`, ran green in the Phase 12 database pass (2026-10-20: `:bnpl:databaseTest` 174 across 17; the `app` selection through `:app:databaseTest` and `:app:ownContainerDatabaseTest` - `com.finapp.app.bnpl.*` with `lending.BnplCapitalDatabaseTest` and `LendingCapitalDatabaseTest` by name) and in the Phase 12 database runs since - `P12-TST-001`'s app selection (2026-10-21), and the exit review's `:bnpl:databaseTest` whole, 182 across 19, with `lending.BnplCapitalDatabaseTest` and `BnplServicingApiTest` among its `app` cases (2026-10-22).)*
 **Phase:** 12
 
 *`INV-BNPL-01`…`INV-BNPL-10` catalogued by the Phase 11 → 12 transition (2026-10-16), the `INV-LND`

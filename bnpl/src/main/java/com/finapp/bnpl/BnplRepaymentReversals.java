@@ -159,7 +159,7 @@ public final class BnplRepaymentReversals {
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
         String reasoned = BnplReasons.reasoned(reason);
-        BnplCorrectionStore.Addressed addressed = notSelfDealing(unitOfWork, agreement, actor, "propose");
+        BnplCorrectionStore.Addressed addressed = notSelfDealing(unitOfWork, agreement, actor, "repayment-reversal:propose");
         // (B4) The obligation: every act on it, and every proposal for any of its repayments, serialises here.
         BnplServicingStore.Locked locked = servicing.lock(unitOfWork, addressed.obligation()).orElseThrow(NotFound::new);
         BnplPurchaseStore.Repayment reversed = store.repayment(unitOfWork, addressed.obligation(), repayment)
@@ -214,7 +214,7 @@ public final class BnplRepaymentReversals {
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
         String reasoned = BnplReasons.reasoned(reason);
-        BnplCorrectionStore.Addressed addressed = notSelfDealing(unitOfWork, agreement, actor, "approve");
+        BnplCorrectionStore.Addressed addressed = notSelfDealing(unitOfWork, agreement, actor, "repayment-reversal:approve");
         // (L0) The party's credit profile, FIRST: the reversal raises outstanding exposure (INV-CRD-09).
         if (!credit.lockExposure(unitOfWork, addressed.party())) {
             throw new IllegalStateException("a BNPL obligation's party has a credit profile - its decision opened it");
@@ -344,7 +344,7 @@ public final class BnplRepaymentReversals {
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
         String reasoned = BnplReasons.reasoned(reason);
-        BnplCorrectionStore.Addressed addressed = notSelfDealing(unitOfWork, agreement, actor, "reject");
+        BnplCorrectionStore.Addressed addressed = notSelfDealing(unitOfWork, agreement, actor, "repayment-reversal:reject");
         servicing.lock(unitOfWork, addressed.obligation()).orElseThrow(NotFound::new);
         BnplRepaymentReversal proposal = lockedProposal(unitOfWork, addressed.obligation(), repayment, reversal);
         if (proposal.status() == BnplCorrectionStatus.REJECTED
@@ -434,9 +434,16 @@ public final class BnplRepaymentReversals {
         return addressed;
     }
 
+    /**
+     * {@link #judgeSelfDealing} for this class's three acts, {@code act} the whole audited label
+     * ({@code repayment-reversal:propose}, {@code :approve}, {@code :reject}) - passed whole, as the waiver's are: a bare
+     * {@code "repayment-reversal:"} literal has a posting key's shape, and is no posting key (the Phase 12 &rarr; 13
+     * transition gate, G2 - {@code ExpectationOpenerRegisterTest} read it as an unclassified one). The labels are
+     * unchanged.
+     */
     private BnplCorrectionStore.Addressed notSelfDealing(Connection unitOfWork, BnplAgreementId agreement, Actor actor,
             String act) {
-        return judgeSelfDealing(store, actingParties, unitOfWork, agreement, actor, "repayment-reversal:" + act);
+        return judgeSelfDealing(store, actingParties, unitOfWork, agreement, actor, act);
     }
 
     /** The proposal {@code FOR UPDATE} (B6), only as a proposal for this repayment of this obligation. */

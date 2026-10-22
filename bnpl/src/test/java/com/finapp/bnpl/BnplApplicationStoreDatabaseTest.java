@@ -125,13 +125,15 @@ class BnplApplicationStoreDatabaseTest {
                 BnplPlan.PAY_IN_6_MONTHS, payInN);
         try (Connection owner = DatabaseRoles.migrator()) {
             refused(owner, "UPDATE bnpl.bnpl_application SET status = 'SUBMITTED' WHERE id = '" + id.value() + "'",
-                    "P0001");
+                    "P0001", "AWAITING_DECISION -> SUBMITTED is not an edge");
             refused(owner, "UPDATE bnpl.bnpl_application SET checkout_session_id = gen_random_uuid() WHERE id = '"
-                    + id.value() + "'", "P0001");
+                    + id.value() + "'", "P0001", "identity and choices are frozen from birth");
             refused(owner, "UPDATE bnpl.bnpl_application SET status = 'CLOSED_UNDECIDED' WHERE id = '" + id.value()
                     + "'", "23514");
-            refused(owner, "DELETE FROM bnpl.bnpl_application WHERE id = '" + id.value() + "'", "P0001");
-            refused(owner, "TRUNCATE bnpl.bnpl_application_event", "P0001");
+            refused(owner, "DELETE FROM bnpl.bnpl_application WHERE id = '" + id.value() + "'", "P0001",
+                    "a BNPL application is never deleted");
+            refused(owner, "TRUNCATE bnpl.bnpl_application_event", "P0001",
+                    "the BNPL applications and their history are never truncated");
         }
         try (Connection application = DatabaseRoles.application()) {
             refused(application, "UPDATE bnpl.bnpl_application SET plan = 'PAY_IN_3_MONTHS' WHERE id = '" + id.value()
@@ -146,9 +148,9 @@ class BnplApplicationStoreDatabaseTest {
         assertThat(withdrawn(id)).as("the loser finds it moved").isFalse();
         try (Connection owner = DatabaseRoles.migrator()) {
             refused(owner, "UPDATE bnpl.bnpl_application SET status = 'AWAITING_DECISION' WHERE id = '" + id.value()
-                    + "'", "P0001");
+                    + "'", "P0001", "WITHDRAWN -> AWAITING_DECISION is not an edge");
             refused(owner, "UPDATE bnpl.bnpl_application SET next_step_at = clock_timestamp() WHERE id = '" + id.value()
-                    + "'", "P0001");
+                    + "'", "P0001", "moves only its permit, and only while AWAITING_DECISION");
         }
         assertThat(scalar("SELECT (closed_at >= submitted_at)::text FROM bnpl.bnpl_application WHERE id = '"
                 + id.value() + "'")).as("the closure stamped by the database").isEqualTo("true");
@@ -159,15 +161,22 @@ class BnplApplicationStoreDatabaseTest {
     void bornOnTheActiveTermsWithAnOfferedPlan() {
         // The trigger refuses the insert itself (P0001), inside the store - which carries the operation and the SQLSTATE,
         // never the driver's exception (INV-AUD-02, BnplStorageException; P12-TSK-027).
+        // The trigger's own reason is read beneath it, from the statement it prepared (the 12 -> 13 transition gate, A6-F2).
         String refusal = "bnpl storage failed inserting a BNPL application: SQLSTATE P0001";
+        List<SQLException> offered = new java.util.concurrent.CopyOnWriteArrayList<>();
         assertThatThrownBy(() -> born(UUID.randomUUID(), UUID.randomUUID(), BnplProduct.BNPL_PAY_IN_N,
-                BnplPlan.PAY_IN_12_MONTHS, payInN)).as("the version offers 3 and 6 months")
+                BnplPlan.PAY_IN_12_MONTHS, payInN, UUID.randomUUID(), offered)).as("the version offers 3 and 6 months")
                 .isInstanceOf(BnplStorageException.class).hasMessage(refusal).hasNoCause();
+        assertThat(offered).singleElement().satisfies(failure -> assertThat(failure.getMessage())
+                .contains("a BNPL application's plan is one its terms version offers"));
         BnplTermsVersionId retired = payIn4;
         payIn4 = activate(BnplTermsFixtures.payIn4().build());
+        List<SQLException> active = new java.util.concurrent.CopyOnWriteArrayList<>();
         assertThatThrownBy(() -> born(UUID.randomUUID(), UUID.randomUUID(), BnplProduct.BNPL_PAY_IN_4,
-                BnplPlan.PAY_IN_4, retired)).as("a retired version").isInstanceOf(BnplStorageException.class)
-                .hasMessage(refusal).hasNoCause();
+                BnplPlan.PAY_IN_4, retired, UUID.randomUUID(), active)).as("a retired version")
+                .isInstanceOf(BnplStorageException.class).hasMessage(refusal).hasNoCause();
+        assertThat(active).singleElement().satisfies(failure -> assertThat(failure.getMessage())
+                .contains("a BNPL application records its product's ACTIVE terms version"));
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -179,10 +188,16 @@ class BnplApplicationStoreDatabaseTest {
 
     private static BnplApplicationId born(UUID party, UUID session, BnplProduct product, BnplPlan plan,
             BnplTermsVersionId version, UUID request) {
+        return born(party, session, product, plan, version, request, new java.util.ArrayList<>());
+    }
+
+    /** {@link #born}, every driver refusal of the insert recorded in {@code refusals} beneath the store's own exception. */
+    private static BnplApplicationId born(UUID party, UUID session, BnplProduct product, BnplPlan plan,
+            BnplTermsVersionId version, UUID request, List<SQLException> refusals) {
         BnplApplicationStore.NewApplication row = new BnplApplicationStore.NewApplication(BnplApplicationId.next(IDS),
                 party, product, plan, session, UUID.randomUUID(), request, version, customer(party), correlation());
         return inOneTransaction(uow -> {
-            if (!STORE.insert(uow, row)) {
+            if (!STORE.insert(BnplAcceptanceDatabaseTest.capturing(uow, refusals), row)) {
                 throw new IllegalStateException("an arbiter refused the case's own application");
             }
             STORE.appendEvent(uow, new BnplApplicationStore.HistoryRow(IDS.next(), row.id(), Optional.empty(),
@@ -308,5 +323,10 @@ class BnplApplicationStoreDatabaseTest {
                 .as(sql)
                 .isInstanceOf(SQLException.class)
                 .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState));
+    }
+
+    /** {@code sql} refused with {@code sqlState} by the rule whose message carries {@code reason} (the 12 -> 13 gate, A6-F2). */
+    private static void refused(Connection connection, String sql, String sqlState, String reason) {
+        BnplAcceptanceDatabaseTest.refused(connection, sql, sqlState, reason);
     }
 }

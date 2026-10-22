@@ -69,7 +69,7 @@ class BnplWaiverDatabaseTest {
                     + " proposed_at, proposal_reason, correlation_id) SELECT gen_random_uuid(), f.obligation_id, 'FEE',"
                     + " f.id, f.instalment_id, f.currency, f.scale, 1, f.agreement_id, f.agreement_version, 'someone',"
                     + " 'EMPLOYEE', clock_timestamp(), 'again', 'c' FROM bnpl.bnpl_fee_assessment f WHERE f.id = '"
-                    + fee.id() + "'", "P0001");
+                    + fee.id() + "'", "P0001", "bounded by what its fee still has due and was never forgiven");
             migrator.rollback();
         }
     }
@@ -97,6 +97,100 @@ class BnplWaiverDatabaseTest {
                 .isInstanceOf(BnplWaivers.WaiverExceedsDue.class);
         assertThat(scalar("SELECT bnpl.fee_waiver_room('" + standing.id() + "')::text")).isEqualTo("0");
         assertThat(scalar("SELECT bnpl.fee_waiver_room('" + released.id() + "')::text")).isEqualTo("0");
+    }
+
+    @Test
+    @DisplayName("R3 through a reversal, on PostgreSQL: 2.00 waived, the 3.00 left paid and its payment reversed - the fee is"
+            + " due again and forgivable to exactly the 3.00 never forgiven: 3.01 refused by the domain and, for every"
+            + " writer, by the trigger's bound; 3.00 waived; then nothing more")
+    void aReopenedFeeIsForgivableOnlyToWhatWasNeverForgiven() throws SQLException {
+        // The Phase 12 -> 13 transition gate, A6-F4: the path BnplWaiversTest proves hermetically, over bnpl's JDBC stores
+        // and bnpl V016's bnpl.fee_waiver_room - the bound read from the rows a reversal re-opened, never the fake's copy.
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        LocalDate day = bought.due(2).plusDays(5);
+        BnplWaiver first = world.proposeWaiver(day, bought, fee.id(), 2_00, world.operator());
+        world.approveWaiver(day, bought, first.id(), world.operator());
+        BnplPurchaseStore.Repayment paid = world.base.repayOn(day.plusDays(1), bought, "the fee", 3_00).repayment();
+        assertThat(world.due(bought, 2, AllocationComponent.FEES.name())).as("the fee settled: 2.00 waived, 3.00 paid")
+                .isZero();
+        assertThat(scalar("SELECT bnpl.fee_waiver_room('" + fee.id() + "')::text")).isEqualTo("0");
+        LocalDate reversed = day.plusDays(2);
+        BnplRepaymentReversal reversal = world.propose(reversed, bought, paid.id(), world.operator());
+        world.approve(reversed, bought, paid.id(), reversal.id(), world.operator());
+        assertThat(world.due(bought, 2, AllocationComponent.FEES.name())).as("the reversal re-opened the 3.00")
+                .isEqualTo(3_00);
+        assertThat(scalar("SELECT bnpl.fee_waiver_room('" + fee.id() + "')::text"))
+                .as("the room: what is due and was never forgiven").isEqualTo("300");
+
+        // The bound, both ranks: the domain's, and the trigger's for a raw writer of either role.
+        assertThatThrownBy(() -> world.proposeWaiver(reversed, bought, fee.id(), 3_01, world.operator()))
+                .isInstanceOf(BnplWaivers.WaiverExceedsDue.class);
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (Connection framed = BnplClockFrame.framed(writer, world.base.frameOn(reversed))) {
+                refused(framed, rawWaiver(fee, 3_01, "beyond the room"), "P0001",
+                        "bounded by what its fee still has due and was never forgiven");
+            }
+        }
+        BnplWaiver second = world.proposeWaiver(reversed, bought, fee.id(), 3_00, world.operator());
+        world.approveWaiver(reversed, bought, second.id(), world.operator());
+        assertThat(world.due(bought, 2, AllocationComponent.FEES.name())).isZero();
+        assertThat(scalar("SELECT bnpl.billing_component_billed(b.id, 'FEES')::text FROM bnpl.bnpl_billing b WHERE"
+                + " b.instalment_id = '" + bought.instalment(2) + "'")).as("the whole 5.00 forgiven, none of it paid")
+                .isEqualTo("0");
+        assertThat(scalar("SELECT bnpl.fee_waiver_room('" + fee.id() + "')::text")).isEqualTo("0");
+        assertThatThrownBy(() -> world.proposeWaiver(reversed, bought, fee.id(), 1, world.operator()))
+                .isInstanceOf(BnplWaivers.WaiverExceedsDue.class);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_waiver_decision d JOIN bnpl.bnpl_waiver w ON w.id = d.waiver_id"
+                + " WHERE w.fee_assessment_id = '" + fee.id() + "' AND d.outcome = 'APPROVED'")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a waiver needs a reason, for every writer: a raw proposal and a raw decision without one are refused by"
+            + " bnpl V016's CHECKs (bnpl_waiver_proposal_reasoned, bnpl_waiver_decision_reasoned) - every other rank"
+            + " satisfied, so the CHECK is what refuses")
+    void aWaiverNeedsAReasonForEveryWriter() throws SQLException {
+        // The Phase 12 -> 13 transition gate, A1-5: the domain's half is BnplWaiversTest#aWaiverNeedsAReason.
+        BnplCorrectionDatabaseWorld world = new BnplCorrectionDatabaseWorld();
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        BnplFeeAssessment fee = lateFee(world, bought);
+        LocalDate day = bought.due(2).plusDays(5);
+        String longer = "r".repeat(BnplReasons.BOUND + 1);
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (Connection framed = BnplClockFrame.framed(writer, world.base.frameOn(day))) {
+                // Within the room (5.00 due, nothing forgiven), no proposal pending: only the reason is wrong.
+                refused(framed, rawWaiver(fee, 1_00, ""), "23514", "bnpl_waiver_proposal_reasoned");
+                refused(framed, rawWaiver(fee, 1_00, longer), "23514", "bnpl_waiver_proposal_reasoned");
+            }
+        }
+        BnplWaiver proposed = world.proposeWaiver(day, bought, fee.id(), 1_00, world.operator());
+        String rawDecision = "INSERT INTO bnpl.bnpl_waiver_decision (id, waiver_id, proposed_by, outcome, decided_by,"
+                + " decided_by_type, decided_at, decision_reason, journal_entry_id, correlation_id) SELECT"
+                + " gen_random_uuid(), w.id, w.proposed_by, 'REJECTED', 'operator-z', 'EMPLOYEE', clock_timestamp(),"
+                + " '%s', NULL, 'c' FROM bnpl.bnpl_waiver w WHERE w.id = '" + proposed.id() + "'";
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (Connection framed = BnplClockFrame.framed(writer, world.base.frameOn(day))) {
+                // Another decider, a rejection posting nothing: only the reason is wrong.
+                refused(framed, String.format(rawDecision, ""), "23514", "bnpl_waiver_decision_reasoned");
+                refused(framed, String.format(rawDecision, longer), "23514", "bnpl_waiver_decision_reasoned");
+            }
+        }
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_waiver_decision WHERE waiver_id = '" + proposed.id() + "'"))
+                .as("the proposal undecided").isZero();
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_waiver WHERE fee_assessment_id = '" + fee.id() + "'"))
+                .as("no raw proposal stood").isEqualTo(1);
+    }
+
+    /** A raw FEE waiver of {@code fee} for {@code minor}, reasoned {@code reason} - every other column its own. */
+    private static String rawWaiver(BnplFeeAssessment fee, long minor, String reason) {
+        return "INSERT INTO bnpl.bnpl_waiver (id, obligation_id, kind, fee_assessment_id, instalment_id, currency, scale,"
+                + " amount_minor, agreement_id, agreement_version, proposed_by, proposed_by_type, proposed_at,"
+                + " proposal_reason, correlation_id) SELECT gen_random_uuid(), f.obligation_id, 'FEE', f.id,"
+                + " f.instalment_id, f.currency, f.scale, " + minor + ", f.agreement_id, (SELECT max(a.version) FROM"
+                + " bnpl.bnpl_agreement a WHERE a.obligation_id = f.obligation_id), 'someone', 'EMPLOYEE',"
+                + " clock_timestamp(), '" + reason + "', 'c' FROM bnpl.bnpl_fee_assessment f WHERE f.id = '" + fee.id()
+                + "'";
     }
 
     @Test

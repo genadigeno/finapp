@@ -82,15 +82,33 @@ class BnplLateFeeDatabaseTest {
 
     @Test
     @DisplayName("the cap holds per agreement: 5.00 fees under a 12.00 cap - 5.00, 5.00 and the 2.00 the cap admits;"
-            + " nothing more; and a raw fee beyond the cap is refused")
+            + " nothing more; and a raw fee within the pinned fee but beyond the cap's room is refused for every writer -"
+            + " the cap's own arm (bnpl V013), the fee's arm unable to refuse it")
     void theCapHolds() throws SQLException {
         BnplConditionDatabaseWorld world = new BnplConditionDatabaseWorld();
         BnplConditionDatabaseWorld.Purchased bought = world.purchaseUnder(BnplTermsFixtures.payIn4().lateFee(eur(5_00))
                 .lateFeeCap(eur(12_00)).build());
+        LocalDate third = bought.due(3).plusDays(5);
+        world.serviceOn(third, bought);
+        assertThat(fees(bought)).as("instalments 2 and 3 late: 10.00 of the 12.00 cap").containsExactly(
+                "2:" + third + ":500", "3:" + third + ":500");
+        // The cap's arm alone (the Phase 12 -> 13 transition gate, A1-2): 3.00 on instalment 4 at its own fee day - at
+        // most the pinned 5.00, so the fee's arm cannot refuse it; past the 2.00 of room the cap leaves, so the cap's does.
         LocalDate day = bought.due(4).plusDays(5);
+        String raw = "INSERT INTO bnpl.bnpl_fee_assessment (id, obligation_id, instalment_id, kind, business_date,"
+                + " currency, scale, amount_minor, agreement_id, agreement_version, journal_entry_id, created_at,"
+                + " correlation_id) SELECT gen_random_uuid(), o.id, '" + bought.instalment(4) + "', 'LATE', DATE '" + day
+                + "', 'EUR', 2, 300, o.agreement_id, 1, gen_random_uuid(), clock_timestamp(), 'raw' FROM"
+                + " bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'";
+        world.serviceOn(bought.due(4), bought);
+        for (Connection writer : List.of(DatabaseRoles.application(), DatabaseRoles.migrator())) {
+            try (Connection framed = BnplClockFrame.framed(writer, world.frameOn(day))) {
+                refused(framed, raw, "P0001", "an agreement's fees at most the pinned cap");
+            }
+        }
         world.serviceOn(day, bought);
         world.serviceOn(day.plusDays(20), bought);
-        assertThat(fees(bought)).containsExactly("2:" + day + ":500", "3:" + day + ":500", "4:" + day + ":200");
+        assertThat(fees(bought)).containsExactly("2:" + third + ":500", "3:" + third + ":500", "4:" + day + ":200");
         assertThat(count("SELECT sum(amount_minor) FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + bought.id()
                 + "'")).isEqualTo(12_00);
     }
@@ -151,14 +169,16 @@ class BnplLateFeeDatabaseTest {
                 + " 'EUR', 2, %d, o.agreement_id, 1, gen_random_uuid(), clock_timestamp(), 'raw' FROM"
                 + " bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'";
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(due.plusDays(4)))) {
-            refused(app, String.format(insert, due.plusDays(4), 5_00), "P0001");
+            refused(app, String.format(insert, due.plusDays(4), 5_00), "P0001",
+                    "age has reached the pinned late-fee day");
         }
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(due.plusDays(6)))) {
-            refused(app, String.format(insert, due.plusDays(6), 5_01), "P0001");
+            refused(app, String.format(insert, due.plusDays(6), 5_01), "P0001",
+                    "a BNPL late fee is at most the pinned fee");
         }
         world.repayOn(due.plusDays(6), bought, "settled", 150_00);
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(due.plusDays(7)))) {
-            refused(app, String.format(insert, due.plusDays(7), 5_00), "P0001");
+            refused(app, String.format(insert, due.plusDays(7), 5_00), "P0001", "still owing interest or principal");
         }
         assertThat(fees(bought)).isEmpty();
         BnplConditionDatabaseWorld.Purchased owing = world.feeBearing();
@@ -170,13 +190,19 @@ class BnplLateFeeDatabaseTest {
                     + "'", "42501");
             refused(app, "DELETE FROM bnpl.bnpl_fee_assessment", "42501");
             refused(migrator, "UPDATE bnpl.bnpl_fee_assessment SET amount_minor = 1 WHERE obligation_id = '"
-                    + owing.id() + "'", "P0001");
-            refused(migrator, "DELETE FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + owing.id() + "'", "P0001");
+                    + owing.id() + "'", "P0001", "a BNPL fee assessment is immutable from insert");
+            refused(migrator, "DELETE FROM bnpl.bnpl_fee_assessment WHERE obligation_id = '" + owing.id() + "'", "P0001",
+                    "a BNPL fee assessment is immutable from insert");
             // Since bnpl V016 (P12-TSK-024) bnpl_waiver references the assessment, so a plain TRUNCATE meets that
             // foreign key first (0A000); a CASCADE reaches the truncate triggers, and the trigger still refuses it - the
-            // credit V007 / lending V016 convention (P12-TSK-027).
+            // credit V007 / lending V016 convention (P12-TSK-027). The cascade reaches the waiver's and its decision's
+            // truncate triggers too, which raise the same message, so the fee table's OWN trigger is isolated: theirs
+            // disabled in the attempt's transaction, rolled back with it (the 12 -> 13 transition gate, A6-F2).
             refused(migrator, "TRUNCATE bnpl.bnpl_fee_assessment", "0A000");
-            refused(migrator, "TRUNCATE bnpl.bnpl_fee_assessment CASCADE", "P0001");
+            assertThat(BnplAcceptanceDatabaseTest.truncateRefusedByItsOwnTrigger(migrator, "bnpl.bnpl_fee_assessment",
+                    "are never truncated")).as("the cascade's reach, disabled for the attempt").contains(
+                    "bnpl.bnpl_waiver.bnpl_waiver_is_never_truncated",
+                    "bnpl.bnpl_waiver_decision.bnpl_waiver_decision_is_never_truncated");
         }
     }
 

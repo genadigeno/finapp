@@ -139,6 +139,11 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    `cum_fee(x) = round(f · x / G)`, `cum_fee(G) = f` — order-independent, the
    `MerchantSettlement.refund` precedent (ADR-0105 owns the refund policy). Merchant fee income is not
    capital (lending's A29; ADR-0104).
+   *(Corrected by the Phase 12 → 13 transition gate, 2026-10-22: `round_HALF_EVEN` above is the default,
+   not the rule. As built the fee and `cum_fee` are each rounded once under the **pinned fee schedule
+   version's own `rounding_policy`** — merchant `V004`'s required, named attribute (`INV-MON-03`), one of
+   six — by merchant's `FeeCalculation` (`assess`, and `returnedFee` through `BnplMerchants`). `HALF_EVEN`
+   is A8's accepted default, the policy a BNPL fee schedule is expected to carry; the code imposes none.)*
 
 8. **The merchant payable gains `bnpl` as a poster.** F1, F5 and F9 post to `MERCHANT_PAYABLE`;
    `MERCHANT_PAYABLE` stays outside `closedToFreeAdjustments()` (reconciliation attributions still

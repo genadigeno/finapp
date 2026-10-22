@@ -319,8 +319,10 @@ class BnplRefundDatabaseTest {
         world.refundOn(bought.purchaseDate().plusDays(1), bought, "first", 180_00);
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(),
                 world.frameOn(bought.purchaseDate().plusDays(1)))) {
-            refused(migrator, rawRefund(bought, 42000, 18000, 0, 42000, 0, 42000, "NONE", 0), "P0001");
-            refused(migrator, rawRefund(bought, 42001, 18000, 1680, 40321, 0, 42001, "NONE", 0), "P0001");
+            refused(migrator, rawRefund(bought, 42000, 18000, 0, 42000, 0, 42000, "NONE", 0), "P0001",
+                    "take back at most its financed net and return at most its fee");
+            refused(migrator, rawRefund(bought, 42001, 18000, 1680, 40321, 0, 42001, "NONE", 0), "P0001",
+                    "never total more than its gross");
         }
     }
 
@@ -446,11 +448,11 @@ class BnplRefundDatabaseTest {
         try (Connection migrator = DatabaseRoles.migrator()) {
             migrator.setAutoCommit(false);
             refused(migrator, "UPDATE bnpl.bnpl_refund SET reason = 'edited' WHERE id = '" + refunded.refund().id() + "'",
-                    "P0001");
+                    "P0001", "a BNPL refund is immutable from insert");
             refused(migrator, "DELETE FROM bnpl.bnpl_refund_adjustment WHERE refund_id = '" + refunded.refund().id()
-                    + "'", "P0001");
+                    + "'", "P0001", "a BNPL refund adjustment is immutable from insert");
             refused(migrator, "UPDATE bnpl.purchase SET status = 'FULLY_REFUNDED' WHERE id = '"
-                    + bought.purchase().value() + "'", "P0001");
+                    + bought.purchase().value() + "'", "P0001", "FULLY_REFUNDED only when its refunds total its gross");
         }
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(),
                 world.frameOn(bought.purchaseDate().plusDays(1)))) {

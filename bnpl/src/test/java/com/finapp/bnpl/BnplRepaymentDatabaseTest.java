@@ -297,36 +297,79 @@ class BnplRepaymentDatabaseTest {
         try (Connection application = DatabaseRoles.application(); Connection migrator = DatabaseRoles.migrator()) {
             application.setAutoCommit(false);
             migrator.setAutoCommit(false);
-            refused(application, "UPDATE bnpl.bnpl_obligation SET next_servicing_at = clock_timestamp()" + where, "P0001");
+            refused(application, "UPDATE bnpl.bnpl_obligation SET next_servicing_at = clock_timestamp()" + where, "P0001",
+                    "CLOSED -> CLOSED is not an edge");
             refused(migrator, "UPDATE bnpl.bnpl_obligation SET status = 'ACTIVE', closure_reason = NULL, closed_at ="
-                    + " NULL" + where, "P0001");
-            refused(migrator, "INSERT INTO bnpl.bnpl_repayment (id, obligation_id, kind, request_key, currency, scale,"
-                    + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
-                    + " received_at) SELECT gen_random_uuid(), o.id, 'CUSTOMER', 'raw', 'EUR', 2, 100, o.agreement_id, 1,"
-                    + " 'ALLOCATION_ENGINE_V1', gen_random_uuid(), current_date, clock_timestamp() FROM"
-                    + " bnpl.bnpl_obligation o" + where.replace("id =", "o.id ="), "P0001");
+                    + " NULL" + where, "P0001", "CLOSED -> ACTIVE is not an edge");
             refused(migrator, "INSERT INTO bnpl.bnpl_obligation_closure (id, obligation_id, reason, currency, scale,"
                     + " refund_minor, created_at, correlation_id) VALUES (gen_random_uuid(), '" + bought.id() + "',"
-                    + " 'REPAID', 'EUR', 2, 0, clock_timestamp(), 'raw')", "P0001");
+                    + " 'REPAID', 'EUR', 2, 0, clock_timestamp(), 'raw')", "P0001",
+                    "an ACTIVE BNPL obligation closes REPAID, REFUNDED");
+        }
+        // A raw repayment dated inside the floor window - on the floor itself, the clock a day past it - so the floor's
+        // rank admits it and only the CLOSED rule (bnpl V014's "repays its ACTIVE obligation", INV-LND-08) can refuse it:
+        // dated current_date it lay below the floor and the floor's rank refused it too (the 12 -> 13 gate, A6-F2).
+        LocalDate floor = LocalDate.parse(scalar("SELECT bnpl.principal_value_floor('" + bought.id() + "')::text"));
+        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
+            try (Connection framed = BnplClockFrame.framed(writer, world.frameOn(floor.plusDays(1)))) {
+                refused(framed, "INSERT INTO bnpl.bnpl_repayment (id, obligation_id, kind, request_key, currency, scale,"
+                        + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
+                        + " received_at) SELECT gen_random_uuid(), o.id, 'CUSTOMER', 'raw', 'EUR', 2, 100, o.agreement_id,"
+                        + " 1, 'ALLOCATION_ENGINE_V1', gen_random_uuid(), DATE '" + floor + "', clock_timestamp() FROM"
+                        + " bnpl.bnpl_obligation o" + where.replace("id =", "o.id ="), "P0001",
+                        "a BNPL repayment repays its ACTIVE obligation");
+            }
         }
     }
 
     @Test
     @DisplayName("the closure's ranks for every writer: CLOSED without its closure refused; a closure with a billed item"
-            + " unpaid refused; a closure whose obligation is not CLOSED at commit refused")
+            + " unpaid refused; a closure whose obligation is not CLOSED at commit refused - the deferred rank reached by"
+            + " a raw writer whose every row rank passes (every instalment billed and paid in the same transaction)")
     void theClosuresRanksHoldForEveryWriter() throws SQLException {
         World world = new World();
         Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
-        world.serviceOn(bought.purchaseDate().plusDays(42), bought);
+        LocalDate last = bought.purchaseDate().plusDays(42);
+        world.serviceOn(last, bought);
         String where = " WHERE id = '" + bought.id() + "'";
         try (Connection migrator = DatabaseRoles.migrator()) {
             migrator.setAutoCommit(false);
             refused(migrator, "UPDATE bnpl.bnpl_obligation SET status = 'CLOSED', closure_reason = 'REPAID'" + where,
-                    "P0001");
+                    "P0001", "a BNPL obligation is CLOSED only beside its closure");
             refused(migrator, "INSERT INTO bnpl.bnpl_obligation_closure (id, obligation_id, reason, currency, scale,"
                     + " refund_minor, created_at, correlation_id) VALUES (gen_random_uuid(), '" + bought.id() + "',"
-                    + " 'REPAID', 'EUR', 2, 0, clock_timestamp(), 'raw')", "P0001");
+                    + " 'REPAID', 'EUR', 2, 0, clock_timestamp(), 'raw')", "P0001",
+                    "closes only once every billed item is paid in full");
         }
+        // The commit-time rank (bnpl V010's bnpl_obligation_closure_closes_its_obligation), reached at last (the 12 -> 13
+        // transition gate, A6-F11): a raw repayment of the 450.00 billed and unpaid, allocated whole to instalments 2 to
+        // 4 - so the closure's row ranks (ACTIVE, every instalment billed, every billed item paid) all pass - and its
+        // closure, the obligation left ACTIVE. Only the deferred rank is left to refuse it, at commit.
+        try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(), world.frameOn(last));
+                Statement insert = migrator.createStatement()) {
+            UUID raw = UUID.randomUUID();
+            insert.execute("INSERT INTO bnpl.bnpl_repayment (id, obligation_id, kind, request_key, currency, scale,"
+                    + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
+                    + " received_at) SELECT '" + raw + "', o.id, 'CUSTOMER', 'raw-whole', 'EUR', 2, 45000, o.agreement_id,"
+                    + " 1, 'ALLOCATION_ENGINE_V1', gen_random_uuid(), DATE '" + last + "', clock_timestamp() FROM"
+                    + " bnpl.bnpl_obligation o" + where.replace("id =", "o.id ="));
+            for (int sequence = 1; sequence <= 3; sequence++) {
+                insert.execute("INSERT INTO bnpl.bnpl_repayment_allocation (id, repayment_id, sequence, target,"
+                        + " instalment_id, component, currency, scale, amount_minor) VALUES (gen_random_uuid(), '" + raw
+                        + "', " + sequence + ", 'DUE_ITEM', '" + bought.schedule().instalments().get(sequence).id()
+                        + "', 'PRINCIPAL', 'EUR', 2, 15000)");
+            }
+            insert.execute("INSERT INTO bnpl.bnpl_obligation_closure (id, obligation_id, reason, repayment_id, currency,"
+                    + " scale, refund_minor, created_at, correlation_id) VALUES (gen_random_uuid(), '" + bought.id()
+                    + "', 'REPAID', '" + raw + "', 'EUR', 2, 0, clock_timestamp(), 'raw')");
+            // Every statement admitted: the row ranks passed; the deferred rank alone judges the commit.
+            assertThatThrownBy(migrator::commit).isInstanceOf(SQLException.class)
+                    .satisfies(refusal -> assertThat(((SQLException) refusal).getSQLState()).isEqualTo("P0001"))
+                    .hasMessageContaining("a BNPL closure committed without its obligation CLOSED for the same reason");
+        }
+        assertThat(scalar("SELECT status || '|' || (SELECT count(*) FROM bnpl.bnpl_obligation_closure c WHERE"
+                + " c.obligation_id = o.id) FROM bnpl.bnpl_obligation o" + where.replace("id =", "o.id =")))
+                .as("nothing committed").isEqualTo("ACTIVE|0");
     }
 
     @Test
@@ -347,12 +390,14 @@ class BnplRepaymentDatabaseTest {
                     + "', 9, 'NOT_DUE_PRINCIPAL', 'EUR', 2, 1)", "23514");
             refused(migrator, "INSERT INTO bnpl.bnpl_repayment_allocation (id, repayment_id, sequence, target,"
                     + " instalment_id, component, currency, scale, amount_minor) VALUES (gen_random_uuid(), '"
-                    + repaid.repayment().id() + "', 9, 'DUE_ITEM', '" + unbilled + "', 'PRINCIPAL', 'EUR', 2, 1)", "P0001");
+                    + repaid.repayment().id() + "', 9, 'DUE_ITEM', '" + unbilled + "', 'PRINCIPAL', 'EUR', 2, 1)", "P0001",
+                    "pays only a billed instalment");
             refused(migrator, "INSERT INTO bnpl.bnpl_repayment (id, obligation_id, kind, request_key, currency, scale,"
                     + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
                     + " received_at) SELECT gen_random_uuid(), o.id, 'PAYOFF', 'raw', 'EUR', 2, 100,"
                     + " o.agreement_id, 1, 'ALLOCATION_ENGINE_V1', gen_random_uuid(), DATE '" + due + "',"
-                    + " clock_timestamp() FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'", "P0001");
+                    + " clock_timestamp() FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'", "P0001",
+                    "a PAYOFF repayment is born only beside its obligation's payoff execution");
         }
         // Over-paying instalment 2 at commit: a raw repayment of 145.00 + 1 cent on its 140.00 still due.
         try (Connection migrator = BnplClockFrame.framed(DatabaseRoles.migrator(), world.frameOn(due))) {
@@ -460,7 +505,8 @@ class BnplRepaymentDatabaseTest {
                     + " amount_minor, agreement_id, agreement_version, allocation_engine, journal_entry_id, value_date,"
                     + " received_at) SELECT gen_random_uuid(), o.id, 'CUSTOMER', 'below', 'EUR', 2, 100, o.agreement_id,"
                     + " 1, 'ALLOCATION_ENGINE_V1', gen_random_uuid(), DATE '" + due.minusDays(1) + "', clock_timestamp()"
-                    + " FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'", "P0001");
+                    + " FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'", "P0001",
+                    "a BNPL repayment is value-dated on or after its obligation's floor");
         }
     }
 

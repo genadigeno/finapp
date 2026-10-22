@@ -1574,11 +1574,12 @@ purchase (checkout `V004`) — and the order is born with the financing entry as
 
 ### Merchant Financing
 **Is:** the born-once record that the platform paid for a BNPL Purchase on the merchant's behalf —
-gross, Merchant Discount and net, `gross = fee + net` by `CHECK` — and its journal entry, which in one
-posting debits the customer's receivable `BNPL_PRINCIPAL` the gross and credits the merchant's
-`MERCHANT_PAYABLE` the net and `BNPL_MERCHANT_FEE_INCOME` the fee (`bnpl.financing:<purchase>`,
-`INV-BNPL-02`, `INV-BNPL-04`); funded from lending capital under the shared headroom (`INV-BNPL-10`,
-owner decision B2). Built by `P12-TSK-013` (`bnpl V006`'s INSERT-only `merchant_financing`, keyed by the purchase, `UNIQUE (journal_entry_id)`, the fee schedule version pinned by value; F1 posted in the purchase's transaction after the capital row's lock, headroom at least the gross). *(`P12-DOC-001`, 2026-10-22: read "Planned" until the Phase 12 exit review.)*
+gross, Merchant Discount and net, `gross = fee + net` by `CHECK` — and its journal entry F1, which in one
+posting of four lines debits the customer's receivable `BNPL_PRINCIPAL` the gross, credits the merchant's
+`MERCHANT_PAYABLE` the gross and debits it the fee, and credits `BNPL_MERCHANT_FEE_INCOME` the fee — the
+payable rising by the net, its gross and fee visible as a card capture's are (a zero fee posts two lines;
+`bnpl.financing:<purchase>`, `INV-BNPL-02`, `INV-BNPL-04`, ADR-0103 decision 5); funded from lending capital under the shared headroom (`INV-BNPL-10`,
+owner decision B2). Built by `P12-TSK-013` (`bnpl V006`'s INSERT-only `merchant_financing`, keyed by the purchase, `UNIQUE (journal_entry_id)`, the fee schedule version pinned by value; F1 posted in the purchase's transaction after the capital row's lock, headroom at least the gross). *(`P12-DOC-001`, 2026-10-22: read "Planned" until the Phase 12 exit review.)* *(The Phase 12 → 13 transition gate, 2026-10-22: read "credits the merchant's `MERCHANT_PAYABLE` the net and `BNPL_MERCHANT_FEE_INCOME` the fee" - three lines - until the gate; as built F1 is four lines, ADR-0103 decision 5.)*
 **Not:** a Merchant Payout or a Merchant Settlement: financing creates the platform's liability to
 the merchant, and `merchant`'s unchanged on-demand payout later discharges it. Nor a Disbursement: no
 money moves at purchase, and nothing reaches a customer's wallet.

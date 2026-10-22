@@ -76,7 +76,7 @@ and §24 (OQ-9, OQ-10).
    attempt, no days past due and no fee on it — not only its held principal.)*
 
 4. **The merchant's response** (OQ-9's merchant-key doors; OQ-10, owner accepted default). The deadline is stamped at
-   opening on the database clock, `opened_at + 14 days`, the window a field of the pinned terms version. The merchant
+   opening on the database clock, `opened_at +` the window, a field of the pinned terms version *(corrected by the Phase 12 → 13 transition gate, 2026-10-22: read "`opened_at + 14 days`" until the gate - 14 days is OQ-10's default, not a constant; the window is the pinned version's `dispute_response_days`, 1 to 60 days by `bnpl V002`'s `CHECK` and `BnplTerms.MAXIMUM_DISPUTE_RESPONSE_DAYS`, and `bnpl V015`'s trigger stamps `opened_at + make_interval(days => dispute_response_days)`)*. The merchant
    answers over its key, tenant-isolated (`INV-MER-01`): `POST /v1/merchant/bnpl-disputes/{id}/response`, keyed
    `bnpl.dispute-response:MERCHANT:<id>` — **accept** (→ `RESOLVED_REFUND` at once) or **contest with evidence**
    (→ `MERCHANT_RESPONDED`). The response requires `deadline > statement_timestamp()` and the deadline sweep

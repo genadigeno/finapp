@@ -57,7 +57,7 @@ class BnplConditionDatabaseTest {
                     + " bucket, previous_bucket, defaulted, agreement_id, agreement_version, created_at, correlation_id)"
                     + " SELECT gen_random_uuid(), o.id, DATE '" + last.plusDays(1) + "', 'DEFAULT', 0, 'CURRENT', NULL,"
                     + " false, o.agreement_id, 1, clock_timestamp(), 'raw' FROM bnpl.bnpl_obligation o WHERE o.id = '"
-                    + bought.id() + "'", "P0001");
+                    + bought.id() + "'", "P0001", "a BNPL condition is recorded only for an ACTIVE obligation");
         }
     }
 
@@ -295,13 +295,15 @@ class BnplConditionDatabaseTest {
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(day.plusDays(1)))) {
             // A writer's DPD: 40 is not the rows' 11.
             refused(app, String.format(insert, day.plusDays(1), "DELINQUENCY", 40, "B2_30_59", "'B1_1_29'", "false"),
-                    "P0001");
+                    "P0001", "days past due and bucket are derived from its billed and settled rows");
             // No change: the flag "changed" from false to false.
-            refused(app, String.format(insert, day.plusDays(1), "DEFAULT", 11, "B1_1_29", "NULL", "false"), "P0001");
+            refused(app, String.format(insert, day.plusDays(1), "DEFAULT", 11, "B1_1_29", "NULL", "false"), "P0001",
+                    "recorded only on a change, from the latest recorded one");
         }
         try (Connection app = BnplClockFrame.framed(DatabaseRoles.application(), world.frameOn(day.minusDays(1)))) {
             // Dated before the recorded change.
-            refused(app, String.format(insert, day.minusDays(1), "DEFAULT", 9, "B1_1_29", "NULL", "true"), "P0001");
+            refused(app, String.format(insert, day.minusDays(1), "DEFAULT", 9, "B1_1_29", "NULL", "true"), "P0001",
+                    "never dated before a change already recorded");
         }
         try (Connection app = DatabaseRoles.application(); Connection migrator = DatabaseRoles.migrator()) {
             app.setAutoCommit(false);
@@ -310,10 +312,10 @@ class BnplConditionDatabaseTest {
                     + "'", "42501");
             refused(app, "DELETE FROM bnpl.bnpl_condition_event", "42501");
             refused(migrator, "UPDATE bnpl.bnpl_condition_event SET days_past_due = 0 WHERE obligation_id = '"
-                    + bought.id() + "'", "P0001");
+                    + bought.id() + "'", "P0001", "a BNPL condition change is immutable from insert");
             refused(migrator, "DELETE FROM bnpl.bnpl_condition_event WHERE obligation_id = '" + bought.id() + "'",
-                    "P0001");
-            refused(migrator, "TRUNCATE bnpl.bnpl_condition_event", "P0001");
+                    "P0001", "a BNPL condition change is immutable from insert");
+            refused(migrator, "TRUNCATE bnpl.bnpl_condition_event", "P0001", "are never truncated");
         }
     }
 

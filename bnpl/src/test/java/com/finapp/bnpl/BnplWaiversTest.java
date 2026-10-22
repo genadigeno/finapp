@@ -309,4 +309,38 @@ class BnplWaiversTest {
                 .isInstanceOf(BnplWaivers.AmountInvalid.class);
         assertThat(fakes.corrections.waiverRows).isEmpty();
     }
+
+    @Test
+    @DisplayName("a waiver needs a reason: a proposal, an approval and a rejection with none, a blank one, one past 1,000"
+            + " characters or one holding a card number are ReasonRequired - nothing written, nothing posted, the"
+            + " proposal still PROPOSED")
+    void aWaiverNeedsAReason() {
+        // The Phase 12 -> 13 transition gate, A1-5: BnplWaivers' three doors screen the reason first
+        // (BnplReasons.reasoned); bnpl V016's CHECKs are BnplWaiverDatabaseTest#aWaiverNeedsAReasonForEveryWriter.
+        BnplConditionWorld.Agreement p4 = aLateFee();
+        BnplFeeAssessment late = fee(p4, 2);
+        List<String> unreasoned = java.util.Arrays.asList(null, "", "   ", "r".repeat(BnplReasons.BOUND + 1),
+                "card 4111 1111 1111 1111");
+        for (String reason : unreasoned) {
+            assertThatThrownBy(() -> world.on(DUE_2.plusDays(5), world.alice, () -> world.waivers.propose(
+                    BnplApplicationFakes.UOW, p4.agreement(), late.id(), eur(1_00), reason, world.alice,
+                    BnplConditionWorld.CORRELATION))).as("proposed with %s", reason)
+                    .isInstanceOf(BnplReasons.ReasonRequired.class);
+        }
+        assertThat(fakes.corrections.waiverRows).as("nothing written").isEmpty();
+        assertThat(fakes.audited).noneMatch(record -> record.operation() == BnplAuditAction.WAIVER_PROPOSED);
+        BnplWaiver proposed = world.proposeWaiver(DUE_2.plusDays(5), p4, late.id(), 1_00, world.alice);
+        for (String reason : unreasoned) {
+            assertThatThrownBy(() -> world.on(DUE_2.plusDays(5), world.bob, () -> world.waivers.approve(
+                    BnplApplicationFakes.UOW, p4.agreement(), proposed.id(), reason, world.bob,
+                    BnplConditionWorld.CORRELATION))).as("approved with %s", reason)
+                    .isInstanceOf(BnplReasons.ReasonRequired.class);
+            assertThatThrownBy(() -> world.on(DUE_2.plusDays(5), world.bob, () -> world.waivers.reject(
+                    BnplApplicationFakes.UOW, p4.agreement(), proposed.id(), reason, world.bob,
+                    BnplConditionWorld.CORRELATION))).as("rejected with %s", reason)
+                    .isInstanceOf(BnplReasons.ReasonRequired.class);
+        }
+        assertThat(fakes.book.keys).as("nothing posted").noneMatch(key -> key.contains(BnplWaivers.WAIVER_KEY_PREFIX));
+        assertThat(fakes.corrections.waiverRows.get(proposed.id()).status()).isEqualTo(BnplCorrectionStatus.PROPOSED);
+    }
 }

@@ -210,7 +210,9 @@ final class BnplStormCensus {
      * C11 - `INV-MER-02` per payable: the drill-down's position equals the payable's own journal lines (independent SQL),
      * its BNPL terms equal the bnpl rows - financed gross and fee, refunds' gross and fee returned - and its payouts the
      * completed payouts; nothing unexplained. And B7 (`INV-MER-07` amended): a payable below zero only by BNPL refunds'
-     * debits, each purchase's refunds debiting at most its net.
+     * debits, each purchase's refunds debiting at most its net - the per-purchase arm counted on its own since the Phase 12
+     * &rarr; 13 transition gate (A6-F6): the payable-wide bound alone cannot see one purchase over its net beside another
+     * under it.
      */
     private void payables(Connection snapshot, String when, SoftAssertions softly) throws SQLException {
         int proven = 0;
@@ -228,7 +230,10 @@ final class BnplStormCensus {
                         + " bnpl.bnpl_refund r WHERE r.merchant_id = ?::uuid), (SELECT coalesce(sum(p.amount_minor), 0) FROM"
                         + " merchant.merchant_payout p WHERE p.merchant_id = ?::uuid AND p.status = 'COMPLETED'),"
                         + " (SELECT coalesce(sum(r.payable_debit_minor), 0) FROM bnpl.bnpl_refund r WHERE r.merchant_id ="
-                        + " ?::uuid)", merchant, merchant, merchant, merchant, merchant, merchant, merchant);
+                        + " ?::uuid), (SELECT count(*) FROM bnpl.merchant_financing f JOIN (SELECT r.purchase_id,"
+                        + " sum(r.payable_debit_minor) AS debited FROM bnpl.bnpl_refund r GROUP BY r.purchase_id) d ON"
+                        + " d.purchase_id = f.purchase_id WHERE f.merchant_id = ?::uuid AND d.debited > f.net_minor)",
+                        merchant, merchant, merchant, merchant, merchant, merchant, merchant, merchant);
                 check(broken, "position = its journal lines", payable.position().minorUnits() == rows[0]);
                 check(broken, "the drill-down sums to the position",
                         payable.terms().minorUnits() == payable.position().minorUnits());
@@ -241,6 +246,10 @@ final class BnplStormCensus {
                 check(broken, "nothing unexplained (other = 0)", payable.other().isZero());
                 check(broken, "B7 - below zero only by the BNPL refunds' debits",
                         payable.position().minorUnits() >= -rows[6]);
+                // B7 per purchase (the 12 -> 13 transition gate, A6-F6): the payable-wide bound above holds even if one
+                // purchase's refunds took back more than it financed while another's took back less - so each purchase's
+                // refunds together debit at most that purchase's net, counted from the rows, never the engine.
+                check(broken, "B7 - each purchase's refunds debit the payable at most its financed net", rows[7] == 0);
             }
         }
         merchantsProven = proven;
@@ -453,6 +462,73 @@ final class BnplStormCensus {
                 + " (INV-BNPL-06)", "SELECT count(*) FROM bnpl.bnpl_refund_adjustment a WHERE NOT a.whole AND EXISTS"
                         + " (SELECT 1 FROM bnpl.bnpl_refund_adjustment b WHERE b.refund_id = a.refund_id"
                         + " AND b.sequence < a.sequence)");
+        // The full walk (the 12 -> 13 transition gate, A6-F7): the census above sees only a partial cancellation beside an
+        // earlier one, never a refund that skipped an owing instalment, took the wrong amount from one, or walked from the
+        // wrong end across refunds. Here every refund's position is derived from the rows, independently of BnplRefunds:
+        // each instalment billed before it at its billed principal, less what every payer settled before it (repayments,
+        // credit-balance applications), plus what approved reversals re-opened before it, less what earlier refunds
+        // cancelled of it; each still unbilled in the latest schedule version before it (never its own) at the billing
+        // rule's walk over the principal not yet due (the gross, less every billing, less earlier refunds' unbilled
+        // cancellations) - all before it in the record's order (bnpl V017), never a clock. The walk is then the rule's own
+        // arithmetic - from the latest, min(what is left of R, the instalment's unpaid principal) - and every refund's
+        // adjustments must be exactly it: the amount per instalment, the whole flag, billed or not, and no instalment
+        // cancelled that the position does not hold. Proven on the bnpl database tier's refunds (72, 0 found) and with a
+        // negative control (one refund's latest and earliest cancellations swapped - found) before it joined the storm.
+        zero.put("C8 a refund whose cancellations are not the latest-first walk over its position, derived from the rows"
+                + " in the record's order (INV-BNPL-06)",
+                "WITH r AS (SELECT id, purchase_id, obligation_id, amount_minor, recorded_order FROM"
+                        + " bnpl.bnpl_refund), billed AS (SELECT r.id AS refund_id, i.sequence, b.id AS billing_id,"
+                        + " b.instalment_id, b.principal_minor FROM r JOIN bnpl.bnpl_billing b ON b.obligation_id ="
+                        + " r.obligation_id AND b.recorded_order < r.recorded_order JOIN bnpl.bnpl_instalment i ON i.id"
+                        + " = b.instalment_id), paid AS (SELECT r.id AS refund_id, a.instalment_id, sum(a.amount_minor)"
+                        + " AS amount FROM r JOIN bnpl.bnpl_repayment p ON p.obligation_id = r.obligation_id AND"
+                        + " p.recorded_order < r.recorded_order JOIN bnpl.bnpl_repayment_allocation a ON a.repayment_id"
+                        + " = p.id WHERE a.target = 'DUE_ITEM' AND a.component = 'PRINCIPAL' GROUP BY 1, 2), applied AS"
+                        + " (SELECT r.id AS refund_id, a.billing_id, sum(a.amount_minor) AS amount FROM r JOIN"
+                        + " bnpl.bnpl_credit_balance_application c ON c.obligation_id = r.obligation_id AND"
+                        + " c.recorded_order < r.recorded_order JOIN bnpl.bnpl_credit_balance_allocation a ON"
+                        + " a.application_id = c.id WHERE a.component = 'PRINCIPAL' GROUP BY 1, 2), reopened AS (SELECT"
+                        + " r.id AS refund_id, a.instalment_id, sum(n.amount_minor) AS amount FROM r JOIN"
+                        + " bnpl.bnpl_repayment_reversal v ON v.obligation_id = r.obligation_id AND v.decided_order <"
+                        + " r.recorded_order JOIN bnpl.bnpl_repayment_allocation_reversal n ON n.reversal_id = v.id"
+                        + " JOIN bnpl.bnpl_repayment_allocation a ON a.id = n.allocation_id WHERE a.target = 'DUE_ITEM'"
+                        + " AND a.component = 'PRINCIPAL' GROUP BY 1, 2), earlier AS (SELECT r.id AS refund_id,"
+                        + " x.instalment_id, x.kind, sum(x.principal_cancelled_minor) AS amount FROM r JOIN"
+                        + " bnpl.bnpl_refund e ON e.obligation_id = r.obligation_id AND e.recorded_order <"
+                        + " r.recorded_order JOIN bnpl.bnpl_refund_adjustment x ON x.refund_id = e.id GROUP BY 1, 2,"
+                        + " 3), latest AS (SELECT DISTINCT ON (r.id) r.id AS refund_id, s.id AS schedule_id FROM r JOIN"
+                        + " bnpl.bnpl_schedule s ON s.obligation_id = r.obligation_id AND s.recorded_order <"
+                        + " r.recorded_order AND s.refund_id IS DISTINCT FROM r.id ORDER BY r.id, s.schedule_version"
+                        + " DESC), not_due AS (SELECT r.id AS refund_id, f.gross_minor - coalesce(bs.amount, 0) -"
+                        + " coalesce(us.amount, 0) AS n FROM r JOIN bnpl.merchant_financing f ON f.purchase_id ="
+                        + " r.purchase_id LEFT JOIN (SELECT refund_id, sum(principal_minor) AS amount FROM billed GROUP"
+                        + " BY 1) bs ON bs.refund_id = r.id LEFT JOIN (SELECT refund_id, sum(amount) AS amount FROM"
+                        + " earlier WHERE kind = 'UNBILLED' GROUP BY 1) us ON us.refund_id = r.id), unbilled AS (SELECT"
+                        + " l.refund_id, i.sequence, i.principal_minor, coalesce(sum(i.principal_minor) OVER (PARTITION"
+                        + " BY l.refund_id ORDER BY i.sequence ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS"
+                        + " before, i.sequence = max(i.sequence) OVER (PARTITION BY l.refund_id) AS last FROM latest l"
+                        + " JOIN bnpl.bnpl_instalment i ON i.schedule_id = l.schedule_id WHERE NOT EXISTS (SELECT 1"
+                        + " FROM billed b WHERE b.refund_id = l.refund_id AND b.sequence = i.sequence)), position AS"
+                        + " (SELECT b.refund_id, b.sequence, true AS billed, b.principal_minor - coalesce(p.amount, 0)"
+                        + " - coalesce(a.amount, 0) + coalesce(o.amount, 0) - coalesce(e.amount, 0) AS unpaid FROM"
+                        + " billed b LEFT JOIN paid p ON p.refund_id = b.refund_id AND p.instalment_id ="
+                        + " b.instalment_id LEFT JOIN applied a ON a.refund_id = b.refund_id AND a.billing_id ="
+                        + " b.billing_id LEFT JOIN reopened o ON o.refund_id = b.refund_id AND o.instalment_id ="
+                        + " b.instalment_id LEFT JOIN earlier e ON e.refund_id = b.refund_id AND e.instalment_id ="
+                        + " b.instalment_id AND e.kind = 'BILLED_UNPAID' UNION ALL SELECT u.refund_id, u.sequence,"
+                        + " false, CASE WHEN u.last THEN d.n - LEAST(u.before, d.n) ELSE LEAST(u.before +"
+                        + " u.principal_minor, d.n) - LEAST(u.before, d.n) END FROM unbilled u JOIN not_due d ON"
+                        + " d.refund_id = u.refund_id), walk AS (SELECT p.refund_id, p.sequence, p.billed, p.unpaid,"
+                        + " LEAST(p.unpaid, GREATEST(0, r.amount_minor - coalesce(sum(p.unpaid) OVER (PARTITION BY"
+                        + " p.refund_id ORDER BY p.sequence DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),"
+                        + " 0))) AS expected FROM position p JOIN r ON r.id = p.refund_id), done AS (SELECT"
+                        + " x.refund_id, x.sequence, sum(x.principal_cancelled_minor) AS cancelled, bool_and(x.whole)"
+                        + " FILTER (WHERE x.principal_cancelled_minor > 0) AS whole, bool_and(x.kind = 'BILLED_UNPAID')"
+                        + " FILTER (WHERE x.principal_cancelled_minor > 0) AS billed FROM bnpl.bnpl_refund_adjustment x"
+                        + " GROUP BY 1, 2) SELECT count(*) FROM walk w FULL JOIN done d ON d.refund_id = w.refund_id"
+                        + " AND d.sequence = w.sequence WHERE (w.refund_id IS NULL AND d.cancelled > 0) OR"
+                        + " coalesce(d.cancelled, 0) <> w.expected OR (d.cancelled > 0 AND (d.whole IS DISTINCT FROM"
+                        + " (d.cancelled = w.unpaid) OR d.billed IS DISTINCT FROM w.billed))");
         zero.put("C8 a purchase's fee returned beyond its fee, or a full refund whose fee returned is not exactly f"
                 + " (the telescoping)", "SELECT count(*) FROM bnpl.merchant_financing f JOIN (SELECT r.purchase_id,"
                         + " sum(r.amount_minor) AS refunded, sum(r.fee_returned_minor) AS returned FROM bnpl.bnpl_refund r"

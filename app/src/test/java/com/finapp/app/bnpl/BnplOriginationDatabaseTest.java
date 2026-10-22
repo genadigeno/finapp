@@ -309,9 +309,12 @@ class BnplOriginationDatabaseTest {
                 + " JOIN credit.credit_decision d ON d.id = o.decision_id WHERE o.application_id = ?", applied.id()))
                 .isEqualTo("true");
         try (Connection owner = DatabaseRoles.migrator()) {
+            // The rule that refused, not merely a refusal (the 12 -> 13 transition gate, A6-F2).
             assertThatThrownBy(() -> BnplApplicationClient.execute(owner, "UPDATE bnpl.bnpl_offer SET expires_at ="
                     + " expires_at + interval '1 day' WHERE application_id = ?", applied.id()))
-                    .isInstanceOf(SQLException.class);
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(refusal -> assertThat(((SQLException) refusal).getSQLState()).isEqualTo("P0001"))
+                    .hasMessageContaining("identity, pin and expiry are frozen from birth");
         }
     }
 
@@ -378,11 +381,15 @@ class BnplOriginationDatabaseTest {
         try (Connection owner = DatabaseRoles.migrator()) {
             assertThatThrownBy(() -> BnplApplicationClient.execute(owner, "UPDATE bnpl.bnpl_offer_terms SET"
                     + " canonical_terms = canonical_terms || ' ' WHERE offer_id = ?::uuid", offer))
-                    .isInstanceOf(SQLException.class);
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(refusal -> assertThat(((SQLException) refusal).getSQLState()).isEqualTo("P0001"))
+                    .hasMessageContaining("terms are immutable from insert, for every role");
         }
         try (Connection app = DatabaseRoles.application()) {
             assertThatThrownBy(() -> BnplApplicationClient.execute(app, "DELETE FROM bnpl.bnpl_offer_terms WHERE"
-                    + " offer_id = ?::uuid", offer)).isInstanceOf(SQLException.class);
+                    + " offer_id = ?::uuid", offer)).isInstanceOf(SQLException.class)
+                    .satisfies(refusal -> assertThat(((SQLException) refusal).getSQLState()).as("no grant")
+                            .isEqualTo("42501"));
         }
         assertThat(client.read(applied.customer().token(), applied.id().toString()).body())
                 .as("the owner finds the offer from the application").contains("\"offerId\":\"" + offer + "\"");

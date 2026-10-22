@@ -133,6 +133,21 @@ money, and none of the merchant) and ADR-0091 (decision consumption through cred
    three rows were built (`P12-TSK-004`, `-021`, `-025`) without being listed. `BnplCreditDecisions` also
    carries `reasonTexts` (a decided request's customer-readable reasons) and `requestOf` (the decision
    event's hint resolved to its request) — neither a score, attribute or threshold.)*
+   *(Corrected by the Phase 12 → 13 transition gate, 2026-10-22: the "Used by" column is incomplete;
+   read it as the call sites in `bnpl`'s main code show. **`BnplCreditDecisions`**: the application
+   (`open`, `cancel`, `reasonTexts`), the offer step (`requestOf`, `decisionFor`, `cancel`), the
+   acceptance (`lockExposure` L0, `consume`) and **every** repayment-reversal approval — L0 is taken
+   first on each approval, not only on a principal-re-instating one; only L6 (`BnplCapital`) is
+   conditional on principal re-instated. **`BnplCheckoutSessions`**: also the session's options read
+   (`BnplOptions`, `read`), and the offer step's `byRef`. **`BnplMerchants`**: also the options read
+   (`standing`, `coversFee`), the dispute's opening (`payableAccount`, the payable alone at (P)), the
+   record store behind the proofs (`payableAccount`) and the three-way proof (`returnedFee`).
+   **`BnplProductBounds`**: also the application and the options read (the gross within the product's
+   bounds). **`BnplActingParty`**: every self-dealing refusal, not the operator refund door alone — the
+   dispute's operator resolution and its four-eyes approval and rejection (`BnplDisputes`), the
+   repayment reversal's proposal, approval and rejection, the waiver's proposal, approval and rejection
+   (`BnplWaivers`, through `BnplRepaymentReversals.judgeSelfDealing`), and the investigation doors
+   (`BnplExplanations`). The other rows stand as written.)*
 
 8. **The neighbours' changes are theirs, each by a named task.** Credit `V022` (`P12-TSK-001`:
    products, the term shape, `ConsumerKind.BNPL_AGREEMENT`); identity `V022` (`-002`: permissions and

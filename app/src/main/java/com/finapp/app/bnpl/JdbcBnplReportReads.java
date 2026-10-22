@@ -17,8 +17,15 @@ import java.util.UUID;
  * {@link BnplReportReads} over bnpl's tables and the ledger's journal (`P12-TSK-026`) - the statements behind BNPL's
  * operations reports, every one read-only and run on the caller's snapshot; lending's {@code LendingReports} statements'
  * shape. An obligation's business date is the database clock in its pinned servicing zone ({@code bnpl.business_date});
- * an amount is the lines whose entry's value date is on or before the date (every bnpl posting is dated its obligation's
- * business date). Every statement is this class's own constant text - nothing is built from input but the bound date.
+ * an amount is the lines whose entry's value date is on or before the date - a position on the VALUE-DATE axis, as
+ * {@link BnplReports} decides. Unlike lending's, a bnpl posting is not always dated the business date it was posted on
+ * (ADR-0103 decision 3, as corrected): a billing is dated its instalment's due date and an accrual its accrual date, so
+ * a catch-up billing or accrual posted later counts on its own earlier date; a repayment, a collection, a credit-balance
+ * application, a refund, a reversal and the payoff are dated {@code max(business date, the obligation's floor)}; a late
+ * fee, a waiver and the closure refund the business date. So a past date's report is that date's position as known
+ * when it is read, and can change when a catch-up is value-dated into it - a report is never a frozen figure (Phase 14's
+ * reproducible reports are a later phase's). Every statement is this class's own constant text - nothing is built from
+ * input but the bound date.
  * Proven by {@code BnplReportsDatabaseTest} (a database of its own).
  */
 public final class JdbcBnplReportReads implements BnplReportReads {
