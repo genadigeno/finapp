@@ -573,5 +573,81 @@ public enum PermissionName {
      * <p><strong>Held by {@code BNPL_SERVICING_AGENT}</strong>: deciding between a customer and a merchant is servicing
      * work, not the products' policy ({@code BNPL_OFFICER}) and never the merchant's own act.
      */
-    BNPL_DISPUTE_RESOLVE
+    BNPL_DISPUTE_RESOLVE,
+
+    /**
+     * Investigate risk (`P13-TSK-001`; {@code PHASE_13_PLAN.md} §§9, 11; ADR-0107, ADR-0110): read assessments with their
+     * inputs, hits, score and reason codes, replay one, read signals, profiles, alerts and cases, open and take a case,
+     * append investigator acts, escalate, propose a disposition, a downstream action or an alert's suppression - every
+     * read audited, nothing moved, never on a subject of one's own party ({@code risk.SelfDealingRefused}, fail
+     * closed). It names {@code risk.AssessmentRead}, {@code risk.Replayed}, {@code risk.ProfileRead},
+     * {@code risk.CaseRead}, {@code risk.AlertRead}, {@code risk.ReportRead}, {@code risk.CaseOpened/Taken/Noted/Escalated}
+     * and every {@code ...Proposed}; the routes are their tasks' (`-004`, `-016`, `-018`, `-024`).
+     *
+     * <p><strong>Held by {@code RISK_ANALYST}</strong>, beside {@link #RISK_CASE_APPROVE}: four eyes is inside the role -
+     * two distinct holders - never between roles (the {@code LOAN_SERVICING_AGENT} shape). Never by the risk officer, whose
+     * work is the policy and the override, nor by the AML officer, whose work is the filing.
+     */
+    RISK_INVESTIGATE,
+
+    /**
+     * Approve another analyst's proposal (`P13-TSK-001`; {@code PHASE_13_PLAN.md} §11; {@code INV-RSK-07}): a disposition
+     * that confirms fraud or suspicion or refers the case, a downstream action, an alert's suppression - <strong>never
+     * one's own</strong>, refused at the domain and by each table's four-eyes {@code CHECK}
+     * ({@code risk.SelfApprovalRefused}, audited {@code FAILED}), enforced by the task that builds each act. It names the
+     * {@code ...Approved} and {@code ...Rejected} actions of {@code risk.Disposition*}, {@code risk.Action*} and
+     * {@code risk.AlertSuppressed}.
+     *
+     * <p><strong>Held by {@code RISK_ANALYST}</strong>: the population that investigates is the one qualified to check an
+     * investigation's conclusion; the separation that matters is between two holders, not two roles.
+     */
+    RISK_CASE_APPROVE,
+
+    /**
+     * Administer risk policy (`P13-TSK-001`; {@code PHASE_13_PLAN.md} §§9, 11, 12.2; ADR-0109): propose, activate or
+     * reject a risk policy version - rules as data, score and fail-safe bands, hold validity, rating bands - four eyes,
+     * the same permission and different persons, held at the domain and by {@code CHECK}, never one's own proposal;
+     * record and activate a screening list version; order a reprocessing of the monitoring intake. It names
+     * {@code risk.PolicyProposed/Activated/Rejected/Retired}, {@code risk.ListVersionRecorded/Activated} and
+     * {@code risk.ReprocessingOrdered}; the routes are `-002`'s, `-019`'s and `-022`'s.
+     *
+     * <p><strong>Held by {@code RISK_OFFICER}</strong>, beside {@link #RISK_OVERRIDE}: whoever answers for what the engine
+     * judges by also answers for the one act that sets a judgement aside. Never the analyst's: the desk that investigates
+     * outcomes does not write the rules that produce them.
+     */
+    RISK_POLICY_ADMINISTER,
+
+    /**
+     * Override a risk decision (`P13-TSK-001`; {@code PHASE_13_PLAN.md} §12.3; ADR-0108; owner decision C7): propose an
+     * override of a {@code DENY}, {@code HOLD} or {@code REVIEW} decision with a reason, and approve another officer's -
+     * two holders at or above the threshold, never one's own ({@code risk.SelfApprovalRefused}); the override records the
+     * action it issues (a held withdrawal's release) and never edits the decision; an {@code ALLOW} is never overridden.
+     * The override door serves the assessment it overrides under this permission. It names
+     * {@code risk.OverrideProposed/Approved/Rejected}; the routes are `-012`'s.
+     *
+     * <p><strong>Held by {@code RISK_OFFICER}</strong>, beside {@link #RISK_POLICY_ADMINISTER}.
+     */
+    RISK_OVERRIDE,
+
+    /**
+     * Approve a regulatory report (`P13-TSK-001`; {@code PHASE_13_PLAN.md} §12.9; ADR-0111): draft a report from a case
+     * disposed {@code CONFIRMED_SUSPICIOUS} - the draft door serves the disposed case's evidence under this permission -
+     * and approve another holder's draft, never one's own ({@code risk.SelfApprovalRefused}); the report is an artefact
+     * distinct from the case, immutable once filed. It names {@code risk.ReportDrafted} and {@code risk.ReportApproved};
+     * the routes are `-021`'s.
+     *
+     * <p><strong>Held by {@code AML_OFFICER}</strong>, beside {@link #AML_REPORT_FILE}: the filing authority is its own
+     * desk - an analyst never files, and the AML officer never investigates (the separation of the investigation from the
+     * filing, {@code INV-RSK-08}'s tipping-off control among its reasons).
+     */
+    AML_REPORT_APPROVE,
+
+    /**
+     * File an approved regulatory report with the authority (`P13-TSK-001`; {@code PHASE_13_PLAN.md} §12.9; ADR-0111;
+     * owner decision C4) through the filing port - a simulated endpoint in Phase 13 - and read its acknowledgement. It
+     * names {@code risk.ReportFiled}; the route is `-021`'s.
+     *
+     * <p><strong>Held by {@code AML_OFFICER}</strong>, beside {@link #AML_REPORT_APPROVE}.
+     */
+    AML_REPORT_FILE
 }

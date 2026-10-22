@@ -172,4 +172,13 @@ include("lending")
 include("creditmath")
 include("bnpl")
 
+// The Phase 13 module (P13-TSK-001). `risk` after every money module, for the structural reason bnpl is: it owns the
+// judgement, the evidence and the case and NONE of the money (ADR-0107 decision 5, INV-RSK-02) - it posts nothing,
+// so `risk -> ledger` is deliberately ABSENT too, not only `ledger -> risk`. Its only edges are `platform` and
+// `sharedkernel`; `risk -> identity`, `-> accounts`, `-> transfers`, `-> payments`, `-> checkout`, `-> merchant`,
+// `-> crossborder`, `-> credit`, `-> lending`, `-> bnpl` and `-> kyc` are ABSENT and no cycle backs any of those
+// refusals - RiskModuleIsolationTest is the only control - and nothing depends on `risk`: the consumers' seams are
+// implemented in `app` as adapters over its API, and every domain an action reaches is a port `app` implements.
+include("risk")
+
 include("app")

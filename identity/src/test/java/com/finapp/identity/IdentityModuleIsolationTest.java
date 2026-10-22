@@ -57,6 +57,7 @@ class IdentityModuleIsolationTest {
                         "lending",
                         "creditmath",
                         "bnpl",
+                        "risk",
                         "app")) {
             assertThat(classpathEntries())
                     .as("identity must not depend on %s", forbidden)

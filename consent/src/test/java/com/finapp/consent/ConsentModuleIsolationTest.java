@@ -50,6 +50,7 @@ class ConsentModuleIsolationTest {
                         "lending",
                         "creditmath",
                         "bnpl",
+                        "risk",
                         "app")) {
             assertThat(classpathEntries())
                     .as("consent must not depend on %s", forbidden)

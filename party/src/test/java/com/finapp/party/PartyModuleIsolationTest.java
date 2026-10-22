@@ -57,6 +57,7 @@ class PartyModuleIsolationTest {
                         "lending",
                         "creditmath",
                         "bnpl",
+                        "risk",
                         "app")) {
             assertThat(classpathEntries())
                     .as("party must not depend on %s", forbidden)

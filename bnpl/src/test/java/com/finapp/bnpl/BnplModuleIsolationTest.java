@@ -57,6 +57,7 @@ class BnplModuleIsolationTest {
             "crossborder",
             "credit",
             "lending",
+            "risk",
             "app");
 
     @Test

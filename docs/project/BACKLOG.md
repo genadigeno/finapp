@@ -22304,7 +22304,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 `-016`; `-024` after `-023`; `-025` after `-016`; `TST-002` after `-003` and `-004`; `TST-001` after `-001`…`-024`
 (never `-025`, the cut candidate); `DOC-001` after both exit tests.
 
-**P13-TSK-001 — The `risk` module boundary, floors, vocabularies and roles** — `READY` (2026-10-22; marked by the Phase 12 → 13 transition)
+**P13-TSK-001 — The `risk` module boundary, floors, vocabularies and roles** — `IN_PROGRESS` (2026-10-22; marked `READY` by the Phase 12 → 13 transition; implemented 2026-10-22, gate pending)
 - **Objective**: make `risk` a build-graph fact with a privilege floor, its closed vocabularies, its ports declared
   and empty, its guards green, and the three roles with their six permissions — before any table, rule or evaluation
   exists — so that every later task writes into this schema and composes through these ports, and the role split (the
@@ -22339,10 +22339,12 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   is the design's and it says so; `risk.NotFound`, `risk.SelfDealingRefused` and `risk.SelfApprovalRefused` are declared
   here in either case, the role split's own refusals); **identity `V023`** — permissions `RISK_INVESTIGATE`,
   `RISK_CASE_APPROVE`, `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE`; roles
-  `RISK_ANALYST` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`}, `RISK_OFFICER` {`RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`,
-  `RISK_INVESTIGATE`}, `AML_OFFICER` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE`};
-  pairwise-disjoint grants between the new roles and every existing one (`INV-AUD-03`), four eyes inside a role between
-  two holders (enforced per task, never by role) (`PHASE_13_PLAN.md` §11); **`NoCustomerSurfaceReadsRiskTest`**
+  `RISK_ANALYST` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`}, `RISK_OFFICER` {`RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`},
+  `AML_OFFICER` {`AML_REPORT_APPROVE`, `AML_REPORT_FILE`} *(the design's correction of the plan's §11, which gave every
+  desk the analyst's reads: one live role per identity and `RoleNameTest`'s pairwise-disjoint grants make the three
+  desks a partition; the override door and the report draft door serve what their desks read under their own
+  permissions)*; pairwise-disjoint grants between the new roles and every existing one (`INV-AUD-03`), four eyes inside
+  a role between two holders (enforced per task, never by role) (`PHASE_13_PLAN.md` §11); **`NoCustomerSurfaceReadsRiskTest`**
   (architecture, `app`: no `/v1/me/**` controller, no merchant controller and none of their desks reaches a `risk` type,
   port or table — `INV-RSK-08`, first enforced here, the guard every later route is read against); `RiskFlowScope`
   (spans per step, no attributes); the sweeper property names for `RiskMonitoringSchedule` and `RiskActionSchedule`
@@ -22390,6 +22392,31 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: the module builds and is isolated; nothing but `app` depends on `risk`; every vocabulary,
   permission, port and guard the later tasks need is declared; the tipping-off guard is green and proven by its probe.
 - **Definition of done**: `DOD-ARCH`, `DOD-SEC`. **Risk**: Low (nothing runs). **Cx**: M.
+- **As built** (2026-10-22, branch `P13-TSK-001` from master `abb81477`): everything in Scope, with these readings: (1) the
+  roles are a **partition** — `RISK_ANALYST` {INVESTIGATE, CASE_APPROVE}, `RISK_OFFICER` {POLICY_ADMINISTER, OVERRIDE},
+  `AML_OFFICER` {AML_REPORT_APPROVE, AML_REPORT_FILE} — because identity holds one live role per identity (`V010`) and
+  `RoleNameTest` holds every pair of grants disjoint; a route carries one permission, so the override door (`-012`) serves
+  the assessment it overrides under `RISK_OVERRIDE` and the report draft door (`-021`) the disposed case's evidence under
+  `AML_REPORT_APPROVE`; the erratum is written into `PHASE_13_PLAN.md` §11, ADR-0107, `RISK_LIFECYCLES.md` §3,
+  `MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md` and the runbook's §9.1. (2) `RiskErrorCode` and `RiskAuditAction` grow
+  per task (the `BnplErrorCode` precedent): the three codes and two acts of the role split are declared and catalogued now,
+  the two acts in `AuditCompletenessTest`'s deliberate absences until `-002` and `-016` raise them; the nine other codes
+  and the other acts keep their *planned* rows until their doors. (3) The eleven ports are declared as interfaces with
+  verdict-shaped signatures (`RiskActingParty`, `SessionAssurance`, `MonitoredLedger` + `MonitoredEntry`,
+  `RegulatoryFilingProvider` with its `Request`/`Receipt`/`Outcome`, `ScreeningClearances`, `PartyRescreening`,
+  `IdentityActions`, `AccountActions`, `MerchantActions`, `BeneficiaryActions`, `HeldWithdrawalActions`, all answering
+  `ActionOutcome {DONE, ALREADY, REFUSED}`) — a deviation from the Phase 12 precedent (each port with its first user),
+  taken so the boundary is visible from the first day; an unimplemented interface is free to be reshaped by its task.
+  (4) `HOLD` is admitted for `WITHDRAWAL` only; `CARD_PAYMENT` admits it when `-010`'s second slice lands, and the two
+  held-payment `ActionKind`s are declared `available() == false` until then. (5) `RiskFlowScope` has the door leg only
+  (bnpl's flow-linked legs arrive with the rows they link, `-004`, `-016`, `-019`); the sweeper flags are reserved in the
+  test profile only, production defaults living in the schedules' code when built (the lending precedent). (6) No
+  "no mutable money" schema guard yet: risk's first money column is `-006`'s window sum, whose bounded upsert needs a
+  rule of its own. Tests: `RiskVocabulariesTest` (eleven cases), `RiskModuleIsolationTest` (twenty refusals, the matcher
+  probed), `RoleNameTest` (three exact-grant cases; the pairwise case the disjointness probe's target),
+  `NoCustomerSurfaceReadsRiskTest` (the rule over the production surface, the coverage guard, the surface's non-vacuity,
+  four planted probes incl. the operator lookalike), every sibling isolation test; owed under C5: `RiskMigrationTest`
+  and the three roles' case in `IdentityAdministrationDatabaseTest`.
 
 **P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `PLANNED`
 - **Objective**: a policy version per operation as versioned data under four eyes — rules of closed kinds with validated

@@ -59,6 +59,7 @@ class LedgerModuleIsolationTest {
                         "lending",
                         "creditmath",
                         "bnpl",
+                        "risk",
                         "app")) {
             assertThat(classpathEntries())
                     .as("ledger must not depend on %s", forbidden)

@@ -716,12 +716,14 @@ A merchant reading its own record over its own key is the ordinary use of the su
 reads are, and none of those writes a record; the operator's BNPL reads (`bnpl.AgreementRead`, `bnpl.ReportRead`, later
 tasks') are audited because an operator reads across tenants by permission. The read writes nothing and decides nothing.
 
-### `risk` — `RiskAuditAction` *(planned by the Phase 12 → 13 transition, 2026-10-22; to be declared by `P13-TSK-001`, emitted by the tasks named)*
+### `risk` — `RiskAuditAction` *(planned by the Phase 12 → 13 transition, 2026-10-22; declared per task from `P13-TSK-001`, emitted by the tasks named)*
 
-*Planned.* No `RiskAuditAction` exists yet, so these are not catalogue rows: each opens with the *planned* marker, which
-`AuditableActionRegistryTest` does not read (it catalogues a line only when it opens with a backticked `module.Action`
-code), and `P13-TSK-001` - which declares the enum - drops the marker and makes each a row of the shape above, checked
-against the code. The list is `PHASE_13_PLAN.md` §11's: each with actor, time, target, reason where required, correlation
+*Declared per task* (`P13-TSK-001`, the `BnplAuditAction` precedent): `RiskAuditAction` holds the two refusals of the
+role split - `risk.SelfApprovalRefused` and `risk.SelfDealingRefused`, the two catalogue rows below without a marker,
+each named in `AuditCompletenessTest`'s deliberate absences with the task that first raises it (`-002`, `-016`) - and
+every later act arrives with the task that raises it, dropping its *planned* marker then. A row that still opens with
+the marker is not a catalogue row: `AuditableActionRegistryTest` catalogues a line only when it opens with a backticked
+`module.Action` code. The list is `PHASE_13_PLAN.md` §11's: each with actor, time, target, reason where required, correlation
 and outcome; summaries carry counts and codes, never an amount, a name, a score or a rule's parameters (`INV-AUD-02`,
 `INV-RSK-08`); every refusal of a self-approval or of self-dealing is recorded `FAILED` in a transaction of its own after
 the act rolled back (the Phase 11 gate's R4, bnpl's shape). The reason column is the design's reading of §4 - a person's
@@ -764,8 +766,8 @@ discretionary act requires one, an automatic consequence does not - for `-001` t
 | *planned* `risk.CaseRead` | No | A holder of `RISK_INVESTIGATE` read a case or the case queue (`GET /v1/operator/risk/cases…`, `P13-TSK-018`) - recorded in the read's own transaction; the summary names the case ids served, never a note or a subject. |
 | *planned* `risk.AlertRead` | No | A holder of `RISK_INVESTIGATE` read the alert queue (`GET /v1/operator/risk/alerts…`, `P13-TSK-018`) - recorded in the read's own transaction; the summary carries counts and kinds only. |
 | *planned* `risk.ReprocessingOrdered` | Yes | A holder of `RISK_POLICY_ADMINISTER` ordered the monitoring intake reprocessed from an earlier watermark (`POST /v1/operator/risk/monitoring/reprocessing`, `P13-TSK-019`) - the reason and the watermark in the summary; the reprocessing itself creates nothing new (`INV-RSK-09`). |
-| *planned* `risk.SelfApprovalRefused` | No | A proposer tried to approve their own proposal - a policy activation, an override, a disposition, an action or a report - and was refused `403 risk.SelfApprovalRefused` (the `credit`/`lending`/`bnpl` precedent; `PHASE_13_PLAN.md` §9 corrected to `403` by the transition) before anything was written; recorded `FAILED` in a transaction of its own after the act rolled back (`INV-RSK-07`, `INV-AUD-04`). The summary names the proposal and the act. |
-| *planned* `risk.SelfDealingRefused` | No | An operator tried to read or work a case, read an assessment or a profile, approve an override or file a report on their own party's subject - or as an operator the platform cannot place in a party (fail closed; the Phase 12 → 13 gate's A7-6 applied forward) - and was refused `403 risk.SelfDealingRefused` with nothing written or read; recorded `FAILED` in a transaction of its own. The summary names the target and the act - never the subject. |
+| `risk.SelfApprovalRefused` | No | A proposer tried to approve their own proposal - a policy activation, an override, a disposition, an action or a report - and was refused `403 risk.SelfApprovalRefused` (the `credit`/`lending`/`bnpl` precedent; `PHASE_13_PLAN.md` §9 corrected to `403` by the transition) before anything was written; recorded `FAILED` in a transaction of its own after the act rolled back (`INV-RSK-07`, `INV-AUD-04`). The summary names the proposal and the act. |
+| `risk.SelfDealingRefused` | No | An operator tried to read or work a case, read an assessment or a profile, approve an override or file a report on their own party's subject - or as an operator the platform cannot place in a party (fail closed; the Phase 12 → 13 gate's A7-6 applied forward) - and was refused `403 risk.SelfDealingRefused` with nothing written or read; recorded `FAILED` in a transaction of its own. The summary names the target and the act - never the subject. |
 
 Thirty-two planned actions - `PHASE_13_PLAN.md` §11's list, each slash-separated name one action. **Payments' new outcomes
 are payments' records, not risk's**: a withdrawal committed `HELD` or `FAILED(RISK_REFUSED)` (payments `V033`,

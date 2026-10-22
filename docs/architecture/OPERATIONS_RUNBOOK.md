@@ -906,9 +906,9 @@ incident - until **every** condition below is true, in this order, each with its
    score (the version's rule kinds over signals and case history) to `LOW`, `MEDIUM` or `HIGH`; the intake's posting-key namespace register covering every namespace the ledger carries
    (`finapp.risk.monitoring.unclassified` at 0 after a reprocessing from the first watermark, §9.3).
 3. **The roles held by distinct people**: `RISK_OFFICER` (policy administration, overrides), `RISK_ANALYST`
-   (investigation, case approval) and `AML_OFFICER` (investigation, case approval, report approval and filing) granted
-   to disjoint holders, at least two per role, so every four-eyes act has its second person (`INV-RSK-07`,
-   `INV-AUD-03`).
+   (investigation, case approval) and `AML_OFFICER` (report approval and filing - the filing desk, never the
+   investigator; `P13-TSK-001`) granted to disjoint holders, at least two per role, so every four-eyes act has its
+   second person (`INV-RSK-07`, `INV-AUD-03`).
 4. **The jurisdiction chosen and the filing adapter real**: the reference remains the neutral EUR one and
    `RegulatoryFilingProvider` is simulated (`DECISIONS.md` §Deferred; `PHASE_13_PLAN.md` §12.9, C4); a real
    jurisdiction brings its reporting format, deadlines and content rules as adapter data, verified against the official

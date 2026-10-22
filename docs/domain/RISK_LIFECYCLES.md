@@ -73,9 +73,11 @@ Nothing here has a ledger effect; the column names where the money moves, if any
 
 **Actors.** **P** — a person holding a Phase 13 permission (identity `V023`; `-001`): `RISK_INVESTIGATE`,
 `RISK_CASE_APPROVE`, `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE`, in the roles
-`RISK_ANALYST` {INVESTIGATE, CASE_APPROVE}, `RISK_OFFICER` {POLICY_ADMINISTER, OVERRIDE, INVESTIGATE} and
-`AML_OFFICER` {INVESTIGATE, CASE_APPROVE, AML_REPORT_APPROVE, AML_REPORT_FILE}; pairwise-disjoint grants with every
-existing role (`INV-AUD-03`); keyed per actor (`risk.policy:<actor>`, `risk.override:<actor>`, `risk.case:<actor>`,
+`RISK_ANALYST` {INVESTIGATE, CASE_APPROVE}, `RISK_OFFICER` {POLICY_ADMINISTER, OVERRIDE} and `AML_OFFICER`
+{AML_REPORT_APPROVE, AML_REPORT_FILE} — a partition (`P13-TSK-001`: one live role per identity, every pair of grants
+disjoint; the override door serves the assessment it overrides under `RISK_OVERRIDE`, the report draft door the
+disposed case's evidence under `AML_REPORT_APPROVE`); pairwise-disjoint grants with every existing role
+(`INV-AUD-03`); keyed per actor (`risk.policy:<actor>`, `risk.override:<actor>`, `risk.case:<actor>`,
 `risk.report:<actor>`, `risk.list:<actor>`); reasoned where the plan says so (`422 risk.ReasonRequired`; reasons and
 notes bounded, screened by `InstrumentShapes`, classified `CONFIDENTIAL`); **four eyes** where marked ★ — two persons,
 the proposer never the approver, by the domain and by a `CHECK`; a refused self-approval `403 risk.SelfApprovalRefused`,

@@ -108,6 +108,14 @@ dependencies {
     implementation(project(":creditmath"))
     implementation(project(":bnpl"))
 
+    // The Phase 13 module (P13-TSK-001), on the classpath for the same reasons: the floating-point and audit guards
+    // reach `risk` from its first classes (INV-MON-01), every seam adapter (transfers', crossborder's, credit's,
+    // payments') and every port `risk` declares (the acting party, the session's assurance, the monitored ledger, the
+    // filing provider, kyc's clearances and rescreening, the owning domains' action doors) is composed here - the one
+    // module that sees both sides - and NoCustomerSurfaceReadsRiskTest holds every customer and merchant surface away
+    // from it (INV-RSK-08).
+    implementation(project(":risk"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

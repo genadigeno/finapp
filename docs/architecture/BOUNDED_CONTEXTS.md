@@ -323,8 +323,8 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   `ACTIVE` policy, a failed read, a throwing rule, the timeout) is the band's fail-safe decision recorded
   `RISK_UNAVAILABLE` / `NO_POLICY_ACTIVE` and an operational alert (owner decision C1); a duplicate event is one
   signal; a policy activated mid-evaluation applies to the next. *Security boundary:* the permissions
-  `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `RISK_INVESTIGATE` in the roles `RISK_OFFICER` and `RISK_ANALYST`
-  (identity `V023`), pairwise-disjoint with every existing role; four eyes on activation and on an override above the
+  `RISK_POLICY_ADMINISTER` and `RISK_OVERRIDE` in the role `RISK_OFFICER`, `RISK_INVESTIGATE` and `RISK_CASE_APPROVE` in
+  `RISK_ANALYST` (identity `V023`, `P13-TSK-001`), a partition pairwise-disjoint with every existing role; four eyes on activation and on an override above the
   threshold (C7); self-dealing fails closed; assessment inputs and rule hits `CONFIDENTIAL`, device attributes
   `RESTRICTED-PII` and hashed at the source. *Operational responsibility:* `finapp.risk.evaluation{operation,verdict}`,
   `evaluation.latency`, `evaluation.unavailable`, `rule.hit{operation,rule}`, `policy.active`,
@@ -367,7 +367,8 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   and the next claim re-reads from the committed watermark; a filing provider unavailable or unknown leaves `FILED`
   committed with the reference pending, reconciled by the inquiry leg (`risk.ReportAcknowledged` / `risk.ReportRejected`),
   never re-filed (the payout precedent). *Security
-  boundary:* `AML_OFFICER` {INVESTIGATE, CASE_APPROVE, AML_REPORT_APPROVE, AML_REPORT_FILE}; the report narrative
+  boundary:* `AML_OFFICER` {AML_REPORT_APPROVE, AML_REPORT_FILE} — the filing desk, disjoint from the analyst's
+  (`P13-TSK-001`: an analyst never files, an AML officer never investigates); the report narrative
   `RESTRICTED-PII`, readable by `AML_REPORT_*` holders only; **tipping-off**: no AML alert, case, report or evidence
   reaches a customer- or merchant-facing surface, a log, an event payload or a metric tag. *Operational
   responsibility:* `finapp.risk.monitoring.lag`, `monitoring.unclassified`, `report{status}`, `sweeper.enabled`; the
