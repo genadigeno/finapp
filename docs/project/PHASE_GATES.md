@@ -1697,8 +1697,8 @@ and an operator's never collide; a merchant's retry under one key is still one r
 
 *Status (the Phase 12 → 13 transition gate, 2026-10-22,
 [`reviews/PHASE_12_TO_13_TRANSITION.md`](reviews/PHASE_12_TO_13_TRANSITION.md)): **Phase 12 `COMPLETE`, confirmed after
-repair.** Seven independent audits re-read the gate against the code and found no CRITICAL and eleven IMPORTANT findings (ten
-distinct) the exit review had not, each against a block above: **Refunds** and **Security** (an insider could mint a
+repair.** Seven independent audits re-read the gate against the code and found no CRITICAL and ten IMPORTANT findings the
+exit review had not, each against a block above: **Refunds** and **Security** (an insider could mint a
 refund-capable merchant key and refund their own purchase; a dispute ACCEPT needed no scope); **Disputes**, **Delinquency**
 and **Observability** (a lapse that could never post, unalerted; a contested dispute with no deadline, queue, gauge or alert;
 a dispute loop that kept a customer from ever defaulting); **Purchase and origination** and **Multi-instance** (a terms pin

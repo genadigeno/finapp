@@ -38,12 +38,12 @@ recorded as deviations (§7.2).**
 | Part | Outcome |
 |---|---|
 | The eighteen completion criteria | **Four `PASS` as found, eleven `PARTIAL`, three `FAIL`** (refunds, delinquency, security) once every audit's findings are read against them — **every one `PASS` after repair** (§1). A1 on its own reading graded seventeen `PASS` and testing and documentation `PARTIAL` |
-| The twelve universal criteria | As found: security `FAIL`, "no unresolved critical issues" not met (eleven IMPORTANT open), failure handling, observability and documentation `PARTIAL`; **after repair eleven `PASS` and criterion 7 `PARTIAL`** — the owner's standing deviation, recorded, not passed (§1) |
+| The twelve universal criteria | As found: security `FAIL`, "no unresolved critical issues" not met (ten IMPORTANT open), failure handling, observability and documentation `PARTIAL`; **after repair eleven `PASS` and criterion 7 `PARTIAL`** — the owner's standing deviation, recorded, not passed (§1) |
 | The ten financial-correctness checks | **All ten `PASS` as found and after repair** (A2); two MINOR residues repaired — a reversal could be valued before the repayment it reverses (A2-1), the refund floor's database rank never exercised live (A2-2) (§2) |
 | *"Would Phase 12 remain correct if 10 service instances executed the relevant operations concurrently?"* | **`PASS`** — financially `PASS` as found (A3: no path creates, destroys or duplicates money; the coded lock order acyclic); the one IMPORTANT race, A3-I1 (an approved application closed for good during a terms activation, no money moved), repaired in `bnpl` and `lending`; every repair's own ten-instance answer `PASS` (§3) |
 | Architecture and security | **A4: no CRITICAL or IMPORTANT** — every neighbour reused through a port, one copy of each engine, the Phase 13 boundary holds; **A5: `FAIL` as found** (an insider could refund their own purchase; a customer could loop disputes to never default), **`PASS` after repair** (§4) |
 | Test meaningfulness | A6: mostly **STRONG**; five IMPORTANT gaps, four closed and the fifth — 123 register rows owing their live database half — discharged in part and recorded with its count (107) as a debt row (§7.1) |
-| Blocking issues | **No CRITICAL. Eleven IMPORTANT at the first pass — ten distinct — every one repaired, tested and probed** in R1–R4; fifty-five probes, every one caught; no independent re-gate verifier (owner's decision) (§5) |
+| Blocking issues | **No CRITICAL. Ten IMPORTANT at the first pass (V015's hold-trigger gap, found by both A1 and A6, counted once) — every one repaired, tested and probed** in R1–R4; fifty-five probes, every one caught; no independent re-gate verifier (owner's decision) (§5) |
 | MINOR findings | About thirty: most fixed in R1–R4; the rest debt rows, postponed issues or owner items, each with an owner (§6) |
 | Testing | Baseline **4,511 tests, 3 failed** (G1–G3, all fixed; G4 found on a merge, fixed); every repair's fresh runs **0 failures**; criterion 7 `PARTIAL`; **no post-merge full re-run, no independent verifier, no database checks after R2's merge, the storm not re-run after the repairs** — recorded deviations (§7.2) |
 | Phase 12 completion | **`COMPLETE`, confirmed after repair** (§9) |
@@ -92,7 +92,7 @@ on its own reading). *As found* is `993eaec3`; *after repair* is `27bd7e1f`.
 | 8 | Documentation reflects reality | `PARTIAL` (A1-3, A1-4, A4-F1…F5, F8; `BACKLOG.md`'s status line) | `PASS` |
 | 9 | `CURRENT_STATE.md` updated | `PASS` | `PASS` — these records |
 | 10 | Relevant ADRs exist and are `Accepted` | `PASS` | `PASS` — ADR-0106 amended (R1); ADR-0092, -0094, -0099 and -0101…-0105 corrected in place with dated notes |
-| 11 | No unresolved critical issues | not met — eleven IMPORTANT open | `PASS` — none CRITICAL; every IMPORTANT repaired |
+| 11 | No unresolved critical issues | not met — ten IMPORTANT open | `PASS` — none CRITICAL; every IMPORTANT repaired |
 | 12 | Formal phase review conducted | `PASS` | `PASS` — the exit review, then this gate |
 
 **The Phase 13 boundary holds** (A4): a grep of `bnpl` and `app/bnpl` for write-off, provisioning, fraud, AML, sanctions,
@@ -218,8 +218,8 @@ with them the absence of MFA on operator acts.
 
 ## 5. Findings — CRITICAL and IMPORTANT
 
-**CRITICAL: none.** The first pass recorded **eleven IMPORTANT** findings belonging to Phase 12; read one row per root cause
-they are the ten below — V015's hold-trigger gap was found by both A1 (graded MINOR) and A6 (graded IMPORTANT). Every one was
+**CRITICAL: none.** The first pass recorded **ten IMPORTANT** findings belonging to Phase 12, one row per root cause below — V015's hold-trigger
+gap was found by both A1 (graded MINOR) and A6 (graded IMPORTANT) and is counted once. Every one was
 repaired before this transition, tested and probed. **No independent re-gate verifier graded them** — by the owner's
 decision (§7.2); the evidence is each repair's own tests, probes and fresh runs.
 
