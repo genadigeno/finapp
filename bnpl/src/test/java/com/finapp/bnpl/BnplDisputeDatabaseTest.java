@@ -584,7 +584,28 @@ class BnplDisputeDatabaseTest {
                 }
             });
             assertThat(atThePayable.await(30, TimeUnit.SECONDS)).as("judged before the deadline, then at (P)").isTrue();
-            Thread.sleep(3_000);
+            // Released only once the deadline has passed on the DATABASE clock the acceptance's statement reads - its own
+            // frame, polled - never after a fixed JVM sleep: the frame's offset is taken from the JVM clock, and the test
+            // VM's database clock steps by up to 1.7 s, so a 3 s sleep left a 1 s margin that a step could eat, the edge
+            // then judged before the deadline and the acceptance Acted (the transition gate's G4, on R3's merge). The
+            // margin beyond the deadline is a step's worth, measured on that clock.
+            try (Connection observer = BnplClockFrame.framed(DatabaseRoles.application(), twoSecondsBefore);
+                    Statement poll = observer.createStatement()) {
+                long patience = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+                while (true) {
+                    try (java.sql.ResultSet past = poll.executeQuery("SELECT clock_timestamp() > TIMESTAMPTZ '" + deadline
+                            + "' + interval '2 seconds'")) {
+                        past.next();
+                        if (past.getBoolean(1)) {
+                            break;
+                        }
+                    }
+                    observer.rollback();
+                    assertThat(System.nanoTime()).as("the deadline passes on the database clock").isLessThan(patience);
+                    Thread.sleep(50);
+                }
+                observer.rollback();
+            }
             release.countDown();
             assertThat(accepting.get(60, TimeUnit.SECONDS)).isInstanceOf(BnplDisputes.DisputeNotActionable.class);
         } finally {
