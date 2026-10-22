@@ -366,13 +366,14 @@ regulatory report's narrative `RESTRICTED-PII`; nothing in `risk` is `INTERNAL` 
 
 ## 9. API architecture
 
-All `/v1`, closed bodies, the error contract, `Idempotency-Key` on every keyed command, owner-scoped. **No customer
+All `/v1`, closed bodies, the error contract, `Idempotency-Key` on every keyed command, owner-scoped; a route carries
+exactly one permission (`RoutePermissionRegisterTest`), so each desk's reads are its own doors. **No customer
 route reads a risk table** (`INV-RSK-08`; `NoCustomerSurfaceReadsRiskTest`). Operator routes:
 
 | Route | Who | Command | Idempotency | Answer |
 |---|---|---|---|---|
 | `POST /v1/operator/risk/policies` · `…/{id}/activation` · `…/{id}/rejection` | `RISK_POLICY_ADMINISTER` | propose; activate (a second holder); reject | `risk.policy:<actor>` | `201` / `200` / `403 risk.SelfApprovalRefused` (the `bnpl`/`credit` precedent: a refused second person is a forbidden act, not a conflict) |
-| `GET /v1/operator/risk/policies/{id}` · `GET …?operation=` | `RISK_POLICY_ADMINISTER`, `RISK_INVESTIGATE` | read | — | `200` |
+| `GET /v1/operator/risk/policies/{id}` · `GET …?operation=` | `RISK_POLICY_ADMINISTER` | read (an assessment names its policy version; the analyst reads it through the assessment, `-004`) | — | `200` |
 | `GET /v1/operator/risk/assessments/{id}` | `RISK_INVESTIGATE` | the assessment with its inputs, hits, score, decision, reasons | — | `200`, audited `risk.AssessmentRead` |
 | `POST /v1/operator/risk/assessments/{id}/replay` | `RISK_INVESTIGATE` | re-evaluate from the sealed inputs; `IDENTICAL` / `DIVERGED` | — | `200`, audited `risk.Replayed` |
 | `POST /v1/operator/risk/assessments/{id}/overrides` · `…/{id}/approval` · `…/{id}/rejection` | `RISK_OVERRIDE` | propose; approve (a second holder, C7); reject | `risk.override:<actor>` | `201` / `200` |
@@ -435,9 +436,9 @@ suspension; `lending.LoanDelinquencyChanged`/`LoanDefaulted`; `bnpl.BnplDelinque
   disposition or action), `RISK_POLICY_ADMINISTER` (propose and activate policy versions and list versions, under
   four eyes), `RISK_OVERRIDE` (propose and approve decision overrides, C7), `AML_REPORT_APPROVE` (approve a regulatory
   report), `AML_REPORT_FILE` (file it). **Roles:** `RISK_ANALYST` {INVESTIGATE, CASE_APPROVE}; `RISK_OFFICER`
-  {POLICY_ADMINISTER, OVERRIDE, INVESTIGATE}; `AML_OFFICER` {INVESTIGATE, CASE_APPROVE, AML_REPORT_APPROVE,
-  AML_REPORT_FILE}. Pairwise-disjoint grants between the new roles and every existing one (`INV-AUD-03`); four eyes
-  inside a role between two holders.
+  {POLICY_ADMINISTER, OVERRIDE}; `AML_OFFICER` {AML_REPORT_APPROVE, AML_REPORT_FILE} — a partition: pairwise-disjoint
+  grants between the new roles, and with every existing one (`INV-AUD-03`); four eyes inside a role between two
+  holders. *(Erratum, `P13-TSK-001`, 2026-10-22: the plan first wrote the analyst's reads into every desk - `RISK_OFFICER` and `AML_OFFICER` each holding `RISK_INVESTIGATE`, the AML officer `RISK_CASE_APPROVE` too. Identity holds one live role per identity (`V010`) and `RoleNameTest` holds every pair of grants disjoint, so the three desks are a partition: `RISK_ANALYST` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`}, `RISK_OFFICER` {`RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`}, `AML_OFFICER` {`AML_REPORT_APPROVE`, `AML_REPORT_FILE`}. A route carries exactly one permission, so where a second desk needs a read it has its own door under its own permission: the override door serves the assessment it overrides under `RISK_OVERRIDE`; the report draft door serves the disposed case's evidence under `AML_REPORT_APPROVE`; an analyst never files and an AML officer never investigates - a stronger separation of the investigation from the filing than the plan had.)*
 - **Self-dealing, fail closed:** no holder reads or works a case, approves an override or files a report on their own
   party's subject; an operator with no placeable party is refused (the gate's A7-6 applied forward); recorded `FAILED`.
 - **Tipping-off (`INV-RSK-08`):** no customer or merchant route reads any `risk` table; the customer sees the
@@ -847,7 +848,7 @@ Mirrors `P12-TSK-002`: the module with its `V001` floor (`REVOKE ALL FROM PUBLIC
 `RISK_ANALYST`, `RISK_OFFICER` and `AML_OFFICER` with the six permissions, `NoCustomerSurfaceReadsRiskTest`, the
 `RiskFlowScope` and the sweeper property names, and the ports' interfaces declared empty of implementation. It is first
 because every other task writes into this schema and composes through these ports, and the role split is the trust
-decision the whole phase rests on. `P13-TSK-002` (policy versions) follows.
+decision the whole phase rests on. `P13-TSK-002` (policy versions) follows. *(Built 2026-10-22, `COMPLETE`: as written, with the roles a partition (§11's erratum), `RiskAuditAction` and `RiskErrorCode` grown per task rather than declared whole, and the ports `RiskActingParty`, `SessionAssurance`, `MonitoredLedger`, `RegulatoryFilingProvider`, `ScreeningClearances`, `PartyRescreening` and the six action ports; `RiskInputs` and `CaseOpener` are `-004`'s.)*
 
 ---
 

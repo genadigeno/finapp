@@ -1446,11 +1446,14 @@ decline alike. The options read answers `SessionNotEligible` for a token that op
 merchant offers within credit's bounds, covering the fee, with an `ACTIVE` terms version: no eligibility is judged, so
 there is no credit refusal to pass through.
 
-### `risk` — `RiskErrorCode` *(planned by the Phase 12 → 13 transition, 2026-10-22; to be declared by `P13-TSK-001`)*
+### `risk` — `RiskErrorCode` *(planned by the Phase 12 → 13 transition, 2026-10-22; declared per task from `P13-TSK-001`)*
 
-*Planned.* No `RiskErrorCode` exists yet, so these are not catalogue rows: each opens with the *planned* marker, which
-`ErrorCodeRegistryTest` does not read (it catalogues a line only when it opens with a backticked `module.Code`), and
-`P13-TSK-001` drops the marker and makes each a row of the shape above, its status then checked against the code. The
+*Declared per task* (`P13-TSK-001`, the `BnplErrorCode` precedent): `RiskErrorCode` holds the three codes the role
+split owns - `risk.NotFound`, `risk.SelfApprovalRefused` and `risk.SelfDealingRefused`, the three catalogue rows below
+without a marker, their statuses checked against the code - and the nine others arrive with the doors that raise them,
+each dropping its *planned* marker then, so no catalogued code is one a client could never receive. A row that still
+opens with the marker is not a catalogue row: `ErrorCodeRegistryTest` catalogues a line only when it opens with a
+backticked `module.Code`. The
 twelve are `PHASE_13_PLAN.md` §9's; the statuses are the plan's where it names one (`403 risk.SelfApprovalRefused`,
 `409 risk.CaseRevisionStale`, `422 risk.PolicyInvalid`) and this register's standing readings for the rest (bnpl's and
 credit's shapes), for `-001` to confirm. Every detail is stranger-safe: never a score, a rule, a reason text, a threshold or
@@ -1459,9 +1462,9 @@ alert, a case or a report exists.
 
 | Code | Status | Meaning |
 |---|---|---|
-| *planned* `risk.NotFound` | 404 | No risk record matches the requested identifier - another party's, an unknown or a malformed id alike. |
-| *planned* `risk.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl` precedent — a forbidden act, not a conflict; the plan's §9 corrected to `403` by the transition, 2026-10-22.)* |
-| *planned* `risk.SelfDealingRefused` | 403 | An employee never reads or works a case, approves an override or files a report on their own party's subject; nothing was done. |
+| `risk.NotFound` | 404 | No risk record matches the requested identifier - another party's, an unknown or a malformed id alike. |
+| `risk.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl` precedent — a forbidden act, not a conflict; the plan's §9 corrected to `403` by the transition, 2026-10-22.)* |
+| `risk.SelfDealingRefused` | 403 | An employee never reads or works a case, approves an override or files a report on their own party's subject; nothing was done. |
 | *planned* `risk.PolicyNotActive` | 409 | No risk policy version is active for the operation, or the version named is not the active one. |
 | *planned* `risk.PolicyStale` | 409 | The risk policy version is no longer awaiting a decision. |
 | *planned* `risk.PolicyInvalid` | 422 | The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a decision the operation does not admit; nothing was proposed. |

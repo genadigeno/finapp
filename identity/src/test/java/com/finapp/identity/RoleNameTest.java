@@ -266,6 +266,61 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("RISK_ANALYST grants exactly RISK_INVESTIGATE and RISK_CASE_APPROVE - four-eyes inside the role, nothing"
+            + " of the policy, the override or the filing")
+    void riskAnalystGrantsExactlyTwo() {
+        // The fifteenth population (P13-TSK-001, ADR-0107, ADR-0110): the desk that investigates checks an
+        // investigation's conclusion between two holders (the LOAN_SERVICING_AGENT shape) and neither writes the rules
+        // that produce the outcomes it investigates nor files with the authority.
+        assertThat(RoleName.RISK_ANALYST.permissions())
+                .as("investigating and approving an investigation's conclusion is one population's work")
+                .containsExactlyInAnyOrder(PermissionName.RISK_INVESTIGATE, PermissionName.RISK_CASE_APPROVE)
+                .doesNotContain(
+                        PermissionName.RISK_POLICY_ADMINISTER,
+                        PermissionName.RISK_OVERRIDE,
+                        PermissionName.AML_REPORT_APPROVE,
+                        PermissionName.AML_REPORT_FILE,
+                        PermissionName.CREDIT_INVESTIGATE,
+                        PermissionName.BNPL_INVESTIGATE);
+    }
+
+    @Test
+    @DisplayName("RISK_OFFICER grants exactly RISK_POLICY_ADMINISTER and RISK_OVERRIDE - never the analyst's reads, never"
+            + " credit's policy")
+    void riskOfficerGrantsExactlyTwo() {
+        // The sixteenth population (P13-TSK-001, ADR-0108, ADR-0109): whoever answers for what the engine judges by also
+        // answers for the one act that sets a judgement aside; the override door serves the assessment it overrides
+        // under RISK_OVERRIDE, so the officer needs no analyst's read.
+        assertThat(RoleName.RISK_OFFICER.permissions())
+                .as("the policy and the override are one desk's, and not the investigator's")
+                .containsExactlyInAnyOrder(PermissionName.RISK_POLICY_ADMINISTER, PermissionName.RISK_OVERRIDE)
+                .doesNotContain(
+                        PermissionName.RISK_INVESTIGATE,
+                        PermissionName.RISK_CASE_APPROVE,
+                        PermissionName.AML_REPORT_APPROVE,
+                        PermissionName.AML_REPORT_FILE,
+                        PermissionName.CREDIT_POLICY_ADMINISTER);
+    }
+
+    @Test
+    @DisplayName("AML_OFFICER grants exactly AML_REPORT_APPROVE and AML_REPORT_FILE - the filing authority is its own"
+            + " desk, never the investigator's")
+    void amlOfficerGrantsExactlyTwo() {
+        // The seventeenth population (P13-TSK-001, ADR-0111): the regulatory filing, with its tipping-off obligation, is
+        // held by a population that is not the one working the case; the draft door serves the disposed case's evidence
+        // under the officer's own permission. Four eyes inside the role: the drafter never approves.
+        assertThat(RoleName.AML_OFFICER.permissions())
+                .as("approving and filing a regulatory report is the filing desk's alone")
+                .containsExactlyInAnyOrder(PermissionName.AML_REPORT_APPROVE, PermissionName.AML_REPORT_FILE)
+                .doesNotContain(
+                        PermissionName.RISK_INVESTIGATE,
+                        PermissionName.RISK_CASE_APPROVE,
+                        PermissionName.RISK_POLICY_ADMINISTER,
+                        PermissionName.RISK_OVERRIDE,
+                        PermissionName.KYC_REVIEW);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -327,6 +382,7 @@ class RoleNameTest {
                                 + " 'RECONCILIATION_CONTROLLER', 'FX_CONTROLLER',"
                                 + " 'CREDIT_POLICY_OFFICER', 'UNDERWRITER',"
                                 + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT',"
-                                + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT'");
+                                + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT',"
+                                + " 'RISK_ANALYST', 'RISK_OFFICER', 'AML_OFFICER'");
     }
 }

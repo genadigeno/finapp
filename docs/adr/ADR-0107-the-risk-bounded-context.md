@@ -60,7 +60,10 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    | identity's acting party | the party of an acting person | every self-dealing refusal (plan §11) |
    | the session's assurance | `MULTI_FACTOR` or not, read for `CHALLENGE` and for step-up | T-eval and T-advise (ADR-0108) |
 
-   The exact port names are each building task's design (`P13-TSK-001` declares them empty of implementation). No
+   The exact port names are each building task's design; `P13-TSK-001` declared them empty of implementation —
+   `RiskActingParty`, `SessionAssurance`, `MonitoredLedger`, `RegulatoryFilingProvider`, `ScreeningClearances`,
+   `PartyRescreening`, `IdentityActions`, `AccountActions`, `MerchantActions`, `BeneficiaryActions`,
+   `HeldWithdrawalActions` — each free to be reshaped by the task that first implements it. No
    port returns a row of another module; each returns a verdict, a reference or a bounded fact. No score, rule name,
    reason text or note crosses out of `risk` through any of them.
 
@@ -115,8 +118,12 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
 
 10. **Security** (plan §11; identity `V023`). Six permissions — `RISK_INVESTIGATE`, `RISK_CASE_APPROVE`,
     `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE` — and three roles,
-    `RISK_ANALYST`, `RISK_OFFICER`, `AML_OFFICER`, pairwise-disjoint with every existing role (`INV-AUD-03`); four eyes
-    inside a role between two holders. No customer or merchant route reads any `risk` table
+    `RISK_ANALYST` {`RISK_INVESTIGATE`, `RISK_CASE_APPROVE`}, `RISK_OFFICER` {`RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`},
+    `AML_OFFICER` {`AML_REPORT_APPROVE`, `AML_REPORT_FILE`} — a partition, pairwise-disjoint with each other and with
+    every existing role (`INV-AUD-03`; one live role per identity); four eyes inside a role between two holders. Built
+    by `P13-TSK-001` (identity `V023`): the plan's §11 first gave every desk the analyst's reads, which the pairwise
+    rule refuses - the override door and the report draft door serve what their desks must read under their own
+    permissions instead. No customer or merchant route reads any `risk` table
     (`NoCustomerSurfaceReadsRiskTest`); the customer sees the operation's generic outcome (C6).
 
 11. **Schedules and the advisory namespace.** `RiskMonitoringSchedule` (the intake leg, profile recomputes,

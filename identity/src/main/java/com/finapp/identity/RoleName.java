@@ -283,7 +283,49 @@ public enum RoleName {
      * lending's servicing: a loan's agent is not a BNPL agent, each context's accounts its own.
      */
     BNPL_SERVICING_AGENT(EnumSet.of(PermissionName.BNPL_SERVICE, PermissionName.BNPL_SERVICE_APPROVE,
-            PermissionName.BNPL_DISPUTE_RESOLVE));
+            PermissionName.BNPL_DISPUTE_RESOLVE)),
+
+    /**
+     * Investigates risk and approves another analyst's conclusion (`P13-TSK-001`, ADR-0107, ADR-0110): holds
+     * {@link PermissionName#RISK_INVESTIGATE} - the audited reads of assessments, signals, profiles, alerts and cases, the
+     * case work and every proposal - and {@link PermissionName#RISK_CASE_APPROVE} - approving another holder's
+     * disposition, action or suppression.
+     *
+     * <p><strong>A fifteenth role, with four-eyes inside it</strong> (the {@link #LOAN_SERVICING_AGENT} shape): the
+     * population that investigates is the one qualified to check an investigation's conclusion, and the separation that
+     * matters - no person approves their own act, and no holder works a subject of their own party - is held between two
+     * holders at the domain and by {@code CHECK}, enforced by each act's task. Holds nothing of the policy, the override
+     * or the filing: the desk that investigates outcomes neither writes the rules that produce them nor files with the
+     * authority. {@code PHASE_13_PLAN.md} §11 first wrote the analyst's reads into every desk; one live role per identity
+     * and pairwise-disjoint grants ({@code INV-AUD-03}, {@code RoleNameTest}) make the three desks a partition instead.
+     */
+    RISK_ANALYST(EnumSet.of(PermissionName.RISK_INVESTIGATE, PermissionName.RISK_CASE_APPROVE)),
+
+    /**
+     * Administers risk policy and overrides decisions (`P13-TSK-001`, ADR-0108, ADR-0109): holds
+     * {@link PermissionName#RISK_POLICY_ADMINISTER} - policy versions, screening list versions and reprocessing under four
+     * eyes - and {@link PermissionName#RISK_OVERRIDE} - the override of a {@code DENY}, {@code HOLD} or {@code REVIEW}
+     * decision, two holders at or above the threshold (C7).
+     *
+     * <p><strong>A sixteenth role, because this IS a distinct trust decision</strong>: whoever answers for what the engine
+     * judges by also answers for the one act that sets a judgement aside, and neither is the investigator's. Holds none
+     * of the other populations' permissions and they hold none of these ({@code INV-AUD-03}); the override door serves
+     * the assessment it overrides under {@code RISK_OVERRIDE}, so the officer needs no analyst's read.
+     */
+    RISK_OFFICER(EnumSet.of(PermissionName.RISK_POLICY_ADMINISTER, PermissionName.RISK_OVERRIDE)),
+
+    /**
+     * Approves and files regulatory reports (`P13-TSK-001`, ADR-0111, owner decision C4): holds
+     * {@link PermissionName#AML_REPORT_APPROVE} - the draft from a case disposed {@code CONFIRMED_SUSPICIOUS} and another
+     * holder's approval of it - and {@link PermissionName#AML_REPORT_FILE} - the filing through the port and its
+     * acknowledgement.
+     *
+     * <p><strong>A seventeenth role: the filing authority is its own desk.</strong> An analyst never files and the AML
+     * officer never investigates - the draft door serves the disposed case's evidence under the officer's own
+     * permission - so the regulatory filing, with its tipping-off obligation ({@code INV-RSK-08}), is held by a
+     * population that is not the one working the case. Four eyes inside the role: the drafter never approves.
+     */
+    AML_OFFICER(EnumSet.of(PermissionName.AML_REPORT_APPROVE, PermissionName.AML_REPORT_FILE));
 
     private final Set<PermissionName> permissions;
 
