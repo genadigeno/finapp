@@ -12,6 +12,7 @@ Session
 Consent
 KYC Case
 KYB Case
+Screening Result
 
 Account
 Wallet
@@ -171,6 +172,28 @@ Recall
 Cross-Border Return
 Payee Check
 
+Risk Signal
+Risk Policy
+Risk Policy Version
+Rule
+Risk Assessment
+Risk Decision
+Decision Override
+Velocity Window
+Customer Risk Profile
+Transaction Risk Profile
+Monitored Transaction
+Alert
+Case
+Investigator Action
+Disposition
+Escalation
+Risk Action
+Screening List Version
+Regulatory Report
+Fraud Detection
+Transaction Monitoring
+
 Journal Entry
 Journal Line
 Chart of Accounts
@@ -268,6 +291,19 @@ lending terms (billing, accrual, repayment, allocation, Days Past Due, Delinquen
 Repayment Reversal) to the obligation and add none. Nothing of Phase 12 is built: each is the planned design,
 defined in the glossary's §7b with the same guard, and the machines are in
 [`BNPL_LIFECYCLES.md`](BNPL_LIFECYCLES.md).)* *(The Phase 12 exit review, `P12-DOC-001`, 2026-10-22: Phase 12 is built — `P12-TSK-001`…`-028`, `P12-TST-001` and `-002`, bnpl `V001`…`V017` — and every BNPL entry was read against the code; every term above is built, so the transition's "Nothing of Phase 12 is built: each is the planned design" no longer holds and the glossary states each as built. Six terms were added, each built as its own table, which the glossary already defined and this list did not name — a disagreement `DomainGlossaryTest`'s union check refuses: BNPL Enablement and BNPL Fee Pin (`merchant` `V010`, `P12-TSK-006`) after Merchant Discount, and BNPL Interest Accrual (`bnpl` `V008`/`V009`), BNPL Payoff (`V014`), BNPL Repayment Reversal and BNPL Waiver (`V016`) after BNPL Instalment — so "BNPL's servicing facts re-apply the lending terms … and add none" held for billing, repayment, allocation, Days Past Due, Delinquency and Default only. No term was renamed.)*
+*(The Phase 12 → 13 transition, 2026-10-22 — ADR-0107…0112 (`Proposed`), `PHASE_13_PLAN.md` §3 and §12 — added the
+twenty-one Phase 13 terms in a risk block after Payee Check: the inputs (Risk Signal, Velocity Window, Monitored
+Transaction, Transaction Risk Profile), policy as versioned data (Risk Policy, Risk Policy Version, Rule), the
+judgement (Risk Assessment, Risk Decision, Decision Override — Risk Score keeps its place in the credit block,
+sharpened), the party's standing (Customer Risk Profile), the investigation (Alert, Case, Investigator Action,
+Disposition, Escalation, Risk Action), the filing and the lists (Regulatory Report, Screening List Version) and the two
+capabilities kept distinct inside one module (Fraud Detection, Transaction Monitoring) — each keeping a distinction
+Phase 13 could collapse: an assessment is not a decision and neither is a score, an alert is not a case and a case is
+not a report, a risk action is not the owning domain's effect, a velocity window is not a cache, and a monitored
+transaction is not the journal entry. Screening Result was added after KYB Case: `kyc` has owned it since
+`P0-TSK-006` and Phase 13 reads it through a port, so the list names it. Nothing of Phase 13 is built: each is the
+planned design, defined in the glossary's §8a with the same guard, and the machines are in
+[`RISK_LIFECYCLES.md`](RISK_LIFECYCLES.md).)*
 
 ---
 

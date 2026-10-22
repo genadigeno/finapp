@@ -872,3 +872,135 @@ next), read each (`GET /v1/operator/bnpl-disputes/{id}` - the customer's reason 
 (`POST /v1/operator/bnpl-disputes/{id}/resolution`, `REFUND` or `UPHOLD`, reasoned; above the pinned four-eyes threshold -
 judged on the purchase's cumulative refunds by dispute since this gate - a second operator approves). A NaN reading is
 `BnplGaugesUnreadable`'s (§8.8).
+
+## 9. Risk, fraud and AML (Phase 13, planned — `P13-TSK-024`): the activation gate and every risk alert
+
+*Planned by the Phase 12 → 13 transition, 2026-10-22 (`PHASE_13_PLAN.md` §1.1, §12.7, §12.9, §14, §15; ADR-0107…ADR-0112,
+`Proposed`); written in full by `P13-TSK-024` from the code, which drops this marker. Nothing below exists until
+`P13-TSK-001` lands.* Risk judges money movements inside their owners' transactions and watches the ledger's journal after
+them; it moves no money, holds none and releases none of its own (`INV-RSK-02`) - every procedure here ends in a risk
+record and, where an effect follows, in a keyed command through the owning domain's existing door. Every alert below is
+`infra/prometheus/rules/risk.yml`'s (`-024`), each a count, an age, a verdict or a gauge - never an amount, a party or a
+subject (`INV-AUD-02`, `INV-RSK-08`). No procedure here edits a row, re-posts an entry, deletes an alert or re-opens a
+case: risk's figures change only by their machines and the four-eyes acts (a policy activation, an override, a
+disposition, a report approval, a downstream action).
+
+### 9.1 The production activation gate - before the first risk policy version in production
+
+**Production ships closed to judging.** No migration activates a risk policy version, so production starts with
+`finapp.risk.policy.active{operation,policy_version}` at 0 for every operation, and every seam answers `ALLOW` with the
+reason code `NO_POLICY_ACTIVE` - **recorded as an assessment** (the control ran; it had no policy), so the first
+activation changes behaviour and not the shape of any record (`PHASE_13_PLAN.md` §1.1). The monitoring sweep runs from
+the first deployment and raises no alert until a monitoring policy is active. That is the expected state - not an
+incident - until **every** condition below is true, in this order, each with its evidence recorded:
+
+1. **A policy version per operation reviewed**: its rules, weights, score bands and fail-safe bands (C1 - internal
+   transfers `ALLOW` recorded below EUR 1,000 and `DENY` at or above; wallet withdrawals and cross-border `DENY` at
+   every band; checkout card and wallet payments `ALLOW` recorded below EUR 250 and `DENY` at or above - a field of the
+   version, changed by activation, never by code), the challenge assurance (`MULTI_FACTOR`) and the override threshold
+   (C7) reviewed against the battery's replay (`P13-TST-002`) and the storm's latency reading (`P13-TST-001`, p99 ≤ 50
+   ms); the fail-safe band chosen knowingly - a fail-open band lets a movement through unjudged when risk is
+   unavailable, a fail-closed band refuses it, and either is a recorded, counted decision.
+2. **The monitoring policy reviewed**: `STRUCTURING`, `RAPID_IN_OUT`, `DORMANT_THEN_ACTIVE`, `ROUND_AMOUNT`,
+   `CORRIDOR_HIGH_RISK` and the `VELOCITY_*` rules with their windows, and the rating bands that map the party's signal
+   score (the version's rule kinds over signals and case history) to `LOW`, `MEDIUM` or `HIGH`; the intake's posting-key namespace register covering every namespace the ledger carries
+   (`finapp.risk.monitoring.unclassified` at 0 after a reprocessing from the first watermark, §9.3).
+3. **The roles held by distinct people**: `RISK_OFFICER` (policy administration, overrides), `RISK_ANALYST`
+   (investigation, case approval) and `AML_OFFICER` (investigation, case approval, report approval and filing) granted
+   to disjoint holders, at least two per role, so every four-eyes act has its second person (`INV-RSK-07`,
+   `INV-AUD-03`).
+4. **The jurisdiction chosen and the filing adapter real**: the reference remains the neutral EUR one and
+   `RegulatoryFilingProvider` is simulated (`DECISIONS.md` §Deferred; `PHASE_13_PLAN.md` §12.9, C4); a real
+   jurisdiction brings its reporting format, deadlines and content rules as adapter data, verified against the official
+   text, with legal review of the report template and of the tipping-off handling recorded.
+5. **A four-eyes risk policy activation**: one `RISK_OFFICER` (the role holding `RISK_POLICY_ADMINISTER`) proposes the
+   reviewed version (`POST /v1/operator/risk/policies`, `Idempotency-Key`, a reason - judged whole, `422
+   risk.PolicyInvalid` naming the defect), a **second** activates it from a `MULTI_FACTOR` session (`POST
+   …/{id}/activation`, a reason), retiring any predecessor in the same transaction; `GET
+   /v1/operator/risk/policies?operation=` reads it back. The monitoring policy the same way. A self-activation is `409
+   risk.SelfApprovalRefused` (`PHASE_13_PLAN.md` §9), recorded `FAILED`.
+6. **The alert armed**: the environment's Prometheus scrape configuration labels the application targets as judging
+   (`-024` fixes the label; `bnpl_offered: "true"`'s shape), so the no-active-policy alert watches every operation from
+   now on.
+
+Nothing here is a switch in code: each step is a person's recorded act. A step out of order is refused by the platform
+where it can be (no evaluation under a version not `ACTIVE`; no self-activation; no filing of an unapproved report, `409
+risk.ReportNotFileable`) and by this procedure where it cannot (1-4, 6).
+
+### 9.2 The risk alerts (`infra/prometheus/rules/risk.yml`)
+
+Each is `PHASE_13_PLAN.md` §15's; `-024` names the ones the plan does not.
+
+- **Evaluation unavailable** - `RiskEvaluationUnavailable` (`finapp.risk.evaluation.unavailable{operation}` > 0): a seam
+  answered its fail-safe band - no `ACTIVE` policy where one is expected, the pin's read failing, a rule throwing, or the
+  250 ms statement timeout (`PHASE_13_PLAN.md` §7.6) - **recorded** as an assessment with reason `RISK_UNAVAILABLE` or
+  `NO_POLICY_ACTIVE`, the money movement committing the band's outcome. A fail-open is a visible, counted event, never
+  silence. **What a person does**: read the day's decisions by reason (`GET /v1/operator/reports/risk/decisions?date=`,
+  `RISK_INVESTIGATE`, recorded `risk.ReportRead`); find the cause - a policy retired without a successor (§9.1 step 5),
+  latency (the next alert), a rule kind failing on an input (a policy defect: a new version, never a patched rule); never
+  evaluate by hand, and never re-judge a committed movement.
+- **Latency over budget** (`finapp.risk.evaluation.latency{operation}` p99 > 50 ms): T-eval runs inside every money
+  movement, so a breach is paid by every transfer, withdrawal, payment and cross-border authorisation and, past 250 ms,
+  becomes the fail-safe decision. Read the window rows' lock waits and the policy's rule count; the monitoring sweep
+  running beside it is M3's split trigger (`PHASE_13_PLAN.md` §3.2) - a sweep that harms the synchronous budget is the
+  evidence that the AML capability wants its own module.
+- **No active policy where judging is expected** - `RiskPolicyNoneActive` (`finapp.risk.policy.active{operation}` = 0 on
+  a target labelled as judging, §9.1 step 6): §9.1 step 5.
+- **Unclassified journal entries** (`finapp.risk.monitoring.unclassified` > 0): the intake met a posting-key namespace
+  its register does not know and recorded the movement `UNCLASSIFIED` - nothing passes unseen, but nothing is evaluated
+  for it either. A new module's postings or a renamed key: extend the classifier (`-019`'s register, a code change with
+  its test), deploy, then reprocess (§9.3).
+- **Monitoring lag over an hour** (`finapp.risk.monitoring.lag` > 3600 s - journal head minus watermark): the sweep is
+  behind the ledger - every instance's sweeper off (`sweeper.enabled` at 0 everywhere, the standing cause), a permit not
+  yet lapsed after a crash (it lapses on the database clock; wait one cadence), or a claim failing (its metered failures).
+  Never advance a watermark by hand.
+- **Velocity proof failing** (`finapp.risk.velocity.proof{verdict="FAILS"}` = 1): a live window's count or sum differs
+  from the monitored transactions it should equal (`INV-RSK-03`), and nothing self-corrects: a window written by a
+  movement the journal never recorded, or a monitored transaction the window missed. Read the proof's named rows and open
+  an incident; the window is not edited.
+- **A case older than its SLA** (`finapp.risk.case.age{kind}` > the kind's SLA): work the queue oldest first (`GET
+  /v1/operator/risk/cases?status=&kind=&after=`); a take is one person's act; §9.5 when the case holds a withdrawal.
+- **An action failed** (`finapp.risk.action.failed{kind}` > 0): the owning domain refused or timed out past the retries;
+  `FAILED` is re-proposable on the case and never re-dispatched by itself. A domain's "already so" is `DONE(ALREADY)`,
+  not this alert.
+- **A filing unknown** (`finapp.risk.report{status="FILED"}` with no acknowledgement past the provider's deadline): §9.4.
+
+### 9.3 Reprocessing the monitoring from an earlier watermark - the order
+
+Ordered by a `RISK_POLICY_ADMINISTER` holder after a monitoring policy change, a classifier change or an incident,
+audited. Idempotent by construction (`INV-RSK-09`): monitored transactions are born once per journal entry, alerts once
+per (subject, rule, window start), cases once open per (subject, kind), so a re-run creates nothing that exists and only
+what the earlier run missed. The order: (1) activate the new monitoring policy, or deploy the classifier, first - a
+reprocessing under the old one re-finds what it found; (2) set the source's watermark back to the chosen journal
+sequence through the operator door (`-019`; never SQL); (3) let `RiskMonitoringSchedule` sweep - every instance claims
+pages `SKIP LOCKED`, none is designated; (4) watch `finapp.risk.monitoring.lag` fall to 0 and
+`finapp.risk.monitoring.unclassified` stay 0; (5) read the decisions and alerts reports for the window reprocessed. New
+alerts fold into their subjects' open cases; a disposed case is never re-opened - a new alert on its subject opens a new
+case referencing it. A replayed history is `P13-TST-001`'s scenario 8 and
+`MonitoringIntakeDatabaseTest#reprocessingCreatesNothingNew`.
+
+### 9.4 A regulatory filing that will not conclude - `UNKNOWN`
+
+`FILED` is committed **before** the provider is called, with the provider's reference pending, and the artefact is
+immutable from then (`PHASE_13_PLAN.md` §14; the payout precedent). A timeout or an unknown answer leaves the report
+`FILED` with no acknowledgement: the platform **inquires** by its own reference through `RegulatoryFilingProvider` on the
+schedule's cadence and **never re-files** - a second filing of one report is the one thing a filing must not be. **What a
+person does**: read the report (`AML_REPORT_FILE`), confirm with the authority by its reference outside the platform
+where the adapter cannot, and record the acknowledgement or the rejection through the operator door; a rejection is a new
+draft from the same case, approved and filed under four eyes again. Nothing of the inquiry, the report or its subject
+reaches a customer surface, a log line or an event payload beyond the report id and the jurisdiction (`INV-RSK-08`).
+
+### 9.5 Releasing or denying a held withdrawal
+
+A withdrawal the seam decided `HOLD` is `HELD` with its ledger hold kept (payments `V033`, `P13-TSK-009`): the customer
+reads the status word `HELD` and nothing else (C6), the case the decision opened carries the assessment as its first
+evidence, and the money moves only by a person's act under four eyes. The path: a `RISK_OVERRIDE` holder proposes an
+override of the `HOLD` with a reason code and text (`POST /v1/operator/risk/assessments/{id}/overrides`), a second holder
+approves it at or above the threshold (C7); the approved override issues `RELEASE_HELD_WITHDRAWAL` - or the case's
+four-eyes disposition issues `DENY_HELD_WITHDRAWAL` - as a risk action, dispatched by `RiskActionSchedule` through
+payments' own door, keyed `risk.action:<id>`, on payments' lock order: a release moves `HELD → DISPATCHED` and the
+withdrawal proceeds as today; a denial moves `HELD → FAILED(RISK_REFUSED)` and releases the hold in the same transaction.
+A release and the hold's expiry (`held_until`: the policy's hold validity, default 72 h; payments' `WithdrawalResolutionSchedule` leg fails it `RISK_REFUSED`/`HOLD_EXPIRED` and releases the hold) leave exactly one outcome (`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`);
+a re-drive replays payments' stored answer. Never release a hold by hand and never edit the withdrawal: the action's
+outcome is recorded on both sides. A customer who closes the wallet meanwhile is refused while the hold is `ACTIVE`
+(accounts' existing rule).

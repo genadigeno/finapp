@@ -4046,6 +4046,26 @@ Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FIN
 | `capital_recognition` | `created_at` | `INTERNAL` | System time |
 | `capital_recognition` | `correlation_id` | `INTERNAL` | The statement's correlation |
 
+### `risk` - the schema's classification - *planned by the Phase 12 → 13 transition, 2026-10-22; registered per table by `P13-TSK-002`…`-022`*
+
+*Planned.* No `risk` column exists yet; this note is the design's classification (`PHASE_13_PLAN.md` §8, §11; ADR-0107,
+ADR-0111), and the task that creates each table adds its rows here in the register's shape - `ColumnClassificationTest`
+derives the schemas from the database, so the first `risk` migration fails the build until its columns are classified,
+as the scheme requires. The levels decided: assessment inputs and rule hits (`risk_assessment_input`, `risk_rule_hit`,
+`risk_reason`) `CONFIDENTIAL`; signal attributes (`risk_signal`) at their source's level - a device attribute
+`RESTRICTED-PII` (identity's `session.device` reaches `risk` only as a hash computed by the handler; no description is
+stored); case notes and evidence references (`risk_case_action`, `risk_case_event`) `CONFIDENTIAL`, person-written text
+screened by `InstrumentShapes` for card and account shapes; the regulatory report's narrative (`regulatory_report`)
+`RESTRICTED-PII`, readable by `AML_REPORT_*` holders only and never in a log, an event or a metric (`INV-RSK-08`,
+tipping-off); nothing in `risk` is `INTERNAL` except identifiers and timestamps (the plan's words; the register's standing
+reading of "identifier" takes in a machine's state and a closed code - `bnpl_terms_version.status`, `.product` - which
+`-002` applies or narrows, saying so). Two readings the plan leaves to the register's rules: the judged amount on an
+assessment and a velocity window's sum are amounts, `RESTRICTED-FINANCIAL` by rule 0, on `INSERT`-only rows and the
+one-statement upsert; the people who propose, activate, approve, take, escalate, dispose and file are operators'
+identities, `CONFIDENTIAL` as in every register above. Payments' `withdrawal` `HELD` status and its `RISK_REFUSED`
+failure reasons (payments `V033`, `V034`; `P13-TSK-009`, `-010`) are machine states in payments' own rows, classified
+there by the tasks that add them.
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

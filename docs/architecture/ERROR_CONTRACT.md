@@ -264,7 +264,8 @@ reasoning at a port); distinct from `UnknownDestination` because the remedies di
 different field to fix. **A `FAILED` judgement is not an error code at all**: insufficient
 funds, an unpostable side, a currency mismatch, a self-transfer — and, from `P4-TSK-010`,
 a limit or risk seam's refusal (`LIMIT_REFUSED`/`RISK_REFUSED`, reserved so Phase 13's
-implementations change no contract) — are committed domain outcomes answered as `201` with
+implementations change no contract; *produced from `P13-TSK-008`, planned by the Phase 12 → 13
+transition, 2026-10-22 - the `risk` section below*) — are committed domain outcomes answered as `201` with
 the reason in the body (ADR-0043/0044 — the asynchronous-outcome contract shape), never
 members of this vocabulary.
 
@@ -863,7 +864,10 @@ disable of what is already stopped answers `UNCHANGED` and writes nothing.
 Phase 13 seams `CrossBorderLimitCheck` and `CrossBorderRiskDecision` are required parameters of the
 cross-border authorization (`P9-TSK-019`), consulted in-lock before the offer is accepted, and Phase 9
 wires `PermitAllUntilPhase13`. A `REFUSE` will consume nothing; reserving the codes now means Phase 13
-changes no contract.
+changes no contract. *(Produced from `P13-TSK-011` - planned by the Phase 12 → 13 transition, 2026-10-22,
+`PHASE_13_PLAN.md` §7.3, §12.1: `app`'s `RiskCrossBorderLimitCheck` and `RiskCrossBorderRiskDecision` run `risk`'s
+evaluation in the authorization's first transaction and map its decision to the two-value verdict; the codes, their
+status and the consume-nothing refusal are unchanged - the `risk` section below.)*
 
 The beneficiary doors (`P9-TSK-017`, ADR-0080 §3) add five. Every registration refusal is recorded on
 the idempotency claim, so a replay of the key answers the same. `CorridorNotOffered` is one answer for
@@ -1441,6 +1445,42 @@ decline alike. The options read answers `SessionNotEligible` for a token that op
 `OPEN` or past its deadline - the application door's one answer, the token never echoed - and lists only the products the
 merchant offers within credit's bounds, covering the fee, with an `ACTIVE` terms version: no eligibility is judged, so
 there is no credit refusal to pass through.
+
+### `risk` — `RiskErrorCode` *(planned by the Phase 12 → 13 transition, 2026-10-22; to be declared by `P13-TSK-001`)*
+
+*Planned.* No `RiskErrorCode` exists yet, so these are not catalogue rows: each opens with the *planned* marker, which
+`ErrorCodeRegistryTest` does not read (it catalogues a line only when it opens with a backticked `module.Code`), and
+`P13-TSK-001` drops the marker and makes each a row of the shape above, its status then checked against the code. The
+twelve are `PHASE_13_PLAN.md` §9's; the statuses are the plan's where it names one (`403 risk.SelfApprovalRefused`,
+`409 risk.CaseRevisionStale`, `422 risk.PolicyInvalid`) and this register's standing readings for the rest (bnpl's and
+credit's shapes), for `-001` to confirm. Every detail is stranger-safe: never a score, a rule, a reason text, a threshold or
+an amount - and, the tipping-off rule (`INV-RSK-08`), never a word that lets a customer or merchant surface learn that an
+alert, a case or a report exists.
+
+| Code | Status | Meaning |
+|---|---|---|
+| *planned* `risk.NotFound` | 404 | No risk record matches the requested identifier - another party's, an unknown or a malformed id alike. |
+| *planned* `risk.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl` precedent — a forbidden act, not a conflict; the plan's §9 corrected to `403` by the transition, 2026-10-22.)* |
+| *planned* `risk.SelfDealingRefused` | 403 | An employee never reads or works a case, approves an override or files a report on their own party's subject; nothing was done. |
+| *planned* `risk.PolicyNotActive` | 409 | No risk policy version is active for the operation, or the version named is not the active one. |
+| *planned* `risk.PolicyStale` | 409 | The risk policy version is no longer awaiting a decision. |
+| *planned* `risk.PolicyInvalid` | 422 | The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a decision the operation does not admit; nothing was proposed. |
+| *planned* `risk.CaseRevisionStale` | 409 | The case changed since it was read; read it again and resend with its current revision. |
+| *planned* `risk.CaseNotOpen` | 409 | The case is disposed; a new case may reference it. |
+| *planned* `risk.AlertNotOpen` | 409 | The alert is already attached to a case or suppressed. |
+| *planned* `risk.ActionNotProposable` | 409 | The action cannot be proposed on this case now - one of its kind and target is already live, or the case's state does not admit it. |
+| *planned* `risk.ReportNotFileable` | 409 | The regulatory report is not approved, or is already filed. |
+| *planned* `risk.ReasonRequired` | 422 | A reason is required. |
+
+**The consumers' answers are their own, unchanged** (`PHASE_13_PLAN.md` §9, C6): a transfer refused by a seam commits
+`FAILED(RISK_REFUSED)` / `FAILED(LIMIT_REFUSED)` as a `201` with the reason in the body (the transfers paragraph above -
+reserved by `P4-TSK-010`, produced from `P13-TSK-008`); a cross-border authorisation answers `422 crossborder.RiskRefused`
+/ `crossborder.LimitRefused` (reserved by `P9-TSK-016`, produced from `P13-TSK-011`); a withdrawal gains
+`WithdrawalFailureReason.RISK_REFUSED` and the status word `HELD` (payments `V033`, `P13-TSK-009`) and a payment intent
+`PaymentFailureReason.RISK_REFUSED` (payments `V034`, `P13-TSK-010`) - committed domain outcomes in payments' own
+contracts, never error codes; an unsatisfied `CHALLENGE` at a door is `403 identity.AssuranceRequired` before any row
+exists (T-advise), the committed refusal with reason `CHALLENGE_REQUIRED` being the race's answer only. No customer or
+merchant response ever differs by the existence of an alert, a case or a report.
 
 ## 3a. Rejection at the boundary
 

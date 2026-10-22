@@ -1905,6 +1905,73 @@ See `PHASE_GATES.md` §Phase 13.
 Machine-learning model training infrastructure, real sanctions list subscriptions, actual
 regulatory filing.
 
+*(**Initialised 2026-10-22 — the decided design is [`PHASE_13_PLAN.md`](PHASE_13_PLAN.md); where this section and
+the plan differ, the plan is right.** Elaborated with ADR-0107…0112 (`Proposed`) at the Phase 12 → 13 transition:
+twenty-eight items across nine milestones in `BACKLOG.md` (`P13-TSK-001`…`-025`, `P13-TST-001`…`-002`,
+`P13-DOC-001`), the machines in `RISK_LIFECYCLES.md` and the invariants `INV-RSK-01`…`-10` in
+`FINANCIAL_INVARIANTS.md`. The eighteen sections above are kept as written. Until Phase 13's first task lands, nothing
+in this addendum is implemented. The material differences:)*
+
+- *§3 — **one module, `risk`**, owning Risk, Fraud, AML / Transaction Monitoring and Case Management (ADR-0107;
+  `MODULE_ARCHITECTURE.md` M3, M6), with edges to `platform` and `sharedkernel` only - no ledger edge and no edge to any
+  business module: every other domain is reached through ports `risk` declares and `app` implements, and every
+  consumer's seam is implemented in `app` as an adapter over `risk`'s one evaluation API. The consumers are Transfers,
+  Payments (the wallet withdrawal and the checkout confirmation - two seams that never existed, added), Cross-border
+  and Credit (`CreditRiskSignal` version 2); BNPL and Lending are judged through credit's signal, not through a seam of
+  their own. Case management is `risk`'s and serves fraud, account takeover, merchant abuse, AML and - a thin slice,
+  cut candidate - collections (C3: a `COLLECTIONS` case opened on `LoanDefaulted` / `BnplDefaulted`, facts only); KYC's
+  own cases stay kyc's.*
+- *§5 — **"a blocked transfer is a transfer in a blocked state, with postings unwound explicitly" is superseded**: a
+  seam is consulted in the owner's transaction before any posting, so a refusal commits the owner's reserved outcome
+  (`FAILED(RISK_REFUSED)`, `FAILED(LIMIT_REFUSED)`; `422 crossborder.RiskRefused`) with nothing posted and nothing to
+  unwind; only the withdrawal has a native hold-then-dispatch shape and gains `HELD` with the ledger hold its owner
+  already placed (C2). The fail-safe is answered per operation and value band as a field of the policy version (C1),
+  always a **recorded** decision (`RISK_UNAVAILABLE`, `NO_POLICY_ACTIVE`), and the in-lock evaluation is bounded by a
+  250 ms statement timeout behind a savepoint, not by a remote latency budget: risk evaluation is a method on the
+  caller's connection, never a service (ADR-0108; §17's single-point-of-failure risk answered that way).*
+- *§6 — the data model as decided: Risk Signal, Risk Policy Version and its Rules, Risk Assessment (with its inputs,
+  rule hits and reasons), Risk Score and Risk Decision as its fields, Decision Override, Velocity Window (a durable row
+  in the judged command's transaction - never Redis, so §12's "Redis velocity counter loss" cannot occur), Customer Risk
+  Profile (versioned), Monitored Transaction and the monitoring watermark, Alert, Case and Investigator Action, Risk
+  Action, Regulatory Report (the "SAR/report artefact abstraction" - never named a SAR in code), Screening List Version
+  and rescreening permits (`PHASE_13_PLAN.md` §3.1, §8). "Limit definition" is a rule of a policy version, not an
+  aggregate.*
+- *§7 — no "internal risk evaluation API with a latency budget" as a service: the evaluation is in-process, in the
+  caller's transaction (above); the operator routes are `/v1/operator/risk/**` (policies, assessments and replay,
+  overrides, alerts, cases and their actions, dispositions, risk actions, reports, screening lists, profiles) and
+  `/v1/operator/reports/risk/**`, every one audited; no customer route reads a risk table (`INV-RSK-08`).*
+- *§8 — **`TransactionBlocked` is not a risk event** (`PHASE_13_PLAN.md` §10): the blocked movement's owner announces
+  its own outcome (`transfers` with `RISK_REFUSED`; payments with `HELD` / `FAILED`) and `RiskDecisionMade` carries
+  the judgement. `CaseClosed` is `CaseDisposed`; added: `CaseEscalated`, `RiskActionRequested` /
+  `RiskActionCompleted`, `CustomerRiskRatingChanged`, `RiskPolicyActivated`, `RegulatoryReportFiled` (never the
+  subject). No event carries a reason text, a score, a rule name, a note or any PII.*
+- *§9 — as written, made specific: six permissions and three pairwise-disjoint roles (`RISK_ANALYST`, `RISK_OFFICER`,
+  `AML_OFFICER`); four eyes between two holders for every `CONFIRMED_*` disposition, an override (C7), a policy
+  activation, a report approval and every downstream action; self-dealing fails closed; `MULTI_FACTOR` step-up for the
+  four-eyes acts; tipping-off as `INV-RSK-08` with a guard test.*
+- *§11 and §12 — "blocked transfer produces correct compensating postings" is withdrawn with §5 (nothing is posted to
+  compensate); "Redis velocity counter loss" cannot occur (§6); "rule set activated mid-evaluation" is the pin's
+  `FOR SHARE` read plus the shared advisory re-read, so no evaluation reads "neither"; added: the latency budget
+  measured by the storm, two-JVM determinism of the engine, the journal census (`INV-RSK-09`), the velocity proof
+  (`INV-RSK-03`), the held withdrawal's release racing its expiry.*
+- *§13 — risk moves no money, so there are no "blocked and reversed transactions" of risk's own to explain: a refused
+  movement posts nothing; a held withdrawal keeps the ledger hold its owner placed, visible and aged as today; a
+  reversal is the owning domain's four-eyes act, which a case may only recommend (`REFERRED`). Risk's own reconciliation
+  is the monitoring record against the journal (`INV-RSK-09`) and the windows against the monitored transactions
+  (`INV-RSK-03`).*
+- *§14 — the ADRs are ADR-0107…0112: the module; synchronous evaluation and the fail-safe; policy versioning; the case
+  model; AML monitoring from the journal and the regulatory report; downstream actions through the owning domains.*
+- *§15 — the deliverables as the plan's milestones M13.1…M13.9; the cut order `-025` (collections, C3), then `-010`'s
+  card `HOLD` slice, then `-022` (rescreening), then `-014`'s merchant-abuse rules; never cut: the sealed assessment and
+  replay, the fail-safe as a recorded decision, the in-transaction velocity windows, the withdrawal `HOLD`, born-once
+  alerts, four-eyes dispositions, the tipping-off control, the journal intake, the storm, the battery.*
+- *§18 — extended by `PHASE_13_PLAN.md` §20: also no real FIU, list or device-intelligence provider; no credential
+  reset or identity mutation beyond the existing suspend / reinstate / revoke commands; no reversal of any
+  transaction; no collections operations beyond the case opening; no write-off or provisioning; no customer-facing risk
+  status or dispute of a risk decision; no risk service outside the monolith; no cache as an authority; no spending
+  limit product. Production evaluates nothing until a policy version is activated under four eyes and
+  `OPERATIONS_RUNBOOK.md` §9's activation gate is passed (`PHASE_13_PLAN.md` §1.1).*
+
 ---
 
 # Phase 14 — Accounting and Financial Reporting

@@ -476,4 +476,145 @@ there), A7's triage and the four repairs' choices.
 
 ## 10. Phase 13 initialisation
 
-Not started — pending the owner's allowance (owner, 2026-10-22).
+*(This section read "Not started — pending the owner's allowance (owner, 2026-10-22)." between the transition's two
+parts; the owner allowed the second part the same day.)*
+
+**Objective.** Make every money movement and every account **judged** before it happens and **watched** after it
+happens, by a platform capability that owns the judgement and none of the money. Phase 13 implements the seams the
+platform has carried since Phase 4 — `TransferLimitCheck` and `TransferRiskDecision` (`P4-TSK-010`),
+`CrossBorderLimitCheck` and `CrossBorderRiskDecision` (`P9-TSK-016`), and credit's `CreditRiskSignal` (`P10-TSK-008`)
+— and adds the two the money-moving commands never had: a risk seam on the wallet withdrawal and on the checkout
+payment confirmation. Behind every seam stands one channel-neutral capability, `risk`: versioned policies of rules as
+data, a deterministic scoring engine, durable velocity windows written in the caller's own transaction, an immutable
+assessment per judged command, an explicit decision with reason codes, a fail-safe answer that is a recorded decision
+and never a silent default, manual override under four eyes, and a case for every judgement a person must make. After
+the money moves, the same capability monitors it: a leaderless sweep over the ledger's own journal — the one financial
+truth — classifies every movement into a monitored transaction, evaluates the monitoring rules per subject over
+durable aggregates, raises alerts born once, folds them into cases, and keeps the distinction between an internal
+investigation and a regulatory filing physical. **Phase 13 moves no money**: it never posts, never holds, never
+releases a hold of its own and never writes another module's row; a decision changes a money movement only because
+the owning domain consulted the seam in its own transaction and committed its own outcome, and an action is a keyed
+command through the owning domain's existing door, recorded on both sides. Planned in
+[`PHASE_13_PLAN.md`](../PHASE_13_PLAN.md); decided in ADR-0107…0112 (`Proposed`; the next free number is ADR-0113);
+the machines in [`RISK_LIFECYCLES.md`](../../domain/RISK_LIFECYCLES.md); the invariants `INV-RSK-01`…`-10`
+(**162 invariants** platform-wide, from 152); the exit criteria in `PHASE_GATES.md` §5 Phase 13, extended by this
+transition; twenty-eight backlog items across nine milestones (M13.1–M13.9) in [`BACKLOG.md`](../BACKLOG.md) §Phase
+13. The design was drafted from `DELIVERY_PLAN.md` §Phase 13, `ROADMAP.md` Refinements 2 and 3,
+`MODULE_ARCHITECTURE.md` M3 and M6, the seams Phases 4, 9 and 10 reserved for this phase and the code as it stands at
+master `e314387f`, written as the plan, and then spread to the ADRs, the invariants and the gate, the lifecycles, the
+glossary and domain model, the architecture, operations and product documents, and the backlog by writers in
+parallel. Where the plan and an earlier document disagree, the plan is right and the earlier document carries a dated
+note saying so; where the plan and the code the tasks build disagree, the task's record is right and the plan gains
+an erratum.
+
+**The production limitation, recorded up front** (plan §1.1). Production evaluates nothing until a risk policy
+version is activated under four eyes and `OPERATIONS_RUNBOOK.md` §9's activation gate is passed. Until then every seam
+answers `ALLOW` with the reason code `NO_POLICY_ACTIVE`, recorded as a decision (the control ran; it had no policy),
+so the first activation changes behaviour and not the shape of any record; the monitoring sweep runs from the first
+deployment and raises no alert until a monitoring policy is active; the regulatory filing adapter is simulated, the
+reference jurisdiction still the neutral EUR one (plan §12.9 records what was researched for the EU and what must be
+verified when a real jurisdiction is chosen).
+
+**Owner decisions (2026-10-22) — C1–C10, recorded as the owner's accepted defaults pending ratification**
+(`PHASE_13_PLAN.md` §2.2; the backlog's first task does not depend on any of them being revisited):
+
+| # | Decision | Default taken | Where it landed |
+|---|---|---|---|
+| C1 | Fail-safe per operation and value band (unresolved question #11) | Internal transfers below EUR 1,000: `ALLOW` recorded; at or above: `DENY`. Wallet withdrawals and cross-border: `DENY` at every band. Checkout card and wallet payments below EUR 250: `ALLOW` recorded; at or above: `DENY`. All of it a field of the policy version, so the owner changes it by activation, not by code | ADR-0108, plan §12.3, the policy v1 fixtures; `CURRENT_STATE.md` §Unresolved #11 resolved |
+| C2 | The decision vocabulary | `ALLOW`, `CHALLENGE`, `DENY`, `HOLD`, `REVIEW` — each with a fixed meaning and the operations that admit it (plan §12.3); `HOLD` admitted only where the operation has a native hold-then-dispatch shape (withdrawals; card payments in `-010`'s second slice) | ADR-0108 |
+| C3 | Collections case management | A thin slice only, cut candidate: `-025` opens a `COLLECTIONS` case on `LoanDefaulted` / `BnplDefaulted` with investigator actions as facts; contact strategy, promises to pay, placement and write-off stay out (Phase 14 and a later phase) | plan §3.1, §17 |
+| C4 | The reporting jurisdiction | The reference remains the neutral EUR one; the regulatory report models the EU shape researched in plan §12.9 behind a simulated filing adapter; every field a real jurisdiction adds is adapter data | ADR-0111, plan §12.9 |
+| C5 | Criterion 7 in Phase 13 | The standing deviation continues (owner, 2026-10-22: keep skipping fleet tiers); database suites are written and owed per task; one owner-authorised database pass before the exit review is recommended and scheduled as a gate agenda item, not a task | plan §13.1; the gate's Phase 13 block; N1 of §9's owner list answered |
+| C6 | What a customer sees of a held or refused movement | The operation's generic answer (`transfers.RISK_REFUSED` → the existing error; a `HELD` withdrawal reads `HELD` with no reason); nothing of an AML alert, case or report ever reaches a customer surface | plan §11, `INV-RSK-08` |
+| C7 | Override threshold | An override of a `DENY`/`HOLD`/`REVIEW` decision needs a second `RISK_OVERRIDE` holder when the judged amount is at or above EUR 1,000 or the decision was `DENY`; below that, one holder with a reason, audited | ADR-0108 §Override |
+| C8 | Policy v1 content | A test-only policy version per operation (the credit policy fixture precedent): rule parameters in plan §12.2's table; production activates none | plan §12.2, `-002` |
+| C9 | Metric tag keys | `rule` added to `MetricNames.ALLOWED_TAG_KEYS` (bounded rule codes of a policy); no `decision_id`-shaped key | plan §15 |
+| C10 | ATO response | A confirmed account-takeover case may propose `REVOKE_SESSIONS` and `SUSPEND_IDENTITY`; both execute through identity's existing commands under four eyes; the platform never resets a credential | ADR-0112, plan §12.8 |
+
+The open questions the draft left are settled by default under the same rule (plan §24, OQ-1…OQ-10: a refused movement
+counts for nothing in a velocity window; `REVIEW` opens its case in the money transaction, the case row risk's and
+taking no money lock; the monitoring intake reads the journal, not events; a device is stored as its hash only; an
+`ALLOW` is never overridden; a case never re-opens; the report is not the case; risk asks and kyc screens; a merchant
+sees the operation's generic refusal only; collections is a thin case slice).
+
+**The module decision** (ADR-0107). One new module **`risk`**, schema `risk`, Flyway `risk/V001…`, owning contexts 20
+(Risk), 21 (Fraud), 22 (AML / Transaction Monitoring) and 23 (Case Management) as `MODULE_ARCHITECTURE.md` M3 and M6
+already decided. Edges **`risk → platform, sharedkernel` only**: no ledger edge — `risk` posts nothing — and no edge to
+any business module; every other domain is reached through ports `risk` declares and `app` implements, and every seam
+the consuming modules declare is implemented in `app` as an adapter over `risk`'s one channel-neutral evaluation API.
+`RiskModuleIsolationTest` refuses every business module and `app`; every sibling's isolation test refuses `risk`.
+Three capabilities kept distinct inside it (M3's condition): fraud decisioning synchronous, in the caller's
+transaction, latency-bounded; AML monitoring asynchronous, retrospective, a leaderless sweep in its own transactions;
+case management serving both and never deciding money. The alternatives weighed and refused — a rules engine in
+`platform`, a remote risk service with a latency budget, separate `fraud` and `aml` modules, velocity in Redis — are
+recorded in plan §3.2.
+
+**Entry gate** (`PHASE_GATES.md` §2):
+
+| # | Criterion | Holds |
+|---|---|---|
+| 1 | Hard dependency phases `COMPLETE` | Yes — Phase 12 `COMPLETE`, confirmed after repair by this gate (§9; master `e314387f`), the one phase dependency the backlog names (`P13-TSK-001`); and the phases whose seams, commands and events this phase builds over — 4 (transfers' seams), 9 (cross-border's seams), 10 (credit's `CreditRiskSignal`), 5 and 6 (payments' withdrawal and the checkout confirmation), 3 (the ledger journal the sweep reads), 1 and 2 (identity's commands, kyc's screening ports), 11 and 12 (the default events the collections case consumes) — `COMPLETE` since their own reviews |
+| 2 | `DELIVERY_PLAN.md` §Phase 13 current and specific | Yes — the plan was drafted from it and the section is reconciled with the plan by this transition; where they disagree the plan is right and the section carries a dated note (`PHASE_13_PLAN.md`'s header) |
+| 3 | Bounded contexts and aggregates identified | Yes — plan §3–§4: one new module `risk` owning contexts 20–23; eleven aggregates (policy version, assessment, override, velocity window, signal, customer risk profile, monitored transaction, alert, case, risk action, regulatory report, screening list version) with their commands and arbiters; payments, identity and the consuming modules changed by named tasks (`-001`, `-008`…`-011`) |
+| 4 | Invariants identified by ID | Yes — `INV-RSK-01`…`-10`, written into the catalogue (152 → 162); the restated ones named in plan §6 (`INV-CON-03`, `INV-IDEM-01`/`-04`, `INV-HIST-04`, `INV-AUD-02`/`-03`/`-04`, `INV-CRD-01`/`-04`, `INV-EVT-04`, `INV-BAL-04`) |
+| 5 | Lifecycles drafted | Yes — `RISK_LIFECYCLES.md`: the policy version, the assessment and its override, the withdrawal's `HELD` state in payments' own machine, the alert, the case, the risk action, the regulatory report, the customer risk profile (plan §5) |
+| 6 | Transaction and consistency boundaries stated | Yes — plan §7.1's ten transactions (T-eval, T-advise, T-pol, T-ovr, T-sig, T-mon, T-case, T-act, T-rep, T-list), §7.2's lock order (R1)–(R8) with §7.3's no-cycle argument (risk rows last inside a money transaction, or first in a risk-only transaction that takes no money row), §7.4's contention table (fifteen rows, each a named test), §7.6's latency budget (p99 ≤ 50 ms; a 250 ms statement timeout behind a savepoint, a breach the band's fail-safe decision) |
+| 7 | Idempotency stated for every money-moving command | Yes — Phase 13 moves no money of its own; every judged command's assessment is `UNIQUE (operation, command_ref)` in the caller's transaction, every keyed operator command carries `Idempotency-Key` with its key shape (`risk.policy:<actor>` …), every downstream action is keyed `risk.action:<id>` through the owning domain's existing door, and every signal, alert, monitored transaction, case and filing is born once (plan §4, §7.4, §9; `INV-RSK-01`, `-06`, `-09`) |
+| 8 | External dependencies and failure modes listed | Yes — plan §14: the evaluation throwing or timing out inside a transfer, no `ACTIVE` policy, a policy activated mid-evaluation, duplicate signals and events, the sweep crashing mid-claim, an owning domain refusing an action, the filing provider unavailable or unknown (simulated; `FILED` committed before the call, `UNKNOWN` reconciled by inquiry), a held withdrawal's wallet closing, an investigator leaving mid-case; no real FIU, list or device-intelligence provider in this phase (§20) |
+| 9 | Security, audit and reconciliation implications stated | Yes — plan §11: six permissions and three pairwise-disjoint roles, self-dealing failing closed, the tipping-off control (`INV-RSK-08`, `NoCustomerSurfaceReadsRiskTest`), evidence by reference, the audited actions, step-up on every four-eyes act; reconciliation as `VelocityProof` (windows against monitored transactions), the journal census (`INV-RSK-09`) and the explanation door and replay (`-023`; §12.4, §12.7, §13.3) |
+| 10 | Backlog at task granularity with acceptance criteria | Yes — `P13-TSK-001`…`-025`, `P13-TST-001`…`-002`, `P13-DOC-001` in `BACKLOG.md` §Phase 13, every field, with the parallel waves A–I and the cut order |
+| 11 | Required decisions have ADRs at least `Proposed` | Yes — ADR-0107…0112, indexed in `docs/adr/README.md` and `DECISIONS.md` |
+| 12 | `CURRENT_STATE.md` names the phase active | Yes — Phase 13 `READY`, `P13-TSK-001` the current task |
+
+**Exit criteria:** `PHASE_GATES.md` §5 Phase 13 — the six original bullets kept and made measurable, and per-area
+blocks (risk evaluation, policy versioning, decision explainability, fraud workflows, AML monitoring, alert
+deduplication, case management, domain integrations, multi-instance correctness, idempotency and recovery, security
+and privacy, auditability, observability, testing, documentation), each naming its test and its task (plan §18).
+
+**Stated for the gate, judged per task:** the multi-instance design (plan §7 — the transactions, the lock order, the
+contention table, the two leaderless schedules `RiskMonitoringSchedule` and `RiskActionSchedule` taking
+`LEASE_PROTECTED_SCHEDULERS` 29 → 31 when built and unchanged until then, the latency budget); the security model
+(§11); the testing plan (§13 — hermetic, database suites written per task and owed a first run under C5, the
+architecture guards, the fifteen mandatory scenarios, the storm `P13-TST-001` and the battery `P13-TST-002`); the
+observability plan (§15 — the `finapp.risk.*` series, the `rule` tag, the alerts in `infra/prometheus/rules/risk.yml`,
+the spans and the audited reports). The ten-instance question is answered `PASS` by each task at its gate, never here.
+
+**First task: `P13-TSK-001`** — the `risk` module boundary, floors, vocabularies and roles (`risk V001`, identity
+`V023`; `DOD-ARCH`, `DOD-SEC`) — `READY`, marked by this transition; **not started, not implemented**. No Phase 13
+code exists. `P13-TSK-002` (policy versions) follows.
+
+**Files created or modified by this initialisation** (documents only; no code, no migration, no test). Created:
+`docs/project/PHASE_13_PLAN.md`; `docs/adr/ADR-0107`…`ADR-0112` (`Proposed`); `docs/domain/RISK_LIFECYCLES.md`.
+Modified: `docs/adr/README.md` and `docs/project/DECISIONS.md` (the index; the next free number ADR-0113);
+`docs/domain/FINANCIAL_INVARIANTS.md` (`INV-RSK-01`…`-10`; 162); `docs/project/PHASE_GATES.md` (§5 Phase 13);
+`docs/domain/GLOSSARY.md`; `docs/domain/DOMAIN_MODEL.md`; `docs/architecture/BOUNDED_CONTEXTS.md`;
+`docs/architecture/MODULE_ARCHITECTURE.md`; `docs/architecture/DISTRIBUTED_EXECUTION.md` (the planned register rows,
+the Phase 13 lock order, schedulers 29 → 31 when built, advisory namespace `13`); `docs/architecture/DATA_CLASSIFICATION.md`;
+`docs/architecture/AUDITABLE_ACTIONS.md`; `docs/architecture/ERROR_CONTRACT.md`; `docs/architecture/OPERATIONS_RUNBOOK.md`;
+`docs/product/ROADMAP.md`; `docs/product/CAPABILITY_MAP.md`; `docs/project/DELIVERY_PLAN.md`;
+`docs/project/BACKLOG.md` (§Phase 13, twenty-eight items); `docs/project/CURRENT_STATE.md` (the dateline, §Current
+Phase's Phase 13 block, §Current Task, §Just completed, §Active Work, §Unresolved #11 resolved, §Next Task);
+`docs/project/history/CHANGE_LOG.md`; this review (§10).
+
+**Verified** (this initialisation wrote documents only): `./gradlew.bat :app:architectureTest :app:test --tests
+<the document-reading hermetic and slice suites>` on the final documents, fresh, in two batches (2026-10-22): the app
+architecture tier **171 tests across 32 suites, 0 failures** (the document guards among them —
+`AdrRegistersAreReconciledTest`, `MutationDemonstrationTest`, `TestTaxonomyTest`, `ErrorCodeRegistryTest`,
+`AuditableActionRegistryTest`, `ArchitectureRulesAreDocumentedTest`, `ModuleBoundaryRulesTest`,
+`NoSingleInstanceAssumptionRulesTest`, `AuditCompletenessTest`, `SecretsAreUnwrappedInOnePlaceTest`,
+`NoAmbientTimeRulesTest`) and the selected hermetic and slice suites **88 tests across 17 suites, 0 failures**
+(`DomainGlossaryTest` — 199 canonical terms, 206 entries, every owner declared; `PlannedMetersExistTest`;
+`RoutePermissionRegisterTest`; `OpenApiContractTest`; `OpenApiChangeTest`; `ApiConventionsAreAccurateTest`;
+`ApiSchemaNamesAreUniqueTest`; `AdministrativeRequestBoundsTest`; `BnplAlertRulesTest`). The planned register
+rows (`| *planned* …`) are invisible to the register guards by their line shape, as intended; nothing of Phase 13
+is demanded of `MUTATION_TESTING.md` until Phase 13 is recorded `COMPLETE`. No database or Kafka tier ran (C5).
+During the writing the transition corrected its own plan on the writers' findings — the migrations numbered in
+landing order (`risk V001`…`V012`), `-006` freed of `-004` and `-004` wired over it, `-015` reduced to the alert and
+`-016` given the folding, `-017` freed of `-012`, `risk.SelfApprovalRefused` `403` (the credit/lending/bnpl precedent),
+the held withdrawal's expiry (`held_until`, the policy's hold validity, payments' `WithdrawalResolutionSchedule` leg),
+the seventh operation `MONITORING` with rating bands, the reprocessing door, the four-eyes suppression door, the
+report's acknowledgement acts, a risk `DENY` terminal for a payment intent, and §15 as the meters table the guard
+reads — every one carried through the ADRs, the lifecycles, the registers and the backlog before this line was written.
+
+**Result:** `CURRENT PHASE = Phase 13 · PHASE STATUS = READY · CURRENT TASK = P13-TSK-001 · TASK STATUS = READY`.
+**The first task is not implemented.**
