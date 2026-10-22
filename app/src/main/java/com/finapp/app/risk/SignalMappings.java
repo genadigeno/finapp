@@ -81,6 +81,11 @@ final class SignalMappings {
         switch (kind) {
             case CREDENTIAL_CHANGED -> { }
             case RECOVERY_INITIATED, RECOVERY_COMPLETED -> {
+                // The request rides both as the aggregate and in the payload: they must agree, as the agreements do.
+                if (!ref(payload, "recoveryRequestId").equals(event.aggregateId())) {
+                    throw new IllegalArgumentException(
+                            "a " + kind.sourceEventType() + " event names one request in its envelope and another in its payload");
+                }
                 attributes.put("request_ref", event.aggregateId().toString());
                 attributes.put("channel_ref", required(payload, "channelId"));
             }

@@ -130,7 +130,8 @@ class RiskMigrationTest {
                 + " GROUP BY grantee ORDER BY grantee"))
                 .containsExactlyInAnyOrder(
                         "finapp_app=INSERT,SELECT",
-                        "finapp_migrator=DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE");
+                        // The owner's full set as PostgreSQL 18 (the catalogue's image) reports it - MAINTAIN since 17.
+                        "finapp_migrator=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE");
 
         // The application role: refused by privilege before any trigger runs.
         assertThatExceptionOfType(SQLException.class)

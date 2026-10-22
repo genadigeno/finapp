@@ -256,6 +256,11 @@ class RiskSignalIntakeTest {
                 UUID.randomUUID(), "lending", condition("loanId", loan))))
                 .as("the envelope and the payload name different agreements")
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> handle(RiskSignalIntake.Source.RECOVERY_COMPLETED, event("identity.RecoveryCompleted",
+                UUID.randomUUID(), "identity", EventPayload.of().with("recoveryRequestId", UUID.randomUUID().toString())
+                        .with("identityId", UUID.randomUUID().toString()).with("channelId", UUID.randomUUID().toString()))))
+                .as("the envelope and the payload name different recovery requests")
+                .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> handle(RiskSignalIntake.Source.ACCOUNT_OPENED, event("accounts.AccountClosed",
                 UUID.randomUUID(), "accounts", EventPayload.of().with("productType", "WALLET"))))
                 .as("a handler is given only its own event type")

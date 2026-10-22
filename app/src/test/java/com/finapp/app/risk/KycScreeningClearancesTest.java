@@ -43,8 +43,9 @@ class KycScreeningClearancesTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-10-23T12:00:00Z"), ZoneOffset.UTC);
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
 
-    private final UUID party = UUID.randomUUID();
-    private final UUID customer = UUID.randomUUID();
+    // UUIDv7, as every platform identifier is (ADR-0013): PartyId.of and CustomerId.of refuse a v4.
+    private final UUID party = IDS.next();
+    private final UUID customer = IDS.next();
     private final KycCaseId kycCase = KycCaseId.next(IDS);
     private final ScriptedChecks checks = new ScriptedChecks();
     private final ScreeningClearances clearances = new KycScreeningClearances(
@@ -93,9 +94,9 @@ class KycScreeningClearancesTest {
     @DisplayName("no live customer, no case, or no check: empty - never a clear")
     void absenceIsEmpty() {
         assertThat(clearances.latestFor(null, party)).as("a case with no check").isEmpty();
-        assertThat(clearances.latestFor(null, UUID.randomUUID())).as("a party with no live customer").isEmpty();
+        assertThat(clearances.latestFor(null, IDS.next())).as("a party with no live customer").isEmpty();
         ScreeningClearances noCase = new KycScreeningClearances(
-                new ScriptedParties(party, customer), new ScriptedCases(UUID.randomUUID(), kycCase), checks);
+                new ScriptedParties(party, customer), new ScriptedCases(IDS.next(), kycCase), checks);
         assertThat(noCase.latestFor(null, party)).as("a customer with no case").isEmpty();
     }
 
