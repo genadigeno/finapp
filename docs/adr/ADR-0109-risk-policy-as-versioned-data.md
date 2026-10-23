@@ -186,6 +186,12 @@ effective dates), `INV-AUD-04` (four eyes are two persons), ADR-0107, ADR-0108.
   `RiskEngineDigestTest` over a seeded corpus through risk's own `SecondJvm`. One gap for `-004`/`-006` to reconcile:
   this ADR and `-002` type a velocity rule's `dimension` as `SubjectKind`, `-006`'s entry names a
   `VelocityDimension` — the engine evaluates what the policy stores.)*
+  *(Amendment, `P13-TSK-006`, 2026-10-23 — the gap is closed by the coordinator's decision: a velocity rule's
+  `dimension` is a `VelocityDimension` (`PARTY`, `SOURCE_ACCOUNT`, `DESTINATION`, `DEVICE`, `MERCHANT`), the parameter
+  type `VELOCITY_DIMENSION`; `SUBJECT_KIND` left the parameter types (no kind used it after); `risk V005` carries the
+  storage change (column `value_velocity_dimension`, the two `CHECK`s re-made behind a guard refusing a stored
+  `SUBJECT_KIND`), `V002` untouched; the engine's `VelocityKey` re-keyed, `RISK_ENGINE_V1` and canonical format 1
+  unchanged — nothing had been sealed.)*
 - `RuleKind` additions after this ADR are recorded as dated amendments here with their engine version.
 - `DISTRIBUTED_EXECUTION.md` registers advisory namespace 13 and the pin's rule; `RISK_LIFECYCLES.md` §Policy
   version is the machine's record.

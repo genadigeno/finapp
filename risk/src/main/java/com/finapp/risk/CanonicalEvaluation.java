@@ -239,7 +239,7 @@ public final class CanonicalEvaluation {
         Map<VelocityKey, VelocityReading> velocity = new TreeMap<>();
         for (Object element : list(root, "velocity")) {
             Map<String, Object> reading = object(element);
-            VelocityKey key = new VelocityKey(SubjectKind.valueOf(text(reading, "dimension")),
+            VelocityKey key = new VelocityKey(VelocityDimension.valueOf(text(reading, "dimension")),
                     WindowKind.valueOf(text(reading, "window")));
             if (velocity.put(key, new VelocityReading(number(reading, "count"), number(reading, "sum"))) != null) {
                 throw new IllegalArgumentException("a velocity key is held once");

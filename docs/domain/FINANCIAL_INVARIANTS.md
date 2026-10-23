@@ -2967,6 +2967,18 @@ alerting on any failure, a planted drift caught (`P13-TSK-023`); the storm's cen
 windows = monitored sums (`P13-TST-001`).
 **Phase:** 13
 
+*(As built by `P13-TSK-006`, 2026-10-23 — `risk V005`, `VelocityWindows`, `VelocityProof`. The dimensions
+are `VelocityDimension`. "Clocks ±5 s" is excluded by construction rather than emulated: no velocity type
+holds a clock and a `WindowCut` can be built only from the instant the database answered after the
+locks (`VelocityWindowStatementsTest#noVelocityTypeHoldsAClock`), and the table refuses a window that
+does not contain its own clock (`VelocityWindowDatabaseTest#theDatabaseRefusesAForeignClock`). The read
+is serialised per subject (R2a, advisory namespace `131`) — the caller's money lock alone left a party's,
+device's or merchant's window open to two concurrent movements on two accounts (`INV-CON-03`;
+`#tenMovementsOfOnePartyFromTenAccountsCountTen`). The proof judges the windows its evidence can name —
+the journal's transfers prove `SOURCE_ACCOUNT` and `DESTINATION`; the rest are reported unprovable until
+the evidence moves to the permitting assessments (`PHASE_13_PLAN.md` §12.4's note). Probes:
+`MUTATION_TESTING.md` §2.)*
+
 ### INV-RSK-04 — Every decision is explainable, and the fail-safe is a recorded decision, never a silent default
 **Statement:** Every assessment records the policy version it was evaluated under, the engine version
 (`RISK_ENGINE_V1`), every rule that fired with its contribution to the score, and the ordered reason

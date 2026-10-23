@@ -79,7 +79,7 @@ class RuleParametersTest {
         assertThatThrownBy(() -> structuring.count("window")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> structuring.value("nothing")).isInstanceOf(IllegalArgumentException.class);
         RuleParameters velocity = RuleParameters.of(RuleKind.VELOCITY_COUNT, conforming(RuleKind.VELOCITY_COUNT));
-        assertThat(velocity.subjectKind("dimension")).isEqualTo(SubjectKind.PARTY);
+        assertThat(velocity.dimension("dimension")).isEqualTo(VelocityDimension.PARTY);
         RuleParameters corridor = RuleParameters.of(RuleKind.CORRIDOR_HIGH_RISK, conforming(RuleKind.CORRIDOR_HIGH_RISK));
         assertThat(corridor.corridors("corridors")).containsExactly("EUR-USD-US");
         RuleParameters session = RuleParameters.of(RuleKind.SESSION_ASSURANCE_BELOW,
@@ -114,7 +114,7 @@ class RuleParametersTest {
             case DAYS -> new ParameterValue.Days(7);
             case HOURS -> new ParameterValue.Hours(24);
             case WINDOW -> new ParameterValue.Window(WindowKind.D1);
-            case SUBJECT_KIND -> new ParameterValue.Subject(SubjectKind.PARTY);
+            case VELOCITY_DIMENSION -> new ParameterValue.Dimension(VelocityDimension.PARTY);
             case CORRIDOR_SET -> new ParameterValue.Corridors(Set.of("EUR-USD-US"));
             case ASSURANCE -> new ParameterValue.Assurance(RiskAssurance.MULTI_FACTOR);
             case RATING -> new ParameterValue.Rating(RiskRating.HIGH);

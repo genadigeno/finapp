@@ -26,8 +26,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The risk schema's privilege floor and its first tables, proven <strong>live</strong> (`P13-TSK-001`; `P13-TSK-019`
- * adds {@code V004}: {@code monitored_transaction}, {@code monitoring_watermark}) - {@code BnplMigrationTest}'s idiom,
- * as every schema-owning module has its own.
+ * adds {@code V004}: {@code monitored_transaction}, {@code monitoring_watermark}; `P13-TSK-006` adds {@code V005}:
+ * {@code velocity_window}) - {@code BnplMigrationTest}'s idiom, as every schema-owning module has its own.
  *
  * <p>The migration-test idiom reads the SQL and holds it to the code; this class holds the <em>database</em> to it,
  * because a floor is only a control as it actually stands in the catalogue - a grant added by a later migration or by
@@ -98,7 +98,8 @@ class RiskMigrationTest {
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
             + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
-            + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019)")
+            + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
+            + " windows (P13-TSK-006)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -117,7 +118,9 @@ class RiskMigrationTest {
                 "risk_rule",
                 "risk_rule_parameter",
                 // V003 (P13-TSK-005): the born-once signal.
-                "risk_signal");
+                "risk_signal",
+                // V005 (P13-TSK-006): the durable velocity windows.
+                "velocity_window");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
                 + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
@@ -142,7 +145,11 @@ class RiskMigrationTest {
                 "risk_signal_is_born_once",
                 "risk_signal_is_never_edited",
                 // V004 (P13-TSK-019).
-                "uuid7_sequence");
+                "uuid7_sequence",
+                // V005 (P13-TSK-006): forward only on the database clock, never removed, the window's length.
+                "velocity_window_counts_forward",
+                "velocity_window_is_never_removed",
+                "velocity_window_length");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))
@@ -423,6 +430,34 @@ class RiskMigrationTest {
                     .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
             application.rollback();
         }
+    }
+
+    // ------------------------------------------------------------------ V005 (P13-TSK-006)
+
+    @Test
+    @DisplayName("V005: the velocity window's grants - SELECT, INSERT and UPDATE of count and sum_minor alone, the"
+            + " upsert's columns; no DELETE or TRUNCATE for any grantee; the trigger refuses the owner's DELETE too")
+    void theVelocityWindowGrants() throws SQLException {
+        assertThat(grantsOn("velocity_window")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'velocity_window' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("count", "sum_minor");
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> asApplication("DELETE FROM " + SCHEMA + ".velocity_window"))
+                .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
+        application.rollback();
+        migrator.setAutoCommit(false);
+        try (Statement owner = migrator.createStatement()) {
+            assertThatExceptionOfType(SQLException.class)
+                    .isThrownBy(() -> owner.execute("TRUNCATE " + SCHEMA + ".velocity_window"))
+                    .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+        } finally {
+            migrator.rollback();
+            migrator.setAutoCommit(true);
+        }
+        String statements = statementsOf(migration("V005__velocity_windows.sql"));
+        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("TRUNCATE ON risk");
     }
 
     // -----------------------------------------------------------------

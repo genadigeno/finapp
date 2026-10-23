@@ -263,6 +263,21 @@ from the monitored transactions (§4.11) and compares — a difference is an ale
 never self-corrected. **Invalid:** a decrement; a window written outside the judged command's transaction; a window
 written for a refused movement; a window keyed on an instance clock.
 
+*(As built by `P13-TSK-006`, 2026-10-23 — `risk V005`, `VelocityWindows`, `VelocityProof`. The dimensions are
+`VelocityDimension` (`PARTY`, `SOURCE_ACCOUNT`, `DESTINATION`, `DEVICE`, `MERCHANT`), the coordinator's decision. The
+read is **serialised (R2a)**: one advisory lock per (dimension, subject), namespace `131`, sorted, before the database
+clock and the figures are read — the plan's unlocked read let two movements of one party from two accounts both pass.
+The window is a tumbling bucket anchored at Monday 1970-01-05 UTC, its start a pure function of the database instant
+read after R2a; every dimension a movement carries counts in all four kinds. **The database holds the machine-less
+rules for every role** (`velocity_window_counts_forward`): born at count 1; an update exactly +1 with a non-decreasing
+sum, the key, currency and scale unchanged; written only while the database clock is inside the window (one minute's
+grace after its end) — so "keyed on an instance clock" is refused by the table, not only avoided by the code; no
+`DELETE` and no `TRUNCATE`. A window in another currency is never summed (the upsert's `WHERE`; refused on the read).
+**The proof** compares the windows of the dimensions its evidence can name — the journal's transfers prove
+`SOURCE_ACCOUNT` and `DESTINATION`; `PARTY`, `DEVICE` and `MERCHANT` are reported unprovable — within a ±5 s edge
+skew, a window counted after the evidence is complete `PENDING`; see `PHASE_13_PLAN.md` §12.4's note for the evidence
+contract `-004`…`-011` inherit.)*
+
 ### 4.4 Risk signal (`risk.risk_signal`) — `P13-TSK-005` (`risk V003`) — not a machine
 
 Born once per source event (`UNIQUE (source_event_id)`), `INSERT`-only, never updated: kind from a closed vocabulary,

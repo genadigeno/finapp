@@ -22537,7 +22537,8 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: a version is proposed, activated by a second person, rejected or retired; one `ACTIVE` per
   operation at every instant; an invalid rule never persists; every fixture validates; the proposer cannot approve.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
-- **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): a `ROUND_AMOUNT` rule with `modulus_minor = 0` passes the policy door (`MinorAmount` is non-negative) and is `EvaluationFailed(RULE_THREW)` in the engine — the documented fail-safe path, tested; the door should require a positive modulus. Owed to the first task that touches the door's parameter validation (`-004` or `-006`), recorded here so it is not lost.
+- **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): a `ROUND_AMOUNT` rule with `modulus_minor = 0` passes the policy door (`MinorAmount` is non-negative) and is `EvaluationFailed(RULE_THREW)` in the engine — the documented fail-safe path, tested; the door should require a positive modulus. Owed to the first task that touches the door's parameter validation (`-004` or `-006`), recorded here so it is not lost. *(`P13-TSK-006` changed the parameter **types**, not the value validation, and left this to `-004`: refusing a zero modulus at the door removes the engine's only `RULE_THREW` fixture (`RiskEngineV1Test`), which `-004`'s fail-safe tests can replace.)*
+- **Cross-task correction by `P13-TSK-006`** (2026-10-23, the coordinator's decision at wave C): a velocity rule's `dimension` parameter is a `VelocityDimension` (`PARTY`, `SOURCE_ACCOUNT`, `DESTINATION`, `DEVICE`, `MERCHANT`), `ParameterType.VELOCITY_DIMENSION` / `ParameterValue.Dimension` / `RuleParameters.dimension`; `SUBJECT_KIND`, `ParameterValue.Subject` and `subjectKind(…)` removed (no kind used them); the storage change is `risk V005`'s (column `value_velocity_dimension`, the type and value `CHECK`s re-made behind a guard refusing a stored `SUBJECT_KIND`) — `V002` untouched; the fixtures' "10 per 24 h per source account" moved from `ACCOUNT` to `SOURCE_ACCOUNT`; the policy door (`RiskPolicyDesk`) parses the new type.
 
 **P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `COMPLETE` (2026-10-23; wave C beside `-006` and `-007`, branch `P13-TSK-003` from master `bfcc0af4`; marked `READY` by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; marks no task `READY` — the coordinator does, `-004` waiting on `-006`)
 - **Objective**: `RiskEngineV1` — a pure, deterministic function from sealed inputs and a policy version to a verdict:
@@ -22626,6 +22627,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   names a `VelocityDimension`; `ROUND_AMOUNT` with `modulus_minor = 0` passes the policy door and is `RULE_THREW`
   here; a judged amount not in the policy's currency is refused, not compared. No row, no route, no event, no meter:
   nothing of the engine's own to persist or count; no database suite owed.
+- **Cross-task correction by `P13-TSK-006`** (2026-10-23, the coordinator's decision at wave C): `VelocityKey` is keyed on `VelocityDimension` (no longer `SubjectKind`); `RuleEvaluation`'s velocity evaluators read `dimension(…)` and `DORMANT_THEN_ACTIVE` the `PARTY` dimension; `CanonicalEvaluation` parses a `VelocityDimension`; `EvaluationInputs.Builder.velocity` takes one (and a `(VelocityKey, VelocityReading)` pair); `RiskEngineV1Test#theCanonicalBytesArePinned`'s golden bytes read `SOURCE_ACCOUNT` — **format stays 1** (nothing had been sealed); `EvaluationCorpus` walks `VelocityDimension.values()`.
 
 **P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `PLANNED`
 - **Objective**: **T-eval** — one sealed, `INSERT`-only assessment per judged command, written in the caller's
@@ -22819,7 +22821,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   edit refused by trigger, constraint-name uniqueness, the shape `CHECK`s live). No audit act, no error code, no door,
   no schedule, no producer changed.
 
-**P13-TSK-006 — Velocity windows in the caller's transaction, and their proof** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
+**P13-TSK-006 — Velocity windows in the caller's transaction, and their proof** — `COMPLETE` (2026-10-23; wave C beside `-007`, branch `P13-TSK-006` from master `046b3498`; **M13.2 at 2 of 3**; marks no task `READY` — the wave's coordinator does. **Gate (2026-10-23): 0 CRITICAL, 0 IMPORTANT, 7 MINOR** — see the as-built paragraph below. Ten-instance `PASS`: R2a's per-subject advisory lock (namespace `131`) before the read, the one-statement upsert's row lock beneath; counted by the owed `VelocityWindowDatabaseTest` (C5). Eight probes performed and sha256-verified (`MUTATION_TESTING.md` §2).) *(read "`READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)" until its gate)*
 - **Objective**: durable velocity windows — a count and a sum per (dimension, subject, window kind, window start) —
   read in T-eval and upserted in the judged command's own transaction, in sorted key order, **only when the decision
   permits the movement**, so a refused movement counts for nothing and a committed one counts exactly once; the window
@@ -22885,6 +22887,64 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   no reversal, no external delivery), `DOD-DOMAIN`. **Risk**: High (a lost or double count is a wrong decision on every
   later movement). **Cx**: M.
 - **Coordinator's decision at wave C (2026-10-23), from `P13-TSK-003`'s finding:** the velocity `dimension` is `VelocityDimension { PARTY, SOURCE_ACCOUNT, DESTINATION, DEVICE, MERCHANT }` as Scope names it, not `SubjectKind` — the plan's "10 per 24 h per source account" needs the source and the destination kept apart. This task (a) declares `VelocityDimension`, (b) adds `RuleKind.ParameterType.VELOCITY_DIMENSION` and retypes `VELOCITY_COUNT`'s and `VELOCITY_SUM`'s `dimension` parameter to it (dropping `SUBJECT_KIND` if no kind uses it), (c) carries the storage change in its own `risk V005` against `-002`'s parameter table — never an edit of `V002`, which is merged — and the domain's `ParameterValue`/`RuleParameters`/`JdbcRiskPolicyStore`, (d) re-keys `-003`'s `VelocityKey` on `VelocityDimension` (the engine's evaluators, `CanonicalEvaluation`'s velocity text, the pinned golden bytes — format stays `1`: nothing has been sealed), and (e) moves `RiskPolicyFixtures` from `ACCOUNT` to `SOURCE_ACCOUNT`. Recorded as a cross-task correction on `-002` and `-003`.
+- **As built (2026-10-23, the gate's record).** *The retyping, per the coordinator's decision:* `VelocityDimension`
+  (`PARTY`, `SOURCE_ACCOUNT`, `DESTINATION`, `DEVICE`, `MERCHANT`, each with its reference shape); `RuleKind`'s velocity
+  `dimension` a `ParameterType.VELOCITY_DIMENSION` (`ParameterValue.Dimension`, `RuleParameters.dimension`) —
+  `SUBJECT_KIND` dropped, no kind using it; `JdbcRiskPolicyStore` and app's `RiskPolicyDesk` on the renamed column;
+  `VelocityKey`, the evaluators, `CanonicalEvaluation` and `RiskEngineV1Test`'s golden bytes on the dimension (format
+  1, nothing sealed); the fixtures' "10 per 24 h per source account" on `SOURCE_ACCOUNT`; `RiskPolicyMigrationTest` holds
+  the parameter table's **effective** `CHECK`s (now `V005`'s) to the enums. *`risk V005`:* a guard first (a stored
+  `SUBJECT_KIND` refuses the migration — content is born once for every role, so no in-place conversion exists), the
+  column renamed `value_velocity_dimension`, V002's type and value `CHECK`s dropped and re-made (V002 untouched);
+  `velocity_window` (primary key (dimension, subject_ref, window_kind, window_start); `count` 1..10^9, `sum_minor`
+  0..10^14 — the engine's reading bounds — with `currency` and `scale`; `last_counted_at` the trigger's stamp; the
+  start aligned by `CHECK` to `date_bin(length, start, Monday 1970-01-05)`); `velocity_window_counts_forward` for every
+  role — born at 1, an update exactly +1 with a non-decreasing sum and the key, currency and scale unchanged, written
+  only while `clock_timestamp()` is inside the window (one minute's grace after its end); `velocity_window_is_never_removed`
+  (no `DELETE`, no `TRUNCATE`, the owner included); `SELECT, INSERT, UPDATE (count, sum_minor)` for the application.
+  *The domain:* `VelocityMovement` (the subjects per role — a destination an account or a beneficiary; the account roles
+  by the **customer account id**, the ledger's `owner_ref`, so the journal names the same subject; the amount 0..10^14
+  with currency and scale); `WindowStarts` (tumbling buckets from the anchor — the SQL rule's twin); `VelocityWindowKey`
+  (R2's sort); `WindowCut` (package-private: the movement and the database instant — no caller can cut at another
+  clock; counted once); `VelocityWindows` — `cut` (**R2a**, added: one advisory lock per (dimension, subject),
+  namespace `131`, keys computed in Java (`lockKey`, SHA-256's first four bytes) and taken in ascending key order so
+  collisions can never be taken in two orders; then `clock_timestamp()`), `read` (the figures before the movement:
+  `PRESENT(0, 0)` for an unopened window, no reading for a dimension the movement lacks), `peek` (T-advise, no lock),
+  `increment` (R2: one `INSERT … ON CONFLICT DO UPDATE SET count = w.count + 1, sum_minor = w.sum_minor + EXCLUDED.sum_minor
+  WHERE` same currency and scale `RETURNING`, per window, sorted, only for `ALLOW` or a satisfied `CHALLENGE`; a
+  movement counts in all four kinds of every dimension it carries), `permits`, `keysRead(policy)`;
+  `JdbcVelocityWindowStore`; `VelocityEvidence` (port) and `JdbcVelocityEvidence` (the monitored transfers through
+  `monitored_transaction_by_sequence`, complete through the watermark's millisecond); `VelocityProof` (`run` in one
+  `REPEATABLE READ` snapshot, refused otherwise; pure `judge`: per live window `HELD`/`DIVERGED` within a ±5 s edge
+  skew, `PENDING` after the evidence's horizon, `UNPROVABLE` for a dimension the evidence cannot name, a lost window a
+  divergence; `Result` with `Verdict { HELD, DIVERGED, VACUOUS }` — no write anywhere); `RiskSpans.VELOCITY_PROOF`
+  reserved. *Why R2a (the gate's reading of `INV-CON-03`):* the plan's unlocked read was safe only for the subject the
+  caller's money lock covers — two transfers from two accounts of one party would each read the party's window below
+  its threshold; a row lock cannot close it because the first movements of a window find no row. *The evidence's bound
+  (for the coordinator, `-004`, `-009`…`-011`, `-023`):* a window counts a movement when judged, the journal when it
+  posts; only the transfer posts in its judged transaction, and the journal names no party or device — so the proof
+  judges `SOURCE_ACCOUNT`/`DESTINATION` windows of transfers and reports the rest unprovable; before a deferred-posting
+  operation's increments are wired, the evidence moves to the permitting assessments. Tests, hermetic (`risk:test`
+  156 of 156, `architectureTest` 3 of 3; app `architectureTest` 180 of 180): `WindowStartsTest` (3), `VelocityWindowsTest` (12), `VelocityMovementTest` (3), `VelocityProofTest`
+  (7), `VelocityEvidenceTest` (2), `VelocityWindowMigrationTest` (5), `VelocityWindowStatementsTest` (3), and the retyped
+  `RiskPolicyMigrationTest`, `RiskVocabulariesTest`, `RuleParametersTest`, `PolicyFixturesTest`, `RuleKindCoverageTest`,
+  `RiskEngineV1Test`; app's `RiskPolicyDeskTest` (a subject kind refused as a dimension). Database, written and owed
+  (C5): `VelocityWindowDatabaseTest` (9: `#tenMovementsCountTen`, `#tenMovementsOfOnePartyFromTenAccountsCountTen`,
+  `#aRefusedMovementCountsNothing`, `#aWindowIsCutByTheDatabaseClock`, `#theDatabaseRefusesAForeignClock`,
+  `#windowStartsAgreeWithSql`, `#overlappingWindowsNeverDeadlock`, `#theSumNeverDecreases`,
+  `#theParameterTableHoldsTheDimension`), `RiskSchemaMoneyColumnsTest` (2 — the floor with exactly the window's two
+  counters excepted; warranted now: `sum_minor` is risk's first updatable money column), `RiskMigrationTest` (the lists
+  and `#theVelocityWindowGrants`), `RiskPolicyEndpointDatabaseTest` (retyped), `ColumnClassificationTest` (the register
+  rows). Probes, eight, each red on its first run and restored sha256-identical (`MUTATION_TESTING.md` §2): the refusal
+  gate removed, the cut from `Instant.now()`, R2a dropped, R2 descending, the count-once guard removed, the upsert
+  overwriting, `V005`'s sum rank disabled, the proof ignoring the sum. Deviations: the entry's `VelocityReadingsTest` is
+  `VelocityWindowsTest`'s reading cases and its `VelocityWindowMigrationTest` hermetic (the live ranks in
+  `VelocityWindowDatabaseTest` and `RiskMigrationTest`); "clocks ±5 s" excluded by construction rather than emulated (no
+  JVM clock exists in the path to skew); no meter and no alert raise (`-024`, `-015`), the proof a result record;
+  `-002`'s zero-modulus follow-up left to `-004` (its note). Recorded, not built: window archival (no `DELETE` path
+  exists — a reviewed migration when retention is decided); a hot subject serialises from R2a to commit (the plan's R2
+  row lock already did — the storm's to measure); the callers post after T-eval, so R2a/R2 are held while the posting
+  takes its balance rows — true no-cycle for the transfer, for `-004`/`-009` to confirm for the withdrawal.
 
 **P13-TSK-007 — The customer risk profile and credit's `CreditRiskSignal` version 2** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
 - **Objective**: a per-party rating `LOW | MEDIUM | HIGH | PROHIBITED`, versioned and append-only, recomputed under the

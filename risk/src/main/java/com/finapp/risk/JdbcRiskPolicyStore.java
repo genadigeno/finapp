@@ -142,7 +142,7 @@ public final class JdbcRiskPolicyStore implements RiskPolicyStore {
                                 + " VALUES (?, ?, ?, ?, ?)");
                 PreparedStatement parameter = unitOfWork.prepareStatement(
                         "INSERT INTO risk.risk_rule_parameter (policy_version_id, rule_ordinal, name, type, value_count,"
-                                + " value_minor, value_bps, value_days, value_hours, value_window, value_subject_kind,"
+                                + " value_minor, value_bps, value_days, value_hours, value_window, value_velocity_dimension,"
                                 + " value_corridors, value_assurance, value_rating)"
                                 + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             for (RiskRule rule : policy.rules()) {
@@ -172,7 +172,7 @@ public final class JdbcRiskPolicyStore implements RiskPolicyStore {
                         case ParameterValue.Days days -> parameter.setInt(8, days.value());
                         case ParameterValue.Hours hours -> parameter.setInt(9, hours.value());
                         case ParameterValue.Window window -> parameter.setString(10, window.value().name());
-                        case ParameterValue.Subject subject -> parameter.setString(11, subject.value().name());
+                        case ParameterValue.Dimension dimension -> parameter.setString(11, dimension.value().name());
                         case ParameterValue.Corridors corridors -> parameter.setArray(12,
                                 unitOfWork.createArrayOf("text", corridors.sorted().toArray(String[]::new)));
                         case ParameterValue.Assurance assurance -> parameter.setString(13, assurance.value().name());
@@ -342,7 +342,7 @@ public final class JdbcRiskPolicyStore implements RiskPolicyStore {
         Map<Integer, Map<String, ParameterValue>> parameters = new LinkedHashMap<>();
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 "SELECT rule_ordinal, name, type, value_count, value_minor, value_bps, value_days, value_hours,"
-                        + " value_window, value_subject_kind, value_corridors, value_assurance, value_rating"
+                        + " value_window, value_velocity_dimension, value_corridors, value_assurance, value_rating"
                         + " FROM risk.risk_rule_parameter WHERE policy_version_id = ? ORDER BY rule_ordinal, name")) {
             select.setObject(1, id.value());
             try (ResultSet row = select.executeQuery()) {
@@ -381,7 +381,8 @@ public final class JdbcRiskPolicyStore implements RiskPolicyStore {
             case DAYS -> new ParameterValue.Days(row.getInt("value_days"));
             case HOURS -> new ParameterValue.Hours(row.getInt("value_hours"));
             case WINDOW -> new ParameterValue.Window(WindowKind.valueOf(row.getString("value_window")));
-            case SUBJECT_KIND -> new ParameterValue.Subject(SubjectKind.valueOf(row.getString("value_subject_kind")));
+            case VELOCITY_DIMENSION -> new ParameterValue.Dimension(
+                    VelocityDimension.valueOf(row.getString("value_velocity_dimension")));
             case CORRIDOR_SET -> {
                 Array array = row.getArray("value_corridors");
                 Set<String> codes = new TreeSet<>(List.of((String[]) array.getArray()));

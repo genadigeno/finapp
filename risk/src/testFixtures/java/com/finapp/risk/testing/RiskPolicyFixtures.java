@@ -13,7 +13,7 @@ import com.finapp.risk.RiskRule;
 import com.finapp.risk.RuleKind;
 import com.finapp.risk.RuleParameters;
 import com.finapp.risk.ScoreBand;
-import com.finapp.risk.SubjectKind;
+import com.finapp.risk.VelocityDimension;
 import com.finapp.risk.WindowKind;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -53,6 +53,12 @@ public final class RiskPolicyFixtures {
     /** The corridors the fixtures treat as high-risk - shapes only ({@code SRC-DST-CC}), test content. */
     public static final Set<String> HIGH_RISK_CORRIDORS = Set.of("EUR-USD-PA", "EUR-GBP-KY", "EUR-AED-AE");
 
+    /**
+     * "10 per 24 h per source account" counts the account the money leaves (`P13-TSK-006`: {@code ACCOUNT} until the
+     * velocity dimension became a {@link VelocityDimension}, the coordinator's decision at wave C).
+     */
+    private static final VelocityDimension SOURCE_ACCOUNT = VelocityDimension.SOURCE_ACCOUNT;
+
     private RiskPolicyFixtures() {}
 
     /** The operations a v1 fixture exists for: the five judged and the sweep's. */
@@ -88,9 +94,9 @@ public final class RiskPolicyFixtures {
         Rules rules = new Rules();
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(500_00)), RiskDecision.CHALLENGE);
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(10_000_00)), RiskDecision.DENY);
-        rules.deciding(RuleKind.VELOCITY_COUNT, velocity(SubjectKind.ACCOUNT, WindowKind.D1, "threshold_count",
+        rules.deciding(RuleKind.VELOCITY_COUNT, velocity(SOURCE_ACCOUNT, WindowKind.D1, "threshold_count",
                 count(10)), RiskDecision.REVIEW);
-        rules.weighted(RuleKind.VELOCITY_SUM, velocity(SubjectKind.PARTY, WindowKind.D1, "threshold_minor",
+        rules.weighted(RuleKind.VELOCITY_SUM, velocity(VelocityDimension.PARTY, WindowKind.D1, "threshold_minor",
                 minor(5_000_00)), 400);
         // The composite: a new payee alone (250) and a mid amount alone (200) each stay in ALLOW; together (450) they
         // reach CHALLENGE.
@@ -110,9 +116,9 @@ public final class RiskPolicyFixtures {
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(2_500_00)), RiskDecision.HOLD);
         rules.deciding(RuleKind.RECENT_CREDENTIAL_CHANGE, Map.of("lookback_hours", hours(24)), RiskDecision.HOLD);
         rules.weighted(RuleKind.RECENT_RECOVERY, Map.of("lookback_hours", hours(72)), 300);
-        rules.deciding(RuleKind.VELOCITY_COUNT, velocity(SubjectKind.ACCOUNT, WindowKind.D1, "threshold_count",
+        rules.deciding(RuleKind.VELOCITY_COUNT, velocity(SOURCE_ACCOUNT, WindowKind.D1, "threshold_count",
                 count(10)), RiskDecision.REVIEW);
-        rules.weighted(RuleKind.VELOCITY_SUM, velocity(SubjectKind.PARTY, WindowKind.D1, "threshold_minor",
+        rules.weighted(RuleKind.VELOCITY_SUM, velocity(VelocityDimension.PARTY, WindowKind.D1, "threshold_minor",
                 minor(5_000_00)), 400);
         rules.weighted(RuleKind.NEW_DEVICE, Map.of("lookback_days", days(30)), 200);
         rules.weighted(RuleKind.ACCOUNT_AGE_BELOW, Map.of("days", days(7)), 200);
@@ -128,9 +134,9 @@ public final class RiskPolicyFixtures {
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(500_00)), RiskDecision.CHALLENGE);
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(10_000_00)), RiskDecision.DENY);
         rules.deciding(RuleKind.MERCHANT_SUSPENDED, Map.of(), RiskDecision.DENY);
-        rules.weighted(RuleKind.VELOCITY_COUNT, velocity(SubjectKind.ACCOUNT, WindowKind.D1, "threshold_count",
+        rules.weighted(RuleKind.VELOCITY_COUNT, velocity(SOURCE_ACCOUNT, WindowKind.D1, "threshold_count",
                 count(10)), 300);
-        rules.weighted(RuleKind.VELOCITY_SUM, velocity(SubjectKind.PARTY, WindowKind.D1, "threshold_minor",
+        rules.weighted(RuleKind.VELOCITY_SUM, velocity(VelocityDimension.PARTY, WindowKind.D1, "threshold_minor",
                 minor(5_000_00)), 400);
         rules.weighted(RuleKind.NEW_DEVICE, Map.of("lookback_days", days(30)), 200);
         rules.weighted(RuleKind.RECENT_AUTH_FAILURES, Map.of("window", window(WindowKind.H1), "threshold_count",
@@ -148,9 +154,9 @@ public final class RiskPolicyFixtures {
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(500_00)), RiskDecision.CHALLENGE);
         rules.deciding(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(10_000_00)), RiskDecision.DENY);
         rules.weighted(RuleKind.CORRIDOR_HIGH_RISK, Map.of("corridors", corridors()), 400);
-        rules.deciding(RuleKind.VELOCITY_COUNT, velocity(SubjectKind.ACCOUNT, WindowKind.D1, "threshold_count",
+        rules.deciding(RuleKind.VELOCITY_COUNT, velocity(SOURCE_ACCOUNT, WindowKind.D1, "threshold_count",
                 count(10)), RiskDecision.REVIEW);
-        rules.weighted(RuleKind.VELOCITY_SUM, velocity(SubjectKind.PARTY, WindowKind.D1, "threshold_minor",
+        rules.weighted(RuleKind.VELOCITY_SUM, velocity(VelocityDimension.PARTY, WindowKind.D1, "threshold_minor",
                 minor(5_000_00)), 400);
         rules.weighted(RuleKind.NEW_PAYEE, Map.of("lookback_days", days(30)), 250);
         rules.weighted(RuleKind.AMOUNT_BAND, Map.of("threshold_minor", minor(1_000_00)), 200);
@@ -173,9 +179,9 @@ public final class RiskPolicyFixtures {
         rules.weighted(RuleKind.ROUND_AMOUNT, Map.of("modulus_minor", minor(1_000_00)), 100);
         rules.weighted(RuleKind.CORRIDOR_HIGH_RISK, Map.of("corridors", corridors()), 300);
         rules.weighted(RuleKind.SCREENING_HIT, Map.of(), 600);
-        rules.weighted(RuleKind.VELOCITY_SUM, velocity(SubjectKind.PARTY, WindowKind.D30, "threshold_minor",
+        rules.weighted(RuleKind.VELOCITY_SUM, velocity(VelocityDimension.PARTY, WindowKind.D30, "threshold_minor",
                 minor(50_000_00)), 200);
-        rules.weighted(RuleKind.VELOCITY_COUNT, velocity(SubjectKind.PARTY, WindowKind.D30, "threshold_count",
+        rules.weighted(RuleKind.VELOCITY_COUNT, velocity(VelocityDimension.PARTY, WindowKind.D30, "threshold_count",
                 count(100)), 200);
         rules.weighted(RuleKind.REFUND_RATIO, Map.of("window", window(WindowKind.D30), "ratio_bps", bps(2_000)), 200);
         rules.weighted(RuleKind.CHARGEBACK_RATIO, Map.of("window", window(WindowKind.D30), "ratio_bps", bps(100)), 300);
@@ -213,9 +219,9 @@ public final class RiskPolicyFixtures {
         return List.of(new FailSafeBand(0, OptionalLong.empty(), everywhere));
     }
 
-    private static Map<String, ParameterValue> velocity(SubjectKind dimension, WindowKind window, String threshold,
-            ParameterValue value) {
-        return Map.of("dimension", new ParameterValue.Subject(dimension), "window", window(window), threshold, value);
+    private static Map<String, ParameterValue> velocity(VelocityDimension dimension, WindowKind window,
+            String threshold, ParameterValue value) {
+        return Map.of("dimension", new ParameterValue.Dimension(dimension), "window", window(window), threshold, value);
     }
 
     public static ParameterValue minor(long value) {
