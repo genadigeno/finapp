@@ -15,6 +15,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Random;
 import java.util.TimeZone;
 import java.util.UUID;
@@ -22,11 +23,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The canonical snapshot, format 1 (`P10-TSK-008`, {@code INV-CRD-07}): the same content always yields the same bytes
- * and hash, whatever order it was assembled in and whatever the JVM's locale, time zone or charset; absence is explicit;
- * the form reads back exactly; and a read of a code the content does not hold is an error.
+ * The canonical snapshot, formats 1 and 2 (`P10-TSK-008`, format 2 `P13-TSK-007`; {@code INV-CRD-07},
+ * {@code INV-CRD-01}, {@code INV-RSK-10}): the same content always yields the same bytes and hash, whatever order it was
+ * assembled in and whatever the JVM's locale, time zone or charset; absence is explicit; the form reads back exactly; a
+ * read of a code the content does not hold is an error; format 1's golden bytes are unchanged and read back, so a
+ * decision sealed before format 2 replays; format 2 names the record a port answered from, and format 1 never does.
  */
-@DisplayName("the canonical decision snapshot, format 1 (P10-TSK-008)")
+@DisplayName("the canonical decision snapshot, formats 1 and 2 (P10-TSK-008, P13-TSK-007)")
 class CanonicalSnapshotTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
@@ -37,12 +40,58 @@ class CanonicalSnapshotTest {
     private static final CreditRecordId RECORD = CreditRecordId.of(UUID.fromString("0190a1b2-0000-7000-8000-00000000000e"));
 
     @Test
-    @DisplayName("the golden snapshot renders exactly its golden bytes and hash")
+    @DisplayName("the format-1 golden snapshot renders exactly its golden bytes and hash - and its stored text reads back"
+            + " and re-renders byte-identically, NOT_ASSESSED at seam version 1: kept for replay (INV-CRD-01)")
     void theGoldenSnapshot() throws IOException {
-        String canonical = CanonicalSnapshot.render(golden(attributes()));
-        assertThat(canonical).isEqualTo(resource("credit/golden-snapshot-format-1.json").strip());
+        String canonical = CanonicalSnapshot.render(golden(attributes()), 1);
+        String stored = resource("credit/golden-snapshot-format-1.json").strip();
+        assertThat(canonical).isEqualTo(stored);
         assertThat(HexFormat.of().formatHex(CanonicalSnapshot.sha256(canonical)))
                 .isEqualTo(resource("credit/golden-snapshot-format-1.sha256").strip());
+        SnapshotContent read = CanonicalSnapshot.parse(stored);
+        assertThat(CanonicalSnapshot.render(read, 1)).isEqualTo(stored);
+        assertThat(read.attribute(CreditAttributeCode.RISK_SIGNAL).value())
+                .isEqualTo(new AttributeValue.CodeValue("NOT_ASSESSED"));
+        assertThat(read.attribute(CreditAttributeCode.RISK_SIGNAL).provenance())
+                .isEqualTo(new AttributeProvenance.Port("risk-signal", 1));
+    }
+
+    @Test
+    @DisplayName("the format-2 golden snapshot (generated independently from format 1's: the header and the risk seam's"
+            + " attribute alone differ) renders exactly its bytes and hash, naming the profile version it was read from")
+    void theFormatTwoGoldenSnapshot() throws IOException {
+        List<CreditAttribute> seamTwo = new ArrayList<>(attributes());
+        seamTwo.removeIf(attribute -> attribute.code() == CreditAttributeCode.RISK_SIGNAL);
+        seamTwo.add(new CreditAttribute(CreditAttributeCode.RISK_SIGNAL, new AttributeValue.CodeValue("HIGH"),
+                new AttributeProvenance.Port("risk-signal", 2, OptionalLong.of(7))));
+        String canonical = CanonicalSnapshot.render(golden(seamTwo));
+        assertThat(CanonicalSnapshot.FORMAT).isEqualTo(2);
+        assertThat(canonical).isEqualTo(resource("credit/golden-snapshot-format-2.json").strip());
+        assertThat(HexFormat.of().formatHex(CanonicalSnapshot.sha256(canonical)))
+                .isEqualTo(resource("credit/golden-snapshot-format-2.sha256").strip());
+        SnapshotContent read = CanonicalSnapshot.parse(canonical);
+        assertThat(read.attribute(CreditAttributeCode.RISK_SIGNAL).provenance())
+                .isEqualTo(new AttributeProvenance.Port("risk-signal", 2, OptionalLong.of(7)));
+        assertThat(CanonicalSnapshot.render(read)).isEqualTo(canonical);
+    }
+
+    @Test
+    @DisplayName("format 1 never names a record version - it refuses to render one and refuses a stored text that"
+            + " claims one; a format this class never wrote is refused")
+    void formatOneNamesNoRecord() throws IOException {
+        List<CreditAttribute> seamTwo = new ArrayList<>(attributes());
+        seamTwo.removeIf(attribute -> attribute.code() == CreditAttributeCode.RISK_SIGNAL);
+        seamTwo.add(new CreditAttribute(CreditAttributeCode.RISK_SIGNAL, new AttributeValue.CodeValue("HIGH"),
+                new AttributeProvenance.Port("risk-signal", 2, OptionalLong.of(7))));
+        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalSnapshot.render(golden(seamTwo), 1));
+        String formatTwo = resource("credit/golden-snapshot-format-2.json").strip();
+        assertThatIllegalArgumentException().as("a format-1 header over a record version")
+                .isThrownBy(() -> CanonicalSnapshot.parse(formatTwo.replaceFirst("\\{\"format\":\"2\"", "{\"format\":\"1\"")));
+        assertThatIllegalArgumentException().as("a format never written")
+                .isThrownBy(() -> CanonicalSnapshot.parse(formatTwo.replaceFirst("\\{\"format\":\"2\"", "{\"format\":\"3\"")));
+        assertThatIllegalArgumentException().isThrownBy(() -> CanonicalSnapshot.render(golden(attributes()), 3));
+        assertThatIllegalArgumentException().as("a record version counts from 1")
+                .isThrownBy(() -> new AttributeProvenance.Port("risk-signal", 2, OptionalLong.of(0)));
     }
 
     @Test

@@ -235,7 +235,8 @@ public final class CreditInvestigationDesk {
                     unavailable.kind() + " data request " + unavailable.dataRequest().value();
             case AttributeProvenance.NotRead notRead -> notRead.kind().name();
             case AttributeProvenance.Declared declared -> "the applicant";
-            case AttributeProvenance.Port port -> port.port() + " v" + port.version();
+            case AttributeProvenance.Port port -> port.port() + " v" + port.version()
+                    + (port.recordVersion().isPresent() ? " record v" + port.recordVersion().getAsLong() : "");
         };
     }
 

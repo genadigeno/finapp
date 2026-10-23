@@ -102,10 +102,11 @@ public class RiskBeans {
         return new JdbcRiskSignalStore();
     }
 
+    /** T-sig - with the customer risk profile's permit pull (`P13-TSK-007`, {@code RiskProfileBeans}). */
     @Bean
     RiskSignals riskSignals(RiskSignalStore riskSignalStore, OutboxWriter<Connection> outboxWriter, IdGenerator ids,
-            Clock clock) {
-        return new RiskSignals(riskSignalStore, outboxWriter, ids, clock);
+            Clock clock, com.finapp.risk.ProfileHints profileHints) {
+        return new RiskSignals(riskSignalStore, outboxWriter, ids, clock, profileHints);
     }
 
     @Bean

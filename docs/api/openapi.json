@@ -21961,6 +21961,79 @@
         },
         "type": "object"
       },
+      "RiskProfileCurrentView": {
+        "properties": {
+          "rating": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskProfileVersionView": {
+        "properties": {
+          "cause": {
+            "type": "string"
+          },
+          "computedAt": {
+            "type": "string"
+          },
+          "dispositionId": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "inputsSha256": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "string"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "signalScore": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskProfileView": {
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/RiskProfileCurrentView"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RiskProfileVersionView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "RiskRatingBandRequest": {
         "properties": {
           "from": {
@@ -33378,6 +33451,33 @@
               }
             },
             "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/parties/{partyId}/profile": {
+      "get": {
+        "operationId": "readRiskProfile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "partyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskProfileView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

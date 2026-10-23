@@ -4102,6 +4102,42 @@ is the sweep's own position and clock: `INTERNAL` throughout.
 | `monitoring_watermark` | `next_sweep_at` | `INTERNAL` | The sweep's permit - the platform's own clock, dating nothing of a customer |
 | `monitoring_watermark` | `advanced_at` | `INTERNAL` | When the position last moved - as `next_sweep_at` |
 
+#### `risk` - the customer risk profile and its versions - *added by `P13-TSK-007` (`risk V006`)*
+
+A party's customer risk rating is a financial-crime judgement about a customer: `CONFIDENTIAL` wherever it is held -
+the head's current rating and every version's - and never on a customer or merchant surface, a log, an event's
+payload beyond its code or a metric tag (`INV-RSK-08`; the event `risk.CustomerRiskRatingChanged` carries the party, the
+rating's code and the version, to internal consumers). The signal score, the reason codes and the sealed inputs are the
+evaluation that set it - `CONFIDENTIAL`, as the plan holds an assessment's inputs and rule hits (`PHASE_13_PLAN.md`
+section 8); the inputs are identifiers and readings (the party's id, a screening flag, `ABSENT` markers), never an amount,
+a name or a description. The party is referenced by identifier, `CONFIDENTIAL` as a party's id is wherever it says whose
+risk this is; the policy version, the engine, the cause, the version numbers, the digest and the stamps are
+`INTERNAL` - identifiers, closed codes and the platform's own clock. No column holds money.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `customer_risk_profile` | `party_id` | `CONFIDENTIAL` | The party whose risk this is, by identifier - one head per party |
+| `customer_risk_profile` | `current_version` | `INTERNAL` | The newest version's number; 0 while unassessed |
+| `customer_risk_profile` | `rating` | `CONFIDENTIAL` | The current customer risk rating - a closed code, a financial-crime judgement about the customer (`INV-RSK-08`) |
+| `customer_risk_profile` | `next_recompute_at` | `INTERNAL` | The recompute's permit - the platform's own clock |
+| `customer_risk_profile` | `recomputed_at` | `INTERNAL` | When the profile was last evaluated - the platform's own clock |
+| `customer_risk_profile` | `created_at` | `INTERNAL` | When the party was enrolled, stamped by the database |
+| `customer_risk_profile_version` | `party_id` | `CONFIDENTIAL` | As the head's |
+| `customer_risk_profile_version` | `version` | `INTERNAL` | The version's number - born in sequence |
+| `customer_risk_profile_version` | `rating` | `CONFIDENTIAL` | The rating this version set - as the head's |
+| `customer_risk_profile_version` | `cause` | `INTERNAL` | A closed code - `RECOMPUTE` or `DISPOSITION` |
+| `customer_risk_profile_version` | `signal_score` | `CONFIDENTIAL` | Risk's number behind a recompute's rating - an evaluation's score, never answered to credit (`INV-CRD-04`) |
+| `customer_risk_profile_version` | `reason_codes` | `CONFIDENTIAL` | The fired rules' closed codes, in order - an evaluation's reasons |
+| `customer_risk_profile_version` | `policy_version_id` | `INTERNAL` | The `MONITORING` policy version pinned, by identifier |
+| `customer_risk_profile_version` | `policy_operation` | `INTERNAL` | A closed code - `MONITORING`, the composite key's half |
+| `customer_risk_profile_version` | `policy_version` | `INTERNAL` | The pinned version's number |
+| `customer_risk_profile_version` | `engine` | `INTERNAL` | A closed code - the engine that evaluated it |
+| `customer_risk_profile_version` | `inputs_canonical` | `CONFIDENTIAL` | The sealed inputs (`CanonicalEvaluation` format 1) - identifiers and readings, as an assessment's inputs |
+| `customer_risk_profile_version` | `inputs_sha256` | `INTERNAL` | The inputs' digest, recomputed by a `CHECK` - a hash of the row's own text |
+| `customer_risk_profile_version` | `disposition_id` | `INTERNAL` | The approved disposition that set a `DISPOSITION` version, by identifier (`P13-TSK-016`) |
+| `customer_risk_profile_version` | `correlation_id` | `INTERNAL` | The flow that wrote the version |
+| `customer_risk_profile_version` | `computed_at` | `INTERNAL` | When the version was born, stamped by the database |
+
 ### `risk.risk_policy_version`, `risk_policy`, `risk_rule`, `risk_rule_parameter`, `risk_policy_band` and `risk_policy_version_event` — *added by `P13-TSK-002`*
 
 A risk policy version as data (`risk V002`; ADR-0109): the policy's content — which rules a version carries, their

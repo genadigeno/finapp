@@ -1,0 +1,245 @@
+package com.finapp.risk;
+
+import com.finapp.platform.outbox.EventPayload;
+import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.sharedkernel.correlation.CausationId;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.event.EventEnvelope;
+import com.finapp.sharedkernel.event.EventId;
+import com.finapp.sharedkernel.id.IdGenerator;
+import java.sql.Connection;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The customer risk profile's recompute (`P13-TSK-007`; {@code PHASE_13_PLAN.md} sections 7.1 T-mon, 7.2 R8, 12.5;
+ * {@code RISK_LIFECYCLES.md} section 4.9; {@code INV-RSK-10}, {@code INV-RSK-07}, {@code INV-HIST-04}) - T-mon's
+ * profile leg, one party per transaction, holding no money row.
+ *
+ * <h2>The order of the locks</h2>
+ *
+ * <p>The pin first (R1: the {@code MONITORING} version {@code FOR SHARE}, or the shared advisory re-read when none -
+ * {@link RiskPolicies#active}, never the door's {@code inForce}), then the head (R8: claimed
+ * {@code FOR UPDATE SKIP LOCKED} by the sweep, or locked {@code FOR UPDATE} - waiting - by a direct recompute). Under
+ * the head's lock the party's inputs are read ({@link ProfileInputs}), the pinned version is evaluated by
+ * {@link RiskEngineV1} - its rating bands map the signal score to {@code LOW}, {@code MEDIUM} or {@code HIGH} - and:
+ *
+ * <ul>
+ *   <li><strong>the rating changed</strong> (or the party had none): version {@code n + 1} born with its whole
+ *       evaluation (the pinned version, the engine, the score, the reasons, the sealed inputs and their digest), the
+ *       head advanced beside it, {@code risk.CustomerRiskRatingChanged} written - one transaction;</li>
+ *   <li><strong>the rating is unchanged</strong>: nothing is written but the permit (`DESIGN-007` D3 - a change of
+ *       reasons alone is not a change of rating);</li>
+ *   <li><strong>the party is {@code PROHIBITED}</strong>: nothing is evaluated - only a four-eyes disposition (`-016`)
+ *       lifts it, and the version trigger refuses a recompute's version after one;</li>
+ *   <li><strong>no {@code MONITORING} version is {@code ACTIVE}</strong>: nothing is written but the permit (D2) - the
+ *       platform has not chosen to judge, and a rating nobody judged would reach credit's snapshots as an
+ *       assessment.</li>
+ * </ul>
+ *
+ * <p>So ten sweepers on one party write one version ({@code ProfileDatabaseTest#tenRecomputesOneVersion}): the claim
+ * skips a held head; a waiting recompute re-reads the head after the winner's commit, evaluates the same committed
+ * inputs, finds the rating unchanged and writes nothing. Every stamp is the database's ({@code clock_timestamp()}); the
+ * permit is re-stamped {@code cadence} after it.
+ *
+ * <p><strong>A recompute that fails</strong> - the engine refusing ({@link EvaluationFailed}), a reading that throws - is
+ * {@link RecomputeFailed}, naming the party and never a partial version: the caller's transaction rolls back whole, and
+ * the sweep then {@link #defer defers} that party's permit by {@link #FAILURE_BACKOFF} in a transaction of its own, so a
+ * party whose recompute keeps failing never stands first in every sweeper's claim and stalls the leg for everyone else.
+ * The failure is metered by the sweep; the party is retried after the backoff.
+ */
+public final class ProfileRecompute {
+
+    public static final String EVENT_TYPE = "risk.CustomerRiskRatingChanged";
+    public static final String PRODUCER = "risk";
+    public static final int EVENT_VERSION = 1;
+    public static final String AGGREGATE_TYPE = "customer_risk_profile";
+
+    /** How long a party whose recompute failed waits before it is claimed again. */
+    public static final Duration FAILURE_BACKOFF = Duration.ofMinutes(15);
+
+    /** A recompute that failed for {@link #partyId()} - nothing was written; its transaction is the caller's to roll back. */
+    public static final class RecomputeFailed extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        private final transient UUID partyId;
+
+        public RecomputeFailed(UUID partyId, RuntimeException cause) {
+            // The cause's class only - its message may carry a value from a reading (INV-RSK-08).
+            super("a customer risk profile recompute failed: " + cause.getClass().getSimpleName(), cause);
+            this.partyId = partyId;
+        }
+
+        /** The party whose recompute failed - the one the sweep defers. */
+        public UUID partyId() {
+            return partyId;
+        }
+    }
+
+    /** What one recompute did. */
+    public enum Kind {
+        /** A new version was born: the rating moved, or the party had none. */
+        CHANGED,
+        /** Evaluated, the rating unchanged: only the permit moved. */
+        UNCHANGED,
+        /** The party is {@code PROHIBITED}: nothing evaluated, only the permit moved. */
+        PROHIBITED_STANDS,
+        /** No {@code MONITORING} version is {@code ACTIVE}: nothing judged, only the permit moved. */
+        NOT_JUDGED
+    }
+
+    /**
+     * One recompute's outcome - the party, what happened and the head's version and rating after it.
+     *
+     * @param version the head's version after the recompute (0 when the party is still unassessed)
+     */
+    public record Outcome(UUID partyId, Kind kind, int version, Optional<RiskRating> rating) {
+        public Outcome {
+            Objects.requireNonNull(partyId, "partyId");
+            Objects.requireNonNull(kind, "kind");
+            Objects.requireNonNull(rating, "rating");
+        }
+
+        /** Identifiers and codes only - never the rating ({@code INV-RSK-08}). */
+        @Override
+        public String toString() {
+            return "Outcome[" + partyId + ", " + kind + ", v" + version + "]";
+        }
+    }
+
+    private final RiskPolicies policies;
+    private final CustomerRiskProfileStore store;
+    private final ProfileInputs inputs;
+    private final OutboxWriter<Connection> outbox;
+    private final IdGenerator ids;
+    private final Clock clock;
+    private final Duration cadence;
+
+    /**
+     * @param cadence how long after a recompute the party is due again - the re-assessment interval; a signal's hint
+     *     pulls it forward
+     */
+    public ProfileRecompute(RiskPolicies policies, CustomerRiskProfileStore store, ProfileInputs inputs,
+            OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock, Duration cadence) {
+        this.policies = Objects.requireNonNull(policies, "policies");
+        this.store = Objects.requireNonNull(store, "store");
+        this.inputs = Objects.requireNonNull(inputs, "inputs");
+        this.outbox = Objects.requireNonNull(outbox, "outbox");
+        this.ids = Objects.requireNonNull(ids, "ids");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.cadence = Objects.requireNonNull(cadence, "cadence");
+        if (cadence.isNegative() || cadence.isZero()) {
+            throw new IllegalArgumentException("the recompute cadence must be positive");
+        }
+    }
+
+    /**
+     * The sweep's leg: the pin, then one due head claimed {@code FOR UPDATE SKIP LOCKED} and recomputed, on the
+     * caller's unit of work, under a correlation minted for it.
+     *
+     * @return the outcome; empty when no head is due (or every due head is held by another sweeper)
+     */
+    public Optional<Outcome> recomputeNextDue(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Optional<RiskPolicyVersion> pinned = policies.active(unitOfWork, RiskOperation.MONITORING);
+        Optional<CustomerRiskProfile> claimed = store.claimDue(unitOfWork);
+        if (claimed.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(recomputeLocked(unitOfWork, claimed.get(), pinned, CorrelationId.generate(ids)));
+    }
+
+    /**
+     * {@code partyId}'s profile recomputed now - enrolled if missing, its head locked {@code FOR UPDATE} (waiting on a
+     * holder): the shape `-016`'s case outcome and `-020`'s monitoring leg call, under their own flow.
+     */
+    public Outcome recompute(Connection unitOfWork, UUID partyId, CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(partyId, "partyId");
+        Objects.requireNonNull(correlation, "correlation");
+        Optional<RiskPolicyVersion> pinned = policies.active(unitOfWork, RiskOperation.MONITORING);
+        return recomputeLocked(unitOfWork, store.lockOrCreate(unitOfWork, partyId), pinned, correlation);
+    }
+
+    private Outcome recomputeLocked(Connection unitOfWork, CustomerRiskProfile head, Optional<RiskPolicyVersion> pinned,
+            CorrelationId correlation) {
+        UUID party = head.partyId();
+        if (head.prohibited()) {
+            store.restamp(unitOfWork, party, cadence, false);
+            return new Outcome(party, Kind.PROHIBITED_STANDS, head.currentVersion(), head.rating());
+        }
+        if (pinned.isEmpty()) {
+            store.restamp(unitOfWork, party, cadence, false);
+            return new Outcome(party, Kind.NOT_JUDGED, head.currentVersion(), head.rating());
+        }
+        try {
+            return evaluated(unitOfWork, head, pinned.get(), correlation);
+        } catch (RuntimeException failure) {
+            throw new RecomputeFailed(party, failure);
+        }
+    }
+
+    /**
+     * The sweep's answer to a {@link RecomputeFailed}: {@code partyId}'s permit re-stamped {@link #FAILURE_BACKOFF}
+     * after the database's clock, nothing else moved - in a transaction of the caller's own, after the failed one rolled
+     * back. The head's row lock is taken by the {@code UPDATE} (waiting on a holder).
+     */
+    public void defer(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(partyId, "partyId");
+        store.restamp(unitOfWork, partyId, FAILURE_BACKOFF, false);
+    }
+
+    private Outcome evaluated(Connection unitOfWork, CustomerRiskProfile head, RiskPolicyVersion version,
+            CorrelationId correlation) {
+        UUID party = head.partyId();
+        EvaluationInputs sealed = inputs.of(unitOfWork, party);
+        Verdict verdict = RiskEngineV1.evaluate(version.policy(), sealed);
+        RiskRating rating = verdict.rating()
+                .orElseThrow(() -> new IllegalStateException("the monitoring verdict is a rating"));
+        if (rating.onlyByDisposition()) {
+            // INV-RSK-07: the bands cannot produce it (RatingBand, Verdict refuse it); asserted where it would matter.
+            throw new IllegalStateException("a recompute never sets " + rating + ": only a disposition does");
+        }
+        if (head.rating().equals(Optional.of(rating))) {
+            store.restamp(unitOfWork, party, cadence, true);
+            return new Outcome(party, Kind.UNCHANGED, head.currentVersion(), head.rating());
+        }
+        int next = head.currentVersion() + 1;
+        String canonical = CanonicalEvaluation.render(sealed);
+        store.insertVersion(unitOfWork, new CustomerRiskProfileVersion(party, next, rating, ProfileCause.RECOMPUTE,
+                verdict.reasons(), Optional.of(new CustomerRiskProfileVersion.Evaluation(version.id(), version.version(),
+                        verdict.engine(), verdict.score().value(), canonical, CanonicalEvaluation.sha256(canonical))),
+                Optional.empty(), correlation.value(), Optional.empty()));
+        store.advance(unitOfWork, party, head.currentVersion(), next, rating, cadence);
+        announce(unitOfWork, party, rating, next, correlation);
+        return new Outcome(party, Kind.CHANGED, next, Optional.of(rating));
+    }
+
+    private void announce(Connection unitOfWork, UUID party, RiskRating rating, int version, CorrelationId correlation) {
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        CustomerRiskProfileId.of(party),
+                        AGGREGATE_TYPE,
+                        Instant.now(clock),
+                        PRODUCER,
+                        correlation,
+                        CausationId.of(correlation.value())),
+                // The party, the rating's code and the version - never a score, a reason or a rule (INV-RSK-08).
+                EventPayload.of()
+                        .with("party", party.toString())
+                        .with("rating", rating.name())
+                        .with("version", Integer.toString(version))
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
+}

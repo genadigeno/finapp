@@ -14,7 +14,8 @@ import java.util.UUID;
  * reads or works a case, approves an override or files a report on a subject of their own party is refused
  * ({@code risk.SelfDealingRefused}) and the attempt recorded {@code FAILED}; a holder who can be placed in no party is
  * refused the same way - fail closed, the Phase 12 → 13 gate's A7-6 applied forward. Read on the caller's unit of work.
- * First implemented and consumed by `-016`.
+ * First implemented and consumed by `-007` (the profile read; {@code app}'s {@code IdentityActingParty}, the one read
+ * of whose party a person is for credit, lending, bnpl and risk); `-016`'s case doors consume it next.
  */
 @FunctionalInterface
 public interface RiskActingParty {

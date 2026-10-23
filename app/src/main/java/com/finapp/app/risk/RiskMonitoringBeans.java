@@ -103,18 +103,24 @@ public class RiskMonitoringBeans {
                 dataSource::getConnection, clock, meterRegistry);
     }
 
-    /** The monitoring sweep - every instance, no lease, off in test contexts. */
+    /**
+     * The monitoring sweep - every instance, no lease, off in test contexts: the intake leg (`P13-TSK-019`) and the
+     * customer risk profile leg (`P13-TSK-007`, {@code finapp.risk.profile.claims-per-tick} heads a tick at most).
+     */
     @Bean
     @ConditionalOnProperty(name = "finapp.risk.monitoring.sweeper.enabled", havingValue = "true", matchIfMissing = true)
     RiskMonitoringSchedule riskMonitoringSchedule(
             MonitoringIntake monitoringIntake,
+            com.finapp.risk.ProfileRecompute profileRecompute,
             RiskTransactions riskTransactions,
             RiskMonitoringMetrics riskMonitoringMetrics,
             RiskFlowScope riskFlowScope,
             @Value("${finapp.risk.monitoring.poll:PT5S}") Duration pollInterval,
-            @Value("${finapp.risk.monitoring.batches-per-tick:10}") int batchesPerTick) {
-        return new RiskMonitoringSchedule(monitoringIntake, riskTransactions, riskMonitoringMetrics, riskFlowScope,
-                pollInterval, batchesPerTick);
+            @Value("${finapp.risk.monitoring.batches-per-tick:10}") int batchesPerTick,
+            @Value("${finapp.risk.profile.claims-per-tick:50}") int profileClaimsPerTick) {
+        return new RiskMonitoringSchedule(monitoringIntake,
+                RiskMonitoringSchedule.ProfileLeg.over(profileRecompute), profileClaimsPerTick,
+                riskTransactions, riskMonitoringMetrics, riskFlowScope, pollInterval, batchesPerTick);
     }
 
     /** Whether this instance runs the monitoring sweep - eager either way (`P1-TSK-029`'s rule). */

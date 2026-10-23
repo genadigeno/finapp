@@ -638,6 +638,21 @@ and by `risk V003`'s `CHECK`. The readings `-004` takes are `SignalReadings`: `r
 its latest `BENEFICIARY_*` signal; `screeningHit` is `ScreeningClearances`' answer (`app`'s `KycScreeningClearances`
 over kyc's case checks); `recentAuthFailures` and `kycStatus` have no event source — see §10's erratum.)*
 
+*(As built, `P13-TSK-007`, 2026-10-23 — four readings the build settled, `DESIGN-007` §0. **No profile is not a clean
+bill of health:** a party risk has not assessed - no head, or one enrolled and not yet recomputed - answers credit's seam
+`NOT_ASSESSED` at seam version 2 with no profile version, and `-004`'s `PROFILE_RATING` reading is `ABSENT`; **and with no
+`MONITORING` version `ACTIVE` the recompute writes nothing** (the backlog's "`LOW` by the compiled default, recorded" was
+refused: a rating nobody judged would reach credit's sealed snapshots as an assessment). **A version only when the
+rating changes** (§4.9; a change of reasons alone writes nothing and announces nothing). **The profile version is pinned
+in credit's snapshot as provenance** - `RISK_SIGNAL`'s `Port("risk-signal", 2, recordVersion)`, credit's canonical
+format 2 (format 1 kept for replay; credit `V023` admits the format) - not as an attribute a credit rule could read.
+**No `MONITORING` rule kind reads a signal** as the vocabulary stands (`RECENT_CREDENTIAL_CHANGE`, `RECENT_RECOVERY` are
+judged-only; no kind reads a default or a delinquency): signals reach the profile as the hint that pulls its permit
+forward (T-sig, `ProfileHints`, through the party join `RiskSubjectParties` - a party and an identity placed today) and
+the rating moves on the screening hit until `-006`'s windows and `-020`'s readings arrive; admitting a signal-reading kind
+for `MONITORING` is a policy-vocabulary decision recorded for the owner and `-020`. The operator read
+`GET /v1/operator/risk/parties/{partyId}/profile` raises `risk.SelfDealingRefused` for the first time.)*
+
 ### 12.6 Fraud detection
 
 Fraud rules run in T-eval (synchronous) and in the sweep (retrospective, over signals): **account takeover** — a
@@ -980,7 +995,9 @@ EUR figure, or the policy's currency must widen.)*
 Items the Phase 12 → 13 gate left the owner that touch this phase: N1 (criterion 7, answered as C5); N5 (schedules'
 unmetered claim failures — every Phase 13 schedule meters its claim failures from the first task); N13 (bucket labels,
 not risk's); PI-002/PI-003 (Phase 6 pins and reasons, not risk's); the Phase 11 and 12 items the gate ratified stand.
-`CreditRiskSignal`'s `NOT_ASSESSED` answer is retired by `-007`.
+`CreditRiskSignal`'s `NOT_ASSESSED` answer is retired by `-007`. *(Retired by `P13-TSK-007`, 2026-10-23: the composition
+answers through `RiskCreditRiskSignal` at seam version 2; `NOT_ASSESSED` remains the answer only for a party risk has
+not assessed, and every decision sealed under version 1 replays it.)*
 
 ---
 

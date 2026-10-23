@@ -295,14 +295,21 @@ public class CreditBeans {
         return new BnplCreditExposure();
     }
 
+    /**
+     * The freezer. Its risk seam is {@code risk}'s, at seam version 2 (`P13-TSK-007`): {@code RiskCreditRiskSignal}
+     * answers the party's customer risk rating and the profile version, recorded in every snapshot; Phase 10's
+     * {@link NotAssessedUntilPhase13} (seam version 1) is no longer wired - the decisions it answered replay from their
+     * own snapshots, {@code NOT_ASSESSED} ({@code INV-CRD-01}).
+     */
     @Bean
     com.finapp.credit.SnapshotFreezer snapshotFreezer(
             CreditDataCollection creditDataCollection,
             com.finapp.credit.CreditPartyStanding<Connection> creditPartyStanding,
+            com.finapp.credit.CreditRiskSignal<Connection> creditRiskSignal,
             BnplCreditExposure bnplCreditExposure,
             IdGenerator idGenerator) {
         return new com.finapp.credit.SnapshotFreezer(new com.finapp.credit.JdbcDecisionSnapshotStore(), creditDataCollection,
-                creditPartyStanding, new NotAssessedUntilPhase13(), new com.finapp.credit.JdbcReservedExposure(),
+                creditPartyStanding, creditRiskSignal, new com.finapp.credit.JdbcReservedExposure(),
                 bnplCreditExposure, idGenerator);
     }
 

@@ -10,6 +10,8 @@ import com.finapp.risk.MonitoredTransactionStore;
 import com.finapp.risk.MonitoringIntake;
 import com.finapp.risk.MonitoringWatermark;
 import com.finapp.risk.MonitoringWatermarkStore;
+import com.finapp.risk.ProfileRecompute;
+import com.finapp.risk.RiskRating;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -35,9 +37,11 @@ import org.junit.jupiter.api.Test;
  * The monitoring schedule over fakes (`P13-TSK-019`; bnpl's {@code BnplOriginationScheduleTest} shape): the
  * configuration judged first; one tick takes batches while they come back full, up to its bound, and stops at a short
  * one or an unclaimed watermark; a failing batch is counted {@code finapp.risk.sweeper.claim.failed{kind=monitoring}}
- * and ends the tick. The transactions are a fake unit of work: the intake's state lives in the fakes.
+ * and ends the tick. The transactions are a fake unit of work: the intake's state lives in the fakes. The profile leg
+ * (`P13-TSK-007`): after the intake, due profiles one per transaction up to its bound, stopping when none is due; a
+ * failing recompute counted the same way, ending the leg and leaving the intake's work standing.
  */
-@DisplayName("the risk monitoring schedule (P13-TSK-019)")
+@DisplayName("the risk monitoring schedule (P13-TSK-019, P13-TSK-007)")
 class RiskMonitoringScheduleTest {
 
     private static final IdGenerator IDS = new IdGenerator(
@@ -94,6 +98,56 @@ class RiskMonitoringScheduleTest {
     }
 
     @Test
+    @DisplayName("the profile leg: after the intake, one due profile per transaction up to its bound; it stops when none"
+            + " is due; a leg with no bound refuses to build")
+    void theProfileLegRecomputesDueProfiles() {
+        World world = new World(1);
+        ScriptedLeg leg = new ScriptedLeg(5);
+        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), leg, 3, world.transactions.real,
+                world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        assertThat(schedule.sweepOnce()).as("the intake's count, as before").isEqualTo(1);
+        assertThat(leg.recomputed).as("three of the five due - the bound").isEqualTo(3);
+        assertThat(world.transactions.began).as("one intake batch, then one transaction per profile").isEqualTo(4);
+        schedule.sweepOnce();
+        assertThat(leg.recomputed).as("the last two, then none due").isEqualTo(5);
+        assertThat(world.transactions.began).isEqualTo(4 + 1 + 3);
+        assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> new RiskMonitoringSchedule(
+                world.intake(2), leg, 0, world.transactions.real, world.metrics, RiskFlowScope.NONE,
+                Duration.ofSeconds(5), 10));
+    }
+
+    @Test
+    @DisplayName("a party whose recompute fails is counted, its permit deferred in a transaction of its own, and the leg"
+            + " goes on to the next due party - one failing party never stalls the leg")
+    void aFailingPartyIsDeferredAndTheLegGoesOn() {
+        World world = new World(0);
+        ScriptedLeg leg = new ScriptedLeg(4);
+        leg.failingParties = 1;
+        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), leg, 10, world.transactions.real,
+                world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        schedule.sweepOnce();
+        assertThat(leg.deferred).as("the failing party's permit deferred").hasSize(1);
+        assertThat(leg.recomputed).as("the three others recomputed after it").isEqualTo(3);
+        assertThat(world.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("a failing claim is counted claim.failed{kind=monitoring} and ends the leg; the intake's batch stands")
+    void aFailingRecomputeIsCounted() {
+        World world = new World(1);
+        ScriptedLeg leg = new ScriptedLeg(5);
+        leg.failing = true;
+        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), leg, 3, world.transactions.real,
+                world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        assertThat(schedule.sweepOnce()).isEqualTo(1);
+        assertThat(world.born).hasSize(1);
+        assertThat(leg.recomputed).isZero();
+        assertThat(world.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("the meters are registered eagerly, with bounded tags and no id")
     void metersAreEager() {
         World world = new World(0);
@@ -104,6 +158,47 @@ class RiskMonitoringScheduleTest {
     }
 
     // ------------------------------------------------------------------ the fakes
+
+    /**
+     * The profile leg as a fake: {@code due} profiles waiting, each recompute taking one; the claim itself failing; or
+     * the first {@code failingParties} recomputes failing for their party, which a deferral moves out of the way.
+     */
+    private static final class ScriptedLeg implements RiskMonitoringSchedule.ProfileLeg {
+        private int due;
+        int recomputed;
+        boolean failing;
+        int failingParties;
+        final List<UUID> deferred = new ArrayList<>();
+
+        ScriptedLeg(int due) {
+            this.due = due;
+        }
+
+        @Override
+        public Optional<ProfileRecompute.Outcome> recomputeNextDue(Connection unitOfWork) {
+            if (failing) {
+                throw new IllegalStateException("the claim failed");
+            }
+            if (due == 0) {
+                return Optional.empty();
+            }
+            UUID party = IDS.next();
+            if (failingParties > 0) {
+                failingParties--;
+                due--;
+                throw new ProfileRecompute.RecomputeFailed(party, new IllegalStateException("the engine refused"));
+            }
+            due--;
+            recomputed++;
+            return Optional.of(new ProfileRecompute.Outcome(party, ProfileRecompute.Kind.CHANGED, 1,
+                    Optional.of(RiskRating.LOW)));
+        }
+
+        @Override
+        public void defer(Connection unitOfWork, UUID partyId) {
+            deferred.add(partyId);
+        }
+    }
 
     private static final class World {
         final FakeLedger ledger = new FakeLedger();
