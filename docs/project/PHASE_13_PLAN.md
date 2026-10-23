@@ -350,6 +350,19 @@ decision (§12.3), recorded with reason `RISK_UNAVAILABLE` — the transaction i
 statement runs behind a savepoint. The monitoring sweep never runs inside a money transaction, so its workload cannot
 breach the budget except through row contention on windows, which the storm measures (M3's split trigger).
 
+*(As built, `P13-TSK-004`, 2026-10-23 — `RiskEvaluation` over `EvaluationBudget`/`JdbcEvaluationBudget`: a JDBC
+savepoint, then `set_config('statement_timeout', '250ms', true)` after it — so rolling back to it reverts the setting
+with the step — and, on success, the transaction's own value restored before the savepoint is released. **Two
+savepoints, one timeout:** the pin (R1) runs behind a savepoint of its own **without** the timeout — an evaluation
+meeting an activation waits for it and pins the successor (A3-I1, §5); a 250 ms limit there would turn every activation
+into unpinned fail-safes — and is kept, its `FOR SHARE` held to the caller's commit; the cut (R2a), the reads, the engine
+and the count (R2) run behind the second, timed savepoint, whose rollback releases R2a and the reads but never the pin.
+A failure there is classified (`TIMEOUT` by SQLSTATE 57014, `ENGINE_REFUSED`, else `READ_FAILED`) and sealed as the
+band's decision; a permitting fail-safe gets one count attempt behind a third timed savepoint, recorded `UNCOUNTED`
+when it fails — so a hot subject queued past the budget costs at most two budgets and is a recorded fail-safe, never
+an aborted movement. Latency is measured on the injected clock and sealed (`latency_micros`) and metered
+(`finapp.risk.evaluation.latency`, buckets around 50 and 250 ms).)*
+
 ---
 
 ## 8. Data architecture
@@ -606,6 +619,20 @@ code and text; at or above the threshold (C7) a second holder approves; the over
 (release the held withdrawal; nothing for a denied transfer — the customer retries under a new key, and the override
 sets a one-time allowance for the same command ref so the retry's evaluation reads it as an input); it never edits the
 decision. An `ALLOW` is never overridden after the fact — the money has moved; a case is the remedy.
+
+*(As built, `P13-TSK-004`, 2026-10-23 — the fail-safe as `RiskEvaluation` seals it, by cause (`UnavailableCause`, a
+column beside the reason code): `NO_POLICY` → the compiled `ALLOW` under `NO_POLICY_ACTIVE` (the windows count it — the
+money moves); `PIN_UNREADABLE` → the compiled `ALLOW` under `RISK_UNAVAILABLE`, **no version named** — the bands could
+not be read, and a compiled `DENY` would be policy in code; `READ_FAILED`, `TIMEOUT`, `ENGINE_REFUSED` → the pinned
+version's band for the judged amount under `RISK_UNAVAILABLE` — **or, for an amount in another currency than the
+version's, the open-ended band** (`RiskEngineV1.failSafeUnplaced`; `DENY` in every C1 band set: an amount that cannot
+be compared is not known to be below any threshold), an owner item before the activation gate since it refuses every
+non-EUR judged movement once a EUR version is active. **The seam's answer** is `RiskEvaluation.Assessed`: `permits()`
+for `ALLOW` and a `CHALLENGE` whose sealed session assurance satisfies the version's challenge assurance (an absent
+session — every one until `-008` wires `SessionAssurance` — is unsatisfied), `refusalReason()` `CHALLENGE_REQUIRED` for
+an unsatisfied one; T-advise's `Advice.stepUpRequired()` is the door's `403 identity.AssuranceRequired`. A `REVIEW`
+and a `HOLD` call `CaseOpener` (`NONE` until `-016`); a `DENY` opens no case — the version has no "case on deny" field,
+`-016`'s to add with its opener.)*
 
 ### 12.4 Velocity (INV-RSK-03)
 

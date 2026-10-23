@@ -2894,6 +2894,16 @@ perturbed input, rule parameter or policy version flipping the verdict and namin
 (`P13-TSK-007`); the storm's census at every round, assessments = judged commands (`P13-TST-001`).
 **Phase:** 13
 
+*(As built by `P13-TSK-004`, 2026-10-23 — `risk V007`, `RiskEvaluation`, `AssessmentReplay`. The enforcement holds as
+written, with one reading: `policy_version_id` is null under `NO_POLICY_ACTIVE` **and** under `RISK_UNAVAILABLE` when
+the pin's own read failed (`unavailable_cause = 'PIN_UNREADABLE'` — there was no version to name), a `CHECK` tying the
+null pin to those two causes alone (`risk_assessment_pinned_unless_unpinnable`); `engine_version` is `NOT NULL` without
+exception (`engine`). "Exactly one" is `UNIQUE (operation, command_ref)` under a lookup first: a retry — and the
+transfer's second seam in one transaction — is answered with the sealed decision without evaluating, counting or
+announcing; a duplicate the caller failed to serialise loses at the insert and aborts its own transaction
+(`RiskEvaluation.RaceLost`), its count with it. The four tables are sealed for every writer by trigger. Probes:
+`MUTATION_TESTING.md` §2.)*
+
 ### INV-RSK-02 — A risk decision never moves money, holds money or writes another domain's row
 **Statement:** The `risk` module posts no journal entry, places and releases no ledger hold, and
 inserts, updates or deletes no row outside schema `risk`. A decision changes a money movement only
@@ -3015,6 +3025,17 @@ only then (`P13-TSK-024`); the storm's census at every round — no assessment w
 version, none without a policy version except `NO_POLICY_ACTIVE`, every fail-safe assessment counted
 by its alert (`P13-TST-001`).
 **Phase:** 13
+
+*(As built by `P13-TSK-004`, 2026-10-23. Every fail-safe is a sealed row carrying its reason code **and** its cause
+(`unavailable_cause`: `NO_POLICY`, `PIN_UNREADABLE`, `READ_FAILED`, `TIMEOUT`, `ENGINE_REFUSED` — together or not at
+all, score 0, the reason first among the reasons, all by `CHECK` and a deferred trigger). The reads run behind a
+savepoint under the 250 ms statement timeout; **the pin runs behind a savepoint of its own without the timeout** (the
+waiting pin of `INV-RSK-05`, not a budget breach), and a pin that cannot be read answers the compiled `ALLOW` under
+`RISK_UNAVAILABLE` with no version named — the census's "none without a policy version except `NO_POLICY_ACTIVE`"
+reads "except `NO_POLICY_ACTIVE` and an unreadable pin". An amount the bands cannot place (another currency) answers
+the open-ended band. The alert is `-015`'s and `-024`'s: until then `finapp.risk.evaluation.unavailable{operation,
+reason_code}` counts every fail-safe and one log line (ids and codes) marks each `RISK_UNAVAILABLE`. The replay re-derives
+a fail-safe by its recorded cause. Probes: `MUTATION_TESTING.md` §2.)*
 
 ### INV-RSK-05 — A policy version is immutable once decided, only an `ACTIVE` one is evaluated, activation is four eyes, and the pin never answers "neither"
 **Statement:** A risk policy version — its rules, weights, score bands, fail-safe bands, challenge

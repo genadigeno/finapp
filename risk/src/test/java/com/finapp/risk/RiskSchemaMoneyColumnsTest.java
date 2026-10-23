@@ -28,6 +28,10 @@ import org.junit.jupiter.api.Test;
  * update; until this task the schema needed no exception and no guard said so. The exception is stated as two exact
  * lines, so it cannot widen silently, and the planted cases prove the guard can fail. <strong>Written and owed</strong>
  * (owner decision C5).
+ *
+ * <p>`P13-TSK-004` ({@code risk V007}) adds the judged amount - {@code risk_assessment.amount_minor} with its currency
+ * and scale - on an {@code INSERT}-only row (SELECT and INSERT for the application, every UPDATE and DELETE refused by
+ * trigger for every role), so the floor holds it with no new exception: the list above is unchanged.
  */
 @Tag("database")
 @DisplayName("risk's money columns: bigint, INSERT-only, the velocity counters the one exception (P13-TSK-006)")

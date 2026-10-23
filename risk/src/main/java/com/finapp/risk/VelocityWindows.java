@@ -127,6 +127,14 @@ public final class VelocityWindows {
     }
 
     /**
+     * The database clock on {@code unitOfWork}, no lock taken (`P13-TSK-004`) - T-advise's instant for its lookbacks,
+     * beside {@link #peek}. Never a cut: T-eval's instant is {@link #cut}'s, read after the subjects' locks.
+     */
+    public java.time.Instant now(Connection unitOfWork) {
+        return store.databaseNow(Objects.requireNonNull(unitOfWork, "unitOfWork"));
+    }
+
+    /**
      * (R2) counts the movement {@code cut} holds in every window it falls in - each dimension it carries, each window
      * kind - one upsert per window in sorted key order, <strong>only when {@code decision} permits the movement</strong>;
      * answers the windows after the movement, or nothing when it was refused. Call at most once per cut, after the

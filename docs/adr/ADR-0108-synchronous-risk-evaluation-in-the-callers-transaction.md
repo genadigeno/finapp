@@ -218,6 +218,19 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
 
 - `P13-TSK-004` — the sealed assessment, the decision vocabulary, reason codes and replay (`risk V003`);
   `P13-TSK-006` — velocity windows in the caller's transaction and `VelocityProof` (`risk V005`).
+  *(Built by `P13-TSK-004`, 2026-10-23, as `risk V007` — the migration number the waves gave it, not `V003`:
+  `RiskEvaluation` (T-eval, T-advise), `RiskAssessments` and `AssessmentReplay` (the read and the replay doors), the
+  fail-safe a recorded decision with its reason and its cause. Three readings of this ADR the build settled, for
+  `P13-DOC-001`: **(i)** decision 5's "risk's reads run under ... 250 ms ... behind a savepoint" holds for every read but
+  the pin, which runs behind a savepoint of its own **without** the timeout — ADR-0109 decision 6's waiting pin is the
+  A3-I1 rule, and a timeout on it would turn every activation into a burst of unpinned fail-safes; **(ii)** decision 4's
+  "the pin's read failing" has no policy to take a band from: the compiled `ALLOW` is recorded under `RISK_UNAVAILABLE`
+  (never `NO_POLICY_ACTIVE`) with no version named, the alternative — a compiled `DENY` — being this ADR's refused "fixed
+  fail-safe in code"; **(iii)** an amount the policy's bands cannot place (another currency than the version's) is
+  answered by the open-ended band — `DENY` in every C1 band set — so activating a EUR version refuses every non-EUR
+  judged movement until per-currency versions or a pinned conversion exist: an owner item before the activation gate.
+  A permitted fail-safe is counted in the windows behind its own savepoint, recorded `UNCOUNTED` if that fails; a
+  `DENY` opens no case — the version has no "case on deny" field, `-016`'s.)*
 - `P13-TSK-008`…`-011` — the adapters on transfers (with the door's step-up advice), withdrawals (`HELD`, payments
   `V033`), checkout (payments `V034`; slice 2 cuttable) and cross-border; `P13-TSK-012` — the override and the held
   withdrawal's release.

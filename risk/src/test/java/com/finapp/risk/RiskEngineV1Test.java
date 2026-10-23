@@ -226,6 +226,29 @@ class RiskEngineV1Test {
         assertThatThrownBy(() -> RiskEngineV1.failSafe(MONITORING, eur(1_00))).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    @DisplayName("P13-TSK-004's two fail-safes: an unread pin answers the compiled ALLOW under RISK_UNAVAILABLE (never"
+            + " NO_POLICY_ACTIVE); an amount the bands cannot place answers the open-ended last band - DENY in every C1"
+            + " band set")
+    void theUnpinnedAndTheUnplacedFailSafes() {
+        for (RiskOperation operation : RiskOperation.values()) {
+            if (!operation.judgesAMovement()) {
+                assertThatThrownBy(() -> RiskEngineV1.failSafeUnpinned(operation))
+                        .isInstanceOf(IllegalArgumentException.class);
+                continue;
+            }
+            Verdict unpinned = RiskEngineV1.failSafeUnpinned(operation);
+            assertThat(unpinned.decision()).contains(RiskDecision.ALLOW);
+            assertThat(unpinned.reasons()).containsExactly(ReasonCode.RISK_UNAVAILABLE);
+            assertThat(unpinned.failSafeApplied()).isTrue();
+            Verdict unplaced = RiskEngineV1.failSafeUnplaced(RiskPolicyFixtures.v1(operation));
+            assertThat(unplaced.decision()).as(operation.name()).contains(RiskDecision.DENY);
+            assertThat(unplaced.reasons()).containsExactly(ReasonCode.RISK_UNAVAILABLE);
+        }
+        assertThatThrownBy(() -> RiskEngineV1.failSafeUnplaced(MONITORING))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     // ------------------------------------------------------------------ the refusals
 
     @Test
@@ -242,16 +265,32 @@ class RiskEngineV1Test {
                 .satisfies(e -> assertThat(((EvaluationFailed) e).failure()).isEqualTo(EvaluationFailed.Cause.CURRENCY_MISMATCH));
         assertThatThrownBy(() -> RiskEngineV1.failSafe(TRANSFER, Money.ofMinorUnits(1_00, CurrencyCode.of("USD"))))
                 .isInstanceOf(EvaluationFailed.class);
-        // A modulus of zero passes the policy door (a MinorAmount is non-negative) and makes ROUND_AMOUNT throw: the
-        // engine wraps it, names the rule, and gives no partial verdict.
-        RiskPolicy zeroModulus = new RiskPolicy(RiskOperation.MONITORING, RiskEngine.RISK_ENGINE_V1, EUR,
+        // P13-TSK-004: a modulus of zero once passed the policy door and made ROUND_AMOUNT throw - the engine's only
+        // throwing fixture. The door now refuses it (a modulus of at least one minor unit), so no valid policy carries a
+        // rule that throws on admitted inputs; the engine's wrapping of a throwing rule - its defence in depth - is
+        // proven through the judge seam: rule 2 throws as a rule's arithmetic would, and the engine wraps it, names the
+        // rule, and gives no partial verdict.
+        assertThatThrownBy(() -> new RiskPolicy(RiskOperation.MONITORING, RiskEngine.RISK_ENGINE_V1, EUR,
+                List.of(RiskRule.weighted(1, RuleKind.ROUND_AMOUNT, RuleParameters.of(RuleKind.ROUND_AMOUNT,
+                        Map.of("modulus_minor", RiskPolicyFixtures.minor(0))), 100)),
+                List.of(), List.of(new RatingBand(0, 1000, RiskRating.LOW)), List.of(), Optional.empty(),
+                Optional.empty(), Optional.empty()))
+                .isInstanceOf(RiskPolicy.PolicyInvalid.class).hasMessageContaining("modulus of at least one");
+        RiskPolicy rounding = new RiskPolicy(RiskOperation.MONITORING, RiskEngine.RISK_ENGINE_V1, EUR,
                 List.of(RiskRule.weighted(1, RuleKind.SCREENING_HIT, RuleParameters.none(RuleKind.SCREENING_HIT), 100),
                         RiskRule.weighted(2, RuleKind.ROUND_AMOUNT, RuleParameters.of(RuleKind.ROUND_AMOUNT,
-                                Map.of("modulus_minor", RiskPolicyFixtures.minor(0))), 100)),
+                                Map.of("modulus_minor", RiskPolicyFixtures.minor(1))), 100)),
                 List.of(), List.of(new RatingBand(0, 1000, RiskRating.LOW)), List.of(), Optional.empty(),
                 Optional.empty(), Optional.empty());
-        assertThatThrownBy(() -> RiskEngineV1.evaluate(zeroModulus,
-                EvaluationInputs.builder(RiskOperation.MONITORING).amount(eur(5_00)).screeningHit(true).build()))
+        RiskEngineV1.RuleJudge throwsOnTheSecond = (rule, in) -> {
+            if (rule.ordinal() == 2) {
+                throw new ArithmeticException("/ by zero");
+            }
+            return RuleEvaluation.of(rule.kind()).judge(rule, in);
+        };
+        assertThatThrownBy(() -> RiskEngineV1.evaluate(rounding,
+                EvaluationInputs.builder(RiskOperation.MONITORING).amount(eur(5_00)).screeningHit(true).build(),
+                throwsOnTheSecond))
                 .isInstanceOf(EvaluationFailed.class)
                 .satisfies(e -> {
                     EvaluationFailed failed = (EvaluationFailed) e;

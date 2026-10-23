@@ -449,6 +449,11 @@ class OpenApiContractTest {
                         // P13-TSK-007: the analyst's customer risk profile door (RISK_INVESTIGATE, a read, audited
                         // risk.ProfileRead; own party 403 risk.SelfDealingRefused).
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/parties/{partyId}/profile",
+                        // P13-TSK-004: the analyst's assessment doors - the sealed assessment read (audited
+                        // risk.AssessmentRead) and its replay from the seal (reasoned, audited risk.Replayed); both
+                        // RISK_INVESTIGATE, own party 403 risk.SelfDealingRefused.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/{assessmentId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/{assessmentId}/replay",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",
