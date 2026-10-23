@@ -27,9 +27,10 @@ import java.util.Set;
  * pinned version judges, returning bounded facts and never a row ({@code INV-RSK-02}). The sources, as of this task:
  *
  * <ul>
- *   <li><strong>the session's assurance</strong> - {@link SessionAssurance} over the request's actor, when one is wired;
- *       none is until `-008` (the transfer door's step-up), so today it is {@code ABSENT} and a {@code CHALLENGE} is
- *       unsatisfied - the seams stay on their permit-all defaults until then;</li>
+ *   <li><strong>the session's assurance</strong> - {@link SessionAssurance} over the request's actor: identity's
+ *       session, re-read live ({@code IdentitySessionAssurance}, wired by `P13-TSK-008`); {@code ABSENT} when the actor
+ *       acts under no session (a system flow, a call outside a request), which leaves a {@code CHALLENGE}
+ *       unsatisfied;</li>
  *   <li><strong>the screening hit</strong> - {@link ScreeningClearances} (kyc's latest decided sanctions or PEP check);
  *       a party never screened is {@code ABSENT}, never "no hit";</li>
  *   <li><strong>KYC approved</strong> - the latest KYC case of the party's live customer relationship, {@code APPROVED}

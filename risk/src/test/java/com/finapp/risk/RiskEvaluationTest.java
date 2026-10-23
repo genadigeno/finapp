@@ -254,6 +254,65 @@ class RiskEvaluationTest {
         assertThat(sealed.hits()).singleElement().satisfies(hit -> assertThat(hit.outcome()).isEqualTo(RuleOutcome.ABSENT));
     }
 
+    @Test
+    @DisplayName("limitDecided (P13-TSK-008): true exactly when a fired AMOUNT_BAND or VELOCITY rule's own hard decision"
+            + " is the refusing decision - the EUR 10,000 DENY and the eleventh's REVIEW, a tie with a screening DENY;"
+            + " never an ALLOW, a CHALLENGE, a screening DENY alone, a score band a weighted limit kind pushed, or a"
+            + " fail-safe DENY - and the replayed answer says the same")
+    void limitDecidedIsTheLimitRulesOwnRefusal() {
+        EvaluationWorld world = new EvaluationWorld();
+        world.activate(RiskOperation.TRANSFER);
+
+        assertThat(world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(100_00))).limitDecided()).isFalse();
+        assertThat(world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(600_00))).limitDecided())
+                .as("an unsatisfied CHALLENGE an AMOUNT_BAND raised is CHALLENGE_REQUIRED, never a limit").isFalse();
+
+        RiskEvaluationRequest large = EvaluationWorld.transfer(eur(10_000_00));
+        RiskEvaluation.Assessed denied = world.evaluation.evaluate(UOW, large);
+        assertThat(denied.decision()).isEqualTo(RiskDecision.DENY);
+        assertThat(denied.limitDecided()).isTrue();
+        RiskEvaluation.Assessed replayed = world.evaluation.evaluate(UOW, large);
+        assertThat(replayed.replayed()).isTrue();
+        assertThat(replayed.limitDecided()).as("derived from the sealed hits").isTrue();
+
+        UUID party = IDS.next();
+        UUID source = IDS.next();
+        for (int i = 0; i < 10; i++) {
+            world.evaluation.evaluate(UOW, EvaluationWorld.request(RiskOperation.TRANSFER, eur(1_00), party)
+                    .sourceAccount(source).destinationAccount(IDS.next()).build());
+        }
+        RiskEvaluation.Assessed reviewed = world.evaluation.evaluate(UOW, EvaluationWorld.request(
+                RiskOperation.TRANSFER, eur(1_00), party).sourceAccount(source).destinationAccount(IDS.next()).build());
+        assertThat(reviewed.decision()).isEqualTo(RiskDecision.REVIEW);
+        assertThat(reviewed.limitDecided()).as("VELOCITY_COUNT's own REVIEW").isTrue();
+
+        world.external = new RiskInputs.Readings(Reading.absent(), Reading.of(true), Reading.absent(),
+                Reading.absent(), Reading.absent(), Map.of());
+        RiskEvaluation.Assessed screened = world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(100_00)));
+        assertThat(screened.decision()).isEqualTo(RiskDecision.DENY);
+        assertThat(screened.limitDecided()).as("a screening DENY is risk's").isFalse();
+        assertThat(world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(10_000_00))).limitDecided())
+                .as("a tie: the limit's own DENY is the decision too").isTrue();
+        world.external = RiskInputs.Readings.none();
+
+        world.failSerialise.push(EvaluationWorld.timeout());
+        RiskEvaluation.Assessed failSafe = world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(5_000_00)));
+        assertThat(failSafe.decision()).isEqualTo(RiskDecision.DENY);
+        assertThat(failSafe.failSafe()).contains(ReasonCode.RISK_UNAVAILABLE);
+        assertThat(failSafe.limitDecided()).as("a fail-safe has no hit").isFalse();
+
+        EvaluationWorld banded = new EvaluationWorld();
+        banded.activate(new RiskPolicy(RiskOperation.TRANSFER, RiskEngine.RISK_ENGINE_V1, EvaluationWorld.EUR,
+                List.of(RiskRule.weighted(1, RuleKind.AMOUNT_BAND, RuleParameters.of(RuleKind.AMOUNT_BAND,
+                        Map.of("threshold_minor", RiskPolicyFixtures.minor(1_00))), 700)),
+                List.of(new ScoreBand(0, 599, RiskDecision.ALLOW), new ScoreBand(600, 1000, RiskDecision.REVIEW)),
+                List.of(), RiskPolicyFixtures.failSafe(1_000_00, RiskDecision.ALLOW, RiskDecision.DENY),
+                Optional.of(RiskAssurance.MULTI_FACTOR), Optional.of(eur(1_000_00)), Optional.empty()));
+        RiskEvaluation.Assessed bandReview = banded.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(10_00)));
+        assertThat(bandReview.decision()).isEqualTo(RiskDecision.REVIEW);
+        assertThat(bandReview.limitDecided()).as("the band decided; a weighted limit kind decides nothing").isFalse();
+    }
+
     // ------------------------------------------------------------------ idempotency
 
     @Test

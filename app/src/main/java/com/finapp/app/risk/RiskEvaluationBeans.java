@@ -1,6 +1,7 @@
 package com.finapp.app.risk;
 
 import com.finapp.identity.IdentityStore;
+import com.finapp.identity.SessionStore;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.merchant.JdbcMerchantStore;
 import com.finapp.party.PartyStore;
@@ -30,22 +31,23 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
 import java.util.Optional;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * Wiring for T-eval, T-advise and the analyst's assessment doors (`P13-TSK-004`; {@code PHASE_13_PLAN.md} sections 7.1,
  * 7.6, 9, 15): the velocity windows over their store, the sealed assessments' store, the savepoint and statement-timeout
- * budget, {@link PlatformRiskInputs} over kyc's, party's and merchant's reads, the meters, and the evaluation itself -
- * channel-neutral, consumed by nothing yet: the movement seams stay on their permit-all defaults until `-008`…`-011`
- * wire their adapters over {@link RiskEvaluation}.
+ * budget, {@link PlatformRiskInputs} over the session's, kyc's, party's and merchant's reads, the meters, and the
+ * evaluation itself - channel-neutral, consumed since `P13-TSK-008` by transfers' two seams and the transfer door's
+ * advice ({@code RiskTransferBeans}); the withdrawal, checkout and cross-border seams stay on their permit-all defaults
+ * until `-009`…`-011` wire their adapters over {@link RiskEvaluation}.
  *
- * <p><strong>Wired as declared, not yet implemented:</strong> {@link CaseOpener#NONE} - a {@code REVIEW} or {@code HOLD}
- * opens no case until `-016` implements the opener (the sealed assessment is the record its folding starts from); and
- * no {@link SessionAssurance} bean exists until `-008`, so a {@code CHALLENGE} reads no session and is unsatisfied.
- * The velocity proof's evidence of record is {@link AssessmentVelocityEvidence} - the counted assessments, every
- * dimension provable (`-006`'s finding closed); `-023` runs the proof on its schedule.
+ * <p><strong>The session's assurance</strong> is identity's, read live ({@link IdentitySessionAssurance}, `-008`), so a
+ * {@code CHALLENGE} the acting session satisfies permits. <strong>Wired as declared, not yet implemented:</strong>
+ * {@link CaseOpener#NONE} - a {@code REVIEW} or {@code HOLD} opens no case until `-016` implements the opener (the
+ * sealed assessment is the record its folding starts from). The velocity proof's evidence of record is
+ * {@link AssessmentVelocityEvidence} - the counted assessments, every dimension provable (`-006`'s finding closed);
+ * `-023` runs the proof on its schedule.
  */
 @Configuration(proxyBeanMethods = false)
 public class RiskEvaluationBeans {
@@ -71,12 +73,21 @@ public class RiskEvaluationBeans {
         return new JdbcEvaluationBudget();
     }
 
-    /** The readings only other modules answer - the session's (when wired), kyc's, party's and merchant's. */
+    /**
+     * The acting session's assurance (`P13-TSK-008`): the session the request presented, re-read live through the
+     * caller's unit of work - the port's first implementation.
+     */
     @Bean
-    RiskInputs riskInputs(ObjectProvider<SessionAssurance> sessionAssurance, ScreeningClearances screeningClearances,
+    SessionAssurance sessionAssurance(SessionStore<Connection> sessionStore) {
+        return new IdentitySessionAssurance(sessionStore);
+    }
+
+    /** The readings only other modules answer - the session's, kyc's, party's and merchant's. */
+    @Bean
+    RiskInputs riskInputs(SessionAssurance sessionAssurance, ScreeningClearances screeningClearances,
             PartyStore<Connection> partyStore, KycCaseStore<Connection> kycCaseStore) {
-        return new PlatformRiskInputs(Optional.ofNullable(sessionAssurance.getIfAvailable()), screeningClearances,
-                partyStore, kycCaseStore, new JdbcMerchantStore());
+        return new PlatformRiskInputs(Optional.of(sessionAssurance), screeningClearances, partyStore, kycCaseStore,
+                new JdbcMerchantStore());
     }
 
     /** {@code finapp.risk.evaluation*}, {@code .rule.hit}, {@code .challenge} - registered eagerly. */

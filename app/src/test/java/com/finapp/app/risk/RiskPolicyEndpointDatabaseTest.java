@@ -57,9 +57,14 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * lost response replays; the domain's refusals on the error contract; and every door closed to a {@code RISK_ANALYST},
  * to a session holding no role, to no session, and (for the acts) to a missing key - nothing written by a refused
  * caller. <strong>Written and owed</strong> (owner decision C5).
+ *
+ * <p><strong>Its own container</strong> (since `P13-TSK-008`): it activates a EUR {@code TRANSFER} version, and since
+ * transfers are judged by risk every transfer in the database is then judged by it - a USD transfer of another suite in a
+ * shared container would be refused by the open-ended fail-safe band, depending on the order the suites ran in.
  */
 @DateShifted
 @Tag("database")
+@Tag("own-container")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

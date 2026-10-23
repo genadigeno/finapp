@@ -234,6 +234,21 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
 - `P13-TSK-008`…`-011` — the adapters on transfers (with the door's step-up advice), withdrawals (`HELD`, payments
   `V033`), checkout (payments `V034`; slice 2 cuttable) and cross-border; `P13-TSK-012` — the override and the held
   withdrawal's release.
+  *(Transfers built by `P13-TSK-008`, 2026-10-23 — no migration, the `transfers` module unchanged. Decision 3's table
+  read for a consumer with **two** seams: one assessment per transfer carries both answers — the limit seam's call
+  (consulted first by `TransferExecution`) runs T-eval and seals, the risk seam's is answered from the seal by
+  `(TRANSFER, transfer id)`; the limit seam answers `REFUSE` exactly when a fired `AMOUNT_BAND`/`VELOCITY_COUNT`/
+  `VELOCITY_SUM` rule's own hard decision is the refusing decision (`Assessed.limitDecided`, `DENY` or `REVIEW` —
+  `FAILED(LIMIT_REFUSED)`), the risk seam `REFUSE` for every non-permitting decision (`FAILED(RISK_REFUSED)`; a superset,
+  so money never moves on the limit seam's wiring alone), an unsatisfied `CHALLENGE` always the risk seam's with
+  `CHALLENGE_REQUIRED`. The `SessionAssurance` port is implemented over identity's session — the one the request
+  presented, re-read live through the caller's unit of work — so a `CHALLENGE` is satisfiable. The door's T-advise runs
+  in a transaction of its own that writes nothing and is **not** `READ ONLY`: the pin is `SELECT … FOR SHARE`, which
+  PostgreSQL refuses there, and a refused pin is the compiled `ALLOW` — an advice that would never step anyone up. The
+  advice never runs for a recorded idempotency key (the retry replays, `INV-IDEM-01`). Recorded for `-012`: the transfer's
+  command ref is its id, fresh per execution, so "a one-time allowance for the same command reference that the retry's
+  evaluation reads" (decision 7) cannot match a retry under a new key — the override must key its allowance on what the
+  retry shares.)*
 - `P13-TST-001` measures T-eval p50/p99/max per operation beside the sweep; `P13-TST-002` replays every decision in
   two JVMs.
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the

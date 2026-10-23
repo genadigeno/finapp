@@ -3037,6 +3037,12 @@ the open-ended band. The alert is `-015`'s and `-024`'s: until then `finapp.risk
 reason_code}` counts every fail-safe and one log line (ids and codes) marks each `RISK_UNAVAILABLE`. The replay re-derives
 a fail-safe by its recorded cause. Probes: `MUTATION_TESTING.md` §2.)*
 
+*(Scenario 9 through a consumer, `P13-TSK-008`, 2026-10-23: transfers reach the fail-safe through both seams — no
+version is `ALLOW(NO_POLICY_ACTIVE)` counted and posted; a timed-out subject lock below EUR 1,000 is
+`ALLOW(RISK_UNAVAILABLE)` and posts, at or above it `DENY(RISK_UNAVAILABLE)` commits `FAILED(RISK_REFUSED)` — never
+`LIMIT_REFUSED`: a fail-safe has no hit. Hermetic `RiskTransferSeamsTest#theFailSafeReachesTheSeam`; owed
+`TransferRiskSeamDatabaseTest#noPolicyRecordsAllowAndTheTransferPosts`, `#riskUnavailableCommitsTheBandsOutcome`.)*
+
 ### INV-RSK-05 — A policy version is immutable once decided, only an `ACTIVE` one is evaluated, activation is four eyes, and the pin never answers "neither"
 **Statement:** A risk policy version — its rules, weights, score bands, fail-safe bands, challenge
 assurance, override threshold and effective-from — is immutable from the moment it is decided
@@ -3183,6 +3189,14 @@ to risk's doors — no score, reason text, note, party or amount in a log line, 
 attribute or exception message (`P13-TST-001`); the storm's census at every round, no customer route
 touching `risk` (`P13-TST-001`).
 **Phase:** 13
+
+*(The transfer's part, `P13-TSK-008`, 2026-10-23: the refusal is the transfer's own `201` with `failureReason`
+`LIMIT_REFUSED` or `RISK_REFUSED` and nothing else; the door's step-up is identity's `403 identity.AssuranceRequired` with
+identity's words; the door reaches risk only through the `app` port `TransferStepUpAdvice`, which answers a boolean.
+`NoCustomerSurfaceReadsRiskTest` was widened by this task to the customer's session routes outside `/me` — the transfer
+door, `POST /v1/transfers`, was outside its reach — with a planted probe. Negative tests:
+`TransferDoorAdviceTest#theStepUpNamesNoRiskWord`; owed `TransferRiskSeamDatabaseTest#aLimitRefusalCommitsLimitRefused`,
+`#anUnsatisfiedChallengeIsRefusedAtTheDoor` (no risk word in either body).)*
 
 ### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
 **Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through

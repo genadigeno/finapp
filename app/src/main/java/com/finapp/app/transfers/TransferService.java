@@ -1,6 +1,7 @@
 package com.finapp.app.transfers;
 
 import com.finapp.app.telemetry.TransferMetrics;
+import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.party.Customer;
@@ -80,9 +81,21 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code Session → Identity → Party → live Customer} (the {@code AccountService} chain) and read
  * through {@code customer_id = ?} in the statement, so not-yours, unknown and malformed are one
  * 404.
+ *
+ * <h2>The step-up before the command</h2>
+ *
+ * <p>Since `P13-TSK-008` the command's in-lock risk judgement may {@code CHALLENGE} a transfer, which proceeds only
+ * under a {@code MULTI_FACTOR} session. So the POST first asks {@link TransferDoorStepUp} - in its own short transaction
+ * that writes nothing, after the caller's own 422s and before the command's transaction - and a challenge the session
+ * cannot satisfy is {@code 403 identity.AssuranceRequired} with nothing written: the customer steps up and retries the
+ * same key. A retry of a recorded key is never advised (it replays); the command's judgement stays authoritative, and a
+ * challenge it meets unsatisfied after the advice let the request through (the race) commits
+ * {@code FAILED(RISK_REFUSED)}. Nothing of risk reaches this class: the advice is an {@code app} port answering a
+ * boolean ({@code INV-RSK-08}).
  */
 public final class TransferService {
 
+    private final TransferDoorStepUp stepUp;
     private final TransferExecution execution;
     private final TransferReversal reversal;
     private final TransferStore<Connection> transfers;
@@ -95,6 +108,7 @@ public final class TransferService {
     private final Clock clock;
 
     public TransferService(
+            TransferDoorStepUp stepUp,
             TransferExecution execution,
             TransferReversal reversal,
             TransferStore<Connection> transfers,
@@ -105,6 +119,7 @@ public final class TransferService {
             DataSource dataSource,
             TransferMetrics metrics,
             Clock clock) {
+        this.stepUp = Objects.requireNonNull(stepUp, "stepUp must not be null");
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
         this.reversal = Objects.requireNonNull(reversal, "reversal must not be null");
         this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
@@ -178,6 +193,8 @@ public final class TransferService {
             // indistinguishable from both.
             UUID sourceRef = parsedOr(body.sourceAccountId(), TransferService::unknownSource);
 
+            // The step-up before the command (P13-TSK-008): its own transaction, nothing written.
+            stepUpBeforeTheCommand(body, idempotencyKey, current, amount, sourceRef);
             Judgement judged = judge(body, idempotencyKey, current, amount, sourceRef);
             // Post-commit and only for the acting call (P3-TSK-020, the AccountService
             // discipline): the outcome is the result's own vocabulary, so the count cannot
@@ -204,6 +221,44 @@ public final class TransferService {
             // Every outcome - a timer recording only successes flatters exactly the incident
             // an operator is trying to see (the LedgerWriteMeters stance).
             metrics.latency(Duration.between(started, clock.instant()));
+        }
+    }
+
+    /**
+     * The door's step-up (`P13-TSK-008`): a retry is never advised; otherwise the proposal resolved as the command will
+     * resolve it - the caller's party, the destination by either arm (its refusals the command's own 422s) - and
+     * advised. A step-up answer is thrown after the transaction, which wrote nothing.
+     */
+    private void stepUpBeforeTheCommand(
+            TransferCreateRequest body,
+            String idempotencyKey,
+            Session current,
+            Money amount,
+            UUID sourceRef) {
+        TransferDoorStepUp.Answer answer =
+                inOneTransaction(
+                        unitOfWork -> {
+                            if (stepUp.retried(unitOfWork, idempotencyKey)) {
+                                return TransferDoorStepUp.Answer.PROCEED;
+                            }
+                            UUID partyId = partyOf(unitOfWork, current);
+                            UUID destinationRef =
+                                    hasText(body.beneficiaryId())
+                                            ? resolvedBeneficiaryDestination(
+                                                    unitOfWork, partyId, body.beneficiaryId())
+                                            : parsedOr(
+                                                    body.destinationAccountId(),
+                                                    TransferService::unknownDestination);
+                            return stepUp.advise(
+                                    unitOfWork,
+                                    partyId,
+                                    current.identityId(),
+                                    sourceRef,
+                                    destinationRef,
+                                    amount);
+                        });
+        if (answer != TransferDoorStepUp.Answer.PROCEED) {
+            throw TransferDoorStepUp.refusal(answer);
         }
     }
 
@@ -349,12 +404,15 @@ public final class TransferService {
      * The {@code refused} outcome (`P4-TSK-011`): a transfer command the platform declined to
      * judge, with nothing written — the resolution refusals and the reversal machine's 409,
      * post-rollback. The caller's own 422s never arrive here as module codes, which is what
-     * keeps "never named a coherent command" out of the count.
+     * keeps "never named a coherent command" out of the count. The door's step-up
+     * ({@code identity.AssuranceRequired}, `P13-TSK-008`) is one too: a coherent command the
+     * platform declined to judge until the session steps up, nothing written.
      */
     private void countIfRefusal(ApiException thrown) {
         if (thrown.errorCode() == TransfersErrorCode.UNKNOWN_SOURCE
                 || thrown.errorCode() == TransfersErrorCode.UNKNOWN_DESTINATION
-                || thrown.errorCode() == TransfersErrorCode.NOT_REVERSIBLE) {
+                || thrown.errorCode() == TransfersErrorCode.NOT_REVERSIBLE
+                || thrown.errorCode() == IdentityErrorCode.ASSURANCE_REQUIRED) {
             metrics.refused();
         }
     }

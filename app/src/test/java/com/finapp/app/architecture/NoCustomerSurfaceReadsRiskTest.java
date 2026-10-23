@@ -4,6 +4,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.merchant.RequiresMerchantKey;
+import com.finapp.app.session.RequiresSession;
 import com.finapp.risk.CaseKind;
 import com.finapp.risk.RiskDecision;
 import com.finapp.risk.RiskRating;
@@ -35,10 +36,18 @@ import org.springframework.web.bind.annotation.RestController;
  * - not even that one exists - is derivable from a customer- or merchant-facing response.
  *
  * <p><strong>The surface, precisely.</strong> Every {@code @RestController} mapped under {@code /me} (the customer's own
- * routes) and every controller that is, or has a method, {@code @RequiresMerchantKey} (the merchant's key-authenticated
- * routes), plus the {@code app} classes each of those depends on directly - its desks. None of them may depend on a type
- * of {@code com.finapp.risk..}. Operator routes ({@code /operator/risk/...}) are not the surface: they are the desks the
- * guard exists to keep separate from it.
+ * routes), every controller that is, or has a method, {@code @RequiresMerchantKey} (the merchant's key-authenticated
+ * routes), and - since `P13-TSK-008` - every controller that is {@code @RequiresSession} as a class and is not mapped
+ * under {@code /operator} (the customer's session routes outside {@code /me}: {@code /transfers}, {@code /beneficiaries},
+ * {@code /payments}, {@code /sessions}, the checkout confirmation, the MFA step-up), plus the {@code app} classes each of
+ * those depends on directly - its desks. None of them may depend on a type of {@code com.finapp.risk..}. Operator routes
+ * ({@code /operator/risk/...}) are not the surface: they are the desks the guard exists to keep separate from it.
+ *
+ * <p><strong>Why the third clause.</strong> The customer's transfer door is {@code POST /v1/transfers}, not under
+ * {@code /me}, and it is the first customer door to sit beside a risk judgement (`P13-TSK-008`: the step-up advice before
+ * the command). The rule as first written did not see it at all; the door was built to the rule's standard anyway (an
+ * {@code app} port answering a boolean, implemented in the risk composition), and the clause makes that a checked fact
+ * rather than a claim.
  *
  * <p><strong>What this does not claim.</strong> The reach is one hop: a desk's own dependency on {@code risk} two hops
  * from a controller is not seen here. The seam adapters are wired in the consumers' bean configurations, never in a
@@ -80,7 +89,19 @@ class NoCustomerSurfaceReadsRiskTest {
         // see is a guard over nothing.
         assertThat(guardedClassNames(imported))
                 .anyMatch(name -> name.endsWith(".WithdrawalController"))
-                .anyMatch(name -> name.endsWith(".CheckoutSessionController"));
+                .anyMatch(name -> name.endsWith(".CheckoutSessionController"))
+                // The transfer door and its desk (P13-TSK-008): a session route outside /me.
+                .anyMatch(name -> name.endsWith(".TransferController"))
+                .anyMatch(name -> name.endsWith(".TransferService"));
+    }
+
+    @Test
+    @DisplayName("a session route outside /me holding a risk type is refused (P13-TSK-008)")
+    void theRuleRefusesASessionRouteOutsideMe() {
+        JavaClasses planted = imported(PlantedSessionController.class, RiskDecision.class);
+        EvaluationResult result = rule(planted).evaluate(planted);
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(String.join("\n", result.getFailureReport().getDetails())).contains("PlantedSessionController");
     }
 
     @Test
@@ -162,17 +183,26 @@ class NoCustomerSurfaceReadsRiskTest {
         if (!candidate.isAnnotatedWith(RestController.class)) {
             return false;
         }
-        if (candidate.isAnnotatedWith(RequestMapping.class)) {
-            RequestMapping mapping = candidate.getAnnotationOfType(RequestMapping.class);
-            if (Stream.concat(Stream.of(mapping.path()), Stream.of(mapping.value()))
-                    .anyMatch(path -> path.equals("/me") || path.startsWith("/me/"))) {
-                return true;
-            }
+        if (mappedUnder(candidate, "/me")) {
+            return true;
+        }
+        if (candidate.isAnnotatedWith(RequiresSession.class) && !mappedUnder(candidate, "/operator")) {
+            return true;
         }
         if (candidate.isAnnotatedWith(RequiresMerchantKey.class)) {
             return true;
         }
         return candidate.getMethods().stream().anyMatch(method -> method.isAnnotatedWith(RequiresMerchantKey.class));
+    }
+
+    /** True when the class-level mapping is {@code root} or under it. */
+    private static boolean mappedUnder(JavaClass candidate, String root) {
+        if (!candidate.isAnnotatedWith(RequestMapping.class)) {
+            return false;
+        }
+        RequestMapping mapping = candidate.getAnnotationOfType(RequestMapping.class);
+        return Stream.concat(Stream.of(mapping.path()), Stream.of(mapping.value()))
+                .anyMatch(path -> path.equals(root) || path.startsWith(root + "/"));
     }
 
     private static JavaClasses imported(Class<?>... classes) {
@@ -214,9 +244,23 @@ class NoCustomerSurfaceReadsRiskTest {
         }
     }
 
-    /** An operator route reaching a risk type - the desks the guard keeps separate from the surface, not the surface. */
+    /** A customer session route outside /me reaching a risk type directly - the transfer door's shape. */
+    @RestController
+    @RequestMapping(path = "/planted-transfers")
+    @RequiresSession
+    static class PlantedSessionController {
+        RiskDecision decision() {
+            return RiskDecision.ALLOW;
+        }
+    }
+
+    /**
+     * An operator route reaching a risk type - the desks the guard keeps separate from the surface, not the surface -
+     * session-authenticated as every operator route is, and still not the surface.
+     */
     @RestController
     @RequestMapping(path = "/operator/risk/planted")
+    @RequiresSession
     static class LookalikeOperatorController {
         RiskDecision decision() {
             return RiskDecision.DENY;
