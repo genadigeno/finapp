@@ -22416,7 +22416,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   probed), `RoleNameTest` (three exact-grant cases; the pairwise case the disjointness probe's target),
   `NoCustomerSurfaceReadsRiskTest` (the rule over the production surface, the coverage guard, the surface's non-vacuity,
   four planted probes incl. the operator lookalike), every sibling isolation test; owed under C5: `RiskMigrationTest`
-  and the three roles' case in `IdentityAdministrationDatabaseTest`. (8) *Gate miss, corrected 2026-10-23 by the wave B coordinator on `P13-TSK-005`'s finding:* the committed OpenAPI contract (`docs/api/openapi.json`) was not regenerated for the three `risk.*` error responses and the three roles in `RoleAssignmentRequest.role` — 24 compatible additions, nothing removed or changed — so `OpenApiContractTest` was red on master from this task's merge until the regeneration; the gate's own run of that suite had read a build older than the roles. (7) `RiskInputs` and `CaseOpener` (Scope's "source ports" and the case hook) are T-eval's own and land with `-004`, which names them; the source ports declared here are `RiskActingParty`, `SessionAssurance` and `ScreeningClearances`. **Gate (2026-10-22):** 0 CRITICAL, 0 IMPORTANT, 2 MINOR (`AlertKind.firstFor` is a fixture helper in main, kept; the ports' signatures are provisional until their implementing tasks, said so in each); the ten-instance question `PASS` vacuously - no process state, no scheduler, Flyway serialising the two migrations; three probes recorded in `MUTATION_TESTING.md` §2 (`INV-AUD-03` a `RISK_OVERRIDE` granted to `BNPL_OFFICER`, `INV-RSK-02` a `ledger` edge, `INV-RSK-08` a `/me` controller holding a risk type - each caught by its intended case, every file restored byte-identical). Fresh at the gate: the risk, identity and every module's architecture tier, app's architecture tier and its register, route, meter and glossary guards, all green. **Owed under C5** (the Docker daemon was down): `RiskMigrationTest` and `IdentityAdministrationDatabaseTest`'s three-roles case - written, compiled, not run.
+  and the three roles' case in `IdentityAdministrationDatabaseTest`. (7) `RiskInputs` and `CaseOpener` (Scope's "source ports" and the case hook) are T-eval's own and land with `-004`, which names them; the source ports declared here are `RiskActingParty`, `SessionAssurance` and `ScreeningClearances`. (8) *Gate miss, corrected 2026-10-23 by the wave B coordinator on `P13-TSK-005`'s finding:* the committed OpenAPI contract (`docs/api/openapi.json`) was not regenerated for the three `risk.*` error responses and the three roles in `RoleAssignmentRequest.role` — 24 compatible additions, nothing removed or changed — so `OpenApiContractTest` was red on master from this task's merge until the regeneration; the gate's own run of that suite had read a build older than the roles. **Gate (2026-10-22):** 0 CRITICAL, 0 IMPORTANT, 2 MINOR (`AlertKind.firstFor` is a fixture helper in main, kept; the ports' signatures are provisional until their implementing tasks, said so in each); the ten-instance question `PASS` vacuously - no process state, no scheduler, Flyway serialising the two migrations; three probes recorded in `MUTATION_TESTING.md` §2 (`INV-AUD-03` a `RISK_OVERRIDE` granted to `BNPL_OFFICER`, `INV-RSK-02` a `ledger` edge, `INV-RSK-08` a `/me` controller holding a risk type - each caught by its intended case, every file restored byte-identical). Fresh at the gate: the risk, identity and every module's architecture tier, app's architecture tier and its register, route, meter and glossary guards, all green. **Owed under C5** (the Docker daemon was down): `RiskMigrationTest` and `IdentityAdministrationDatabaseTest`'s three-roles case - written, compiled, not run.
 
 **P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `COMPLETE` (2026-10-23; marked `READY` by `P13-TSK-001`'s completion gate, 2026-10-22; wave B, branch `P13-TSK-002` from master `5238a455`, beside `-005` and `-019`)
 - **As built** (2026-10-23): as scoped, with these readings settled by the build. `risk V002` holds the version in six
@@ -22538,7 +22538,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   operation at every instant; an invalid rule never persists; every fixture validates; the proposer cannot approve.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `PLANNED`
+**P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
 - **Objective**: `RiskEngineV1` — a pure, deterministic function from sealed inputs and a policy version to a verdict:
   the rules evaluated in the version's declared order, every firing rule's contribution summed into a score 0–1000
   clamped, hard decisions and score bands resolved under the precedence `DENY > HOLD > REVIEW > CHALLENGE > ALLOW` (a
@@ -22782,7 +22782,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   edit refused by trigger, constraint-name uniqueness, the shape `CHECK`s live). No audit act, no error code, no door,
   no schedule, no producer changed.
 
-**P13-TSK-006 — Velocity windows in the caller's transaction, and their proof** — `PLANNED`
+**P13-TSK-006 — Velocity windows in the caller's transaction, and their proof** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
 - **Objective**: durable velocity windows — a count and a sum per (dimension, subject, window kind, window start) —
   read in T-eval and upserted in the judged command's own transaction, in sorted key order, **only when the decision
   permits the movement**, so a refused movement counts for nothing and a committed one counts exactly once; the window
@@ -22848,7 +22848,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   no reversal, no external delivery), `DOD-DOMAIN`. **Risk**: High (a lost or double count is a wrong decision on every
   later movement). **Cx**: M.
 
-**P13-TSK-007 — The customer risk profile and credit's `CreditRiskSignal` version 2** — `PLANNED`
+**P13-TSK-007 — The customer risk profile and credit's `CreditRiskSignal` version 2** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
 - **Objective**: a per-party rating `LOW | MEDIUM | HIGH | PROHIBITED`, versioned and append-only, recomputed under the
   profile head row's lock from the party's signals and case outcomes; `PROHIBITED` set only by a four-eyes disposition
   (`-016`); read by every evaluation (`PROFILE_RATING`) and by credit's seam, whose `app` adapter answers the current
