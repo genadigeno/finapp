@@ -22884,6 +22884,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F8 binding — the proof; F1, F2, F4, F5 vacuous — no posting,
   no reversal, no external delivery), `DOD-DOMAIN`. **Risk**: High (a lost or double count is a wrong decision on every
   later movement). **Cx**: M.
+- **Coordinator's decision at wave C (2026-10-23), from `P13-TSK-003`'s finding:** the velocity `dimension` is `VelocityDimension { PARTY, SOURCE_ACCOUNT, DESTINATION, DEVICE, MERCHANT }` as Scope names it, not `SubjectKind` — the plan's "10 per 24 h per source account" needs the source and the destination kept apart. This task (a) declares `VelocityDimension`, (b) adds `RuleKind.ParameterType.VELOCITY_DIMENSION` and retypes `VELOCITY_COUNT`'s and `VELOCITY_SUM`'s `dimension` parameter to it (dropping `SUBJECT_KIND` if no kind uses it), (c) carries the storage change in its own `risk V005` against `-002`'s parameter table — never an edit of `V002`, which is merged — and the domain's `ParameterValue`/`RuleParameters`/`JdbcRiskPolicyStore`, (d) re-keys `-003`'s `VelocityKey` on `VelocityDimension` (the engine's evaluators, `CanonicalEvaluation`'s velocity text, the pinned golden bytes — format stays `1`: nothing has been sealed), and (e) moves `RiskPolicyFixtures` from `ACCOUNT` to `SOURCE_ACCOUNT`. Recorded as a cross-task correction on `-002` and `-003`.
 
 **P13-TSK-007 — The customer risk profile and credit's `CreditRiskSignal` version 2** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
 - **Objective**: a per-party rating `LOW | MEDIUM | HIGH | PROHIBITED`, versioned and append-only, recomputed under the
@@ -23222,6 +23223,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   the unavailable path denies and records.
 - **Definition of done**: `DOD-FIN` (F3, F6, F7 binding; F1, F2 crossborder's own; F4, F5 vacuous; F8 — the census),
   `DOD-API`. **Risk**: Medium. **Cx**: M.
+- **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): the engine refuses a judged amount whose currency is not the policy's (`EvaluationFailed.CURRENCY_MISMATCH`), never comparing across currencies. This task's adapter presents the cross-border movement's EUR figure (the quote's source amount when the source is EUR, else the figure the corridor converts to) — or the policy's currency must widen, an owner decision this task raises if it needs it.
 
 **P13-TSK-012 — Decision override under four eyes, and the held withdrawal's release** — `PLANNED`
 - **Objective**: the override machine over `V007`'s `decision_override`: a `RISK_OVERRIDE` holder proposes an override
