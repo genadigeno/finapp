@@ -489,7 +489,10 @@ CREATE TABLE risk.risk_rule_parameter (
         AND (value_hours IS NULL OR value_hours >= 1)
         AND (value_window IS NULL OR value_window IN ('H1', 'D1', 'D7', 'D30'))
         AND (value_subject_kind IS NULL
-            OR value_subject_kind IN ('PARTY', 'ACCOUNT', 'DEVICE', 'MERCHANT', 'BENEFICIARY', 'SESSION'))
+            -- The whole SubjectKind, as the domain admits it: IDENTITY and CREDIT_AGREEMENT joined the vocabulary with
+            -- P13-TSK-005 (merged with this migration in wave B, 2026-10-23, before either had reached any environment
+            -- but a test container - C5); -006's velocity dimensions narrow what a VELOCITY_* rule may name.
+            OR value_subject_kind IN ('PARTY', 'ACCOUNT', 'DEVICE', 'MERCHANT', 'BENEFICIARY', 'SESSION', 'IDENTITY', 'CREDIT_AGREEMENT'))
         AND (value_corridors IS NULL OR cardinality(value_corridors) >= 1)
         AND (value_assurance IS NULL OR value_assurance IN ('SINGLE_FACTOR', 'MULTI_FACTOR'))
         AND (value_rating IS NULL OR value_rating IN ('LOW', 'MEDIUM', 'HIGH', 'PROHIBITED')))

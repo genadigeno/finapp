@@ -1,6 +1,7 @@
 package com.finapp.platform.outbox;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -75,6 +76,60 @@ public final class EventPayload {
             throw new IllegalArgumentException("Field '" + field + "' was already set");
         }
         return this;
+    }
+
+    /**
+     * One field of a payload as this class writes it: {@code "field":"value"}, each side the grammar above.
+     *
+     * <p>Named groups rather than positions so the reader below cannot drift from the writer: the field and value
+     * patterns are the same two constants {@link #with} enforces, so whatever the writer admits the reader admits,
+     * and nothing else.
+     */
+    private static final Pattern WRITTEN_FIELD =
+            Pattern.compile("\"(?<field>[a-zA-Z][A-Za-z0-9]{0,63})\":\"(?<value>[A-Za-z0-9_-]{1,200})\"");
+
+    /**
+     * The fields of a payload these bytes were written by {@link #toBytes()} - the inverse, and <strong>exactly</strong>
+     * the inverse (`P13-TSK-005`).
+     *
+     * <p>Until Phase 13 no consumer read a payload: every handler reacted to the envelope's aggregate and asked the
+     * owning module through a port (the metadata-only stance, `P2-TSK-007`). A risk signal is different - it records
+     * what the event <em>said</em>, and nothing read from the producer's tables (`PHASE_13_PLAN.md` section 12.5) -
+     * so a consumer must read the bytes the producer committed. This reader accepts the one shape {@link #toBytes()}
+     * produces - a flat object of the writer's field names and values - and refuses everything else: a nested object,
+     * a number, a list, an escaped string, a free-text value, a value past the bound. A reader looser than the writer
+     * would be the general object mapper the class above declines to be, met from the other side; a payload the
+     * writer could not have produced is not one of ours, and the caller refuses the event rather than guessing.
+     *
+     * @return the fields in the order written; never empty
+     * @throws IllegalArgumentException if the bytes are not a payload this class writes. The message never repeats
+     *     the bytes: a refusal that echoed a malformed payload would put whatever it carried into a log line
+     */
+    public static Map<String, String> fields(byte[] bytes) {
+        Objects.requireNonNull(bytes, "bytes must not be null");
+        String json = new String(bytes, StandardCharsets.UTF_8);
+        if (json.length() < 2 || json.charAt(0) != '{' || json.charAt(json.length() - 1) != '}') {
+            throw new IllegalArgumentException("Not an event payload this platform writes: not a flat object");
+        }
+        String body = json.substring(1, json.length() - 1);
+        Map<String, String> fields = new LinkedHashMap<>();
+        if (body.isEmpty()) {
+            throw new IllegalArgumentException("Not an event payload this platform writes: no field");
+        }
+        for (String member : body.split(",", -1)) {
+            var matcher = WRITTEN_FIELD.matcher(member);
+            if (!matcher.matches()) {
+                throw new IllegalArgumentException(
+                        "Not an event payload this platform writes: a member is not a written field of an"
+                                + " identifier or an enumerated name");
+            }
+            if (fields.putIfAbsent(matcher.group("field"), matcher.group("value")) != null) {
+                throw new IllegalArgumentException(
+                        "Not an event payload this platform writes: a field appears twice");
+            }
+        }
+        // Insertion order kept (a LinkedHashMap), read-only: a consumer reads a payload, never edits one.
+        return Collections.unmodifiableMap(fields);
     }
 
     /** The payload as UTF-8 JSON, in insertion order so the bytes are reproducible. */

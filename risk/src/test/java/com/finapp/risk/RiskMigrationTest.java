@@ -97,8 +97,8 @@ class RiskMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
-            + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V004 the"
-            + " monitored transactions and the watermark (P13-TSK-019)")
+            + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
+            + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -115,7 +115,9 @@ class RiskMigrationTest {
                 "risk_policy_version",
                 "risk_policy_version_event",
                 "risk_rule",
-                "risk_rule_parameter");
+                "risk_rule_parameter",
+                // V003 (P13-TSK-005): the born-once signal.
+                "risk_signal");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
                 + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
@@ -136,12 +138,103 @@ class RiskMigrationTest {
                 "risk_policy_version_has_its_content",
                 "risk_policy_version_permits_only_machine_edges",
                 "risk_policy_version_retires_only_beside_its_successor",
+                // V003 (P13-TSK-005): the signal's stamp and its refusal of every edit.
+                "risk_signal_is_born_once",
+                "risk_signal_is_never_edited",
                 // V004 (P13-TSK-019).
                 "uuid7_sequence");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))
                 .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
+        application.rollback();
+    }
+
+    @Test
+    @DisplayName("risk_signal (V003): the application holds SELECT and INSERT and nothing else; no role holds UPDATE, DELETE"
+            + " or TRUNCATE, and the trigger refuses the migrator's edit too (P13-TSK-005, INV-RSK-06)")
+    void theSignalTableIsInsertOnlyForEveryWriter() throws SQLException {
+        // The whole ACL, as for the schema: an extra grantee or an extra privilege is the silent failure a floor exists
+        // to prevent, invisible to a per-role probe.
+        assertThat(column("SELECT grantee || '=' || string_agg(privilege_type, ',' ORDER BY privilege_type)"
+                + " FROM information_schema.role_table_grants"
+                + " WHERE table_schema = '" + SCHEMA + "' AND table_name = 'risk_signal'"
+                + " GROUP BY grantee ORDER BY grantee"))
+                .containsExactlyInAnyOrder(
+                        "finapp_app=INSERT,SELECT",
+                        // The owner's full set as PostgreSQL 18 (the catalogue's image) reports it - MAINTAIN since 17.
+                        "finapp_migrator=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE");
+
+        // The application role: refused by privilege before any trigger runs.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> asApplication("UPDATE " + SCHEMA + ".risk_signal SET kind = kind"))
+                .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
+        application.rollback();
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> asApplication("DELETE FROM " + SCHEMA + ".risk_signal"))
+                .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
+        application.rollback();
+
+        // The owner: holds the privilege and is refused by the trigger - a signal is evidence for EVERY writer. The
+        // row is planted as the migrator, in a transaction rolled back after the probe.
+        migrator.setAutoCommit(false);
+        try (Statement plant = migrator.createStatement()) {
+            plant.execute("INSERT INTO " + SCHEMA + ".risk_signal (id, kind, subject_kind, subject_ref,"
+                    + " source_event_id, source_event_type, source_event_version, producer, observed_at,"
+                    + " correlation_id, causation_id)"
+                    + " VALUES (gen_random_uuid(), 'CREDENTIAL_CHANGED', 'IDENTITY', gen_random_uuid()::text,"
+                    + " gen_random_uuid(), 'identity.CredentialChanged', 1, 'identity', now(), 'flow', 'cause')");
+            assertThatExceptionOfType(SQLException.class)
+                    .isThrownBy(() -> plant.execute("UPDATE " + SCHEMA + ".risk_signal SET producer = 'x'"))
+                    .withMessageContaining("never updated or deleted");
+            migrator.rollback();
+            plant.execute("INSERT INTO " + SCHEMA + ".risk_signal (id, kind, subject_kind, subject_ref,"
+                    + " source_event_id, source_event_type, source_event_version, producer, observed_at,"
+                    + " correlation_id, causation_id)"
+                    + " VALUES (gen_random_uuid(), 'CREDENTIAL_CHANGED', 'IDENTITY', gen_random_uuid()::text,"
+                    + " gen_random_uuid(), 'identity.CredentialChanged', 1, 'identity', now(), 'flow', 'cause')");
+            assertThatExceptionOfType(SQLException.class)
+                    .isThrownBy(() -> plant.execute("DELETE FROM " + SCHEMA + ".risk_signal"))
+                    .withMessageContaining("never updated or deleted");
+            migrator.rollback();
+            assertThatExceptionOfType(SQLException.class)
+                    .isThrownBy(() -> plant.execute("TRUNCATE " + SCHEMA + ".risk_signal"))
+                    .withMessageContaining("never updated or deleted");
+            migrator.rollback();
+        } finally {
+            migrator.setAutoCommit(true);
+        }
+    }
+
+    @Test
+    @DisplayName("every constraint name in the schema is unique per table, and the CHECKs refuse a description as a device"
+            + " and an attribute its kind does not carry (the V012 class; OQ-4)")
+    void theConstraintsAreNamedOnceAndLive() throws SQLException {
+        assertThat(column("SELECT conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace"
+                + " WHERE n.nspname = '" + SCHEMA + "' GROUP BY conname HAVING count(*) > 1"))
+                .as("a constraint name used twice on one table is refused by PostgreSQL at the SECOND migration that"
+                        + " uses it (23505) - the Phase 12 V012 class")
+                .isEmpty();
+
+        String row = "INSERT INTO " + SCHEMA + ".risk_signal (id, kind, subject_kind, subject_ref, source_event_id,"
+                + " source_event_type, source_event_version, producer, observed_at, correlation_id, causation_id,"
+                + " product) VALUES (gen_random_uuid(), ?, ?, ?, gen_random_uuid(), ?, 1, 'x', now(), 'flow', 'cause', ?)";
+        // A device description as a subject reference: refused by the shape CHECK, whatever the writer.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> asApplication(row, "ACCOUNT_OPENED", "DEVICE", "Chrome on Windows",
+                        "accounts.AccountOpened", "WALLET"))
+                .matches(e -> "23514".equals(e.getSQLState()));
+        application.rollback();
+        // An attribute a kind does not carry: CREDENTIAL_CHANGED carries none.
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> asApplication(row, "CREDENTIAL_CHANGED", "IDENTITY",
+                        java.util.UUID.randomUUID().toString(), "identity.CredentialChanged", "WALLET"))
+                .matches(e -> "23514".equals(e.getSQLState()));
+        application.rollback();
+        // The positive control: the shape admits what the kind declares.
+        assertThatCode(() -> asApplication(row, "ACCOUNT_OPENED", "ACCOUNT", java.util.UUID.randomUUID().toString(),
+                "accounts.AccountOpened", "WALLET"))
+                .doesNotThrowAnyException();
         application.rollback();
     }
 
@@ -390,6 +483,15 @@ class RiskMigrationTest {
     private static List<String> grantsOn(String table) throws SQLException {
         return column("SELECT grantee || ':' || privilege_type FROM information_schema.table_privileges"
                 + " WHERE table_schema = 'risk' AND table_name = '" + table + "' AND grantee <> 'finapp_migrator'");
+    }
+
+    private static void asApplication(String sql, Object... arguments) throws SQLException {
+        try (java.sql.PreparedStatement statement = application.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                statement.setObject(i + 1, arguments[i]);
+            }
+            statement.execute();
+        }
     }
 
     private static List<String> aclOf(String schema) throws SQLException {

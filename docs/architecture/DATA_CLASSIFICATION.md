@@ -4175,6 +4175,49 @@ timestamps `INTERNAL` (the note above, applied: a machine's state and a closed c
 | `risk_policy_version_event` | `occurred_at` | `INTERNAL` | The database's stamp |
 | `risk_policy_version_event` | `correlation_id` | `INTERNAL` | The acting request's correlation |
 
+### `risk.risk_signal` - the born-once signal - *added by `P13-TSK-005`*
+
+`risk V003`: one `INSERT`-only table, no `UPDATE` or `DELETE` for any role (the grant and the every-writer trigger),
+one row per source event (`UNIQUE (source_event_id)`, `INV-RSK-06`). The attributes are typed columns - a closed
+code of the producer's vocabulary, an ISO country or currency, a business date, a count of days, a flag, a version,
+a reference - each nullable and set exactly for the kinds that declare it (`risk_signal_attributes_match_kind`);
+there is no free-text column, no amount and no description. **The device rule (OQ-4):** a `DEVICE` subject's
+`subject_ref` is identity's SHA-256 of the device description as 64 lowercase hex, the only shape the `CHECK`
+admits, so the `RESTRICTED-PII` description identity holds can never be stored here by any writer; the hash is
+classified `CONFIDENTIAL` as a stable per-device identifier. Every subject reference names a row of another module
+by identifier (an identity, an account, a merchant, a beneficiary, a loan or a BNPL obligation) and is
+`CONFIDENTIAL` as those identifiers are in their own registers; the codes and dates copied from the events are
+`INTERNAL`, as they are at their sources (`PHASE_13_PLAN.md` §8: signal attributes at the source's level). No
+customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceReadsRiskTest`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `risk_signal` | `id` | `INTERNAL` | Generated - a signal's identity, the evidence reference a case holds (`-016`) |
+| `risk_signal` | `kind` | `INTERNAL` | A closed `SignalKind` code |
+| `risk_signal` | `subject_kind` | `INTERNAL` | A closed `SubjectKind` code |
+| `risk_signal` | `subject_ref` | `CONFIDENTIAL` | The subject by identifier - an identity, account, merchant, beneficiary or credit agreement id as text, or for a `DEVICE` identity's hash of the description (64 hex; never the description, OQ-4) |
+| `risk_signal` | `source_event_id` | `INTERNAL` | The event the signal was born from - once (`UNIQUE`) |
+| `risk_signal` | `source_event_type` | `INTERNAL` | The event's type, as the producer named it |
+| `risk_signal` | `source_event_version` | `INTERNAL` | The event contract's version that was read |
+| `risk_signal` | `producer` | `INTERNAL` | The producing module |
+| `risk_signal` | `observed_at` | `INTERNAL` | When the fact happened - the event's own instant |
+| `risk_signal` | `recorded_at` | `INTERNAL` | System time, stamped by the trigger on the database clock |
+| `risk_signal` | `correlation_id` | `INTERNAL` | The consumed event's flow |
+| `risk_signal` | `causation_id` | `INTERNAL` | The consumed event's cause |
+| `risk_signal` | `product` | `INTERNAL` | A product code of accounts, lending or bnpl (`ACCOUNT_OPENED`, the conditions) |
+| `risk_signal` | `status` | `INTERNAL` | An identity status code (`IDENTITY_SUSPENDED`) |
+| `risk_signal` | `previous_status` | `INTERNAL` | The beneficiary status a screening outcome moved from (`BENEFICIARY_ACTIVATED`, `_BLOCKED`) |
+| `risk_signal` | `bucket` | `INTERNAL` | A delinquency bucket code (the conditions) |
+| `risk_signal` | `previous_bucket` | `INTERNAL` | The bucket before a delinquency change |
+| `risk_signal` | `country` | `INTERNAL` | A beneficiary's ISO country |
+| `risk_signal` | `currency` | `INTERNAL` | A beneficiary's or a merchant's ISO currency |
+| `risk_signal` | `business_date` | `INTERNAL` | The condition's business date |
+| `risk_signal` | `days_past_due` | `INTERNAL` | The condition's days past due - a count, never an amount |
+| `risk_signal` | `defaulted` | `INTERNAL` | The condition's default flag |
+| `risk_signal` | `agreement_version` | `INTERNAL` | The agreement version that judged the condition |
+| `risk_signal` | `channel_ref` | `CONFIDENTIAL` | The contact channel a recovery went to, by identifier (`RECOVERY_*`) - the channel's address stays identity's |
+| `risk_signal` | `request_ref` | `CONFIDENTIAL` | The recovery request, by identifier (`RECOVERY_*`) |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

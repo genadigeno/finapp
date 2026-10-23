@@ -46,7 +46,7 @@
  * closed vocabularies ({@link com.finapp.risk.RiskOperation} with the decisions each admits, {@code RuleKind} with each
  * kind's operations and parameter schema, the alert, case, disposition, action, subject, window, rating and assurance
  * vocabularies, the engine identity), the aggregates' typed identifiers, the error codes and audit actions declared so
- * far, the span names and the ports above (`P13-TSK-001`); and the risk policy version as data (`P13-TSK-002`,
+ * far, the span names and the ports above (`P13-TSK-001`); the risk policy version as data (`P13-TSK-002`,
  * {@code V002}): {@link com.finapp.risk.RiskPolicy} - the immutable content judged whole at construction (rules of
  * closed kinds with {@link com.finapp.risk.RuleParameters} held to each kind's schema, score, rating and fail-safe
  * bands, the challenge assurance, the override threshold and the hold validity), {@link com.finapp.risk.RiskPolicyVersion}
@@ -54,8 +54,35 @@
  * (propose, activate under four eyes with the predecessor retired in the same transaction, reject - advisory namespace
  * 13 first, T-pol) and {@link com.finapp.risk.RiskPolicies} (the reads and <em>the pin</em> at (R1): the ACTIVE row
  * {@code FOR SHARE}, re-read under the shared namespace when the first read is empty, so it never answers "neither"),
- * the event {@code risk.RiskPolicyActivated}, and the test-only policy v1 fixtures (C8). No evaluation, no schedule:
- * production evaluates nothing until a policy version is activated under four eyes (section 1.1), and until
- * `-008`…`-011` and `-007` land, the consumers' seams stay wired to their permit-all and not-assessed defaults.
+ * the event {@code risk.RiskPolicyActivated}, and the test-only policy v1 fixtures (C8); and <strong>the born-once
+ * signal</strong> (`P13-TSK-005`, {@code V003}): {@link com.finapp.risk.SignalKind} - thirteen kinds, one per consumed
+ * event that exists, each with its subject and its typed, bounded attribute schema - {@link com.finapp.risk.RiskSignal},
+ * {@link com.finapp.risk.SignalSubject} (a device only ever by {@link com.finapp.risk.DeviceHash}, OQ-4),
+ * {@link com.finapp.risk.RiskSignalStore} ({@code INSERT ... ON CONFLICT (source_event_id) DO NOTHING}, four bounded
+ * reads), {@link com.finapp.risk.RiskSignals} (T-sig: record and announce {@code risk.RiskSignalRecorded} when born),
+ * {@link com.finapp.risk.SignalReadings} (the signal half of `-004`'s inputs) and {@link com.finapp.risk.MonitoringHints}
+ * (the completions as hints; `NONE` until `-019`); {@code SubjectKind} gained {@code IDENTITY} and
+ * {@code CREDIT_AGREEMENT}, the aggregates the events actually name; the handlers live in {@code app}
+ * ({@code RiskSignalIntake}, consumer {@code risk.signals}), as does {@code ScreeningClearances}' implementation over
+ * kyc's case checks. <strong>The monitoring intake</strong> (`P13-TSK-019`, {@code V004}): the journal has no sequence
+ * column, so {@link com.finapp.risk.MonitoredLedger} (implemented in {@code app} over the ledger's journal and chart
+ * stores, {@code SELECT} only) reads by the entry's UUIDv7 id as a keyset under a settle horizon on the database clock,
+ * the id's millisecond prefix the "sequence"; {@link com.finapp.risk.MonitoredKind} is the posting-key namespace
+ * register (forty-four namespaces into twenty-three kinds, {@code REVERSAL} and {@code ADJUSTMENT} by entry type,
+ * {@code UNCLASSIFIED} recorded and gauged, never skipped); {@link com.finapp.risk.MonitoringClassification} the pure
+ * classification into {@link com.finapp.risk.MonitoredTransaction} ({@code INSERT}-only, born once by
+ * {@code UNIQUE (journal_entry_id)}); {@link com.finapp.risk.MonitoringWatermark} the claim, not a machine, over
+ * {@link com.finapp.risk.MonitoringWatermarkStore} (the claim {@code FOR UPDATE SKIP LOCKED} on the database clock -
+ * the Phase 13 lock order's R7 - the waiting lock, the move, the hint) and
+ * {@link com.finapp.risk.MonitoredTransactionStore} ({@code ON CONFLICT DO NOTHING});
+ * {@link com.finapp.risk.MonitoringIntake} (T-mon's intake leg: one batch = one transaction, a partial batch never
+ * advances), {@link com.finapp.risk.MonitoringReprocessing} (the audited reset {@code risk.ReprocessingOrdered}; the
+ * reason required and screened; a point ahead of the watermark refused {@code risk.ReprocessingNotBehind}) and
+ * {@link com.finapp.risk.WatermarkMonitoringHints} (`-005`'s hint seam closed: a completion pulls the journal's permit
+ * to now in the handler's own transaction); the schedule {@code RiskMonitoringSchedule}, the officer's door
+ * {@code POST /v1/operator/risk/monitoring/reprocessing} and the gauges live in {@code app}. No evaluation: production
+ * evaluates nothing until a policy version is activated under four eyes (section 1.1), and until `-008`…`-011` and
+ * `-007` land, the consumers' seams stay wired to their permit-all and not-assessed defaults; the monitoring sweep is
+ * off in test contexts and ingests, in production, a journal no rule yet reads (`-020`).
  */
 package com.finapp.risk;

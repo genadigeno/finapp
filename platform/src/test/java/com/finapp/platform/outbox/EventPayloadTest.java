@@ -103,4 +103,71 @@ class EventPayloadTest {
                 .doesNotContain("abc")
                 .contains("partyId");
     }
+
+    // -----------------------------------------------------------------
+    // The reader (P13-TSK-005): exactly the writer's inverse.
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("what the writer wrote, the reader reads back - every field, in order")
+    void theReaderIsTheWritersInverse() {
+        UUID id = UUID.fromString("0199c1f8-7a3d-7000-8000-0123456789ab");
+        byte[] bytes = EventPayload.of()
+                .with("identityId", id.toString())
+                .with("status", "SUSPENDED")
+                .with("daysPastDue", "31")
+                .with("defaulted", "false")
+                .toBytes();
+
+        assertThat(EventPayload.fields(bytes))
+                .containsExactly(
+                        java.util.Map.entry("identityId", id.toString()),
+                        java.util.Map.entry("status", "SUSPENDED"),
+                        java.util.Map.entry("daysPastDue", "31"),
+                        java.util.Map.entry("defaulted", "false"));
+    }
+
+    @Test
+    @DisplayName("the reader admits nothing the writer could not have produced")
+    void theReaderRefusesWhatTheWriterRefuses() {
+        // A reader looser than the writer is the general object mapper this class declines to be, met from the
+        // consuming side: a free-text value, a nested object, a number, a list or an escaped string is not a payload
+        // of ours, whatever produced it, and the consumer refuses the event rather than guessing at it.
+        for (String hostile : new String[] {
+                "{\"displayName\":\"Ada Lovelace\"}",
+                "{\"device\":\"Chrome on Windows\"}",
+                "{\"a\":{\"b\":\"c\"}}",
+                "{\"a\":1}",
+                "{\"a\":[\"b\"]}",
+                "{\"a\":\"b\\\"c\"}",
+                "{\"a\":\"" + "x".repeat(201) + "\"}",
+                "{\"not a field\":\"x\"}",
+                "{\"a\":\"b\",\"a\":\"c\"}",
+                "{}",
+                "",
+                "[]",
+                "{\"a\":\"b\",}",
+                " {\"a\":\"b\"}"}) {
+            assertThatThrownBy(() -> EventPayload.fields(hostile.getBytes(StandardCharsets.UTF_8)))
+                    .as("refused: %s", hostile.replace("Ada Lovelace", "<name>").replace("Chrome on Windows", "<device>"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("the reader's refusal does not repeat the bytes it refused")
+    void theReadersRefusalDoesNotEchoTheBytes() {
+        assertThatThrownBy(() -> EventPayload.fields("{\"displayName\":\"Ada Lovelace\"}".getBytes(StandardCharsets.UTF_8)))
+                .hasMessageNotContaining("Ada")
+                .hasMessageNotContaining("Lovelace");
+    }
+
+    @Test
+    @DisplayName("what the reader returns cannot be edited")
+    void theFieldsAreReadOnly() {
+        java.util.Map<String, String> fields =
+                EventPayload.fields(EventPayload.of().with("kind", "PERSON").toBytes());
+        assertThatThrownBy(() -> fields.put("kind", "ORGANISATION"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

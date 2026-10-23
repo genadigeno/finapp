@@ -276,6 +276,15 @@ what it derives. Publishes `RiskSignalRecorded` (signal id, kind, subject kind a
 subject's case is disposed records normally and re-opens nothing (§4.6). **Invalid:** any `UPDATE`; a second signal per
 source event; an attribute above its bound or of an unknown kind.
 
+*(As built, `P13-TSK-005`, 2026-10-23: `SignalKind` — thirteen kinds, one per consumed event that exists, each
+declaring its subject kind and its typed, bounded attribute schema; `SubjectKind` + `IDENTITY` and `CREDIT_AGREEMENT`,
+the aggregates the events name; every handler under the one consumer name `risk.signals`; the row's `observed_at` the
+event's own instant and `recorded_at` the database's by trigger; `UPDATE`, `DELETE` and `TRUNCATE` refused for every
+writer by trigger, the grant `SELECT, INSERT`; an attribute outside its kind's shape refused by
+`risk_signal_attributes_match_kind` as well as by the domain; a version or payload the build cannot read thrown, so the
+inbox seeks back and stalls loudly — never truncated, never acknowledged. The completions record no signal: they are
+hints to `MonitoringHints` (`-019`).)*
+
 ### 4.5 Alert (`risk.risk_alert`) — `P13-TSK-015` (`risk V008`: the table, raise, dedupe and suppression); the folding into a case `-016`; the monitoring rules `-020`; the fraud rules `-013`, `-014`
 
 ```
