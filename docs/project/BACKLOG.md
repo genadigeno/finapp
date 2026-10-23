@@ -22418,7 +22418,46 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   four planted probes incl. the operator lookalike), every sibling isolation test; owed under C5: `RiskMigrationTest`
   and the three roles' case in `IdentityAdministrationDatabaseTest`. (8) *Gate miss, corrected 2026-10-23 by the wave B coordinator on `P13-TSK-005`'s finding:* the committed OpenAPI contract (`docs/api/openapi.json`) was not regenerated for the three `risk.*` error responses and the three roles in `RoleAssignmentRequest.role` — 24 compatible additions, nothing removed or changed — so `OpenApiContractTest` was red on master from this task's merge until the regeneration; the gate's own run of that suite had read a build older than the roles. (7) `RiskInputs` and `CaseOpener` (Scope's "source ports" and the case hook) are T-eval's own and land with `-004`, which names them; the source ports declared here are `RiskActingParty`, `SessionAssurance` and `ScreeningClearances`. **Gate (2026-10-22):** 0 CRITICAL, 0 IMPORTANT, 2 MINOR (`AlertKind.firstFor` is a fixture helper in main, kept; the ports' signatures are provisional until their implementing tasks, said so in each); the ten-instance question `PASS` vacuously - no process state, no scheduler, Flyway serialising the two migrations; three probes recorded in `MUTATION_TESTING.md` §2 (`INV-AUD-03` a `RISK_OVERRIDE` granted to `BNPL_OFFICER`, `INV-RSK-02` a `ledger` edge, `INV-RSK-08` a `/me` controller holding a risk type - each caught by its intended case, every file restored byte-identical). Fresh at the gate: the risk, identity and every module's architecture tier, app's architecture tier and its register, route, meter and glossary guards, all green. **Owed under C5** (the Docker daemon was down): `RiskMigrationTest` and `IdentityAdministrationDatabaseTest`'s three-roles case - written, compiled, not run.
 
-**P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `READY` (2026-10-22; marked by `P13-TSK-001`'s completion gate)
+**P13-TSK-002 — Risk policy versions as data: rule kinds, bands, fail-safe, four-eyes activation** — `COMPLETE` (2026-10-23; marked `READY` by `P13-TSK-001`'s completion gate, 2026-10-22; wave B, branch `P13-TSK-002` from master `5238a455`, beside `-005` and `-019`)
+- **As built** (2026-10-23): as scoped, with these readings settled by the build. `risk V002` holds the version in six
+  tables along the money line — `risk_policy_version` the money-free machine row (one `ACTIVE` per operation by partial
+  unique, `UNIQUE (operation, version)`, the four-eyes `CHECK`, the engine name `CHECK`ed to this build's, every stamp
+  `clock_timestamp()` after the lock, the effective period clamped by credit `V014`'s rule, the retirement only beside a
+  LATER successor by deferred trigger, the content and the bands required at commit), `risk_policy` (currency, challenge
+  assurance, override threshold, hold validity — each operation's own by `CHECK`), `risk_rule`, `risk_rule_parameter`
+  (one typed row per parameter the kind declares, exactly its type's column non-null), `risk_policy_band` (`SCORE`,
+  `RATING`, `FAIL_SAFE`) and `risk_policy_version_event`; the reason screen's twin in the schema; `SELECT, INSERT`
+  everywhere, `UPDATE` of the decision columns alone, no `DELETE`. **Several `PROPOSED` per operation**, numbered
+  without a gap under namespace `13` (this entry's "ten proposals, ten versions" — the lifecycle's one-`PROPOSED`
+  reading not built); activation monotonic in version number, a proposal below the version in force `409
+  risk.PolicyStale`. `RiskPolicy` judged whole at construction (`RuleParameters` held to the schema `RuleKind` declares
+  once — not a record per kind; `ScoreBand`/`RatingBand`/`FailSafeBand` contiguous over their ranges; the hard decision
+  and every band's decision admitted by the operation; `CREDIT_SIGNAL` carries no policy). `RiskPolicyAdministration`
+  (propose / activate / reject; `recordRefusal` `FAILED` in its own transaction) and `RiskPolicies` (`inForce`,
+  `version`, `activeVersions`, and **the pin** `active(uow, operation)` composing the store's `shareActiveOnce` and
+  `lockOperationShared`, so the A3-I1 shape is hermetic as well as live). The event `risk.RiskPolicyActivated`
+  (operation, version). `RiskErrorCode` + `POLICY_NOT_ACTIVE` 409, `POLICY_STALE` 409, `POLICY_INVALID` 422,
+  `REASON_REQUIRED` 422; `RiskAuditAction` + `POLICY_PROPOSED/ACTIVATED/REJECTED/RETIRED`;
+  `risk.SelfApprovalRefused` first raised (`SelfApprovalRefusals`), its `NOT_YET_EMITTED` entry removed. In `app`:
+  `RiskBeans`, `RiskTransactions`, `RiskPolicyDesk`, `RiskPolicyController` (`/v1/operator/risk/policies`: POST,
+  GET `{id}`, GET `?operation=`, POST `{id}/activation` under `@RequiresAssurance(MULTI_FACTOR)`, POST
+  `{id}/rejection`; `RISK_POLICY_ADMINISTER`; keyed `risk.policy:<type>:<id>`; closed bodies, the rule parameters a
+  map by declared name; the withdrawal's hold validity defaulted to 72 h), `RiskPolicyMetrics`
+  (`finapp.risk.policy.active{operation}` = the version number; the plan's `policy_version` tag answered by the value),
+  `RiskSpans.POLICY_*` through `RiskFlowScope.door`; the route register and the OpenAPI baseline extended. The C8
+  fixtures as risk's published test fixtures (`RiskPolicyFixtures.v1(operation)`, six versions, every one of the
+  twenty-two kinds used, C1's bands exactly). Tests — hermetic: `RiskPolicyVersionTest`, `RuleParametersTest`,
+  `PolicyFixturesTest`, `RiskPolicyAdministrationTest`, `RiskPoliciesPinTest`, `RiskPolicyMigrationTest` (constraint
+  names unique, namespace 13 pinned), `RiskVocabulariesTest` extended, `RiskPolicyDeskTest`; database, **written and
+  owed** (C5): `RiskPolicyDatabaseTest` (`#tenProposalsTenVersions`, `#oneActivePerOperation`,
+  `#tenActivationsOneActive`, `#retireAndActivateAreOneTransaction`, `#anEvaluationBehindAnActivationPinsTheSuccessor`,
+  `#theProposerCannotActivate`, `#aDecidedVersionIsImmutable`), `RiskMigrationTest`'s lists, `RiskPolicyEndpointDatabaseTest`
+  (the MFA refusal, the self-approval `403` recorded `FAILED`, the negatives, the closed doors, ten under one key);
+  the guard suites green. Probes performed and recorded in `MUTATION_TESTING.md` §2 (`INV-RSK-05`, `INV-RSK-07`,
+  `INV-AUD-04`). Deviations from this entry: `RuleParameters` is one record over a sealed `ParameterValue`, not one
+  record per kind; the gauge carries no `policy_version` tag; `RiskPolicyApiTest` is `RiskPolicyEndpointDatabaseTest`
+  (the precedent's tier); no `RiskPolicyDeskTest` over a fake administration — the desk's parse and view are hermetic,
+  the keyed act is the endpoint test's.
 - **Objective**: a policy version per operation as versioned data under four eyes — rules of closed kinds with validated
   typed parameters, a weight and/or a hard decision, in a declared order; score bands over [0, 1000]; fail-safe bands by
   amount (C1); the challenge assurance (`MULTI_FACTOR`); the override threshold (C7); effective-from — proposed,

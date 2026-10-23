@@ -100,16 +100,36 @@ class RiskMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds Flyway's history - which the application cannot read - and nothing else: V001 is the"
-            + " floor alone; the first risk table is P13-TSK-002's")
+    @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
+            + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
         // this list with its own tables, views and functions.
-        assertThat(tablesIn(SCHEMA)).containsExactly("flyway_schema_history");
+        assertThat(tablesIn(SCHEMA)).containsExactly(
+                "flyway_schema_history",
+                // V002 (P13-TSK-002): the machine row, the content, the rules and their parameters, the bands, the history.
+                "risk_policy",
+                "risk_policy_band",
+                "risk_policy_version",
+                "risk_policy_version_event",
+                "risk_rule",
+                "risk_rule_parameter");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
-                + " WHERE n.nspname = '" + SCHEMA + "'")).isEmpty();
+                + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
+                // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
+                "holds_account_identifier_shape",
+                "holds_card_number_shape",
+                "holds_instrument_shape",
+                "luhn_valid",
+                "mod97_check_holds",
+                "risk_policy_content_is_born_once",
+                "risk_policy_is_never_truncated",
+                "risk_policy_version_event_is_append_only",
+                "risk_policy_version_has_its_content",
+                "risk_policy_version_permits_only_machine_edges",
+                "risk_policy_version_retires_only_beside_its_successor");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

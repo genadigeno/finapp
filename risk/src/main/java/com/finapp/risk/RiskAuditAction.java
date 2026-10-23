@@ -14,6 +14,44 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum RiskAuditAction implements AuditableAction {
 
+    /** A risk policy version was proposed for one operation (`P13-TSK-002`). */
+    POLICY_PROPOSED(
+            "risk.PolicyProposed",
+            "A holder of RISK_POLICY_ADMINISTER proposed a risk policy version for one operation"
+                    + " (POST /v1/operator/risk/policies, keyed risk.policy:<actor>, P13-TSK-002; ADR-0109): rules as"
+                    + " data of closed kinds with typed parameters, weights, score bands, fail-safe bands (C1), the"
+                    + " challenge assurance, the override threshold (C7) and the hold validity - judged whole at the door"
+                    + " (422 risk.PolicyInvalid), immutable from this moment and awaiting a DIFFERENT holder's activation."
+                    + " The summary names the operation, the version and the rule count - never a threshold or a weight.",
+            true),
+
+    /** A risk policy version was activated by a second person, its predecessor retired beside it. */
+    POLICY_ACTIVATED(
+            "risk.PolicyActivated",
+            "A holder of RISK_POLICY_ADMINISTER other than its proposer activated a risk policy version from a"
+                    + " MULTI_FACTOR session (POST /v1/operator/risk/policies/{id}/activation; INV-RSK-05, INV-AUD-04,"
+                    + " the four-eyes CHECK beneath), retiring the operation's predecessor in the same transaction under"
+                    + " advisory namespace 13 so the pin never reads \"neither\"; the event risk.RiskPolicyActivated"
+                    + " beside it. The summary names the operation and both versions.",
+            true),
+
+    /** A proposed risk policy version was rejected, or withdrawn by its proposer. */
+    POLICY_REJECTED(
+            "risk.PolicyRejected",
+            "A proposed risk policy version was rejected - or withdrawn by its proposer"
+                    + " (POST /v1/operator/risk/policies/{id}/rejection, P13-TSK-002); it was never in force. The summary"
+                    + " names the operation, the version and whether the proposer withdrew it.",
+            true),
+
+    /** A risk policy version left force beside its successor's activation. */
+    POLICY_RETIRED(
+            "risk.PolicyRetired",
+            "A risk policy version left force - retired beside its successor's activation in the activation's"
+                    + " transaction (the activator the actor; P13-TSK-002), never on its own; every assessment that"
+                    + " pinned it still replays under it (INV-HIST-04). The summary names the operation and both"
+                    + " versions.",
+            false),
+
     /** A proposer tried to approve their own proposal and was refused. */
     SELF_APPROVAL_REFUSED(
             "risk.SelfApprovalRefused",
