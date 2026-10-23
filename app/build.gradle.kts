@@ -362,9 +362,13 @@ extra["ownContainerSuites"] =
         "com.finapp.app.reconciliation.ResolutionBatteryDatabaseTest",
         "com.finapp.app.reconciliation.SettlementReconciliationStormDatabaseTest",
         "com.finapp.app.reconciliation.UnmatchedConfirmationSuspenseDatabaseTest",
+        // P13-TSK-008: each activates a EUR TRANSFER risk version, after which every transfer in the database is
+        // judged by it - a shared container's USD transfers would be refused by the open-ended fail-safe band.
+        "com.finapp.app.risk.RiskPolicyEndpointDatabaseTest",
         "com.finapp.app.settlement.BankStatementCashDatabaseTest",
         "com.finapp.app.settlement.PayoutSettlementCashDatabaseTest",
         "com.finapp.app.settlement.SchemeCycleCashDatabaseTest",
+        "com.finapp.app.transfers.TransferRiskSeamDatabaseTest",
     )
 
 // The document inputs below are declared on EVERY test task, not only on `test`.

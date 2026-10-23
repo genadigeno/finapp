@@ -264,10 +264,16 @@ reasoning at a port); distinct from `UnknownDestination` because the remedies di
 different field to fix. **A `FAILED` judgement is not an error code at all**: insufficient
 funds, an unpostable side, a currency mismatch, a self-transfer — and, from `P4-TSK-010`,
 a limit or risk seam's refusal (`LIMIT_REFUSED`/`RISK_REFUSED`, reserved so Phase 13's
-implementations change no contract; *produced from `P13-TSK-008`, planned by the Phase 12 → 13
-transition, 2026-10-22 - the `risk` section below*) — are committed domain outcomes answered as `201` with
-the reason in the body (ADR-0043/0044 — the asynchronous-outcome contract shape), never
-members of this vocabulary.
+implementations change no contract; *produced since `P13-TSK-008` (2026-10-23): `LIMIT_REFUSED` when an amount or
+velocity rule of risk's decided the refusal, `RISK_REFUSED` for every other refusal - the `risk` section below*) — are
+committed domain outcomes answered as `201` with the reason in the body (ADR-0043/0044 — the asynchronous-outcome
+contract shape), never members of this vocabulary. **The transfer door's step-up** (`P13-TSK-008`): before the command,
+in a transaction of its own that writes nothing, the door asks risk's advice; a transfer the judgement would challenge
+and the session cannot satisfy is `403 identity.AssuranceRequired` — no transfer row, no claim of the key, no assessment
+— with identity's step-up words ("step up with your enrolled factor", or "enrol one, step up with it"), never a rule,
+a reason or a score. The caller steps up and retries **the same key**; a key already recorded is never advised (it
+replays, `INV-IDEM-01`); a challenge the command meets unsatisfied after the advice let the request through is the
+committed `FAILED(RISK_REFUSED)` — the race's answer.
 
 **`transfers.NotReversible` is one 409 for every machine refusal** (`P4-TSK-009`): a `FAILED`
 transfer moved no money and has nothing to reverse, an already-`REVERSED` one is already

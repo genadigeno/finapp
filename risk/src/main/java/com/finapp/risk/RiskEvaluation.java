@@ -114,10 +114,20 @@ public final class RiskEvaluation {
      * T-eval's answer - the sealed assessment's decision, as the seam maps it: {@link #permits} → {@code PERMIT}; else
      * {@code REFUSE}, a {@code CHALLENGE} unsatisfied committing {@link ReasonCode#CHALLENGE_REQUIRED}.
      * {@code replayed} is true when the command was already sealed and nothing was evaluated now.
+     *
+     * <p>{@code limitDecided} (`P13-TSK-008`) answers a consumer with a limit seam beside its risk seam (transfers'
+     * {@code TransferLimitCheck}, cross-border's {@code CrossBorderLimitCheck}): true when the decision refuses and is
+     * not a {@code CHALLENGE}, and some fired limit rule - {@code AMOUNT_BAND}, {@code VELOCITY_COUNT},
+     * {@code VELOCITY_SUM} - carries that very decision as its own hard decision. The decision is the strictest of the
+     * band's and every fired hard decision, so this is "a limit rule decided the refusal": a screening {@code DENY}
+     * beside a velocity {@code REVIEW} is not a limit refusal; a score band a weighted limit-kind rule pushed is not one
+     * (bands are risk's judgement); a fail-safe has no hit and is never one; an unsatisfied {@code CHALLENGE} is always
+     * {@code CHALLENGE_REQUIRED}, whichever rule raised it. Derived from the sealed hits, so a replayed answer says the
+     * same as the fresh one.
      */
     public record Assessed(RiskAssessmentId assessmentId, RiskOperation operation, CommandRef commandRef,
             RiskDecision decision, List<ReasonCode> reasons, Optional<Boolean> challengeSatisfied,
-            Optional<ReasonCode> failSafe, VelocityOutcome velocity, boolean replayed) {
+            Optional<ReasonCode> failSafe, VelocityOutcome velocity, boolean replayed, boolean limitDecided) {
 
         public Assessed {
             Objects.requireNonNull(assessmentId, "assessmentId");
@@ -128,11 +138,24 @@ public final class RiskEvaluation {
             Objects.requireNonNull(challengeSatisfied, "challengeSatisfied");
             Objects.requireNonNull(failSafe, "failSafe");
             Objects.requireNonNull(velocity, "velocity");
+            if (limitDecided && (decision == RiskDecision.ALLOW || decision == RiskDecision.CHALLENGE)) {
+                throw new IllegalArgumentException("only a refusing decision other than a challenge is decided by a limit");
+            }
         }
 
         static Assessed of(RiskAssessment sealed, boolean replayed) {
             return new Assessed(sealed.id(), sealed.operation(), sealed.commandRef(), sealed.decision(),
-                    sealed.reasons(), sealed.challengeSatisfied(), sealed.failSafeReason(), sealed.velocity(), replayed);
+                    sealed.reasons(), sealed.challengeSatisfied(), sealed.failSafeReason(), sealed.velocity(), replayed,
+                    limitDecided(sealed.decision(), sealed.hits()));
+        }
+
+        /** Whether a fired limit rule's own hard decision is the refusing {@code decision} (the record's javadoc). */
+        static boolean limitDecided(RiskDecision decision, List<RuleHit> hits) {
+            if (decision == RiskDecision.ALLOW || decision == RiskDecision.CHALLENGE) {
+                return false;
+            }
+            return hits.stream().anyMatch(hit -> hit.fired() && LIMIT_KINDS.contains(hit.kind())
+                    && hit.hardDecision().filter(decision::equals).isPresent());
         }
 
         /** True when the movement may proceed: {@code ALLOW}, or a {@code CHALLENGE} the sealed session satisfied. */

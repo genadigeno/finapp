@@ -151,10 +151,17 @@
  * with the kinds); {@link com.finapp.risk.VelocityOutcome} on every assessment and
  * {@link com.finapp.risk.AssessmentVelocityEvidence} - the counted assessments, the velocity proof's evidence of record,
  * every dimension provable; {@code decision_override}'s table (its machine `-012`'s); a {@code ROUND_AMOUNT} modulus
- * below one minor unit refused by {@code RiskPolicy}. No evaluation yet in production: until `-008`…`-011` wire their
- * adapters over {@code RiskEvaluation}, the movement seams stay on their permit-all defaults (credit's seam is risk's
- * since `-007`); production evaluates nothing until a policy version is activated under four eyes (section 1.1) - the
- * profile leg judges nothing until a {@code MONITORING} version is; the monitoring sweep is off in test contexts and
- * ingests, in production, a journal no rule yet reads (`-020`).
+ * below one minor unit refused by {@code RiskPolicy}. <strong>The first consumer</strong> (`P13-TSK-008`, wave E):
+ * transfers' two seams, {@code app}'s {@code RiskTransferLimitCheck} and {@code RiskTransferRiskDecision}, each calling
+ * {@code evaluate} for the transfer's id in its execution's transaction after both account locks - the first call
+ * seals, the second is answered from the seal - mapped through {@code Assessed.permits()} and the new
+ * {@code Assessed.limitDecided()} (a fired amount or velocity rule's own hard decision is the refusing decision); the
+ * transfer door's step-up over {@code advise}; {@link com.finapp.risk.SessionAssurance} implemented over identity's
+ * session, read live ({@code app}'s {@code IdentitySessionAssurance}), so a {@code CHALLENGE} is satisfiable. The
+ * withdrawal, checkout and cross-border seams stay on their permit-all defaults until `-009`…`-011` (credit's seam is
+ * risk's since `-007`); production evaluates every transfer and records {@code ALLOW(NO_POLICY_ACTIVE)} until a
+ * {@code TRANSFER} version is activated under four eyes (section 1.1) - the profile leg judges nothing until a
+ * {@code MONITORING} version is; the monitoring sweep is off in test contexts and ingests, in production, a journal no
+ * rule yet reads (`-020`).
  */
 package com.finapp.risk;

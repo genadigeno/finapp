@@ -534,7 +534,12 @@ and the availability read, before the posting; `app`'s `RiskTransferLimitCheck` 
 T-eval there (`-008`). A refusal commits `FAILED(LIMIT_REFUSED)` / `FAILED(RISK_REFUSED)` as today (`FailureReason`,
 `P4-TSK-010`'s reserved reasons); the door's T-advise answers an unsatisfied `CHALLENGE` `403
 identity.AssuranceRequired` before the command. `PermitAllUntilPhase13`'s wiring in `app` is replaced; the modules
-change nothing.
+change nothing. *(As built, `P13-TSK-008`, 2026-10-23 — the machine is untouched; one assessment per transfer carries
+both seams' answers (the limit seam's call seals, the risk seam's is answered from the seal); `LIMIT_REFUSED` exactly
+when a fired amount or velocity rule's own hard decision is the refusing decision, `RISK_REFUSED` for every other
+refusal, an unsatisfied `CHALLENGE` among them. A posting refused after the permit (`DESTINATION_NOT_POSTABLE`, the
+savepoint after the seams) leaves the assessment `ALLOW`/`COUNTED` standing — scenario 7's transfer half: the decision
+stands, the domain's outcome is recorded, risk retries nothing.)*
 
 **Cross-border (`crossborder.payment`) — unchanged.** `CrossBorderAuthorization` consults the seams in its first
 transaction before the offer is accepted; a refusal consumes nothing (`422 crossborder.RiskRefused` /

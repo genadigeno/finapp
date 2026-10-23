@@ -281,6 +281,14 @@ true for a transfer, for `-004`/`-009` to confirm for the withdrawal's in-lock j
 - **Transfers:** `TransferExecution` consults both seams after `lockBothInFixedOrder` and the availability read
   (`:233-248`), before the posting; the Phase 13 adapters run T-eval there. A refusal commits `FAILED(RISK_REFUSED)` /
   `FAILED(LIMIT_REFUSED)` as today. The door's advisory step-up check runs before the command (T-advise).
+  *(As built, `P13-TSK-008`, 2026-10-23 — `RiskTransferLimitCheck` (consulted first) runs T-eval for
+  `(TRANSFER, transfer id)` and seals; `RiskTransferRiskDecision` is answered from the seal — one assessment, one
+  increment. The limit seam refuses exactly when a fired `AMOUNT_BAND`/`VELOCITY_*` rule's own hard decision is the
+  refusing decision (`Assessed.limitDecided`); the risk seam refuses every non-permitting decision. The request's party
+  is the initiating identity's, its accounts the wallets' `owner_ref`s re-read under the execution's own locks. The door
+  (`TransferDoorStepUp`) advises in a transaction of its own — not `READ ONLY`, the pin being `FOR SHARE` — after the
+  caller's 422s, never for a recorded key and never over a source not the caller's; no migration; `transfers`
+  unchanged.)*
 - **Cross-border:** `CrossBorderAuthorization` consults the seams in its first transaction before the offer is
   accepted; a refusal consumes nothing (`422 crossborder.RiskRefused` / `LimitRefused`). Unchanged contract.
 - **Withdrawals:** `Withdrawals` is hold-then-dispatch (ADR-0062 §6): the hold is judged under the wallet account's lock;
@@ -633,6 +641,16 @@ session — every one until `-008` wires `SessionAssurance` — is unsatisfied),
 an unsatisfied one; T-advise's `Advice.stepUpRequired()` is the door's `403 identity.AssuranceRequired`. A `REVIEW`
 and a `HOLD` call `CaseOpener` (`NONE` until `-016`); a `DENY` opens no case — the version has no "case on deny" field,
 `-016`'s to add with its opener.)*
+
+*(As built, `P13-TSK-008`, 2026-10-23 — the `CHALLENGE` row on transfers: `SessionAssurance` implemented
+(`IdentitySessionAssurance`: the session the request presented, re-read live in the caller's transaction; `PASSWORD` →
+`SINGLE_FACTOR`, `MULTI_FACTOR`/`STRONG` → `MULTI_FACTOR`), so a satisfied challenge permits and counts; the door's
+T-advise answers `403 identity.AssuranceRequired` before any row exists, with identity's step-up words (step up, or enrol
+and step up) and nothing of the judgement; the committed `RISK_REFUSED` (`CHALLENGE_REQUIRED` on the assessment) is the
+race's answer — the windows moved, or the session was revoked or rotated, between the advice and the command. For a
+consumer with a limit seam beside its risk seam (transfers, and cross-border at `-011`), `LIMIT_REFUSED` is exactly a
+refusal a fired amount or velocity rule's own hard decision made (`DENY` or `REVIEW`); everything else refused is
+`RISK_REFUSED`.)*
 
 ### 12.4 Velocity (INV-RSK-03)
 
