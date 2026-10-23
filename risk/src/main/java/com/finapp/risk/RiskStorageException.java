@@ -1,12 +1,10 @@
 package com.finapp.risk;
 
 /**
- * A risk persistence failure (`P13-TSK-005`) - the operation and the SQLSTATE, never the driver's exception or a row:
- * a driver message can carry a subject, a code or a reason (the Phase 9 rule, {@code INV-AUD-02}, {@code INV-RSK-08};
- * bnpl's {@code BnplStorageException}).
+ * A risk store's failure, named by its operation and SQLSTATE only (`P13-TSK-002`; bnpl's
+ * {@code BnplStorageException}): never the driver's message, which can carry a value from the row.
  */
 public final class RiskStorageException extends RuntimeException {
-
     @java.io.Serial private static final long serialVersionUID = 1L;
 
     public RiskStorageException(String message) {

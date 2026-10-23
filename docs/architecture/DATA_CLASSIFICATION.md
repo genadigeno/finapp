@@ -4048,7 +4048,8 @@ Rule 0 applied: the recognised amount is the platform's capital, `RESTRICTED-FIN
 
 ### `risk` - the schema's classification - *planned by the Phase 12 → 13 transition, 2026-10-22; registered per table by `P13-TSK-002`…`-022`*
 
-*Planned.* No `risk` column exists yet; this note is the design's classification (`PHASE_13_PLAN.md` §8, §11; ADR-0107,
+*The first tables registered by `P13-TSK-002` (`risk V002`), below this note, in the register's shape; the note stands
+as the design's classification for the tables still to come.* No `risk` column existed until then; this note is the design's classification (`PHASE_13_PLAN.md` §8, §11; ADR-0107,
 ADR-0111), and the task that creates each table adds its rows here in the register's shape - `ColumnClassificationTest`
 derives the schemas from the database, so the first `risk` migration fails the build until its columns are classified,
 as the scheme requires. The levels decided: assessment inputs and rule hits (`risk_assessment_input`, `risk_rule_hit`,
@@ -4065,6 +4066,79 @@ one-statement upsert; the people who propose, activate, approve, take, escalate,
 identities, `CONFIDENTIAL` as in every register above. Payments' `withdrawal` `HELD` status and its `RISK_REFUSED`
 failure reasons (payments `V033`, `V034`; `P13-TSK-009`, `-010`) are machine states in payments' own rows, classified
 there by the tasks that add them.
+
+### `risk.risk_policy_version`, `risk_policy`, `risk_rule`, `risk_rule_parameter`, `risk_policy_band` and `risk_policy_version_event` — *added by `P13-TSK-002`*
+
+A risk policy version as data (`risk V002`; ADR-0109): the policy's content — which rules a version carries, their
+thresholds, weights, decisions and bands — is `CONFIDENTIAL` (ADR-0109 §Security: read only under the two permissions,
+audited; a threshold an attacker reads is a threshold they stay under); the amounts in it (the override threshold, a
+rule's amount parameter, a fail-safe band's bounds — and the band bounds column as a whole, because one column holds
+scores for two kinds and amounts for the third, classified at its ceiling) `RESTRICTED-FINANCIAL` by rule 0, on
+INSERT-only rows that are never a balance; person-written reasons `RESTRICTED-PII` (bnpl's reading); the people
+`CONFIDENTIAL`; identifiers, the operation, version numbers, the engine name, machine states, closed codes and
+timestamps `INTERNAL` (the note above, applied: a machine's state and a closed code read as identifiers).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `risk_policy_version` | `id` | `INTERNAL` | Generated |
+| `risk_policy_version` | `operation` | `INTERNAL` | A closed `RiskOperation` code |
+| `risk_policy_version` | `version` | `INTERNAL` | The operation's version number |
+| `risk_policy_version` | `engine` | `INTERNAL` | A closed `RiskEngine` name |
+| `risk_policy_version` | `status` | `INTERNAL` | The machine's state |
+| `risk_policy_version` | `proposed_by` | `CONFIDENTIAL` | The risk officer who proposed it |
+| `risk_policy_version` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `risk_policy_version` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `risk_policy_version` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served |
+| `risk_policy_version` | `decided_by` | `CONFIDENTIAL` | The second officer, or the rejecter |
+| `risk_policy_version` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `risk_policy_version` | `decided_at` | `INTERNAL` | The database's stamp, after the lock |
+| `risk_policy_version` | `decision_reason` | `RESTRICTED-PII` | As `proposal_reason` |
+| `risk_policy_version` | `effective_from` | `INTERNAL` | The period's start, the database's |
+| `risk_policy_version` | `effective_to` | `INTERNAL` | The period's end, stamped beside the successor |
+| `risk_policy_version` | `correlation_id` | `INTERNAL` | The proposing request's correlation |
+| `risk_policy` | `policy_version_id` | `INTERNAL` | The version's id |
+| `risk_policy` | `operation` | `INTERNAL` | Pinned to the version's |
+| `risk_policy` | `currency` | `INTERNAL` | ISO 4217, the reference currency |
+| `risk_policy` | `scale` | `INTERNAL` | The currency's minor units |
+| `risk_policy` | `challenge_assurance` | `CONFIDENTIAL` | The policy's content: what satisfies a challenge |
+| `risk_policy` | `override_threshold_minor` | `RESTRICTED-FINANCIAL` | An amount (C7), minor units; INSERT-only |
+| `risk_policy` | `hold_validity_hours` | `CONFIDENTIAL` | The policy's content: how long a hold stands |
+| `risk_rule` | `policy_version_id` | `INTERNAL` | The version's id |
+| `risk_rule` | `ordinal` | `INTERNAL` | The rule's place in the declared order |
+| `risk_rule` | `kind` | `CONFIDENTIAL` | The policy's content: which rule a version carries - a closed `RuleKind`, but which ones a policy holds is the policy |
+| `risk_rule` | `weight` | `CONFIDENTIAL` | The policy's content: a score contribution |
+| `risk_rule` | `hard_decision` | `CONFIDENTIAL` | The policy's content: the decision a firing rule forces |
+| `risk_rule_parameter` | `policy_version_id` | `INTERNAL` | The version's id |
+| `risk_rule_parameter` | `rule_ordinal` | `INTERNAL` | The rule's ordinal |
+| `risk_rule_parameter` | `name` | `INTERNAL` | The parameter's declared name (`RuleKind.Parameter`) |
+| `risk_rule_parameter` | `type` | `INTERNAL` | A closed `RuleKind.ParameterType` |
+| `risk_rule_parameter` | `value_count` | `CONFIDENTIAL` | The policy's content: a count threshold |
+| `risk_rule_parameter` | `value_minor` | `RESTRICTED-FINANCIAL` | An amount threshold, minor units; INSERT-only |
+| `risk_rule_parameter` | `value_bps` | `CONFIDENTIAL` | The policy's content: a ratio |
+| `risk_rule_parameter` | `value_days` | `CONFIDENTIAL` | The policy's content: a lookback or age |
+| `risk_rule_parameter` | `value_hours` | `CONFIDENTIAL` | The policy's content: a lookback |
+| `risk_rule_parameter` | `value_window` | `CONFIDENTIAL` | The policy's content: a `WindowKind` |
+| `risk_rule_parameter` | `value_subject_kind` | `CONFIDENTIAL` | The policy's content: a velocity dimension |
+| `risk_rule_parameter` | `value_corridors` | `CONFIDENTIAL` | The policy's content: the corridors it treats as high-risk |
+| `risk_rule_parameter` | `value_assurance` | `CONFIDENTIAL` | The policy's content: an assurance floor |
+| `risk_rule_parameter` | `value_rating` | `CONFIDENTIAL` | The policy's content: a rating floor |
+| `risk_policy_band` | `policy_version_id` | `INTERNAL` | The version's id |
+| `risk_policy_band` | `band_kind` | `INTERNAL` | `SCORE`, `RATING` or `FAIL_SAFE` |
+| `risk_policy_band` | `ordinal` | `INTERNAL` | The band's place |
+| `risk_policy_band` | `lower_bound` | `RESTRICTED-FINANCIAL` | A score for two kinds, an amount in minor units for the fail-safe: the column at its ceiling (rule 0) |
+| `risk_policy_band` | `upper_bound` | `RESTRICTED-FINANCIAL` | As `lower_bound`; NULL for the open-ended last fail-safe band |
+| `risk_policy_band` | `decision` | `CONFIDENTIAL` | The policy's content: the band's decision |
+| `risk_policy_band` | `rating` | `CONFIDENTIAL` | The policy's content: the band's rating |
+| `risk_policy_version_event` | `id` | `INTERNAL` | Generated |
+| `risk_policy_version_event` | `policy_version_id` | `INTERNAL` | The version's id |
+| `risk_policy_version_event` | `operation` | `INTERNAL` | Pinned to the version's |
+| `risk_policy_version_event` | `from_status` | `INTERNAL` | The edge's start, NULL at birth |
+| `risk_policy_version_event` | `to_status` | `INTERNAL` | The edge's end |
+| `risk_policy_version_event` | `actor` | `CONFIDENTIAL` | The officer who moved it |
+| `risk_policy_version_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `risk_policy_version_event` | `reason` | `RESTRICTED-PII` | As `proposal_reason` |
+| `risk_policy_version_event` | `occurred_at` | `INTERNAL` | The database's stamp |
+| `risk_policy_version_event` | `correlation_id` | `INTERNAL` | The acting request's correlation |
 
 ### `risk.risk_signal` - the born-once signal - *added by `P13-TSK-005`*
 

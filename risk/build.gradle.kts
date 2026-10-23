@@ -24,6 +24,11 @@ buildscript {
 plugins {
     id("finapp.java-conventions")
     alias(libs.plugins.flyway)
+    // The policy v1 fixtures (RiskPolicyFixtures, P13-TSK-002; owner decision C8 - test-only content, production
+    // activates none) are shared by this module's suites, the engine's (-003), the assessment's (-004), the battery's
+    // and app's door tests - so they are published as test fixtures rather than copied: one reference. Test code: it
+    // ships in no jar. The bnpl precedent (ReferenceMerchantFeeReturn).
+    `java-test-fixtures`
 }
 
 // Connection details, resolved exactly as platform resolves them and from the same environment variables, so
@@ -84,6 +89,9 @@ dependencies {
     // The shared database harness (DatabaseUnderTest, DatabaseRoles) for the database-tier test this task ships: the
     // schema floor proven LIVE (RiskMigrationTest). The module that owns the schema owns the proof of its floor.
     testImplementation(testFixtures(project(":platform")))
+
+    // The fixtures see this module's RiskPolicy (main) and sharedkernel's money - nothing else.
+    testFixturesImplementation(project(":sharedkernel"))
 }
 
 // The `database` tier's module-specific configuration - the container image, from the version catalog, exactly as
