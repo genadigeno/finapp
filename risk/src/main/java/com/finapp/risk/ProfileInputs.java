@@ -12,8 +12,8 @@ import java.util.UUID;
  * <p><strong>What is read, and what is honestly {@code ABSENT}.</strong> The subject is the {@link SubjectKind#PARTY};
  * the screening hit is the party's latest clearance through {@link ScreeningClearances} ({@code ABSENT} when never
  * screened). Every other reading is {@code ABSENT} - "we did not look", recorded on each rule's hit - because its source
- * is another task's: the velocity windows (`-006`), the monitoring readings over the party's movements (`-020`, which
- * extends this reader). The signals themselves feed no reading here: no rule kind admitted for {@code MONITORING}
+ * is another task's to read for a party: `-006`'s velocity windows and the monitoring readings over the party's
+ * movements, both `-020`'s, which extends this reader. The signals themselves feed no reading here: no rule kind admitted for {@code MONITORING}
  * reads a signal ({@link RuleKind}'s scopes - `DESIGN-007` D10); a signal reaches the profile as the hint that pulls
  * its permit forward ({@link ProfileHints}).
  */

@@ -164,8 +164,13 @@ public record EvaluationInputs(
             return this;
         }
 
-        public Builder velocity(SubjectKind dimension, WindowKind window, long count, long sumMinor) {
-            velocity.put(new VelocityKey(dimension, window), new VelocityReading(count, sumMinor));
+        public Builder velocity(VelocityDimension dimension, WindowKind window, long count, long sumMinor) {
+            return velocity(new VelocityKey(dimension, window), new VelocityReading(count, sumMinor));
+        }
+
+        /** One reading as {@link VelocityWindows#read} answers it. */
+        public Builder velocity(VelocityKey key, VelocityReading reading) {
+            velocity.put(Objects.requireNonNull(key, "key"), Objects.requireNonNull(reading, "reading"));
             return this;
         }
 

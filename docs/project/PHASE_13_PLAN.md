@@ -266,6 +266,16 @@ held except (R6)**, which no money transaction ever takes. (R1) is `FOR SHARE` a
 activation, which holds no money row. The only risk rows a money transaction writes are its own velocity windows, in
 sorted order, so two money transactions upserting overlapping windows cannot deadlock.
 
+*(As built, `P13-TSK-006`, 2026-10-23 — **(R2a)**, before (R2): one advisory lock per (dimension, subject) the judged
+movement carries, namespace `131`, in ascending lock-key order (`VelocityWindows.lockKey`, SHA-256 of the dimension and subject — one global order, collisions included), taken
+before the database clock and the window figures are read and held to commit, so each subject's read-evaluate-upsert
+is one serialised step whether or not its row exists yet: the caller's money lock serialises the source account only,
+and two movements of one party from two accounts would otherwise both pass a threshold the other was about to cross
+(`INV-CON-03`). It sits where (R2)'s row locks already sat and adds no cycle among velocity writers. Recorded, not
+introduced: the callers post **after** T-eval (`TransferExecution`), so (R2a)/(R2) are held while the posting takes its
+balance-projection rows; the argument above needs that no transaction holding such a row waits on a velocity lock —
+true for a transfer, for `-004`/`-009` to confirm for the withdrawal's in-lock judgement after its hold.)*
+
 ### 7.3 Couplings read in the code
 
 - **Transfers:** `TransferExecution` consults both seams after `lockBothInFixedOrder` and the availability read
@@ -616,6 +626,23 @@ the window's figure verbatim, which is what `VelocityProof` recomputes. So "10 p
 names a `VelocityDimension { PARTY, SOURCE_ACCOUNT, DESTINATION, DEVICE, MERCHANT }`, and whether its two account
 members fold into `ACCOUNT`/`BENEFICIARY` or `-002`'s parameter type grows is the coordinator's reconciliation between
 `-006` and `-004`. A window the reader did not seal is `ABSENT` for the rule naming it.)*
+
+*(As built, `P13-TSK-006`, 2026-10-23 — **the gap above is closed** by the coordinator's decision: the dimension is
+`VelocityDimension { PARTY, SOURCE_ACCOUNT, DESTINATION, DEVICE, MERCHANT }` end to end — the parameter type
+`VELOCITY_DIMENSION` (`SUBJECT_KIND` dropped; `risk V005` renames the column behind a guard, `V002` untouched),
+`VelocityKey`, the evaluators and the canonical text (format still 1), so `-004` passes `VelocityWindows.read`'s
+readings straight into `EvaluationInputs` with no mapping. Three readings the build fixed. **(R2a)** T-eval's read is
+**serialised** — one advisory lock per (dimension, subject), namespace `131`, sorted, before the clock and the figures
+are read (`VelocityWindows.cut`): the plan's unlocked read was safe only for the subject the caller's money lock
+covers, and two movements of one party from two accounts would each read the party's window below its threshold
+(`INV-CON-03`; §7.2's (R2) note). **The window** is a tumbling bucket anchored at Monday 1970-01-05 UTC (`H1` on the
+hour, `D1` at UTC midnight, `D7` an ISO week, `D30` thirty days from the anchor), cut at the database instant read
+after R2a; every dimension a movement carries counts in all four kinds, whichever the active policy reads.
+**The proof's evidence** (`VelocityEvidence`): the journal can equal only what posts in the judged transaction — the
+transfer — and names no party or device, so `JdbcVelocityEvidence` proves the `SOURCE_ACCOUNT` and `DESTINATION`
+windows of transfers and reports the rest unprovable; a withdrawal, a payment and a cross-border payment post at their
+outcome, so before `-009`…`-011` wire their increments the evidence moves to the permitting assessments (`-004`'s
+sealed inputs) — recorded for the coordinator; "windows = monitored sums" (§4.11, `INV-RSK-09`) holds for transfers.)*
 
 ### 12.5 Signals and the customer risk profile
 

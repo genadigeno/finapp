@@ -60,7 +60,7 @@ enum RuleEvaluation {
     DORMANT_THEN_ACTIVE((rule, in) -> {
         WindowKind window = rule.parameters().window("window");
         Optional<Integer> dormant = in.monitoring().dormantDays().value();
-        VelocityReading sum = in.velocity().get(new VelocityKey(SubjectKind.PARTY, window));
+        VelocityReading sum = in.velocity().get(new VelocityKey(VelocityDimension.PARTY, window));
         if (dormant.isEmpty() || sum == null) {
             return Judgement.ABSENT;
         }
@@ -161,7 +161,7 @@ enum RuleEvaluation {
     private record KeyedVelocity(VelocityKey key, VelocityReading reading) {}
 
     private static Optional<KeyedVelocity> velocity(EvaluationInputs in, RiskRule rule) {
-        VelocityKey key = new VelocityKey(rule.parameters().subjectKind("dimension"), rule.parameters().window("window"));
+        VelocityKey key = new VelocityKey(rule.parameters().dimension("dimension"), rule.parameters().window("window"));
         VelocityReading reading = in.velocity().get(key);
         return reading == null ? Optional.empty() : Optional.of(new KeyedVelocity(key, reading));
     }

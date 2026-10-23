@@ -111,8 +111,15 @@ class RiskVocabulariesTest {
         assertThat(RuleKind.STRUCTURING.parameters()).extracting(RuleKind.Parameter::name)
                 .containsExactly("window", "below_minor", "threshold_count", "sum_minor");
         assertThat(RuleKind.VELOCITY_SUM.parameters()).extracting(RuleKind.Parameter::type)
-                .containsExactly(RuleKind.ParameterType.SUBJECT_KIND, RuleKind.ParameterType.WINDOW,
+                .containsExactly(RuleKind.ParameterType.VELOCITY_DIMENSION, RuleKind.ParameterType.WINDOW,
                         RuleKind.ParameterType.MINOR_AMOUNT);
+        assertThat(RuleKind.VELOCITY_COUNT.parameters()).extracting(RuleKind.Parameter::type)
+                .containsExactly(RuleKind.ParameterType.VELOCITY_DIMENSION, RuleKind.ParameterType.WINDOW,
+                        RuleKind.ParameterType.COUNT);
+        // P13-TSK-006: SUBJECT_KIND left the parameter types when the velocity dimension became its own vocabulary -
+        // no kind used it after; risk V005 dropped it from the type CHECK.
+        assertThat(names(RuleKind.ParameterType.values())).containsExactly("COUNT", "MINOR_AMOUNT", "BASIS_POINTS",
+                "DAYS", "HOURS", "WINDOW", "VELOCITY_DIMENSION", "CORRIDOR_SET", "ASSURANCE", "RATING");
         assertThatThrownBy(() -> new RuleKind.Parameter("Threshold", RuleKind.ParameterType.COUNT))
                 .as("a parameter name is lower snake case")
                 .isInstanceOf(IllegalArgumentException.class);
@@ -183,6 +190,9 @@ class RiskVocabulariesTest {
                 .containsExactly("PARTY", "ACCOUNT", "DEVICE", "MERCHANT", "BENEFICIARY", "SESSION", "IDENTITY",
                         "CREDIT_AGREEMENT");
         assertThat(names(WindowKind.values())).containsExactly("H1", "D1", "D7", "D30");
+        // P13-TSK-006 (the coordinator's decision at wave C): the velocity dimensions, in the order R2a and R2 lock them.
+        assertThat(names(VelocityDimension.values()))
+                .containsExactly("PARTY", "SOURCE_ACCOUNT", "DESTINATION", "DEVICE", "MERCHANT");
         assertThat(WindowKind.H1.length()).isEqualTo(Duration.ofHours(1));
         assertThat(WindowKind.D1.length()).isEqualTo(Duration.ofDays(1));
         assertThat(WindowKind.D7.length()).isEqualTo(Duration.ofDays(7));
@@ -278,7 +288,7 @@ class RiskVocabulariesTest {
     void theSpans() {
         for (String span : List.of(RiskSpans.EVALUATE, RiskSpans.ADVISE, RiskSpans.POLICY_ACTIVATE,
                 RiskSpans.MONITORING_INTAKE, RiskSpans.CASE_DISPOSE, RiskSpans.ACTION_DISPATCH, RiskSpans.REPORT,
-                RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ)) {
+                RiskSpans.VELOCITY_PROOF, RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ)) {
             assertThat(span).startsWith("risk.").matches("[a-z]+(\\.[a-z]+)+");
         }
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);

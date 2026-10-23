@@ -79,8 +79,8 @@ public record RuleParameters(RuleKind kind, Map<String, ParameterValue> values) 
         return ((ParameterValue.Window) declared(name, RuleKind.ParameterType.WINDOW)).value();
     }
 
-    public SubjectKind subjectKind(String name) {
-        return ((ParameterValue.Subject) declared(name, RuleKind.ParameterType.SUBJECT_KIND)).value();
+    public VelocityDimension dimension(String name) {
+        return ((ParameterValue.Dimension) declared(name, RuleKind.ParameterType.VELOCITY_DIMENSION)).value();
     }
 
     public Set<String> corridors(String name) {

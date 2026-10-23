@@ -101,6 +101,20 @@
  * {@link com.finapp.risk.CanonicalEvaluation}, format 1 - the byte-exact text of the inputs and of a verdict, its SHA-256
  * what `-004` seals and replays against, the inputs form parsed back strictly; proven byte-identical in a second JVM
  * ({@code RiskEngineDigestTest}). The engine reads nothing: `-004`'s T-eval fills the inputs and seals them.
+ * <strong>The velocity windows</strong> (`P13-TSK-006`, wave C, {@code V005}): the dimension is its own vocabulary,
+ * {@link com.finapp.risk.VelocityDimension} ({@code PARTY}, {@code SOURCE_ACCOUNT}, {@code DESTINATION}, {@code DEVICE},
+ * {@code MERCHANT} - the role a subject plays, so a transfer's source and destination are counted apart), retyped through
+ * the policy's parameter type ({@code VELOCITY_DIMENSION}; {@code SUBJECT_KIND} dropped), its store and the engine's
+ * {@link com.finapp.risk.VelocityKey} (canonical format still 1); {@link com.finapp.risk.VelocityWindows} - T-eval's
+ * three steps in the caller's transaction: {@code cut} (R2a, one advisory lock per (dimension, subject), namespace
+ * 131, sorted, then {@code clock_timestamp()} - a {@link com.finapp.risk.WindowCut} no caller can build from another
+ * clock), {@code read} (the figures before the movement) and {@code increment} (R2, one
+ * {@code INSERT … ON CONFLICT DO UPDATE … RETURNING} per window in sorted key order, only for {@code ALLOW} or a
+ * satisfied {@code CHALLENGE}) over {@link com.finapp.risk.VelocityWindowStore}; the windows tumbling buckets from
+ * {@link com.finapp.risk.WindowStarts}, counted forward only and only on the database clock for every role by
+ * {@code V005}'s trigger; and {@link com.finapp.risk.VelocityProof}, which recomputes the provable live windows from
+ * {@link com.finapp.risk.VelocityEvidence} (the monitored transfers, {@link com.finapp.risk.JdbcVelocityEvidence}) and
+ * reports a difference, never correcting it. Nothing calls them until `-004` wires T-eval and `-023` the proof.
  * <strong>The customer risk profile</strong> (`P13-TSK-007`, wave C, {@code V006}): {@link com.finapp.risk.CustomerRiskProfile}
  * - the head per party, born unassessed and moved only beside a new version - and
  * {@link com.finapp.risk.CustomerRiskProfileVersion}, born once in sequence ({@code PRIMARY KEY (party_id, version)},
@@ -110,7 +124,7 @@
  * {@code PROHIBITED}); {@link com.finapp.risk.CustomerRiskProfileStore} over the schema;
  * {@link com.finapp.risk.ProfileRecompute} (T-mon's profile leg: the pin (R1), the head (R8) claimed
  * {@code SKIP LOCKED} or locked waiting, {@link com.finapp.risk.ProfileInputs} - the party and its screening clearance,
- * the rest {@code ABSENT} until `-006`/`-020` - evaluated by the engine over the rating bands, a version only when the
+ * the rest {@code ABSENT} until `-020` reads the windows and the movements - evaluated by the engine over the rating bands, a version only when the
  * rating changes, announced {@code risk.CustomerRiskRatingChanged}; a {@code PROHIBITED} party never re-rated; no
  * {@code MONITORING} version, nothing judged); {@link com.finapp.risk.CustomerRiskProfiles} ({@code current} - what
  * credit's seam, version 2 through {@code app}'s {@code RiskCreditRiskSignal}, and `-004`'s {@code PROFILE_RATING} read;

@@ -2158,7 +2158,8 @@ the remedy. Nor credit's underwriting second approval.
 ### Velocity Window
 **Is:** a durable counter per (dimension, subject, window kind, window start) — dimensions party, source account,
 destination account or beneficiary, device, merchant; kinds `H1`, `D1`, `D7`, `D30`, cut on the database clock read
-after the caller's lock — holding a count and a sum in an explicit currency; read by the evaluation and upserted in one
+after the caller's lock — holding a count and a sum in an explicit currency; read by the evaluation under the
+subject's serialisation lock (`VelocityDimension`, R2a, `P13-TSK-006`) and upserted in one
 statement in the judged command's own transaction, only when the decision permits the movement, so a refused movement
 counts for nothing and a committed one exactly once; derivable, and proven against the Monitored Transactions it
 counts (`INV-CON-03`).

@@ -72,8 +72,7 @@ final class EvaluationCorpus {
         if (operation.judgesAMovement() || present(random, everyReading)) {
             builder.amount(Money.ofMinorUnits(amount(random), RiskPolicyFixtures.EUR));
         }
-        for (SubjectKind dimension : List.of(SubjectKind.PARTY, SubjectKind.ACCOUNT, SubjectKind.DEVICE,
-                SubjectKind.MERCHANT, SubjectKind.BENEFICIARY)) {
+        for (VelocityDimension dimension : VelocityDimension.values()) {
             for (WindowKind window : WindowKind.values()) {
                 if (present(random, everyReading)) {
                     builder.velocity(dimension, window, count(random, 120), sum(random));

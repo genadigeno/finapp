@@ -25,13 +25,13 @@ public enum RuleKind {
 
     /** The subject's movement count in a window at or above a threshold (the durable velocity windows, `-006`). */
     VELOCITY_COUNT(Scope.JUDGED_AND_MONITORING,
-            Parameter.of("dimension", ParameterType.SUBJECT_KIND),
+            Parameter.of("dimension", ParameterType.VELOCITY_DIMENSION),
             Parameter.of("window", ParameterType.WINDOW),
             Parameter.of("threshold_count", ParameterType.COUNT)),
 
     /** The subject's movement sum in a window at or above a threshold. */
     VELOCITY_SUM(Scope.JUDGED_AND_MONITORING,
-            Parameter.of("dimension", ParameterType.SUBJECT_KIND),
+            Parameter.of("dimension", ParameterType.VELOCITY_DIMENSION),
             Parameter.of("window", ParameterType.WINDOW),
             Parameter.of("threshold_minor", ParameterType.MINOR_AMOUNT)),
 
@@ -123,8 +123,11 @@ public enum RuleKind {
         HOURS,
         /** A {@link WindowKind}. */
         WINDOW,
-        /** A {@link SubjectKind} - the velocity dimension. */
-        SUBJECT_KIND,
+        /**
+         * A {@link VelocityDimension} - the role a velocity rule counts per (`P13-TSK-006`, the coordinator's decision at
+         * wave C; it replaced {@code SUBJECT_KIND}, which no kind used afterwards and {@code risk V005} dropped).
+         */
+        VELOCITY_DIMENSION,
         /** A set of corridor codes. */
         CORRIDOR_SET,
         /** A {@link RiskAssurance}. */

@@ -4189,7 +4189,7 @@ timestamps `INTERNAL` (the note above, applied: a machine's state and a closed c
 | `risk_rule_parameter` | `value_days` | `CONFIDENTIAL` | The policy's content: a lookback or age |
 | `risk_rule_parameter` | `value_hours` | `CONFIDENTIAL` | The policy's content: a lookback |
 | `risk_rule_parameter` | `value_window` | `CONFIDENTIAL` | The policy's content: a `WindowKind` |
-| `risk_rule_parameter` | `value_subject_kind` | `CONFIDENTIAL` | The policy's content: a velocity dimension |
+| `risk_rule_parameter` | `value_velocity_dimension` | `CONFIDENTIAL` | The policy's content: a velocity dimension (`VelocityDimension`; `value_subject_kind` until `risk V005`, `P13-TSK-006`) |
 | `risk_rule_parameter` | `value_corridors` | `CONFIDENTIAL` | The policy's content: the corridors it treats as high-risk |
 | `risk_rule_parameter` | `value_assurance` | `CONFIDENTIAL` | The policy's content: an assurance floor |
 | `risk_rule_parameter` | `value_rating` | `CONFIDENTIAL` | The policy's content: a rating floor |
@@ -4253,6 +4253,30 @@ customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceRea
 | `risk_signal` | `agreement_version` | `INTERNAL` | The agreement version that judged the condition |
 | `risk_signal` | `channel_ref` | `CONFIDENTIAL` | The contact channel a recovery went to, by identifier (`RECOVERY_*`) - the channel's address stays identity's |
 | `risk_signal` | `request_ref` | `CONFIDENTIAL` | The recovery request, by identifier (`RECOVERY_*`) |
+
+### `risk.velocity_window` - the durable velocity windows - *added by `P13-TSK-006`*
+
+`risk V005`: one row per (dimension, subject, window kind, window start) holding the count and the sum of the
+**permitted** movements of one subject in one tumbling window - written only in the judged command's own transaction
+by the one-statement upsert, counted forward only for every role, never deleted (`INV-RSK-03`). The sum is a sum of
+judged amounts, **never a balance** (`INV-RSK-02`), but it is an amount and so `RESTRICTED-FINANCIAL` by rule 0; the
+count says how often a subject moved money in a window - the Transaction Risk Profile's input - and is
+`CONFIDENTIAL`, as the assessment inputs it feeds are (`PHASE_13_PLAN.md` §8). A `DEVICE` window's `subject_ref` is
+identity's hash, never the description (OQ-4, the `CHECK`). No customer or merchant route reads this table
+(`INV-RSK-08`, `NoCustomerSurfaceReadsRiskTest`). The same task renamed `risk_rule_parameter.value_subject_kind` to
+`value_velocity_dimension` (its row in the policy section above).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `velocity_window` | `dimension` | `INTERNAL` | A closed `VelocityDimension` code |
+| `velocity_window` | `subject_ref` | `CONFIDENTIAL` | The party, account, beneficiary or merchant by identifier, or a device by identity's hash - as `risk_signal.subject_ref` |
+| `velocity_window` | `window_kind` | `INTERNAL` | A closed `WindowKind` code |
+| `velocity_window` | `window_start` | `CONFIDENTIAL` | Dates the subject's activity to the window - with `subject_ref`, when a subject moved money |
+| `velocity_window` | `count` | `CONFIDENTIAL` | How many permitted movements the subject made in the window - the Transaction Risk Profile's input |
+| `velocity_window` | `sum_minor` | `RESTRICTED-FINANCIAL` | **The amount** - the sum of the window's judged amounts in minor units; never a balance; updatable only by the bounded upsert |
+| `velocity_window` | `currency` | `INTERNAL` | An ISO 4217 code; the fact lives in the pairing with the sum |
+| `velocity_window` | `scale` | `INTERNAL` | Precision metadata of the sum |
+| `velocity_window` | `last_counted_at` | `CONFIDENTIAL` | The database clock at the latest count - dates the subject's latest movement |
 
 ### Free text, classified at its ceiling
 

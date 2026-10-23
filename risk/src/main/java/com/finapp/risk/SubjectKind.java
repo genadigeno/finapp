@@ -1,9 +1,10 @@
 package com.finapp.risk;
 
 /**
- * What a signal, a velocity window, an alert or a case is about (`P13-TSK-001`; {@code PHASE_13_PLAN.md} sections 3.1,
- * 12.4) - the subject kinds, each referenced by identifier only, never by constraint (ADR-0029) and never by a row of
- * another module. A velocity dimension is one of these ({@link RuleKind.ParameterType#SUBJECT_KIND}).
+ * What a signal, an alert or a case is about (`P13-TSK-001`; {@code PHASE_13_PLAN.md} section 3.1) - the subject kinds,
+ * each referenced by identifier only, never by constraint (ADR-0029) and never by a row of another module. A velocity
+ * window is keyed on a {@link VelocityDimension} instead - the role a subject plays in a movement, not what it is
+ * (`P13-TSK-006`: a transfer's source and destination are both {@link #ACCOUNT}s and are counted apart).
  *
  * <p><strong>Two kinds the plan did not name, added by `P13-TSK-005`.</strong> A signal records what its source
  * event <em>said</em> and nothing read from the producer's tables (section 12.5), and the platform's events name

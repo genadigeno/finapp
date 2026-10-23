@@ -113,6 +113,12 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    `V033`); the checkout in Tx1 after the eligibility checks and before the routing decision commits (payments
    `V034`); credit's `SnapshotFreezer` records the profile's rating with seam version 2, a decision made under
    version 1 replaying with `NOT_ASSESSED` (`INV-CRD-01`).
+   *(Amendment, `P13-TSK-006`, 2026-10-23 — **(R2a)** precedes (R2): one transaction-scoped advisory lock per
+   (dimension, subject) the judged movement carries, namespace `131`, in ascending lock-key order, before the
+   database clock and the window figures are read. The caller's lock serialises only the subject it locks (the
+   transfer's source account); without (R2a) two movements of one party, device or merchant on two money locks each
+   read the window below its threshold and both pass — this ADR's own refused alternative, reached by the side door.
+   No new cycle: one global order, where (R2)'s row locks already sat.)*
 
 7. **The override** (C7; T-ovr, its own transaction). A `RISK_OVERRIDE` holder proposes an override of a `DENY`,
    `HOLD` or `REVIEW` decision with a reason code and text; a second holder approves when the judged amount is at or
