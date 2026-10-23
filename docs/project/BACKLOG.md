@@ -22629,7 +22629,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   nothing of the engine's own to persist or count; no database suite owed.
 - **Cross-task correction by `P13-TSK-006`** (2026-10-23, the coordinator's decision at wave C): `VelocityKey` is keyed on `VelocityDimension` (no longer `SubjectKind`); `RuleEvaluation`'s velocity evaluators read `dimension(…)` and `DORMANT_THEN_ACTIVE` the `PARTY` dimension; `CanonicalEvaluation` parses a `VelocityDimension`; `EvaluationInputs.Builder.velocity` takes one (and a `(VelocityKey, VelocityReading)` pair); `RiskEngineV1Test#theCanonicalBytesArePinned`'s golden bytes read `SOURCE_ACCOUNT` — **format stays 1** (nothing had been sealed); `EvaluationCorpus` walks `VelocityDimension.values()`.
 
-**P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `PLANNED`
+**P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `READY` (2026-10-23; wave D — marked by the coordinator once wave C (`-003`, `-006`, `-007`) merged, master `e7da3b47`; every dependency `COMPLETE`)
 - **Objective**: **T-eval** — one sealed, `INSERT`-only assessment per judged command, written in the caller's
   transaction after the caller's locks, pinning the `ACTIVE` policy, carrying the inputs read, the engine and policy
   versions, every rule hit and contribution, the score, the decision, the ordered reason codes, whether the fail-safe
@@ -23462,7 +23462,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   merchant learns nothing; the BNPL rule feeds credit's signal, not a seam.
 - **Definition of done**: `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
 
-**P13-TSK-015 — Alerts born once: the alert table, raise, dedupe and suppression** — `PLANNED`
+**P13-TSK-015 — Alerts born once: the alert table, raise, dedupe and suppression** — `READY` (2026-10-23; wave D — marked by the coordinator once wave C (`-003`, `-006`, `-007`) merged, master `e7da3b47`; every dependency `COMPLETE`)
 - **Objective**: the alert — born once per (subject, rule, window start) from a synchronous or a monitoring rule, with
   `ON CONFLICT DO NOTHING`; `OPEN → ATTACHED | SUPPRESSED`; evidence refs, severity, kind, the policy version; never
   deleted — and its folding contract: an alert for a subject with an open case of the matching kind **attaches** to it
