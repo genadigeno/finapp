@@ -22538,7 +22538,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   operation at every instant; an invalid rule never persists; every fixture validates; the proposer cannot approve.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)
+**P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `COMPLETE` (2026-10-23; wave C beside `-006` and `-007`, branch `P13-TSK-003` from master `bfcc0af4`; marked `READY` by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; marks no task `READY` — the coordinator does, `-004` waiting on `-006`)
 - **Objective**: `RiskEngineV1` — a pure, deterministic function from sealed inputs and a policy version to a verdict:
   the rules evaluated in the version's declared order, every firing rule's contribution summed into a score 0–1000
   clamped, hard decisions and score bands resolved under the precedence `DENY > HOLD > REVIEW > CHALLENGE > ALLOW` (a
@@ -22589,6 +22589,42 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: every rule kind evaluates deterministically; the precedence holds; the fail-safe is a function
   of the policy's bands and the amount; the two-JVM digest is equal.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-TEST`. **Risk**: Medium (the engine judges every movement). **Cx**: M.
+- **As built** (2026-10-23): `RiskEngineV1.evaluate(policy, inputs)` — every rule of the version judged in declared
+  order by its kind's `RuleEvaluation` (a package-private enum, one member per `RuleKind`, the two held equal as the
+  class loads; no first-match), a `RuleHit` per rule with its `RuleOutcome` `FIRED` / `NOT_FIRED` / `ABSENT`, its
+  contribution, its hard decision and the judged reading's text; `Score` the fired weights summed and clamped to
+  [0, 1000]; the decision the **strictest** of the score band's and every fired hard decision (a band never softens a
+  hard rule; with nothing fired the band at 0 decides — the engine compiles no `ALLOW`); the `MONITORING` version's
+  rating from its rating bands and no decision; `ReasonCode` closed and ordered (one member per kind, named as the
+  kind, plus `NO_POLICY_ACTIVE`, `RISK_UNAVAILABLE`, `CHALLENGE_REQUIRED` — the last the seam's and never a verdict's);
+  `failSafe(policy, amount)` the band's decision under `RISK_UNAVAILABLE` and `failSafe(operation)` the compiled `ALLOW`
+  under `NO_POLICY_ACTIVE`, each a `Verdict` with no hit and score 0; `EvaluationFailed` (`WRONG_OPERATION`,
+  `WRONG_ENGINE`, `CURRENCY_MISMATCH`, `RULE_THREW` with the rule's ordinal and kind, `DECISION_NOT_ADMITTED`) — never
+  a partial verdict. `EvaluationInputs` (the entry's name; `RiskInputs` stays `-004`'s port): operation, the subjects
+  by `SignalSubject` reference, `Reading<Money>` amount (required for a judged operation), velocity readings keyed by
+  (`SubjectKind` dimension, `WindowKind`) — the current figures before the movement, compared at-or-above, never added
+  to — `FirstSeen` for payee and device novelty (`never()` a present value), `Reading<RiskAssurance>`, authentication
+  failures per window, `LastSeen` for credential change and recovery, account age, KYC standing, screening hit, the
+  profile rating as a code (`INV-CRD-04`), merchant suspension, corridor, and `MonitoringReadings` (dormant days,
+  `Flow` per window, `Amounts` per window for `STRUCTURING` — sorted, ≤ 10,000 — `Ratio` figures for the refund and
+  chargeback shares compared by cross-multiplication, BNPL counts); every map declaration-ordered, every bound a
+  refusal. `CanonicalEvaluation` format 1: the byte-exact text of the inputs and of a verdict (hand-written, no
+  whitespace, every value a token from a character set needing no escape), `sha256` as lowercase hex, `parseInputs`
+  strict (re-rendered and compared) — what `-004` seals and replays against. Tests, hermetic: `RiskEngineV1Test`
+  (13: the golden cases, the precedence table over every ordered pair, hard-beats-band both ways, the clamp, the band
+  at 0, absent readings, the sweep's rating, the fail-safe per band and with none, the refusals, the model's own
+  refusals, format 1's bytes pinned), `RiskEngineV1PropertiesTest` (6 over a seeded corpus of 480: determinism,
+  presentation order, the score and hits re-derived, the decision, monotonicity, the strict round trip),
+  `RuleKindCoverageTest` (3: evaluator and reason per kind; each kind fires, stays quiet and is `ABSENT`; filled inputs
+  leave no rule `ABSENT`), `RiskEngineDigestTest` (1: 360 cases rendered, parsed and evaluated in a second JVM through
+  risk's own `SecondJvm` — creditmath's is refused on this classpath — byte-identical digests). Seven probes recorded in
+  `MUTATION_TESTING.md` §2 (`INV-RSK-01`; `INV-RSK-04` ×4 — a fired hit dropped, the reasons reversed, the clamp at
+  999, `HOLD`/`REVIEW` swapped; `INV-CRD-04` — the rating entering the sum as a number; `INV-MON-01`), each red on its
+  first run, each file restored sha256-identical; the gate found the precedence table's first version derived its
+  expectation from the enum's own order and spelled it out before probing. Found for the coordinator: `-002` types a velocity `dimension` as `SubjectKind` while `-006`
+  names a `VelocityDimension`; `ROUND_AMOUNT` with `modulus_minor = 0` passes the policy door and is `RULE_THREW`
+  here; a judged amount not in the policy's currency is refused, not compared. No row, no route, no event, no meter:
+  nothing of the engine's own to persist or count; no database suite owed.
 
 **P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `PLANNED`
 - **Objective**: **T-eval** — one sealed, `INSERT`-only assessment per judged command, written in the caller's

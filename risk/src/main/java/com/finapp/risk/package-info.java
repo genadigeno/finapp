@@ -80,9 +80,30 @@
  * reason required and screened; a point ahead of the watermark refused {@code risk.ReprocessingNotBehind}) and
  * {@link com.finapp.risk.WatermarkMonitoringHints} (`-005`'s hint seam closed: a completion pulls the journal's permit
  * to now in the handler's own transaction); the schedule {@code RiskMonitoringSchedule}, the officer's door
- * {@code POST /v1/operator/risk/monitoring/reprocessing} and the gauges live in {@code app}. No evaluation: production
- * evaluates nothing until a policy version is activated under four eyes (section 1.1), and until `-008`…`-011` and
- * `-007` land, the consumers' seams stay wired to their permit-all and not-assessed defaults; the monitoring sweep is
- * off in test contexts and ingests, in production, a journal no rule yet reads (`-020`).
+ * {@code POST /v1/operator/risk/monitoring/reprocessing} and the gauges live in {@code app}. <strong>The engine</strong>
+ * (`P13-TSK-003`, wave C; no row): {@link com.finapp.risk.RiskEngineV1} - a pure, deterministic function from a
+ * {@code RiskPolicy} and the sealed {@link com.finapp.risk.EvaluationInputs} (every reading a {@link com.finapp.risk.Reading}
+ * {@code PRESENT} or {@code ABSENT}: the amount, the subjects by reference, the velocity figures per
+ * {@link com.finapp.risk.VelocityKey}, the payee's and device's {@link com.finapp.risk.FirstSeen}, the session assurance,
+ * the authentication failures per window, the credential change's and recovery's {@link com.finapp.risk.LastSeen}, the
+ * account age, the KYC standing, the screening hit, the profile rating as a code, the merchant's suspension, the
+ * corridor, and the sweep's {@link com.finapp.risk.MonitoringReadings}) to a {@link com.finapp.risk.Verdict}: every rule's
+ * {@link com.finapp.risk.RuleHit} in declared order with its {@link com.finapp.risk.RuleOutcome} - an absent reading never
+ * fires and says so - the {@link com.finapp.risk.Score} (the fired weights summed, clamped to [0, 1000]), the decision as
+ * the strictest of the score band's and every fired hard decision (a band never softens a hard rule; with nothing fired
+ * the band at 0 decides), the {@link com.finapp.risk.ReasonCode}s (closed, one per fired rule, in order; a member per
+ * {@code RuleKind}, {@code NO_POLICY_ACTIVE}, {@code RISK_UNAVAILABLE}, {@code CHALLENGE_REQUIRED}), and for the
+ * {@code MONITORING} version the rating from its rating bands instead of a decision; one
+ * {@link com.finapp.risk.RuleEvaluation} per kind, the two enums held equal as the class loads;
+ * {@code RiskEngineV1.failSafe} - the policy's band for the amount under {@code RISK_UNAVAILABLE}, the compiled
+ * {@code ALLOW} under {@code NO_POLICY_ACTIVE} with none; {@link com.finapp.risk.EvaluationFailed} for what refuses
+ * (another operation, another engine, another currency, a rule that throws) - never a partial verdict; and
+ * {@link com.finapp.risk.CanonicalEvaluation}, format 1 - the byte-exact text of the inputs and of a verdict, its SHA-256
+ * what `-004` seals and replays against, the inputs form parsed back strictly; proven byte-identical in a second JVM
+ * ({@code RiskEngineDigestTest}). The engine reads nothing: `-004`'s T-eval fills the inputs and seals them. No
+ * evaluation yet in production: nothing calls the engine until `-004` lands, production evaluates nothing until a policy
+ * version is activated under four eyes (section 1.1), and until `-008`…`-011` and `-007` land, the consumers' seams stay
+ * wired to their permit-all and not-assessed defaults; the monitoring sweep is off in test contexts and ingests, in
+ * production, a journal no rule yet reads (`-020`).
  */
 package com.finapp.risk;

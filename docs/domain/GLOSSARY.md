@@ -722,6 +722,10 @@ its `CreditRiskSignal` port and records what it was given; in Phase 10 the port 
 deterministically, so a decision made before Phase 13 replays identically after it; Phase 13's `app` implements the
 port over the Customer Risk Profile's rating with seam version 2 (`P13-TSK-007`), never over this score. See §10: the
 owner is settled.
+*(As built, `P13-TSK-003`, 2026-10-23: `Score`, an integer record bounded to [0, 1000], `Score.clamped(sum)` the one
+clamp; the decision is the strictest of the score band's and every fired hard decision — a band never softens a hard
+rule — and with nothing fired the band covering 0 decides; the `MONITORING` version's score maps to a rating, never a
+decision.)*
 **Owned by:** `risk` (Phase 13) *(was `credit` until the Phase 9 → 10 transition, 2026-10-07 —
 ADR-0084, `MODULE_ARCHITECTURE.md` §4)*
 
@@ -2110,7 +2114,10 @@ data, never code.
 **Not:** a kind — the kind is code and declares the parameter schema; the rule is one parameterisation of it. Nor
 credit's policy rule row (an operand over credit attributes with an adverse Reason Code) nor reconciliation's Match
 Rule (a member of a Matching Rule Set). A rule's firing is a rule hit recorded on the Risk Assessment; a rule never
-decides alone — precedence and the bands do.
+decides alone — precedence and the bands do. *(As built, `P13-TSK-003`, 2026-10-23: the kind's code is its
+`RuleEvaluation`, one per kind; a rule's hit is a `RuleHit` — ordinal, kind, outcome `FIRED` / `NOT_FIRED` / `ABSENT`,
+contribution, hard decision, the judged reading's token — recorded for every rule of the version, fired or not; a rule
+over an absent reading does not fire and says so.)*
 **Owned by:** `risk`
 
 ### Risk Assessment

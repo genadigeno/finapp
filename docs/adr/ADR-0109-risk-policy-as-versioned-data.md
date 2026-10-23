@@ -172,7 +172,20 @@ effective dates), `INV-AUD-04` (four eyes are two persons), ADR-0107, ADR-0108.
   and the `CHECK` on the engine name at insert; the gauge's `policy_version` as the value, not a tag; `CREDIT_SIGNAL`
   carries no version — `RISK_LIFECYCLES.md` §4.1's as-built note, `PHASE_13_PLAN.md` §22.)*
 - `P13-TSK-003` — `RISK_ENGINE_V1`, pure and deterministic, with its two-JVM determinism test; `P13-TSK-004` — the
-  sealed assessment and replay; `P13-TST-002` — the battery and its fingerprint.
+  sealed assessment and replay; `P13-TST-002` — the battery and its fingerprint. *(The engine built 2026-10-23, as
+  decision 3 states it, with three readings settled by the build and recorded in `PHASE_13_PLAN.md` §12.2–12.4 for
+  the review: **the composition** — the decision is the strictest of the score band's decision and every fired hard
+  decision, so "a hard rule's decision beats a score band's" means a band never *softens* a hard rule while it may
+  raise one — the only reading under which the C8 fixtures' hard `CHALLENGE` at EUR 500 and `DENY` band from 800 both
+  work; **nothing fired** gives score 0 and the band covering 0 decides (the fixtures' is `ALLOW`; the engine compiles
+  no `ALLOW`); **velocity readings** are the current figures before the judged movement, compared at-or-above the
+  threshold, never added to. The sealed inputs are `EvaluationInputs`, every reading `PRESENT` or `ABSENT` — an absent
+  reading never fires and its hit says so; a rule that throws, inputs of another operation, a policy for another
+  engine and an amount in another currency are `EvaluationFailed`, never a partial verdict; the canonical form is
+  `CanonicalEvaluation` format 1, SHA-256 over its UTF-8 bytes, the inputs parsed back strictly; the two-JVM proof is
+  `RiskEngineDigestTest` over a seeded corpus through risk's own `SecondJvm`. One gap for `-004`/`-006` to reconcile:
+  this ADR and `-002` type a velocity rule's `dimension` as `SubjectKind`, `-006`'s entry names a
+  `VelocityDimension` — the engine evaluates what the policy stores.)*
 - `RuleKind` additions after this ADR are recorded as dated amendments here with their engine version.
 - `DISTRIBUTED_EXECUTION.md` registers advisory namespace 13 and the pin's rule; `RISK_LIFECYCLES.md` §Policy
   version is the machine's record.
