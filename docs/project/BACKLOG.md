@@ -22537,6 +22537,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: a version is proposed, activated by a second person, rejected or retired; one `ACTIVE` per
   operation at every instant; an invalid rule never persists; every fixture validates; the proposer cannot approve.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): a `ROUND_AMOUNT` rule with `modulus_minor = 0` passes the policy door (`MinorAmount` is non-negative) and is `EvaluationFailed(RULE_THREW)` in the engine — the documented fail-safe path, tested; the door should require a positive modulus. Owed to the first task that touches the door's parameter validation (`-004` or `-006`), recorded here so it is not lost.
 
 **P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `COMPLETE` (2026-10-23; wave C beside `-006` and `-007`, branch `P13-TSK-003` from master `bfcc0af4`; marked `READY` by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; marks no task `READY` — the coordinator does, `-004` waiting on `-006`)
 - **Objective**: `RiskEngineV1` — a pure, deterministic function from sealed inputs and a policy version to a verdict:
