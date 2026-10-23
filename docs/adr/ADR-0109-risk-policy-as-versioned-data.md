@@ -164,7 +164,13 @@ effective dates), `INV-AUD-04` (four eyes are two persons), ADR-0107, ADR-0108.
 ## Follow-up
 
 - `P13-TSK-002` — policy versions as data: `risk V002` (`risk_policy_version`, `risk_rule`), the kinds' parameter
-  schemas, the door, four-eyes activation, the pin with advisory namespace 13, the v1 fixtures.
+  schemas, the door, four-eyes activation, the pin with advisory namespace 13, the v1 fixtures. *(Built 2026-10-23, as
+  decided, with the build's readings recorded for the review: several `PROPOSED` per operation numbered without a gap,
+  activation monotonic in version number (a proposal below the version in force `409 risk.PolicyStale`); the content
+  split along the money line into `risk_policy`, `risk_rule`, `risk_rule_parameter` (one typed row per declared
+  parameter) and `risk_policy_band` beside the money-free machine row; decision 8's engine-drift refusal at activation
+  and the `CHECK` on the engine name at insert; the gauge's `policy_version` as the value, not a tag; `CREDIT_SIGNAL`
+  carries no version — `RISK_LIFECYCLES.md` §4.1's as-built note, `PHASE_13_PLAN.md` §22.)*
 - `P13-TSK-003` — `RISK_ENGINE_V1`, pure and deterministic, with its two-JVM determinism test; `P13-TSK-004` — the
   sealed assessment and replay; `P13-TST-002` — the battery and its fingerprint.
 - `RuleKind` additions after this ADR are recorded as dated amendments here with their engine version.

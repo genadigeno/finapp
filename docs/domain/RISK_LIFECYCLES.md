@@ -181,6 +181,18 @@ status is `-002`'s to assign). **Invalid:** anything out of `RETIRED` or `REJECT
 `ACTIVE → PROPOSED | REJECTED`; an `ACTIVE` retired without its successor activated in the same transaction; activation
 by the proposer (`CHECK`); a content edit of any version (no `UPDATE` grant on the content columns).
 
+*(As built by `P13-TSK-002`, 2026-10-23: as drawn, with three readings settled by the build. **Several `PROPOSED` per
+operation** — the backlog entry's "ten proposals leave ten versions numbered without a gap" is the rule; there is no
+one-`PROPOSED` partial unique, and activation is monotonic in version number: a proposal numbered below the version in
+force answers `409 risk.PolicyStale` (superseded) and is rejected or left, so the retire-beside-successor trigger's
+"later successor" rank always holds. **The codes' statuses**: `risk.PolicyStale` `409` on a decided version re-decided
+and on a superseded proposal; `risk.PolicyNotActive` `409` on the in-force read with none active (the register's
+planned status kept). **The effective-from arithmetic**: credit `V014`'s rule confirmed for this table — the
+retirement's `effective_to` is `GREATEST(clock_timestamp(), transaction_timestamp(), effective_from + 1 µs)` and the
+successor's `effective_from` `GREATEST(transaction_timestamp(), max(effective_to))`, so the periods meet. The content
+is six tables, not two: the machine row, `risk_policy` (the knobs), `risk_rule`, `risk_rule_parameter` (one typed row
+per declared parameter), `risk_policy_band` and the history; `CREDIT_SIGNAL` carries no policy — refused at the door.)*
+
 ### 4.2 Risk assessment (`risk.risk_assessment`, `risk_assessment_input`, `risk_rule_hit`, `risk_reason`) — `P13-TSK-004` (`risk V007`); evaluated by `-003`'s engine; the seams wired by `-008`…`-011`
 
 ```
@@ -634,9 +646,12 @@ them.*
   `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`, `-007` `V006`, `-004` `V007` (the
   assessment tables and `decision_override`), `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`
   (the headings of §4 and the table of §5).
-- **One `PROPOSED` per operation** (`-002`) — still this document's reading: one `PROPOSED` per operation (the credit
-  and BNPL shape), the loser of a concurrent decision `409 risk.PolicyStale` — plan §9 lists the code and assigns it to
-  no door; `-002` assigns it (and `risk.PolicyNotActive`, the in-force read with none active).
+- **One `PROPOSED` per operation** (`-002`) — **settled by the build** (`P13-TSK-002`, 2026-10-23): several `PROPOSED`
+  per operation, numbered without a gap under the advisory lock (the backlog entry's "ten proposals leave ten
+  versions"); activation monotonic in version number, a proposal below the version in force superseded; the loser of a
+  concurrent decision and a superseded proposal both `409 risk.PolicyStale`; `risk.PolicyNotActive` `409` on the
+  in-force read with none active (§4.1's as-built note). *(Read "one `PROPOSED` per operation (the credit and BNPL
+  shape)" until then.)*
 - **"One watermark per source"** (`-019`) — still this document's reading: with one journal there is one source — the
   `MonitoredLedger` port's sequence, one row; a second source arrives only with a second journal.
 - **Live-twin refusals** (`-012`, `-017`, `-021`) — still this document's reading: `409 risk.ActionNotProposable` for
@@ -645,6 +660,7 @@ them.*
 - **The rescreening permit's states and the superseded list** (`-022`) — still this document's reading: the permit
   `PENDING → REQUESTED → DONE` keyed (list version, party); the predecessor list version keeps `ACTIVE` until `-022`
   decides whether a `SUPERSEDED` state is wanted.
-- **The effective-from arithmetic** (`-002`) — still this document's reading: credit `V014`'s
-  `GREATEST(transaction_timestamp(), effective_from + 1 µs)` rule for a retirement beside its successor; `-002` confirms
-  it against the policy table.
+- **The effective-from arithmetic** (`-002`) — **confirmed by the build** (`P13-TSK-002`, 2026-10-23): credit `V014`'s
+  rule in `risk V002`'s edge trigger — the retirement's end `GREATEST(clock_timestamp(), transaction_timestamp(),
+  effective_from + 1 µs)`, the successor's start `GREATEST(transaction_timestamp(), max(effective_to))` — so a backward
+  database clock neither refuses an activation nor overlaps two periods (`RiskPolicyMigrationTest#theDecisionIsStampedAfterTheLock`).

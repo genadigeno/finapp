@@ -4,7 +4,6 @@ import com.finapp.ledger.JournalEntryStore;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
-import com.finapp.platform.telemetry.Spans;
 import com.finapp.risk.JdbcMonitoredTransactionStore;
 import com.finapp.risk.JdbcMonitoringWatermarkStore;
 import com.finapp.risk.MonitoredLedger;
@@ -23,8 +22,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Wiring for the monitoring intake (`P13-TSK-019`): risk's unit of work, the port {@code app} implements over the
@@ -34,17 +31,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration(proxyBeanMethods = false)
 public class RiskMonitoringBeans {
 
-    /** risk's unit of work - one transaction, default propagation; the snapshot read-only REPEATABLE READ. */
-    @Bean
-    RiskTransactions riskTransactions(PlatformTransactionManager transactionManager, DataSource dataSource) {
-        return new SpringRiskTransactions(new TransactionTemplate(transactionManager), dataSource);
-    }
-
-    /** risk's step spans - over the platform's domain spans, no attribute ever. */
-    @Bean
-    RiskFlowScope riskFlowScope(Spans domainSpans) {
-        return new RiskFlowScope(domainSpans);
-    }
+    // risk's unit of work (`RiskTransactions`, the port; `SpringRiskTransactions` its implementation) and its step
+    // spans (`RiskFlowScope`) are `RiskBeans`' (P13-TSK-002) - one bean of each across the tree.
 
     /**
      * The journal as the intake reads it (ADR-0111 decision 1): the ledger's own journal and chart stores, SELECT only.

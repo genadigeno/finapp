@@ -1465,15 +1465,15 @@ alert, a case or a report exists.
 | `risk.NotFound` | 404 | No risk record matches the requested identifier - another party's, an unknown or a malformed id alike. |
 | `risk.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl` precedent — a forbidden act, not a conflict; the plan's §9 corrected to `403` by the transition, 2026-10-22.)* |
 | `risk.SelfDealingRefused` | 403 | An employee never reads or works a case, approves an override or files a report on their own party's subject; nothing was done. |
-| *planned* `risk.PolicyNotActive` | 409 | No risk policy version is active for the operation, or the version named is not the active one. |
-| *planned* `risk.PolicyStale` | 409 | The risk policy version is no longer awaiting a decision. |
-| *planned* `risk.PolicyInvalid` | 422 | The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a decision the operation does not admit; nothing was proposed. |
+| `risk.PolicyNotActive` | 409 | No risk policy version is active for the operation, or the version named is not the active one. |
+| `risk.PolicyStale` | 409 | The risk policy version is no longer awaiting a decision, or is superseded by a later activation (`P13-TSK-002`). |
+| `risk.PolicyInvalid` | 422 | The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a decision the operation does not admit; nothing was proposed. |
 | *planned* `risk.CaseRevisionStale` | 409 | The case changed since it was read; read it again and resend with its current revision. |
 | *planned* `risk.CaseNotOpen` | 409 | The case is disposed; a new case may reference it. |
 | *planned* `risk.AlertNotOpen` | 409 | The alert is already attached to a case or suppressed. |
 | *planned* `risk.ActionNotProposable` | 409 | The action cannot be proposed on this case now - one of its kind and target is already live, or the case's state does not admit it. |
 | *planned* `risk.ReportNotFileable` | 409 | The regulatory report is not approved, or is already filed. |
-| `risk.ReasonRequired` | 422 | A reason is required - 1 to 1000 characters, holding no card-number or bank-account shape. *(Declared by `P13-TSK-019` for the reprocessing door; `-002`'s policy doors raise the same code.)* |
+| `risk.ReasonRequired` | 422 | A reason is required - 1 to 1000 characters, holding no card-number or bank-account shape. *(One code, the wave's: raised by `P13-TSK-002`'s policy doors and `P13-TSK-019`'s reprocessing door.)* |
 | `risk.ReprocessingNotBehind` | 422 | A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip entries. Nothing was changed. *(`P13-TSK-019`, `POST /v1/operator/risk/monitoring/reprocessing`.)* |
 
 **The consumers' answers are their own, unchanged** (`PHASE_13_PLAN.md` §9, C6): a transfer refused by a seam commits

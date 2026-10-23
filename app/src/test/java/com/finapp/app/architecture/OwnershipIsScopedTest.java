@@ -1788,6 +1788,51 @@ class OwnershipIsScopedTest {
                                         + " the product's advisory lock (namespace 12), the decision's own row, behind"
                                         + " @RequiresPermission(BNPL_ADMINISTER); terms have no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskPolicyStore.insertContent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-002. The version id is minted by the administration in this transaction,"
+                                        + " its machine row inserted just before; a risk policy version is platform-wide"
+                                        + " configuration with no owner to scope by, every writing door behind"
+                                        + " @RequiresPermission(RISK_POLICY_ADMINISTER), asserted per route by"
+                                        + " RiskPolicyEndpointDatabaseTest with nothing written, and risk V002's trigger"
+                                        + " admits content only for a PROPOSED version (the bnpl terms shape).")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskPolicyStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-002. The id comes only from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id), under the operation's advisory lock, namespace 13), the move"
+                                        + " conditional on PROPOSED; policy configuration behind RISK_POLICY_ADMINISTER,"
+                                        + " four-eyes by CHECK.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskPolicyStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-002. The id comes only from the operation's ACTIVE row this transaction"
+                                        + " locked FOR UPDATE (lockActive), the move conditional on ACTIVE, and a deferred"
+                                        + " trigger refuses a retirement that commits without a later successor.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskPolicyStore.version",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-002. A read of platform-wide policy configuration: the version id is one"
+                                        + " the ACTIVE status or the FOR SHARE pin answered, or the operator's own request"
+                                        + " on a door behind @RequiresPermission(RISK_POLICY_ADMINISTER); a policy has"
+                                        + " no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskPolicyStore.rules",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-002. version's own helper: the rules and parameters of the version id"
+                                        + " version answered - the same read, the same door, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskPolicyStore.bands",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-002. version's own helper: the bands of the version id version answered -"
+                                        + " the same read, the same door, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

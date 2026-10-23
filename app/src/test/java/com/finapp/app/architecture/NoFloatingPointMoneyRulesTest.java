@@ -322,6 +322,11 @@ class NoFloatingPointMoneyRulesTest {
                     // number, never a rate or a fee.
                     "com.finapp.app.bnpl.BnplTermsMetrics",
                     "com.finapp.app.bnpl.BnplTermsMetrics$Cached",
+                    // P13-TSK-002. The SAME case as BnplTermsMetrics, for risk: each operation's ACTIVE policy version
+                    // NUMBER through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable. A version
+                    // number, never a threshold, a weight or an amount.
+                    "com.finapp.app.risk.RiskPolicyMetrics",
+                    "com.finapp.app.risk.RiskPolicyMetrics$Cached",
                     // P12-TSK-017. The SAME case as LoanServicingMetrics' accrual half, for bnpl: the accrual lag in SECONDS
                     // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for unreadable - a duration, never an
                     // amount (the accruals are the rows' and the ledger's, ADR-0072); the dates are counted by

@@ -25,9 +25,24 @@ public enum RiskErrorCode implements ErrorCode {
             403,
             "A holder never acts on a case, override or report whose subject is their own party; nothing was done."),
 
-    /** Declared by `P13-TSK-019` for the reprocessing door; `-002`'s doors raise the same code (the wave's one). */
+    // The policy doors' four (P13-TSK-002), the register's planned statuses kept.
+    POLICY_NOT_ACTIVE(
+            "risk.PolicyNotActive",
+            409,
+            "No risk policy version is active for the operation, or the version named is not the active one."),
+
+    POLICY_STALE("risk.PolicyStale", 409, "The risk policy version is no longer awaiting a decision, or is superseded."),
+
+    POLICY_INVALID(
+            "risk.PolicyInvalid",
+            422,
+            "The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a"
+                    + " decision the operation does not admit; nothing was proposed."),
+
+    /** The policy doors' (P13-TSK-002) and the reprocessing door's (P13-TSK-019) - one code, the wave's. */
     REASON_REQUIRED("risk.ReasonRequired", 422, "A reason is required."),
 
+    // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
     REPROCESSING_NOT_BEHIND(
             "risk.ReprocessingNotBehind",
             422,

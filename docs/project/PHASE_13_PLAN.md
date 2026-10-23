@@ -177,7 +177,9 @@ Drafted in full in [`RISK_LIFECYCLES.md`](../domain/RISK_LIFECYCLES.md); summari
 
 - **Policy version:** `PROPOSED → ACTIVE` (a second person) `| REJECTED`; `ACTIVE → RETIRED` beside its successor's
   activation in one transaction (the BNPL terms shape, so the pin never reads "neither" — the Phase 12 → 13 gate's A3-I1
-  applied forward: the pin takes the shared advisory lock when its first read is empty).
+  applied forward: the pin takes the shared advisory lock when its first read is empty). *(Built by `P13-TSK-002`,
+  2026-10-23, as written; several `PROPOSED` per operation numbered without a gap, activation monotonic in version
+  number — a proposal below the version in force `409 risk.PolicyStale`; `RISK_LIFECYCLES.md` §4.1's as-built note.)*
 - **Assessment / decision:** born `DECIDED` with one decision; never changes. An **override** is `PROPOSED → APPROVED |
   REJECTED` and records the effect it issued.
 - **Withdrawal with a `HOLD`:** payments' machine gains `HELD` before `DISPATCHED`: `HELD → DISPATCHED` (released by an
@@ -869,6 +871,21 @@ Mirrors `P12-TSK-002`: the module with its `V001` floor (`REVOKE ALL FROM PUBLIC
 `RiskFlowScope` and the sweeper property names, and the ports' interfaces declared empty of implementation. It is first
 because every other task writes into this schema and composes through these ports, and the role split is the trust
 decision the whole phase rests on. `P13-TSK-002` (policy versions) follows. *(Built 2026-10-22, `COMPLETE`: as written, with the roles a partition (§11's erratum), `RiskAuditAction` and `RiskErrorCode` grown per task rather than declared whole, and the ports `RiskActingParty`, `SessionAssurance`, `MonitoredLedger`, `RegulatoryFilingProvider`, `ScreeningClearances`, `PartyRescreening` and the six action ports; `RiskInputs` and `CaseOpener` are `-004`'s.)*
+
+**`P13-TSK-002` — Risk policy versions as data** *(built 2026-10-23, `COMPLETE`, in wave B beside `-005` and `-019`: as
+§12.2 and §4 describe it, with these readings settled by the build — several `PROPOSED` per operation numbered without
+a gap and activation monotonic in version number (the entry's "ten proposals, ten versions"; no one-`PROPOSED` unique);
+the content in six tables along the money line (the machine row money-free, `risk_policy`, `risk_rule`,
+`risk_rule_parameter` with one typed row per declared parameter, `risk_policy_band` for the score, rating and fail-safe
+bands, the history), every amount `RESTRICTED-FINANCIAL` on INSERT-only rows; `RuleParameters` held to each kind's
+schema as declared once on `RuleKind` rather than restated per kind; `CREDIT_SIGNAL` carries no policy (refused
+`422 risk.PolicyInvalid`); `risk.PolicyNotActive` and `risk.PolicyStale` `409`, `risk.PolicyInvalid` and
+`risk.ReasonRequired` `422`; the gauge `finapp.risk.policy.active{operation}` with the version number as its value
+(§15's `policy_version` tag answered by the value — a number per activation is not a bounded tag); the pin's A3-I1
+re-read composed in `RiskPolicies.active` over the store's two primitives so its shape is hermetic
+(`RiskPoliciesPinTest`) as well as live (`RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor`,
+written and owed under C5 with the rest of the database tier); the C8 fixtures as risk's published test fixtures
+(`RiskPolicyFixtures`), every one of the twenty-two kinds used by some fixture.)*
 
 ---
 

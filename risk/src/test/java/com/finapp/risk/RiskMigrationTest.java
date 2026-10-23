@@ -96,17 +96,48 @@ class RiskMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds Flyway's history - which the application cannot read - and the tables and functions"
-            + " the tasks so far created, exactly")
-    void theObjectsAreExactlyTheTasksSoFar() throws SQLException {
-        // Each later task rewrites these lists with its own tables, views and functions, keeping the others'.
-        assertThat(tablesIn(SCHEMA)).containsExactly("flyway_schema_history", "monitored_transaction",
-                "monitoring_watermark");
+    @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
+            + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V004 the"
+            + " monitored transactions and the watermark (P13-TSK-019)")
+    void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
+        // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
+        // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
+        // this list with its own tables, views and functions, keeping the others' (the wave's rule); the lists are in
+        // the catalogue's order.
+        assertThat(tablesIn(SCHEMA)).containsExactly(
+                "flyway_schema_history",
+                // V004 (P13-TSK-019): the born-once record and the intake's position per source.
+                "monitored_transaction",
+                "monitoring_watermark",
+                // V002 (P13-TSK-002): the machine row, the content, the rules and their parameters, the bands, the history.
+                "risk_policy",
+                "risk_policy_band",
+                "risk_policy_version",
+                "risk_policy_version_event",
+                "risk_rule",
+                "risk_rule_parameter");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
                 + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
-                "monitored_transaction_is_append_only", "monitored_transaction_is_stamped_by_the_database",
-                "monitoring_watermark_derives_its_sequence", "uuid7_sequence");
+                // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
+                "holds_account_identifier_shape",
+                "holds_card_number_shape",
+                "holds_instrument_shape",
+                "luhn_valid",
+                "mod97_check_holds",
+                // V004 (P13-TSK-019): the monitored row's stamp and freeze, the watermark's derivation, the uuid prefix.
+                "monitored_transaction_is_append_only",
+                "monitored_transaction_is_stamped_by_the_database",
+                "monitoring_watermark_derives_its_sequence",
+                // V002 (P13-TSK-002), continued.
+                "risk_policy_content_is_born_once",
+                "risk_policy_is_never_truncated",
+                "risk_policy_version_event_is_append_only",
+                "risk_policy_version_has_its_content",
+                "risk_policy_version_permits_only_machine_edges",
+                "risk_policy_version_retires_only_beside_its_successor",
+                // V004 (P13-TSK-019).
+                "uuid7_sequence");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

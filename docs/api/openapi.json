@@ -9012,6 +9012,111 @@
           }
         }
       },
+      "risk.PolicyInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.PolicyInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.PolicyInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a decision the operation does not admit; nothing was proposed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.PolicyNotActive": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.PolicyNotActive"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.PolicyNotActive"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] No risk policy version is active for the operation, or the version named is not the active one.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.PolicyStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.PolicyStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.PolicyStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The risk policy version is no longer awaiting a decision, or is superseded.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "risk.ReasonRequired": {
         "content": {
           "application/problem+json": {
@@ -21617,6 +21722,340 @@
         },
         "type": "object"
       },
+      "RiskBandView": {
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "from": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rating": {
+            "type": "string"
+          },
+          "to": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskFailSafeBandRequest": {
+        "properties": {
+          "decision": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "fromMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "toMinor": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision",
+          "fromMinor"
+        ],
+        "type": "object"
+      },
+      "RiskFailSafeBandView": {
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "fromMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "toMinor": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskPolicyDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskPolicyProposalRequest": {
+        "properties": {
+          "challengeAssurance": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "engine": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "failSafeBands": {
+            "items": {
+              "$ref": "#/components/schemas/RiskFailSafeBandRequest"
+            },
+            "maxItems": 32,
+            "minItems": 0,
+            "type": "array"
+          },
+          "holdValidityHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "operation": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "overrideThresholdMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ratingBands": {
+            "items": {
+              "$ref": "#/components/schemas/RiskRatingBandRequest"
+            },
+            "maxItems": 32,
+            "minItems": 0,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RiskRuleRequest"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          },
+          "scoreBands": {
+            "items": {
+              "$ref": "#/components/schemas/RiskScoreBandRequest"
+            },
+            "maxItems": 32,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "currency",
+          "engine",
+          "operation",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "RiskPolicyReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "retiredId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskPolicyView": {
+        "properties": {
+          "challengeAssurance": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "failSafeBands": {
+            "items": {
+              "$ref": "#/components/schemas/RiskFailSafeBandView"
+            },
+            "type": "array"
+          },
+          "holdValidityHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "overrideThresholdMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "ratingBands": {
+            "items": {
+              "$ref": "#/components/schemas/RiskBandView"
+            },
+            "type": "array"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RiskRuleView"
+            },
+            "type": "array"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scoreBands": {
+            "items": {
+              "$ref": "#/components/schemas/RiskBandView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskRatingBandRequest": {
+        "properties": {
+          "from": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rating": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "to": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from",
+          "rating",
+          "to"
+        ],
+        "type": "object"
+      },
+      "RiskRuleRequest": {
+        "properties": {
+          "hardDecision": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": { },
+            "type": "object"
+          },
+          "weight": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "RiskRuleView": {
+        "properties": {
+          "hardDecision": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "parameters": {
+            "additionalProperties": { },
+            "type": "object"
+          },
+          "weight": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskScoreBandRequest": {
+        "properties": {
+          "decision": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "from": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "to": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
       "RoleAssignmentRequest": {
         "properties": {
           "reason": {
@@ -32939,6 +33378,185 @@
               }
             },
             "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/policies": {
+      "get": {
+        "operationId": "readRiskPolicyInForce",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "operation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeRiskPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskPolicyProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/policies/{versionId}": {
+      "get": {
+        "operationId": "readRiskPolicyVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/policies/{versionId}/activation": {
+      "post": {
+        "operationId": "activateRiskPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskPolicyDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/policies/{versionId}/rejection": {
+      "post": {
+        "operationId": "rejectRiskPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskPolicyDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyReceipt"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

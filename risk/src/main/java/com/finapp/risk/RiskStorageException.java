@@ -1,8 +1,8 @@
 package com.finapp.risk;
 
 /**
- * A risk store's statement failed (`P13-TSK-019`; bnpl's {@code BnplStorageException}): the operation and the SQLSTATE,
- * never a parameter - no subject, amount or key reaches a log through this message ({@code INV-RSK-08}).
+ * A risk store's failure, named by its operation and SQLSTATE only (`P13-TSK-002`; bnpl's
+ * {@code BnplStorageException}): never the driver's message, which can carry a value from the row.
  */
 public final class RiskStorageException extends RuntimeException {
 
