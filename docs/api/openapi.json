@@ -21722,6 +21722,117 @@
         },
         "type": "object"
       },
+      "RiskAssessmentView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "assessedAt": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "canonicalFormat": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "challengeSatisfied": {
+            "type": "boolean"
+          },
+          "commandRef": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "destinationId": {
+            "type": "string"
+          },
+          "destinationKind": {
+            "type": "string"
+          },
+          "deviceHash": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "failSafeReason": {
+            "type": "string"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/RiskRuleHitView"
+            },
+            "type": "array"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "inputsCanonical": {
+            "type": "string"
+          },
+          "inputsSha256": {
+            "type": "string"
+          },
+          "latencyMicros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sealHolds": {
+            "type": "boolean"
+          },
+          "sourceAccountId": {
+            "type": "string"
+          },
+          "unavailableCause": {
+            "type": "string"
+          },
+          "velocityCutAt": {
+            "type": "string"
+          },
+          "velocityOutcome": {
+            "type": "string"
+          },
+          "verdictSha256": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskBandView": {
         "properties": {
           "decision": {
@@ -22055,6 +22166,62 @@
           "rating",
           "to"
         ],
+        "type": "object"
+      },
+      "RiskReplayRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskReplayView": {
+        "properties": {
+          "assessmentId": {
+            "type": "string"
+          },
+          "diverged": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "firstDivergedRule": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskRuleHitView": {
+        "properties": {
+          "contribution": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hardDecision": {
+            "type": "string"
+          },
+          "judged": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RiskRuleRequest": {
@@ -33410,6 +33577,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnmatchedReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/{assessmentId}": {
+      "get": {
+        "operationId": "readRiskAssessment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAssessmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/{assessmentId}/replay": {
+      "post": {
+        "operationId": "replayRiskAssessment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskReplayView"
                 }
               }
             },

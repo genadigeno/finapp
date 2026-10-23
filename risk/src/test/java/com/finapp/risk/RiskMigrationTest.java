@@ -28,7 +28,9 @@ import org.junit.jupiter.api.Test;
  * The risk schema's privilege floor and its first tables, proven <strong>live</strong> (`P13-TSK-001`; `P13-TSK-019`
  * adds {@code V004}: {@code monitored_transaction}, {@code monitoring_watermark}; `P13-TSK-006` adds {@code V005}:
  * {@code velocity_window}; `P13-TSK-007` adds {@code V006}: {@code customer_risk_profile},
- * {@code customer_risk_profile_version}) - {@code BnplMigrationTest}'s idiom, as every schema-owning module has its own.
+ * {@code customer_risk_profile_version}; `P13-TSK-004` adds {@code V007}: {@code risk_assessment},
+ * {@code risk_assessment_input}, {@code risk_rule_hit}, {@code risk_reason}, {@code decision_override}) -
+ * {@code BnplMigrationTest}'s idiom, as every schema-owning module has its own.
  *
  * <p>The migration-test idiom reads the SQL and holds it to the code; this class holds the <em>database</em> to it,
  * because a floor is only a control as it actually stands in the catalogue - a grant added by a later migration or by
@@ -100,7 +102,8 @@ class RiskMigrationTest {
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
             + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
-            + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007)")
+            + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007), V007 the sealed assessment and the"
+            + " override's table (P13-TSK-004)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -110,16 +113,25 @@ class RiskMigrationTest {
                 // V006 (P13-TSK-007): the profile's head and its versions.
                 "customer_risk_profile",
                 "customer_risk_profile_version",
+                // V007 (P13-TSK-004): the override's table (its machine P13-TSK-012's).
+                "decision_override",
                 "flyway_schema_history",
                 // V004 (P13-TSK-019): the born-once record and the intake's position per source.
                 "monitored_transaction",
                 "monitoring_watermark",
+                // V007 (P13-TSK-004): the sealed assessment's head and its inputs.
+                "risk_assessment",
+                "risk_assessment_input",
                 // V002 (P13-TSK-002): the machine row, the content, the rules and their parameters, the bands, the history.
                 "risk_policy",
                 "risk_policy_band",
                 "risk_policy_version",
                 "risk_policy_version_event",
+                // V007 (P13-TSK-004): the ordered reasons.
+                "risk_reason",
                 "risk_rule",
+                // V007 (P13-TSK-004): every rule's hit.
+                "risk_rule_hit",
                 "risk_rule_parameter",
                 // V003 (P13-TSK-005): the born-once signal.
                 "risk_signal",
@@ -134,6 +146,8 @@ class RiskMigrationTest {
                 "customer_risk_profile_moves_with_its_versions",
                 "customer_risk_profile_version_is_append_only",
                 "customer_risk_profile_version_is_born_in_sequence",
+                // V007 (P13-TSK-004): the override born PROPOSED over a refusal, unmoved until P13-TSK-012.
+                "decision_override_permits_only_machine_edges",
                 // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
                 "holds_account_identifier_shape",
                 "holds_card_number_shape",
@@ -144,6 +158,10 @@ class RiskMigrationTest {
                 "monitored_transaction_is_append_only",
                 "monitored_transaction_is_stamped_by_the_database",
                 "monitoring_watermark_derives_its_sequence",
+                // V007 (P13-TSK-004): born with its inputs, stamped by the database, sealed for every writer.
+                "risk_assessment_has_its_inputs",
+                "risk_assessment_is_born_stamped",
+                "risk_assessment_is_sealed",
                 // V002 (P13-TSK-002), continued.
                 "risk_policy_content_is_born_once",
                 "risk_policy_is_never_truncated",
@@ -334,6 +352,23 @@ class RiskMigrationTest {
         assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
                 + " WHERE conname = 'customer_risk_profile_version_cause_is_known'"))
                 .contains("'" + ProfileCause.RECOMPUTE.name() + "'", "'" + ProfileCause.DISPOSITION.name() + "'");
+    }
+
+    @Test
+    @DisplayName("V007: the five tables SELECT and INSERT for the application and nothing else - no column UPDATE, no"
+            + " DELETE - and every constraint name unique in the schema")
+    void theAssessmentGrants() throws SQLException {
+        for (String table : List.of("risk_assessment", "risk_assessment_input", "risk_rule_hit", "risk_reason",
+                "decision_override")) {
+            assertThat(grantsOn(table)).as(table).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+            assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                    + " WHERE table_schema = 'risk' AND table_name = '" + table + "' AND grantee = 'finapp_app'"
+                    + " AND privilege_type = 'UPDATE'")).as(table).isEmpty();
+        }
+        String statements = statementsOf(migration("V007__the_sealed_assessment.sql"));
+        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("GRANT UPDATE");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
 
     @Test

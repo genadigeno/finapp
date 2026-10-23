@@ -22537,7 +22537,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: a version is proposed, activated by a second person, rejected or retired; one `ACTIVE` per
   operation at every instant; an invalid rule never persists; every fixture validates; the proposer cannot approve.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
-- **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): a `ROUND_AMOUNT` rule with `modulus_minor = 0` passes the policy door (`MinorAmount` is non-negative) and is `EvaluationFailed(RULE_THREW)` in the engine — the documented fail-safe path, tested; the door should require a positive modulus. Owed to the first task that touches the door's parameter validation (`-004` or `-006`), recorded here so it is not lost. *(`P13-TSK-006` changed the parameter **types**, not the value validation, and left this to `-004`: refusing a zero modulus at the door removes the engine's only `RULE_THREW` fixture (`RiskEngineV1Test`), which `-004`'s fail-safe tests can replace.)*
+- **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): a `ROUND_AMOUNT` rule with `modulus_minor = 0` passes the policy door (`MinorAmount` is non-negative) and is `EvaluationFailed(RULE_THREW)` in the engine — the documented fail-safe path, tested; the door should require a positive modulus. Owed to the first task that touches the door's parameter validation (`-004` or `-006`), recorded here so it is not lost. *(`P13-TSK-006` changed the parameter **types**, not the value validation, and left this to `-004`: refusing a zero modulus at the door removes the engine's only `RULE_THREW` fixture (`RiskEngineV1Test`), which `-004`'s fail-safe tests can replace.)* **Closed by `P13-TSK-004` (2026-10-23):** `RiskPolicy`'s rule validation refuses a `ROUND_AMOUNT` `modulus_minor` below one minor unit (`PolicyInvalid`, so `422 risk.PolicyInvalid` at the door and a refusal on any read of a stored version — none exists outside a test container; no migration `CHECK` was added, the domain holds every writer, which is the door alone); `RiskPolicyDeskTest` gained the case and `RiskEngineV1Test#theRefusals` proves the refusal. The engine's `RULE_THREW` path stays tested another way: `RiskEngineV1` judges each rule through a package-private `RuleJudge` seam (production always `RuleEvaluation`'s), and the test injects a judge that throws for rule 2 — the wrapping, the ordinal, the kind and the message free of the reading, as before. The engine's semantics are unchanged (no assessment had been sealed).
 - **Cross-task correction by `P13-TSK-006`** (2026-10-23, the coordinator's decision at wave C): a velocity rule's `dimension` parameter is a `VelocityDimension` (`PARTY`, `SOURCE_ACCOUNT`, `DESTINATION`, `DEVICE`, `MERCHANT`), `ParameterType.VELOCITY_DIMENSION` / `ParameterValue.Dimension` / `RuleParameters.dimension`; `SUBJECT_KIND`, `ParameterValue.Subject` and `subjectKind(…)` removed (no kind used them); the storage change is `risk V005`'s (column `value_velocity_dimension`, the type and value `CHECK`s re-made behind a guard refusing a stored `SUBJECT_KIND`) — `V002` untouched; the fixtures' "10 per 24 h per source account" moved from `ACCOUNT` to `SOURCE_ACCOUNT`; the policy door (`RiskPolicyDesk`) parses the new type.
 
 **P13-TSK-003 — The risk engine v1 (pure, deterministic, two-JVM)** — `COMPLETE` (2026-10-23; wave C beside `-006` and `-007`, branch `P13-TSK-003` from master `bfcc0af4`; marked `READY` by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; marks no task `READY` — the coordinator does, `-004` waiting on `-006`)
@@ -22629,7 +22629,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   nothing of the engine's own to persist or count; no database suite owed.
 - **Cross-task correction by `P13-TSK-006`** (2026-10-23, the coordinator's decision at wave C): `VelocityKey` is keyed on `VelocityDimension` (no longer `SubjectKind`); `RuleEvaluation`'s velocity evaluators read `dimension(…)` and `DORMANT_THEN_ACTIVE` the `PARTY` dimension; `CanonicalEvaluation` parses a `VelocityDimension`; `EvaluationInputs.Builder.velocity` takes one (and a `(VelocityKey, VelocityReading)` pair); `RiskEngineV1Test#theCanonicalBytesArePinned`'s golden bytes read `SOURCE_ACCOUNT` — **format stays 1** (nothing had been sealed); `EvaluationCorpus` walks `VelocityDimension.values()`.
 
-**P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `READY` (2026-10-23; wave D — marked by the coordinator once wave C (`-003`, `-006`, `-007`) merged, master `e7da3b47`; every dependency `COMPLETE`)
+**P13-TSK-004 — The sealed assessment, the decision, reason codes and replay** — `COMPLETE` (2026-10-23; Phase 13 wave D beside `P13-TSK-015`, branch `P13-TSK-004` from master `79273666`; risk `V007`; **M13.1 `CLOSED` at 4 of 4** — `-001`…`-004`; marks no task `READY` — the coordinator does. **Gate (2026-10-23): 0 CRITICAL, 0 IMPORTANT (two found and fixed at the gate: the fail-safe's log line carried the `CONFIDENTIAL` decision; `risk_assessment.merchant_id` spelled the tenant column outside the tenant's packages — `OwnershipIsScopedTest#tenantColumnsLiveOnlyInTheTenantsPackages` red in app `architectureTest` — renamed `merchant_subject_id`), 7 MINOR** — see the as-built paragraph below. Ten-instance `PASS`: `UNIQUE (operation, command_ref)` the one arbiter of an assessment, R1's `FOR SHARE` pin, R2a's per-subject advisory locks before every read and R2's row upsert beneath, no process state; counted by the owed `RiskEvaluationDatabaseTest` (C5). Seven probes performed and sha256-verified (`MUTATION_TESTING.md` §2); three database probes written and owed.) *(read "`READY` (2026-10-23; wave D — marked by the coordinator once wave C (`-003`, `-006`, `-007`) merged, master `e7da3b47`; every dependency `COMPLETE`)" until its gate)*
 - **Objective**: **T-eval** — one sealed, `INSERT`-only assessment per judged command, written in the caller's
   transaction after the caller's locks, pinning the `ACTIVE` policy, carrying the inputs read, the engine and policy
   versions, every rule hit and contribution, the score, the decision, the ordered reason codes, whether the fail-safe
@@ -22716,6 +22716,91 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   the sealed inputs is `IDENTICAL` and a perturbation `DIVERGED` naming its row; the operator read is audited.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: High (in every money transaction once the seams
   land). **Cx**: H.
+- **As built (2026-10-23, the gate's record).** *`risk V007`:* `risk_assessment` (the head: the operation, the
+  `command_ref` token, the movement's subjects exactly as the windows count them — `party_id` (required),
+  `identity_id`, `source_account_id`, `destination_kind`/`destination_id`, `device_hash`, `merchant_subject_id` (named apart from the tenant column `merchant_id`, which `OwnershipIsScopedTest` confines to the tenant's packages) — the judged
+  `amount_minor`/`currency`/`scale` on this `INSERT`-only row, the pin (`policy_version_id` + `policy_operation`, a
+  composite FK to `risk_policy_version (id, operation)`, + `policy_version`), `engine` (NOT NULL — the fail-safe verdict
+  names the engine too), `score`, `decision` (admitted per operation by `CHECK`), `fail_safe_reason` with
+  `unavailable_cause` (`NO_POLICY`, `PIN_UNREADABLE`, `READ_FAILED`, `TIMEOUT`, `ENGINE_REFUSED`; together or not at
+  all; score 0), `challenge_satisfied` (exactly for a `CHALLENGE`), `velocity_outcome` (`COUNTED`, `NOT_PERMITTED`,
+  `UNCOUNTED`) with `velocity_cut_at`, `canonical_format` 1, `inputs_sha256`, `verdict_sha256`, `latency_micros`,
+  correlation and causation, `assessed_at` stamped `clock_timestamp()` by trigger; `UNIQUE (operation, command_ref)`),
+  `risk_assessment_input` (the canonical inputs text, its digest a `CHECK`), `risk_rule_hit`, `risk_reason`
+  (`PRIMARY KEY (assessment_id, position)`); all four sealed for every writer by trigger (no `UPDATE`, `DELETE` or
+  `TRUNCATE`, the owner included) and born whole (a deferred trigger: the inputs row and, for a fail-safe, its reason
+  first); `decision_override` (the table only: the four-eyes `CHECK` over `requires_second_person`, one live proposal,
+  a birth over a `DENY`/`HOLD`/`REVIEW` decision only, every `UPDATE` refused until `-012`); `SELECT, INSERT` for the
+  application on all five, nothing else. *T-eval* — `RiskEvaluation.evaluate(Connection, RiskEvaluationRequest)` →
+  `Assessed`, on the caller's connection inside its transaction after its locks, stateless: (1) the
+  `(operation, command_ref)` lookup — a retry answered by its seal (`replayed`), nothing evaluated; (2) **(R1) the pin**
+  (`RiskPolicies.active`, `FOR SHARE`) behind a savepoint with **no** statement timeout — an evaluation meeting an
+  activation waits and pins the successor (A3-I1); (3) behind a second savepoint under `SET LOCAL statement_timeout =
+  250ms` (`EvaluationBudget`/`JdbcEvaluationBudget`, the caller's setting restored before the release): **(R2a)**
+  `VelocityWindows.cut`, the reads (the windows the policy reads, the profile's rating, the signals' readings,
+  `RiskInputs`), `RiskEngineV1`, and **(R2)** `increment` only for `ALLOW` or a satisfied `CHALLENGE`; (4) **(R3) the
+  seal** — `INSERT … ON CONFLICT DO NOTHING`, a lost race `RaceLost` (the caller rolls back, its counts with it; its
+  retry finds the seal); (5) the outbox — `risk.RiskDecisionMade` (ids and codes only; the reasons as `reasonCount` +
+  `reason1…N`) and `risk.LimitBreached` per fired amount or velocity rule whose own decision is `DENY`/`HOLD`; (6)
+  `CaseOpener` for `REVIEW`/`HOLD` (`NONE` wired until `-016`). A failed step undoes its savepoint alone and is a
+  **recorded** fail-safe (`UnavailableCause`): `NO_POLICY` → `ALLOW(NO_POLICY_ACTIVE)`; `PIN_UNREADABLE` →
+  `ALLOW(RISK_UNAVAILABLE)` naming no policy (`RiskEngineV1.failSafeUnpinned`); `READ_FAILED`, `TIMEOUT` (SQLSTATE
+  `57014`, `RiskStorageException.sqlState()`), `ENGINE_REFUSED` → the pinned version's band for the amount (C1), the
+  open-ended band for another currency (`failSafeUnplaced`); a permitting fail-safe is counted behind a timed savepoint
+  of its own, `UNCOUNTED` when that fails. Two failures abort the caller, deliberately: the lookup (else a retry could
+  count twice) and the seal (`INV-RSK-01`). A `CHALLENGE` is satisfied when the sealed session assurance satisfies the
+  policy's; absent is unsatisfied (`CHALLENGE_REQUIRED`). *T-advise* — `advise(…)` → `Advice`: the same judgement over
+  `VelocityWindows.peek`, no lock, no count, no row, no event. *The rest of the domain:* `RiskEvaluationRequest` (the
+  operation, `CommandRef` `[A-Za-z0-9][A-Za-z0-9_-]{0,127}`, the amount, the party; optional identity, actor, source
+  account, destination (an account or a beneficiary), device, merchant, corridor; correlation, causation), the ports
+  `RiskInputs` and `CaseOpener` and `RiskEvaluationObserver`, `RiskAssessment` (`verdict()` re-derived from the sealed
+  rows, `sealHolds()`), `RiskAssessmentStore`/`JdbcRiskAssessmentStore`, `UnavailableCause`, `VelocityOutcome`;
+  `AssessmentReplay` (`IDENTICAL`, or `DIVERGED` naming `INPUTS`, `POLICY`, `EVALUATION`, `SEAL`, `DECISION`, `SCORE`,
+  `HITS`, `REASONS`, `FAIL_SAFE` or `CHALLENGE`); `RiskAssessments` (`read`, `replay` — audited `risk.AssessmentRead`
+  and `risk.Replayed` (a reason required); `risk.SelfDealingRefused` recorded `FAILED` for the analyst's own party, fail
+  closed); `AssessmentVelocityEvidence`; `RiskAuditAction` {`ASSESSMENT_READ`, `REPLAYED`}. *`app`:*
+  `RiskEvaluationBeans`; `PlatformRiskInputs` (live: the screening clearance, KYC approved — the party's latest case,
+  the merchant suspended — not `ACTIVE`; `ABSENT`: the session assurance (no source until `-008`'s step-up), the account
+  payee's first sighting, the authentication failures); `RiskEvaluationMetrics` (`finapp.risk.evaluation{operation,verdict}`,
+  `.evaluation.latency{operation}` (SLO buckets 5–500 ms), `.evaluation.unavailable{operation,reason_code}`,
+  `.rule.hit{operation,rule}`, `.challenge{operation,outcome}`, all eager; one log line per `RISK_UNAVAILABLE`, ids and
+  codes only); `RiskAssessmentController`/`RiskAssessmentDesk` (`GET /v1/operator/risk/assessments/{assessmentId}`,
+  `POST /v1/operator/risk/assessments/{assessmentId}/replay` `{reason}`, `RISK_INVESTIGATE`; `404 risk.NotFound`,
+  `403 risk.SelfDealingRefused` — no new error code); `MetricNames.ALLOWED_TAG_KEYS` + `rule` (C9);
+  `docs/api/openapi.json` regenerated (two paths, additions only). *The owed items:* (a) `-003`'s zero modulus — closed
+  on `-002`'s entry (the door refuses it; `RULE_THREW` kept tested through the engine's package-private `RuleJudge`
+  seam); (b) `-006`'s evidence bound — closed on `-006`'s entry (the `COUNTED` assessments are the windows' evidence of
+  record, every dimension provable). *Tests, fresh:* risk `test` 204 across 36 classes (new: `RiskEvaluationTest` 17,
+  `AssessmentReplayTest` 3, `AssessmentVelocityEvidenceTest` 2, `RiskAssessmentMigrationTest` 6,
+  `JdbcEvaluationBudgetTest` 4; `RiskEngineV1Test` and `RiskVocabulariesTest` extended), risk `architectureTest` 3; app
+  `test` filtered to `com.finapp.app.risk.*` 47 across 12 (new: `RiskEvaluationDeskTest` 5, `PlatformRiskInputsTest` 3,
+  `RiskEvaluationMetricsTest` 2; `RiskPolicyDeskTest` extended); app `architectureTest` 180 across 34 (the run before the gate's rename 1 red — `OwnershipIsScopedTest`); app `test` filtered to `com.finapp.app.risk.*` and the fourteen guard suites by name 179 across 34 (the `test` task's eight architecture rule classes with them); `MetricConventionTest` 5 over the real composition's meters — all green; no `databaseTest`, no
+  `kafkaTest`, no fleet run (C5). *Database, written and owed (C5; Docker was not running at the gate):*
+  `RiskEvaluationDatabaseTest` (9: `#tenRetriesOneAssessment`, `#aTimeoutSealsTheFailSafe`,
+  `#anEvaluationBehindAnActivationPinsTheSuccessor`, `#tenMovementsCountTen`, `#aRefusedMovementCountsNothing`,
+  `#noActivePolicyRecordsAllow`, `#anUnserialisedDuplicateLosesAtTheSeal`, `#theAssessmentIsInsertOnly`,
+  `#replayIsIdenticalAndTheCountedAreTheEvidence`), `RiskMigrationTest` (the lists, `#theAssessmentGrants`),
+  `RiskAssessmentApiTest` (2), `ColumnClassificationTest` (the register rows), `RiskSchemaMoneyColumnsTest`. *Probes*
+  (seven, each red on its first run and restored sha256-identical): the lookup removed, a failed step rethrown, a reason
+  dropped from the seal, a refused movement counted, the savepoints removed, risk's SQL naming `ledger`, the positive
+  modulus disabled; the three database probes written and owed. *Gate, MINOR:* (1) self-dealing is judged on the
+  assessment's party (the payer) alone — a destination names an account or a beneficiary, not a party; (2) a `HOLD`
+  released by `-012`'s override is never counted in the windows — `-012`'s to decide; (3) every version is EUR
+  (`REFERENCE_CURRENCY`), so a non-EUR movement's fail-safe takes the open-ended band (`DENY` in every C1 set) — an
+  owner item before a seam judges non-EUR money; (4) no decision opens a case until `-016` (`CaseOpener.NONE`), and no
+  version names which decisions do; (5) the database tier owed, so `V007`'s triggers and grants are proven by text
+  (`RiskAssessmentMigrationTest`) only; (6) the modulus probe's app half (`RiskPolicyDeskTest`) not run red; (7) the
+  session assurance `ABSENT` until a source is wired, so every `CHALLENGE` today is unsatisfied — the safe direction.
+  Fixed at the gate: the fail-safe log line without the decision; the merchant subject column renamed
+  `merchant_subject_id` (app `architectureTest`'s `OwnershipIsScopedTest` red on `merchant_id`, the tenant column's
+  name, in `JdbcRiskAssessmentStore` — risk records the merchant as a judged subject, never a tenant scope); `DISTRIBUTED_EXECUTION.md`'s lock-order row no
+  longer "planned"; the owed database probes recorded. *Deviations:* the pin outside the statement timeout (above —
+  the plan put every read under it); a `PIN_UNREADABLE` assessment names no policy (`risk_assessment_pinned_unless_unpinnable`);
+  `risk_assessment_input` holds the canonical inputs text, not a row per reading (the replay's bytes); the entry's
+  `fail_safe_applied` is `fail_safe_reason` + `unavailable_cause`; `#aPerturbedInputDiverges` hermetic
+  (`AssessmentReplayTest`) and `#anEvaluationBehindAnActivationPinsTheSuccessor` in `RiskEvaluationDatabaseTest`; the
+  replay takes a reason (the platform's replay precedent); the meters' `unavailable` and `challenge` carry
+  `reason_code` and `outcome` beside `operation`.
 
 **P13-TSK-005 — Signal ingestion from the platform's events** — `COMPLETE` (2026-10-23; wave B beside `P13-TSK-002` and `P13-TSK-019`, dependency-free after `P13-TSK-001` — marked `READY` by the wave's coordinator, the owner's standing instruction to run every dependency-free task in parallel; branch `P13-TSK-005` from master `5238a455`; **M13.2 at 1 of 3**; marks no task `READY` — the wave's coordinator marks wave C. **Gate (2026-10-23): 0 CRITICAL, 0 IMPORTANT, 5 MINOR** — `OpenApiContractTest` red on the branch for `-001`'s risk error codes absent from `docs/api/openapi.json`, pre-existing and outside this task (for `-002`'s first doors or the coordinator); `recentAuthFailures` and `kycStatus` unsourced by any event (recorded for `-004` and the owner); the owed `RiskMigrationTest`'s owner-privilege list is PostgreSQL-version-sensitive; the app guard suites' counts come from the pre-fix run; `EventPayload.fields` lands in the shared `platform` module (additive, tested). Ten-instance `PASS` — the inbox primary key and `UNIQUE (source_event_id)` are the only arbiters, `INSERT`-only, no process state; counted by the owed `SignalIntakeDatabaseTest` (C5). Six probes performed and sha256-verified (`MUTATION_TESTING.md` §2). One fix at the gate: the recovery mappings now refuse an envelope and payload naming different requests, as the agreements' do. See the as-built paragraph below.)
 - **Objective**: risk signals born once per source event — from identity, kyc, accounts, merchant, crossborder, lending,
@@ -22945,6 +23030,18 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   exists — a reviewed migration when retention is decided); a hot subject serialises from R2a to commit (the plan's R2
   row lock already did — the storm's to measure); the callers post after T-eval, so R2a/R2 are held while the posting
   takes its balance rows — true no-cycle for the transfer, for `-004`/`-009` to confirm for the withdrawal.
+- **The evidence's bound — closed by `P13-TSK-004` (2026-10-23).** Every sealed assessment records what the proof needs:
+  the movement's subjects exactly as the windows count them (`party_id`, `source_account_id`, `destination_kind` +
+  `destination_id`, `device_hash`, `merchant_subject_id`), the judged amount with currency and scale, `velocity_outcome`
+  (`COUNTED` / `NOT_PERMITTED` / `UNCOUNTED`) and `velocity_cut_at` (the database instant the windows were cut at — the
+  very instant `WindowStarts` placed them from). `AssessmentVelocityEvidence` (`VelocityEvidence` over the `COUNTED`
+  assessments, index `risk_assessment_counted`) is the proof's evidence of record: every `VelocityDimension` provable,
+  for every operation whenever its money posts, complete through the proof's own snapshot (a count and its assessment
+  commit together or not at all) — the composition's `VelocityEvidence` bean; `JdbcVelocityEvidence` stays as the
+  journal's cross-check of the transfers' account windows. Proven hermetically (`AssessmentVelocityEvidenceTest`: the
+  party, device and merchant windows `HELD`, a count no assessment explains `DIVERGED`) and owed live
+  (`RiskEvaluationDatabaseTest#replayIsIdenticalAndTheCountedAreTheEvidence`). The withdrawal's no-cycle confirmation
+  stays `-009`'s: nothing calls T-eval from a withdrawal yet.
 
 **P13-TSK-007 — The customer risk profile and credit's `CreditRiskSignal` version 2** — `COMPLETE` (2026-10-23; Phase 13 wave C beside `P13-TSK-006`, branch `P13-TSK-007` from master `046b3498`; risk `V006` and credit `V023`; **M13.2 at 3 of 3** — `-005`, `-006`, `-007` — master `6bcda77e` merged in before the report; marks no task `READY` — the wave's coordinator does) *(read "`READY` (2026-10-23; wave C — marked by the wave's coordinator once wave B (`-002`, `-005`, `-019`) merged, master `05ca0c2f`; every dependency `COMPLETE`)" until its gate)*
 - **Objective**: a per-party rating `LOW | MEDIUM | HIGH | PROHIBITED`, versioned and append-only, recomputed under the

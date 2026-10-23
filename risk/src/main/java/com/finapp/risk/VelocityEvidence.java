@@ -24,7 +24,8 @@ import java.util.UUID;
  * {@link VelocityDimension#SOURCE_ACCOUNT} and {@link VelocityDimension#DESTINATION} windows of transfers, and those
  * are its {@link #provable} dimensions; the rest are reported unprovable, never judged. Before a deferred-posting
  * operation's increments are wired (`-009`…`-011`), the evidence moves to the permitting assessments (`-004`'s sealed
- * inputs: the same transaction and database clock as the count, every dimension) - recorded for the coordinator.
+ * inputs: the same transaction and database clock as the count, every dimension) - <em>moved by `P13-TSK-004`:
+ * {@link AssessmentVelocityEvidence}, the composition's evidence of record; this one stays the journal's cross-check.</em>
  */
 public interface VelocityEvidence {
 

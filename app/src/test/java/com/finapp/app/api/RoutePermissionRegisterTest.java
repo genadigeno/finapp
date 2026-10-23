@@ -360,7 +360,13 @@ class RoutePermissionRegisterTest {
                     // P13-TSK-007: the analyst's customer risk profile door - a party's rating history, audited
                     // risk.ProfileRead, the analyst's own party refused risk.SelfDealingRefused; RISK_INVESTIGATE (held
                     // by RISK_ANALYST); the negatives are ProfileApiTest's.
-                    entry("GET /v1/operator/risk/parties/{partyId}/profile", PermissionName.RISK_INVESTIGATE)));
+                    entry("GET /v1/operator/risk/parties/{partyId}/profile", PermissionName.RISK_INVESTIGATE),
+                    // P13-TSK-004: the analyst's assessment doors - the sealed assessment read (audited
+                    // risk.AssessmentRead) and its replay from the seal (reasoned, audited risk.Replayed), the analyst's
+                    // own party refused risk.SelfDealingRefused; RISK_INVESTIGATE (held by RISK_ANALYST); the negatives
+                    // are RiskAssessmentApiTest's.
+                    entry("GET /v1/operator/risk/assessments/{assessmentId}", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/assessments/{assessmentId}/replay", PermissionName.RISK_INVESTIGATE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

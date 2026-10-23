@@ -243,18 +243,20 @@ class RiskVocabulariesTest {
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
                 .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
                         "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
-                        "risk.ReprocessingOrdered", "risk.ProfileRead");
+                        "risk.ReprocessingOrdered", "risk.ProfileRead",
+                        // P13-TSK-004: the analyst's assessment read and replay.
+                        "risk.AssessmentRead", "risk.Replayed");
         for (RiskAuditAction action : RiskAuditAction.values()) {
             assertThat(action.description()).as(action.name()).isNotBlank();
         }
         // The platform's acts are reasoned by the act they follow; a person's discretionary act requires a reason.
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
-                RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ)) {
+                RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ, RiskAuditAction.ASSESSMENT_READ)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
         for (RiskAuditAction action : List.of(RiskAuditAction.POLICY_PROPOSED, RiskAuditAction.POLICY_ACTIVATED,
-                RiskAuditAction.POLICY_REJECTED, RiskAuditAction.REPROCESSING_ORDERED)) {
+                RiskAuditAction.POLICY_REJECTED, RiskAuditAction.REPROCESSING_ORDERED, RiskAuditAction.REPLAYED)) {
             assertThat(action.requiresReason()).as("%s is a person's discretionary act", action).isTrue();
         }
     }

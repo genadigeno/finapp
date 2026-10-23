@@ -4278,6 +4278,73 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `velocity_window` | `scale` | `INTERNAL` | Precision metadata of the sum |
 | `velocity_window` | `last_counted_at` | `CONFIDENTIAL` | The database clock at the latest count - dates the subject's latest movement |
 
+### `risk.risk_assessment`, `risk_assessment_input`, `risk_rule_hit`, `risk_reason` and `decision_override` - the sealed assessment - *added by `P13-TSK-004`*
+
+`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `risk_assessment` | `id` | `INTERNAL` | Generated |
+| `risk_assessment` | `operation` | `INTERNAL` | A closed `RiskOperation` code - one of the five judged |
+| `risk_assessment` | `command_ref` | `INTERNAL` | The judged command's identity (`CommandRef`, a token) - an identifier of the owning domain's aggregate |
+| `risk_assessment` | `party_id` | `CONFIDENTIAL` | Whose movement it was - with the judgement, who was judged and how (as `risk_signal.subject_ref`) |
+| `risk_assessment` | `identity_id` | `CONFIDENTIAL` | The acting identity, by identifier |
+| `risk_assessment` | `source_account_id` | `CONFIDENTIAL` | The customer account the money left, by identifier |
+| `risk_assessment` | `destination_kind` | `INTERNAL` | A closed code - `ACCOUNT` or `BENEFICIARY` |
+| `risk_assessment` | `destination_id` | `CONFIDENTIAL` | The customer account or beneficiary the money went to, by identifier |
+| `risk_assessment` | `device_hash` | `CONFIDENTIAL` | Identity's hash of the device, never the description (OQ-4, the `CHECK`) - as `velocity_window.subject_ref` |
+| `risk_assessment` | `merchant_subject_id` | `CONFIDENTIAL` | The merchant as a judged subject (the `MERCHANT` velocity role), by identifier - never a tenant scope, so named apart from the tenant column `merchant_id` |
+| `risk_assessment` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The amount** - the judged amount in minor units, on an `INSERT`-only row; never a balance (`INV-RSK-02`) |
+| `risk_assessment` | `currency` | `INTERNAL` | An ISO 4217 code; the fact lives in the pairing with the amount |
+| `risk_assessment` | `scale` | `INTERNAL` | Precision metadata of the amount |
+| `risk_assessment` | `policy_version_id` | `INTERNAL` | The pinned policy version, by identifier; absent only when none could be pinned |
+| `risk_assessment` | `policy_operation` | `INTERNAL` | A closed code - the composite key's half, the assessment's own operation |
+| `risk_assessment` | `policy_version` | `INTERNAL` | The pinned version's number |
+| `risk_assessment` | `engine` | `INTERNAL` | A closed `RiskEngine` name |
+| `risk_assessment` | `score` | `CONFIDENTIAL` | The Risk Score - the fired weights summed, 0-1000; never a credit score (`INV-CRD-04`), never in an event or a tag (`INV-RSK-08`) |
+| `risk_assessment` | `decision` | `CONFIDENTIAL` | The Risk Decision - what the control said of this party's movement; the customer sees the operation's generic outcome only (C6) |
+| `risk_assessment` | `fail_safe_reason` | `INTERNAL` | A closed `ReasonCode` - `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE` |
+| `risk_assessment` | `unavailable_cause` | `INTERNAL` | A closed `UnavailableCause` code |
+| `risk_assessment` | `challenge_satisfied` | `CONFIDENTIAL` | Whether the session satisfied a `CHALLENGE` - a fact of the judgement |
+| `risk_assessment` | `velocity_outcome` | `INTERNAL` | A closed `VelocityOutcome` code |
+| `risk_assessment` | `velocity_cut_at` | `CONFIDENTIAL` | The database instant the movement's windows were cut at - dates the party's movement, as `velocity_window.last_counted_at` |
+| `risk_assessment` | `canonical_format` | `INTERNAL` | The canonical form's format number |
+| `risk_assessment` | `inputs_sha256` | `INTERNAL` | A digest of the sealed inputs - a hash of the row's own text |
+| `risk_assessment` | `verdict_sha256` | `INTERNAL` | A digest of the canonical verdict |
+| `risk_assessment` | `latency_micros` | `INTERNAL` | Telemetry - how long T-eval took |
+| `risk_assessment` | `correlation_id` | `INTERNAL` | The judged command's flow |
+| `risk_assessment` | `causation_id` | `INTERNAL` | The judged command's cause |
+| `risk_assessment` | `assessed_at` | `INTERNAL` | The database's stamp at the seal |
+| `risk_assessment_input` | `assessment_id` | `INTERNAL` | The assessment's id |
+| `risk_assessment_input` | `inputs_canonical` | `CONFIDENTIAL` | The sealed inputs (`CanonicalEvaluation` format 1) - the Transaction Risk Profile: subjects by identifier, the amount, the velocity figures, the readings (`PHASE_13_PLAN.md` section 8) |
+| `risk_assessment_input` | `inputs_sha256` | `INTERNAL` | The inputs' digest, recomputed by a `CHECK` |
+| `risk_rule_hit` | `assessment_id` | `INTERNAL` | The assessment's id |
+| `risk_rule_hit` | `ordinal` | `INTERNAL` | The rule's position in its version |
+| `risk_rule_hit` | `kind` | `INTERNAL` | A closed `RuleKind` code |
+| `risk_rule_hit` | `outcome` | `CONFIDENTIAL` | Whether the rule fired on this party's movement - a rule hit (`PHASE_13_PLAN.md` section 8) |
+| `risk_rule_hit` | `contribution` | `CONFIDENTIAL` | The rule's contribution to the score |
+| `risk_rule_hit` | `hard_decision` | `CONFIDENTIAL` | The fired rule's own decision |
+| `risk_rule_hit` | `judged` | `CONFIDENTIAL` | The canonical token of what the rule read (`amount=150000`, a velocity figure) - a reading, never a threshold |
+| `risk_reason` | `assessment_id` | `INTERNAL` | The assessment's id |
+| `risk_reason` | `position` | `INTERNAL` | The reason's order |
+| `risk_reason` | `code` | `CONFIDENTIAL` | A closed `ReasonCode` - why this party's movement was decided so; carried in `risk.RiskDecisionMade` as a code, never as text |
+| `decision_override` | `id` | `INTERNAL` | Generated |
+| `decision_override` | `assessment_id` | `INTERNAL` | The overridden assessment's id |
+| `decision_override` | `status` | `INTERNAL` | The machine's state (`P13-TSK-012`) |
+| `decision_override` | `reason_code` | `INTERNAL` | A closed code (`P13-TSK-012`'s vocabulary) |
+| `decision_override` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served beyond the override desk |
+| `decision_override` | `requires_second_person` | `INTERNAL` | Whether C7's four eyes apply - fixed at the proposal |
+| `decision_override` | `action` | `INTERNAL` | A closed code - the action the approval issued |
+| `decision_override` | `action_outcome` | `INTERNAL` | A closed code - the action's outcome |
+| `decision_override` | `proposed_by` | `CONFIDENTIAL` | The officer who proposed it |
+| `decision_override` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `decision_override` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `decision_override` | `decided_by` | `CONFIDENTIAL` | The deciding officer |
+| `decision_override` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `decision_override` | `decided_at` | `INTERNAL` | The database's stamp, after the lock |
+| `decision_override` | `decision_reason` | `RESTRICTED-PII` | As `reason` |
+| `decision_override` | `correlation_id` | `INTERNAL` | The proposing request's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

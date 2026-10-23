@@ -240,7 +240,15 @@ public final class MetricNames {
                     // request's value, a person or a resource (the code writes a constant per step). The task's own
                     // series carries it (PHASE_12_PLAN.md section 15 as P12-TSK-015 extends it:
                     // finapp.bnpl.servicing{step, outcome}); registered eagerly.
-                    "step");
+                    "step",
+                    // Which risk rule kind fired (P13-TSK-004, owner decision C9): one of the closed RuleKind vocabulary
+                    // (AMOUNT_BAND, VELOCITY_COUNT, ... - twenty-two codes, a reviewed code change with its migration's
+                    // CHECK), never a rule's parameter, a threshold, a policy version, a subject or a request's value
+                    // (the code writes the fired hit's kind). The plan's own series carries it (PHASE_13_PLAN.md
+                    // section 15: finapp.risk.rule.hit{operation, rule}); a name-split would invent a series per kind
+                    // and make "which rules are firing" unanswerable in one query. Registered eagerly per operation and
+                    // the kinds written for it. No decision-shaped key joins it (C9).
+                    "rule");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

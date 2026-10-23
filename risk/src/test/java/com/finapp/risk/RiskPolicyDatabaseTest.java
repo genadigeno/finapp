@@ -161,6 +161,8 @@ class RiskPolicyDatabaseTest {
     @DisplayName("scenario 3: an activation in flight while ten evaluations pin - every pin answers exactly one version,"
             + " the predecessor or the successor, none \"neither\"; the activation never waits on anything but the pins")
     void anEvaluationBehindAnActivationPinsTheSuccessor() throws Exception {
+        // The pin's half; the evaluation's - ten T-evals behind a held activation, each assessment sealed with exactly
+        // one version - is RiskEvaluationDatabaseTest's case of the same name (P13-TSK-004).
         RiskPolicyVersionId predecessor = activate(RiskOperation.TRANSFER);
         RiskPolicyAdministration.Proposed successor = propose(RiskOperation.TRANSFER, employee());
         CountDownLatch retired = new CountDownLatch(1);

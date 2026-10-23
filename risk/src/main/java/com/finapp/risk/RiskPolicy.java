@@ -161,6 +161,13 @@ public record RiskPolicy(
                 throw new PolicyInvalid("rule " + rule.ordinal() + " (" + rule.kind() + ") decides "
                         + rule.hardDecision().get() + ", which " + operation + " does not admit");
             }
+            // P13-TSK-004 (owed by P13-TSK-003's gate): a ROUND_AMOUNT modulus of 0 is a non-negative amount, so the
+            // parameter's type admits it - and the engine's "a multiple of 0" throws. Refused here, at the door and on
+            // every read of a stored version, so no policy that cannot be evaluated is ever stored (ADR-0109 decision 2).
+            if (rule.kind() == RuleKind.ROUND_AMOUNT && rule.parameters().minorAmount("modulus_minor") < 1) {
+                throw new PolicyInvalid("rule " + rule.ordinal() + " (ROUND_AMOUNT) names a modulus of at least one"
+                        + " minor unit");
+            }
             expected++;
         }
         return List.copyOf(rules);

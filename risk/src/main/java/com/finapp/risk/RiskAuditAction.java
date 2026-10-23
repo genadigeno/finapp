@@ -67,11 +67,12 @@ public enum RiskAuditAction implements AuditableAction {
     /** An investigator or officer tried to act on their own party's subject and was refused. */
     SELF_DEALING_REFUSED(
             "risk.SelfDealingRefused",
-            "A holder tried to read a customer risk profile, read or work a case, approve an override or file a"
-                    + " report whose subject is their own party - or could not be placed in any party, which fails"
-                    + " closed (the Phase 12 -> 13 gate's A7-6 applied forward) - and was refused 403"
-                    + " risk.SelfDealingRefused before anything was read or written (PHASE_13_PLAN.md section 11; first"
-                    + " raised by P13-TSK-007's profile read, then by P13-TSK-016's case doors). Recorded FAILED in a"
+            "A holder tried to read a customer risk profile, read or replay a risk assessment, read or work a case,"
+                    + " approve an override or file a report whose subject is their own party - or could not be placed in"
+                    + " any party, which fails closed (the Phase 12 -> 13 gate's A7-6 applied forward) - and was refused"
+                    + " 403 risk.SelfDealingRefused before anything was read or written (PHASE_13_PLAN.md section 11;"
+                    + " first raised by P13-TSK-007's profile read, then by P13-TSK-004's assessment doors and"
+                    + " P13-TSK-016's case doors). Recorded FAILED in a"
                     + " transaction of its own. Its target the profile, case, override or report; the summary names the"
                     + " act and the cause - never the party.",
             false),
@@ -85,6 +86,26 @@ public enum RiskAuditAction implements AuditableAction {
                     + " unrecorded. Its target the profile (the party's id); the summary the number of versions served -"
                     + " never a rating, a score or a reason (INV-RSK-08).",
             false),
+
+    /** An analyst read a sealed risk assessment - its inputs, hits, score, decision and reasons. */
+    ASSESSMENT_READ(
+            "risk.AssessmentRead",
+            "A holder of RISK_INVESTIGATE read a sealed risk assessment with its inputs, rule hits, score, decision and"
+                    + " reason codes (GET /v1/operator/risk/assessments/{id}, P13-TSK-004; INV-RSK-01, INV-RSK-04),"
+                    + " after the self-dealing judgement, recorded on the read's own transaction so nothing is served"
+                    + " unrecorded. Its target the assessment; the summary its operation, its decision and whether its"
+                    + " seal holds - never an amount, a subject, a score or a rule's parameters (INV-RSK-08).",
+            false),
+
+    /** An analyst replayed a sealed risk assessment from its sealed inputs under its pinned policy and engine. */
+    REPLAYED(
+            "risk.Replayed",
+            "A holder of RISK_INVESTIGATE replayed a sealed risk assessment from its sealed inputs under its pinned"
+                    + " policy version and engine (POST /v1/operator/risk/assessments/{id}/replay, a reason required,"
+                    + " P13-TSK-004; INV-RSK-01): IDENTICAL or DIVERGED, recorded in a transaction of its own before the"
+                    + " verdict is answered (bnpl.Replayed's shape). Its target the assessment; the reason the analyst's;"
+                    + " the summary the verdict and the kinds that diverged - never a figure.",
+            true),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(

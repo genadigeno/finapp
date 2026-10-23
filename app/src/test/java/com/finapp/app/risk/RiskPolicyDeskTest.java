@@ -97,7 +97,10 @@ class RiskPolicyDeskTest {
                 new RiskPolicyController.RiskRuleRequest("PROFILE_RATING", Map.of("rating", "TERRIBLE"), 100, null),
                 new RiskPolicyController.RiskRuleRequest("SESSION_ASSURANCE_BELOW", Map.of("assurance", 2), 100, null),
                 new RiskPolicyController.RiskRuleRequest("NEW_PAYEE", Map.of("lookback_days", 30), null, null),
-                new RiskPolicyController.RiskRuleRequest("NEW_PAYEE", Map.of("lookback_days", 30_000_000_000L), 100, null));
+                new RiskPolicyController.RiskRuleRequest("NEW_PAYEE", Map.of("lookback_days", 30_000_000_000L), 100, null),
+                // P13-TSK-004 (owed by P13-TSK-003's gate): a ROUND_AMOUNT modulus of 0 - "a multiple of nothing" -
+                // is refused at the door, so the engine never meets a rule that throws.
+                new RiskPolicyController.RiskRuleRequest("ROUND_AMOUNT", Map.of("modulus_minor", 0), 100, null));
         for (RiskPolicyController.RiskRuleRequest bad : badRules) {
             assertThatThrownBy(() -> RiskPolicyDesk.policy(request(transfer, Map.of("rules", List.of(bad)))))
                     .as(bad.toString()).isInstanceOf(RiskPolicy.PolicyInvalid.class);

@@ -41,8 +41,25 @@ public final class RiskEngineV1 {
      * @throws EvaluationFailed when no verdict can be produced (its {@link EvaluationFailed#failure cause} says why)
      */
     public static Verdict evaluate(RiskPolicy policy, EvaluationInputs inputs) {
+        return evaluate(policy, inputs, (rule, read) -> RuleEvaluation.of(rule.kind()).judge(rule, read));
+    }
+
+    /**
+     * How one rule is judged - {@link RuleEvaluation}'s, always, in production. A seam for the engine's own suite
+     * (`P13-TSK-004`): once the policy door refused a zero {@code ROUND_AMOUNT} modulus, no rule a valid policy carries
+     * can throw on inputs {@link EvaluationInputs} admits, and the wrapping of a throwing rule into
+     * {@link EvaluationFailed} - the engine's defence in depth - would otherwise go untested.
+     */
+    @FunctionalInterface
+    interface RuleJudge {
+        RuleEvaluation.Judgement judge(RiskRule rule, EvaluationInputs inputs);
+    }
+
+    /** {@link #evaluate(RiskPolicy, EvaluationInputs)} with every rule judged by {@code judge}. */
+    static Verdict evaluate(RiskPolicy policy, EvaluationInputs inputs, RuleJudge judge) {
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(inputs, "inputs");
+        Objects.requireNonNull(judge, "judge");
         if (policy.engine() != VERSION) {
             throw new EvaluationFailed(EvaluationFailed.Cause.WRONG_ENGINE,
                     "the policy is written for " + policy.engine() + ", this is " + VERSION);
@@ -60,7 +77,7 @@ public final class RiskEngineV1 {
         for (RiskRule rule : policy.rules()) {
             RuleEvaluation.Judgement judgement;
             try {
-                judgement = RuleEvaluation.of(rule.kind()).judge(rule, inputs);
+                judgement = judge.judge(rule, inputs);
             } catch (RuntimeException thrown) {
                 throw new EvaluationFailed(rule, thrown);
             }
@@ -125,6 +142,35 @@ public final class RiskEngineV1 {
             throw new IllegalArgumentException(operation + " decides no movement: it has no fail-safe");
         }
         return failSafe(operation, RiskDecision.ALLOW, ReasonCode.NO_POLICY_ACTIVE);
+    }
+
+    /**
+     * The recorded fail-safe when the pin's own read failed (`P13-TSK-004`; ADR-0108 decision 4: "the pin's read failing"
+     * is unavailable): no policy is in hand, so no band can be read, and the compiled {@code ALLOW} answers - under
+     * {@link ReasonCode#RISK_UNAVAILABLE}, never {@code NO_POLICY_ACTIVE}, because whether a version is active is exactly
+     * what could not be read. A compiled {@code DENY} here would be policy in code (ADR-0108's refused alternative).
+     */
+    public static Verdict failSafeUnpinned(RiskOperation operation) {
+        Objects.requireNonNull(operation, "operation");
+        if (!operation.judgesAMovement()) {
+            throw new IllegalArgumentException(operation + " decides no movement: it has no fail-safe");
+        }
+        return failSafe(operation, RiskDecision.ALLOW, ReasonCode.RISK_UNAVAILABLE);
+    }
+
+    /**
+     * The recorded fail-safe for an amount the policy's bands cannot place - another currency than the version's
+     * (`P13-TSK-004`): the open-ended last band answers, under {@link ReasonCode#RISK_UNAVAILABLE}. An amount that cannot
+     * be compared is not known to be below any threshold, so it is judged as the largest; in every C1 band set that is
+     * {@code DENY}. Multi-currency judging needs a policy per currency or a pinned conversion - the owner's, recorded.
+     */
+    public static Verdict failSafeUnplaced(RiskPolicy policy) {
+        Objects.requireNonNull(policy, "policy");
+        if (policy.isMonitoring()) {
+            throw new IllegalArgumentException("the sweep has no fail-safe: it decides no movement");
+        }
+        List<FailSafeBand> bands = policy.failSafeBands();
+        return failSafe(policy.operation(), bands.get(bands.size() - 1).decision(), ReasonCode.RISK_UNAVAILABLE);
     }
 
     private static Verdict failSafe(RiskOperation operation, RiskDecision decision, ReasonCode reason) {

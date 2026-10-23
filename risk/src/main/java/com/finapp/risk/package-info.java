@@ -132,10 +132,29 @@
  * self-dealing judgement); {@link com.finapp.risk.ProfileHints} (T-sig's permit pull, inside {@code RiskSignals.record})
  * through the party join {@link com.finapp.risk.RiskSubjectParties} ({@code app}'s {@code IdentitySubjectParties}: a party
  * and an identity placed today). {@link com.finapp.risk.RiskActingParty} has its first implementation ({@code app}'s
- * {@code IdentityActingParty}). No evaluation yet in production: nothing calls the engine for a movement until `-004`
- * lands, production evaluates nothing until a policy version is activated under four eyes (section 1.1) - the profile
- * leg judges nothing until a {@code MONITORING} version is - and until `-008`…`-011` land, the movement seams stay wired
- * to their permit-all defaults (credit's seam is risk's since `-007`); the monitoring sweep is off in test contexts and
+ * {@code IdentityActingParty}). <strong>The sealed assessment</strong> (`P13-TSK-004`, wave D, {@code V007}):
+ * {@link com.finapp.risk.RiskEvaluation} - T-eval, {@code evaluate(uow, RiskEvaluationRequest)}, in the caller's
+ * transaction after its locks: a lookup of (operation, {@link com.finapp.risk.CommandRef}) answering a retry with its
+ * seal; the pin (R1) behind a savepoint with no statement timeout; behind a second savepoint under 250 ms
+ * ({@link com.finapp.risk.EvaluationBudget}, {@link com.finapp.risk.JdbcEvaluationBudget}) the cut (R2a), the reads -
+ * the windows the policy reads, the profile, the signals, {@link com.finapp.risk.RiskInputs} - the engine and the count
+ * (R2) when the decision permits; a failure undone to its savepoint and answered by the recorded fail-safe with its
+ * {@link com.finapp.risk.UnavailableCause} ({@code RiskEngineV1.failSafe}, {@code failSafeUnpinned}, {@code
+ * failSafeUnplaced}); the seal (R3) - {@link com.finapp.risk.RiskAssessment} over
+ * {@link com.finapp.risk.RiskAssessmentStore} ({@code JdbcRiskAssessmentStore}: the head, the canonical inputs, every
+ * rule's hit, the ordered reasons; {@code UNIQUE (operation, command_ref)}, sealed for every writer, a lost race
+ * {@code RaceLost}); {@code risk.RiskDecisionMade} and {@code risk.LimitBreached}; {@link com.finapp.risk.CaseOpener}
+ * for {@code REVIEW} and {@code HOLD} ({@code NONE} until `-016`); {@link com.finapp.risk.RiskEvaluationObserver} for
+ * the meters - and T-advise, {@code advise}, the same judgement peeked, nothing counted or written.
+ * {@link com.finapp.risk.RiskAssessments} (the analyst's audited read and replay, self-dealing fail closed) over
+ * {@link com.finapp.risk.AssessmentReplay} (the pinned engine over the parsed seal: {@code IDENTICAL} or {@code DIVERGED}
+ * with the kinds); {@link com.finapp.risk.VelocityOutcome} on every assessment and
+ * {@link com.finapp.risk.AssessmentVelocityEvidence} - the counted assessments, the velocity proof's evidence of record,
+ * every dimension provable; {@code decision_override}'s table (its machine `-012`'s); a {@code ROUND_AMOUNT} modulus
+ * below one minor unit refused by {@code RiskPolicy}. No evaluation yet in production: until `-008`…`-011` wire their
+ * adapters over {@code RiskEvaluation}, the movement seams stay on their permit-all defaults (credit's seam is risk's
+ * since `-007`); production evaluates nothing until a policy version is activated under four eyes (section 1.1) - the
+ * profile leg judges nothing until a {@code MONITORING} version is; the monitoring sweep is off in test contexts and
  * ingests, in production, a journal no rule yet reads (`-020`).
  */
 package com.finapp.risk;

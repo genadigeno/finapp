@@ -224,6 +224,29 @@ opens in T-eval's transaction with the assessment as its first evidence. **Inval
 not admit (refused at the policy door, `422 risk.PolicyInvalid`); an assessment written outside the judged command's
 transaction.
 
+*(As built by `P13-TSK-004`, 2026-10-23 — `risk V007`, `RiskEvaluation`, `RiskAssessments`, `AssessmentReplay`. **The
+order:** a lookup of (operation, command ref) first — a retry, and the transfer's second seam in one transaction, are
+answered with the sealed decision and nothing below runs; then the pin (R1) behind a savepoint **with no statement
+timeout** (an evaluation meeting an activation waits for it and pins the successor — A3-I1; a timeout there would turn
+every activation into unpinned fail-safes); then, behind a second savepoint under `statement_timeout = 250ms`, the cut
+(R2a), the reads (the windows the policy reads, the profile, the signals, `RiskInputs`), the engine and the count (R2)
+when the decision permits; then the seal (R3), `risk.RiskDecisionMade` and `risk.LimitBreached`, and `CaseOpener` for
+`REVIEW`/`HOLD` (`NONE` until `-016`). **The record:** the head (`risk_assessment` — the subjects exactly as the windows
+count them, the judged amount, the pin, the engine, the score, the decision, `fail_safe_reason` with
+`unavailable_cause` — `NO_POLICY`, `PIN_UNREADABLE`, `READ_FAILED`, `TIMEOUT`, `ENGINE_REFUSED` — the challenge's
+answer, `velocity_outcome` with the cut instant, the digests of the canonical inputs and verdict, the latency),
+`risk_assessment_input` (the canonical inputs text, its digest a `CHECK`), `risk_rule_hit`, `risk_reason`; every table
+sealed for every writer by trigger and granted `SELECT, INSERT` alone. **Three readings the build settled:** the pin's
+own read failing has no band to read and answers the compiled `ALLOW` under `RISK_UNAVAILABLE` with no version named
+(the policy-version `CHECK` admits a null pin under `NO_POLICY` and `PIN_UNREADABLE` alike); an amount in another
+currency than the policy's is answered by the open-ended band (`DENY` in every C1 band set) — multi-currency judging is
+an owner item; a permitted fail-safe is counted behind a savepoint of its own and recorded `UNCOUNTED` when that count
+fails. **A `DENY` opens no case:** the policy version carries no "case on deny" field, so T-eval calls the opener for
+`REVIEW` and `HOLD` alone — the field is `-016`'s. The replay re-derives the verdict — the engine over the parsed sealed
+inputs, or the fail-safe the recorded cause names — and answers `IDENTICAL` or `DIVERGED` with the kinds
+(`INPUTS`, `POLICY`, `EVALUATION`, `SEAL`, `DECISION`, `SCORE`, `HITS`, `REASONS`, `FAIL_SAFE`, `CHALLENGE`) and the
+first diverged rule.)*
+
 #### 4.2a Decision override (`risk.decision_override`) — `P13-TSK-012` (`risk V007`'s table)
 
 ```
@@ -246,6 +269,13 @@ is this machine's race with payments' `held_until` expiry (§4.12): the first co
 live proposal per assessment; an override of an `ALLOW` or of a `CHALLENGE` (the customer satisfies it or does not);
 approval by the proposer at or above the threshold (`CHECK`); an approval that writes the withdrawal's row (the release
 is payments' act through its door).
+
+*(The table as `P13-TSK-004` landed it in `risk V007`, 2026-10-23: `decision_override` with `requires_second_person`
+fixed at the proposal (C7) and the four-eyes `CHECK (status <> 'APPROVED' OR NOT requires_second_person OR decided_by <>
+proposed_by)`, `decision_override_one_live` (one `PROPOSED` per assessment), a birth trigger refusing a row born decided
+or over an assessment whose decision is not `DENY`, `HOLD` or `REVIEW`, reasons screened by `risk.holds_instrument_shape`;
+`SELECT, INSERT` for the application, **every `UPDATE` refused by the edge trigger until `P13-TSK-012` replaces its
+function with the machine** and grants the decision columns; never deleted.)*
 
 ### 4.3 Velocity window (`risk.velocity_window`) — `P13-TSK-006` (`risk V005`) — not a machine
 
