@@ -23385,7 +23385,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   `DOD-API`. **Risk**: Medium. **Cx**: M.
 - **Follow-up from `P13-TSK-003`'s gate** (2026-10-23): the engine refuses a judged amount whose currency is not the policy's (`EvaluationFailed.CURRENCY_MISMATCH`), never comparing across currencies. This task's adapter presents the cross-border movement's EUR figure (the quote's source amount when the source is EUR, else the figure the corridor converts to) — or the policy's currency must widen, an owner decision this task raises if it needs it.
 
-**P13-TSK-012 — Decision override under four eyes, and the held withdrawal's release** — `PLANNED`
+**P13-TSK-012 — Decision override under four eyes, and the held withdrawal's release** — `READY` (2026-10-24; marked by the coordinator at `P13-TSK-009`'s merge, master `f7618780`; its one dependency `-009` `COMPLETE`)
 - **Objective**: the override machine over `V007`'s `decision_override`: a `RISK_OVERRIDE` holder proposes an override
   of a `DENY`, `HOLD` or `REVIEW` decision with a reason code and text; at or above EUR 1,000 or for any `DENY` a
   **second** holder approves (C7), below that one holder with a reason, audited; it **never edits the decision**; it
