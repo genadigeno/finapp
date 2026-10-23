@@ -537,6 +537,20 @@ composite weight, `NEW_DEVICE` weight, `RECENT_CREDENTIAL_CHANGE` + withdrawal �
 summing above EUR 2,500 in 24 h), `RAPID_IN_OUT` (≥ 80% out within 24 h of in), `DORMANT_THEN_ACTIVE` (90 days
 dormant, then ≥ EUR 1,000 in 24 h), `ROUND_AMOUNT` weight, `CORRIDOR_HIGH_RISK`.
 
+*(As built, `P13-TSK-003`, 2026-10-23: `RiskEngineV1` evaluates every rule — no first-match — by one `RuleEvaluation`
+per kind, the two enums held equal as the class loads; the sealed inputs are `EvaluationInputs`, every reading a
+`Reading` `PRESENT` or `ABSENT`, typed and bounded (an input past its bound is refused, never clamped), and a rule over
+an `ABSENT` reading does not fire and records `ABSENT` on its hit — "we did not look" kept apart from "we looked and it
+was not so" (`FirstSeen.never()`, `LastSeen.never()` are present values). `STRUCTURING` reads the window's movement
+amounts themselves (`Amounts`, sorted, ≤ 10,000) because its "below" threshold is the policy's, which the reader must
+not know; `RAPID_IN_OUT`, `REFUND_RATIO` and `CHARGEBACK_RATIO` read the two figures of a share and compare by
+cross-multiplication in `long`, never a quotient (`INV-MON-01`); `DORMANT_THEN_ACTIVE` reads the dormant days beside
+the party's velocity sum in the window. A rule that throws is `EvaluationFailed`, named by ordinal and kind, never a
+partial verdict — `ROUND_AMOUNT` with `modulus_minor = 0`, which the policy door admits, is the one such case found,
+for `-002`'s door to tighten. The canonical form is `CanonicalEvaluation` format 1 (hand-written, byte-exact, SHA-256
+as lowercase hex, the inputs form parsed back strictly); `RiskEngineDigestTest` proves the bytes identical in a second
+JVM with another charset, locale, time zone and identity hash codes.)*
+
 ### 12.3 The decision model and the fail-safe (ADR-0108)
 
 Derived from what each operation can do with a judgement, not adopted as a list:
@@ -551,6 +565,20 @@ Derived from what each operation can do with a judgement, not adopted as a list:
 
 **Precedence when rules disagree:** `DENY` > `HOLD` > `REVIEW` > `CHALLENGE` > `ALLOW`; a hard rule's decision beats
 a score band's.
+
+*(As built, `P13-TSK-003`, 2026-10-23 — the composition read one way: the decision is the **strictest** of the score
+band's decision and every fired rule's hard decision (`RiskDecision.strictest`), so "a hard rule's decision beats a
+score band's" means a band can never *soften* a hard decision — a screening hit's `DENY` stands at score 0 — while a
+band may raise one: the C8 transfer fixture's hard `CHALLENGE` at EUR 500 and its `DENY` band from 800 both work, and
+a EUR 2,000 transfer to a new payee from a new device by a `HIGH`-rated party is `DENY`, not capped at `CHALLENGE`.
+The other reading — the hard layer overriding the bands entirely — would make every band dead above EUR 500 and was
+refused. With nothing fired the score is 0 and **the band covering 0 decides**; the engine compiles no `ALLOW`, so a
+"challenge everything" version stays expressible (`-002` validates the bands contiguous from 0 for exactly this). The
+`MONITORING` version's verdict is the rating its rating bands give and no decision; it has no fail-safe. The fail-safe
+is `RiskEngineV1.failSafe`: the policy's band for the amount under `RISK_UNAVAILABLE`, or with no policy the compiled
+`ALLOW` under `NO_POLICY_ACTIVE` — a `Verdict` with no hit and score 0, `failSafeApplied` true; the *cause* of the
+unavailability is `-004`'s column, not the engine's. `CHALLENGE_REQUIRED` is in the closed vocabulary (`ReasonCode`,
+source `SEAM`) and is never an engine verdict's reason.)*
 
 **Fail-safe (unresolved #11, answered):** "unavailable" is any of: no `ACTIVE` policy for the operation; the pin's
 read failing; a rule evaluation throwing; the statement timeout (§7.6). The answer is the policy's fail-safe band for
@@ -577,6 +605,17 @@ figures, evaluates, and — only when the decision permits the movement — upse
 transaction, so a refused movement counts for nothing and a committed one counts exactly once. The windows are
 derivable: `VelocityProof` recomputes every live window from the monitored transactions and compares; a difference is
 an alert, never self-corrected.
+
+*(As built, `P13-TSK-003`, 2026-10-23 — what the engine does with a velocity reading: `VELOCITY_COUNT` and
+`VELOCITY_SUM` compare **the sealed figure** — the window's count or sum as T-eval read it, *before* the judged
+movement — **at or above** the threshold, and the engine never adds the judged amount into a figure: a sealed figure is
+the window's figure verbatim, which is what `VelocityProof` recomputes. So "10 per 24 h" refuses the eleventh movement
+(prior count 10 ≥ 10) and "EUR 5,000 per 24 h" fires once 5,000 has been reached; the size of one movement is
+`AMOUNT_BAND`'s business. A reading is keyed by (`SubjectKind` dimension, `WindowKind`) — the `dimension` parameter
+`-002` stores (`ParameterType.SUBJECT_KIND`) — so `-004` maps `-006`'s window figures onto those keys; `-006`'s entry
+names a `VelocityDimension { PARTY, SOURCE_ACCOUNT, DESTINATION, DEVICE, MERCHANT }`, and whether its two account
+members fold into `ACCOUNT`/`BENEFICIARY` or `-002`'s parameter type grows is the coordinator's reconciliation between
+`-006` and `-004`. A window the reader did not seal is `ABSENT` for the rule naming it.)*
 
 ### 12.5 Signals and the customer risk profile
 
@@ -917,6 +956,22 @@ re-read composed in `RiskPolicies.active` over the store's two primitives so its
 (`RiskPoliciesPinTest`) as well as live (`RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor`,
 written and owed under C5 with the rest of the database tier); the C8 fixtures as risk's published test fixtures
 (`RiskPolicyFixtures`), every one of the twenty-two kinds used by some fixture.)*
+
+**`P13-TSK-003` — The risk engine v1** *(built 2026-10-23, `COMPLETE`, in wave C beside `-006` and `-007`: as §12.2
+and §12.3 describe it, with the readings their as-built notes record — the decision the strictest of the band's and
+every fired hard decision; the band at 0 deciding when nothing fires; velocity readings the current figures before the
+movement, compared at-or-above; an absent reading never firing and saying so. The entry's names kept: `EvaluationInputs`
+(not `RiskInputs`, which is `-004`'s port), `Verdict` (not `RiskEvaluation`, which is `-004`'s service), `RuleHit`,
+`Score`, `ReasonCode`, `EvaluationFailed`, `failSafe(policy, amount)` and `failSafe(operation)`; `RuleEvaluation` a
+package-private enum, one member per kind. Added beyond the entry: `Reading`, `FirstSeen`, `LastSeen`, `VelocityKey`,
+`VelocityReading`, `Flow`, `Ratio`, `Amounts`, `MonitoringReadings` (the readings' value types) and
+`CanonicalEvaluation` format 1 with a strict parser of the inputs form, so a sealed text can be replayed from the text
+alone — the two-JVM digest parses the parent's rendered corpus rather than regenerating it. No row, no migration, no
+route, no event, no meter: the engine has nothing of its own to persist or count. Found on the way, for the
+coordinator: the `SubjectKind`/`VelocityDimension` gap between `-002` and `-006` (§12.4's note); `ROUND_AMOUNT` with
+`modulus_minor = 0` passing the policy door (§12.2's note); a judged amount in a currency other than the policy's is
+refused (`EvaluationFailed.CURRENCY_MISMATCH`) rather than compared — `-011`'s cross-border judged amount must be the
+EUR figure, or the policy's currency must widen.)*
 
 ---
 
