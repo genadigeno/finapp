@@ -189,6 +189,9 @@ dependencies {
     // The refund allocator's reference merchant fee arithmetic, proven equal here to merchant's FeeCalculation
     // (BnplFeeArithmeticAgreesWithMerchantTest, P12-TSK-009) - app is the one module that sees both.
     testImplementation(testFixtures(project(":bnpl")))
+    // The policy v1 fixtures (RiskPolicyFixtures, P13-TSK-002, owner decision C8): the policy desk's round-trip and the
+    // door tests propose exactly the content the engine and the battery evaluate - one reference, never a copy.
+    testImplementation(testFixtures(project(":risk")))
 
     // Architecture rules live here because `app` is the only module that sees every other
     // one — enforcing a boundary requires being able to observe both sides of it. As

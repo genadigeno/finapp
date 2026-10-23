@@ -23,7 +23,23 @@ public enum RiskErrorCode implements ErrorCode {
     SELF_DEALING_REFUSED(
             "risk.SelfDealingRefused",
             403,
-            "A holder never acts on a case, override or report whose subject is their own party; nothing was done.");
+            "A holder never acts on a case, override or report whose subject is their own party; nothing was done."),
+
+    // The policy doors' four (P13-TSK-002), the register's planned statuses kept.
+    POLICY_NOT_ACTIVE(
+            "risk.PolicyNotActive",
+            409,
+            "No risk policy version is active for the operation, or the version named is not the active one."),
+
+    POLICY_STALE("risk.PolicyStale", 409, "The risk policy version is no longer awaiting a decision, or is superseded."),
+
+    POLICY_INVALID(
+            "risk.PolicyInvalid",
+            422,
+            "The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a"
+                    + " decision the operation does not admit; nothing was proposed."),
+
+    REASON_REQUIRED("risk.ReasonRequired", 422, "A reason is required.");
 
     private final String code;
     private final int status;

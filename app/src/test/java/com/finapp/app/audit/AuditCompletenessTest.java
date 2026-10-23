@@ -80,10 +80,8 @@ class AuditCompletenessTest {
                     "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
                         + " explicit does not count as an audit trail. Phase 15.",
                     // The risk role split's two refusals, declared with the roles (P13-TSK-001) so the catalogue names
-                    // them from the first day; each leaves this map with the door that first raises it.
-                    "risk.SelfApprovalRefused",
-                    "Declared by P13-TSK-001 with the risk roles; first raised by P13-TSK-002's policy activation"
-                        + " door, which removes this entry.",
+                    // them from the first day; each leaves this map with the door that first raises it -
+                    // risk.SelfApprovalRefused left at P13-TSK-002 (the policy activation door, SelfApprovalRefusals).
                     "risk.SelfDealingRefused",
                     "Declared by P13-TSK-001 with the risk roles; first raised by P13-TSK-016's case doors, which"
                         + " remove this entry.");

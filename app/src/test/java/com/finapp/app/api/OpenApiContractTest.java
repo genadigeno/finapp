@@ -334,6 +334,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl/terms/{versionId}/rejection",
+                        // Risk policy versions under four eyes (P13-TSK-002)
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/policies",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/{versionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/{versionId}/activation",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/{versionId}/rejection",
                         // P12-TSK-006: a merchant's BNPL enablement under four eyes (MERCHANT_ADMINISTER, keyed) and
                         // its BNPL fee schedule per product (FEE_ADMINISTER, a converging PUT).
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement",

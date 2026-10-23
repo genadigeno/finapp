@@ -295,6 +295,12 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/bnpl/terms", PermissionName.BNPL_ADMINISTER),
                     entry("POST /v1/operator/bnpl/terms/{versionId}/approval", PermissionName.BNPL_ADMINISTER),
                     entry("POST /v1/operator/bnpl/terms/{versionId}/rejection", PermissionName.BNPL_ADMINISTER),
+                    // Risk policy versions under four eyes (P13-TSK-002): the risk officer's desk
+                    entry("POST /v1/operator/risk/policies", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/risk/policies/{versionId}/activation", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/risk/policies/{versionId}/rejection", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/risk/policies", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/risk/policies/{versionId}", PermissionName.RISK_POLICY_ADMINISTER),
                     // P12-TSK-006: a merchant's BNPL enablement under four eyes, and its BNPL fee schedule per product.
                     entry("POST /v1/operator/merchants/{merchantId}/bnpl-enablement", PermissionName.MERCHANT_ADMINISTER),
                     entry("POST /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/approval",
