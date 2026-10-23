@@ -1,6 +1,7 @@
 package com.finapp.credit;
 
 import java.util.Objects;
+import java.util.OptionalLong;
 
 /**
  * Where a credit attribute came from (`P10-TSK-005`, completed by `P10-TSK-008`; PHASE_10_PLAN.md section 12.2,
@@ -66,20 +67,33 @@ public sealed interface AttributeProvenance
 
     /**
      * Answered by a port the decision consults - party facts, the risk seam, reserved exposure - with its version, so a
-     * decision made before the port's implementation changed replays identically after it ({@code INV-CRD-01}).
+     * decision made before the port's implementation changed replays identically after it ({@code INV-CRD-01}); and,
+     * where the port answered from a versioned record of its own, that record's version (`P13-TSK-007`: the risk
+     * seam's version 2 answers from risk's customer risk profile, and the profile version it read is pinned here -
+     * {@code INV-RSK-10}, {@code INV-HIST-04}). A record version is canonical format 2's ({@link CanonicalSnapshot}).
      *
      * @param port the port's stable name
      * @param version the answering implementation's version
+     * @param recordVersion the version of the port's record the answer was read from; empty when it named none
      */
-    record Port(String port, int version) implements AttributeProvenance {
+    record Port(String port, int version, OptionalLong recordVersion) implements AttributeProvenance {
         public Port {
             Objects.requireNonNull(port, "port");
+            Objects.requireNonNull(recordVersion, "recordVersion");
             if (!port.matches("[a-z][a-z0-9-]{0,63}")) {
                 throw new IllegalArgumentException("a port name is a lowercase token");
             }
             if (version < 1) {
                 throw new IllegalArgumentException("a port version counts from 1");
             }
+            if (recordVersion.isPresent() && recordVersion.getAsLong() < 1) {
+                throw new IllegalArgumentException("a record version counts from 1");
+            }
+        }
+
+        /** Answered from no versioned record - every port's answer before `P13-TSK-007`. */
+        public Port(String port, int version) {
+            this(port, version, OptionalLong.empty());
         }
     }
 }

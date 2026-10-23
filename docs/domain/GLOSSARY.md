@@ -2179,6 +2179,9 @@ version 2, recorded in the decision's snapshot so the decision replays as it was
 **Not:** credit's Credit Profile (the deciding transaction's anchor, holding no rating) nor kyc's Risk Rating
 (onboarding's own, set by the KYC case); nor a Risk Score, which is one assessment's number. A rating change never
 rewrites a decision already made, and no customer or merchant surface reads it.
+*(As built, `P13-TSK-007`, 2026-10-23: a head row per party and a version per rating **change**; a party risk has not
+assessed has no rating at all - credit's seam answers `NOT_ASSESSED`, never a default `LOW` - and nothing is rated while
+no `MONITORING` version is `ACTIVE`; credit's snapshot pins the profile version beside the code.)*
 **Owned by:** `risk`
 
 ### Transaction Risk Profile

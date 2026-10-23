@@ -17,11 +17,14 @@ import lombok.RequiredArgsConstructor;
  * ({@code SessionAuthenticationInterceptor}: the actor's id is the identity's), and every identity belongs to a party;
  * an actor id that is no identity - a malformed id, or one never registered - answers empty, which the review refuses.
  * Read on the act's own connection, never cached. Also {@code lending}'s {@link com.finapp.lending.LoanActingParty}
- * (`P11-TSK-020` - a servicing agent never acts on their own party's loan): one read of whose party a person is, for both.
+ * (`P11-TSK-020` - a servicing agent never acts on their own party's loan), {@code bnpl}'s, and {@code risk}'s
+ * {@link com.finapp.risk.RiskActingParty} (`P13-TSK-007` - an analyst never reads their own party's risk profile; the
+ * case doors next): one read of whose party a person is, for all of them.
  */
 @RequiredArgsConstructor
 public final class IdentityActingParty
-        implements CreditActingParty<Connection>, com.finapp.lending.LoanActingParty, com.finapp.bnpl.BnplActingParty {
+        implements CreditActingParty<Connection>, com.finapp.lending.LoanActingParty, com.finapp.bnpl.BnplActingParty,
+                com.finapp.risk.RiskActingParty {
 
     @NonNull private final IdentityStore<Connection> identities;
 

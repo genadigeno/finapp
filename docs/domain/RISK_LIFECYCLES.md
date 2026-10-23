@@ -428,6 +428,14 @@ the rating it was given, `IDENTICAL` whatever the profile does after (`INV-RSK-1
 13). The operator read: `GET /v1/operator/risk/parties/{partyId}/profile` (`RISK_INVESTIGATE`, `risk.ProfileRead`).
 **Invalid:** an `UPDATE` of any version row; a version out of sequence; a `PROHIBITED` version from the sweep; a rating
 edited by hand (there is no door); a rating read by a customer or merchant surface.
+*(As built, `P13-TSK-007`, `risk V006`, 2026-10-23: each invalid edge is refused by the schema for every writer - the
+versions `INSERT`-only by grant and trigger, numbered without a gap by trigger, `PROHIBITED` only with cause
+`DISPOSITION` and its `disposition_id` (`CHECK`), no `RECOMPUTE` version after a `PROHIBITED` one (trigger), the head born
+unassessed and moved one version at a time beside a version of the same rating (trigger). A version is written only when
+the rating changes; no `MONITORING` version `ACTIVE` writes nothing (an unassessed party is `NOT_ASSESSED` at the seam);
+a `PROHIBITED` head is never evaluated by the sweep. The recompute is `ProfileRecompute` - the pin (R1), then the head
+(R8) claimed `SKIP LOCKED` by the sweep's leg or locked waiting by a direct call - and the hint is T-sig's
+(`ProfileHints`), waiting on a held head rather than skipping it.)*
 
 ### 4.10 Screening list version and the rescreening permit (`risk.screening_list_version`, `rescreening_permit`) — `P13-TSK-022` (`risk V012`; cut candidate)
 

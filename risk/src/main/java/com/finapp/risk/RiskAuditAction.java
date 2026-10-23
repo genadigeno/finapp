@@ -67,12 +67,23 @@ public enum RiskAuditAction implements AuditableAction {
     /** An investigator or officer tried to act on their own party's subject and was refused. */
     SELF_DEALING_REFUSED(
             "risk.SelfDealingRefused",
-            "A holder tried to read or work a case, approve an override or file a report whose subject is their own"
-                    + " party - or could not be placed in any party, which fails closed (the Phase 12 -> 13 gate's"
-                    + " A7-6 applied forward) - and was refused 403 risk.SelfDealingRefused before anything was written"
-                    + " (PHASE_13_PLAN.md section 11; first raised by P13-TSK-016's case doors). Recorded FAILED in a"
-                    + " transaction of its own. Its target the case, override or report; the summary names it and the"
-                    + " act - never the party.",
+            "A holder tried to read a customer risk profile, read or work a case, approve an override or file a"
+                    + " report whose subject is their own party - or could not be placed in any party, which fails"
+                    + " closed (the Phase 12 -> 13 gate's A7-6 applied forward) - and was refused 403"
+                    + " risk.SelfDealingRefused before anything was read or written (PHASE_13_PLAN.md section 11; first"
+                    + " raised by P13-TSK-007's profile read, then by P13-TSK-016's case doors). Recorded FAILED in a"
+                    + " transaction of its own. Its target the profile, case, override or report; the summary names the"
+                    + " act and the cause - never the party.",
+            false),
+
+    /** An analyst read a party's customer risk profile - its rating history. */
+    PROFILE_READ(
+            "risk.ProfileRead",
+            "A holder of RISK_INVESTIGATE read a party's customer risk profile - the current rating and every version"
+                    + " with what set it (GET /v1/operator/risk/parties/{partyId}/profile, P13-TSK-007; INV-RSK-10),"
+                    + " after the self-dealing judgement, recorded on the read's own transaction so nothing is served"
+                    + " unrecorded. Its target the profile (the party's id); the summary the number of versions served -"
+                    + " never a rating, a score or a reason (INV-RSK-08).",
             false),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */

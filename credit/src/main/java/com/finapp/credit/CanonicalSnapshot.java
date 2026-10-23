@@ -11,11 +11,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * The canonical form of a decision snapshot, format 1 (`P10-TSK-008`; PHASE_10_PLAN.md section 12.2,
- * {@code INV-CRD-07}): the same content always yields the same bytes, and so the same SHA-256.
+ * The canonical form of a decision snapshot, format 2 - format 1 kept for replay (`P10-TSK-008`, format 2
+ * `P13-TSK-007`; PHASE_10_PLAN.md section 12.2, {@code INV-CRD-07}): the same content always yields the same bytes, and
+ * so the same SHA-256.
  *
  * <h2>Why hand-written</h2>
  *
@@ -26,14 +29,23 @@ import java.util.UUID;
  * and nothing read from a locale, a time zone or a map's iteration order. Every token is checked against a character set
  * that needs no escaping, so the form never contains an escape at all.
  *
- * <p>{@link #parse} reads format 1 back strictly - and refuses any text it would not itself have written (it re-renders
- * and compares), so a stored snapshot is re-readable and re-verifiable. A change to this form is format 2, with format 1
- * kept here for replay.
+ * <p>{@link #parse} reads a snapshot back strictly - and refuses any text it would not itself have written in the format
+ * the text declares (it re-renders in that format and compares), so a stored snapshot is re-readable and re-verifiable.
+ *
+ * <p><strong>Format 2</strong> (`P13-TSK-007`; {@code INV-RSK-10}, {@code INV-HIST-04}) differs from format 1 in one
+ * place: a port's provenance may name the version of the record the port answered from -
+ * {@code "recordVersion":"n"} after its {@code "version"} - which the risk seam's version 2 does with the customer risk
+ * profile version it read. Everything else is format 1's, byte for byte. Format 1 is kept, unchanged, for replay: every
+ * stored format-1 text parses and re-renders exactly as it did, and a format-1 text that names a record version is
+ * refused - format 1 never wrote one. A further change to this form is format 3, with formats 1 and 2 kept.
  */
 public final class CanonicalSnapshot {
 
     /** The format this class writes. */
-    public static final int FORMAT = 1;
+    public static final int FORMAT = 2;
+
+    /** Every format this class reads - each one it ever wrote, for replay. */
+    public static final Set<Integer> FORMATS = Set.of(1, 2);
 
     private static final String CANONICAL_CHARACTERS = "[A-Za-z0-9_.:-]{0,128}";
 
@@ -41,11 +53,22 @@ public final class CanonicalSnapshot {
 
     // ------------------------------------------------------------------ rendering
 
-    /** The canonical form of {@code content}. */
+    /** The canonical form of {@code content}, in the format this class writes. */
     public static String render(SnapshotContent content) {
+        return render(content, FORMAT);
+    }
+
+    /**
+     * The canonical form of {@code content} in {@code format} - a format this class reads; format 1 refuses content
+     * naming a record version, which it never wrote.
+     */
+    public static String render(SnapshotContent content, int format) {
         Objects.requireNonNull(content, "content");
+        if (!FORMATS.contains(format)) {
+            throw new IllegalArgumentException("not a snapshot format this class writes: " + format);
+        }
         StringBuilder out = new StringBuilder(2048);
-        out.append("{\"format\":").append(string(Integer.toString(FORMAT)));
+        out.append("{\"format\":").append(string(Integer.toString(format)));
         out.append(",\"request\":{\"decisionRequest\":").append(string(content.decisionRequest().toString()))
                 .append(",\"party\":").append(string(content.party().toString()))
                 .append(",\"product\":").append(string(content.product().name()))
@@ -65,7 +88,7 @@ public final class CanonicalSnapshot {
             first = false;
             out.append("{\"code\":").append(string(attribute.code().name()))
                     .append(",\"value\":").append(value(attribute.value()))
-                    .append(",\"provenance\":").append(provenance(attribute.provenance()))
+                    .append(",\"provenance\":").append(provenance(attribute.provenance(), format))
                     .append('}');
         }
         return out.append("]}").toString();
@@ -96,7 +119,7 @@ public final class CanonicalSnapshot {
                 + string(money.currency().code()) + ",\"scale\":" + string(Integer.toString(money.scale())) + "}";
     }
 
-    private static String provenance(AttributeProvenance provenance) {
+    private static String provenance(AttributeProvenance provenance, int format) {
         return switch (provenance) {
             case AttributeProvenance.Provider p -> "{\"kind\":\"provider\",\"source\":" + string(p.kind().name())
                     + ",\"provider\":" + string(p.providerCode()) + ",\"normaliser\":"
@@ -109,8 +132,19 @@ public final class CanonicalSnapshot {
             case AttributeProvenance.NotRead n -> "{\"kind\":\"notRead\",\"source\":" + string(n.kind().name()) + "}";
             case AttributeProvenance.Declared d -> "{\"kind\":\"declared\"}";
             case AttributeProvenance.Port p -> "{\"kind\":\"port\",\"port\":" + string(p.port()) + ",\"version\":"
-                    + string(Integer.toString(p.version())) + "}";
+                    + string(Integer.toString(p.version())) + recordVersion(p.recordVersion(), format) + "}";
         };
+    }
+
+    /** Format 2's one addition: the record a port answered from. Format 1 never wrote one, so it refuses one. */
+    private static String recordVersion(OptionalLong recordVersion, int format) {
+        if (recordVersion.isEmpty()) {
+            return "";
+        }
+        if (format == 1) {
+            throw new IllegalArgumentException("a format-1 snapshot names no record version");
+        }
+        return ",\"recordVersion\":" + string(Long.toString(recordVersion.getAsLong()));
     }
 
     private static String string(String token) {
@@ -123,15 +157,17 @@ public final class CanonicalSnapshot {
     // ------------------------------------------------------------------ parsing
 
     /**
-     * Reads format 1 back - strictly: the text must be exactly what {@link #render} would write for the content it
-     * says, or it is refused.
+     * Reads a snapshot of any format in {@link #FORMATS} back - strictly: the text must be exactly what
+     * {@link #render(SnapshotContent, int)} would write in the format it declares for the content it says, or it is
+     * refused.
      */
     public static SnapshotContent parse(String canonical) {
         Objects.requireNonNull(canonical, "canonical");
         Map<String, Object> root = object(new Reader(canonical).value());
-        if (!String.valueOf(root.get("format")).equals(Integer.toString(FORMAT))) {
-            throw new IllegalArgumentException("not a format-" + FORMAT + " snapshot");
-        }
+        int format = FORMATS.stream()
+                .filter(known -> String.valueOf(root.get("format")).equals(Integer.toString(known)))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("not a snapshot format this class reads"));
         Map<String, Object> request = object(root.get("request"));
         CreditProduct product = CreditProduct.valueOf(text(request.get("product")));
         String term = text(request.get("termMonths"));
@@ -153,8 +189,8 @@ public final class CanonicalSnapshot {
                 new PinnedVersions(UUID.fromString(text(versions.get("policy"))),
                         UUID.fromString(text(versions.get("model"))), Integer.parseInt(text(versions.get("engine")))),
                 attributes);
-        if (!render(content).equals(canonical)) {
-            throw new IllegalArgumentException("not a canonical format-" + FORMAT + " snapshot");
+        if (!render(content, format).equals(canonical)) {
+            throw new IllegalArgumentException("not a canonical format-" + format + " snapshot");
         }
         return content;
     }
@@ -191,7 +227,10 @@ public final class CanonicalSnapshot {
                     CreditDataRequestId.of(UUID.fromString(text(p.get("dataRequest")))));
             case "notRead" -> new AttributeProvenance.NotRead(CreditSourceKind.valueOf(text(p.get("source"))));
             case "declared" -> new AttributeProvenance.Declared();
-            case "port" -> new AttributeProvenance.Port(text(p.get("port")), Integer.parseInt(text(p.get("version"))));
+            case "port" -> new AttributeProvenance.Port(text(p.get("port")), Integer.parseInt(text(p.get("version"))),
+                    p.containsKey("recordVersion")
+                            ? OptionalLong.of(Long.parseLong(text(p.get("recordVersion"))))
+                            : OptionalLong.empty());
             default -> throw new IllegalArgumentException("unknown provenance kind");
         };
     }

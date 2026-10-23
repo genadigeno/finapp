@@ -372,9 +372,12 @@ public final class SnapshotFreezer {
                 .<AttributeValue>map(country -> new AttributeValue.CodeValue(country.code()))
                 .orElse(new AttributeValue.Absent()), party));
 
+        // The seam's answer as given (INV-CRD-04: a code, never a number) with the seam's version and, from seam
+        // version 2, the risk profile version it was read from - pinned so the replay never asks the seam again
+        // (INV-RSK-10, INV-CRD-01).
         CreditRiskSignal.RiskSignal signal = riskSignal.signal(uow, input.party());
         attributes.add(new CreditAttribute(CreditAttributeCode.RISK_SIGNAL, new AttributeValue.CodeValue(signal.code()),
-                new AttributeProvenance.Port("risk-signal", signal.seamVersion())));
+                new AttributeProvenance.Port("risk-signal", signal.seamVersion(), signal.profileVersion())));
 
         Money reserved = reservedExposure.reservedFor(uow, input.party(), input.product().currency());
         attributes.add(new CreditAttribute(CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE,

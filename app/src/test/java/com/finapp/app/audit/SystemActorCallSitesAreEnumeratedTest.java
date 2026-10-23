@@ -449,7 +449,10 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " database clock, reads the ledger's journal through a port and records each entry once as the"
                         + " system; no audit record is written for the intake (its rows are its trail, born once by"
                         + " UNIQUE (journal_entry_id)). An officer's reprocessing order is theirs, recorded"
-                        + " risk.ReprocessingOrdered under the officer's own actor at the door."),
+                        + " risk.ReprocessingOrdered under the officer's own actor at the door. Its profile leg"
+                        + " (P13-TSK-007) likewise: nobody commands a customer risk profile's recompute - the sweep claims"
+                        + " a head whose permit came and the MONITORING policy rates the party as the system, its version"
+                        + " row and risk.CustomerRiskRatingChanged the trail; PROHIBITED is a person's disposition (-016)."),
                     Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"

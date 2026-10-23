@@ -438,6 +438,43 @@ class DecisionSnapshotDatabaseTest {
     }
 
     @Test
+    @DisplayName("seam version 2 (P13-TSK-007): the rating and the profile version it was read from are recorded - canonical"
+            + " format 2, the format column 2, the text re-verifiable; an answer from no profile names none (INV-RSK-10)")
+    void seamVersionTwoRecordsTheProfileVersion() throws Exception {
+        UUID party = IDS.next();
+        UUID decision = request(party);
+        SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
+            seedBureau(uow, decision, party, databaseNow(uow).minus(Duration.ofDays(1)), cleanBureau());
+            return freezer((uow2, partyId) -> new CreditRiskSignal.RiskSignal("HIGH", 2, java.util.OptionalLong.of(7)))
+                    .freeze(uow, input(decision, party, 1), correlation());
+        });
+        DecisionSnapshot snapshot = ((SnapshotFreezer.Freeze.Frozen) freeze).snapshot();
+        assertThat(snapshot.format()).isEqualTo(2);
+        assertThat(snapshot.content().attribute(CreditAttributeCode.RISK_SIGNAL).value())
+                .isEqualTo(new AttributeValue.CodeValue("HIGH"));
+        assertThat(snapshot.content().attribute(CreditAttributeCode.RISK_SIGNAL).provenance())
+                .isEqualTo(new AttributeProvenance.Port("risk-signal", 2, java.util.OptionalLong.of(7)));
+        assertThat(snapshot.canonical()).startsWith("{\"format\":\"2\"")
+                .contains("{\"kind\":\"port\",\"port\":\"risk-signal\",\"version\":\"2\",\"recordVersion\":\"7\"}");
+        assertThat(snapshot.verifies()).isTrue();
+        try (Connection app = DatabaseRoles.application(); Statement statement = app.createStatement();
+                java.sql.ResultSet row = statement.executeQuery("SELECT snapshot_format FROM credit.decision_snapshot"
+                        + " WHERE decision_request_id = '" + decision + "'")) {
+            assertThat(row.next()).isTrue();
+            assertThat(row.getInt(1)).as("the format CHECK admits 2 since V023").isEqualTo(2);
+        }
+
+        UUID unassessed = IDS.next();
+        UUID second = request(unassessed);
+        SnapshotFreezer.Freeze none = inOneTransaction(uow -> {
+            seedBureau(uow, second, unassessed, databaseNow(uow).minus(Duration.ofDays(1)), cleanBureau());
+            return freezer(signal("NOT_ASSESSED", 2)).freeze(uow, input(second, unassessed, 1), correlation());
+        });
+        assertThat(((SnapshotFreezer.Freeze.Frozen) none).snapshot().canonical())
+                .contains("{\"kind\":\"port\",\"port\":\"risk-signal\",\"version\":\"2\"}");
+    }
+
+    @Test
     @DisplayName("not ready and withdrawn sources freeze nothing")
     void notReadyAndWithdrawnFreezeNothing() throws Exception {
         UUID party = IDS.next();

@@ -238,13 +238,19 @@ final class CreditWorld {
                 new CreditEvidence("{\"answer\":\"test\"}".getBytes(StandardCharsets.UTF_8)));
     }
 
+    /**
+     * The risk seam every freezer of this world answers through - Phase 10's {@code NOT_ASSESSED} at seam version 1 unless
+     * a suite sets risk's own (`P13-TSK-007`'s {@code CreditRiskSeamDatabaseTest}) and restores it after.
+     */
+    static volatile com.finapp.credit.CreditRiskSignal<Connection> risk = new NotAssessedUntilPhase13();
+
     static SnapshotFreezer freezer() {
         return freezer(collection());
     }
 
     /** The freezer over {@code collection} - a case's own sources (`P10-TSK-021`). */
     static SnapshotFreezer freezer(CreditDataCollection collection) {
-        return new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection, STANDING, new NotAssessedUntilPhase13(),
+        return new SnapshotFreezer(new JdbcDecisionSnapshotStore(), collection, STANDING, risk,
                 new JdbcReservedExposure(), PLATFORM_EXPOSURE, IDS);
     }
 

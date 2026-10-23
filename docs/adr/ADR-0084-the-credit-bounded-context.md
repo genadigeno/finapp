@@ -262,7 +262,18 @@ ADR-0037's rule, not an invariant), ADR-0081 §8 (the seam with a recorded answe
 - The transition moves `Risk Score` to `risk` in `MODULE_ARCHITECTURE.md` and settles
   `GLOSSARY.md` §10.
 - Phase 13: a real `CreditRiskSignal` composition; the seam's version changes, and decisions
-  pinned to the Phase 10 version keep replaying under it.
+  pinned to the Phase 10 version keep replaying under it. *(Built by `P13-TSK-007`, 2026-10-23:
+  `app`'s `RiskCreditRiskSignal`, seam version 2, answers the party's customer risk rating's code
+  and the version of risk's profile it was read from - or `NOT_ASSESSED` with no version for a
+  party risk has not assessed. **The seam's record changed shape**: `RiskSignal(code,
+  seamVersion, profileVersion)` - a profile version only from seam version 2 - and the freezer pins
+  it as `RISK_SIGNAL`'s provenance, `AttributeProvenance.Port`'s new record version; naming a
+  record in a port's provenance is `CanonicalSnapshot`'s format 2 (format 1 kept, byte-identical,
+  for replay; `credit V023` admits format 2 in the format `CHECK`). A decision replays from its
+  snapshot and never asks the seam again, so a decision sealed under version 1 replays
+  `NOT_ASSESSED` and one sealed under version 2 the rating it was given, whatever the profile
+  does after (`INV-RSK-10`, `INV-CRD-01`). Point 5's "no v1 rule reads it" is unchanged: no
+  seeded credit policy rule reads `RISK_SIGNAL`.)*
 - Phase 11: `lending` depends on `credit` through the `CreditDecisions` port and writes the
   consumption fact, `credit_decision_consumption` (ADR-0088 §4).
 - **As built** (2026-10-09, read against the code by `P10-DOC-001`): `P10-TSK-001` (module,

@@ -33,6 +33,8 @@ public final class RiskSpans {
     public static final String MONITORING_EVALUATE = "risk.monitoring.evaluate";
     /** T-mon - a customer risk profile recomputed. */
     public static final String PROFILE_RECOMPUTE = "risk.profile.recompute";
+    /** The analyst's door - a party's customer risk profile read (`P13-TSK-007`). */
+    public static final String PROFILE_READ = "risk.profile.read";
     /** T-mon - the rescreening leg. */
     public static final String RESCREEN = "risk.rescreen";
     /**

@@ -24,6 +24,10 @@ import java.util.Objects;
  * identifiers and closed codes, never an attribute, a description or a reason ({@code INV-RSK-08}; ADR-0107 decision
  * 8). It inherits the consumed event's correlation and is caused by that event, so the causal chain reads producer →
  * signal rather than flattening into siblings ({@code EventEnvelope#correlationForEmittedEvent}'s rule).
+ *
+ * <p><strong>The permit pull</strong> (`P13-TSK-007`): a signal born is handed to {@link ProfileHints} in the same
+ * transaction, which pulls the subject's party's customer risk profile permit to now - enrolling the party if it has
+ * none. A signal already recorded hints nothing: its first delivery did.
  */
 public final class RiskSignals {
 
@@ -44,12 +48,20 @@ public final class RiskSignals {
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
     private final Clock clock;
+    private final ProfileHints profileHints;
 
+    /** T-sig with no permit pull ({@link ProfileHints#NONE}) - the suites' shape. */
     public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock) {
+        this(store, outbox, ids, clock, ProfileHints.NONE);
+    }
+
+    public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock,
+            ProfileHints profileHints) {
         this.store = Objects.requireNonNull(store, "store");
         this.outbox = Objects.requireNonNull(outbox, "outbox");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.profileHints = Objects.requireNonNull(profileHints, "profileHints");
     }
 
     /** Records {@code signal} on the caller's unit of work; announces it only when born. */
@@ -78,6 +90,7 @@ public final class RiskSignals {
                         .with("subjectRef", signal.subject().ref())
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
+        profileHints.signalRecorded(unitOfWork, signal);
         return Outcome.BORN;
     }
 }

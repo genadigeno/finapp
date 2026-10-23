@@ -356,7 +356,11 @@ class RoutePermissionRegisterTest {
                     // P13-TSK-019: the risk officer's monitoring door - a reprocessing of the intake ordered from an
                     // earlier watermark (keyed, reasoned, audited risk.ReprocessingOrdered); RISK_POLICY_ADMINISTER
                     // (held by RISK_OFFICER); the negatives are RiskMonitoringEndpointDatabaseTest's.
-                    entry("POST /v1/operator/risk/monitoring/reprocessing", PermissionName.RISK_POLICY_ADMINISTER)));
+                    entry("POST /v1/operator/risk/monitoring/reprocessing", PermissionName.RISK_POLICY_ADMINISTER),
+                    // P13-TSK-007: the analyst's customer risk profile door - a party's rating history, audited
+                    // risk.ProfileRead, the analyst's own party refused risk.SelfDealingRefused; RISK_INVESTIGATE (held
+                    // by RISK_ANALYST); the negatives are ProfileApiTest's.
+                    entry("GET /v1/operator/risk/parties/{partyId}/profile", PermissionName.RISK_INVESTIGATE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

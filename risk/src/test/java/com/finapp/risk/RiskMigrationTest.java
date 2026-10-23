@@ -27,7 +27,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The risk schema's privilege floor and its first tables, proven <strong>live</strong> (`P13-TSK-001`; `P13-TSK-019`
  * adds {@code V004}: {@code monitored_transaction}, {@code monitoring_watermark}; `P13-TSK-006` adds {@code V005}:
- * {@code velocity_window}) - {@code BnplMigrationTest}'s idiom, as every schema-owning module has its own.
+ * {@code velocity_window}; `P13-TSK-007` adds {@code V006}: {@code customer_risk_profile},
+ * {@code customer_risk_profile_version}) - {@code BnplMigrationTest}'s idiom, as every schema-owning module has its own.
  *
  * <p>The migration-test idiom reads the SQL and holds it to the code; this class holds the <em>database</em> to it,
  * because a floor is only a control as it actually stands in the catalogue - a grant added by a later migration or by
@@ -99,13 +100,16 @@ class RiskMigrationTest {
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and exactly the tables and"
             + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
-            + " windows (P13-TSK-006)")
+            + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
         // this list with its own tables, views and functions, keeping the others' (the wave's rule); the lists are in
         // the catalogue's order.
         assertThat(tablesIn(SCHEMA)).containsExactly(
+                // V006 (P13-TSK-007): the profile's head and its versions.
+                "customer_risk_profile",
+                "customer_risk_profile_version",
                 "flyway_schema_history",
                 // V004 (P13-TSK-019): the born-once record and the intake's position per source.
                 "monitored_transaction",
@@ -124,6 +128,12 @@ class RiskMigrationTest {
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
                 + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
+                // V006 (P13-TSK-007): nothing removed; the head moving with its versions; the versions append-only, in
+                // sequence and PROHIBITED sticky against the sweep.
+                "customer_risk_profile_is_never_removed",
+                "customer_risk_profile_moves_with_its_versions",
+                "customer_risk_profile_version_is_append_only",
+                "customer_risk_profile_version_is_born_in_sequence",
                 // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
                 "holds_account_identifier_shape",
                 "holds_card_number_shape",
@@ -298,6 +308,32 @@ class RiskMigrationTest {
                     + " WHERE conname = 'monitored_transaction_counterparty_kind_is_known'"))
                     .contains("'" + kind.name() + "'");
         }
+    }
+
+    // ------------------------------------------------------------------ V006 (P13-TSK-007)
+
+    @Test
+    @DisplayName("V006: the grants - the head SELECT, INSERT and an UPDATE of its version, rating and permit alone; the"
+            + " versions SELECT and INSERT only; no DELETE anywhere - and every constraint name unique in the schema")
+    void theProfileGrants() throws SQLException {
+        assertThat(grantsOn("customer_risk_profile"))
+                .containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'customer_risk_profile' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("current_version", "next_recompute_at", "rating", "recomputed_at");
+        assertThat(grantsOn("customer_risk_profile_version"))
+                .containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        String statements = statementsOf(migration("V006__the_customer_risk_profile.sql"));
+        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+        assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+                + " WHERE conname = 'customer_risk_profile_version_rating_is_known'"))
+                .contains("'LOW'", "'MEDIUM'", "'HIGH'", "'PROHIBITED'");
+        assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+                + " WHERE conname = 'customer_risk_profile_version_cause_is_known'"))
+                .contains("'" + ProfileCause.RECOMPUTE.name() + "'", "'" + ProfileCause.DISPOSITION.name() + "'");
     }
 
     @Test

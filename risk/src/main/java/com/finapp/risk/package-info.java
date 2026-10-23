@@ -114,10 +114,28 @@
  * {@link com.finapp.risk.WindowStarts}, counted forward only and only on the database clock for every role by
  * {@code V005}'s trigger; and {@link com.finapp.risk.VelocityProof}, which recomputes the provable live windows from
  * {@link com.finapp.risk.VelocityEvidence} (the monitored transfers, {@link com.finapp.risk.JdbcVelocityEvidence}) and
- * reports a difference, never correcting it. Nothing calls them until `-004` wires T-eval and `-023` the proof. No
- * evaluation yet in production: nothing calls the engine until `-004` lands, production evaluates nothing until a policy
- * version is activated under four eyes (section 1.1), and until `-008`…`-011` and `-007` land, the consumers' seams stay
- * wired to their permit-all and not-assessed defaults; the monitoring sweep is off in test contexts and ingests, in
- * production, a journal no rule yet reads (`-020`).
+ * reports a difference, never correcting it. Nothing calls them until `-004` wires T-eval and `-023` the proof.
+ * <strong>The customer risk profile</strong> (`P13-TSK-007`, wave C, {@code V006}): {@link com.finapp.risk.CustomerRiskProfile}
+ * - the head per party, born unassessed and moved only beside a new version - and
+ * {@link com.finapp.risk.CustomerRiskProfileVersion}, born once in sequence ({@code PRIMARY KEY (party_id, version)},
+ * {@code INSERT}-only), a {@link com.finapp.risk.ProfileCause#RECOMPUTE} version carrying its whole evaluation (the
+ * pinned {@code MONITORING} version, the engine, the signal score, the reasons, the sealed inputs and their digest), a
+ * {@link com.finapp.risk.ProfileCause#DISPOSITION} version its disposition (`-016`'s act, the only one that sets or lifts
+ * {@code PROHIBITED}); {@link com.finapp.risk.CustomerRiskProfileStore} over the schema;
+ * {@link com.finapp.risk.ProfileRecompute} (T-mon's profile leg: the pin (R1), the head (R8) claimed
+ * {@code SKIP LOCKED} or locked waiting, {@link com.finapp.risk.ProfileInputs} - the party and its screening clearance,
+ * the rest {@code ABSENT} until `-020` reads the windows and the movements - evaluated by the engine over the rating bands, a version only when the
+ * rating changes, announced {@code risk.CustomerRiskRatingChanged}; a {@code PROHIBITED} party never re-rated; no
+ * {@code MONITORING} version, nothing judged); {@link com.finapp.risk.CustomerRiskProfiles} ({@code current} - what
+ * credit's seam, version 2 through {@code app}'s {@code RiskCreditRiskSignal}, and `-004`'s {@code PROFILE_RATING} read;
+ * an unassessed party is no rating at all, never a default - and {@code history}, the analyst's audited read behind the
+ * self-dealing judgement); {@link com.finapp.risk.ProfileHints} (T-sig's permit pull, inside {@code RiskSignals.record})
+ * through the party join {@link com.finapp.risk.RiskSubjectParties} ({@code app}'s {@code IdentitySubjectParties}: a party
+ * and an identity placed today). {@link com.finapp.risk.RiskActingParty} has its first implementation ({@code app}'s
+ * {@code IdentityActingParty}). No evaluation yet in production: nothing calls the engine for a movement until `-004`
+ * lands, production evaluates nothing until a policy version is activated under four eyes (section 1.1) - the profile
+ * leg judges nothing until a {@code MONITORING} version is - and until `-008`…`-011` land, the movement seams stay wired
+ * to their permit-all defaults (credit's seam is risk's since `-007`); the monitoring sweep is off in test contexts and
+ * ingests, in production, a journal no rule yet reads (`-020`).
  */
 package com.finapp.risk;

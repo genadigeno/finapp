@@ -223,8 +223,8 @@ class RiskVocabulariesTest {
 
     @Test
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
-            + " doors' four and four (-002), the reprocessing door's one and one (-019) - namespaced risk., the refusals"
-            + " 403, the policy codes the register's statuses")
+            + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007) -"
+            + " namespaced risk., the refusals 403, the policy codes the register's statuses")
     void theCodesAndActions() {
         // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
         assertThat(Arrays.stream(RiskErrorCode.values()).map(RiskErrorCode::code))
@@ -243,13 +243,13 @@ class RiskVocabulariesTest {
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
                 .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
                         "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
-                        "risk.ReprocessingOrdered");
+                        "risk.ReprocessingOrdered", "risk.ProfileRead");
         for (RiskAuditAction action : RiskAuditAction.values()) {
             assertThat(action.description()).as(action.name()).isNotBlank();
         }
         // The platform's acts are reasoned by the act they follow; a person's discretionary act requires a reason.
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
-                RiskAuditAction.POLICY_RETIRED)) {
+                RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
@@ -277,6 +277,7 @@ class RiskVocabulariesTest {
         assertThat(RegulatoryReportId.of(value).value()).isEqualTo(value);
         assertThat(MonitoredTransactionId.next(ids).value().version()).isEqualTo(7);
         assertThat(ScreeningListVersionId.next(ids).value().version()).isEqualTo(7);
+        assertThat(CustomerRiskProfileId.of(value).value()).as("a profile's identity is its party's").isEqualTo(value);
         assertThatThrownBy(() -> RiskCaseId.of(UUID.randomUUID()))
                 .as("a v4 value carries no creation instant (ADR-0013)")
                 .isInstanceOf(IllegalArgumentException.class);
@@ -287,7 +288,7 @@ class RiskVocabulariesTest {
     void theSpans() {
         for (String span : List.of(RiskSpans.EVALUATE, RiskSpans.ADVISE, RiskSpans.POLICY_ACTIVATE,
                 RiskSpans.MONITORING_INTAKE, RiskSpans.CASE_DISPOSE, RiskSpans.ACTION_DISPATCH, RiskSpans.REPORT,
-                RiskSpans.VELOCITY_PROOF)) {
+                RiskSpans.VELOCITY_PROOF, RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ)) {
             assertThat(span).startsWith("risk.").matches("[a-z]+(\\.[a-z]+)+");
         }
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);

@@ -3228,7 +3228,13 @@ changes after a credit decision is sealed and the decision replays `IDENTICAL` u
 a `PROHIBITED` version without its disposition refused by the `CHECK` alone (`P13-TSK-007`,
 `P13-TSK-016`); a decision made under seam version 1 replaying `NOT_ASSESSED` (`P13-TSK-007`);
 `finapp.risk.profile.rating{bucket}` (`P13-TSK-024`); the battery replaying every assessment under
-the profile version it recorded (`P13-TST-002`).
+the profile version it recorded (`P13-TST-002`). *(As built by `P13-TSK-007`, 2026-10-23: the schema
+holds each rule for every writer - `PRIMARY KEY (party_id, version)`, the versions `INSERT`-only and
+born in sequence, `PROHIBITED` only with cause `DISPOSITION` and its `disposition_id` (`CHECK`), no
+recompute's version after a `PROHIBITED` one, the head moved only beside its versions (`risk V006`);
+credit's snapshot pins the profile version as `RISK_SIGNAL`'s provenance (canonical format 2,
+`credit V023`); hermetic `CustomerRiskProfileTest`, `RiskCreditRiskSignalTest`,
+`CanonicalSnapshotTest`; `ProfileDatabaseTest`, `CreditRiskSeamDatabaseTest` written and owed, C5.)*
 **Phase:** 13
 
 *`INV-RSK-01`…`INV-RSK-10` catalogued by the Phase 12 → 13 transition (2026-10-22), the `INV-BNPL`
