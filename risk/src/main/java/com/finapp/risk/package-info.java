@@ -100,7 +100,21 @@
  * (another operation, another engine, another currency, a rule that throws) - never a partial verdict; and
  * {@link com.finapp.risk.CanonicalEvaluation}, format 1 - the byte-exact text of the inputs and of a verdict, its SHA-256
  * what `-004` seals and replays against, the inputs form parsed back strictly; proven byte-identical in a second JVM
- * ({@code RiskEngineDigestTest}). The engine reads nothing: `-004`'s T-eval fills the inputs and seals them. No
+ * ({@code RiskEngineDigestTest}). The engine reads nothing: `-004`'s T-eval fills the inputs and seals them.
+ * <strong>The velocity windows</strong> (`P13-TSK-006`, wave C, {@code V005}): the dimension is its own vocabulary,
+ * {@link com.finapp.risk.VelocityDimension} ({@code PARTY}, {@code SOURCE_ACCOUNT}, {@code DESTINATION}, {@code DEVICE},
+ * {@code MERCHANT} - the role a subject plays, so a transfer's source and destination are counted apart), retyped through
+ * the policy's parameter type ({@code VELOCITY_DIMENSION}; {@code SUBJECT_KIND} dropped), its store and the engine's
+ * {@link com.finapp.risk.VelocityKey} (canonical format still 1); {@link com.finapp.risk.VelocityWindows} - T-eval's
+ * three steps in the caller's transaction: {@code cut} (R2a, one advisory lock per (dimension, subject), namespace
+ * 131, sorted, then {@code clock_timestamp()} - a {@link com.finapp.risk.WindowCut} no caller can build from another
+ * clock), {@code read} (the figures before the movement) and {@code increment} (R2, one
+ * {@code INSERT … ON CONFLICT DO UPDATE … RETURNING} per window in sorted key order, only for {@code ALLOW} or a
+ * satisfied {@code CHALLENGE}) over {@link com.finapp.risk.VelocityWindowStore}; the windows tumbling buckets from
+ * {@link com.finapp.risk.WindowStarts}, counted forward only and only on the database clock for every role by
+ * {@code V005}'s trigger; and {@link com.finapp.risk.VelocityProof}, which recomputes the provable live windows from
+ * {@link com.finapp.risk.VelocityEvidence} (the monitored transfers, {@link com.finapp.risk.JdbcVelocityEvidence}) and
+ * reports a difference, never correcting it. Nothing calls them until `-004` wires T-eval and `-023` the proof. No
  * evaluation yet in production: nothing calls the engine until `-004` lands, production evaluates nothing until a policy
  * version is activated under four eyes (section 1.1), and until `-008`…`-011` and `-007` land, the consumers' seams stay
  * wired to their permit-all and not-assessed defaults; the monitoring sweep is off in test contexts and ingests, in

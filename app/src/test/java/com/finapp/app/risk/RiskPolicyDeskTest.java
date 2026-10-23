@@ -87,6 +87,9 @@ class RiskPolicyDeskTest {
                 new RiskPolicyController.RiskRuleRequest("AMOUNT_BAND", null, 100, null),
                 new RiskPolicyController.RiskRuleRequest("VELOCITY_COUNT", Map.of("dimension", "PLANET", "window", "D1",
                         "threshold_count", 10), 100, null),
+                // P13-TSK-006: a subject kind is no longer a velocity dimension - the source and the destination are.
+                new RiskPolicyController.RiskRuleRequest("VELOCITY_COUNT", Map.of("dimension", "ACCOUNT", "window", "D1",
+                        "threshold_count", 10), 100, null),
                 new RiskPolicyController.RiskRuleRequest("VELOCITY_COUNT", Map.of("dimension", "PARTY", "window", "Y1",
                         "threshold_count", 10), 100, null),
                 new RiskPolicyController.RiskRuleRequest("VELOCITY_COUNT", Map.of("dimension", "PARTY", "window", "D1",

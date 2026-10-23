@@ -35,6 +35,11 @@ public final class RiskSpans {
     public static final String PROFILE_RECOMPUTE = "risk.profile.recompute";
     /** T-mon - the rescreening leg. */
     public static final String RESCREEN = "risk.rescreen";
+    /**
+     * The velocity proof - every live window recomputed from its evidence in one snapshot (`P13-TSK-006` reserves it;
+     * `-023`'s schedule records it). T-eval's own velocity steps run inside {@link #EVALUATE}.
+     */
+    public static final String VELOCITY_PROOF = "risk.velocity.proof";
     /** T-case - a case opened. */
     public static final String CASE_OPEN = "risk.case.open";
     /** T-case - an investigator's act on a case. */

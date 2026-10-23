@@ -103,14 +103,14 @@ class RuleKindCoverageTest {
                 new Probe(RuleKind.AMOUNT_BAND, RiskOperation.TRANSFER,
                         Map.of("threshold_minor", RiskPolicyFixtures.minor(500_00)),
                         b -> b.amount(eur(500_00)), b -> b.amount(eur(499_99))),
-                new Probe(RuleKind.VELOCITY_COUNT, RiskOperation.TRANSFER, velocity(SubjectKind.ACCOUNT, WindowKind.D1,
+                new Probe(RuleKind.VELOCITY_COUNT, RiskOperation.TRANSFER, velocity(VelocityDimension.SOURCE_ACCOUNT, WindowKind.D1,
                         "threshold_count", RiskPolicyFixtures.count(10)),
-                        b -> b.velocity(SubjectKind.ACCOUNT, WindowKind.D1, 10, 0),
-                        b -> b.velocity(SubjectKind.ACCOUNT, WindowKind.D1, 9, 0)),
-                new Probe(RuleKind.VELOCITY_SUM, RiskOperation.TRANSFER, velocity(SubjectKind.PARTY, WindowKind.D1,
+                        b -> b.velocity(VelocityDimension.SOURCE_ACCOUNT, WindowKind.D1, 10, 0),
+                        b -> b.velocity(VelocityDimension.SOURCE_ACCOUNT, WindowKind.D1, 9, 0)),
+                new Probe(RuleKind.VELOCITY_SUM, RiskOperation.TRANSFER, velocity(VelocityDimension.PARTY, WindowKind.D1,
                         "threshold_minor", RiskPolicyFixtures.minor(5_000_00)),
-                        b -> b.velocity(SubjectKind.PARTY, WindowKind.D1, 0, 5_000_00),
-                        b -> b.velocity(SubjectKind.PARTY, WindowKind.D1, 0, 4_999_99)),
+                        b -> b.velocity(VelocityDimension.PARTY, WindowKind.D1, 0, 5_000_00),
+                        b -> b.velocity(VelocityDimension.PARTY, WindowKind.D1, 0, 4_999_99)),
                 new Probe(RuleKind.NEW_PAYEE, RiskOperation.TRANSFER, Map.of("lookback_days", RiskPolicyFixtures.days(30)),
                         b -> b.payeeFirstSeen(FirstSeen.never()), b -> b.payeeFirstSeen(FirstSeen.daysAgo(30))),
                 new Probe(RuleKind.NEW_DEVICE, RiskOperation.TRANSFER, Map.of("lookback_days", RiskPolicyFixtures.days(30)),
@@ -146,8 +146,8 @@ class RuleKindCoverageTest {
                 new Probe(RuleKind.DORMANT_THEN_ACTIVE, RiskOperation.MONITORING,
                         Map.of("dormant_days", RiskPolicyFixtures.days(90), "window", RiskPolicyFixtures.window(WindowKind.D1),
                                 "threshold_minor", RiskPolicyFixtures.minor(1_000_00)),
-                        b -> b.velocity(SubjectKind.PARTY, WindowKind.D1, 1, 1_000_00).monitoring(dormant(90)),
-                        b -> b.velocity(SubjectKind.PARTY, WindowKind.D1, 1, 999_99).monitoring(dormant(120))),
+                        b -> b.velocity(VelocityDimension.PARTY, WindowKind.D1, 1, 1_000_00).monitoring(dormant(90)),
+                        b -> b.velocity(VelocityDimension.PARTY, WindowKind.D1, 1, 999_99).monitoring(dormant(120))),
                 new Probe(RuleKind.RAPID_IN_OUT, RiskOperation.MONITORING,
                         Map.of("window", RiskPolicyFixtures.window(WindowKind.D1), "ratio_bps", RiskPolicyFixtures.bps(8_000)),
                         b -> b.monitoring(flows(new Flow(1_000_00, 800_00))),
@@ -192,9 +192,9 @@ class RuleKindCoverageTest {
         return Money.ofMinorUnits(minor, RiskPolicyFixtures.EUR);
     }
 
-    private static Map<String, ParameterValue> velocity(SubjectKind dimension, WindowKind window, String threshold,
+    private static Map<String, ParameterValue> velocity(VelocityDimension dimension, WindowKind window, String threshold,
             ParameterValue value) {
-        return Map.of("dimension", new ParameterValue.Subject(dimension), "window", RiskPolicyFixtures.window(window),
+        return Map.of("dimension", new ParameterValue.Dimension(dimension), "window", RiskPolicyFixtures.window(window),
                 threshold, value);
     }
 

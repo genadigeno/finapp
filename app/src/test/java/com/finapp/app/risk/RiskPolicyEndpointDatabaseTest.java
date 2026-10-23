@@ -254,7 +254,7 @@ class RiskPolicyEndpointDatabaseTest {
         fields.put("rules", "[{\"kind\":\"AMOUNT_BAND\",\"parameters\":{\"threshold_minor\":50000},\"hardDecision\":\"CHALLENGE\"},"
                 + "{\"kind\":\"SCREENING_HIT\",\"parameters\":{},\"hardDecision\":\"DENY\"},"
                 + "{\"kind\":\"NEW_DEVICE\",\"parameters\":{\"lookback_days\":30},\"weight\":200},"
-                + "{\"kind\":\"VELOCITY_COUNT\",\"parameters\":{\"dimension\":\"ACCOUNT\",\"window\":\"D1\","
+                + "{\"kind\":\"VELOCITY_COUNT\",\"parameters\":{\"dimension\":\"SOURCE_ACCOUNT\",\"window\":\"D1\","
                 + "\"threshold_count\":10},\"hardDecision\":\"REVIEW\"}]");
         fields.put("scoreBands", "[{\"from\":0,\"to\":299,\"decision\":\"ALLOW\"},"
                 + "{\"from\":300,\"to\":1000,\"decision\":\"CHALLENGE\"}]");

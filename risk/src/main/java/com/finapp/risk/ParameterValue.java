@@ -98,15 +98,15 @@ public sealed interface ParameterValue {
         }
     }
 
-    /** A velocity dimension. */
-    record Subject(SubjectKind value) implements ParameterValue {
-        public Subject {
+    /** A velocity dimension (`P13-TSK-006`; it replaced the {@code SubjectKind} value `-002` first stored). */
+    record Dimension(VelocityDimension value) implements ParameterValue {
+        public Dimension {
             Objects.requireNonNull(value, "value");
         }
 
         @Override
         public RuleKind.ParameterType type() {
-            return RuleKind.ParameterType.SUBJECT_KIND;
+            return RuleKind.ParameterType.VELOCITY_DIMENSION;
         }
     }
 

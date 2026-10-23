@@ -302,7 +302,7 @@ class RiskEngineV1Test {
         EvaluationInputs inputs = EvaluationInputs.builder(RiskOperation.TRANSFER)
                 .subject(SignalSubject.of(SubjectKind.PARTY, PARTY))
                 .amount(eur(1_200_00))
-                .velocity(SubjectKind.ACCOUNT, WindowKind.D1, 2, 300_00)
+                .velocity(VelocityDimension.SOURCE_ACCOUNT, WindowKind.D1, 2, 300_00)
                 .payeeFirstSeen(FirstSeen.never())
                 .deviceFirstSeen(FirstSeen.daysAgo(45))
                 .sessionAssurance(RiskAssurance.MULTI_FACTOR)
@@ -314,7 +314,7 @@ class RiskEngineV1Test {
         String canonicalInputs = "{\"format\":\"1\",\"kind\":\"inputs\",\"operation\":\"TRANSFER\","
                 + "\"subjects\":[{\"kind\":\"PARTY\",\"ref\":\"00000000-0000-7000-8000-000000000001\"}],"
                 + "\"amount\":{\"minor\":\"120000\",\"currency\":\"EUR\",\"scale\":\"2\"},"
-                + "\"velocity\":[{\"dimension\":\"ACCOUNT\",\"window\":\"D1\",\"count\":\"2\",\"sum\":\"30000\"}],"
+                + "\"velocity\":[{\"dimension\":\"SOURCE_ACCOUNT\",\"window\":\"D1\",\"count\":\"2\",\"sum\":\"30000\"}],"
                 + "\"payeeFirstSeen\":{\"days\":\"NEVER\"},\"deviceFirstSeen\":{\"days\":\"45\"},"
                 + "\"sessionAssurance\":{\"value\":\"MULTI_FACTOR\"},\"authFailures\":[],"
                 + "\"credentialChange\":{\"hours\":\"NEVER\"},\"recovery\":{\"absent\":\"true\"},"
@@ -331,7 +331,7 @@ class RiskEngineV1Test {
                 + "\"hits\":["
                 + hit(1, "AMOUNT_BAND", "FIRED", 0, "CHALLENGE", "amount=120000") + ","
                 + hit(2, "AMOUNT_BAND", "NOT_FIRED", 0, "NONE", "amount=120000") + ","
-                + hit(3, "VELOCITY_COUNT", "NOT_FIRED", 0, "NONE", "velocity:ACCOUNT:D1:count=2") + ","
+                + hit(3, "VELOCITY_COUNT", "NOT_FIRED", 0, "NONE", "velocity:SOURCE_ACCOUNT:D1:count=2") + ","
                 + hit(4, "VELOCITY_SUM", "ABSENT", 0, "NONE", "ABSENT") + ","
                 + hit(5, "NEW_PAYEE", "FIRED", 250, "NONE", "payee:daysSinceFirstSeen=NEVER") + ","
                 + hit(6, "AMOUNT_BAND", "FIRED", 200, "NONE", "amount=120000") + ","
@@ -357,8 +357,8 @@ class RiskEngineV1Test {
         return EvaluationInputs.builder(RiskOperation.TRANSFER)
                 .subject(SignalSubject.of(SubjectKind.PARTY, PARTY))
                 .amount(eur(amountMinor))
-                .velocity(SubjectKind.ACCOUNT, WindowKind.D1, 2, 300_00)
-                .velocity(SubjectKind.PARTY, WindowKind.D1, 3, 400_00)
+                .velocity(VelocityDimension.SOURCE_ACCOUNT, WindowKind.D1, 2, 300_00)
+                .velocity(VelocityDimension.PARTY, WindowKind.D1, 3, 400_00)
                 .payeeFirstSeen(FirstSeen.daysAgo(200))
                 .deviceFirstSeen(FirstSeen.daysAgo(100))
                 .sessionAssurance(RiskAssurance.MULTI_FACTOR)

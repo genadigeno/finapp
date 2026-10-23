@@ -62,11 +62,11 @@ class PolicyFixturesTest {
         assertThat(hardDecisions(transfer, RuleKind.AMOUNT_BAND)).containsExactly(
                 Map.entry(500_00L, RiskDecision.CHALLENGE), Map.entry(10_000_00L, RiskDecision.DENY));
         RiskRule count = first(transfer, RuleKind.VELOCITY_COUNT);
-        assertThat(count.parameters().subjectKind("dimension")).isEqualTo(SubjectKind.ACCOUNT);
+        assertThat(count.parameters().dimension("dimension")).isEqualTo(VelocityDimension.SOURCE_ACCOUNT);
         assertThat(count.parameters().window("window")).isEqualTo(WindowKind.D1);
         assertThat(count.parameters().count("threshold_count")).isEqualTo(10);
         RiskRule sum = first(transfer, RuleKind.VELOCITY_SUM);
-        assertThat(sum.parameters().subjectKind("dimension")).isEqualTo(SubjectKind.PARTY);
+        assertThat(sum.parameters().dimension("dimension")).isEqualTo(VelocityDimension.PARTY);
         assertThat(sum.parameters().minorAmount("threshold_minor")).isEqualTo(5_000_00);
         assertThat(first(transfer, RuleKind.SCREENING_HIT).hardDecision()).contains(RiskDecision.DENY);
         RiskRule prohibited = first(transfer, RuleKind.PROFILE_RATING);

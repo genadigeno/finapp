@@ -30,7 +30,7 @@ import com.finapp.risk.RiskSpans;
 import com.finapp.risk.RuleKind;
 import com.finapp.risk.RuleParameters;
 import com.finapp.risk.ScoreBand;
-import com.finapp.risk.SubjectKind;
+import com.finapp.risk.VelocityDimension;
 import com.finapp.risk.WindowKind;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
@@ -246,7 +246,8 @@ public final class RiskPolicyDesk {
             case DAYS -> new ParameterValue.Days(Math.toIntExact(bounded(integral(raw, where), where)));
             case HOURS -> new ParameterValue.Hours(Math.toIntExact(bounded(integral(raw, where), where)));
             case WINDOW -> new ParameterValue.Window(named(WindowKind.class, text(raw, where), "a window"));
-            case SUBJECT_KIND -> new ParameterValue.Subject(named(SubjectKind.class, text(raw, where), "a dimension"));
+            case VELOCITY_DIMENSION -> new ParameterValue.Dimension(
+                    named(VelocityDimension.class, text(raw, where), "a dimension"));
             case ASSURANCE -> new ParameterValue.Assurance(named(RiskAssurance.class, text(raw, where), "an assurance"));
             case RATING -> new ParameterValue.Rating(named(RiskRating.class, text(raw, where), "a rating"));
             case CORRIDOR_SET -> {
@@ -367,7 +368,7 @@ public final class RiskPolicyDesk {
             case ParameterValue.Days days -> days.value();
             case ParameterValue.Hours hours -> hours.value();
             case ParameterValue.Window window -> window.value().name();
-            case ParameterValue.Subject subject -> subject.value().name();
+            case ParameterValue.Dimension dimension -> dimension.value().name();
             case ParameterValue.Corridors corridors -> List.copyOf(corridors.sorted());
             case ParameterValue.Assurance assurance -> assurance.value().name();
             case ParameterValue.Rating rating -> rating.value().name();

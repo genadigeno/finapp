@@ -29,6 +29,9 @@ class RiskPolicyMigrationTest {
 
     private static final String RESOURCE = "db/migration/risk/V002__risk_policy_versions_as_data.sql";
 
+    /** risk V005 (P13-TSK-006): the parameter table's type and value CHECKs re-made for the velocity dimension. */
+    private static final String VELOCITY_RESOURCE = "db/migration/risk/V005__velocity_windows.sql";
+
     @Test
     @DisplayName("the status, operation, engine, kind, decision, parameter type, window, subject, assurance and rating"
             + " lists are exactly the enums' members")
@@ -41,13 +44,22 @@ class RiskPolicyMigrationTest {
         assertThat(constraint("risk_policy_version_engine_is_this_builds")).contains("engine IN (" + list(RiskEngine.values()) + ")");
         assertThat(collapsed("risk_rule_kind_is_known")).contains("kind IN (" + list(RuleKind.values()) + ")");
         assertThat(constraint("risk_rule_hard_decision_is_known")).contains("hard_decision IN (" + list(RiskDecision.values()) + ")");
-        assertThat(collapsed("risk_rule_parameter_type_is_known"))
+        // The parameter table's two CHECKs as they stand: risk V005 (P13-TSK-006) dropped V002's and re-made them with
+        // the velocity dimension in place of the subject kind - V002 is merged and never edited, so the effective
+        // definition is the latest migration's, and THAT is held to the enums.
+        assertThat(statements(VELOCITY_RESOURCE)).contains(
+                "ALTER TABLE risk.risk_rule_parameter DROP CONSTRAINT risk_rule_parameter_type_is_known;",
+                "ALTER TABLE risk.risk_rule_parameter DROP CONSTRAINT risk_rule_parameter_value_typed;");
+        assertThat(collapsed(VELOCITY_RESOURCE, "risk_rule_parameter_type_is_known"))
                 .contains("type IN (" + list(RuleKind.ParameterType.values()) + ")");
-        String typed = collapsed("risk_rule_parameter_value_typed");
+        String typed = collapsed(VELOCITY_RESOURCE, "risk_rule_parameter_value_typed");
         assertThat(typed).contains("value_window IN (" + list(WindowKind.values()) + ")")
-                .contains("value_subject_kind IN (" + list(SubjectKind.values()) + ")")
+                .contains("value_velocity_dimension IN (" + list(VelocityDimension.values()) + ")")
                 .contains("value_assurance IN (" + list(RiskAssurance.values()) + ")")
                 .contains("value_rating IN (" + list(RiskRating.values()) + ")");
+        for (RuleKind.ParameterType type : RuleKind.ParameterType.values()) {
+            assertThat(typed).as("every parameter type has its column").contains("(type = '" + type.name() + "') = (");
+        }
         String bands = collapsed("risk_policy_band_shape_coherent");
         assertThat(bands).contains("decision IN (" + list(RiskDecision.values()) + ")")
                 .contains("rating IN ('LOW', 'MEDIUM', 'HIGH')")
@@ -176,11 +188,19 @@ class RiskPolicyMigrationTest {
 
     /** {@code constraint(name)} with its whitespace collapsed and the list brackets closed up, for a one-line read. */
     private static String collapsed(String name) {
-        return constraint(name).replaceAll("\\s+", " ").replace("( ", "(").replace(" )", ")");
+        return collapsed(RESOURCE, name);
+    }
+
+    private static String collapsed(String resource, String name) {
+        return constraint(resource, name).replaceAll("\\s+", " ").replace("( ", "(").replace(" )", ")");
     }
 
     private static String constraint(String name) {
-        String sql = statements();
+        return constraint(RESOURCE, name);
+    }
+
+    private static String constraint(String resource, String name) {
+        String sql = statements(resource);
         int start = sql.indexOf("CONSTRAINT " + name + " CHECK");
         assertThat(start).as(name).isNotNegative();
         int next = sql.indexOf("CONSTRAINT ", start + 1);
@@ -200,14 +220,22 @@ class RiskPolicyMigrationTest {
 
     /** The migration with its comment lines removed - what actually executes. */
     private static String statements() {
-        return migration().lines()
+        return statements(RESOURCE);
+    }
+
+    private static String statements(String resource) {
+        return migration(resource).lines()
                 .filter(line -> !line.strip().startsWith("--"))
                 .collect(Collectors.joining("\n"));
     }
 
     private static String migration() {
-        try (InputStream in = RiskPolicyMigrationTest.class.getClassLoader().getResourceAsStream(RESOURCE)) {
-            assertThat(in).as(RESOURCE + " on the classpath").isNotNull();
+        return migration(RESOURCE);
+    }
+
+    private static String migration(String resource) {
+        try (InputStream in = RiskPolicyMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
+            assertThat(in).as(resource + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException unreadable) {
             throw new IllegalStateException(unreadable);
