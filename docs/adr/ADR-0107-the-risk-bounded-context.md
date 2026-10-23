@@ -59,6 +59,8 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    | kyc's screening ports | `CounterpartyScreenings`; the case-bound party screening | rescreening on list updates (plan §12.10) |
    | identity's acting party | the party of an acting person | every self-dealing refusal (plan §11) |
    | the session's assurance | `MULTI_FACTOR` or not, read for `CHALLENGE` and for step-up | T-eval and T-advise (ADR-0108) |
+   | `ScreeningClearances` *(implemented by `P13-TSK-005`, 2026-10-23)* | kyc's `PartyStore`, `KycCaseStore` and `CheckStore` reads: the latest decided `SANCTIONS` or `PEP` check of the party's live customer's latest case — three bounded facts (the check's id, hit or not, decided at), empty where none is decided | the screening-hit reading (`-004`) |
+   | `MonitoringHints` *(added by `P13-TSK-005`, 2026-10-23; implemented by `-019`)* | the monitoring watermark's permit — a completed movement, announced by its owner, pulls `next_sweep_at` forward in the handler's own transaction; `NONE` until `-019` | the five completion hints (`RiskSignalIntake`) |
 
    The exact port names are each building task's design; `P13-TSK-001` declared them empty of implementation —
    `RiskActingParty`, `SessionAssurance`, `MonitoredLedger`, `RegulatoryFilingProvider`, `ScreeningClearances`,
@@ -109,7 +111,16 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    blocked movement's owner announces its own outcome and `RiskDecisionMade` carries the judgement. Events from
    identity, kyc, accounts, crossborder, merchant, lending, bnpl, transfers and payments are consumed through
    `InboxEventHandler`s named `risk.<component>` as signal sources and as hints that pull a sweep's permit forward —
-   never for correctness; the sweep reads rows.
+   never for correctness; the sweep reads rows. *(As built by `P13-TSK-005`, 2026-10-23: every handler is
+   `app`'s `RiskSignalIntake` under the one consumer name `risk.signals`, one instance per event type; only events
+   that exist are consumed — identity's `CredentialChanged`, `RecoveryInitiated`, `RecoveryCompleted`,
+   `IdentitySuspended`, `accounts.AccountOpened`, crossborder's `BeneficiaryRegistered` / `Activated` / `Blocked`,
+   `merchant.MerchantOnboarded`, lending's and bnpl's delinquency and default events as signals; the five completions as
+   hints recording no signal (the journal's `monitored_transaction` is the movement's record). The handler reads the
+   payload — the first consumer to — through `EventPayload.fields`, the writer's exact inverse, and records what the
+   event said and nothing read from the producer's tables; the events name their own aggregate, never the party, so
+   `SubjectKind` gained `IDENTITY` and `CREDIT_AGREEMENT`. `RiskSignalRecorded` carries the signal id, kind, subject
+   kind and reference, caused by the consumed event. The plan's §10 erratum records what it named that does not exist.)*
 
 9. **Data classification** (plan §8). Assessment inputs and rule hits `CONFIDENTIAL`; signal attributes at their
    source's level (`device` `RESTRICTED-PII` — only identity's hash of the device description is ever received, OQ-4);
