@@ -150,13 +150,14 @@ public final class PaymentMeters {
         FAILED,
         UNKNOWN;
 
-        /** The committed status as a judgement; a dispatch is none. */
+        /** The committed status as a judgement; a dispatch is none, and neither is a hold
+         * (`P13-TSK-009`: {@code HELD} is risk's verdict, which no rail judged). */
         public static Optional<WithdrawalOutcome> of(WithdrawalStatus status) {
             return switch (status) {
                 case COMPLETED -> Optional.of(COMPLETED);
                 case FAILED -> Optional.of(FAILED);
                 case UNKNOWN -> Optional.of(UNKNOWN);
-                case DISPATCHED -> Optional.empty();
+                case DISPATCHED, HELD -> Optional.empty();
             };
         }
     }

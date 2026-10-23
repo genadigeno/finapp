@@ -46,6 +46,22 @@ class WithdrawalTest {
                 HoldId.of(IDS.next()));
     }
 
+    private static Withdrawal held() {
+        return Withdrawal.held(
+                IDS,
+                CLOCK,
+                WithdrawalId.next(IDS),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                LedgerAccountId.of(IDS.next()),
+                UUID.randomUUID(),
+                new ProviderReference("dest-w-" + IDS.next()),
+                AMOUNT,
+                RailId.of("instant"),
+                HoldId.of(IDS.next()),
+                java.time.Duration.ofHours(72));
+    }
+
     private static Withdrawal inState(WithdrawalStatus status) {
         Withdrawal fresh = dispatched();
         return switch (status) {
@@ -55,6 +71,7 @@ class WithdrawalTest {
                     fresh.complete(
                             new ProviderReference("sch-" + IDS.next()), Optional.of("C1"));
             case FAILED -> fresh.fail(WithdrawalFailureReason.DECLINED);
+            case HELD -> held();
         };
     }
 
@@ -63,12 +80,14 @@ class WithdrawalTest {
     class TheMachine {
 
         @Test
-        @DisplayName("every transition is enforced, swept from the cross-product")
+        @DisplayName("every transition is enforced, swept from the cross-product - the scheme's"
+                + " word and risk's (P13-TSK-009)")
         void everyTransitionIsEnforced() {
             for (WithdrawalStatus from : WithdrawalStatus.values()) {
                 for (WithdrawalStatus to : WithdrawalStatus.values()) {
                     Withdrawal subject = inState(from);
-                    Runnable move =
+                    // The scheme's edges: only after a dispatch.
+                    Runnable schemeMove =
                             switch (to) {
                                 case COMPLETED ->
                                         () ->
@@ -82,32 +101,170 @@ class WithdrawalTest {
                                                         WithdrawalFailureReason
                                                                 .PROVIDER_UNAVAILABLE);
                                 case UNKNOWN -> subject::outcomeUnknown;
-                                case DISPATCHED -> null; // birth only - no door exists
+                                case DISPATCHED ->
+                                        () -> subject.release(
+                                                subject.lastDispatchedAt().plusSeconds(1),
+                                                "risk.action:" + IDS.next());
+                                case HELD -> null; // birth only - no edge enters HELD
                             };
-                    if (move == null) {
+                    if (schemeMove == null) {
                         continue;
                     }
-                    if (from.canTransitionTo(to)) {
-                        move.run();
+                    boolean schemeEdge =
+                            from.canTransitionTo(to)
+                                    && (from.isResolvable() || to == WithdrawalStatus.DISPATCHED);
+                    if (schemeEdge) {
+                        schemeMove.run();
                     } else {
-                        assertThatThrownBy(move::run)
+                        assertThatThrownBy(schemeMove::run)
+                                .as("%s -> %s by the scheme or a release", from, to)
                                 .isInstanceOf(IllegalWithdrawalTransitionException.class);
                     }
                 }
+                // Risk's edges out of HELD (deny, expire): from HELD alone.
+                Withdrawal subject = inState(from);
+                if (from == WithdrawalStatus.HELD) {
+                    assertThat(subject.deny("risk.action:" + IDS.next()).failureReason())
+                            .contains(WithdrawalFailureReason.RISK_REFUSED);
+                    assertThat(inState(from).expire().failureDetail())
+                            .contains(WithdrawalFailureDetail.HOLD_EXPIRED);
+                } else {
+                    assertThatThrownBy(() -> subject.deny("risk.action:k"))
+                            .isInstanceOf(IllegalWithdrawalTransitionException.class);
+                    assertThatThrownBy(subject::expire)
+                            .isInstanceOf(IllegalWithdrawalTransitionException.class);
+                }
             }
+        }
+
+        @Test
+        @DisplayName("the scheme never fails a held withdrawal, and never with risk's reason"
+                + " (P13-TSK-009)")
+        void theSchemeNeverRefusesWhatItNeverReceived() {
+            assertThatThrownBy(() -> held().fail(WithdrawalFailureReason.DECLINED))
+                    .isInstanceOf(IllegalWithdrawalTransitionException.class);
+            assertThatThrownBy(() -> dispatched().fail(WithdrawalFailureReason.RISK_REFUSED))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> held().withSendPermit(Instant.now(CLOCK).plusSeconds(60)))
+                    .as("a held withdrawal was never sent: no permit is renewed on it")
+                    .isInstanceOf(IllegalWithdrawalTransitionException.class);
         }
 
         @Test
         @DisplayName("the generated SQL lists say what the machine says")
         void theGeneratedListsMatchTheMachine() {
             assertThat(WithdrawalStatus.sqlValueList())
-                    .isEqualTo("'DISPATCHED', 'COMPLETED', 'FAILED', 'UNKNOWN'");
+                    .isEqualTo("'DISPATCHED', 'COMPLETED', 'FAILED', 'UNKNOWN', 'HELD'");
             assertThat(WithdrawalStatus.resolvableSqlValueList())
                     .isEqualTo("'DISPATCHED', 'UNKNOWN'");
             assertThat(WithdrawalStatus.sqlTerminalValueList())
                     .isEqualTo("'COMPLETED', 'FAILED'");
             assertThat(WithdrawalFailureReason.sqlValueList())
-                    .isEqualTo("'DECLINED', 'PROVIDER_UNAVAILABLE', 'NEVER_RECEIVED'");
+                    .isEqualTo("'DECLINED', 'PROVIDER_UNAVAILABLE', 'NEVER_RECEIVED', 'RISK_REFUSED'");
+            assertThat(WithdrawalFailureDetail.sqlValueList()).isEqualTo("'HOLD_EXPIRED'");
+            assertThat(WithdrawalStatus.birthStates())
+                    .containsExactly(
+                            WithdrawalStatus.DISPATCHED, WithdrawalStatus.FAILED, WithdrawalStatus.HELD);
+        }
+    }
+
+    @Nested
+    @DisplayName("the judged births and the held edges (P13-TSK-009)")
+    class TheHeldWithdrawal {
+
+        @Test
+        @DisplayName("a held birth carries its window, keeps no reason, and is not resolvable")
+        void aHeldBirth() {
+            Withdrawal held = held();
+            assertThat(held.status()).isEqualTo(WithdrawalStatus.HELD);
+            assertThat(held.held()).hasValueSatisfying(window ->
+                    assertThat(window.validity()).isEqualTo(java.time.Duration.ofHours(72)));
+            assertThat(held.failureReason()).isEmpty();
+            assertThat(held.status().isResolvable()).isFalse();
+            assertThat(held.status().isTerminal()).isFalse();
+        }
+
+        @Test
+        @DisplayName("a refused birth is FAILED(RISK_REFUSED) with no window")
+        void aRefusedBirth() {
+            Withdrawal refused = Withdrawal.refused(IDS, CLOCK, WithdrawalId.next(IDS),
+                    UUID.randomUUID(), UUID.randomUUID(), LedgerAccountId.of(IDS.next()),
+                    UUID.randomUUID(), new ProviderReference("dest-w-" + IDS.next()), AMOUNT,
+                    RailId.of("instant"), HoldId.of(IDS.next()));
+            assertThat(refused.status()).isEqualTo(WithdrawalStatus.FAILED);
+            assertThat(refused.failureReason()).contains(WithdrawalFailureReason.RISK_REFUSED);
+            assertThat(refused.held()).isEmpty();
+            assertThat(refused.failureDetail()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the release dispatches with a forward permit and its key; the window stays")
+        void theRelease() {
+            Withdrawal held = held();
+            Withdrawal released = held.release(held.lastDispatchedAt().plusSeconds(3), "risk.action:a");
+            assertThat(released.status()).isEqualTo(WithdrawalStatus.DISPATCHED);
+            assertThat(released.lastDispatchedAt()).isEqualTo(held.lastDispatchedAt().plusSeconds(3));
+            assertThat(released.heldResolutionKey()).contains("risk.action:a");
+            assertThat(released.held()).isEqualTo(held.held());
+            assertThatThrownBy(() -> held.release(held.lastDispatchedAt().minusSeconds(1), "k"))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> released.release(released.lastDispatchedAt(), "k"))
+                    .isInstanceOf(IllegalWithdrawalTransitionException.class);
+        }
+
+        @Test
+        @DisplayName("the denial records its key; the expiry its detail and no key")
+        void theDenialAndTheExpiry() {
+            Withdrawal denied = held().deny("risk.action:d");
+            assertThat(denied.heldResolutionKey()).contains("risk.action:d");
+            assertThat(denied.failureDetail()).isEmpty();
+            Withdrawal expired = held().expire();
+            assertThat(expired.failureDetail()).contains(WithdrawalFailureDetail.HOLD_EXPIRED);
+            assertThat(expired.heldResolutionKey()).isEmpty();
+            assertThat(expired.status().isTerminal()).isTrue();
+        }
+
+        @Test
+        @DisplayName("V033's coherence is refused on rehydrate too")
+        void theHeldCoherence() {
+            Withdrawal base = held();
+            // HELD without its window.
+            assertThatThrownBy(() -> Withdrawal.rehydrate(base.id(), base.partyId(), base.customerId(),
+                    base.walletAccountId(), base.paymentMethodId(), base.destination(), base.amount(),
+                    base.reference(), base.railId(), WithdrawalStatus.HELD, Optional.empty(),
+                    Optional.empty(), Optional.empty(), base.holdId(), base.createdAt(),
+                    base.lastDispatchedAt(), Optional.empty(), Optional.empty(), Optional.empty()))
+                    .isInstanceOf(IllegalArgumentException.class);
+            // A detail beside a scheme reason.
+            assertThatThrownBy(() -> Withdrawal.rehydrate(base.id(), base.partyId(), base.customerId(),
+                    base.walletAccountId(), base.paymentMethodId(), base.destination(), base.amount(),
+                    base.reference(), base.railId(), WithdrawalStatus.FAILED,
+                    Optional.of(WithdrawalFailureReason.DECLINED), Optional.empty(), Optional.empty(),
+                    base.holdId(), base.createdAt(), base.lastDispatchedAt(), base.held(),
+                    Optional.of(WithdrawalFailureDetail.HOLD_EXPIRED), Optional.empty()))
+                    .isInstanceOf(IllegalArgumentException.class);
+            // A door's key on a row never held.
+            Withdrawal never = dispatched();
+            assertThatThrownBy(() -> Withdrawal.rehydrate(never.id(), never.partyId(), never.customerId(),
+                    never.walletAccountId(), never.paymentMethodId(), never.destination(), never.amount(),
+                    never.reference(), never.railId(), WithdrawalStatus.DISPATCHED, Optional.empty(),
+                    Optional.empty(), Optional.empty(), never.holdId(), never.createdAt(),
+                    never.lastDispatchedAt(), Optional.empty(), Optional.empty(), Optional.of("k")))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("the stored birth replaces the provisional window and moves the permit only forward")
+        void theStoredBirth() {
+            Withdrawal held = held();
+            Withdrawal.HeldWindow stored = new Withdrawal.HeldWindow(
+                    held.createdAt().plusMillis(2), held.createdAt().plusMillis(2).plusSeconds(3600));
+            Withdrawal kept = held.withStoredBirth(held.createdAt().plusMillis(2), Optional.of(stored));
+            assertThat(kept.held()).contains(stored);
+            assertThatThrownBy(() -> held.withStoredBirth(held.createdAt(), Optional.empty()))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> dispatched().withStoredBirth(Instant.now(CLOCK), Optional.of(stored)))
+                    .isInstanceOf(IllegalStateException.class);
         }
     }
 
@@ -192,7 +349,10 @@ class WithdrawalTest {
                     Optional.ofNullable(cycle),
                     like.holdId(),
                     like.createdAt(),
-                    like.lastDispatchedAt());
+                    like.lastDispatchedAt(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty());
         }
     }
 
@@ -211,13 +371,19 @@ class WithdrawalTest {
                         WithdrawalStatus.UNKNOWN);
         assertThat(WithdrawalStatus.UNKNOWN.permittedTransitions())
                 .containsExactlyInAnyOrder(WithdrawalStatus.COMPLETED, WithdrawalStatus.FAILED);
+        // P13-TSK-009: a held withdrawal leaves only by its release or by risk's refusal.
+        assertThat(WithdrawalStatus.HELD.permittedTransitions())
+                .containsExactlyInAnyOrder(WithdrawalStatus.DISPATCHED, WithdrawalStatus.FAILED);
         // INV-REV-03's domain rank on a final-on-acceptance rail: the accepted
         // withdrawal has no edge at all - not to FAILED, not to anything.
         assertThat(WithdrawalStatus.COMPLETED.permittedTransitions()).isEmpty();
         assertThat(WithdrawalStatus.FAILED.permittedTransitions()).isEmpty();
-        // And no state permits a move back to DISPATCHED: dispatch is the only birth.
+        // And no state but HELD reaches DISPATCHED - the release (P13-TSK-009); nothing ever
+        // re-enters HELD: it is a birth, as DISPATCHED is.
         for (WithdrawalStatus from : WithdrawalStatus.values()) {
-            assertThat(from.canTransitionTo(WithdrawalStatus.DISPATCHED)).isFalse();
+            assertThat(from.canTransitionTo(WithdrawalStatus.DISPATCHED))
+                    .isEqualTo(from == WithdrawalStatus.HELD);
+            assertThat(from.canTransitionTo(WithdrawalStatus.HELD)).isFalse();
         }
     }
 

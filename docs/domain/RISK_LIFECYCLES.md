@@ -574,6 +574,26 @@ plan §14). `held_until` is payments' column (`V033`), stamped at the hold from 
 a release by any door but payments' own; a `HELD` row whose hold was released; `HELD` reaching the customer with a
 reason.
 
+*(As built, `P13-TSK-009`, 2026-10-24 — payments `V033`, as drawn with these readings. **No `SUBMITTED`**: payments'
+machine has no request state (`P7-TSK-008`), so the withdrawal is **born** in the state its in-lock verdict decides -
+`DISPATCHED`, `HELD` or `FAILED(RISK_REFUSED)` - and the every-writer birth trigger (`withdrawal_is_born_judged`, in
+place of `withdrawal_is_born_dispatched`) admits exactly those, an instructed (SYSTEM) row only `DISPATCHED`: the
+instruction is **not judged** (it carries out a credit decision; owner item). **`held_at`** is the birth permit's own
+instant and **`held_until`** `held_at` + the validity the seam answered with its `HOLD` (`Assessed.holdValidity`, the
+pinned version's), both stamped by the database in the insert. `HELD` is not terminal and **not resolvable** (no
+inquiry, no permit renewal). **The release** is `Withdrawals.releaseHeld(key, id, reasonCode)`: the claim
+`payments.withdrawal.release`, the row `FOR UPDATE`, the conditional edge **within `held_until` on the database clock**
+(past it: `REFUSED`, nothing written - the expiry is the policy's outcome), the first real send permit and the key on the
+row (`held_resolution_key`), then the wire and the platform's answer (Tx2); a re-driven key re-sends behind a renewed
+permit. **The denial** is `Withdrawals.denyHeld(key, id, reasonCode)`, one transaction, the key recorded. **The
+expiry** is `WithdrawalResolution.expireHolds`: one `HELD` row past `held_until` per transaction, claimed `FOR UPDATE
+SKIP LOCKED`, failed with `failure_detail` `HOLD_EXPIRED`, its hold released, as the platform. The doors answer
+`DONE` / `ALREADY` (no longer `HELD`) / `REFUSED` (no such withdrawal, or a lapsed release). A `HOLD` is **not counted**
+in the windows (T-eval counts what the decision permits). No case is opened yet: `CaseOpener` is `NONE` until `-016`.
+The machine as built: `DISPATCHED → COMPLETED | FAILED | UNKNOWN`, `UNKNOWN → COMPLETED | FAILED`, `HELD → DISPATCHED |
+FAILED`; `RISK_REFUSED` exactly out of `HELD` (or at birth), the scheme's reasons exactly after a dispatch; the held
+window frozen; the key and the detail arriving only with the edge out of `HELD`.)*
+
 **Checkout payment confirmation (`payments.payment_intent`) — payments' own, changed by `-010` (payments `V034`).**
 `PaymentConfirmation.confirm` decides routing in Tx1 under the intent; the new `PaymentRiskDecision` (`app`'s
 `RiskPaymentRiskDecision`) is consulted in Tx1 after the eligibility checks and before the routing decision commits,
@@ -609,7 +629,7 @@ rows changes and every earlier decision replays as it was sealed.
 | Monitored transaction · watermark | `monitored_transaction`, `monitoring_watermark` (`-019`, `V004`) | — | `UNIQUE (journal_entry_id)`; one watermark per source; `next_sweep_at` |
 | Regulatory report | `regulatory_report`, `_event` (`-021`, `V011`) | `regulatory_report_event` | `UNIQUE (case_id)` over an open draft; four-eyes `CHECK`; `FILED` columns frozen (trigger) |
 | List version · permit | `screening_list_version`, `rescreening_permit` (`-022`, `V012`) | — | `UNIQUE (list, version)`; one permit per (list version, party) |
-| Withdrawal (payments') | `withdrawal` (payments `V033`, `-009`) | payments' | `HELD` in the status `CHECK` and the edge trigger; `RISK_REFUSED` in the reason list, with the `HOLD_EXPIRED` detail; `held_until` stamped at the hold |
+| Withdrawal (payments') | `withdrawal` (payments `V033`, `-009`) | payments' | `HELD` in the status `CHECK` and the edge trigger; `RISK_REFUSED` in the reason list, with the `HOLD_EXPIRED` detail; `held_until` stamped at the hold *(built: the judged births by trigger, `held_at`/`held_until` frozen and stamped by the database, `held_resolution_key`, the expiry's partial index `withdrawal_hold_expiry`)* |
 | Payment intent (payments') | the refused-by-risk decision row (payments `V034`, `-010`) | payments' | `RISK_REFUSED` in `PaymentFailureReason`'s list; the refusal terminal for the intent — no edge back to `REQUIRES_CONFIRMATION` |
 
 Every trigger is `<table>_permits_only_machine_edges`, written by hand; every status `CHECK` a membership list; every

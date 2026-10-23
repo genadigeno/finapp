@@ -124,10 +124,16 @@ public final class RiskEvaluation {
      * (bands are risk's judgement); a fail-safe has no hit and is never one; an unsatisfied {@code CHALLENGE} is always
      * {@code CHALLENGE_REQUIRED}, whichever rule raised it. Derived from the sealed hits, so a replayed answer says the
      * same as the fresh one.
+     *
+     * <p>{@code holdValidity} (`P13-TSK-009`) answers the one consumer with a native hold - the withdrawal: present
+     * exactly for a {@code HOLD}, the pinned version's hold validity (ADR-0109 - policy data, so the consumer's
+     * {@code held_until} is the version's, never a constant of its own). A {@code HOLD} always names its version (the
+     * fail-safe without one is the compiled {@code ALLOW}), so it is read from the pin, fresh or replayed alike.
      */
     public record Assessed(RiskAssessmentId assessmentId, RiskOperation operation, CommandRef commandRef,
             RiskDecision decision, List<ReasonCode> reasons, Optional<Boolean> challengeSatisfied,
-            Optional<ReasonCode> failSafe, VelocityOutcome velocity, boolean replayed, boolean limitDecided) {
+            Optional<ReasonCode> failSafe, VelocityOutcome velocity, boolean replayed, boolean limitDecided,
+            Optional<Duration> holdValidity) {
 
         public Assessed {
             Objects.requireNonNull(assessmentId, "assessmentId");
@@ -138,15 +144,19 @@ public final class RiskEvaluation {
             Objects.requireNonNull(challengeSatisfied, "challengeSatisfied");
             Objects.requireNonNull(failSafe, "failSafe");
             Objects.requireNonNull(velocity, "velocity");
+            Objects.requireNonNull(holdValidity, "holdValidity");
             if (limitDecided && (decision == RiskDecision.ALLOW || decision == RiskDecision.CHALLENGE)) {
                 throw new IllegalArgumentException("only a refusing decision other than a challenge is decided by a limit");
             }
+            if ((decision == RiskDecision.HOLD) != holdValidity.isPresent()) {
+                throw new IllegalArgumentException("a hold validity is answered exactly for a HOLD");
+            }
         }
 
-        static Assessed of(RiskAssessment sealed, boolean replayed) {
+        static Assessed of(RiskAssessment sealed, boolean replayed, Optional<Duration> holdValidity) {
             return new Assessed(sealed.id(), sealed.operation(), sealed.commandRef(), sealed.decision(),
                     sealed.reasons(), sealed.challengeSatisfied(), sealed.failSafeReason(), sealed.velocity(), replayed,
-                    limitDecided(sealed.decision(), sealed.hits()));
+                    limitDecided(sealed.decision(), sealed.hits()), holdValidity);
         }
 
         /** Whether a fired limit rule's own hard decision is the refusing {@code decision} (the record's javadoc). */
@@ -231,7 +241,7 @@ public final class RiskEvaluation {
     private Assessed evaluated(Connection unitOfWork, RiskEvaluationRequest request) {
         Optional<RiskAssessment> sealed = assessments.find(unitOfWork, request.operation(), request.commandRef());
         if (sealed.isPresent()) {
-            return Assessed.of(sealed.get(), true);
+            return Assessed.of(sealed.get(), true, holdValidity(unitOfWork, sealed.get()));
         }
         Instant started = clock.instant();
         Judgement judgement = judgement(unitOfWork, request, true);
@@ -248,7 +258,22 @@ public final class RiskEvaluation {
                 assessment.decision(), assessment.unavailable(),
                 judgement.verdict().fired().stream().map(RuleHit::reason).toList(), assessment.challengeSatisfied(),
                 assessment.velocity(), Duration.ofNanos(assessment.latencyMicros() * 1_000L)));
-        return Assessed.of(assessment, false);
+        return Assessed.of(assessment, false, assessment.decision() == RiskDecision.HOLD
+                ? judgement.version().flatMap(version -> version.policy().holdValidity())
+                : Optional.empty());
+    }
+
+    /**
+     * A sealed {@code HOLD}'s hold validity - its pinned version's (`P13-TSK-009`); empty for every other decision. A
+     * replay reads the version by its id, unlocked: a decided version never changes ({@code INV-RSK-05}).
+     */
+    private Optional<Duration> holdValidity(Connection unitOfWork, RiskAssessment sealed) {
+        if (sealed.decision() != RiskDecision.HOLD) {
+            return Optional.empty();
+        }
+        RiskAssessment.Pin pin = sealed.pin().orElseThrow(() -> new IllegalStateException(
+                "a sealed HOLD names its policy version: only the compiled ALLOW pins none"));
+        return policies.version(unitOfWork, pin.id()).policy().holdValidity();
     }
 
     // ------------------------------------------------------------------ T-advise

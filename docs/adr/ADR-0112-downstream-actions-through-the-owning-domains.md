@@ -176,6 +176,15 @@ keyed command through its door), `INV-RSK-07` (every downstream action is two pe
 - `P13-TSK-017` — the action machine, the ports per owning domain, `RiskActionSchedule`, T-act and the two re-drive
   tests (`risk V010`); `P13-TSK-012` — the override's `RELEASE_HELD_WITHDRAWAL` / `DENY_HELD_WITHDRAWAL`
   through payments; `P13-TSK-009` — payments' `HELD` state and its release and denial commands (payments `V033`);
+  *(built 2026-10-24: `Withdrawals.releaseHeld(key, id, reasonCode)` — the claim `payments.withdrawal.release`, the
+  withdrawal row `FOR UPDATE`, `HELD → DISPATCHED` within `held_until` on the database clock, the send after the commit,
+  the outcome the platform's — and `Withdrawals.denyHeld(key, id, reasonCode)` — one transaction, `FAILED(RISK_REFUSED)`
+  and the hold released; each `DONE`/`ALREADY`/`REFUSED`; risk's `HeldWithdrawalActions` reshaped by its first
+  implementation, `app`'s `PaymentsHeldWithdrawalActions` — **no unit of work** (the release sends, so the door runs in
+  payments' own transactions: decision 3's T-act shape, the domain's command in its own transaction) and **the reason a
+  code**, never a note (`INV-RSK-08`). The loser of a release racing the expiry is `ALREADY` (the expiry won) or `REFUSED`
+  (the release arrived past `held_until` before the sweep — the expiry then commits): exactly one edge out of `HELD`
+  either way. Unwired to any risk caller until `-012`/`-017`.)*
   `P13-TSK-013` — the ATO rules that propose C10's actions; `P13-TSK-022` — `RESCREEN_PARTY` through kyc.
 - `P13-TST-001` runs scenarios 4, 7, 10 and 11 with counts and asserts the lock wait on R6 and on the withdrawal row
   in both orders.

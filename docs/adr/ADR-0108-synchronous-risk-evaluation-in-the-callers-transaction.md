@@ -249,6 +249,17 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
   command ref is its id, fresh per execution, so "a one-time allowance for the same command reference that the retry's
   evaluation reads" (decision 7) cannot match a retry under a new key — the override must key its allowance on what the
   retry shares.)*
+  *(Withdrawals built by `P13-TSK-009`, 2026-10-24 — payments `V033`, no risk migration. Decision 3's `HOLD` row as
+  built: payments' own seam `WithdrawalRiskDecision` answers `PERMIT`, `HOLD(validity)` or `REFUSE`, consulted in the
+  dispatch transaction after the hold under the withdrawal's own id; `HOLD` commits `HELD` with the hold kept and
+  `held_until` = `held_at` + **the pinned version's hold validity**, answered by risk with the verdict
+  (`Assessed.holdValidity`) and stamped by the database — policy data, never a payments constant; `DENY`, `REVIEW` and an
+  unsatisfied `CHALLENGE` commit `FAILED(RISK_REFUSED)` with the hold released in the same transaction; C1's fail-safe
+  `DENY` at every band for withdrawals is that refusal. **A `HOLD` is not counted** in the windows (T-eval counts what
+  the decision permits; OQ-1 read for `HOLD`). The expiry past `held_until` is payments' (`WithdrawalResolutionSchedule`'s
+  leg, `HOLD_EXPIRED`), the release and the denial payments' keyed doors behind risk's `HeldWithdrawalActions`; a release
+  past `held_until` is refused — the expiry is the policy's outcome. The SYSTEM withdrawal on an instruction (a loan's
+  payout) is not judged — it carries out a credit decision (owner item). `CaseOpener` is still `NONE` (`-016`).)*
 - `P13-TST-001` measures T-eval p50/p99/max per operation beside the sweep; `P13-TST-002` replays every decision in
   two JVMs.
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the

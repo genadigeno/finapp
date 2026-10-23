@@ -80,6 +80,10 @@ public final class WithdrawalOutcomes {
     static final String INITIATED_EVENT_TYPE = "payments.WithdrawalInitiated";
     static final String COMPLETED_EVENT_TYPE = "payments.WithdrawalCompleted";
     static final String FAILED_EVENT_TYPE = "payments.WithdrawalFailed";
+    /** A withdrawal born {@code HELD} by the risk seam's verdict (`P13-TSK-009`): ids and the status only. */
+    static final String HELD_EVENT_TYPE = "payments.WithdrawalHeld";
+    /** A held withdrawal released through the keyed door - dispatched (`P13-TSK-009`). */
+    static final String RELEASED_EVENT_TYPE = "payments.WithdrawalReleased";
     static final String AGGREGATE_TYPE = "withdrawal";
     static final String PRODUCER = "payments";
     static final int EVENT_VERSION = 1;
@@ -232,6 +236,136 @@ public final class WithdrawalOutcomes {
                             : new Applied(locked.status(), false);
             case INDETERMINATE -> unknown(unitOfWork, locked, correlation, "inquiry");
         };
+    }
+
+    // ------------------------------------------------------------------ risk's edges (P13-TSK-009)
+
+    /**
+     * A refused birth's money (`P13-TSK-009`): the hold the dispatch placed under the wallet's lock, released in the
+     * same transaction that committed {@code FAILED(RISK_REFUSED)}, and the failure announced - nothing was sent, so
+     * nothing is posted and no rail judged anything.
+     */
+    void refusedAtBirth(
+            Connection unitOfWork, Withdrawal born, Correlation correlation, Instant now) {
+        Objects.requireNonNull(born, "born must not be null");
+        if (born.failureReason().filter(WithdrawalFailureReason.RISK_REFUSED::equals).isEmpty()) {
+            throw new IllegalStateException("only a refused birth releases its hold at birth");
+        }
+        requireReleased(unitOfWork, born);
+        announce(unitOfWork, born, FAILED_EVENT_TYPE, correlation, now);
+    }
+
+    /** A held birth's fact (`P13-TSK-009`): the hold stands, nothing sent - announced as payments' own outcome. */
+    void announceHeld(
+            Connection unitOfWork, Withdrawal born, Correlation correlation, Instant now) {
+        announce(unitOfWork, born, HELD_EVENT_TYPE, correlation, now);
+    }
+
+    /**
+     * The release's edge on the LOCKED held row (`P13-TSK-009`): {@code HELD → DISPATCHED} with the database's send
+     * permit and the door's key, announced and audited as the door caller's act - while the hold's validity stands on
+     * the database clock. The hold stands - it is the dispatched withdrawal's from here, released only by the scheme's
+     * answer through this class. Returns the released row, or empty when the validity has lapsed (nothing written: the
+     * expiry is the policy's outcome).
+     */
+    Optional<Withdrawal> releaseHeld(
+            Connection unitOfWork,
+            Withdrawal locked,
+            String key,
+            String reasonCode,
+            Correlation correlation) {
+        Objects.requireNonNull(locked, "locked must not be null");
+        Instant now = Instant.now(clock);
+        Optional<Instant> permit = withdrawals.releaseHeld(unitOfWork, locked, key, now);
+        if (permit.isEmpty()) {
+            return Optional.empty();
+        }
+        Withdrawal released = locked.release(permit.get(), key);
+        announce(unitOfWork, released, RELEASED_EVENT_TYPE, correlation, now);
+        recordDoor(unitOfWork, released, PaymentsAuditAction.WITHDRAWAL_RELEASED, key, reasonCode,
+                correlation, now);
+        return Optional.of(released);
+    }
+
+    /**
+     * The denial's edge on the LOCKED held row (`P13-TSK-009`): {@code HELD → FAILED(RISK_REFUSED)}, the hold
+     * released, announced and audited as the door caller's act - one transaction.
+     */
+    Applied denyHeld(
+            Connection unitOfWork,
+            Withdrawal locked,
+            String key,
+            String reasonCode,
+            Correlation correlation) {
+        Objects.requireNonNull(locked, "locked must not be null");
+        Instant now = Instant.now(clock);
+        Withdrawal denied = locked.deny(key);
+        requireLanded(unitOfWork, locked, denied, now);
+        requireReleased(unitOfWork, locked);
+        announce(unitOfWork, denied, FAILED_EVENT_TYPE, correlation, now);
+        recordDoor(unitOfWork, denied, PaymentsAuditAction.WITHDRAWAL_DENIED, key, reasonCode,
+                correlation, now);
+        return new Applied(WithdrawalStatus.FAILED, true);
+    }
+
+    /**
+     * The expiry's edge on the CLAIMED held row (`P13-TSK-009`): {@code HELD → FAILED(RISK_REFUSED)} with
+     * {@code HOLD_EXPIRED}, the hold released, announced and audited as the platform's act. The risk case, if any, is
+     * risk's and is not touched.
+     */
+    Applied expireHeld(Connection unitOfWork, Withdrawal claimed, Correlation correlation) {
+        Objects.requireNonNull(claimed, "claimed must not be null");
+        Instant now = Instant.now(clock);
+        Withdrawal expired = claimed.expire();
+        requireLanded(unitOfWork, claimed, expired, now);
+        requireReleased(unitOfWork, claimed);
+        announce(unitOfWork, expired, FAILED_EVENT_TYPE, correlation, now);
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        now,
+                        PaymentsAuditAction.WITHDRAWAL_HOLD_EXPIRED,
+                        Withdrawals.TARGET_TYPE,
+                        expired.id().value().toString(),
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of(
+                                "withdrawal=" + expired.id()
+                                        + ", status=FAILED, failure=RISK_REFUSED,"
+                                        + " detail=HOLD_EXPIRED")));
+        return new Applied(WithdrawalStatus.FAILED, true);
+    }
+
+    private void recordDoor(
+            Connection unitOfWork,
+            Withdrawal after,
+            PaymentsAuditAction action,
+            String key,
+            String reasonCode,
+            Correlation correlation,
+            Instant now) {
+        // The door's caller is the actor: the approving operator (-012) or the platform's action
+        // schedule (-017). The reason is a code - a note never crosses into payments (INV-RSK-08).
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        now,
+                        action,
+                        Withdrawals.TARGET_TYPE,
+                        after.id().value().toString(),
+                        Optional.of(reasonCode),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of(
+                                "withdrawal=" + after.id()
+                                        + ", status=" + after.status()
+                                        + after.failureReason().map(r -> ", failure=" + r).orElse("")
+                                        + ", key=" + key)));
     }
 
     /** An acceptance beside a FAILED withdrawal: a break reconciliation must see. */
@@ -399,6 +533,9 @@ public final class WithdrawalOutcomes {
                         .with("rail", withdrawal.railId().value());
         if (withdrawal.failureReason().isPresent()) {
             payload = payload.with("failureReason", withdrawal.failureReason().get().name());
+        }
+        if (withdrawal.failureDetail().isPresent()) {
+            payload = payload.with("failureDetail", withdrawal.failureDetail().get().name());
         }
         // Identifiers and enumerated names only - never the amount, never a reference
         // (INV-AUD-02).

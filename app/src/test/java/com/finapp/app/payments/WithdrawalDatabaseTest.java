@@ -573,7 +573,8 @@ class WithdrawalDatabaseTest {
                         withdrawalStore, outcomes, holdService, routingStoreBean, railsBean,
                         com.finapp.payments.RailOperations.ofPush(RailId.of("instant"), takeoversWire),
                         evidenceBean, executorBean, auditWriterBean, ids,
-                        com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5)), transactions);
+                        com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5)), transactions,
+                        withdrawalRiskDecisionBean);
 
         Withdrawals.Initiated retried;
         Actor person = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
@@ -926,7 +927,8 @@ class WithdrawalDatabaseTest {
                         com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS,
                         java.util.Map.of(RailId.of("instant"), push),
                         java.util.Map.of(corridor, corridorRail)),
-                evidenceBean, executorBean, auditWriterBean, ids, CLOCK, transactions);
+                evidenceBean, executorBean, auditWriterBean, ids, CLOCK, transactions,
+                withdrawalRiskDecisionBean);
 
         long withdrawals = count("SELECT count(*) FROM payments.withdrawal");
         long holds = count("SELECT count(*) FROM ledger.hold");
@@ -1221,8 +1223,14 @@ class WithdrawalDatabaseTest {
                 auditWriterBean,
                 ids,
                 CLOCK,
-                transactions);
+                transactions,
+                withdrawalRiskDecisionBean);
     }
+
+    /** The composition's own risk seam (P13-TSK-009): the real adapter, which answers ALLOW(NO_POLICY_ACTIVE) in this
+     * suite's shared container - no WITHDRAWAL version is ever activated there (WithdrawalRiskSeamDatabaseTest, which
+     * activates one, runs in a container of its own). */
+    @Autowired private com.finapp.payments.WithdrawalRiskDecision<Connection> withdrawalRiskDecisionBean;
 
     @Autowired private com.finapp.payments.RoutingStore<Connection> routingStoreBean;
     @Autowired private PushRail instantRail;

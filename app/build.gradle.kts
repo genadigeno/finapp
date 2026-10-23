@@ -357,6 +357,9 @@ extra["ownContainerSuites"] =
         "com.finapp.app.lending.LoanPayoutDatabaseTest",
         "com.finapp.app.merchant.PayoutReturnDatabaseTest",
         "com.finapp.app.payments.SystemWithdrawalDatabaseTest",
+        // P13-TSK-009: it activates a EUR WITHDRAWAL risk version, after which every withdrawal in the database is
+        // judged by it - a shared container's USD withdrawals would be refused, its EUR 2,500 ones held.
+        "com.finapp.app.payments.WithdrawalRiskSeamDatabaseTest",
         "com.finapp.app.reconciliation.BatchRepudiationDatabaseTest",
         "com.finapp.app.reconciliation.JpyAndBhdPostableDatabaseTest",
         "com.finapp.app.reconciliation.ResolutionBatteryDatabaseTest",

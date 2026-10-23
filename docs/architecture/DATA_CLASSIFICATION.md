@@ -2991,6 +2991,21 @@ identifier (`lending:<loanId>`), equal to the row's dispatch key; it names a len
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `withdrawal` | `instruction_reference` | `INTERNAL` | The recorded instruction a system withdrawal carries out (`lending:<loanId>`) - one withdrawal per instruction; null on a person's |
+
+### `payments` - the held withdrawal - *added by `P13-TSK-009`*
+
+`payments V033`: what risk's `HOLD` verdict left on a person's withdrawal - when it was held and until when (the pinned
+policy's hold validity, both on the database clock), the expiry's detail beside `RISK_REFUSED`, and the key of the door
+that moved it out of `HELD`. Nothing of the judgement crosses: no reason, no score, no case (`INV-RSK-08`); the customer
+reads `HELD`, a status word, and none of these columns.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `withdrawal` | `held_at` | `CONFIDENTIAL` | Dates a person's withdrawal being held - the `created_at` reasoning; that a person's money was held is theirs and the operator's, never a customer surface's |
+| `withdrawal` | `held_until` | `CONFIDENTIAL` | When the hold's validity lapses (`held_at` + the pinned policy's hold validity): it discloses the review window, so it is never on a customer surface |
+| `withdrawal` | `failure_detail` | `INTERNAL` | `HOLD_EXPIRED` or null - an enumerated detail, never text; the customer reads `RISK_REFUSED` and never the detail |
+| `withdrawal` | `held_resolution_key` | `INTERNAL` | The keyed door's idempotency key (`risk.action:<id>`) - an identifier of a risk action, never a note or a reason |
+
 ### `lending` - the interest accrual and the servicing permit - *added by `P11-TSK-016`*
 
 `lending V010`: one row per account and accrued date - the base, the period's exact cumulative interest and what the date

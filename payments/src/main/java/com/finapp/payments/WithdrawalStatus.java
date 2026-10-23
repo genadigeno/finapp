@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
  * DISPATCHED ──► COMPLETED
  *     │    └───► FAILED
  *     └───────► UNKNOWN ──(inquiry)──► COMPLETED | FAILED
+ * HELD ──(release)──► DISPATCHED
+ *   └──(denial, or the hold's expiry)──► FAILED(RISK_REFUSED)
  * </pre>
  *
  * <p>Declared on the enum so the machine is readable in one place and a test can enumerate
@@ -30,6 +32,15 @@ import java.util.stream.Collectors;
  * the scheme's answer — synchronous, re-driven by a lease takeover, or asked for by the
  * inquiry sweep — produces the rest, always through a conditional transition on the locked
  * row.
+ *
+ * <p><strong>The judged births</strong> (`P13-TSK-009`, payments {@code V033}, {@code PHASE_13_PLAN.md} §5, §7.3):
+ * since risk judges the withdrawal in the dispatch transaction, after the hold and before the commit, a withdrawal is
+ * born in the state its verdict decides - {@code DISPATCHED} (permitted), {@link #HELD} (held: the hold kept, nothing
+ * sent) or {@code FAILED} with {@link WithdrawalFailureReason#RISK_REFUSED} (refused: the hold released in the same
+ * transaction). Still no request state: the judgement, like the bound, is inside the birth. {@code HELD} is not
+ * terminal and <strong>not resolvable</strong> - the scheme has never heard of it, so no inquiry asks about it and no
+ * send permit is renewed on it; it leaves only by the keyed release ({@code → DISPATCHED}), the keyed denial or the
+ * expiry of its hold validity ({@code → FAILED(RISK_REFUSED)}).
  */
 public enum WithdrawalStatus {
 
@@ -50,13 +61,22 @@ public enum WithdrawalStatus {
 
     /** The scheme's answer is missing or ambiguous: the hold STANDS until the inquiry
      * resolves it ({@code INV-LIFE-03}, the standing-hold doctrine). */
-    UNKNOWN;
+    UNKNOWN,
+
+    /**
+     * Risk answered {@code HOLD} in the dispatch transaction (`P13-TSK-009`): accepted, the ledger hold KEPT (the
+     * wallet's available balance reduced, nothing moved), nothing sent - until a person releases or denies it, or its
+     * {@code held_until} (the pinned policy's hold validity, stamped on the database clock) passes. Declared last, so
+     * every generated list keeps its earlier order.
+     */
+    HELD;
 
     /** The states reachable from this one. */
     public Set<WithdrawalStatus> permittedTransitions() {
         return switch (this) {
             case DISPATCHED -> EnumSet.of(COMPLETED, FAILED, UNKNOWN);
             case UNKNOWN -> EnumSet.of(COMPLETED, FAILED);
+            case HELD -> EnumSet.of(DISPATCHED, FAILED);
             case COMPLETED, FAILED -> EnumSet.noneOf(WithdrawalStatus.class);
         };
     }
@@ -70,9 +90,16 @@ public enum WithdrawalStatus {
     }
 
     /** Still awaiting the scheme's word — the only states a resolver may move or a send
-     * permit may be renewed in. */
+     * permit may be renewed in. Named, not derived from "not terminal" (`P13-TSK-009`): a
+     * {@link #HELD} withdrawal is not terminal, and was never sent - an inquiry about it, or a
+     * renewed permit on it, would be a question about a send that never happened. */
     public boolean isResolvable() {
-        return !isTerminal();
+        return this == DISPATCHED || this == UNKNOWN;
+    }
+
+    /** The states a withdrawal may be born in (`P13-TSK-009`): what its in-lock judgement decides. */
+    public static Set<WithdrawalStatus> birthStates() {
+        return EnumSet.of(DISPATCHED, FAILED, HELD);
     }
 
     /** The values as a SQL literal list — `V016`'s status {@code CHECK} is generated from

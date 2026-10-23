@@ -166,6 +166,31 @@ class RiskEvaluationTest {
     }
 
     @Test
+    @DisplayName("a HOLD answers its pinned version's hold validity, fresh and replayed alike; no other decision"
+            + " carries one (P13-TSK-009)")
+    void aHoldCarriesItsHoldValidity() {
+        EvaluationWorld world = new EvaluationWorld();
+        world.activate(RiskOperation.WITHDRAWAL);
+        RiskEvaluationRequest holding = EvaluationWorld.request(RiskOperation.WITHDRAWAL, eur(2_500_00), IDS.next())
+                .sourceAccount(IDS.next()).build();
+        RiskEvaluation.Assessed held = world.evaluation.evaluate(UOW, holding);
+        assertThat(held.decision()).isEqualTo(RiskDecision.HOLD);
+        assertThat(held.holdValidity()).contains(RiskPolicy.DEFAULT_HOLD_VALIDITY);
+        assertThat(held.velocity()).as("a HOLD permits nothing, so counts nothing").isEqualTo(
+                VelocityOutcome.NOT_PERMITTED);
+
+        RiskEvaluation.Assessed replayed = world.evaluation.evaluate(UOW, holding);
+        assertThat(replayed.replayed()).isTrue();
+        assertThat(replayed.holdValidity()).contains(RiskPolicy.DEFAULT_HOLD_VALIDITY);
+
+        RiskEvaluation.Assessed allowed = world.evaluation.evaluate(UOW,
+                EvaluationWorld.request(RiskOperation.WITHDRAWAL, eur(10_00), IDS.next()).sourceAccount(IDS.next())
+                        .build());
+        assertThat(allowed.decision()).isEqualTo(RiskDecision.ALLOW);
+        assertThat(allowed.holdValidity()).isEmpty();
+    }
+
+    @Test
     @DisplayName("card and wallet payments: ALLOW; CHALLENGE at EUR 500; DENY for a suspended merchant. Cross-border:"
             + " ALLOW; DENY on a screening hit; the corridor sealed; a beneficiary first seen 2 days ago is a new payee")
     void thePaymentsAndCrossBorder() {

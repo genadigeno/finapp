@@ -517,6 +517,13 @@ accepts it (ADR-0062).
 **Not:** a Refund, which returns a payment to its payer, and not a Merchant Payout, which pays a
 merchant its payable. The three share the outbound disciplines and have different subjects and
 bounds.
+*(`P13-TSK-009`: a person's withdrawal is judged by risk in its dispatch transaction, after the
+hold - permitted it is `DISPATCHED` as before; held it is **`HELD`**: accepted, the wallet's hold
+KEPT, nothing sent, until a person releases it (it is then dispatched) or denies it, or its hold
+validity lapses on the database clock (it then fails `RISK_REFUSED`, detail `HOLD_EXPIRED`, the
+hold released); refused it fails `RISK_REFUSED` with the hold released at once. The customer reads
+`HELD` as a status word and nothing of why. A `HELD` withdrawal is not a Hold - the hold is the
+ledger's reservation it keeps - and not in flight: the scheme has never heard of it.)*
 **Owned by:** `payments`
 
 ### Interaction Model

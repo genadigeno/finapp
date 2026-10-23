@@ -162,7 +162,10 @@ class NoSingleInstanceAssumptionRulesTest {
                     // withdrawal row whose losers converge - N schedules, the synchronous
                     // answer and a takeover's re-send are one counted race. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the race is
-                    // WithdrawalDatabaseTest's.
+                    // WithdrawalDatabaseTest's. P13-TSK-009 added a second leg to the same class:
+                    // the held withdrawal's expiry, one row per transaction claimed FOR UPDATE SKIP
+                    // LOCKED past held_until on the DATABASE clock, its edge conditional on HELD -
+                    // ten sweepers expire each row once (WithdrawalHoldDatabaseTest's).
                     "com.finapp.app.payments.WithdrawalResolutionSchedule",
                     // P9-TSK-020: the same half for the cross-border outbound credit. The
                     // corridor inquiry is read-only and idempotent by OUR reference; every

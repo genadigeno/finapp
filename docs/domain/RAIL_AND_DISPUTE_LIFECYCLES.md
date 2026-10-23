@@ -211,6 +211,14 @@ margin under the permit rule — judged on the locked row, never a clock alone. 
 withdrawal is irrevocable: a reversal of it is refused by the domain (`INV-REV-03`) — the
 declaration gate before anything exists, and the machine's own shape after.
 
+*(`P13-TSK-009`, payments `V033`: risk judges a person's withdrawal in the dispatch transaction after
+the hold, and the verdict decides the birth — `DISPATCHED` as above, **`HELD`** (the hold kept,
+nothing sent) or `FAILED(RISK_REFUSED)` (the hold released at once). The machine gains `HELD →
+DISPATCHED` (payments' keyed release, within `held_until`) and `HELD → FAILED(RISK_REFUSED)` (the
+keyed denial, or the expiry past `held_until` with the detail `HOLD_EXPIRED`); `HELD` is not
+resolvable — the scheme has never heard of it — and `RISK_REFUSED` never follows a dispatch.
+`RISK_LIFECYCLES.md` §4.12 is the full record.)*
+
 ## 6. The dispute (ADR-0061 §2) — *shipped `P7-TSK-012`; its money `P7-TSK-013`*
 
 ```

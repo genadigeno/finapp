@@ -42,9 +42,19 @@ import org.springframework.beans.factory.ObjectProvider;
  * <p>The step-up is the beneficiary pattern (`P4-TSK-007`): {@code MULTI_FACTOR} required
  * exactly of an identity that has an active factor, an authoritative read per decision —
  * money leaving the platform is exactly where an account takeover monetises.
+ *
+ * <h2>Judged by risk (`P13-TSK-009`)</h2>
+ *
+ * <p>The command's in-lock risk judgement may hold, refuse or challenge a withdrawal. Its outcome is the
+ * withdrawal's own status word ({@code HELD}, or {@code FAILED} with {@code RISK_REFUSED}) and nothing of the judgement
+ * (C6, {@code INV-RSK-08}); a challenge the session cannot satisfy is answered before the command by
+ * {@link WithdrawalDoorStepUp} - its own short transaction, nothing written - as {@code 403 identity.AssuranceRequired},
+ * so the customer steps up and retries the same key. Nothing of risk reaches this class: the advice is an {@code app}
+ * port answering a boolean.
  */
 public final class WithdrawalService {
 
+    private final WithdrawalDoorStepUp stepUp;
     private final ObjectProvider<Withdrawals> engine;
     private final PaymentParticipants<Connection> participants;
     private final WithdrawalStore<Connection> withdrawals;
@@ -54,6 +64,7 @@ public final class WithdrawalService {
     private final TransactionRunner transactions;
 
     public WithdrawalService(
+            WithdrawalDoorStepUp stepUp,
             ObjectProvider<Withdrawals> engine,
             PaymentParticipants<Connection> participants,
             WithdrawalStore<Connection> withdrawals,
@@ -61,6 +72,7 @@ public final class WithdrawalService {
             IdentityStore<Connection> identities,
             PartyStore<Connection> parties,
             TransactionRunner transactions) {
+        this.stepUp = Objects.requireNonNull(stepUp, "stepUp must not be null");
         this.engine = Objects.requireNonNull(engine, "engine must not be null");
         this.participants = Objects.requireNonNull(participants, "participants must not be null");
         this.withdrawals = Objects.requireNonNull(withdrawals, "withdrawals must not be null");
@@ -71,15 +83,16 @@ public final class WithdrawalService {
     }
 
     /** The rendered withdrawal — the caller's own record: status honestly {@code UNKNOWN}
-     * when the scheme's answer is missing, the amount their own instruction. */
+     * when the scheme's answer is missing, {@code HELD} as a status word only (`P13-TSK-009`,
+     * C6 - no reason, no detail, no deadline), the amount their own instruction. */
     public record WithdrawalView(
             String id, String status, String failureReason, String amount, String currency,
             String createdAt) {}
 
     /**
      * Dispatches (or replays) the caller's withdrawal — {@code 201} with the honest judged
-     * status: {@code COMPLETED}, {@code FAILED} with its reason, or {@code UNKNOWN} with
-     * the amount still held ({@code INV-LIFE-03}).
+     * status: {@code COMPLETED}, {@code FAILED} with its reason, {@code UNKNOWN} with
+     * the amount still held ({@code INV-LIFE-03}), or {@code HELD} (`P13-TSK-009`).
      */
     public WithdrawalView withdraw(Session current, WithdrawalRequest body, String idempotencyKey) {
         Objects.requireNonNull(current, "current must not be null");
@@ -93,6 +106,8 @@ public final class WithdrawalService {
                     PaymentsErrorCode.PROVIDER_UNAVAILABLE,
                     "A withdrawal arrived on a deployment with no push rail configured");
         }
+        // The step-up before the command (P13-TSK-009): its own transaction, nothing written.
+        stepUpBeforeTheCommand(current, methodId, amount, idempotencyKey);
         Withdrawals.Initiated initiated;
         try {
             initiated =
@@ -158,6 +173,27 @@ public final class WithdrawalService {
     }
 
     // -----------------------------------------------------------------
+
+    /**
+     * The door's step-up (`P13-TSK-009`): the proposal resolved as the command will resolve it and advised in a
+     * transaction of its own that writes nothing; a step-up answer is thrown after it.
+     */
+    private void stepUpBeforeTheCommand(
+            Session current, UUID methodId, Money amount, String idempotencyKey) {
+        WithdrawalDoorStepUp.Answer answer =
+                transactions.inTransaction(
+                        unitOfWork ->
+                                stepUp.advise(
+                                        unitOfWork,
+                                        partyOf(unitOfWork, current),
+                                        current.identityId(),
+                                        methodId,
+                                        amount,
+                                        idempotencyKey));
+        if (answer != WithdrawalDoorStepUp.Answer.PROCEED) {
+            throw WithdrawalDoorStepUp.refusal(answer);
+        }
+    }
 
     /** The engine's resolver: runs inside the dispatch transaction, refusals and all. */
     private Withdrawals.Resolved resolved(

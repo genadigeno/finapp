@@ -183,6 +183,66 @@ public final class WithdrawalResolution {
         return new SweepResult(candidates.size(), resolved, judgements);
     }
 
+    /** One expiry pass's tally — telemetry, never the count of record. */
+    public record ExpiryResult(int expired, int failed) {}
+
+    /**
+     * The held withdrawal's expiry leg (`P13-TSK-009`; {@code PHASE_13_PLAN.md} §5, §14): every {@code HELD}
+     * withdrawal whose {@code held_until} has passed <strong>on the database clock</strong> fails
+     * {@code RISK_REFUSED}/{@code HOLD_EXPIRED} and its hold is released - once, under its row lock, as the platform's
+     * act; the risk case, if one is open, is risk's and stays open. Leaderless: each transaction claims ONE due row
+     * {@code FOR UPDATE SKIP LOCKED} ({@link WithdrawalStore#claimExpiredHold}) and acts on it, so ten instances expire
+     * each row once, and a row a release or denial holds is skipped, never waited on - the door's conditional edge or
+     * a later tick decides it. At most {@code batchSize} rows a pass; a row whose expiry fails is passed over for the
+     * rest of the pass (per-row containment) and re-claimed on the next.
+     */
+    @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
+    public ExpiryResult expireHolds() {
+        java.util.Set<WithdrawalId> passedOver = new java.util.HashSet<>();
+        int expired = 0;
+        for (int pass = 0; pass < config.batchSize(); pass++) {
+            // A held withdrawal's expiry has no person at all: the platform's act, scoped to one
+            // row's transaction (an enumerated enterSystem() site).
+            WithdrawalId[] claimedId = new WithdrawalId[1];
+            try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                    CorrelationContext.Scope scope =
+                            CorrelationContext.enter(
+                                    Correlation.startingWith(CorrelationId.generate(ids)))) {
+                boolean acted =
+                        transactions.inTransaction(
+                                uow -> {
+                                    java.util.Optional<Withdrawal> claimed =
+                                            withdrawals.claimExpiredHold(uow, passedOver);
+                                    if (claimed.isEmpty()) {
+                                        return false;
+                                    }
+                                    claimedId[0] = claimed.get().id();
+                                    outcomes.expireHeld(
+                                            uow,
+                                            claimed.get(),
+                                            CorrelationContext.current().orElseThrow());
+                                    return true;
+                                });
+                if (!acted) {
+                    break;
+                }
+                expired++;
+            } catch (RuntimeException oneRowFailed) {
+                if (claimedId[0] == null) {
+                    // The claim itself failed: nothing to pass over, nothing more this pass.
+                    log.warn("withdrawal hold expiry could not claim: {}",
+                            oneRowFailed.getClass().getSimpleName());
+                    return new ExpiryResult(expired, passedOver.size() + 1);
+                }
+                passedOver.add(claimedId[0]);
+                // Identifier and failure class only (INV-AUD-02).
+                log.warn("withdrawal hold expiry could not expire {}: {}", claimedId[0],
+                        oneRowFailed.getClass().getSimpleName());
+            }
+        }
+        return new ExpiryResult(expired, passedOver.size());
+    }
+
     /**
      * The instant at or before which a permit makes {@code UNRECOGNISED} conclusive:
      * now − (the rail's declared outcome deadline + the configured margin). Declared data
