@@ -213,11 +213,15 @@ class RiskVocabulariesTest {
 
     @Test
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
-            + " doors' four and four (-002) - namespaced risk., the refusals 403, the policy codes the register's statuses")
+            + " doors' four and four (-002), the reprocessing door's one and one (-019) - namespaced risk., the refusals"
+            + " 403, the policy codes the register's statuses")
     void theCodesAndActions() {
+        // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
         assertThat(Arrays.stream(RiskErrorCode.values()).map(RiskErrorCode::code))
-                .containsExactly("risk.NotFound", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
-                        "risk.PolicyNotActive", "risk.PolicyStale", "risk.PolicyInvalid", "risk.ReasonRequired");
+                // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
+                .containsExactlyInAnyOrder("risk.NotFound", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
+                        "risk.PolicyNotActive", "risk.PolicyStale", "risk.PolicyInvalid", "risk.ReasonRequired",
+                        "risk.ReprocessingNotBehind");
         assertThat(RiskErrorCode.NOT_FOUND.status()).isEqualTo(404);
         assertThat(RiskErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
         assertThat(RiskErrorCode.SELF_DEALING_REFUSED.status()).isEqualTo(403);
@@ -225,20 +229,23 @@ class RiskVocabulariesTest {
         assertThat(RiskErrorCode.POLICY_STALE.status()).isEqualTo(409);
         assertThat(RiskErrorCode.POLICY_INVALID.status()).isEqualTo(422);
         assertThat(RiskErrorCode.REASON_REQUIRED.status()).isEqualTo(422);
+        assertThat(RiskErrorCode.REPROCESSING_NOT_BEHIND.status()).isEqualTo(422);
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
-                .containsExactly("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
-                        "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused");
+                .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
+                        "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
+                        "risk.ReprocessingOrdered");
+        for (RiskAuditAction action : RiskAuditAction.values()) {
+            assertThat(action.description()).as(action.name()).isNotBlank();
+        }
+        // The platform's acts are reasoned by the act they follow; a person's discretionary act requires a reason.
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
                 RiskAuditAction.POLICY_RETIRED)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
         for (RiskAuditAction action : List.of(RiskAuditAction.POLICY_PROPOSED, RiskAuditAction.POLICY_ACTIVATED,
-                RiskAuditAction.POLICY_REJECTED)) {
+                RiskAuditAction.POLICY_REJECTED, RiskAuditAction.REPROCESSING_ORDERED)) {
             assertThat(action.requiresReason()).as("%s is a person's discretionary act", action).isTrue();
-        }
-        for (RiskAuditAction action : RiskAuditAction.values()) {
-            assertThat(action.description()).as(action.name()).isNotBlank();
         }
     }
 

@@ -44,7 +44,7 @@ public class RiskBeans {
     /** risk's unit of work - one transaction, default propagation. */
     @Bean
     RiskTransactions riskTransactions(PlatformTransactionManager transactionManager, DataSource dataSource) {
-        return new RiskTransactions(new TransactionTemplate(transactionManager), dataSource);
+        return new SpringRiskTransactions(new TransactionTemplate(transactionManager), dataSource);
     }
 
     @Bean
@@ -113,10 +113,14 @@ public class RiskBeans {
         return new SignalReadings(riskSignalStore);
     }
 
-    /** The completions' hint falls on the floor until `-019` pulls the monitoring permit with it. */
+    /**
+     * The completions' hint pulls the ledger journal's monitoring permit to now (`P13-TSK-019` closing `-005`'s seam):
+     * one conditional {@code UPDATE} on the handler's own connection, a row a sweep holds skipped, a permit already due
+     * left; the movement itself is not read. The sweep reads the journal whatever the hints said.
+     */
     @Bean
-    MonitoringHints monitoringHints() {
-        return MonitoringHints.NONE;
+    MonitoringHints monitoringHints(com.finapp.risk.MonitoringWatermarkStore monitoringWatermarkStore) {
+        return new com.finapp.risk.WatermarkMonitoringHints(monitoringWatermarkStore);
     }
 
     @Bean

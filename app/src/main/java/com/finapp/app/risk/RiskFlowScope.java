@@ -33,6 +33,15 @@ public final class RiskFlowScope {
         return spans.within(span, Map.of(), work);
     }
 
+    /**
+     * A sweep leg (`P13-TSK-019`): the span in the sweep's own scope, no attribute. The monitoring intake's batch has no
+     * row of its own to carry a stored correlation - the watermark is a claim, not a flow - so the leg links to nothing
+     * and names nothing: not the position, not an entry, not a subject ({@code INV-RSK-08}).
+     */
+    public <T> T sweep(String span, Supplier<T> work) {
+        return spans.within(span, Map.of(), work);
+    }
+
     /** A step in the scope the caller holds - an inbox handler's delivery - no attribute (`P13-TSK-005`). */
     public void step(String span, Runnable work) {
         Objects.requireNonNull(work, "work");

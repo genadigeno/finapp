@@ -1473,7 +1473,8 @@ alert, a case or a report exists.
 | *planned* `risk.AlertNotOpen` | 409 | The alert is already attached to a case or suppressed. |
 | *planned* `risk.ActionNotProposable` | 409 | The action cannot be proposed on this case now - one of its kind and target is already live, or the case's state does not admit it. |
 | *planned* `risk.ReportNotFileable` | 409 | The regulatory report is not approved, or is already filed. |
-| `risk.ReasonRequired` | 422 | A reason is required. |
+| `risk.ReasonRequired` | 422 | A reason is required - 1 to 1000 characters, holding no card-number or bank-account shape. *(One code, the wave's: raised by `P13-TSK-002`'s policy doors and `P13-TSK-019`'s reprocessing door.)* |
+| `risk.ReprocessingNotBehind` | 422 | A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip entries. Nothing was changed. *(`P13-TSK-019`, `POST /v1/operator/risk/monitoring/reprocessing`.)* |
 
 **The consumers' answers are their own, unchanged** (`PHASE_13_PLAN.md` §9, C6): a transfer refused by a seam commits
 `FAILED(RISK_REFUSED)` / `FAILED(LIMIT_REFUSED)` as a `201` with the reason in the body (the transfers paragraph above -

@@ -442,6 +442,15 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " system, recorded bnpl.DisputeResolved with actor SYSTEM, its refund under the purchase's one"
                         + " bound. The customer's, the merchant's and the operator's acts on a dispute are theirs."),
                     Map.entry(
+                            "com.finapp.app.risk.RiskMonitoringSchedule.sweepOnce",
+                    "The risk monitoring sweep's intake leg (P13-TSK-019, PHASE_13_PLAN.md section 7.1 T-mon, ADR-0111"
+                        + " decision 3: monitoring is retrospective and never a person's act): nobody commands a journal"
+                        + " entry's monitored transaction - the sweep claims the watermark when its permit came on the"
+                        + " database clock, reads the ledger's journal through a port and records each entry once as the"
+                        + " system; no audit record is written for the intake (its rows are its trail, born once by"
+                        + " UNIQUE (journal_entry_id)). An officer's reprocessing order is theirs, recorded"
+                        + " risk.ReprocessingOrdered under the officer's own actor at the door."),
+                    Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
                         + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"

@@ -1,54 +1,23 @@
 package com.finapp.app.risk;
 
 import java.sql.Connection;
-import java.util.Objects;
 import java.util.function.Function;
-import javax.sql.DataSource;
-import org.springframework.jdbc.datasource.DataSourceUtils;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * risk's unit of work over Spring (`P13-TSK-002`) - bnpl's {@code BnplTransactions} shape, composed here because the
- * risk module carries no framework: one transaction, default propagation, one connection for the work. T-pol runs in
- * it; T-eval (`-004`) never does - an evaluation runs on the caller's connection, in the caller's transaction.
+ * risk's unit of work (`P13-TSK-002` the shape, bnpl's {@code BnplTransactions}; `P13-TSK-019` made it a port so a
+ * hermetic suite can run a sweep or a desk over fakes without naming a data source): one transaction, default
+ * propagation, one connection for the work; and one read-only {@code REPEATABLE READ} snapshot for a read that spans
+ * several statements. The composition root's implementation is {@link SpringRiskTransactions}, the one bean
+ * {@code RiskBeans.riskTransactions}.
  */
-public final class RiskTransactions {
-
-    private final TransactionTemplate transactions;
-    private final TransactionTemplate snapshots;
-    private final DataSource dataSource;
-
-    public RiskTransactions(TransactionTemplate transactions, DataSource dataSource) {
-        this.transactions = Objects.requireNonNull(transactions, "transactions");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-        this.snapshots = new TransactionTemplate(Objects.requireNonNull(transactions.getTransactionManager(),
-                "the template's transaction manager"));
-        this.snapshots.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
-        this.snapshots.setReadOnly(true);
-    }
-
-    /** {@code work} in one read-only {@code REPEATABLE READ} snapshot: a read spanning several statements sees one instant. */
-    public <R> R inSnapshot(Function<Connection, R> work) {
-        return snapshots.execute(status -> {
-            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
-            try {
-                return work.apply(unitOfWork);
-            } finally {
-                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
-            }
-        });
-    }
+public interface RiskTransactions {
 
     /** {@code work} in one transaction on one connection; a thrown refusal rolls it back whole. */
-    public <R> R inTransaction(Function<Connection, R> work) {
-        return transactions.execute(status -> {
-            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
-            try {
-                return work.apply(unitOfWork);
-            } finally {
-                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
-            }
-        });
-    }
+    <R> R inTransaction(Function<Connection, R> work);
+
+    /**
+     * {@code work} in one read-only {@code REPEATABLE READ} snapshot (lending's {@code inSnapshot}): a read that spans
+     * several statements sees one instant, every row wholly in or wholly out. It decides nothing.
+     */
+    <R> R inSnapshot(Function<Connection, R> work);
 }

@@ -79,4 +79,32 @@ public interface JournalEntryStore<T> {
      */
     java.util.List<LineKey> lineKeysOn(
             T unitOfWork, java.util.Collection<LedgerAccountId> accounts);
+
+    /**
+     * The journal walked in its own order — at most {@code limit} entries whose id sorts after
+     * {@code after} and whose minting millisecond lies before {@code clock_timestamp() − settleHorizon}
+     * on the database clock, ascending by id, each whole with its lines and attribution — the
+     * monitoring intake's read (`P13-TSK-019`, ADR-0111 decision 1; {@code INV-RSK-09}).
+     *
+     * <p>Why by id: the journal has no sequence column, and its UUIDv7 primary key (ADR-0013) is
+     * its one ordered access path — the first 48 bits are the minting millisecond, so bytewise
+     * uuid order is time order and a keyset over it appends. Why the horizon: an entry's commit
+     * can land after a later-minted entry's, so a reader at the head would overtake it; reading
+     * only entries settled for {@code settleHorizon} — longer than any posting's transaction and
+     * the instances' clock skew — closes that gap within the bound; the monitoring census is the
+     * proof beyond it. Lock-free and read-only: an entry is immutable, and this read decides
+     * nothing of the ledger's.
+     *
+     * @param after the exclusive lower bound — a position, not necessarily an entry's id (the
+     *     intake's floor is {@code 00000000-0000-7000-8000-000000000000})
+     */
+    java.util.List<PostedEntry> entriesAfter(
+            T unitOfWork, java.util.UUID after, java.time.Duration settleHorizon, int limit);
+
+    /**
+     * How many entries sort after {@code after}, counted up to {@code cap} — the intake's lag
+     * figure (`P13-TSK-019`). Saturating on purpose: a gauge behind a long outage must not scan
+     * the whole journal to say "many".
+     */
+    long countBeyond(T unitOfWork, java.util.UUID after, long cap);
 }

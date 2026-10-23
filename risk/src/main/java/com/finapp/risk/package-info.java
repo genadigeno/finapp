@@ -64,8 +64,25 @@
  * (the completions as hints; `NONE` until `-019`); {@code SubjectKind} gained {@code IDENTITY} and
  * {@code CREDIT_AGREEMENT}, the aggregates the events actually name; the handlers live in {@code app}
  * ({@code RiskSignalIntake}, consumer {@code risk.signals}), as does {@code ScreeningClearances}' implementation over
- * kyc's case checks. No evaluation, no schedule: production evaluates nothing until a policy version is activated under
- * four eyes (section 1.1), and until `-008`…`-011` and `-007` land, the consumers' seams stay wired to their permit-all
- * and not-assessed defaults.
+ * kyc's case checks. <strong>The monitoring intake</strong> (`P13-TSK-019`, {@code V004}): the journal has no sequence
+ * column, so {@link com.finapp.risk.MonitoredLedger} (implemented in {@code app} over the ledger's journal and chart
+ * stores, {@code SELECT} only) reads by the entry's UUIDv7 id as a keyset under a settle horizon on the database clock,
+ * the id's millisecond prefix the "sequence"; {@link com.finapp.risk.MonitoredKind} is the posting-key namespace
+ * register (forty-four namespaces into twenty-three kinds, {@code REVERSAL} and {@code ADJUSTMENT} by entry type,
+ * {@code UNCLASSIFIED} recorded and gauged, never skipped); {@link com.finapp.risk.MonitoringClassification} the pure
+ * classification into {@link com.finapp.risk.MonitoredTransaction} ({@code INSERT}-only, born once by
+ * {@code UNIQUE (journal_entry_id)}); {@link com.finapp.risk.MonitoringWatermark} the claim, not a machine, over
+ * {@link com.finapp.risk.MonitoringWatermarkStore} (the claim {@code FOR UPDATE SKIP LOCKED} on the database clock -
+ * the Phase 13 lock order's R7 - the waiting lock, the move, the hint) and
+ * {@link com.finapp.risk.MonitoredTransactionStore} ({@code ON CONFLICT DO NOTHING});
+ * {@link com.finapp.risk.MonitoringIntake} (T-mon's intake leg: one batch = one transaction, a partial batch never
+ * advances), {@link com.finapp.risk.MonitoringReprocessing} (the audited reset {@code risk.ReprocessingOrdered}; the
+ * reason required and screened; a point ahead of the watermark refused {@code risk.ReprocessingNotBehind}) and
+ * {@link com.finapp.risk.WatermarkMonitoringHints} (`-005`'s hint seam closed: a completion pulls the journal's permit
+ * to now in the handler's own transaction); the schedule {@code RiskMonitoringSchedule}, the officer's door
+ * {@code POST /v1/operator/risk/monitoring/reprocessing} and the gauges live in {@code app}. No evaluation: production
+ * evaluates nothing until a policy version is activated under four eyes (section 1.1), and until `-008`…`-011` and
+ * `-007` land, the consumers' seams stay wired to their permit-all and not-assessed defaults; the monitoring sweep is
+ * off in test contexts and ingests, in production, a journal no rule yet reads (`-020`).
  */
 package com.finapp.risk;

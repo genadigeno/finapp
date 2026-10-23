@@ -27,6 +27,8 @@ public final class RiskSpans {
     public static final String SIGNAL_RECORD = "risk.signal.record";
     /** T-mon - the intake leg: journal entries into monitored transactions. */
     public static final String MONITORING_INTAKE = "risk.monitoring.intake";
+    /** The reprocessing door - an officer moving the intake's watermark back (`P13-TSK-019`). */
+    public static final String MONITORING_REPROCESS = "risk.monitoring.reprocess";
     /** T-mon - the monitoring rules over one subject. */
     public static final String MONITORING_EVALUATE = "risk.monitoring.evaluate";
     /** T-mon - a customer risk profile recomputed. */

@@ -39,7 +39,15 @@ public enum RiskErrorCode implements ErrorCode {
             "The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a"
                     + " decision the operation does not admit; nothing was proposed."),
 
-    REASON_REQUIRED("risk.ReasonRequired", 422, "A reason is required.");
+    /** The policy doors' (P13-TSK-002) and the reprocessing door's (P13-TSK-019) - one code, the wave's. */
+    REASON_REQUIRED("risk.ReasonRequired", 422, "A reason is required."),
+
+    // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
+    REPROCESSING_NOT_BEHIND(
+            "risk.ReprocessingNotBehind",
+            422,
+            "A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip"
+                    + " entries. Nothing was changed.");
 
     private final String code;
     private final int status;

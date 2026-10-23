@@ -422,7 +422,17 @@ class NoFloatingPointMoneyRulesTest {
                     // P2-TSK-002. The consuming twin of the entry above, same argument
                     // verbatim: ints out of ReceiverPollResult, Counter.increment(double) at
                     // the registry boundary, floating point nowhere else in the class.
-                    "com.finapp.app.eventing.InboxConsumers$Loop");
+                    "com.finapp.app.eventing.InboxConsumers$Loop",
+                    // P13-TSK-019. The SAME case again: two counts - journal entries beyond the
+                    // monitoring watermark (JournalEntryStore.countBeyond returns long, saturating)
+                    // and UNCLASSIFIED monitored transactions (MonitoredTransactionStore
+                    // .countUnclassified returns long) - published through the ToDoubleFunction
+                    // Micrometer's Gauge imposes, NaN when unreadable. No amount reaches this
+                    // class: the monitored transaction's amount_minor stays a long in the risk
+                    // module and is never summed into a meter.
+                    "com.finapp.app.risk.RiskMonitoringMetrics",
+                    "com.finapp.app.risk.RiskMonitoringMetrics$Cached",
+                    "com.finapp.app.risk.RiskMonitoringMetrics$Figures");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

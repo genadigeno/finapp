@@ -5,6 +5,7 @@ package com.finapp.risk;
  * {@code BnplStorageException}): never the driver's message, which can carry a value from the row.
  */
 public final class RiskStorageException extends RuntimeException {
+
     @java.io.Serial private static final long serialVersionUID = 1L;
 
     public RiskStorageException(String message) {

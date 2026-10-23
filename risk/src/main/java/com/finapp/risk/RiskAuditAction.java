@@ -73,7 +73,19 @@ public enum RiskAuditAction implements AuditableAction {
                     + " (PHASE_13_PLAN.md section 11; first raised by P13-TSK-016's case doors). Recorded FAILED in a"
                     + " transaction of its own. Its target the case, override or report; the summary names it and the"
                     + " act - never the party.",
-            false);
+            false),
+
+    /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
+    REPROCESSING_ORDERED(
+            "risk.ReprocessingOrdered",
+            "A holder of RISK_POLICY_ADMINISTER ordered the monitoring intake reprocessed from an earlier watermark"
+                    + " (POST /v1/operator/risk/monitoring/reprocessing, P13-TSK-019): the watermark row locked, judged"
+                    + " at or before its position and moved back to the sequence named, its permit left due now. The"
+                    + " re-run creates nothing new - every monitored transaction is born once (INV-RSK-09). Its target"
+                    + " the watermark row (monitoring_watermark, the source its id); the reason the officer's; the"
+                    + " summary the sequence restarted from and where the watermark stood - never the reason, an"
+                    + " amount or a party.",
+            true);
 
     private final String code;
     private final String description;

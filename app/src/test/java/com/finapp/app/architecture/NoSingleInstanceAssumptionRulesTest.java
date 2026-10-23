@@ -368,7 +368,21 @@ class NoSingleInstanceAssumptionRulesTest {
                     // T-ref's body, one refund per dispute by bnpl_refund UNIQUE (dispute_id) and the ledger key
                     // bnpl.refund:<refund>. Register row: DISTRIBUTED_EXECUTION.md section 3; the race against a late
                     // acceptance is BnplDisputeDatabaseTest's.
-                    "com.finapp.app.bnpl.BnplDisputeSchedule");
+                    "com.finapp.app.bnpl.BnplDisputeSchedule",
+                    // P13-TSK-019: the same half for the risk monitoring sweep - the 30th entry (P12-TSK-023's
+                    // BnplDisputeSchedule the 29th). DESIGN: no external call is made and no money row is taken. Each
+                    // batch claims the ledger journal's watermark row in ONE statement on the database clock (FOR UPDATE
+                    // SKIP LOCKED when next_sweep_at has come - the Phase 13 lock order's R7), reads the journal entries
+                    // after it through MonitoredLedger within the settle horizon (SELECT only, no journal lock), inserts
+                    // one monitored_transaction per entry born once by UNIQUE (journal_entry_id) with ON CONFLICT DO
+                    // NOTHING, and advances the watermark in the SAME transaction - so a partial batch never advances and
+                    // ten sweepers over one watermark ingest every entry once: nine skip the locked row and the tenth's
+                    // rows are the only rows, or any overlap after a rollback or a reprocessing is absorbed by the
+                    // unique. The permit is re-stamped by the database (now after a full batch, the idle cadence after
+                    // a short one); a completion hint only pulls it forward; the reprocessing door moves the position
+                    // back under FOR UPDATE, waiting for a running batch. Register row: DISTRIBUTED_EXECUTION.md section
+                    // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce.
+                    "com.finapp.app.risk.RiskMonitoringSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

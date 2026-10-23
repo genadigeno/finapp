@@ -602,6 +602,17 @@ final class BnplPayoutWorld implements AutoCloseable {
         }
 
         @Override
+        public List<PostedEntry> entriesAfter(Connection unitOfWork, java.util.UUID after,
+                java.time.Duration settleHorizon, int limit) {
+            throw new UnsupportedOperationException("no journal walk in the payout world (P13-TSK-019's read)");
+        }
+
+        @Override
+        public long countBeyond(Connection unitOfWork, java.util.UUID after, long cap) {
+            throw new UnsupportedOperationException("no journal walk in the payout world (P13-TSK-019's read)");
+        }
+
+        @Override
         public DerivedBalance derive(Connection unitOfWork, LedgerAccountId account, AsOf asOf) {
             return new DerivedBalance(account, settled(account, state.entries));
         }
