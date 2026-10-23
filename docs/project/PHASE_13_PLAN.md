@@ -187,7 +187,14 @@ Drafted in full in [`RISK_LIFECYCLES.md`](../domain/RISK_LIFECYCLES.md); summari
   **expired**: `held_until` = held at + the policy version's hold validity, default 72 h, judged on the database clock
   under the withdrawal row lock by a new leg of payments' existing `WithdrawalResolutionSchedule`, reason detail
   `HOLD_EXPIRED`; the case stays open); the ledger hold placed at the withdrawal is kept through `HELD` and released
-  on `FAILED` — payments' own machine, changed by `-009` with its own migration.
+  on `FAILED` — payments' own machine, changed by `-009` with its own migration. *(As built, `P13-TSK-009`,
+  2026-10-24, payments `V033`: born in the verdict's state — no `SUBMITTED` exists, so `HELD` is a birth beside
+  `DISPATCHED` and `FAILED(RISK_REFUSED)`; `held_at`/`held_until` stamped by the database from the validity the seam
+  answers with its `HOLD` (`Assessed.holdValidity`, the pinned version's); the release is payments' keyed
+  `Withdrawals.releaseHeld` (within `held_until` — past it `REFUSED`, the expiry being the policy's outcome), the
+  denial `Withdrawals.denyHeld`, the expiry `WithdrawalResolution.expireHolds` on the existing schedule; the doors reached
+  through risk's `HeldWithdrawalActions`, implemented in `app` and called by nothing until `-012`/`-017`.
+  `RISK_LIFECYCLES.md` §4.12's as-built note.)*
 - **Alert:** `OPEN → ATTACHED` (to a case — an alert raised while its subject has an open case of the kind attaches
   to it, the system's dedupe) `| SUPPRESSED` (only an operator's reasoned suppression under four eyes:
   `POST /v1/operator/risk/alerts/{id}/suppression`, a second holder's approval, audited `risk.AlertSuppressed`).
@@ -274,7 +281,11 @@ and two movements of one party from two accounts would otherwise both pass a thr
 (`INV-CON-03`). It sits where (R2)'s row locks already sat and adds no cycle among velocity writers. Recorded, not
 introduced: the callers post **after** T-eval (`TransferExecution`), so (R2a)/(R2) are held while the posting takes its
 balance-projection rows; the argument above needs that no transaction holding such a row waits on a velocity lock —
-true for a transfer, for `-004`/`-009` to confirm for the withdrawal's in-lock judgement after its hold.)*
+true for a transfer, for `-004`/`-009` to confirm for the withdrawal's in-lock judgement after its hold.)* *(Confirmed
+by `P13-TSK-009`, 2026-10-24: after its R2a locks a withdrawal touches only rows it created and the wallet row it already
+holds (a refusal's hold release re-locks that row), so it never waits on a money row while holding a velocity lock; the
+held withdrawal's doors and expiry take the withdrawal row then the wallet — payments' order — and never (R1) or (R2a).
+The argument in full: `DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)*
 
 ### 7.3 Couplings read in the code
 
@@ -295,6 +306,16 @@ true for a transfer, for `-004`/`-009` to confirm for the withdrawal's in-lock j
   the new `WithdrawalRiskDecision` is consulted there, in-lock, after the hold is placed and before the dispatch is
   committed; `HOLD` commits `HELD` with the hold kept; `DENY` commits `FAILED(RISK_REFUSED)` and releases the hold in
   the same transaction; `ALLOW` and a satisfied `CHALLENGE` commit `DISPATCHED` as today. Payments' migration `V033`.
+  *(As built, `P13-TSK-009`, 2026-10-24 — `Withdrawals` mints the withdrawal's id after `HoldService.place` and asks
+  `WithdrawalRiskDecision` (a required constructor parameter) under it; `app`'s `RiskWithdrawalRiskDecision` runs T-eval
+  for `(WITHDRAWAL, withdrawal id)`: `PERMIT` for `ALLOW` and a satisfied `CHALLENGE` (counted), `HOLD` with the pinned
+  hold validity (**not counted** — OQ-1 read for `HOLD`: a window counts what the decision permits), `REFUSE` for
+  `DENY`, `REVIEW` and an unsatisfied `CHALLENGE` (C1's fail-safe `DENY` at every band among them). The request carries
+  the party, the wallet's customer account and the acting identity; **no device** (`-008`'s finding) and **no
+  destination** (`RiskEvaluationRequest.Destination` names a customer account or a beneficiary — an external bank
+  instrument is neither, and a third kind is a risk migration: recorded). The person's door asks T-advise through the
+  `app` port `WithdrawalStepUpAdvice` first (`403 identity.AssuranceRequired`, nothing written). The SYSTEM entry on an
+  instruction is not judged (owner item). The lock order confirmed — `DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)*
 - **Checkout payment confirmation:** `PaymentConfirmation.confirm` decides routing in Tx1 under the intent; the new
   `PaymentRiskDecision` is consulted in Tx1 after the eligibility checks and before the routing decision commits;
   `DENY` is **terminal for the intent** (not re-confirmable — the customer creates a new intent; routing's refusal

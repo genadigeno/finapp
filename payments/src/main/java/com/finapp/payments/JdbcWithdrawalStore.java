@@ -36,17 +36,26 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
                     + " destination_reference, amount_minor, currency, scale,"
                     + " end_to_end_reference, rail, status, failure_reason,"
                     + " scheme_reference, settlement_cycle, dispatch_key, hold_reference,"
-                    + " created_at, last_dispatched_at";
+                    + " created_at, last_dispatched_at, held_at, held_until, failure_detail,"
+                    + " held_resolution_key";
+
+    /** The birth's columns, the held window's two excepted (the database stamps them). */
+    private static final String BIRTH_COLUMNS =
+            "id, party_id, customer_id, wallet_account_id, payment_method_id,"
+                    + " destination_reference, amount_minor, currency, scale,"
+                    + " end_to_end_reference, rail, status, failure_reason,"
+                    + " scheme_reference, settlement_cycle, dispatch_key, hold_reference,"
+                    + " created_at, last_dispatched_at, instruction_reference, held_at, held_until";
 
     @Override
-    public Instant insert(Connection unitOfWork, Withdrawal dispatched, String dispatchKey) {
-        Objects.requireNonNull(dispatched, "dispatched must not be null");
+    public Stored insert(Connection unitOfWork, Withdrawal born, String dispatchKey) {
+        Objects.requireNonNull(born, "born must not be null");
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null");
-        return inserted(unitOfWork, dispatched, dispatchKey, null);
+        return inserted(unitOfWork, born, dispatchKey, null);
     }
 
     @Override
-    public Instant insertInstructed(
+    public Stored insertInstructed(
             Connection unitOfWork, Withdrawal dispatched, String instructionReference) {
         Objects.requireNonNull(dispatched, "dispatched must not be null");
         Objects.requireNonNull(instructionReference, "instructionReference must not be null");
@@ -54,17 +63,30 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         return inserted(unitOfWork, dispatched, instructionReference, instructionReference);
     }
 
-    private Instant inserted(
+    private Stored inserted(
             Connection unitOfWork,
             Withdrawal dispatched,
             String dispatchKey,
             String instructionReference) {
+        // The held window on the DATABASE clock (P13-TSK-009): the expiry leg compares held_until
+        // with statement_timestamp(), so the window is stamped by the same clock, never by an
+        // instance's - held_at the birth permit's own instant, held_until that plus the
+        // validity in whole microseconds. NULL both for any other birth.
+        Long validityMicros =
+                dispatched.held()
+                        .map(window -> java.util.concurrent.TimeUnit.NANOSECONDS.toMicros(
+                                window.validity().toNanos()))
+                        .orElse(null);
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
-                        "INSERT INTO " + TABLE + " (" + COLUMNS + ", instruction_reference) VALUES"
+                        "INSERT INTO " + TABLE + " (" + BIRTH_COLUMNS + ") VALUES"
                                 + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()), ?)"
-                                + " RETURNING last_dispatched_at")) {
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()), ?,"
+                                + " CASE WHEN CAST(? AS bigint) IS NULL THEN NULL"
+                                + "      ELSE GREATEST(CAST(? AS timestamptz), statement_timestamp()) END,"
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp())"
+                                + "      + CAST(? AS bigint) * INTERVAL '1 microsecond')"
+                                + " RETURNING last_dispatched_at, held_at, held_until")) {
             insert.setObject(1, dispatched.id().value());
             insert.setObject(2, dispatched.partyId());
             insert.setObject(3, dispatched.customerId());
@@ -87,9 +109,20 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
             // The birth permit: never older than the database's clock, never before created_at.
             insert.setTimestamp(19, Timestamp.from(dispatched.createdAt()));
             insert.setString(20, instructionReference);
+            insert.setObject(21, validityMicros, java.sql.Types.BIGINT);
+            insert.setTimestamp(22, Timestamp.from(dispatched.createdAt()));
+            insert.setTimestamp(23, Timestamp.from(dispatched.createdAt()));
+            insert.setObject(24, validityMicros, java.sql.Types.BIGINT);
             try (ResultSet stored = insert.executeQuery()) {
                 stored.next();
-                return stored.getTimestamp(1).toInstant();
+                Timestamp heldAt = stored.getTimestamp(2);
+                Timestamp heldUntil = stored.getTimestamp(3);
+                return new Stored(
+                        stored.getTimestamp(1).toInstant(),
+                        heldAt == null
+                                ? Optional.empty()
+                                : Optional.of(new Withdrawal.HeldWindow(
+                                        heldAt.toInstant(), heldUntil.toInstant())));
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -241,15 +274,18 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
                 unitOfWork.prepareStatement(
                         "UPDATE " + TABLE
                                 + " SET status = ?, failure_reason = ?, scheme_reference = ?,"
-                                + " settlement_cycle = ?"
+                                + " settlement_cycle = ?, failure_detail = ?,"
+                                + " held_resolution_key = ?"
                                 + " WHERE id = ? AND status = ?")) {
             update.setString(1, after.status().name());
             update.setString(2, after.failureReason().map(Enum::name).orElse(null));
             update.setString(
                     3, after.schemeReference().map(ProviderReference::value).orElse(null));
             update.setString(4, after.settlementCycle().orElse(null));
-            update.setObject(5, after.id().value());
-            update.setString(6, before.status().name());
+            update.setString(5, after.failureDetail().map(Enum::name).orElse(null));
+            update.setString(6, after.heldResolutionKey().orElse(null));
+            update.setObject(7, after.id().value());
+            update.setString(8, before.status().name());
             if (update.executeUpdate() != 1) {
                 return false;
             }
@@ -261,6 +297,72 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         }
         appendHistory(unitOfWork, after.id(), before.status(), after.status(), at);
         return true;
+    }
+
+    @Override
+    public Optional<Instant> releaseHeld(
+            Connection unitOfWork, Withdrawal before, String key, Instant at) {
+        Objects.requireNonNull(before, "before must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        // The release's one statement (P13-TSK-009): the conditional IS the HELD judgement, the
+        // permit the database's instant (V028's trigger re-stamps it strictly forward too), the
+        // key the takeover's convergence target. V033's machine trigger admits the permit's move
+        // on exactly this edge.
+        Instant permit;
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE + " SET status = 'DISPATCHED',"
+                                + " last_dispatched_at = GREATEST(last_dispatched_at"
+                                + " + interval '1 microsecond', statement_timestamp()),"
+                                + " held_resolution_key = ?"
+                                + " WHERE id = ? AND status = 'HELD'"
+                                // Within the hold's validity on the DATABASE clock: past it, the
+                                // expiry is the policy's outcome, never a late release.
+                                + " AND held_until > statement_timestamp()"
+                                + " RETURNING last_dispatched_at")) {
+            update.setString(1, key);
+            update.setObject(2, before.id().value());
+            try (ResultSet released = update.executeQuery()) {
+                if (!released.next()) {
+                    return Optional.empty();
+                }
+                permit = released.getTimestamp(1).toInstant();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("releasing a held withdrawal", failure));
+        }
+        appendHistory(
+                unitOfWork, before.id(), WithdrawalStatus.HELD, WithdrawalStatus.DISPATCHED, at);
+        return Optional.of(permit);
+    }
+
+    @Override
+    public Optional<Withdrawal> claimExpiredHold(
+            Connection unitOfWork, java.util.Set<WithdrawalId> passedOver) {
+        Objects.requireNonNull(passedOver, "passedOver must not be null");
+        // The expiry leg's claim (P13-TSK-009): one row per transaction, the DATABASE clock
+        // deciding "past held_until", SKIP LOCKED so a door holding the row is never waited on -
+        // ten sweepers expire each row once, and a row a release holds is re-judged next tick.
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE status = 'HELD' AND held_until <= statement_timestamp()"
+                                + " AND NOT (id = ANY (?))"
+                                + " ORDER BY held_until, id LIMIT 1"
+                                + " FOR UPDATE SKIP LOCKED")) {
+            select.setArray(
+                    1,
+                    unitOfWork.createArrayOf(
+                            "uuid", passedOver.stream().map(WithdrawalId::value).toArray()));
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(map(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("claiming an expired held withdrawal", failure));
+        }
     }
 
     @Override
@@ -400,6 +502,9 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         String failureReason = row.getString("failure_reason");
         String schemeReference = row.getString("scheme_reference");
         String settlementCycle = row.getString("settlement_cycle");
+        Timestamp heldAt = row.getTimestamp("held_at");
+        Timestamp heldUntil = row.getTimestamp("held_until");
+        String failureDetail = row.getString("failure_detail");
         return Withdrawal.rehydrate(
                 WithdrawalId.of(row.getObject("id", UUID.class)),
                 row.getObject("party_id", UUID.class),
@@ -419,6 +524,12 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
                 Optional.ofNullable(settlementCycle),
                 HoldId.of(row.getObject("hold_reference", UUID.class)),
                 row.getTimestamp("created_at").toInstant(),
-                row.getTimestamp("last_dispatched_at").toInstant());
+                row.getTimestamp("last_dispatched_at").toInstant(),
+                heldAt == null
+                        ? Optional.empty()
+                        : Optional.of(new Withdrawal.HeldWindow(
+                                heldAt.toInstant(), heldUntil.toInstant())),
+                Optional.ofNullable(failureDetail).map(WithdrawalFailureDetail::valueOf),
+                Optional.ofNullable(row.getString("held_resolution_key")));
     }
 }

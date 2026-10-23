@@ -392,7 +392,8 @@ public class PaymentBeans {
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
             Clock clock,
-            TransactionRunner paymentTransactionRunner) {
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.payments.WithdrawalRiskDecision<Connection> withdrawalRiskDecision) {
         return new com.finapp.payments.Withdrawals(
                 withdrawalStore,
                 withdrawalOutcomes,
@@ -406,11 +407,34 @@ public class PaymentBeans {
                 auditWriter,
                 ids,
                 clock,
-                paymentTransactionRunner);
+                paymentTransactionRunner,
+                // The risk seam, required (P13-TSK-009): risk's adapter, RiskWithdrawalBeans.
+                withdrawalRiskDecision);
+    }
+
+    /**
+     * The withdrawal door's step-up before the command (`P13-TSK-009`): risk's advice through the
+     * {@code app} port, the key's record, the caller's wallet, instrument and product, and identity's
+     * enrolments (which step-up words to answer).
+     */
+    @Bean
+    WithdrawalDoorStepUp withdrawalDoorStepUp(
+            WithdrawalStepUpAdvice withdrawalStepUpAdvice,
+            com.finapp.platform.idempotency.IdempotencyRecordStore<Connection> idempotencyRecordStore,
+            com.finapp.payments.PaymentParticipants<Connection> paymentParticipants,
+            CustomerAccountStore<Connection> customerAccountStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore) {
+        return new WithdrawalDoorStepUp(
+                withdrawalStepUpAdvice,
+                idempotencyRecordStore,
+                paymentParticipants,
+                customerAccountStore,
+                mfaEnrolmentStore);
     }
 
     @Bean
     WithdrawalService withdrawalService(
+            WithdrawalDoorStepUp withdrawalDoorStepUp,
             org.springframework.beans.factory.ObjectProvider<com.finapp.payments.Withdrawals>
                     withdrawals,
             com.finapp.payments.PaymentParticipants<Connection> paymentParticipants,
@@ -420,6 +444,7 @@ public class PaymentBeans {
             PartyStore<Connection> partyStore,
             TransactionRunner paymentTransactionRunner) {
         return new WithdrawalService(
+                withdrawalDoorStepUp,
                 withdrawals,
                 paymentParticipants,
                 withdrawalStore,

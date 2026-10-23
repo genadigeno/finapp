@@ -272,6 +272,20 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " platform's. The scope wraps the applier only; the evidence before it"
                         + " is retained in the same transaction."),
                     Map.entry(
+                            "com.finapp.payments.Withdrawals.releaseHeld",
+                    "The released withdrawal's outcome transaction (P13-TSK-009): the initiate reasoning at the held"
+                        + " withdrawal's release door - the release itself is the caller's act (the approving operator"
+                        + " of -012, the action schedule of -017), recorded so in the release's own audit record in"
+                        + " Tx1; the scheme's answer to the send that follows is then applied by the platform, because"
+                        + " the same answer applied by the inquiry sweep is the platform's too and attribution must not"
+                        + " depend on which resolver wins. The scope wraps the outcome transaction only."),
+                    Map.entry(
+                            "com.finapp.payments.WithdrawalResolution.expireHolds",
+                    "The held withdrawal's expiry leg (P13-TSK-009, PHASE_13_PLAN.md section 5): a hold validity"
+                        + " lapsing on the database clock has no person at all - the platform fails the withdrawal"
+                        + " RISK_REFUSED/HOLD_EXPIRED and releases its hold, recorded payments.WithdrawalHoldExpired."
+                        + " The scope wraps one claimed row's transaction; nothing before it claims anything."),
+                    Map.entry(
                             "com.finapp.payments.WithdrawalResolution.sweep",
                     "The swept withdrawal inquiry (P7-TSK-008, ADR-0062 section 3): a"
                         + " scheduled inquiry by our reference has no person at all - the"

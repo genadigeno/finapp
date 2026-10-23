@@ -357,6 +357,17 @@ verbatim: an **unconfigured deployment** declines to judge, distinct in kind fro
 a judged outcome. **There is deliberately no payment not-found code**: unknown, not-yours and
 malformed on every `{id}` route are one `api.NotFound` (the `P1-TSK-016` reasoning).
 
+**A withdrawal judged by risk adds no code** (`P13-TSK-009`): risk's verdict is the withdrawal's own committed state,
+answered `201` - `HELD` (a status word only, no reason and no deadline in the body: C6, `INV-RSK-08`) or `FAILED` with
+`failureReason` `RISK_REFUSED` (the expiry's `HOLD_EXPIRED` detail is internal and never in a body) - and `GET
+/v1/me/withdrawals/{id}` reads `HELD` the same way. **The withdrawal door's step-up** is the transfer door's: before the
+command, in a transaction of its own that writes nothing, the door asks risk's advice through an `app` port; a
+withdrawal the judgement would challenge and the session cannot satisfy is `403 identity.AssuranceRequired` - no
+withdrawal row, no hold, no claim of the key, no assessment - with identity's step-up words, never a rule, a reason or a
+score. A recorded key is never advised (it replays), a wallet or instrument not the caller's is never advised over
+(the command answers its own `422`), and a challenge the command meets unsatisfied after the advice is the committed
+`FAILED(RISK_REFUSED)` - the race's answer.
+
 The refund's three (`P5-TSK-015`) are the privileged surface's refusals, decided **before the
 wire call** with nothing dispatched. `payments.NotRefundable` (409) is the machine edge — no
 `CAPTURED` attempt exists to refund against, whatever the commonest cause. `payments.

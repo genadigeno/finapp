@@ -179,6 +179,14 @@ every collection of a step; a collection takes at most what is available, and no
 allowed. `AutoCollectionDatabaseTest#partialCollectionWhenAllowed`, `#allOrNothingWhenNot` (a hold making settled money
 unavailable).)*
 
+*(The held withdrawal, `P13-TSK-009`: risk judges a person's withdrawal after its hold is placed under the wallet's lock;
+a `HELD` withdrawal keeps exactly that hold - the money reserved, nothing moved - and every `FAILED(RISK_REFUSED)` (at the
+judgement, by a denial, by the expiry) releases it in the same transaction as the edge; a released one keeps it for the
+dispatch, released by the scheme's answer as before. A `HELD` wallet cannot be closed while the hold stands (accounts'
+own rule). `WithdrawalsTest` (hermetic: the hold kept, released, never released twice); owed
+`WithdrawalRiskSeamDatabaseTest#aHoldCommitsHeldWithTheHoldKept`, `#aDenialReleasesTheHoldInTheSameTransaction`,
+`WithdrawalHoldDatabaseTest#theExpiryReleasesTheHoldOnce`, `#aHeldWalletCannotClose`.)*
+
 ### INV-BAL-05 — Projections are never authoritative for a financial decision
 **Statement:** A financial decision (sufficient funds, credit exposure, settlement
 eligibility) is never made from a projection whose staleness is unbounded.
@@ -3197,6 +3205,15 @@ identity's words; the door reaches risk only through the `app` port `TransferSte
 door, `POST /v1/transfers`, was outside its reach — with a planted probe. Negative tests:
 `TransferDoorAdviceTest#theStepUpNamesNoRiskWord`; owed `TransferRiskSeamDatabaseTest#aLimitRefusalCommitsLimitRefused`,
 `#anUnsatisfiedChallengeIsRefusedAtTheDoor` (no risk word in either body).)*
+
+*(The withdrawal's part, `P13-TSK-009`, 2026-10-24: the customer reads `HELD` as a status word - no reason, no
+`held_until`, no detail - or `FAILED` with `failureReason` `RISK_REFUSED`, never the internal `HOLD_EXPIRED`; payments'
+seam carries no reason across (`WithdrawalVerdict`: `PERMIT`, `HOLD(validity)`, `REFUSE`); the release and denial doors
+take a reason **code**, never a note, so no investigation text is copied into payments; the withdrawal door reaches risk
+only through the `app` port `WithdrawalStepUpAdvice` (a boolean). `NoCustomerSurfaceReadsRiskTest`'s non-vacuity names
+`WithdrawalService`. Negative tests: `WithdrawalDoorAdviceTest#theStepUpNamesNoRiskWord`; owed
+`WithdrawalRiskSeamDatabaseTest#aHoldCommitsHeldWithTheHoldKept` (the `GET` reads `HELD` with no risk word) and
+`#theDoorsStepUpWritesNothing`.)*
 
 ### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
 **Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through

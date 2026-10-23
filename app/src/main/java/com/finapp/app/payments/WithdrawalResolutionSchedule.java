@@ -14,6 +14,12 @@ import org.springframework.context.SmartLifecycle;
  * (`P7-TSK-008`) — the {@code PaymentSweeperSchedule} shape: leaderless by design, the
  * database's conditional transitions arbitrate, and a tick that finds nothing costs one
  * bounded query.
+ *
+ * <p><strong>Two legs a tick</strong> (`P13-TSK-009`): the inquiry sweep, then the held withdrawal's expiry
+ * ({@link WithdrawalResolution#expireHolds()}) - every {@code HELD} withdrawal past its {@code held_until} on the
+ * database clock failed {@code RISK_REFUSED}/{@code HOLD_EXPIRED} and its hold released, one row per transaction claimed
+ * {@code FOR UPDATE SKIP LOCKED}. The same class, flag and cadence - a leg, not a new scheduler; each leg contained, so
+ * one failing never starves the other.
  */
 @Slf4j
 public final class WithdrawalResolutionSchedule implements SmartLifecycle {
@@ -56,7 +62,28 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
                 TimeUnit.MILLISECONDS);
     }
 
-    private void sweepQuietly() {
+    /** One tick: both legs, each contained. Package-visible for the schedule's own suite. */
+    void sweepQuietly() {
+        sweepInquiries();
+        expireHolds();
+    }
+
+    private void expireHolds() {
+        try {
+            WithdrawalResolution.ExpiryResult result = resolution.expireHolds();
+            if (result.expired() > 0 || result.failed() > 0) {
+                // Counts only - identifiers live in the leg's own per-row lines.
+                log.info(
+                        "Withdrawal hold expiry: {} expired, {} failed",
+                        result.expired(),
+                        result.failed());
+            }
+        } catch (RuntimeException failure) {
+            log.warn("Withdrawal hold expiry failed: {}", failure.getClass().getSimpleName());
+        }
+    }
+
+    private void sweepInquiries() {
         try {
             WithdrawalResolution.SweepResult result = resolution.sweep();
             if (result.candidates() > 0) {

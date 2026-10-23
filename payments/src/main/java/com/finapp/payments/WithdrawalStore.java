@@ -19,18 +19,50 @@ import java.util.UUID;
  */
 public interface WithdrawalStore<T> {
 
-    /** Stores a freshly dispatched withdrawal, with the client key its takeover converges
+    /**
+     * What a birth's insert stamped on the database clock: the send permit (never older than the
+     * database's clock, `X-TSK-013` - what the first-send rule later compares the locked row's
+     * with) and, for a {@code HELD} birth, the held window (`P13-TSK-009`: {@code held_at} the
+     * statement's instant, never before the birth; {@code held_until} that plus the validity).
+     */
+    record Stored(Instant sendPermit, Optional<Withdrawal.HeldWindow> held) {
+        public Stored {
+            java.util.Objects.requireNonNull(sendPermit, "sendPermit must not be null");
+            java.util.Objects.requireNonNull(held, "held must not be null");
+        }
+    }
+
+    /** Stores a freshly judged withdrawal - {@code DISPATCHED}, {@code HELD} or
+     * {@code FAILED(RISK_REFUSED)} (`P13-TSK-009`) - with the client key its takeover converges
      * on ({@code (customer_id, dispatch_key)} unique — ADR-0057 §5's shape per customer).
-     * Returns the send permit AS STORED - never older than the database's clock (`X-TSK-013`),
-     * what the first-send rule later compares the locked row's with. */
-    Instant insert(T unitOfWork, Withdrawal dispatched, String dispatchKey);
+     * Returns what the database stamped. */
+    Stored insert(T unitOfWork, Withdrawal born, String dispatchKey);
 
     /**
      * Stores a freshly dispatched SYSTEM withdrawal on its instructor's recorded instruction
      * (`P11-TSK-015`, payments {@code V032}): the instruction is its dispatch key and its
-     * convergence target, one withdrawal per instruction. Returns the send permit as stored.
+     * convergence target, one withdrawal per instruction. Returns what the database stamped.
      */
-    Instant insertInstructed(T unitOfWork, Withdrawal dispatched, String instructionReference);
+    Stored insertInstructed(T unitOfWork, Withdrawal dispatched, String instructionReference);
+
+    /**
+     * The release's edge (`P13-TSK-009`): {@code HELD → DISPATCHED}, conditional on the row still
+     * being {@code HELD} AND its {@code held_until} not yet reached on the database's clock, with
+     * the door's {@code key} recorded and the first real send permit the database's own instant
+     * (strictly after the birth permit), returned as stored - and its history row stamped
+     * {@code at}. Empty when the hold's validity has lapsed (the caller locked the row, so a lapse
+     * is the only reason in the door's flow): the expiry is then the policy's outcome.
+     */
+    Optional<Instant> releaseHeld(T unitOfWork, Withdrawal before, String key, Instant at);
+
+    /**
+     * The expiry leg's claim (`P13-TSK-009`): ONE {@code HELD} withdrawal whose
+     * {@code held_until} is at or before the database's clock, oldest first, locked
+     * {@code FOR UPDATE SKIP LOCKED} - a row a door holds is skipped, never waited on, and
+     * re-judged on a later tick. {@code passedOver} - the rows whose expiry already failed this tick
+     * - are not claimed again, so one row's failure never starves the rest. Empty when none is due.
+     */
+    Optional<Withdrawal> claimExpiredHold(T unitOfWork, java.util.Set<WithdrawalId> passedOver);
 
     /**
      * The system withdrawal carrying {@code instructionReference}, unlocked (`P11-TSK-015`):
@@ -74,7 +106,9 @@ public interface WithdrawalStore<T> {
     /**
      * Moves the withdrawal {@code before → after}, conditional on {@code before}'s status,
      * with its history row — stamped {@code at}, from the caller's injected clock — in the
-     * same transaction. {@code false} when another writer moved it first.
+     * same transaction. {@code false} when another writer moved it first. Writes the outcome
+     * columns {@code after} carries, the failure detail and a door's key included
+     * (`P13-TSK-009`: a denial's and an expiry's edge out of {@code HELD}).
      */
     boolean transition(T unitOfWork, Withdrawal before, Withdrawal after, Instant at);
 

@@ -179,6 +179,66 @@ public enum PaymentsAuditAction implements AuditableAction {
             false),
 
     /**
+     * A customer's withdrawal was judged {@code HOLD} in its dispatch transaction (`P13-TSK-009`): born
+     * {@code HELD} under the wallet's lock, its hold kept, nothing sent. The person's act, as
+     * {@link #WITHDRAWAL_DISPATCHED} is for a permitted one.
+     */
+    WITHDRAWAL_HELD(
+            "payments.WithdrawalHeld",
+            "A wallet withdrawal was accepted and held by the risk seam's verdict: its hold kept,"
+                    + " nothing sent; the record names the withdrawal, the wallet account, the"
+                    + " instrument and the rail, never an amount, a reason or a judgement.",
+            false),
+
+    /**
+     * A customer's withdrawal was refused by the risk seam in its dispatch transaction (`P13-TSK-009`): born
+     * {@code FAILED(RISK_REFUSED)}, the hold placed under the wallet's lock released in the same transaction. The
+     * person's act, recorded {@code FAILED}.
+     */
+    WITHDRAWAL_REFUSED(
+            "payments.WithdrawalRefused",
+            "A wallet withdrawal was refused by the risk seam's verdict at its judgement: born"
+                    + " FAILED(RISK_REFUSED), its hold released in the same transaction, nothing"
+                    + " sent; the record names the withdrawal, the wallet account, the instrument"
+                    + " and the rail, never an amount, a reason or a judgement.",
+            false),
+
+    /**
+     * A held withdrawal was released through payments' keyed door (`P13-TSK-009`; reached by `-012`'s approved
+     * override and `-017`'s action): {@code HELD → DISPATCHED} under the withdrawal row's lock, the send following
+     * the commit. The door's caller is the actor; the reason is a reason code, never a note.
+     */
+    WITHDRAWAL_RELEASED(
+            "payments.WithdrawalReleased",
+            "A held withdrawal was released and dispatched through the keyed door; the record"
+                    + " names the withdrawal, the door's key and its reason code, never an amount or"
+                    + " a note.",
+            true),
+
+    /**
+     * A held withdrawal was denied through payments' keyed door (`P13-TSK-009`): {@code HELD → FAILED(RISK_REFUSED)}
+     * and its hold released, in one transaction under the withdrawal row's lock. The door's caller is the actor.
+     */
+    WITHDRAWAL_DENIED(
+            "payments.WithdrawalDenied",
+            "A held withdrawal was denied through the keyed door: FAILED(RISK_REFUSED) and its"
+                    + " hold released in one transaction; the record names the withdrawal, the"
+                    + " door's key and its reason code, never an amount or a note.",
+            true),
+
+    /**
+     * A held withdrawal reached its {@code held_until} on the database clock (`P13-TSK-009`): failed
+     * {@code RISK_REFUSED}/{@code HOLD_EXPIRED} and its hold released by payments' expiry leg - the platform's act,
+     * once, under the withdrawal row's lock; the risk case is left open.
+     */
+    WITHDRAWAL_HOLD_EXPIRED(
+            "payments.WithdrawalHoldExpired",
+            "A held withdrawal's hold validity lapsed: FAILED(RISK_REFUSED, HOLD_EXPIRED) and its"
+                    + " hold released by the expiry leg; the record names the withdrawal, never an"
+                    + " amount.",
+            false),
+
+    /**
      * The platform applied a cross-border outbound credit's outcome on its locked row (`P9-TSK-020`):
      * the completion, a failure, an {@code UNKNOWN}, a {@code RECEIVED} or a delivery - whichever
      * resolver won (the synchronous answer, a hinted inquiry, the sweep), acting once.

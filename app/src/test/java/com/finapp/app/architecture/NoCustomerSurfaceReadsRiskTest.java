@@ -89,6 +89,8 @@ class NoCustomerSurfaceReadsRiskTest {
         // see is a guard over nothing.
         assertThat(guardedClassNames(imported))
                 .anyMatch(name -> name.endsWith(".WithdrawalController"))
+                // The withdrawal door's desk (P13-TSK-009): it asks the step-up advice through an app port.
+                .anyMatch(name -> name.endsWith(".WithdrawalService"))
                 .anyMatch(name -> name.endsWith(".CheckoutSessionController"))
                 // The transfer door and its desk (P13-TSK-008): a session route outside /me.
                 .anyMatch(name -> name.endsWith(".TransferController"))

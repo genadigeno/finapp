@@ -5,7 +5,9 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.Money;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,8 +54,40 @@ import java.util.UUID;
  * rail declaring {@code FINAL_ON_ACCEPTANCE} with no reversal capability, {@code INV-REV-03}
  * is a property of the machine's shape, and the engine's capability gate refuses the request
  * before any transaction or wire call exists.
+ *
+ * <h2>The judged birth (`P13-TSK-009`, payments {@code V033})</h2>
+ *
+ * <p>Risk judges the withdrawal in the dispatch transaction, after the hold: {@link #dispatch} for a permitted one,
+ * {@link #held} for a held one (the hold kept, nothing sent, a {@link HeldWindow} the database stamps), {@link #refused}
+ * for a refused one ({@code FAILED(RISK_REFUSED)}, the hold released beside it). A held withdrawal leaves {@code HELD}
+ * only by {@link #release} (a keyed door: {@code DISPATCHED} with its first real send permit), {@link #deny} (a keyed
+ * door: {@code FAILED(RISK_REFUSED)}) or {@link #expire} (the schedule: {@code FAILED(RISK_REFUSED)},
+ * {@code HOLD_EXPIRED}). On a row never dispatched the send permit holds the birth instant, and no send followed it.
  */
 public final class Withdrawal {
+
+    /** The longest door key the row records - {@code V033}'s bound, the dispatch key's. */
+    public static final int MAX_RESOLUTION_KEY_LENGTH = 200;
+
+    /**
+     * When a held withdrawal was held and until when it may stand (`P13-TSK-009`): stamped by the database in the
+     * birth's insert - {@code held_at} the statement's instant (never before the birth), {@code held_until} that plus
+     * the pinned policy's hold validity - and frozen for ever, the row's record that it was held.
+     */
+    public record HeldWindow(Instant at, Instant until) {
+        public HeldWindow {
+            Objects.requireNonNull(at, "at must not be null");
+            Objects.requireNonNull(until, "until must not be null");
+            if (!until.isAfter(at)) {
+                throw new IllegalArgumentException("a hold stands for a positive time");
+            }
+        }
+
+        /** How long the hold may stand. */
+        public Duration validity() {
+            return Duration.between(at, until);
+        }
+    }
 
     private final WithdrawalId id;
     private final UUID partyId;
@@ -71,6 +105,9 @@ public final class Withdrawal {
     private final HoldId holdId;
     private final Instant createdAt;
     private final Instant lastDispatchedAt;
+    private final Optional<HeldWindow> held;
+    private final Optional<WithdrawalFailureDetail> failureDetail;
+    private final Optional<String> heldResolutionKey;
 
     private Withdrawal(
             WithdrawalId id,
@@ -88,7 +125,10 @@ public final class Withdrawal {
             Optional<String> settlementCycle,
             HoldId holdId,
             Instant createdAt,
-            Instant lastDispatchedAt) {
+            Instant lastDispatchedAt,
+            Optional<HeldWindow> held,
+            Optional<WithdrawalFailureDetail> failureDetail,
+            Optional<String> heldResolutionKey) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.partyId = Objects.requireNonNull(partyId, "partyId must not be null");
         this.customerId = Objects.requireNonNull(customerId, "customerId must not be null");
@@ -111,6 +151,10 @@ public final class Withdrawal {
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.lastDispatchedAt =
                 Objects.requireNonNull(lastDispatchedAt, "lastDispatchedAt must not be null");
+        this.held = Objects.requireNonNull(held, "held must not be null");
+        this.failureDetail = Objects.requireNonNull(failureDetail, "failureDetail must not be null");
+        this.heldResolutionKey =
+                Objects.requireNonNull(heldResolutionKey, "heldResolutionKey must not be null");
 
         if (!amount.isPositive()) {
             throw new IllegalArgumentException("a withdrawal amount must be positive");
@@ -137,6 +181,24 @@ public final class Withdrawal {
         if (lastDispatchedAt.isBefore(createdAt)) {
             throw new IllegalArgumentException("a send permit cannot precede its withdrawal");
         }
+        // And V033's (P13-TSK-009).
+        if (status == WithdrawalStatus.HELD && held.isEmpty()) {
+            throw new IllegalArgumentException("a HELD withdrawal carries its held window");
+        }
+        if (failureDetail.isPresent()
+                && (failureReason.filter(WithdrawalFailureReason.RISK_REFUSED::equals).isEmpty()
+                        || held.isEmpty()
+                        || heldResolutionKey.isPresent())) {
+            throw new IllegalArgumentException(
+                    "a failure detail rides only a held withdrawal's expiry (RISK_REFUSED, no door's key)");
+        }
+        if (heldResolutionKey.isPresent()
+                && (held.isEmpty()
+                        || heldResolutionKey.get().isEmpty()
+                        || heldResolutionKey.get().length() > MAX_RESOLUTION_KEY_LENGTH)) {
+            throw new IllegalArgumentException(
+                    "a door's key is 1-" + MAX_RESOLUTION_KEY_LENGTH + " characters, on a row that was held");
+        }
     }
 
     /**
@@ -155,15 +217,97 @@ public final class Withdrawal {
             Money amount,
             RailId railId,
             HoldId hold) {
+        return dispatch(ids, clock, WithdrawalId.next(ids), partyId, customerId, walletAccountId,
+                paymentMethodId, destination, amount, railId, hold);
+    }
+
+    /** {@link #dispatch}, under an id minted before the judgement (`P13-TSK-009`: the seam's command ref). */
+    public static Withdrawal dispatch(
+            IdGenerator ids,
+            Clock clock,
+            WithdrawalId id,
+            UUID partyId,
+            UUID customerId,
+            LedgerAccountId walletAccountId,
+            UUID paymentMethodId,
+            ProviderReference destination,
+            Money amount,
+            RailId railId,
+            HoldId hold) {
+        return born(ids, clock, id, partyId, customerId, walletAccountId, paymentMethodId,
+                destination, amount, railId, hold, WithdrawalStatus.DISPATCHED, Optional.empty(),
+                Optional.empty());
+    }
+
+    /**
+     * The held birth (`P13-TSK-009`): judged {@code HOLD} under the wallet's lock - the hold KEPT, routed and
+     * referenced, nothing sent. The window here is provisional ({@code createdAt} plus {@code validity}); the store
+     * stamps it on the database clock and the stored window replaces it ({@link #withStoredBirth}).
+     */
+    public static Withdrawal held(
+            IdGenerator ids,
+            Clock clock,
+            WithdrawalId id,
+            UUID partyId,
+            UUID customerId,
+            LedgerAccountId walletAccountId,
+            UUID paymentMethodId,
+            ProviderReference destination,
+            Money amount,
+            RailId railId,
+            HoldId hold,
+            Duration validity) {
+        Objects.requireNonNull(validity, "validity must not be null");
+        return born(ids, clock, id, partyId, customerId, walletAccountId, paymentMethodId,
+                destination, amount, railId, hold, WithdrawalStatus.HELD, Optional.empty(),
+                Optional.of(validity));
+    }
+
+    /**
+     * The refused birth (`P13-TSK-009`): judged and refused under the wallet's lock - {@code FAILED(RISK_REFUSED)},
+     * its hold released by the same transaction, nothing ever sent.
+     */
+    public static Withdrawal refused(
+            IdGenerator ids,
+            Clock clock,
+            WithdrawalId id,
+            UUID partyId,
+            UUID customerId,
+            LedgerAccountId walletAccountId,
+            UUID paymentMethodId,
+            ProviderReference destination,
+            Money amount,
+            RailId railId,
+            HoldId hold) {
+        return born(ids, clock, id, partyId, customerId, walletAccountId, paymentMethodId,
+                destination, amount, railId, hold, WithdrawalStatus.FAILED,
+                Optional.of(WithdrawalFailureReason.RISK_REFUSED), Optional.empty());
+    }
+
+    private static Withdrawal born(
+            IdGenerator ids,
+            Clock clock,
+            WithdrawalId id,
+            UUID partyId,
+            UUID customerId,
+            LedgerAccountId walletAccountId,
+            UUID paymentMethodId,
+            ProviderReference destination,
+            Money amount,
+            RailId railId,
+            HoldId hold,
+            WithdrawalStatus status,
+            Optional<WithdrawalFailureReason> failureReason,
+            Optional<Duration> holdValidity) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         // Truncated to the schema's own microsecond resolution (the P7-TSK-004 clock
         // lesson): the permit is COMPARED for identity by the first-send rule, and a
         // nanosecond the column cannot hold would make the row disagree with the flight
         // that wrote it.
-        Instant now = Instant.now(clock).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
         return new Withdrawal(
-                WithdrawalId.next(ids),
+                Objects.requireNonNull(id, "id must not be null"),
                 partyId,
                 customerId,
                 walletAccountId,
@@ -174,13 +318,16 @@ public final class Withdrawal {
                 // a UUIDv7's 32 hex characters, inside ISO 20022's own 35-character bound.
                 new EndToEndReference(ids.next().toString().replace("-", "")),
                 railId,
-                WithdrawalStatus.DISPATCHED,
-                Optional.empty(),
+                status,
+                failureReason,
                 Optional.empty(),
                 Optional.empty(),
                 hold,
                 now,
-                now);
+                now,
+                holdValidity.map(validity -> new HeldWindow(now, now.plus(validity))),
+                Optional.empty(),
+                Optional.empty());
     }
 
     /** A row read back from storage — the constructor's coherence refuses a corrupt one. */
@@ -200,7 +347,10 @@ public final class Withdrawal {
             Optional<String> settlementCycle,
             HoldId holdId,
             Instant createdAt,
-            Instant lastDispatchedAt) {
+            Instant lastDispatchedAt,
+            Optional<HeldWindow> held,
+            Optional<WithdrawalFailureDetail> failureDetail,
+            Optional<String> heldResolutionKey) {
         return new Withdrawal(
                 id,
                 partyId,
@@ -217,7 +367,10 @@ public final class Withdrawal {
                 settlementCycle,
                 holdId,
                 createdAt,
-                lastDispatchedAt);
+                lastDispatchedAt,
+                held,
+                failureDetail,
+                heldResolutionKey);
     }
 
     /** The scheme accepted — irrevocably; its reference and cycle are Phase 8's keys. */
@@ -228,9 +381,18 @@ public final class Withdrawal {
         return moved(WithdrawalStatus.COMPLETED, Optional.empty(), Optional.of(theirs), cycle);
     }
 
-    /** The scheme refused, or provably never received it. */
+    /** The scheme refused, or provably never received it - the scheme's word, after a dispatch. */
     public Withdrawal fail(WithdrawalFailureReason why) {
         Objects.requireNonNull(why, "why must not be null");
+        if (why == WithdrawalFailureReason.RISK_REFUSED) {
+            throw new IllegalArgumentException(
+                    "a risk refusal is the judgement's, a denial's or an expiry's - never the scheme's");
+        }
+        if (!status.isResolvable()) {
+            // HELD -> FAILED exists, but only as risk's refusal (deny, expire): the scheme never
+            // heard of a held withdrawal, so it cannot have refused one (V033's trigger, both ways).
+            throw new IllegalWithdrawalTransitionException(status, WithdrawalStatus.FAILED);
+        }
         requireEdge(WithdrawalStatus.FAILED);
         return moved(WithdrawalStatus.FAILED, Optional.of(why), Optional.empty(), Optional.empty());
     }
@@ -242,6 +404,68 @@ public final class Withdrawal {
     }
 
     /**
+     * The keyed release of a held withdrawal (`P13-TSK-009`): {@code HELD → DISPATCHED}, its first real send permit
+     * {@code permit} (the database's, never before the birth) and the door's {@code key} recorded - a takeover's
+     * convergence target, as the dispatch key is the person's.
+     */
+    public Withdrawal release(Instant permit, String key) {
+        Objects.requireNonNull(permit, "permit must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+        requireHeld(WithdrawalStatus.DISPATCHED);
+        Instant granted = permit.truncatedTo(ChronoUnit.MICROS);
+        if (granted.isBefore(lastDispatchedAt)) {
+            throw new IllegalArgumentException("a send permit only moves forward");
+        }
+        return new Withdrawal(id, partyId, customerId, walletAccountId, paymentMethodId, destination,
+                amount, reference, railId, WithdrawalStatus.DISPATCHED, Optional.empty(),
+                Optional.empty(), Optional.empty(), holdId, createdAt, granted, held,
+                Optional.empty(), Optional.of(key));
+    }
+
+    /** The keyed denial of a held withdrawal (`P13-TSK-009`): {@code HELD → FAILED(RISK_REFUSED)}, the key recorded. */
+    public Withdrawal deny(String key) {
+        Objects.requireNonNull(key, "key must not be null");
+        requireHeld(WithdrawalStatus.FAILED);
+        return new Withdrawal(id, partyId, customerId, walletAccountId, paymentMethodId, destination,
+                amount, reference, railId, WithdrawalStatus.FAILED,
+                Optional.of(WithdrawalFailureReason.RISK_REFUSED), Optional.empty(), Optional.empty(),
+                holdId, createdAt, lastDispatchedAt, held, Optional.empty(), Optional.of(key));
+    }
+
+    /**
+     * The hold's expiry (`P13-TSK-009`): {@code HELD → FAILED(RISK_REFUSED)} with {@code HOLD_EXPIRED} - the
+     * schedule's act, keyed by nothing but the row's own state.
+     */
+    public Withdrawal expire() {
+        requireHeld(WithdrawalStatus.FAILED);
+        return new Withdrawal(id, partyId, customerId, walletAccountId, paymentMethodId, destination,
+                amount, reference, railId, WithdrawalStatus.FAILED,
+                Optional.of(WithdrawalFailureReason.RISK_REFUSED), Optional.empty(), Optional.empty(),
+                holdId, createdAt, lastDispatchedAt, held,
+                Optional.of(WithdrawalFailureDetail.HOLD_EXPIRED), Optional.empty());
+    }
+
+    /**
+     * The birth as the database stamped it (`P13-TSK-009`; `X-TSK-013`): the birth permit, never older than the
+     * database's clock, and - for a held birth - the held window on that clock. Whatever the birth state: a held or
+     * refused row has a birth permit too, which no send ever followed.
+     */
+    public Withdrawal withStoredBirth(Instant permit, Optional<HeldWindow> window) {
+        Objects.requireNonNull(permit, "permit must not be null");
+        Objects.requireNonNull(window, "window must not be null");
+        if (window.isPresent() != held.isPresent()) {
+            throw new IllegalStateException("a held window is stored exactly for a held birth");
+        }
+        Instant stored = permit.truncatedTo(ChronoUnit.MICROS);
+        if (stored.isBefore(lastDispatchedAt)) {
+            throw new IllegalArgumentException("a send permit only moves forward");
+        }
+        return new Withdrawal(id, partyId, customerId, walletAccountId, paymentMethodId, destination,
+                amount, reference, railId, status, failureReason, schemeReference, settlementCycle,
+                holdId, createdAt, stored, window, failureDetail, heldResolutionKey);
+    }
+
+    /**
      * A renewed send permit, committed before a takeover re-sends our reference — only while
      * the withdrawal still awaits the scheme's word, and only forward in time (ADR-0057 §4).
      */
@@ -250,7 +474,7 @@ public final class Withdrawal {
         if (!status.isResolvable()) {
             throw new IllegalWithdrawalTransitionException(status, status);
         }
-        Instant granted = at.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant granted = at.truncatedTo(ChronoUnit.MICROS);
         if (granted.isBefore(lastDispatchedAt)) {
             throw new IllegalArgumentException("a send permit only moves forward");
         }
@@ -270,7 +494,10 @@ public final class Withdrawal {
                 settlementCycle,
                 holdId,
                 createdAt,
-                granted);
+                granted,
+                held,
+                failureDetail,
+                heldResolutionKey);
     }
 
     /**
@@ -286,6 +513,12 @@ public final class Withdrawal {
 
     private void requireEdge(WithdrawalStatus target) {
         if (!status.canTransitionTo(target)) {
+            throw new IllegalWithdrawalTransitionException(status, target);
+        }
+    }
+
+    private void requireHeld(WithdrawalStatus target) {
+        if (status != WithdrawalStatus.HELD) {
             throw new IllegalWithdrawalTransitionException(status, target);
         }
     }
@@ -311,7 +544,10 @@ public final class Withdrawal {
                 cycle,
                 holdId,
                 createdAt,
-                lastDispatchedAt);
+                lastDispatchedAt,
+                held,
+                failureDetail,
+                heldResolutionKey);
     }
 
     public WithdrawalId id() {
@@ -376,6 +612,21 @@ public final class Withdrawal {
 
     public Instant lastDispatchedAt() {
         return lastDispatchedAt;
+    }
+
+    /** When it was held and until when - present exactly on a withdrawal that was ever {@code HELD}. */
+    public Optional<HeldWindow> held() {
+        return held;
+    }
+
+    /** {@code HOLD_EXPIRED} on an expired hold; empty otherwise. */
+    public Optional<WithdrawalFailureDetail> failureDetail() {
+        return failureDetail;
+    }
+
+    /** The release's or denial's key that moved it out of {@code HELD}; empty for an expiry or a row never held. */
+    public Optional<String> heldResolutionKey() {
+        return heldResolutionKey;
     }
 
     /** Identifiers and state only — never the amount, never a reference (INV-AUD-02). */
