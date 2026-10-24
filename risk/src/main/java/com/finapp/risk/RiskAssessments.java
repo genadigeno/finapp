@@ -70,8 +70,12 @@ public final class RiskAssessments {
     public static final class SelfDealingRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        /** Why: the reader's own party, or a reader the platform cannot place in any party. */
-        public enum Cause { OWN_PARTY, UNPLACEABLE }
+        /**
+         * Why: the reader's own party, or a reader the platform cannot place in any party - or (`P13-TSK-015`, an
+         * alert's suppression) a subject whose party the platform cannot place, so the judgement cannot be made and
+         * fails closed.
+         */
+        public enum Cause { OWN_PARTY, UNPLACEABLE, SUBJECT_UNPLACEABLE }
 
         private final Cause refusal;
         private final String act;

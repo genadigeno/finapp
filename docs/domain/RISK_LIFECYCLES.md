@@ -362,7 +362,7 @@ writer by trigger, the grant `SELECT, INSERT`; an attribute outside its kind's s
 inbox seeks back and stalls loudly — never truncated, never acknowledged. The completions record no signal: they are
 hints to `MonitoringHints` (`-019`).)*
 
-### 4.5 Alert (`risk.risk_alert`) — `P13-TSK-015` (`risk V008`: the table, raise, dedupe and suppression); the folding into a case `-016`; the monitoring rules `-020`; the fraud rules `-013`, `-014`
+### 4.5 Alert (`risk.risk_alert`) — `P13-TSK-015` (`risk V010` - planned `V008`, the next free at its build: the table, raise, dedupe and suppression); the folding into a case `-016`; the monitoring rules `-020`; the fraud rules `-013`, `-014`
 
 ```
  (raised by a rule — T-eval or T-mon) OPEN ──attached to a case (opened or found open)──> ATTACHED
@@ -384,6 +384,34 @@ velocity proof's difference and an `UNCLASSIFIED` journal entry are read here as
 `monitoring.unclassified`), not rows of this machine — §8. **Invalid:** anything out of `ATTACHED` or `SUPPRESSED`;
 `ATTACHED → OPEN`; a second alert per (subject, rule, window start); an alert carrying a reason text, a score or PII
 into an event (`INV-RSK-08`); an alert reaching any customer or merchant surface.
+
+*(As built, `P13-TSK-015`, 2026-10-25, `risk V010`.)* **The raise** - `Alerts.raise` / `raiseAll` on the caller's unit
+of work (T-eval's or T-mon's, READ COMMITTED): each birth ONE statement, `INSERT … ON CONFLICT ON CONSTRAINT
+risk_alert_born_once DO NOTHING RETURNING` (the named constraint - a primary-key collision is never swallowed); a
+conflict reads the standing row and writes nothing; `risk.AlertRaised` (`alertId`, `kind`, `severity`, `subjectKind`,
+`subjectRef`) only when born; `raiseAll` raises a transaction's alerts in `AlertKey` order and every birth before any
+fold (a birth is an insert at (R3)'s position, the fold the case's (R4) then the alert's (R5)), so overlapping raisers
+meet on the unique in one order. **The window is a bucket**: `window_kind` + `window_start`, aligned by `CHECK` to the
+velocity windows' anchor (`date_bin` over `risk.velocity_window_length`), computed from a database instant that is the
+evidence's own (`AlertWindow.of(kind, WindowCut)` in T-eval; a born-once row's stamp in T-mon) - so a replay recomputes
+the same start; the unique stays the plan's triple. **The folding** is the port `AlertFolding` (`-016` implements it;
+`NONE` wired - every alert stays `OPEN`, queued in `risk_alert_open_queue`); only a born alert of a kind that opens a
+case is folded; `Alerts.attach` is the alert's own `OPEN → ATTACHED` edge (`attached_case_id`'s foreign key is
+`-016`'s migration). **The suppression** (P only, `EMPLOYEE` by domain and `CHECK`): `proposeSuppression` (a closed
+`SuppressionReason` - `FALSE_POSITIVE`, `ACTIVITY_EXPLAINED`, `RULE_DEFECT`, `DATA_DEFECT`, deliberately no
+`DUPLICATE` - and a screened text; one live proposal), `approveSuppression` (another holder; the proposer `403
+risk.SelfApprovalRefused` recorded `FAILED`, `risk_alert_suppression_four_eyes` holding every writer alone - the trigger
+deliberately does not judge it), `rejectSuppression` (anyone: the proposal cleared, the alert `OPEN`); audited
+`risk.AlertSuppressionProposed`, `risk.AlertSuppressed`, `risk.AlertSuppressionRejected`; refusals `409
+risk.AlertNotOpen` (the register's status - the table above reads 409 too; the backlog entry 422), `409
+risk.SuppressionStale`, `422 risk.ReasonRequired`, `403 risk.SelfDealingRefused` - **fail closed for the subject too**:
+an alert whose subject's party cannot be placed (`RiskSubjectParties` places a party and an identity today) is not
+suppressible until its join exists. **The operational kinds** (`UNCLASSIFIED_TRANSACTION`, `VELOCITY_DIVERGENCE`) are
+declared and admitted by the table (their own code as rule, no policy, never attached) but **raised by no writer**: the
+reading settled in §8 stands - their alert is the Prometheus rule on `monitoring.unclassified` and
+`velocity.proof{verdict}`; the fail-safe's alert the rule on `evaluation.unavailable` (no `AlertKind` exists for it).
+Meters `finapp.risk.alert{kind,severity}` and `.alert.suppressed{reason_code}` (`app`'s `RiskAlertMetrics`); span
+`risk.alert.raise`.
 
 ### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V009`; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
 
@@ -681,7 +709,7 @@ rows changes and every earlier decision replays as it was sealed.
 | Signal | `risk_signal` (`-005`, `V003`) | — | `UNIQUE (source_event_id)`; attributes typed and bounded |
 | Velocity window | `velocity_window` (`-006`, `V005`) | — | primary key (dimension, subject_ref, window_kind, window_start); the one-statement upsert the only `UPDATE`; a sum never decreases |
 | Profile | `customer_risk_profile`, `_version` (`-007`, `V006`) | the versions | `UNIQUE (party_id, version)`; `PROHIBITED` only beside an approved disposition (deferred) |
-| Alert | `risk_alert` (`-015`, `V008`) | — | `UNIQUE (subject_ref, rule_code, window_start)`; `ATTACHED` only naming a case; never deleted |
+| Alert | `risk_alert` (`-015`, `V008` - *built as `V010`, the next free*) | — | `UNIQUE (subject_ref, rule_code, window_start)`; `ATTACHED` only naming a case; never deleted *(built: the window aligned by `CHECK`, four eyes and persons by `CHECK`, the facts frozen and `DELETE`/`TRUNCATE` refused for every writer by `risk_alert_permits_only_machine_edges`)* |
 | Case | `risk_case`, `risk_case_action`, `risk_case_event` (`-016`, `V009`) | `risk_case_event`; actions append-only | partial unique one open per (subject, kind); `revision` monotonic; four-eyes `CHECK` on `CONFIRMED_*`; no action on `DISPOSED` |
 | Risk action | `risk_action` (`-017`, `V010`) | the row's stamps | `UNIQUE (case_id, kind, target_ref)` over live; four-eyes `CHECK`; the `next_attempt_at` permit |
 | Monitored transaction · watermark | `monitored_transaction`, `monitoring_watermark` (`-019`, `V004`) | — | `UNIQUE (journal_entry_id)`; one watermark per source; `next_sweep_at` |
@@ -694,7 +722,8 @@ Every trigger is `<table>_permits_only_machine_edges`, written by hand; every st
 migration test asserts constraint-name uniqueness per table (the Phase 12 `V012` lesson, plan §13.1); raw-SQL terminal
 edges are refused for every role in each task's database tests. Migration numbers are assigned in the waves' landing
 order, Flyway `outOfOrder` off (plan §8, §17): `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`,
-`-007` `V006`, `-004` `V007`, `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`.
+`-007` `V006`, `-004` `V007`, `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`. *(As
+landed: `-010` `V008`, `-012` `V009`, `-015` `V010` - each the next free at its build; the later rows take theirs.)*
 
 ---
 

@@ -173,5 +173,22 @@
  * {@link com.finapp.risk.OverrideActions} (T-act's shape: the dispatch through {@link com.finapp.risk.HeldWithdrawalActions}
  * and {@link com.finapp.risk.HeldPaymentActions} on no transaction, keyed {@code risk.action:<override id>}, the outcome
  * recorded once; the re-drive's claim on the row's permit), until `-017` folds it into the action machine.
+ *
+ * <p><strong>The born-once alert</strong> (`P13-TSK-015`, {@code risk V010}): {@link com.finapp.risk.Alerts} - the
+ * raise ({@code raise} / {@code raiseAll}, S, on the caller's unit of work in T-eval or T-mon): one
+ * {@code INSERT … ON CONFLICT ON CONSTRAINT risk_alert_born_once DO NOTHING} per alert, so a replayed event, a
+ * reprocessed history or ten instances raise one row ({@code INV-RSK-06}); {@code risk.AlertRaised} only when born; a
+ * transaction's alerts born in {@link com.finapp.risk.AlertKey} order and every birth before any fold - the
+ * {@link com.finapp.risk.AlertFolding} port (`-016` implements it over its case tables; {@code NONE} wired, every alert
+ * {@code OPEN} and queued) and the alert's own attach edge; the four-eyes suppression machine (propose, approve by a
+ * second holder, reject - P only, reasons required, self-approval and self-dealing refused and recorded {@code FAILED},
+ * the subject's party failing closed) for `-018`'s door. {@link com.finapp.risk.RiskAlert} as stored,
+ * {@link com.finapp.risk.NewAlert} (a rule's alert or an operational one), {@link com.finapp.risk.AlertWindow} (a
+ * bucket of its kind from a database instant that is the evidence's own), {@link com.finapp.risk.AlertEvidence}
+ * (references only, bounded), {@link com.finapp.risk.AlertRule}, {@link com.finapp.risk.AlertStatus},
+ * {@link com.finapp.risk.SuppressionReason}, {@link com.finapp.risk.RiskAlertStore} ({@code JdbcRiskAlertStore}) and
+ * {@link com.finapp.risk.AlertObserver} (the meters, {@code app}'s {@code RiskAlertMetrics}). Nothing raises yet - the
+ * rules are `-013`, `-014` and `-020`'s - and the operational kinds are raised by no writer (their alerts are the
+ * Prometheus rules on their gauges).
  */
 package com.finapp.risk;

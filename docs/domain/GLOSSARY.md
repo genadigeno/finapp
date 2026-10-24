@@ -2224,7 +2224,10 @@ Monitored Transactions; a fraud alert one raised by a fraud rule, synchronously 
 **Not:** a Risk Decision (nothing is refused by an alert), nor a Case (the investigation it folds into), nor an
 operational alert (`infra/prometheus/rules/risk.yml` fires on metrics, never on a row). A replayed event or a
 reprocessed history raises no second alert, and no alert reaches a customer or merchant surface, log, event payload or
-metric tag.
+metric tag. *(As built, `P13-TSK-015`: the window is a bucket of its kind - `H1`, `D1`, `D7`, `D30` on the velocity
+windows' anchor - from a database instant that is the evidence's own; a **suppression** is closing an alert without a
+case, two persons' act with a closed `SuppressionReason` - never `DUPLICATE`, which attaches; the operational kinds
+`UNCLASSIFIED_TRANSACTION` and `VELOCITY_DIVERGENCE` are declared but no writer raises them as rows.)*
 **Owned by:** `risk`
 
 ### Case

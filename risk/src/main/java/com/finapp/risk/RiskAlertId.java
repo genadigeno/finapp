@@ -5,7 +5,8 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.util.UUID;
 
 /**
- * An alert's identity - born once per subject, rule and window (`P13-TSK-001`; the table is `P13-TSK-015`'s (`risk V008`)).
+ * An alert's identity - born once per subject, rule and window (`P13-TSK-001`; the table is `P13-TSK-015`'s,
+ * {@code risk V010} - planned {@code V008}, the next free at its build).
  */
 public final class RiskAlertId extends EntityId {
 

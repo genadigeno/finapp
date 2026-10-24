@@ -4384,6 +4384,49 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `decision_override` | `action_attempts` | `INTERNAL` | A count - the permits issued to the action's dispatch |
 | `decision_override` | `action_concluded_at` | `INTERNAL` | The database's stamp of the outcome's record |
 
+### `risk.risk_alert` - the born-once alert - *added by `P13-TSK-015`*
+
+`risk V010`: one row per (subject, rule code, window start) - `risk_alert_born_once`, `INV-RSK-06` - raised by a fraud
+or monitoring rule inside T-eval or T-mon, with its machine `OPEN → ATTACHED | SUPPRESSED` (the attach `-016`'s, the
+suppression two persons', never the system's) and no `DELETE` for any role. **No money, no score, no rule parameter**:
+the alert names the rule by its closed code and points at its evidence by reference only - signal, assessment and
+journal entry ids, resolved through audited reads, never copied (`PHASE_13_PLAN.md` §8, §11: evidence references
+`CONFIDENTIAL`). The subject is `CONFIDENTIAL` as `risk_signal.subject_ref` is (a `DEVICE` is identity's hash, never the
+description, by `CHECK`); that a subject has an alert is itself what the tipping-off rule protects (`INV-RSK-08` - no
+customer or merchant route reads this table, `NoCustomerSurfaceReadsRiskTest`). The suppression's texts are
+person-written, screened for instrument shapes (`risk.holds_instrument_shape`) and `RESTRICTED-PII`, as the override's
+are; the people `CONFIDENTIAL`; closed codes, the platform's own identifiers and the database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `risk_alert` | `id` | `INTERNAL` | Generated - the alert's identity, the evidence reference a case holds (`-016`) |
+| `risk_alert` | `kind` | `INTERNAL` | A closed `AlertKind` code |
+| `risk_alert` | `severity` | `INTERNAL` | A closed `AlertSeverity` code |
+| `risk_alert` | `subject_kind` | `INTERNAL` | A closed `SubjectKind` code |
+| `risk_alert` | `subject_ref` | `CONFIDENTIAL` | The subject by identifier - a party, identity, account, merchant, beneficiary, session or credit agreement id as text, or for a `DEVICE` identity's hash (64 hex; never the description, OQ-4) |
+| `risk_alert` | `rule_code` | `INTERNAL` | A closed code - a `RuleKind`, or an operational `AlertKind`'s own; never a parameter |
+| `risk_alert` | `window_kind` | `INTERNAL` | A closed `WindowKind` code |
+| `risk_alert` | `window_start` | `INTERNAL` | The bucket's start on the velocity windows' anchor, from a database instant (`CHECK`-aligned) |
+| `risk_alert` | `policy_version_id` | `INTERNAL` | The policy version whose rule raised it - risk's own row; none for an operational alert |
+| `risk_alert` | `evidence_signal_ids` | `CONFIDENTIAL` | Evidence by reference - the signals the rule read (at most 100) |
+| `risk_alert` | `evidence_assessment_ids` | `CONFIDENTIAL` | Evidence by reference - the sealed assessments (at most 100) |
+| `risk_alert` | `evidence_journal_entry_ids` | `CONFIDENTIAL` | Evidence by reference - the ledger journal entries the monitoring rule read (at most 100) |
+| `risk_alert` | `status` | `INTERNAL` | The machine's state - `OPEN`, `ATTACHED`, `SUPPRESSED` |
+| `risk_alert` | `attached_case_id` | `INTERNAL` | The case it attached to - risk's own row (`-016`'s foreign key) |
+| `risk_alert` | `attached_at` | `INTERNAL` | The database's stamp of the attach |
+| `risk_alert` | `suppression_reason_code` | `INTERNAL` | A closed `SuppressionReason` code |
+| `risk_alert` | `suppression_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; served on the analyst's desk alone, never logged |
+| `risk_alert` | `suppression_proposed_by` | `CONFIDENTIAL` | The analyst who proposed the suppression |
+| `risk_alert` | `suppression_proposed_by_type` | `INTERNAL` | A closed actor type - `EMPLOYEE` by `CHECK` |
+| `risk_alert` | `suppression_proposed_at` | `INTERNAL` | The database's stamp of the proposal |
+| `risk_alert` | `suppression_decided_by` | `CONFIDENTIAL` | The second analyst who approved it - never the proposer, by `CHECK` |
+| `risk_alert` | `suppression_decided_by_type` | `INTERNAL` | A closed actor type - `EMPLOYEE` by `CHECK` |
+| `risk_alert` | `suppression_decided_at` | `INTERNAL` | The database's stamp of the approval, after the lock |
+| `risk_alert` | `suppression_decision_reason` | `RESTRICTED-PII` | As `suppression_reason` |
+| `risk_alert` | `raised_at` | `INTERNAL` | The database's stamp of the birth |
+| `risk_alert` | `correlation_id` | `INTERNAL` | The raising flow's correlation |
+| `risk_alert` | `causation_id` | `INTERNAL` | The raising flow's cause |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

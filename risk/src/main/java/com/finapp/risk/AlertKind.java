@@ -10,8 +10,11 @@ import java.util.Optional;
  *
  * <p>Two kinds are operational: an {@link #UNCLASSIFIED_TRANSACTION} (a journal namespace the intake's register does
  * not know - nothing passes unseen) and a {@link #VELOCITY_DIVERGENCE} (a window whose figures no longer equal what it
- * counts, never self-corrected) open no case; they are an operator's to act on and fire the Prometheus rules of section
- * 15 beside the alert row.
+ * counts, never self-corrected) open no case; they are an operator's to act on. <em>As built by `P13-TSK-015`:</em>
+ * {@code risk V010} admits them (their own code as the rule, no policy, never attached) but no writer raises them as
+ * rows - the transition's settled reading ({@code RISK_LIFECYCLES.md} section 8) stands: their alert is the Prometheus
+ * rule of section 15 on {@code finapp.risk.monitoring.unclassified} and {@code finapp.risk.velocity.proof{verdict}};
+ * raising them as rows is `-023`'s or `-024`'s to decide, with no migration.
  */
 public enum AlertKind {
 

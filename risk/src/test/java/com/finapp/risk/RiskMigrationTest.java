@@ -30,7 +30,8 @@ import org.junit.jupiter.api.Test;
  * {@code velocity_window}; `P13-TSK-007` adds {@code V006}: {@code customer_risk_profile},
  * {@code customer_risk_profile_version}; `P13-TSK-004` adds {@code V007}: {@code risk_assessment},
  * {@code risk_assessment_input}, {@code risk_rule_hit}, {@code risk_reason}, {@code decision_override}; `P13-TSK-012`
- * adds {@code V009}: the override's machine - no new table, its column-scoped {@code UPDATE}) - {@code BnplMigrationTest}'s
+ * adds {@code V009}: the override's machine - no new table, its column-scoped {@code UPDATE}; `P13-TSK-015` adds
+ * {@code V010}: {@code risk_alert}, its machine's trigger and its column-scoped {@code UPDATE}) - {@code BnplMigrationTest}'s
  * idiom, as every schema-owning module has its own.
  *
  * <p>The migration-test idiom reads the SQL and holds it to the code; this class holds the <em>database</em> to it,
@@ -104,7 +105,7 @@ class RiskMigrationTest {
             + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
             + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007), V007 the sealed assessment and the"
-            + " override's table (P13-TSK-004)")
+            + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -120,6 +121,8 @@ class RiskMigrationTest {
                 // V004 (P13-TSK-019): the born-once record and the intake's position per source.
                 "monitored_transaction",
                 "monitoring_watermark",
+                // V010 (P13-TSK-015): the born-once alert.
+                "risk_alert",
                 // V007 (P13-TSK-004): the sealed assessment's head and its inputs.
                 "risk_assessment",
                 "risk_assessment_input",
@@ -160,6 +163,8 @@ class RiskMigrationTest {
                 "monitored_transaction_is_append_only",
                 "monitored_transaction_is_stamped_by_the_database",
                 "monitoring_watermark_derives_its_sequence",
+                // V010 (P13-TSK-015): the alert's machine - born OPEN, facts frozen, four edges, never deleted.
+                "risk_alert_permits_only_machine_edges",
                 // V007 (P13-TSK-004): born with its inputs, stamped by the database, sealed for every writer.
                 "risk_assessment_has_its_inputs",
                 "risk_assessment_is_born_stamped",
@@ -328,6 +333,37 @@ class RiskMigrationTest {
                     + " WHERE conname = 'monitored_transaction_counterparty_kind_is_known'"))
                     .contains("'" + kind.name() + "'");
         }
+    }
+
+    // ------------------------------------------------------------------ V010 (P13-TSK-015)
+
+    @Test
+    @DisplayName("V010: the alert's grants - SELECT, INSERT and an UPDATE of the status, the attachment and the"
+            + " suppression columns alone (never a fact or a stamp); no DELETE; the arbiters live and every constraint"
+            + " name unique in the schema")
+    void theAlertGrants() throws SQLException {
+        assertThat(grantsOn("risk_alert")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'risk_alert' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("attached_case_id", "status", "suppression_decided_by", "suppression_decided_by_type",
+                        "suppression_decision_reason", "suppression_proposed_by", "suppression_proposed_by_type",
+                        "suppression_reason", "suppression_reason_code");
+        String statements = statementsOf(migration("V010__the_born_once_alert.sql"));
+        // The trigger names DELETE and TRUNCATE to refuse them; no GRANT names either.
+        assertThat(statements).doesNotContainPattern("GRANT[^;]*(DELETE|TRUNCATE)").doesNotContain("GRANT ALL");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname LIKE 'risk_alert_%' ORDER BY conname")).contains("risk_alert_born_once",
+                "risk_alert_pk", "risk_alert_policy_version_fk", "risk_alert_suppression_four_eyes",
+                "risk_alert_suppression_by_persons", "risk_alert_window_start_is_aligned",
+                "risk_alert_operational_never_attached", "risk_alert_evidence_bounded");
+        assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'risk_alert_born_once'"))
+                .isEqualTo("UNIQUE (subject_ref, rule_code, window_start)");
+        assertThat(column("SELECT indexname FROM pg_indexes WHERE schemaname = 'risk' AND tablename = 'risk_alert'"
+                + " ORDER BY indexname")).containsExactly("risk_alert_born_once", "risk_alert_open_queue",
+                "risk_alert_pk");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
 
     // ------------------------------------------------------------------ V009 (P13-TSK-012)
