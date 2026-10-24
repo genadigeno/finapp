@@ -291,6 +291,21 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
   the cross-border first transaction took the quote and the source wallet `FOR UPDATE` *after* the seams, with (R2a)
   held - neither of decision 6's shapes; `app`'s judgement now takes those rows first, in the Phase 9 order, then
   (R1)–(R3).)*
+  *(The override built by `P13-TSK-012`, 2026-10-24 — risk `V009`, decision 7 read three ways, for `P13-DOC-001`:
+  **(i)** the effect is the proposal's, frozen and judged against the decision: a `HOLD`'s release (or capture) and -
+  the entry's "a rejection the rejecter marks final" re-shaped - its denial (or void) as an *approved* override's effect,
+  so every issued action is two persons' act at or above C7 (`INV-RSK-07`); **(ii)** "for a denied transfer nothing, …
+  a one-time allowance for the same command reference that the retry's evaluation reads" is **not built**, for transfers
+  or cross-border: a transfer's retry carries a new command ref (`-008`), and a cross-border retry on the same quote is
+  answered from its seal at T-eval's first step, before any input is read (`-004`, `-011`) - an allowance consulted by
+  the seam instead would move money on a sealed `DENY` whose assessment no longer explains the outcome, within a quote
+  window fx bounds at an hour; an approved override of any refusal records `RESUBMISSION` (nothing dispatched; the
+  resubmission judged afresh), and a movement-keyed allowance read by the engine as a sealed input is the owner's to
+  commission; **(iii)** C7 is fixed at the proposal and derived twice - the domain's `requiresSecondPerson` and the
+  birth trigger's reading of the pinned threshold - failing closed where the threshold cannot be compared. A released
+  hold is not counted in the windows (the windows count what the decision permitted; an owner item). The issued action
+  runs in ADR-0112's T-act shape from the approval door after the commit, re-driven by the door's retry and a leg on
+  `RiskMonitoringSchedule`, until `-017`'s machine.)*
 - `P13-TST-001` measures T-eval p50/p99/max per operation beside the sweep; `P13-TST-002` replays every decision in
   two JVMs.
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the

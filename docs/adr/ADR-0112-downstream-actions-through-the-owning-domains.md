@@ -194,6 +194,17 @@ keyed command through its door), `INV-RSK-07` (every downstream action is two pe
   `PaymentCapture` or `PaymentVoid`, the provider called holding no connection; `DONE`/`ALREADY`/`REFUSED` mapped word for
   word; an authorisation still in flight thrown for the action machine to re-drive; the deadline payments' own leg.
   `ActionKind.CAPTURE_HELD_PAYMENT`/`VOID_HELD_PAYMENT` are available. Unwired to any risk caller until `-012`/`-017`.)*
+  `P13-TSK-012` — the override's issued action *(built 2026-10-24: `OverrideActions` over both payments ports - their
+  first risk caller - `RELEASE_HELD_WITHDRAWAL` / `DENY_HELD_WITHDRAWAL` for a held withdrawal and, **a dated amendment
+  to decision 2's table**, `CAPTURE_HELD_PAYMENT` / `VOID_HELD_PAYMENT` for a held card payment: an override may issue
+  the void too, as an approved override's `REFUSE` (the table read "a disposition the void"). Decision 3's "an
+  override-issued action is born `APPROVED` by the override's own approval" holds on the override row itself until
+  `-017`: the approval records the action and a permit; decision 4's T-act runs from the approval door after the
+  commit with **no risk row held at all** (stronger than "only R6": no action row exists yet), keyed
+  `risk.action:<override id>` with the override's frozen reason code; decision 5's re-drive is the door's own retry and
+  a leg on `RiskMonitoringSchedule` claiming the row's permit `SKIP LOCKED` - `RiskActionSchedule` takes it over at
+  `-017`; the outcomes `DONE`, `ALREADY`, `REFUSED` recorded once (`risk.ActionConcluded`), a thrown dispatch recording
+  nothing; `risk.RiskActionRequested` / `risk.RiskActionCompleted` carry the override's id with `source=OVERRIDE`.)*
   `P13-TSK-013` — the ATO rules that propose C10's actions; `P13-TSK-022` — `RESCREEN_PARTY` through kyc.
 - `P13-TST-001` runs scenarios 4, 7, 10 and 11 with counts and asserts the lock wait on R6 and on the withdrawal row
   in both orders.

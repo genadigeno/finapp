@@ -37,6 +37,16 @@ import org.springframework.context.SmartLifecycle;
  * {@link ProfileRecompute#FAILURE_BACKOFF} in a transaction of its own - so a party that keeps failing never stalls the
  * leg - and the leg goes on; any other failure (the claim itself, the pin) is counted and ends the leg for the tick. Ten
  * instances sweeping together write one version per rating change ({@code ProfileDatabaseTest#tenRecomputesOneVersion}).
+ *
+ * <p><strong>The override action leg</strong> (`P13-TSK-012`; {@code DESIGN-012} D1; ADR-0112 decisions 4-5): last, the
+ * at-least-once re-drive of the actions approved overrides issued - a held withdrawal's release or denial, a held card
+ * payment's capture or void - whose outcome is not yet recorded because the approving instance died between its commit
+ * and its dispatch, or the dispatch threw. Up to {@code finapp.risk.override.actions-per-tick} due permits a tick, each
+ * claimed {@code SKIP LOCKED} in a transaction of its own and re-stamped a lease ahead before payments' keyed door is
+ * called on no transaction under {@code risk.action:<override id>} - so ten instances claim a due action once per lease
+ * and any overlap is one effect by payments' key ({@code DecisionOverrideDatabaseTest#aCrashBetweenApprovalAndReleaseReDrivesOnce});
+ * the outcome recorded as the platform. No new scheduler: the leg rides this one's leaderless tick (the `-009`/`-010`
+ * precedent), and `-017`'s {@code RiskActionSchedule} takes it over. A leg that throws is counted and ends for the tick.
  */
 @Slf4j
 public final class RiskMonitoringSchedule implements SmartLifecycle {
@@ -80,8 +90,20 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
         }
     }
 
+    /** The override action leg's step - {@link OverrideActionDriver#driveDue}, in production. */
+    @FunctionalInterface
+    public interface ActionLeg {
+
+        /** No action leg - the intake and the profiles alone (the earlier tasks' shape, kept for their suites). */
+        ActionLeg NONE = () -> 0;
+
+        /** The due actions driven, bounded per tick; how many were driven to a recorded outcome. */
+        int driveDue();
+    }
+
     private final MonitoringIntake intake;
     private final ProfileLeg profiles;
+    private final ActionLeg actions;
     private final int profileClaimsPerTick;
     private final RiskTransactions transactions;
     private final RiskMonitoringMetrics metrics;
@@ -107,6 +129,16 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     public RiskMonitoringSchedule(MonitoringIntake intake, ProfileLeg profiles, int profileClaimsPerTick,
             RiskTransactions transactions, RiskMonitoringMetrics metrics, RiskFlowScope flow, Duration pollInterval,
             int batchesPerTick) {
+        this(intake, profiles, profileClaimsPerTick, ActionLeg.NONE, transactions, metrics, flow, pollInterval,
+                batchesPerTick);
+    }
+
+    /**
+     * @param actions the override action leg - {@code driver::driveDue} in production (`P13-TSK-012`)
+     */
+    public RiskMonitoringSchedule(MonitoringIntake intake, ProfileLeg profiles, int profileClaimsPerTick,
+            ActionLeg actions, RiskTransactions transactions, RiskMonitoringMetrics metrics, RiskFlowScope flow,
+            Duration pollInterval, int batchesPerTick) {
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -120,6 +152,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
             throw new IllegalArgumentException("profileClaimsPerTick must be positive: " + profileClaimsPerTick);
         }
         this.profileClaimsPerTick = profileClaimsPerTick;
+        this.actions = Objects.requireNonNull(actions, "actions");
         this.batchesPerTick = batchesPerTick;
         this.intake = Objects.requireNonNull(intake, "intake");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
@@ -130,7 +163,8 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     /**
      * One sweep under the system actor: batches of the intake leg while they come back full, each in a transaction of
      * its own, a failed batch counted and the intake ended for this tick; then the profile leg, one due profile per
-     * transaction up to its bound, a failed recompute counted and its party deferred, a failed claim ending the leg.
+     * transaction up to its bound, a failed recompute counted and its party deferred, a failed claim ending the leg; then
+     * the override action leg, its due actions driven up to its bound, a failure counted and the leg ended.
      *
      * @return how many monitored transactions this call bore
      */
@@ -159,6 +193,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
                 }
             }
             recomputeDueProfiles();
+            driveDueActions();
             return born;
         }
     }
@@ -197,6 +232,19 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
                 return;
             }
             log.debug("Risk profile recompute: {}", outcome.get().kind());
+        }
+    }
+
+    /** The override action leg, inside {@link #sweepOnce}'s system scope: payments' doors run on no transaction. */
+    private void driveDueActions() {
+        try {
+            int driven = actions.driveDue();
+            if (driven > 0) {
+                log.debug("Risk override actions driven: {}", driven);
+            }
+        } catch (RuntimeException failure) {
+            metrics.claimFailed();
+            log.warn("Risk override action leg failed: {}", failure.getClass().getSimpleName());
         }
     }
 

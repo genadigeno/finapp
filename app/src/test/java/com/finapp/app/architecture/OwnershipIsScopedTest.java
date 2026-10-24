@@ -1833,6 +1833,56 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-002. version's own helper: the bands of the version id version answered -"
                                         + " the same read, the same door, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcDecisionOverrideStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-012. An override read by id on the risk officer's desk behind"
+                                        + " @RequiresPermission(RISK_OVERRIDE) - the URL names it, deliberately someone"
+                                        + " else's subject - after the not-self rule: DecisionOverrides judges the"
+                                        + " officer's party against the overridden assessment's party first (fail"
+                                        + " closed, risk.SelfDealingRefused) and serves the override only when it is"
+                                        + " the named assessment's; the action's drive reads it by the id its own"
+                                        + " approval committed.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcDecisionOverrideStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-012. R4: the override row FOR UPDATE for its approval or rejection, behind"
+                                        + " @RequiresPermission(RISK_OVERRIDE), after the not-self rule against the"
+                                        + " named assessment's party; the row is acted on only when it is that"
+                                        + " assessment's, and four eyes hold by the domain and by CHECK.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcDecisionOverrideStore.ofAssessment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-012. An assessment's overrides read on the override desk behind"
+                                        + " @RequiresPermission(RISK_OVERRIDE), after the not-self rule: an officer of"
+                                        + " the assessment's own party, or placed in no party, is refused before"
+                                        + " anything is read; recorded risk.AssessmentRead.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcDecisionOverrideStore.approve",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-012. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), the named assessment's, after the not-self rule), the move"
+                                        + " conditional on PROPOSED; behind RISK_OVERRIDE and MULTI_FACTOR, four eyes"
+                                        + " by the domain and by decision_override_four_eyes.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcDecisionOverrideStore.reject",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-012. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), the named assessment's, after the not-self rule), the move"
+                                        + " conditional on PROPOSED; behind RISK_OVERRIDE; it issues nothing.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcDecisionOverrideStore.conclude",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-012. The id is an issued action's - one the approval door's own approval"
+                                        + " committed, or the re-drive leg's claim returned - and the write is"
+                                        + " conditional on an outcome not yet recorded; it records payments' answer"
+                                        + " and moves nothing of anyone's.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

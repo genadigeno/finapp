@@ -1504,7 +1504,8 @@ alert, a case or a report exists.
 | *planned* `risk.CaseRevisionStale` | 409 | The case changed since it was read; read it again and resend with its current revision. |
 | *planned* `risk.CaseNotOpen` | 409 | The case is disposed; a new case may reference it. |
 | *planned* `risk.AlertNotOpen` | 409 | The alert is already attached to a case or suppressed. |
-| *planned* `risk.ActionNotProposable` | 409 | The action cannot be proposed on this case now - one of its kind and target is already live, or the case's state does not admit it. |
+| `risk.ActionNotProposable` | 409 | The override or action cannot be proposed now: the decision is an `ALLOW` or a `CHALLENGE`, nothing is held to refuse, or a live proposal or an approved override already stands; for `-017`'s case actions, one of its kind and target is already live, or the case's state does not admit it. *(Raised first by `P13-TSK-012`'s override door, `POST /v1/operator/risk/assessments/{assessmentId}/overrides`.)* |
+| `risk.OverrideStale` | 409 | The override is no longer awaiting a decision - approved or rejected by somebody else, or differently; the same person's retry converges. *(`P13-TSK-012`, the override's approval and rejection doors - `risk.PolicyStale`'s shape.)* |
 | *planned* `risk.ReportNotFileable` | 409 | The regulatory report is not approved, or is already filed. |
 | `risk.ReasonRequired` | 422 | A reason is required - 1 to 1000 characters, holding no card-number or bank-account shape. *(One code, the wave's: raised by `P13-TSK-002`'s policy doors and `P13-TSK-019`'s reprocessing door; `P13-TSK-004`'s assessment replay door raises it too.)* |
 | `risk.ReprocessingNotBehind` | 422 | A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip entries. Nothing was changed. *(`P13-TSK-019`, `POST /v1/operator/risk/monitoring/reprocessing`.)* |

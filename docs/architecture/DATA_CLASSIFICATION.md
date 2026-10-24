@@ -4314,7 +4314,7 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 
 ### `risk.risk_assessment`, `risk_assessment_input`, `risk_rule_hit`, `risk_reason` and `decision_override` - the sealed assessment - *added by `P13-TSK-004`*
 
-`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`.
+`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`. *(`risk V009`, `P13-TSK-012`, adds five columns: the effect and the issued action's permit, attempts and conclusion are closed codes, counts and the database's stamps - `INTERNAL`; the target is the judged command's own id - a withdrawal's or a payment intent's, an identifier of the platform's own aggregate and the assessment's `command_ref` again - `INTERNAL` by the note above. The reasons are served on the override desk alone, to `RISK_OVERRIDE` holders, never logged.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4378,6 +4378,11 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `decision_override` | `decided_at` | `INTERNAL` | The database's stamp, after the lock |
 | `decision_override` | `decision_reason` | `RESTRICTED-PII` | As `reason` |
 | `decision_override` | `correlation_id` | `INTERNAL` | The proposing request's correlation |
+| `decision_override` | `effect` | `INTERNAL` | A closed code - the effect the approval will issue (`OverrideEffect`), frozen at the proposal (`P13-TSK-012`, `risk V009`) |
+| `decision_override` | `target_id` | `INTERNAL` | The judged command's id - the held withdrawal's or payment intent's; none for a `RESUBMISSION` |
+| `decision_override` | `action_due_at` | `INTERNAL` | The issued action's re-drive permit - the database's clock plus the lease; none once concluded |
+| `decision_override` | `action_attempts` | `INTERNAL` | A count - the permits issued to the action's dispatch |
+| `decision_override` | `action_concluded_at` | `INTERNAL` | The database's stamp of the outcome's record |
 
 ### Free text, classified at its ceiling
 

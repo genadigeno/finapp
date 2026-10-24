@@ -7,8 +7,10 @@ import java.util.UUID;
  * sections 5, 12.3, 12.8; ADR-0108, ADR-0112) - {@code app} implements this over payments' release and denial of a
  * {@code HELD} withdrawal ({@code PaymentsHeldWithdrawalActions}, `P13-TSK-009`), each under the withdrawal row's lock in
  * payments' order, keyed by {@code idempotencyKey} ({@code risk.action:<id>}) and audited by payments: a release
- * dispatches it; a denial fails it {@code RISK_REFUSED} and releases its ledger hold. The release an approved override
- * issues runs through this port from the approval door (`-012`) until `-017` folds it into the action machine.
+ * dispatches it; a denial fails it {@code RISK_REFUSED} and releases its ledger hold. The release or denial an approved
+ * override issues runs through this port - {@link OverrideActions#dispatch}, its first risk caller (`P13-TSK-012`),
+ * from the approval door after the approval commits and from the re-drive leg - until `-017` folds it into the action
+ * machine.
  *
  * <p><strong>Reshaped by its first implementation (`P13-TSK-009`)</strong>, as this module's ports may be until then:
  * <ul>

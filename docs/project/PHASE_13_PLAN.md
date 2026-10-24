@@ -697,6 +697,15 @@ code and text; at or above the threshold (C7) a second holder approves; the over
 sets a one-time allowance for the same command ref so the retry's evaluation reads it as an input); it never edits the
 decision. An `ALLOW` is never overridden after the fact — the money has moved; a case is the remedy.
 
+*(As built, `P13-TSK-012`, 2026-10-24 — **the override**: the effect is the proposal's, judged against the decision -
+a held withdrawal released or denied, a held card payment captured or voided (each an *approved* override's effect,
+four eyes at or above C7 and `MULTI_FACTOR`), a `DENY`/`REVIEW` overridden as `RESUBMISSION` with nothing dispatched;
+**the one-time allowance is not built** - a transfer's retry carries a new command ref, and a cross-border retry on the
+same quote is answered from its seal before any input is read - an owner item; a released hold is not counted in the
+windows; the action dispatched through payments' keyed door after the approval commits, keyed `risk.action:<override
+id>`, re-driven by the door's retry and a leg on `RiskMonitoringSchedule`; risk `V009`. `RISK_LIFECYCLES.md` §4.2a's
+as-built note.)*
+
 *(As built, `P13-TSK-004`, 2026-10-23 — the fail-safe as `RiskEvaluation` seals it, by cause (`UnavailableCause`, a
 column beside the reason code): `NO_POLICY` → the compiled `ALLOW` under `NO_POLICY_ACTIVE` (the windows count it — the
 money moves); `PIN_UNREADABLE` → the compiled `ALLOW` under `RISK_UNAVAILABLE`, **no version named** — the bands could

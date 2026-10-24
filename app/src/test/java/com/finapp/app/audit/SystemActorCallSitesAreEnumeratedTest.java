@@ -474,7 +474,13 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " risk.ReprocessingOrdered under the officer's own actor at the door. Its profile leg"
                         + " (P13-TSK-007) likewise: nobody commands a customer risk profile's recompute - the sweep claims"
                         + " a head whose permit came and the MONITORING policy rates the party as the system, its version"
-                        + " row and risk.CustomerRiskRatingChanged the trail; PROHIBITED is a person's disposition (-016)."),
+                        + " row and risk.CustomerRiskRatingChanged the trail; PROHIBITED is a person's disposition (-016)."
+                        + " Its override action leg (P13-TSK-012) likewise: nobody commands the re-drive of an approved"
+                        + " override's issued action - the officers' approval is the person's act, recorded"
+                        + " risk.OverrideApproved under their own actor at the door; when the approving instance died"
+                        + " between its commit and its dispatch, the sweep claims the due permit on the database clock and"
+                        + " re-presents payments' keyed door the same key as the platform, the outcome recorded"
+                        + " risk.ActionConcluded with actor SYSTEM."),
                     Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"

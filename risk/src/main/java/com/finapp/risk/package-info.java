@@ -150,7 +150,7 @@
  * {@link com.finapp.risk.AssessmentReplay} (the pinned engine over the parsed seal: {@code IDENTICAL} or {@code DIVERGED}
  * with the kinds); {@link com.finapp.risk.VelocityOutcome} on every assessment and
  * {@link com.finapp.risk.AssessmentVelocityEvidence} - the counted assessments, the velocity proof's evidence of record,
- * every dimension provable; {@code decision_override}'s table (its machine `-012`'s); a {@code ROUND_AMOUNT} modulus
+ * every dimension provable; {@code decision_override}'s table (its machine `-012`'s, below); a {@code ROUND_AMOUNT} modulus
  * below one minor unit refused by {@code RiskPolicy}. <strong>The first consumer</strong> (`P13-TSK-008`, wave E):
  * transfers' two seams, {@code app}'s {@code RiskTransferLimitCheck} and {@code RiskTransferRiskDecision}, each calling
  * {@code evaluate} for the transfer's id in its execution's transaction after both account locks - the first call
@@ -163,5 +163,15 @@
  * {@code TRANSFER} version is activated under four eyes (section 1.1) - the profile leg judges nothing until a
  * {@code MONITORING} version is; the monitoring sweep is off in test contexts and ingests, in production, a journal no
  * rule yet reads (`-020`).
+ *
+ * <p><strong>The decision override</strong> (`P13-TSK-012`, {@code risk V009}): {@link com.finapp.risk.DecisionOverrides}
+ * (T-ovr - propose, approve, reject, the officer's reads; C7's four eyes fixed at the proposal by
+ * {@code requiresSecondPerson}, failing closed; self-dealing fail closed on every act and read; the sealed assessment
+ * never written) over {@link com.finapp.risk.DecisionOverrideStore} ({@code JdbcDecisionOverrideStore}); the
+ * {@link com.finapp.risk.OverrideEffect} an approval issues - a held withdrawal released or denied, a held card payment
+ * captured or voided, a refusal's {@code RESUBMISSION} that dispatches nothing - and
+ * {@link com.finapp.risk.OverrideActions} (T-act's shape: the dispatch through {@link com.finapp.risk.HeldWithdrawalActions}
+ * and {@link com.finapp.risk.HeldPaymentActions} on no transaction, keyed {@code risk.action:<override id>}, the outcome
+ * recorded once; the re-drive's claim on the row's permit), until `-017` folds it into the action machine.
  */
 package com.finapp.risk;

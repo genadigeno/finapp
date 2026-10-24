@@ -384,7 +384,11 @@ class NoSingleInstanceAssumptionRulesTest {
                     // unique. The permit is re-stamped by the database (now after a full batch, the idle cadence after
                     // a short one); a completion hint only pulls it forward; the reprocessing door moves the position
                     // back under FOR UPDATE, waiting for a running batch. Register row: DISTRIBUTED_EXECUTION.md section
-                    // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce.
+                    // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce. P13-TSK-012 adds
+                    // the override action leg, no new scheduler: one due permit per transaction claimed FOR UPDATE SKIP
+                    // LOCKED and re-stamped a lease ahead before payments' keyed door is called on no transaction under
+                    // risk.action:<override id> - ten sweepers, one claim per lease, one effect by payments' key
+                    // (DecisionOverrideDatabaseTest#aCrashBetweenApprovalAndReleaseReDrivesOnce).
                     "com.finapp.app.risk.RiskMonitoringSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */

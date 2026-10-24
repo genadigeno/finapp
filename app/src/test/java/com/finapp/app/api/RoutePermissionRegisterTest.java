@@ -366,7 +366,20 @@ class RoutePermissionRegisterTest {
                     // own party refused risk.SelfDealingRefused; RISK_INVESTIGATE (held by RISK_ANALYST); the negatives
                     // are RiskAssessmentApiTest's.
                     entry("GET /v1/operator/risk/assessments/{assessmentId}", PermissionName.RISK_INVESTIGATE),
-                    entry("POST /v1/operator/risk/assessments/{assessmentId}/replay", PermissionName.RISK_INVESTIGATE)));
+                    entry("POST /v1/operator/risk/assessments/{assessmentId}/replay", PermissionName.RISK_INVESTIGATE),
+                    // P13-TSK-012: the risk officer's override doors - the overridden assessment served under the
+                    // officer's own permission (roles are a partition: RISK_OFFICER holds no RISK_INVESTIGATE), propose,
+                    // approve (a second holder at or above C7, MULTI_FACTOR; the proposer refused
+                    // risk.SelfApprovalRefused) and reject; RISK_OVERRIDE (held by RISK_OFFICER); the negatives are
+                    // RiskOverrideApiTest's.
+                    entry("GET /v1/operator/risk/assessments/{assessmentId}/overrides", PermissionName.RISK_OVERRIDE),
+                    entry("POST /v1/operator/risk/assessments/{assessmentId}/overrides", PermissionName.RISK_OVERRIDE),
+                    entry("GET /v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}",
+                            PermissionName.RISK_OVERRIDE),
+                    entry("POST /v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/approval",
+                            PermissionName.RISK_OVERRIDE),
+                    entry("POST /v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/rejection",
+                            PermissionName.RISK_OVERRIDE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the
@@ -428,7 +441,8 @@ class RoutePermissionRegisterTest {
                         PermissionName.COUNTERPARTY_SCREENING_REVIEW,
                         PermissionName.CREDIT_POLICY_ADMINISTER,
                         PermissionName.CREDIT_INVESTIGATE,
-                        PermissionName.CREDIT_UNDERWRITE);
+                        PermissionName.CREDIT_UNDERWRITE,
+                        PermissionName.RISK_OVERRIDE);
     }
 
     private Map<String, PermissionName> declared() {

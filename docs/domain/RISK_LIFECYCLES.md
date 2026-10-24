@@ -277,6 +277,38 @@ or over an assessment whose decision is not `DENY`, `HOLD` or `REVIEW`, reasons 
 `SELECT, INSERT` for the application, **every `UPDATE` refused by the edge trigger until `P13-TSK-012` replaces its
 function with the machine** and grants the decision columns; never deleted.)*
 
+*(As built by `P13-TSK-012`, 2026-10-24 - `risk V009`, `DecisionOverrides`, `OverrideActions`, the five doors under
+`/v1/operator/risk/assessments/{assessmentId}/overrides` (`RISK_OVERRIDE`). **The proposal names its effect**, frozen
+and judged against the assessment by the domain (`OverrideEffect.of`) and by the birth trigger, each alone: a
+`WITHDRAWAL` `HOLD` - `RELEASE_HELD_WITHDRAWAL` (`resolution: PROCEED`) or `DENY_HELD_WITHDRAWAL` (`REFUSE`); a
+`CARD_PAYMENT` `HOLD` - `CAPTURE_HELD_PAYMENT` or `VOID_HELD_PAYMENT`; any `DENY` or `REVIEW` - `RESUBMISSION`, nothing
+dispatched (the command is terminal in its owner's machine; the customer's resubmission is judged afresh). **The
+table's "a rejected one that the rejecter marks final" is re-shaped**: a denial or a void is an *approved* override's
+effect (C7's four eyes and `MULTI_FACTOR`), never a rejection's - a rejection is open to anyone, the proposer's
+withdrawal included, and an action it issued would be one person's downstream action (`INV-RSK-07`); a rejection issues
+nothing. **The denied transfer's one-time allowance is not built** - for neither transfers nor cross-border (a
+transfer's retry carries a new command ref; a cross-border retry on the same quote is answered from its seal before any
+input is read), an owner item (`DESIGN-012` D4). **C7 is derived at the birth twice**: the domain's
+`requiresSecondPerson` and the trigger's own reading of the assessment and the pinned `override_threshold_minor`, which
+refuses `false` where a second holder is required - failing closed for no pin, no threshold, another currency or
+scale. **The read-one-way refusals settled**: an `ALLOW`, a `CHALLENGE`, a `REFUSE` of a refusal and a standing override
+are `409 risk.ActionNotProposable`; a decided override is `409 risk.OverrideStale` (new; the same person's retry
+converges); one standing override per assessment (`decision_override_one_standing`, `PROPOSED` or `APPROVED`) beside
+`V007`'s live one, so a rejected proposal may be followed by a new one and an approved one may not. **The issued action
+(T-act's shape before `-017`)**: the approval records `action = effect` and, for a dispatchable one, a permit
+(`action_due_at` = the approval's instant + the lease, `finapp.risk.override.action-lease`, 2 min) and its first attempt;
+after the commit - on no transaction - the approval door calls payments' keyed door through `OverrideActions` under
+`risk.action:<override id>` with the override's frozen reason code; the outcome (`DONE`, `ALREADY`, `REFUSED`) recorded
+once by a conditional edge (`action_concluded_at` stamped, the permit cleared), audited `risk.ActionConcluded`,
+announced `risk.RiskActionCompleted`; a dispatch that throws records nothing. **The re-drive**: the approver's retry
+(the key replays the approval and re-drives the action) and, at least once, the override action leg on
+`RiskMonitoringSchedule` - one due permit per transaction `FOR UPDATE SKIP LOCKED`, re-stamped a lease ahead and an
+attempt counted before the dispatch, as the platform. Release racing the expiry: payments' row lock decides; the
+override records `DONE` exactly when its release won, `ALREADY` or `REFUSED` when the expiry did
+(`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`, its override half). A released hold is **not** counted
+in the velocity windows (`DESIGN-012` D5, an owner item). Counted by `DecisionOverrideDatabaseTest` (written, owed -
+C5) and proven hermetically by `DecisionOverrideTest`, `OverrideActionTest`, `RiskOverrideDeskTest`.)*
+
 ### 4.3 Velocity window (`risk.velocity_window`) — `P13-TSK-006` (`risk V005`) — not a machine
 
 A velocity window has no status and no edges: it is a durable counter per primary key (dimension, subject_ref,
@@ -730,7 +762,10 @@ them.*
   (`V007`'s table); the release it issues runs in T-act's shape from the approval door, keyed
   `risk.action:<override id>`, through payments' existing door, until `-017` folds it into the action machine as
   `RELEASE_HELD_WITHDRAWAL`; `-017` no longer depends on `-012`. A denied transfer's "one-time allowance for the same
-  command ref" is an assessment input, not an action (§4.2a, §4.7).
+  command ref" is an assessment input, not an action (§4.2a, §4.7). *(Built by `P13-TSK-012`, 2026-10-24, as settled -
+  the release, and the denial, capture and void beside it, in T-act's shape from the approval door with the re-drive leg
+  on `RiskMonitoringSchedule`; **the allowance is not built** - for neither transfers nor cross-border - and an approved
+  override of a refusal records `RESUBMISSION`, an owner item (§4.2a's as-built note).)*
 - **Operational alerts versus alert rows** (`-004`, `-006`, `-019`) — **settled** (plan §15's alert table):
   `RiskEvaluationUnavailable` and `RiskPolicyNoneActive` are `infra/prometheus/rules/risk.yml` alerts on
   `finapp.risk.evaluation.unavailable`, and the velocity proof's difference and an `UNCLASSIFIED` entry alert on their
@@ -769,7 +804,9 @@ them.*
   `MonitoredLedger` port's sequence, one row; a second source arrives only with a second journal.
 - **Live-twin refusals** (`-012`, `-017`, `-021`) — still this document's reading: `409 risk.ActionNotProposable` for
   a second live override and for a second live action of one (case, kind, target), `409 risk.ReportNotFileable` for a
-  second open report draft — the tasks assign them.
+  second open report draft — the tasks assign them. *(The override's half settled by `P13-TSK-012`, 2026-10-24: `409
+  risk.ActionNotProposable` for a live proposal or an approved override of the assessment, an `ALLOW`, a `CHALLENGE` and a
+  `REFUSE` of a refusal; `409 risk.OverrideStale` - new - for a decided override.)*
 - **The rescreening permit's states and the superseded list** (`-022`) — still this document's reading: the permit
   `PENDING → REQUESTED → DONE` keyed (list version, party); the predecessor list version keeps `ACTIVE` until `-022`
   decides whether a `SUPERSEDED` state is wanted.
