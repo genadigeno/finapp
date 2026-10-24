@@ -345,6 +345,10 @@ extra["ownContainerSuites"] =
         "com.finapp.app.credit.Phase10ReportsDatabaseTest",
         "com.finapp.app.credit.Phase10SpansDatabaseTest",
         "com.finapp.app.credit.UnderwritingCaseDatabaseTest",
+        // P13-TSK-011: it activates a EUR CROSS_BORDER risk version, after which every cross-border payment in the
+        // database is judged by it - a shared container's EUR 600 payments would be stepped up at the door, its
+        // EUR-JPY-JP ones refused (the suite's high-risk corridor), its non-EUR-leg ones refused by the fail-safe.
+        "com.finapp.app.fx.CrossBorderRiskSeamDatabaseTest",
         "com.finapp.app.fx.FxCrossBorderStormDatabaseTest",
         "com.finapp.app.lending.BnplCapitalDatabaseTest",
         "com.finapp.app.lending.LendingCapitalDatabaseTest",

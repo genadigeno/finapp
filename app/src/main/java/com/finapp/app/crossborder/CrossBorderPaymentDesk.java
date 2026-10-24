@@ -41,6 +41,16 @@ import java.util.concurrent.atomic.AtomicReference;
  * cover first</strong>, then the corridor - and Tx2 recording the corridor's answer and the claim's {@code 202}.
  * A refusal commits only the claim's outcome. A crashed flight is taken over by the same key, converging on the
  * committed payment and re-sending the same end-to-end reference.
+ *
+ * <p><strong>Risk at the door</strong> (`P13-TSK-011`): before the claim, the door's step-up advice in a transaction of
+ * its own that writes nothing ({@link CrossBorderDoorStepUp} - {@code 403 identity.AssuranceRequired} before any row);
+ * inside the authorization, the Phase 13 seams' T-eval. A seam's refusal ({@code crossborder.RiskRefused},
+ * {@code crossborder.LimitRefused}) is the one refusal that does <strong>not</strong> roll back to the savepoint: the
+ * seams are consulted before the offer is accepted, so everything written since the savepoint is risk's own sealed
+ * record of the refused instruction, which commits beside the claim's outcome ({@code INV-RSK-01}: a refused command's
+ * assessment commits with the refusal). Every other refusal rolls back - a judgement that permitted and was then refused
+ * by fx or payments goes with it, its count included (a rolled-back command leaves no assessment). Nothing of the
+ * judgement reaches this class: the advice is an {@code app} port answering a boolean, the refusal crossborder's code.
  */
 public final class CrossBorderPaymentDesk {
 
@@ -59,6 +69,7 @@ public final class CrossBorderPaymentDesk {
     private final Clock clock;
     private final com.finapp.crossborder.PaymentCancellation cancellation;
     private final com.finapp.crossborder.CancellationStore cancellations;
+    private final CrossBorderDoorStepUp stepUp;
 
     public CrossBorderPaymentDesk(
             PaymentAuthorization authorization,
@@ -72,7 +83,8 @@ public final class CrossBorderPaymentDesk {
             Clock clock,
             com.finapp.crossborder.PaymentCancellation cancellation,
             com.finapp.crossborder.CancellationStore cancellations,
-            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics,
+            CrossBorderDoorStepUp stepUp) {
         this.authorization = Objects.requireNonNull(authorization, "authorization must not be null");
         this.fx = Objects.requireNonNull(fx, "fx must not be null");
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
@@ -85,6 +97,7 @@ public final class CrossBorderPaymentDesk {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
         this.cancellations = Objects.requireNonNull(cancellations, "cancellations must not be null");
+        this.stepUp = Objects.requireNonNull(stepUp, "stepUp must not be null");
     }
 
     /** A payment as its owner sees it - the status shaped. */
@@ -92,7 +105,7 @@ public final class CrossBorderPaymentDesk {
             String paymentId, String status, String quoteId, String beneficiaryId, String corridor,
             boolean cancellationRequested) {}
 
-    private record Refusal(String vocabulary, String code) {}
+    record Refusal(String vocabulary, String code) {}
 
     public CrossBorderPaymentView authorize(
             Session current, String idempotencyKey, CrossBorderPaymentController.CrossBorderPaymentRequest body) {
@@ -107,6 +120,12 @@ public final class CrossBorderPaymentDesk {
         }
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         String dispatchKey = key.scope() + "|" + key.key();
+        // The step-up before the claim (P13-TSK-011): its own transaction, nothing written.
+        CrossBorderDoorStepUp.Answer advised = transactions.inTransaction(unitOfWork ->
+                stepUp.advise(unitOfWork, partyOf(unitOfWork, current), current.identityId(), quoteId, key));
+        if (advised != CrossBorderDoorStepUp.Answer.PROCEED) {
+            throw CrossBorderDoorStepUp.refusal(advised);
+        }
 
         record Begun(IdempotentExecutor.BeginOutcome outcome, PaymentAuthorization.Authorized authorized, Refusal refusal) {}
         Begun begun = transactions.inTransaction(unitOfWork -> {
@@ -120,7 +139,7 @@ public final class CrossBorderPaymentDesk {
             IdempotentExecutor.BeginOutcome outcome = executor.begin(unitOfWork, key, fingerprint, claimed -> {
                 // A refusal can follow writes - the quote accepted before routing refuses, the cover born before
                 // the hold finds no funds - so the authorization runs under a savepoint and a refusal rolls back
-                // to it: only the claim's outcome commits.
+                // to it: only the claim's outcome commits. A seam's refusal keeps risk's record (P13-TSK-011).
                 Savepoint before = savepoint(claimed);
                 try {
                     authorized.set(authorization.authorize(claimed, dispatchKey, party, quoteId, actor, now(), correlation));
@@ -131,7 +150,7 @@ public final class CrossBorderPaymentDesk {
                 } catch (CrossBorderExecution.ExecutionRefused refusal) {
                     refused.set(new Refusal(refusal.vocabulary(), refusal.code()));
                 }
-                if (refused.get() != null) {
+                if (refused.get() != null && !keepsTheJudgement(refused.get())) {
                     rollbackTo(claimed, before);
                 }
                 return new byte[] {1};
@@ -256,6 +275,20 @@ public final class CrossBorderPaymentDesk {
             throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
                     "A cross-border payment from an MFA-enrolled identity requires a MULTI_FACTOR session");
         }
+    }
+
+    /**
+     * Whether {@code refusal} keeps what was written since the authorization's savepoint (`P13-TSK-011`): exactly the
+     * Phase 13 seams' two refusals. They are consulted before the offer is accepted - after the takeover lookup, the offer,
+     * the beneficiary {@code FOR SHARE}, the clearance, the corridor version, the database clock and the availability,
+     * all reads - so the only rows since the savepoint are risk's sealed assessment of the refused instruction and its
+     * events, which must commit with the refusal ({@code INV-RSK-01}, {@code INV-RSK-04}); nothing of the payment exists
+     * to keep. Every other refusal follows writes of the authorization's own and rolls back.
+     */
+    static boolean keepsTheJudgement(Refusal refusal) {
+        return refusal.vocabulary().equals("XB")
+                && (refusal.code().equals(CrossborderErrorCode.RISK_REFUSED.name())
+                        || refusal.code().equals(CrossborderErrorCode.LIMIT_REFUSED.name()));
     }
 
     private static Savepoint savepoint(Connection unitOfWork) {

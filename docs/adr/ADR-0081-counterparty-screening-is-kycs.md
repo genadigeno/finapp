@@ -107,6 +107,12 @@ changed:
    the authorization's first transaction, risk **before** the quote is accepted so `REFUSE`
    consumes nothing. Velocity limits, scoring, monitoring, KYC tiers and residence attributes
    are Phase 13's, each a recorded debt row with its trigger.
+   *(Implemented by `P13-TSK-011`, 2026-10-24: `app`'s `RiskCrossBorderRiskDecision` and
+   `RiskCrossBorderLimitCheck` in place of `PermitAllUntilPhase13` (kept, wired nowhere), one
+   assessment per quote; `CrossBorderInstruction` gained `quoteId` - the reserved instruction named
+   neither the movement nor the beneficiary. "Consumes nothing" holds by the position; the refusal's
+   assessment is kept beside the claim's outcome, and the authorization's quote and wallet are now
+   taken before risk's rows - ADR-0108's follow-up.)*
 
 ## Alternatives Considered
 

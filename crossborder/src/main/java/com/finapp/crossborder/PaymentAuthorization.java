@@ -33,7 +33,9 @@ import lombok.RequiredArgsConstructor;
  * payments routes the outbound credit, reachable only by the beneficiary's issuing rail, holds the offer's total
  * debit under the wallet lock and dispatches the credit with our end-to-end reference; the payment is born
  * {@code SUBMITTED}, audited and announced. Every refusal throws and the transaction rolls back, leaving only the
- * claim's outcome. What the customer was shown is exactly what is held and instructed ({@code INV-XB-03}).
+ * claim's outcome - and, for a seam's refusal, the judgement the seam recorded (`P13-TSK-011`: the door keeps
+ * what was written since its savepoint, which by the seams' position is only theirs; nothing of the payment).
+ * What the customer was shown is exactly what is held and instructed ({@code INV-XB-03}).
  */
 @RequiredArgsConstructor
 public final class PaymentAuthorization {
@@ -118,7 +120,7 @@ public final class PaymentAuthorization {
         if (!availability.isAvailable(unitOfWork, offer.corridor())) {
             throw new PaymentRefused(CrossborderErrorCode.CORRIDOR_UNAVAILABLE);
         }
-        CrossBorderInstruction instruction = new CrossBorderInstruction(owner, offer.corridor(), offer.totalDebit());
+        CrossBorderInstruction instruction = new CrossBorderInstruction(owner, quoteId, offer.corridor(), offer.totalDebit());
         if (risk.check(unitOfWork, instruction) == CrossBorderVerdict.REFUSE) {
             throw new PaymentRefused(CrossborderErrorCode.RISK_REFUSED);
         }
