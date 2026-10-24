@@ -60,6 +60,8 @@ class PaymentConfirmationTest {
     private final List<AuditRecord> auditTrail = new ArrayList<>();
     private final List<EventEnvelope> events = new ArrayList<>();
     private final FakeRoutingStore routing = new FakeRoutingStore();
+    private final ScriptedSeam seam = new ScriptedSeam();
+    private final FakeCaptureHolds holds = new FakeCaptureHolds();
 
     private final UUID party = UUID.randomUUID();
     private PaymentIntent intent;
@@ -102,7 +104,9 @@ class PaymentConfirmationTest {
                 IDS,
                 CLOCK,
                 RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none());
+                com.finapp.payments.RailOperations.none(),
+                seam,
+                holds);
     }
 
     /**
@@ -363,7 +367,7 @@ class PaymentConfirmationTest {
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS, CLOCK,
                         RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none());
+                com.finapp.payments.RailOperations.none(), seam, holds);
         assertThatThrownBy(() -> withoutInstrument.confirm(party, intent.id()))
                 .isInstanceOf(UnknownPaymentInstrumentException.class);
         assertThat(intents.rows.get(intent.id().value()).status())
@@ -398,6 +402,124 @@ class PaymentConfirmationTest {
         assertThat(loser.attempt()).contains(PaymentAttemptStatus.AUTH_DISPATCHED);
         assertThat(provider.calls).isZero();
         assertThat(attempts.rows).hasSize(1);
+    }
+
+    // ------------------------------------------------------------------ the risk seam (P13-TSK-010)
+
+    @Test
+    @DisplayName("the seam is asked once, under the locked intent, after eligibility and the plan and before any"
+            + " write - with the payment's own facts; PERMIT routes and dispatches as before")
+    void thePermitRoutesAsToday() {
+        provider.answer = ProviderAnswer.approved(new ProviderReference("psp-auth-permit"), "body".getBytes());
+        PaymentConfirmation.ConfirmationResult result = confirmation().confirm(party, intent.id());
+
+        assertThat(seam.asked).singleElement().satisfies(judged -> {
+            assertThat(judged.intentId()).isEqualTo(intent.id());
+            assertThat(judged.partyId()).isEqualTo(party);
+            assertThat(judged.instrument()).isEqualTo(InstrumentKind.CARD_TOKEN);
+            assertThat(judged.debitAccount()).isEmpty();
+            assertThat(judged.creditAccount()).isEqualTo(intent.creditAccount());
+            assertThat(judged.amount()).isEqualTo(AMOUNT);
+        });
+        assertThat(seam.lockedBefore).as("the intent row was locked before the seam").isTrue();
+        assertThat(seam.attemptsAtCheck).as("no attempt before the verdict").isZero();
+        assertThat(seam.decisionsAtCheck).as("no routing row before the verdict").isZero();
+        assertThat(seam.intentAtCheck).isEqualTo(PaymentIntentStatus.REQUIRES_CONFIRMATION);
+        assertThat(result.intent()).isEqualTo(PaymentIntentStatus.PROCESSING);
+        assertThat(result.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
+        assertThat(routing.latestFor(intent.id()).chosenRail()).contains(SimulatedCardPspAdapter.RAIL.id());
+        assertThat(holds.rows).as("a permit holds nothing").isEmpty();
+    }
+
+    @Test
+    @DisplayName("#aDeniedConfirmationCommitsRiskRefused: REFUSE ends the intent FAILED(RISK_REFUSED) in Tx1 - no"
+            + " attempt, no routing row, no call; the person's act audited FAILED, payments.PaymentFailed announced")
+    void aDeniedConfirmationCommitsRiskRefused() {
+        seam.next = PaymentVerdict.refuse();
+        PaymentConfirmation.ConfirmationResult result = confirmation().confirm(party, intent.id());
+
+        assertThat(result.intent()).isEqualTo(PaymentIntentStatus.FAILED);
+        assertThat(result.attempt()).as("no attempt was ever born").isEmpty();
+        assertThat(result.acting()).isTrue();
+        PaymentIntent stored = intents.rows.get(intent.id().value());
+        assertThat(stored.status()).isEqualTo(PaymentIntentStatus.FAILED);
+        assertThat(stored.failureReason()).contains(PaymentFailureReason.RISK_REFUSED);
+        assertThat(attempts.rows).isEmpty();
+        assertThat(routing.decisions).as("nothing of the routing decision is written").isEmpty();
+        assertThat(provider.calls).isZero();
+        assertThat(runner.committed).as("Tx1 alone").isEqualTo(1);
+        assertThat(auditTrail).singleElement().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(PaymentsAuditAction.PAYMENT_RISK_REFUSED);
+            assertThat(record.outcome()).isEqualTo(com.finapp.platform.audit.AuditOutcome.FAILED);
+            assertThat(record.changeSummary()).as("identifiers and the kind - never an amount or a reason")
+                    .contains("intent=" + intent.id() + ", instrument=CARD_TOKEN");
+        });
+        assertThat(events).singleElement()
+                .satisfies(envelope -> assertThat(envelope.eventType()).isEqualTo("payments.PaymentFailed"));
+    }
+
+    @Test
+    @DisplayName("#aRiskRefusedIntentCannotBeReconfirmed: ten re-confirmations of a refused intent are each refused"
+            + " by the machine - never judged again, nothing routed, nothing sent")
+    void aRiskRefusedIntentCannotBeReconfirmed() {
+        seam.next = PaymentVerdict.refuse();
+        confirmation().confirm(party, intent.id());
+        seam.next = PaymentVerdict.permit();
+        for (int i = 0; i < 10; i++) {
+            assertThatThrownBy(() -> confirmation().confirm(party, intent.id()))
+                    .isInstanceOf(IllegalPaymentIntentTransitionException.class);
+        }
+        assertThat(seam.asked).as("one judgement per intent, whoever asks how often").hasSize(1);
+        assertThat(intents.rows.get(intent.id().value()).failureReason()).contains(PaymentFailureReason.RISK_REFUSED);
+        assertThat(attempts.rows).isEmpty();
+        assertThat(routing.decisions).isEmpty();
+        assertThat(provider.calls).isZero();
+    }
+
+    @Test
+    @DisplayName("routing's refusal comes first and judges nothing: the intent stays re-confirmable, the seam unasked")
+    void noEligibleRailAsksNoJudgement() {
+        routing.availability.put(SimulatedCardPspAdapter.RAIL.id(), new RailAvailability(
+                SimulatedCardPspAdapter.RAIL.id(), false, "incident", "op-1", Instant.now(CLOCK)));
+        assertThatThrownBy(() -> confirmation().confirm(party, intent.id()))
+                .isInstanceOf(NoEligibleRailException.class);
+        assertThat(seam.asked).isEmpty();
+        assertThat(intents.rows.get(intent.id().value()).status())
+                .isEqualTo(PaymentIntentStatus.REQUIRES_CONFIRMATION);
+    }
+
+    @Test
+    @DisplayName("#aHeldCardPaymentAuthorisesAndDefersCapture: HOLD dispatches the authorisation as any card payment's"
+            + " and births the capture hold beside the attempt with the verdict's validity - audited, announced")
+    void aHeldCardPaymentAuthorisesAndDefersCapture() {
+        seam.next = PaymentVerdict.hold(java.time.Duration.ofHours(72));
+        provider.answer = ProviderAnswer.approved(new ProviderReference("psp-auth-held"), "body".getBytes());
+        PaymentConfirmation.ConfirmationResult result = confirmation().confirm(party, intent.id());
+
+        assertThat(result.intent()).isEqualTo(PaymentIntentStatus.PROCESSING);
+        assertThat(result.attempt()).as("authorised, not captured").contains(PaymentAttemptStatus.AUTHORIZED);
+        assertThat(provider.calls).isEqualTo(1);
+        assertThat(provider.attemptStatusAtCall).isEqualTo(PaymentAttemptStatus.AUTH_DISPATCHED);
+        assertThat(holds.rows).singleElement().satisfies(hold -> {
+            assertThat(hold.intent()).isEqualTo(intent.id());
+            assertThat(hold.attempt()).isEqualTo(attempts.single().id());
+            assertThat(hold.validity()).isEqualTo(java.time.Duration.ofHours(72));
+        });
+        assertThat(provider.transactionsCommittedAtCall).as("the hold commits with the dispatch, before the call")
+                .isEqualTo(1);
+        assertThat(auditTrail).anyMatch(record -> record.operation() == PaymentsAuditAction.PAYMENT_CAPTURE_DEFERRED);
+        assertThat(events).anyMatch(e -> e.eventType().equals("payments.PaymentCaptureDeferred"));
+    }
+
+    @Test
+    @DisplayName("a seam answering nothing is a defect, loud - the transaction rolls back with nothing written")
+    void aSilentSeamIsLoud() {
+        seam.answerNull = true;
+        assertThatThrownBy(() -> confirmation().confirm(party, intent.id()))
+                .isInstanceOf(NullPointerException.class);
+        assertThat(attempts.rows).isEmpty();
+        assertThat(intents.rows.get(intent.id().value()).status())
+                .isEqualTo(PaymentIntentStatus.REQUIRES_CONFIRMATION);
     }
 
     private void reset(ProviderAnswer next) {
@@ -671,6 +793,29 @@ class PaymentConfirmationTest {
         public Optional<PaymentIntent> findOwned(
                 Connection uow, PaymentIntentId id, UUID partyId) {
             return findById(uow, id).filter(row -> row.partyId().equals(partyId));
+        }
+
+        /** The confirmation's first act (P13-TSK-010), recorded so a suite can place the seam after it. */
+        final List<String> locks = new ArrayList<>();
+
+        @Override
+        public Optional<PaymentIntent> findOwnedForUpdate(
+                Connection uow, PaymentIntentId id, UUID partyId) {
+            locks.add("intent:" + id.value());
+            return findOwned(uow, id, partyId);
+        }
+
+        @Override
+        public boolean refuse(Connection uow, PaymentIntentId id, PaymentFailureReason reason) {
+            PaymentIntent row = rows.get(id.value());
+            if (row == null || row.status() != PaymentIntentStatus.REQUIRES_CONFIRMATION) {
+                return false;
+            }
+            rows.put(id.value(), PaymentIntent.rehydrate(
+                    row.id(), row.partyId(), row.customerId(), row.paymentMethodId(), row.creditAccount(),
+                    row.captureMode(), row.amount(), PaymentIntentStatus.FAILED, row.createdAt(),
+                    row.debitAccount().orElse(null), reason));
+            return true;
         }
 
         @Override
@@ -981,6 +1126,80 @@ class PaymentConfirmationTest {
         @Override
         public boolean evidenceExists(Connection uow, java.util.UUID evidenceId) {
             return false;
+        }
+    }
+
+    /**
+     * The risk seam, scripted (`P13-TSK-010`): answers {@link #next} and records what it was asked and what Tx1 had
+     * written when it was asked - the oracle for "after the lock, before any write".
+     */
+    private final class ScriptedSeam implements PaymentRiskDecision<Connection> {
+        PaymentVerdict next = PaymentVerdict.permit();
+        boolean answerNull;
+        final List<PaymentRiskDecision.Judged> asked = new ArrayList<>();
+        boolean lockedBefore;
+        int attemptsAtCheck = -1;
+        int decisionsAtCheck = -1;
+        PaymentIntentStatus intentAtCheck;
+
+        @Override
+        public PaymentVerdict check(Connection unitOfWork, Judged payment) {
+            asked.add(payment);
+            lockedBefore = intents.locks.contains("intent:" + payment.intentId().value());
+            attemptsAtCheck = attempts.rows.size();
+            decisionsAtCheck = routing.decisions.size();
+            intentAtCheck = intents.rows.get(payment.intentId().value()).status();
+            return answerNull ? null : next;
+        }
+    }
+
+    /** The capture holds born by a {@code HOLD} (`P13-TSK-010`), in memory. */
+    private static final class FakeCaptureHolds implements CaptureHoldStore<Connection> {
+        record Born(PaymentIntentId intent, PaymentAttemptId attempt, java.time.Duration validity) {}
+
+        final List<Born> rows = new ArrayList<>();
+
+        @Override
+        public void insert(
+                Connection unitOfWork, PaymentIntentId intent, PaymentAttemptId attempt,
+                java.time.Duration validity) {
+            rows.add(new Born(intent, attempt, validity));
+        }
+
+        @Override
+        public Optional<CaptureHold> findForIntent(Connection unitOfWork, PaymentIntentId intent) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
+        }
+
+        @Override
+        public Optional<CaptureHold> lock(Connection unitOfWork, PaymentIntentId intent) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
+        }
+
+        @Override
+        public boolean resolveCapture(Connection unitOfWork, PaymentIntentId intent, String key) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
+        }
+
+        @Override
+        public boolean resolveVoid(Connection unitOfWork, PaymentIntentId intent, String key) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
+        }
+
+        @Override
+        public Optional<CaptureHold> claimExpired(
+                Connection unitOfWork, java.util.Collection<PaymentIntentId> passedOver) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
+        }
+
+        @Override
+        public boolean expire(Connection unitOfWork, PaymentIntentId intent) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
+        }
+
+        @Override
+        public List<CaptureHold> voidsToFinish(Connection unitOfWork, int limit) {
+            throw new UnsupportedOperationException("the confirmation only births a hold");
         }
     }
 }

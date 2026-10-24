@@ -47,6 +47,7 @@ recorded on both sides"), §2.2 (C10), §3.1 (Risk Action), §4, §5, §7.1 (T-a
    | `SUSPEND_MERCHANT` | merchant — `MerchantAdministration.suspend` | |
    | `BLOCK_BENEFICIARY` | crossborder — the beneficiary block | |
    | `RELEASE_HELD_WITHDRAWAL`, `DENY_HELD_WITHDRAWAL` | payments — the held withdrawal's release / denial (`P13-TSK-009`, `-012`) | the only kinds an **override** issues (ADR-0108) |
+   | `CAPTURE_HELD_PAYMENT`, `VOID_HELD_PAYMENT` | payments — the held card payment's capture / void, `HeldPayments.captureHeld` / `voidHeld` behind the port `HeldPaymentActions` (`P13-TSK-010` slice 2; *dated amendment, 2026-10-24*) | an override of a card `HOLD` issues the capture; a disposition the void |
    | `RESCREEN_PARTY` | kyc — through its screening ports (`P13-TSK-022`) | |
 
    The vocabulary is closed in code; a new kind is a new row here and a new port method, never a generic "execute
@@ -185,6 +186,14 @@ keyed command through its door), `INV-RSK-07` (every downstream action is two pe
   code**, never a note (`INV-RSK-08`). The loser of a release racing the expiry is `ALREADY` (the expiry won) or `REFUSED`
   (the release arrived past `held_until` before the sweep — the expiry then commits): exactly one edge out of `HELD`
   either way. Unwired to any risk caller until `-012`/`-017`.)*
+  `P13-TSK-010` — the held card payment's capture and void (payments `V034`, slice 2) *(built 2026-10-24: the port
+  `HeldPaymentActions` declared - none existed - on `HeldWithdrawalActions`' shape, `app`'s `PaymentsHeldPaymentActions`
+  over `HeldPayments.captureHeld(key, intent, reasonCode)` and `voidHeld(key, intent, reasonCode)`: each one transaction
+  under the caller's key - the capture hold row `FOR UPDATE`, its conditional resolution (`CAPTURE` only within
+  `held_until` on the database clock), the caller's audited act - then the money handed to payments' existing
+  `PaymentCapture` or `PaymentVoid`, the provider called holding no connection; `DONE`/`ALREADY`/`REFUSED` mapped word for
+  word; an authorisation still in flight thrown for the action machine to re-drive; the deadline payments' own leg.
+  `ActionKind.CAPTURE_HELD_PAYMENT`/`VOID_HELD_PAYMENT` are available. Unwired to any risk caller until `-012`/`-017`.)*
   `P13-TSK-013` — the ATO rules that propose C10's actions; `P13-TSK-022` — `RESCREEN_PARTY` through kyc.
 - `P13-TST-001` runs scenarios 4, 7, 10 and 11 with counts and asserts the lock wait on R6 and on the withdrawal row
   in both orders.

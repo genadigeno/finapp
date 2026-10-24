@@ -855,7 +855,9 @@ class PaymentSweeperDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none())
+                com.finapp.payments.RailOperations.none(),
+                (unitOfWork, judged) -> com.finapp.payments.PaymentVerdict.permit(), // the payment machine's suite, not risk's (P13-TSK-010)
+                new com.finapp.payments.JdbcCaptureHoldStore())
                     .confirm(holder.party(), holder.intent());
             PaymentAttemptId attemptId =
                     runner.inTransaction(

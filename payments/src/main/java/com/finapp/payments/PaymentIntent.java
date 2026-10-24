@@ -45,7 +45,10 @@ import java.util.UUID;
  * Transition instants are the append-only history table's evidence ({@code P5-TSK-008}), and
  * no intent transition carries a payload, so nothing but {@code status} ever changes after
  * birth — which is what lets {@code P5-TSK-008} narrow the {@code UPDATE} grant to that one
- * column. Only birth reads the clock, and it is injected.
+ * column. Only birth reads the clock, and it is injected. <em>(`P13-TSK-010`: one exception, and only one - risk's
+ * refusal at the confirmation carries {@code RISK_REFUSED} onto this row with its own edge,
+ * {@code REQUIRES_CONFIRMATION → FAILED}, because no attempt exists to carry it; payments {@code V034} grants that
+ * column beside {@code status} and freezes it once set.)</em>
  *
  * <p><strong>A class rather than a record, and the choice is load-bearing</strong>: a record's
  * generated {@code toString} prints every component, {@link Money}'s rendering includes the
@@ -79,6 +82,14 @@ public final class PaymentIntent {
      */
     private final LedgerAccountId debitAccount;
 
+    /**
+     * Risk's refusal at the confirmation (`P13-TSK-010`, payments {@code V034}): {@code RISK_REFUSED} exactly on an
+     * intent that went {@code REQUIRES_CONFIRMATION → FAILED} - <strong>the one status-dependent fact this row
+     * carries</strong>, because a refusal is committed before any attempt exists and so has no attempt to carry it
+     * (every other failure reason stays the attempt's, {@code INV-PAY-03}). Appended last, like the debit account.
+     */
+    private final PaymentFailureReason failureReason;
+
     private PaymentIntent(
             PaymentIntentId id,
             UUID partyId,
@@ -89,7 +100,8 @@ public final class PaymentIntent {
             Money amount,
             PaymentIntentStatus status,
             Instant createdAt,
-            LedgerAccountId debitAccount) {
+            LedgerAccountId debitAccount,
+            PaymentFailureReason failureReason) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.partyId = Objects.requireNonNull(partyId, "partyId must not be null");
         this.customerId = Objects.requireNonNull(customerId, "customerId must not be null");
@@ -113,6 +125,14 @@ public final class PaymentIntent {
         this.amount = Objects.requireNonNull(amount, "amount must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+        // The refusal's reason: the intent's own only for risk's refusal, and only on a FAILED row (V034's CHECKs).
+        if (failureReason != null
+                && (failureReason.isAttemptReason() || status != PaymentIntentStatus.FAILED)) {
+            throw new IllegalArgumentException(
+                    "a payment intent carries a failure reason only as risk's refusal of a FAILED intent"
+                            + " (P13-TSK-010) - every other reason is its attempt's (INV-PAY-03)");
+        }
+        this.failureReason = failureReason;
 
         // A zero amount asserts nothing and a negative one is a credit wearing a debit's
         // clothes (P3-TSK-004). Never a committed outcome — the boundary 422s it — so this is
@@ -158,6 +178,7 @@ public final class PaymentIntent {
                 amount,
                 PaymentIntentStatus.REQUIRES_CONFIRMATION,
                 Instant.now(clock),
+                null,
                 null);
     }
 
@@ -189,7 +210,8 @@ public final class PaymentIntent {
                 amount,
                 PaymentIntentStatus.REQUIRES_CONFIRMATION,
                 Instant.now(clock),
-                debitAccount);
+                debitAccount,
+                null);
     }
 
     /**
@@ -207,39 +229,75 @@ public final class PaymentIntent {
             PaymentIntentStatus status,
             Instant createdAt,
             LedgerAccountId debitAccount) {
+        return rehydrate(
+                id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
+                status, createdAt, debitAccount, null);
+    }
+
+    /** A row read back with its refusal's reason (`P13-TSK-010`) - the store's read; the shorter form names none. */
+    public static PaymentIntent rehydrate(
+            PaymentIntentId id,
+            UUID partyId,
+            UUID customerId,
+            UUID paymentMethodId,
+            LedgerAccountId creditAccount,
+            CaptureMode captureMode,
+            Money amount,
+            PaymentIntentStatus status,
+            Instant createdAt,
+            LedgerAccountId debitAccount,
+            PaymentFailureReason failureReason) {
         return new PaymentIntent(
                 id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
-                status, createdAt, debitAccount);
+                status, createdAt, debitAccount, failureReason);
     }
 
     /** Confirmed: {@code PROCESSING}, the outcome now a third party's (ADR-0046 dispatches). */
     public PaymentIntent confirm() {
-        return moved(PaymentIntentStatus.PROCESSING);
+        return moved(PaymentIntentStatus.PROCESSING, null);
+    }
+
+    /**
+     * Refused by risk at the confirmation (`P13-TSK-010`): {@code REQUIRES_CONFIRMATION → FAILED} with
+     * {@code RISK_REFUSED}, before any attempt - terminal, so the intent is never confirmed again (the customer's path
+     * is a new intent). Only from {@code REQUIRES_CONFIRMATION}: a dispatched payment's failure is its attempt's.
+     */
+    public PaymentIntent refuseByRisk() {
+        if (status != PaymentIntentStatus.REQUIRES_CONFIRMATION) {
+            throw new IllegalPaymentIntentTransitionException(id, status, PaymentIntentStatus.FAILED);
+        }
+        return moved(PaymentIntentStatus.FAILED, PaymentFailureReason.RISK_REFUSED);
     }
 
     /** The customer's own withdrawal, only from {@code REQUIRES_CONFIRMATION}. */
     public PaymentIntent cancel() {
-        return moved(PaymentIntentStatus.CANCELLED);
+        return moved(PaymentIntentStatus.CANCELLED, null);
     }
 
     /** The attempt captured; the posting commits beside this transition ({@code P5-TSK-010}). */
     public PaymentIntent succeed() {
-        return moved(PaymentIntentStatus.SUCCEEDED);
+        return moved(PaymentIntentStatus.SUCCEEDED, null);
     }
 
-    /** The attempt failed; the mapped reason is the attempt's fact, not this row's. */
+    /**
+     * The attempt failed; the mapped reason is the attempt's fact, not this row's. Only from {@code PROCESSING}: the
+     * edge from {@code REQUIRES_CONFIRMATION} is risk's refusal ({@link #refuseByRisk}), which carries its reason.
+     */
     public PaymentIntent fail() {
-        return moved(PaymentIntentStatus.FAILED);
+        if (status != PaymentIntentStatus.PROCESSING) {
+            throw new IllegalPaymentIntentTransitionException(id, status, PaymentIntentStatus.FAILED);
+        }
+        return moved(PaymentIntentStatus.FAILED, null);
     }
 
     /** The machine's one check ({@code INV-LIFE-02}), whichever door the transition arrives by. */
-    private PaymentIntent moved(PaymentIntentStatus target) {
+    private PaymentIntent moved(PaymentIntentStatus target, PaymentFailureReason reason) {
         if (!status.canTransitionTo(target)) {
             throw new IllegalPaymentIntentTransitionException(id, status, target);
         }
         return new PaymentIntent(
                 id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
-                target, createdAt, debitAccount);
+                target, createdAt, debitAccount, reason);
     }
 
     public PaymentIntentId id() {
@@ -305,5 +363,13 @@ public final class PaymentIntent {
 
     public Instant createdAt() {
         return createdAt;
+    }
+
+    /**
+     * {@code RISK_REFUSED} exactly when risk refused this intent at its confirmation (`P13-TSK-010`) - internal: the
+     * customer's and the merchant's answers render the generic {@code FAILED} with no reason ({@code INV-RSK-08}).
+     */
+    public Optional<PaymentFailureReason> failureReason() {
+        return Optional.ofNullable(failureReason);
     }
 }

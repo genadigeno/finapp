@@ -603,8 +603,10 @@ public final class PaymentService {
 
     /**
      * The mapped reason, exactly when the intent is {@code FAILED} — the attempt's fact
-     * ({@code PAYMENT_LIFECYCLES.md} §2: the intent deliberately carries no reason vocabulary),
-     * read only when it can exist.
+     * ({@code PAYMENT_LIFECYCLES.md} §2: the intent carries no provider reason vocabulary),
+     * read only when it can exist. The intent's own {@code RISK_REFUSED} (`P13-TSK-010`) is never
+     * read here: a payment risk refused has no attempt, so it answers the generic {@code FAILED}
+     * with no reason (C6, {@code INV-RSK-08}; {@code NoCustomerSurfaceReadsRiskTest}).
      */
     private String reasonFor(Connection unitOfWork, PaymentIntent row) {
         if (row.status() != PaymentIntentStatus.FAILED) {

@@ -38,6 +38,21 @@ public interface PaymentIntentStore<T> {
     Optional<PaymentIntent> findOwned(T unitOfWork, PaymentIntentId intent, UUID partyId);
 
     /**
+     * {@link #findOwned}, the row {@code FOR UPDATE} (`P13-TSK-010`): the confirmation's first act, so concurrent
+     * confirmations of one intent are serialised <em>before</em> any of them is judged by risk - the loser reads the
+     * winner's committed state and converges or is refused, never evaluated a second time ({@code INV-RSK-01}). The
+     * intent row is the first row the confirmation takes; every money row and every risk row comes after it.
+     */
+    Optional<PaymentIntent> findOwnedForUpdate(T unitOfWork, PaymentIntentId intent, UUID partyId);
+
+    /**
+     * Risk's refusal (`P13-TSK-010`): {@code REQUIRES_CONFIRMATION → FAILED} with {@code reason} on the intent, one
+     * conditional statement; {@code false} when the row was no longer awaiting confirmation. {@code V034}'s trigger
+     * admits that edge only with the reason and freezes the reason after.
+     */
+    boolean refuse(T unitOfWork, PaymentIntentId intent, PaymentFailureReason reason);
+
+    /**
      * The party's intents, newest first (`P5-TSK-011`): the ownership predicate in the
      * statement, same discipline as {@link #findOwned} — a party that owns nothing and a party
      * that does not exist are one empty answer.

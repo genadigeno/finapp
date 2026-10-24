@@ -2243,7 +2243,9 @@ class PayByBankDatabaseTest {
                 ids,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.ofPush(com.finapp.payments.RailId.of("instant"), dead));
+                com.finapp.payments.RailOperations.ofPush(com.finapp.payments.RailId.of("instant"), dead),
+                (unitOfWork, judged) -> com.finapp.payments.PaymentVerdict.permit(), // the payment machine's suite, not risk's (P13-TSK-010)
+                new com.finapp.payments.JdbcCaptureHoldStore());
     }
 
     @Autowired private com.finapp.payments.ProviderEvidenceStore<Connection> evidenceBean;

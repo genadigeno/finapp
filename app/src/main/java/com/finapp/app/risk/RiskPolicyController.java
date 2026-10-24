@@ -104,7 +104,8 @@ public class RiskPolicyController {
      * corridor set) a list of codes - a weight (1 to 1000) and/or a hard decision. A judged operation states its
      * {@code scoreBands} (contiguous over 0..1000), {@code failSafeBands} (contiguous amount bands from 0, the last
      * open-ended, each {@code ALLOW} or {@code DENY}), {@code challengeAssurance} ({@code MULTI_FACTOR}) and
-     * {@code overrideThresholdMinor}; a withdrawal its {@code holdValidityHours} (72 when omitted); the
+     * {@code overrideThresholdMinor}; a withdrawal its {@code holdValidityHours} (72 when omitted), as does a card
+     * payment's version whose bands or rules can decide {@code HOLD} (`P13-TSK-010`; none for one that never holds); the
      * {@code MONITORING} operation its {@code ratingBands} alone. Every value is judged by the domain
      * ({@code risk.PolicyInvalid}).
      */

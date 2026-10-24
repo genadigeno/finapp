@@ -165,7 +165,10 @@ public class CheckoutBeans {
             Clock clock,
             PlatformTransactionManager transactionManager,
             DataSource dataSource,
-            com.finapp.identity.MfaEnrolmentStore<java.sql.Connection> mfaEnrolmentStore) {
+            com.finapp.identity.MfaEnrolmentStore<java.sql.Connection> mfaEnrolmentStore,
+            CheckoutStepUpAdvice checkoutStepUpAdvice,
+            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.accounts.CustomerAccountStore<Connection> customerAccountStore) {
         return new CheckoutService(
                 checkoutSessions,
                 checkoutMeters,
@@ -181,7 +184,16 @@ public class CheckoutBeans {
                 clock,
                 new TransactionTemplate(transactionManager),
                 dataSource,
-                mfaEnrolmentStore);
+                mfaEnrolmentStore,
+                // The confirmation door's step-up advice (P13-TSK-010): through the app port, before any row.
+                new CheckoutDoorStepUp(
+                        checkoutStepUpAdvice,
+                        CheckoutDoorStepUp.Offers.over(checkoutSessions),
+                        paymentIntentStore,
+                        paymentParticipants,
+                        customerAccountStore,
+                        mfaEnrolmentStore,
+                        clock));
     }
 
     @Bean

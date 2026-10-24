@@ -72,6 +72,21 @@ Deliberately absent, each with its reason (the ADR-0044 discipline): `REQUIRES_A
 producer), `PARTIALLY_REFUNDED`/`REFUNDED` (derived from the refund rows, never stored
 twice), `DISPUTED` (Phase 7's lifecycle, not an intent state).
 
+**Risk's refusal — the fifth edge** *(`P13-TSK-010`, 2026-10-24, payments `V034`; `RISK_LIFECYCLES.md` §4.12)*:
+
+```
+REQUIRES_CONFIRMATION ──risk REFUSE (confirm's Tx1, under the intent row's lock)──> FAILED   failure_reason = RISK_REFUSED, no attempt
+```
+
+The checkout confirmation is judged by risk in Tx1 before anything of its dispatch is written; a refusal commits
+`FAILED` with the **intent's own** `RISK_REFUSED` — the one reason an intent carries, because no attempt exists to carry
+it (every other reason stays the attempt's, `INV-PAY-03`) — and is **terminal**: a re-confirmation is refused by the
+machine (`409 payments.NotConfirmable`), never judged again; the customer's path is a new intent. Routing's refusal, by
+contrast, moves nothing (ADR-0060 §3). The reason arrives with this edge alone, is frozen after, never rides
+`PROCESSING → FAILED`, and no attempt is ever born for a refused intent — all held by `V034`'s triggers for every writer.
+The customer and the merchant read the generic `FAILED`, no reason (C6, `INV-RSK-08`). **Slice 2's held card payment adds
+no state**: it is `PROCESSING` with an `AUTHORIZED` attempt and an open capture hold (§3).
+
 ## 3. The attempt lifecycle (ADR-0045, ADR-0046)
 
 ```
@@ -148,6 +163,19 @@ retry (the schema admits N
 attempts per intent with a one-live partial index as the arbiter, but Phase 5 ships exactly
 one attempt per intent: an automatic retry policy is a versioned artefact with nothing to
 calibrate it, and routing is Phase 7's).
+
+**The held card payment's capture hold** *(`P13-TSK-010` slice 2, 2026-10-24, payments `V034`)*: the machine above is
+unchanged; a card payment risk judged `HOLD` is dispatched and authorised as any card payment, and beside its attempt a
+`payment_capture_hold` row is born **open** in the confirmation's Tx1 (`held_at` the insert's instant, `held_until` that
+plus the pinned policy's hold validity, both on the database clock). While it stands - open, or resolved `VOID` or
+`EXPIRED` - `AUTHORIZED → CAPTURE_DISPATCHED` is refused (the store's conditional answers false and
+`payment_attempt_capture_waits_for_its_hold` refuses every other writer), so the surface's chain converges on
+`AUTHORIZED` and the sweeper's stranded-chain leg passes it by. It is resolved **exactly once** - `CAPTURE` by payments'
+keyed door within `held_until`, `VOID` by the keyed void door, `EXPIRED` by the deadline leg from `held_until` - and the
+money then follows through this machine's own edges: `AUTHORIZED → CAPTURE_DISPATCHED` by `PaymentCapture`, or
+`AUTHORIZED → VOID_DISPATCHED` by `PaymentVoid` (the deadline leg's finisher voids every `VOID`/`EXPIRED` hold whose
+attempt still stands `AUTHORIZED`). A customer's own cancellation still voids the authorisation (it releases their
+funds); the hold then expires with nothing to void. Nothing of the hold is on a customer or merchant surface.
 
 ## 4. The refund lifecycle (ADR-0045, ADR-0048)
 

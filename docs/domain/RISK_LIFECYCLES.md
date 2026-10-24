@@ -607,6 +607,32 @@ lock is unchanged. `HOLD` (slice 2, cuttable) authorises and defers the capture:
 ADR-0059) — `-010` confirms. `ALLOW` and a satisfied `CHALLENGE` route as today. **Invalid:** a payment moved by
 `risk`; a capture deferred without the attempt's own machine recording it; a risk-refused intent re-confirmed.
 
+*(As built, `P13-TSK-010`, 2026-10-24 — payments `V034` and risk `V008`, both slices. **The refusal is intent-level**,
+not an attempt row: `REQUIRES_CONFIRMATION → FAILED` carrying the intent's own `RISK_REFUSED` (`payment_intent.failure_reason`,
+the one reason an intent carries - no attempt exists to carry it), committed in Tx1 under the intent row's lock with the
+sealed assessment, the history row, `payments.PaymentRiskRefused` (the person's act, `FAILED`) and `payments.PaymentFailed`;
+no attempt (a trigger refuses one for a refused intent, every writer), no routing decision, nothing sent - so no
+provider-facing record claims a try that never happened, and routing's own refusal stays the re-confirmable one. `FAILED`
+is terminal: a re-confirmation is the machine's `409 payments.NotConfirmable` and is never judged again. **The seam's
+place:** Tx1 locks the intent first (`findOwnedForUpdate` - concurrent confirmations serialised before any judgement),
+then the instrument, the credit account `FOR SHARE` (card/bank), the routing plan (a plan with no rail commits routing's
+refusal unjudged), the book rail's pair `FOR UPDATE` for the wallet, and only then T-eval - risk's rows last (the
+backlog's "T-eval before the pair lock" refused: R2a held to commit ahead of the wallet row would cycle with a transfer
+of the same party). **The mapping** (`RiskPaymentRiskDecision`): `ALLOW` (fail-safes included; C1 below EUR 250) and a
+satisfied `CHALLENGE` → `PERMIT`; a card `HOLD` → `HOLD(validity)`, not counted; `DENY` (C1 at or above EUR 250 among
+them) and an unsatisfied `CHALLENGE` → `REFUSE`; a top-up and a pay-by-bank checkout `PERMIT` unjudged. **Slice 2:** the
+held card payment is `PROCESSING` with an `AUTHORIZED` attempt and an open `payment_capture_hold` (no new intent
+status - `AUTHORISED_HELD` named and refused, every reader of the intent would have learned a word C6 forbids them), its
+`held_until` = `held_at` + the pinned `CARD_PAYMENT` version's hold validity on the database clock; the attempt's capture
+is refused while the hold is open, voided or expired (the conditional and `payment_attempt_capture_waits_for_its_hold`),
+so neither the chain nor the stranded-chain leg captures it. It ends exactly once: `HeldPayments.captureHeld` (keyed,
+within `held_until`, then `PaymentCapture`), `voidHeld` (keyed, then `PaymentVoid`), or the deadline -
+`HeldPayments.expireHolds` on `PaymentSweeperSchedule`, the hold claimed `FOR UPDATE SKIP LOCKED` and resolved `EXPIRED`,
+its authorisation then voided by the leg's finisher (which also voids a door's `VOID` a crash left undispatched); a
+capture racing the deadline leaves one resolution and the loser `ALREADY` (or `REFUSED` past `held_until`). The doors are
+reached through risk's new `HeldPaymentActions`, implemented in `app` and called by nothing until `-012`/`-017`; the case
+`CaseOpener` would open is `NONE` until `-016`.)*
+
 **Credit (`credit.CreditRiskSignal`) — no machine change.** `SnapshotFreezer` records the signal in the snapshot;
 `app`'s `RiskCreditRiskSignal` replaces `NotAssessedUntilPhase13` with **seam version 2** (§4.9); nothing of credit's
 rows changes and every earlier decision replays as it was sealed.

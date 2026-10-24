@@ -286,6 +286,14 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " RISK_REFUSED/HOLD_EXPIRED and releases its hold, recorded payments.WithdrawalHoldExpired."
                         + " The scope wraps one claimed row's transaction; nothing before it claims anything."),
                     Map.entry(
+                            "com.finapp.payments.HeldPayments.expireHolds",
+                    "The held card payment's deadline (P13-TSK-010, PHASE_13_PLAN.md sections 5, 14): a hold validity"
+                        + " lapsing on the database clock has no person at all - the platform resolves the capture hold"
+                        + " EXPIRED, recorded payments.HeldPaymentExpired, and its finisher pass releases the"
+                        + " authorisation through the void command (reason HOLD_EXPIRED, or HELD_PAYMENT_VOIDED for a"
+                        + " door's void a crash left undispatched). The scope wraps the tick's expiries and voids; each"
+                        + " row runs in its own transaction under its own correlation."),
+                    Map.entry(
                             "com.finapp.payments.WithdrawalResolution.sweep",
                     "The swept withdrawal inquiry (P7-TSK-008, ADR-0062 section 3): a"
                         + " scheduled inquiry by our reference has no person at all - the"

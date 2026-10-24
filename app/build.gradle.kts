@@ -356,6 +356,10 @@ extra["ownContainerSuites"] =
         "com.finapp.app.lending.LoanOfferDatabaseTest",
         "com.finapp.app.lending.LoanPayoutDatabaseTest",
         "com.finapp.app.merchant.PayoutReturnDatabaseTest",
+        // P13-TSK-010: it activates EUR CARD_PAYMENT and WALLET_PAYMENT risk versions, after which every merchant-bound
+        // card and wallet payment in the database is judged by them - a shared container's USD checkouts would be
+        // refused by the open-ended fail-safe band, its EUR 600 ones challenged, its EUR 2,500 card ones held.
+        "com.finapp.app.payments.PaymentRiskSeamDatabaseTest",
         "com.finapp.app.payments.SystemWithdrawalDatabaseTest",
         // P13-TSK-009: it activates a EUR WITHDRAWAL risk version, after which every withdrawal in the database is
         // judged by it - a shared container's USD withdrawals would be refused, its EUR 2,500 ones held.

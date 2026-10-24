@@ -48,7 +48,8 @@ class RiskVocabulariesTest {
 
     @Test
     @DisplayName("each operation admits exactly the decisions its consumer can honour - HOLD only where a native hold"
-            + " exists (the withdrawal; the card payment waits for -010's second slice), none for the signal and the sweep")
+            + " exists (the withdrawal; the card payment since -010's second slice, never the wallet payment), none for"
+            + " the signal and the sweep")
     void theAdmittedDecisions() {
         assertThat(RiskDecision.admittedBy(RiskOperation.TRANSFER)).containsExactlyInAnyOrder(
                 RiskDecision.ALLOW, RiskDecision.CHALLENGE, RiskDecision.DENY, RiskDecision.REVIEW);
@@ -57,13 +58,16 @@ class RiskVocabulariesTest {
         assertThat(RiskDecision.admittedBy(RiskOperation.WITHDRAWAL)).containsExactlyInAnyOrder(
                 RiskDecision.ALLOW, RiskDecision.CHALLENGE, RiskDecision.DENY, RiskDecision.HOLD, RiskDecision.REVIEW);
         assertThat(RiskDecision.admittedBy(RiskOperation.CARD_PAYMENT)).containsExactlyInAnyOrder(
-                RiskDecision.ALLOW, RiskDecision.CHALLENGE, RiskDecision.DENY);
+                RiskDecision.ALLOW, RiskDecision.CHALLENGE, RiskDecision.DENY, RiskDecision.HOLD);
         assertThat(RiskDecision.admittedBy(RiskOperation.WALLET_PAYMENT)).containsExactlyInAnyOrder(
                 RiskDecision.ALLOW, RiskDecision.CHALLENGE, RiskDecision.DENY);
         assertThat(RiskDecision.admittedBy(RiskOperation.CREDIT_SIGNAL)).isEmpty();
         assertThat(RiskDecision.admittedBy(RiskOperation.MONITORING)).isEmpty();
         assertThat(RiskDecision.HOLD.isAdmittedBy(RiskOperation.WITHDRAWAL)).isTrue();
-        assertThat(RiskDecision.HOLD.isAdmittedBy(RiskOperation.CARD_PAYMENT)).isFalse();
+        assertThat(RiskDecision.HOLD.isAdmittedBy(RiskOperation.CARD_PAYMENT))
+                .as("-010's second slice: the card authorised, its capture held (risk V008, payments V034)").isTrue();
+        assertThat(RiskDecision.HOLD.isAdmittedBy(RiskOperation.WALLET_PAYMENT))
+                .as("a wallet has no native hold at confirmation (C2)").isFalse();
         // Every judged operation admits ALLOW and DENY: a policy can always permit and always refuse.
         for (RiskOperation operation : RiskOperation.values()) {
             if (operation.judgesAMovement()) {
@@ -161,15 +165,17 @@ class RiskVocabulariesTest {
     }
 
     @Test
-    @DisplayName("twelve action kinds, each naming its target and its owning domain, the two held-payment kinds declared"
-            + " but not yet proposable; the platform never resets a credential")
+    @DisplayName("twelve action kinds, each naming its target and its owning domain, every one available since the two"
+            + " held-payment kinds landed with -010's second slice; the platform never resets a credential")
     void theActionKinds() {
         assertThat(names(ActionKind.values())).containsExactly("SUSPEND_IDENTITY", "REINSTATE_IDENTITY",
                 "REVOKE_SESSIONS", "SUSPEND_ACCOUNT", "REINSTATE_ACCOUNT", "SUSPEND_MERCHANT", "BLOCK_BENEFICIARY",
                 "RELEASE_HELD_WITHDRAWAL", "DENY_HELD_WITHDRAWAL", "CAPTURE_HELD_PAYMENT", "VOID_HELD_PAYMENT",
                 "RESCREEN_PARTY");
         assertThat(Arrays.stream(ActionKind.values()).filter(kind -> !kind.available()))
-                .containsExactly(ActionKind.CAPTURE_HELD_PAYMENT, ActionKind.VOID_HELD_PAYMENT);
+                .as("the held-payment kinds became available beside payments' doors (P13-TSK-010)").isEmpty();
+        assertThat(ActionKind.CAPTURE_HELD_PAYMENT.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
+        assertThat(ActionKind.VOID_HELD_PAYMENT.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
         assertThat(ActionKind.SUSPEND_IDENTITY.domain()).isEqualTo(ActionKind.Domain.IDENTITY);
         assertThat(ActionKind.SUSPEND_IDENTITY.target()).isEqualTo(SubjectKind.PARTY);
         assertThat(ActionKind.RELEASE_HELD_WITHDRAWAL.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);

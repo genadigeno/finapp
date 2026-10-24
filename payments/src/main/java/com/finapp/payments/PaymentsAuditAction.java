@@ -239,6 +239,66 @@ public enum PaymentsAuditAction implements AuditableAction {
             false),
 
     /**
+     * A person's confirmation was refused by the checkout payment risk seam (`P13-TSK-010`): the intent
+     * {@code REQUIRES_CONFIRMATION → FAILED(RISK_REFUSED)} in the confirmation's first transaction, before any attempt,
+     * routing row or call - terminal. The person's act, recorded {@code FAILED}.
+     */
+    PAYMENT_RISK_REFUSED(
+            "payments.PaymentRiskRefused",
+            "A payment confirmation was refused by the risk seam's verdict: the intent FAILED with"
+                    + " RISK_REFUSED before any attempt, nothing routed or sent; the record names the"
+                    + " intent and its instrument kind, never an amount, a reason or a judgement.",
+            false),
+
+    /**
+     * A person's card payment was confirmed under the risk seam's {@code HOLD} (`P13-TSK-010`): the authorisation
+     * dispatched as any card payment's, its capture deferred behind a capture hold until a person captures or voids it
+     * or its {@code held_until} lapses. The person's act, beside {@link #PAYMENT_CONFIRMED}.
+     */
+    PAYMENT_CAPTURE_DEFERRED(
+            "payments.PaymentCaptureDeferred",
+            "A card payment's capture was deferred by the risk seam's verdict: authorised, not"
+                    + " captured, behind a capture hold; the record names the intent and the attempt,"
+                    + " never an amount, a reason or a judgement.",
+            false),
+
+    /**
+     * A held card payment was released for capture through payments' keyed door (`P13-TSK-010`; reached by `-012`'s
+     * approved override and `-017`'s action): the capture hold resolved {@code CAPTURE} under its row's lock within
+     * {@code held_until}, the capture then dispatched by {@link PaymentCapture}. The door's caller is the actor; the
+     * reason is a reason code, never a note.
+     */
+    HELD_PAYMENT_CAPTURED(
+            "payments.HeldPaymentCaptured",
+            "A held card payment was released for capture through the keyed door; the record"
+                    + " names the intent, the attempt, the door's key and its reason code, never an"
+                    + " amount or a note.",
+            true),
+
+    /**
+     * A held card payment was voided through payments' keyed door (`P13-TSK-010`): the capture hold resolved
+     * {@code VOID} under its row's lock, the authorisation then released by {@link PaymentVoid}. The door's caller is
+     * the actor.
+     */
+    HELD_PAYMENT_VOIDED(
+            "payments.HeldPaymentVoided",
+            "A held card payment was voided through the keyed door; the record names the intent,"
+                    + " the attempt, the door's key and its reason code, never an amount or a note.",
+            true),
+
+    /**
+     * A held card payment reached its {@code held_until} on the database clock (`P13-TSK-010`): the capture hold
+     * resolved {@code EXPIRED} by payments' expiry leg - the platform's act, once, under the hold row's lock - and the
+     * authorisation then released by {@link PaymentVoid}; the risk case is left open.
+     */
+    HELD_PAYMENT_EXPIRED(
+            "payments.HeldPaymentExpired",
+            "A held card payment's hold validity lapsed: the capture hold expired by the expiry"
+                    + " leg and the authorisation released; the record names the intent and the"
+                    + " attempt, never an amount.",
+            false),
+
+    /**
      * The platform applied a cross-border outbound credit's outcome on its locked row (`P9-TSK-020`):
      * the completion, a failure, an {@code UNKNOWN}, a {@code RECEIVED} or a delivery - whichever
      * resolver won (the synchronous answer, a hinted inquiry, the sweep), acting once.

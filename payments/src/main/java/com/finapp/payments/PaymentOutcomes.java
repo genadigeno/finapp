@@ -1586,6 +1586,23 @@ public final class PaymentOutcomes {
      *     transaction rolls back whole and the intent still awaits confirmation
      *     (the confirmation is keyless: it converges by the intent's state)
      */
+    /**
+     * The book payment's account pair {@code FOR UPDATE} in {@code UUID} order, before the risk seam judges it
+     * (`P13-TSK-010`; {@code DISTRIBUTED_EXECUTION.md} §3, the Phase 13 lock order): money rows first, risk's rows last,
+     * the order every transfer and withdrawal takes - so T-eval's subject locks, held to commit, are never taken ahead
+     * of a wallet row another judged movement holds while it waits on them. {@link #dispatchBook} re-takes the same two
+     * rows afterwards (granted: already held) and judges availability under them.
+     */
+    public void lockBookPair(Connection uow, PaymentIntent intent) {
+        com.finapp.ledger.LedgerAccountId wallet =
+                intent.debitAccount()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a book payment's intent carries its debit wallet (V019's XOR)"));
+        lockPairInFixedOrder(uow, wallet, intent.creditAccount());
+    }
+
     public BookDispatch dispatchBook(Connection uow, PaymentIntent intent, RailId rail) {
         Money amount = intent.amount();
         com.finapp.ledger.LedgerAccountId wallet =

@@ -32,6 +32,9 @@ class RiskPolicyMigrationTest {
     /** risk V005 (P13-TSK-006): the parameter table's type and value CHECKs re-made for the velocity dimension. */
     private static final String VELOCITY_RESOURCE = "db/migration/risk/V005__velocity_windows.sql";
 
+    /** risk V008 (P13-TSK-010): the knobs CHECK re-made for the card payment's hold validity. */
+    private static final String HELD_CARD_PAYMENT_RESOURCE = "db/migration/risk/V008__the_held_card_payment.sql";
+
     @Test
     @DisplayName("the status, operation, engine, kind, decision, parameter type, window, subject, assurance and rating"
             + " lists are exactly the enums' members")
@@ -88,10 +91,25 @@ class RiskPolicyMigrationTest {
     @DisplayName("each operation's knobs are its own: the sweep's version carries none, a judged version the assurance and"
             + " the threshold, the withdrawal alone the hold validity")
     void theKnobsAreTheOperations() {
+        // V002 as written: the withdrawal alone names a hold validity.
         String knobs = collapsed("risk_policy_knobs_coherent");
         assertThat(knobs).contains("operation = 'MONITORING' AND challenge_assurance IS NULL AND override_threshold_minor IS"
                 + " NULL AND hold_validity_hours IS NULL")
                 .contains("(operation = 'WITHDRAWAL') = (hold_validity_hours IS NOT NULL)");
+        // risk V008 (P13-TSK-010) is the current definition: the withdrawal always, the card payment when its version
+        // can hold (RiskPolicy holds that at the door), every other judged operation never.
+        assertThat(statements(HELD_CARD_PAYMENT_RESOURCE))
+                .contains("ALTER TABLE risk.risk_policy DROP CONSTRAINT risk_policy_knobs_coherent;");
+        String current = collapsed(HELD_CARD_PAYMENT_RESOURCE, "risk_policy_knobs_coherent");
+        assertThat(current).contains("operation = 'MONITORING' AND challenge_assurance IS NULL AND"
+                        + " override_threshold_minor IS NULL AND hold_validity_hours IS NULL")
+                .contains("(operation <> 'WITHDRAWAL' OR hold_validity_hours IS NOT NULL)")
+                .contains("(operation IN ('WITHDRAWAL', 'CARD_PAYMENT') OR hold_validity_hours IS NULL)");
+        String holding = Arrays.stream(RiskOperation.values())
+                .filter(operation -> RiskDecision.admittedBy(operation).contains(RiskDecision.HOLD))
+                .map(o -> "'" + o.name() + "'").collect(Collectors.joining(", "));
+        assertThat(current).as("exactly the operations admitting HOLD may name a hold validity")
+                .contains("operation IN (" + holding + ") OR hold_validity_hours IS NULL");
         assertThat(constraint("risk_policy_challenge_assurance_satisfies_a_challenge")).contains("= 'MULTI_FACTOR'");
         assertThat(constraint("risk_policy_currency_is_the_references")).contains("currency = 'EUR'");
     }

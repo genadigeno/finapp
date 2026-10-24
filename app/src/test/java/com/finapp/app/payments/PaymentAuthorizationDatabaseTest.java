@@ -625,6 +625,28 @@ class PaymentAuthorizationDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("a stranger's payment intent is one empty answer under the confirmation's lock too, and locks nothing"
+            + " (P13-TSK-010, the ownership register's negative test for findOwnedForUpdate)")
+    void aStrangersPaymentIntentIsNotLockedForThem() throws Exception {
+        PaymentIntentId owned = createIntent();
+        try (Connection stranger = DatabaseRoles.application();
+                Connection owner = DatabaseRoles.application()) {
+            stranger.setAutoCommit(false);
+            owner.setAutoCommit(false);
+            // The confirmation's Tx1 read (findOwned's statement with FOR UPDATE): party_id = ? decides before any
+            // row is locked, so the stranger's empty answer leaves the owner's own lock free to take at once.
+            assertThat(intents.findOwnedForUpdate(stranger, owned, UUID.randomUUID())).isEmpty();
+            assertThat(intents.findOwnedForUpdate(stranger, PaymentIntentId.next(IDS), party)).isEmpty();
+            try (java.sql.Statement nowait = owner.createStatement()) {
+                nowait.execute("SET LOCAL lock_timeout = '1s'");
+            }
+            assertThat(intents.findOwnedForUpdate(owner, owned, party)).isPresent();
+            owner.rollback();
+            stranger.rollback();
+        }
+    }
+
     // ------------------------------------------------------------------ fixtures and helpers
 
     private PaymentIntentId createIntent() {
@@ -674,7 +696,9 @@ class PaymentAuthorizationDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none());
+                com.finapp.payments.RailOperations.none(),
+                (unitOfWork, judged) -> com.finapp.payments.PaymentVerdict.permit(), // the payment machine's suite, not risk's (P13-TSK-010)
+                new com.finapp.payments.JdbcCaptureHoldStore());
     }
 
     /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */

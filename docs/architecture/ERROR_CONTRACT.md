@@ -368,6 +368,22 @@ score. A recorded key is never advised (it replays), a wallet or instrument not 
 (the command answers its own `422`), and a challenge the command meets unsatisfied after the advice is the committed
 `FAILED(RISK_REFUSED)` - the race's answer.
 
+**A checkout payment judged by risk adds no code** (`P13-TSK-010`): risk's refusal is the intent's own committed
+`FAILED` (payments `V034`: `REQUIRES_CONFIRMATION → FAILED` with the intent's internal `RISK_REFUSED`, no attempt), and
+the customer and the merchant read only the generic failure (C6, `INV-RSK-08`): the confirmation answers the session's
+state - `PAYMENT_PENDING`, exactly as for a declined card - and `GET /v1/payments/{id}` reads `FAILED` with **no**
+`failureReason` (an attempt's mapped reason renders there; a risk refusal has no attempt, and its reason is never in a
+body). The refusal is **terminal**: a re-confirmation is the machine's existing `409 payments.NotConfirmable`, never a
+second judgement - unlike routing's `422 payments.NoEligibleRail`, which leaves the intent awaiting confirmation (ADR-0060
+§3). A held card payment (slice 2) reads `PROCESSING` and its session `PAYMENT_PENDING` - a pending capture, a status
+word. **The checkout confirmation door's step-up** is the transfer's and the withdrawal's: before the confirmation writes
+anything, in a transaction of its own that writes nothing, the door asks risk's advice through an `app` port; a card or
+wallet payment the judgement would challenge and the session cannot satisfy is `403 identity.AssuranceRequired` - no
+intent, no fee pin, the session still `OPEN`, no assessment - with identity's step-up words. A payment already judged
+(an intent dispatched, refused or paid) is never advised, an offer dead or unknown and an instrument not the caller's
+are never advised over (the confirmation answers its own refusal), and a challenge the confirmation meets unsatisfied
+after the advice is the committed refusal - the race's answer.
+
 The refund's three (`P5-TSK-015`) are the privileged surface's refusals, decided **before the
 wire call** with nothing dispatched. `payments.NotRefundable` (409) is the machine edge — no
 `CAPTURED` attempt exists to refund against, whatever the commonest cause. `payments.

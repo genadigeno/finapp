@@ -76,6 +76,11 @@ class PaymentsMigrationTest {
 
     /** V033: the held withdrawal (P13-TSK-009) - the regenerated vocabularies, the judged births,
      * the machine function's CURRENT definition (V032 became applied history for it). */
+    /** V034: the risk-judged checkout payment (P13-TSK-010) - the intent's refusal reason, the intent's edge
+     * function's CURRENT definition (V019 became applied history for it), the capture hold. */
+    private static final String RISK_JUDGED_PAYMENT =
+            "db/migration/payments/V034__the_risk_judged_payment.sql";
+
     private static final String HELD_WITHDRAWAL =
             "db/migration/payments/V033__the_held_withdrawal.sql";
 
@@ -181,7 +186,17 @@ class PaymentsMigrationTest {
     @Test
     @DisplayName("every transition trigger's edge conditions are generated from its machine")
     void triggerEdgesMatchTheMachines() {
-        assertEdges(migration(INTENT), PaymentIntentStatus.values().length,
+        // V002 (and V012, V019, which restated it) is applied history holding Phase 5's intent machine - four edges,
+        // frozen below; V034 (P13-TSK-010) is the current definition and carries the live machine, risk's refusal
+        // REQUIRES_CONFIRMATION -> FAILED included.
+        java.util.Map<String, java.util.List<String>> phaseFiveIntent = new java.util.LinkedHashMap<>();
+        phaseFiveIntent.put("REQUIRES_CONFIRMATION", java.util.List.of("PROCESSING", "CANCELLED"));
+        phaseFiveIntent.put("PROCESSING", java.util.List.of("SUCCEEDED", "FAILED"));
+        phaseFiveIntent.put("SUCCEEDED", java.util.List.of());
+        phaseFiveIntent.put("FAILED", java.util.List.of());
+        phaseFiveIntent.put("CANCELLED", java.util.List.of());
+        assertEdges(migration(INTENT), PaymentIntentStatus.values().length, phaseFiveIntent);
+        assertEdges(migration(RISK_JUDGED_PAYMENT), PaymentIntentStatus.values().length,
                 java.util.Arrays.stream(PaymentIntentStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
                                 .stream().map(Enum::name).collect(Collectors.toList()))));
@@ -963,6 +978,99 @@ class PaymentsMigrationTest {
                 java.util.Arrays.stream(WithdrawalStatus.values())
                         .collect(Collectors.toMap(Enum::name, s -> s.permittedTransitions()
                                 .stream().map(Enum::name).collect(Collectors.toList()))));
+    }
+
+    @Test
+    @DisplayName("V034's risk-judged payment is generated from the enums and pinned (P13-TSK-010): the intent's"
+            + " refusal reason, the regenerated edge function, no attempt for a refused intent, the capture hold's"
+            + " window, its one resolution and the capture waiting for it")
+    void theRiskJudgedPaymentIsPinned() {
+        String v034 = migration(RISK_JUDGED_PAYMENT);
+        assertThat(v034)
+                // The refusal on the intent: the intent's own reason list, only on a FAILED row.
+                .contains("CHECK (failure_reason IN (" + PaymentFailureReason.intentSqlValueList() + "))")
+                .contains("CHECK (failure_reason IS NULL OR status = 'FAILED')")
+                // The edge function replaced: the reason frozen once set, arriving with risk's edge alone.
+                .contains("CREATE OR REPLACE FUNCTION payments.payment_intent_permits_only_machine_edges()")
+                .contains("OR (OLD.failure_reason IS NOT NULL AND NEW.failure_reason IS DISTINCT FROM"
+                        + " OLD.failure_reason) THEN")
+                .contains("IF (OLD.status = 'REQUIRES_CONFIRMATION' AND NEW.status = 'FAILED')\n"
+                        + "            <> (NEW.failure_reason IS NOT NULL AND OLD.failure_reason IS NULL) THEN")
+                .contains("CREATE TRIGGER payment_attempt_is_never_born_for_a_refused_intent")
+                .contains("GRANT UPDATE (failure_reason) ON payments.payment_intent TO finapp_app;")
+                // The capture hold: its resolution vocabulary generated, its window on the database clock.
+                .contains("CHECK (resolution IN (" + CaptureHold.Resolution.sqlValueList() + "))")
+                .contains("CHECK (length(resolution_key) BETWEEN 1 AND "
+                        + CaptureHold.MAX_RESOLUTION_KEY_LENGTH + ")")
+                .contains("CHECK (held_until > held_at)")
+                .contains("CHECK ((resolution IS NULL) = (resolved_at IS NULL))")
+                .contains("CONSTRAINT payment_capture_hold_one_per_attempt UNIQUE (attempt_id)")
+                .contains("IF NEW.resolution = 'CAPTURE' AND statement_timestamp() >= OLD.held_until THEN")
+                .contains("IF NEW.resolution = 'EXPIRED' AND statement_timestamp() < OLD.held_until THEN")
+                .contains("IF OLD.resolution IS NOT NULL THEN")
+                .contains("AND a.interaction_model = 'TWO_STEP'")
+                .contains("CREATE INDEX payment_capture_hold_expiry\n    ON payments.payment_capture_hold"
+                        + " (held_until, intent_id)\n    WHERE resolution IS NULL;")
+                // The capture waits for its hold, for every writer.
+                .contains("IF OLD.status = 'AUTHORIZED' AND NEW.status = 'CAPTURE_DISPATCHED'")
+                .contains("h.resolution IS DISTINCT FROM 'CAPTURE'")
+                .contains("GRANT SELECT, INSERT ON payments.payment_capture_hold TO finapp_app;")
+                .contains("GRANT UPDATE (resolution, resolution_key) ON payments.payment_capture_hold TO"
+                        + " finapp_app;")
+                .doesNotContain("GRANT DELETE")
+                .doesNotContain("GRANT UPDATE (held_");
+    }
+
+    @Test
+    @DisplayName("every constraint, index and trigger name V034 declares is declared once (the Phase 12 V012"
+            + " lesson, P13-TSK-010)")
+    void theRiskJudgedPaymentNamesAreUnique() {
+        String v034 = migration(RISK_JUDGED_PAYMENT);
+        java.util.List<String> names = new java.util.ArrayList<>();
+        java.util.regex.Matcher constraints =
+                java.util.regex.Pattern.compile(
+                                "CONSTRAINT\\s+([a-z0-9_]+)\\s+(?:PRIMARY|UNIQUE|CHECK|FOREIGN)")
+                        .matcher(v034);
+        while (constraints.find()) {
+            names.add(constraints.group(1));
+        }
+        java.util.regex.Matcher indexes =
+                java.util.regex.Pattern.compile("CREATE (?:UNIQUE )?INDEX\\s+([a-z0-9_]+)").matcher(v034);
+        while (indexes.find()) {
+            names.add(indexes.group(1));
+        }
+        java.util.regex.Matcher triggers =
+                java.util.regex.Pattern.compile("CREATE (?:CONSTRAINT )?TRIGGER\\s+([a-z0-9_]+)").matcher(v034);
+        while (triggers.find()) {
+            names.add(triggers.group(1));
+        }
+        assertThat(names).as("the guard is not vacuous").hasSizeGreaterThanOrEqualTo(16);
+        assertThat(names).doesNotHaveDuplicates();
+        assertThat(names).allMatch(name -> name.startsWith("payment_"));
+        // And none collides with a name an earlier payments migration declared.
+        String earlier = java.util.stream.IntStream.rangeClosed(1, 33)
+                .mapToObj(n -> earlierMigration(n))
+                .collect(Collectors.joining("\n"));
+        for (String name : names) {
+            assertThat(earlier).as(name + " is new").doesNotContainPattern(
+                    "(CONSTRAINT|INDEX|TRIGGER)\\s+" + name + "\\b");
+        }
+    }
+
+    /** The text of payments' migration {@code V<n>}, whatever its description. */
+    private static String earlierMigration(int number) {
+        String prefix = String.format("V%03d__", number);
+        java.net.URL folder = PaymentsMigrationTest.class.getClassLoader().getResource("db/migration/payments");
+        try {
+            java.nio.file.Path directory = java.nio.file.Path.of(folder.toURI());
+            try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(directory)) {
+                java.nio.file.Path match = files.filter(f -> f.getFileName().toString().startsWith(prefix))
+                        .findFirst().orElseThrow(() -> new AssertionError("no payments migration " + prefix));
+                return java.nio.file.Files.readString(match);
+            }
+        } catch (java.net.URISyntaxException | java.io.IOException unreadable) {
+            throw new AssertionError("payments' migrations are readable", unreadable);
+        }
     }
 
     @Test

@@ -18,12 +18,39 @@ import org.junit.jupiter.api.Test;
 @DisplayName("the payment sweeper schedule (P5-TSK-014)")
 class PaymentSweeperScheduleTest {
 
+    /** No held card payment to expire - the legs the sweeper's own cases are not about. */
+    private static final java.util.function.Supplier<com.finapp.payments.HeldPayments.ExpiryTally> NO_HOLDS =
+            () -> new com.finapp.payments.HeldPayments.ExpiryTally(0, 0, 0);
+
+    @Test
+    @DisplayName("the held payments' deadline is the schedule's second leg (P13-TSK-010): every tick runs it, a failing"
+            + " sweep never starves it and a failing expiry never stops the schedule")
+    void theDeadlineIsTheSecondLeg() {
+        AtomicInteger ticks = new AtomicInteger();
+        AtomicInteger expiries = new AtomicInteger();
+        PaymentSweeperSchedule schedule =
+                new PaymentSweeperSchedule(ticking(ticks, true), () -> {
+                    if (expiries.incrementAndGet() % 2 == 0) {
+                        throw new IllegalStateException("an expiry tick failed");
+                    }
+                    return new com.finapp.payments.HeldPayments.ExpiryTally(1, 1, 0);
+                }, Duration.ofMillis(50));
+        schedule.start();
+        try {
+            await().atMost(Duration.ofSeconds(5)).until(() -> expiries.get() >= 3 && ticks.get() >= 3);
+        } finally {
+            schedule.stop();
+        }
+        assertThatThrownBy(() -> new PaymentSweeperSchedule(ticking(ticks, false), null, Duration.ofMillis(50)))
+                .as("the deadline is required: a composition cannot drop it").isInstanceOf(NullPointerException.class);
+    }
+
     @Test
     @DisplayName("ticks invoke the sweeper on the configured delay, and stop stops")
     void ticksInvokeTheSweeper() {
         AtomicInteger ticks = new AtomicInteger();
         PaymentSweeperSchedule schedule =
-                new PaymentSweeperSchedule(ticking(ticks, false), Duration.ofMillis(50));
+                new PaymentSweeperSchedule(ticking(ticks, false), NO_HOLDS, Duration.ofMillis(50));
         schedule.start();
         try {
             assertThat(schedule.isRunning()).isTrue();
@@ -41,7 +68,7 @@ class PaymentSweeperScheduleTest {
     void aThrowingTickDoesNotKillTheSchedule() {
         AtomicInteger ticks = new AtomicInteger();
         PaymentSweeperSchedule schedule =
-                new PaymentSweeperSchedule(ticking(ticks, true), Duration.ofMillis(50));
+                new PaymentSweeperSchedule(ticking(ticks, true), NO_HOLDS, Duration.ofMillis(50));
         schedule.start();
         try {
             await().atMost(Duration.ofSeconds(5)).until(() -> ticks.get() >= 3);
@@ -55,12 +82,12 @@ class PaymentSweeperScheduleTest {
     void aNonPositiveIntervalIsRefused() {
         AtomicInteger ticks = new AtomicInteger();
         assertThatThrownBy(
-                        () -> new PaymentSweeperSchedule(ticking(ticks, false), Duration.ZERO))
+                        () -> new PaymentSweeperSchedule(ticking(ticks, false), NO_HOLDS, Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 new PaymentSweeperSchedule(
-                                        ticking(ticks, false), Duration.ofMillis(-1)))
+                                        ticking(ticks, false), NO_HOLDS, Duration.ofMillis(-1)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

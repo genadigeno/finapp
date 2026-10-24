@@ -135,6 +135,27 @@ class RiskPolicyDeskTest {
     }
 
     @Test
+    @DisplayName("a card payment's version names a hold validity exactly when it can decide HOLD (P13-TSK-010): the v1"
+            + " fixture, which never holds, takes none and refuses one; with a HOLD rule it takes 72 h when omitted")
+    void aCardVersionNamesAHoldValidityOnlyWhenItHolds() {
+        RiskPolicy card = RiskPolicyFixtures.v1(RiskOperation.CARD_PAYMENT);
+        assertThat(RiskPolicyDesk.policy(request(card, Map.of())).holdValidity()).isEmpty();
+        assertThatThrownBy(() -> RiskPolicyDesk.policy(request(card, Map.of("holdValidityHours", 72))))
+                .isInstanceOf(RiskPolicy.PolicyInvalid.class);
+        List<RiskRule> rules = new ArrayList<>(card.rules());
+        rules.add(RiskRule.deciding(rules.size() + 1, RuleKind.AMOUNT_BAND, RuleParameters.of(RuleKind.AMOUNT_BAND,
+                Map.of("threshold_minor", RiskPolicyFixtures.minor(2_500_00))), RiskDecision.HOLD));
+        RiskPolicy holding = new RiskPolicy(RiskOperation.CARD_PAYMENT, card.engine(), card.currency(), rules,
+                card.scoreBands(), List.of(), card.failSafeBands(), card.challengeAssurance(), card.overrideThreshold(),
+                Optional.of(Duration.ofHours(48)));
+        assertThat(RiskPolicyDesk.policy(request(holding, Map.of()))).isEqualTo(holding);
+        Map<String, Object> omitted = new HashMap<>();
+        omitted.put("holdValidityHours", null);
+        assertThat(RiskPolicyDesk.policy(request(holding, omitted)).holdValidity())
+                .contains(RiskPolicy.DEFAULT_HOLD_VALIDITY);
+    }
+
+    @Test
     @DisplayName("the view serves the whole content and the machine row - every rule's parameters by name, the bands, the"
             + " knobs - and never a reason or a person")
     void theViewServesTheContent() {

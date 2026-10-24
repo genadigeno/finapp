@@ -1,8 +1,10 @@
 package com.finapp.app.payments;
 
+import com.finapp.payments.HeldPayments;
 import com.finapp.payments.PaymentSweeper;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -51,12 +53,23 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
     public static final String DISPATCHED_AGE = "${finapp.payments.sweeper.dispatched-age:PT10M}";
 
     private final PaymentSweeper sweeper;
+
+    /**
+     * The held card payments' deadline (`P13-TSK-010`, slice 2): {@code HeldPayments.expireHolds} - the expiry of every
+     * open capture hold past its {@code held_until} on the database clock, then the finisher's voids - as this
+     * schedule's second leg, on the same exemption (every write a conditional whose loser converges; the claim
+     * {@code FOR UPDATE SKIP LOCKED}). No new scheduler; required, so a composition cannot drop the deadline.
+     */
+    private final Supplier<HeldPayments.ExpiryTally> expiry;
+
     private final Duration pollInterval;
 
     private ScheduledExecutorService executor;
 
-    public PaymentSweeperSchedule(PaymentSweeper sweeper, Duration pollInterval) {
+    public PaymentSweeperSchedule(
+            PaymentSweeper sweeper, Supplier<HeldPayments.ExpiryTally> expiry, Duration pollInterval) {
         this.sweeper = Objects.requireNonNull(sweeper, "sweeper must not be null");
+        this.expiry = Objects.requireNonNull(expiry, "expiry must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -97,6 +110,16 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
         } catch (RuntimeException failure) {
             // The class only: a JDBC or provider message can name hosts and identifiers.
             log.warn("Payment sweep failed: {}", failure.getClass().getSimpleName());
+        }
+        // The second leg, contained on its own: a failed sweep never starves the deadline, nor the reverse.
+        try {
+            HeldPayments.ExpiryTally tally = expiry.get();
+            if (tally.expired() + tally.voided() + tally.failed() > 0) {
+                log.info("Held payments: {} expired, {} voided, {} failed",
+                        tally.expired(), tally.voided(), tally.failed());
+            }
+        } catch (RuntimeException failure) {
+            log.warn("Held payments' expiry failed: {}", failure.getClass().getSimpleName());
         }
     }
 

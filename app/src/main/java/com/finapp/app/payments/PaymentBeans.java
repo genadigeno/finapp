@@ -1141,7 +1141,9 @@ public class PaymentBeans {
             IdGenerator ids,
             Clock clock,
             com.finapp.payments.RoutingTelemetry routingTelemetry,
-            com.finapp.payments.RailOperations railOperations) {
+            com.finapp.payments.RailOperations railOperations,
+            com.finapp.payments.PaymentRiskDecision<Connection> paymentRiskDecision,
+            com.finapp.payments.CaptureHoldStore<Connection> captureHoldStore) {
         return new PaymentConfirmation(
                 paymentTransactionRunner,
                 paymentIntentStore,
@@ -1161,7 +1163,11 @@ public class PaymentBeans {
                 routingTelemetry,
                 // The push dispatch (P7-TSK-009): the routed rail's push adapter, looked up in
                 // the directory (P9-TSK-014); none configured is the bank branch's honest 503.
-                railOperations);
+                railOperations,
+                // The risk seam (P13-TSK-010): app's adapter over risk, required - no default exists.
+                paymentRiskDecision,
+                // Slice 2's capture holds: the hold a card payment's HOLD is born with.
+                captureHoldStore);
     }
 
     /**
@@ -1494,9 +1500,47 @@ public class PaymentBeans {
             com.finapp.payments.PaymentSweeper.class)
     PaymentSweeperSchedule paymentSweeperSchedule(
             com.finapp.payments.PaymentSweeper paymentSweeper,
+            com.finapp.payments.HeldPayments heldPayments,
             @Value("${finapp.payments.sweeper.poll-interval:PT30S}")
                     java.time.Duration pollInterval) {
-        return new PaymentSweeperSchedule(paymentSweeper, pollInterval);
+        // Two legs a tick, each contained (P13-TSK-010): the sweep, then the held card payments' deadline.
+        return new PaymentSweeperSchedule(paymentSweeper, heldPayments::expireHolds, pollInterval);
+    }
+
+    /** The held card payments' capture holds (`P13-TSK-010`, payments {@code V034}). */
+    @Bean
+    com.finapp.payments.CaptureHoldStore<Connection> captureHoldStore() {
+        return new com.finapp.payments.JdbcCaptureHoldStore();
+    }
+
+    /**
+     * A held card payment's keyed capture and void doors and its deadline (`P13-TSK-010`, slice 2): reached by risk's
+     * {@code HeldPaymentActions} ({@code -012}'s override, {@code -017}'s actions) and by the sweeper schedule's
+     * expiry leg. Provider-conditional with the capture and the void it hands the money to.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.HeldPayments heldPayments(
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.payments.CaptureHoldStore<Connection> captureHoldStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            IdempotentExecutor idempotentExecutor,
+            AuditWriter<Connection> auditWriter,
+            com.finapp.payments.PaymentCapture paymentCapture,
+            com.finapp.payments.PaymentVoid paymentVoid,
+            IdGenerator ids,
+            Clock clock,
+            @Value("${finapp.payments.sweeper.batch:50}") int batchSize) {
+        return new com.finapp.payments.HeldPayments(
+                paymentTransactionRunner,
+                captureHoldStore,
+                paymentAttemptStore,
+                idempotentExecutor,
+                auditWriter,
+                com.finapp.payments.HeldPayments.Commands.over(paymentCapture, paymentVoid),
+                ids,
+                clock,
+                batchSize);
     }
 
     @Bean

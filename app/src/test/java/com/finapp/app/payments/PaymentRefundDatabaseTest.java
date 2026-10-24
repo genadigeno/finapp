@@ -1404,7 +1404,9 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none())
+                com.finapp.payments.RailOperations.none(),
+                (unitOfWork, judged) -> com.finapp.payments.PaymentVerdict.permit(), // the payment machine's suite, not risk's (P13-TSK-010)
+                new com.finapp.payments.JdbcCaptureHoldStore())
                                         .confirm(created.party(), created.intent()))
                 .isInstanceOf(com.finapp.payments.NoWalletForPaymentException.class);
         assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
@@ -1480,7 +1482,9 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none())
+                com.finapp.payments.RailOperations.none(),
+                (unitOfWork, judged) -> com.finapp.payments.PaymentVerdict.permit(), // the payment machine's suite, not risk's (P13-TSK-010)
+                new com.finapp.payments.JdbcCaptureHoldStore())
                                             .confirm(created.party(), created.intent());
                                 }
                                 return null;
@@ -1960,7 +1964,9 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                com.finapp.payments.RailOperations.none())
+                com.finapp.payments.RailOperations.none(),
+                (unitOfWork, judged) -> com.finapp.payments.PaymentVerdict.permit(), // the payment machine's suite, not risk's (P13-TSK-010)
+                new com.finapp.payments.JdbcCaptureHoldStore())
                 .confirm(party, created.intent());
         PaymentAttemptId attemptId =
                 runner.inTransaction(

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.merchant.RequiresMerchantKey;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.payments.PaymentIntent;
 import com.finapp.risk.CaseKind;
 import com.finapp.risk.RiskDecision;
 import com.finapp.risk.RiskRating;
@@ -94,7 +95,13 @@ class NoCustomerSurfaceReadsRiskTest {
                 .anyMatch(name -> name.endsWith(".CheckoutSessionController"))
                 // The transfer door and its desk (P13-TSK-008): a session route outside /me.
                 .anyMatch(name -> name.endsWith(".TransferController"))
-                .anyMatch(name -> name.endsWith(".TransferService"));
+                .anyMatch(name -> name.endsWith(".TransferService"))
+                // The checkout confirmation door and its desk (P13-TSK-010): the step-up advice through an app port,
+                // the refusal the intent's generic failure; and the customer's payment door, which reads it back.
+                .anyMatch(name -> name.endsWith(".CheckoutConfirmationController"))
+                .anyMatch(name -> name.endsWith(".CheckoutService"))
+                .anyMatch(name -> name.endsWith(".PaymentController"))
+                .anyMatch(name -> name.endsWith(".PaymentService"));
     }
 
     @Test
@@ -142,17 +149,51 @@ class NoCustomerSurfaceReadsRiskTest {
         // among these classes there is nothing to evaluate, and that is the assertion.
     }
 
+    /**
+     * The checkout payment's refusal, one step further (`P13-TSK-010`; C6): a payment risk refused carries its own
+     * {@code RISK_REFUSED} on the intent - payments' record - and no surface renders it. The customer and the merchant
+     * read the intent's generic {@code FAILED} (the payment read's {@code failureReason} is the attempt's mapped reason,
+     * and a refused intent has no attempt), so no surface class may read {@code PaymentIntent.failureReason()} at all.
+     */
+    @ArchTest
+    static void noSurfaceReadsTheIntentsRiskRefusal(JavaClasses imported) {
+        intentReasonRule(imported).check(imported);
+    }
+
+    @Test
+    @DisplayName("a session route rendering the intent's own failure reason (RISK_REFUSED) is refused (P13-TSK-010)")
+    void theRuleRefusesARenderedIntentReason() {
+        JavaClasses planted = imported(PlantedPaymentController.class, PaymentIntent.class);
+        EvaluationResult result = intentReasonRule(planted).evaluate(planted);
+        assertThat(result.hasViolation()).isTrue();
+        assertThat(String.join("\n", result.getFailureReport().getDetails())).contains("PlantedPaymentController");
+    }
+
     // ------------------------------------------------------------------ the rule
+
+    static ArchRule intentReasonRule(JavaClasses classes) {
+        return noClasses()
+                .that(onTheSurface(guardedClassNames(classes)))
+                .should()
+                .callMethod(PaymentIntent.class, "failureReason")
+                .because(
+                        "a payment refused by risk answers the intent's generic FAILED (C6, INV-RSK-08): the intent's"
+                                + " own RISK_REFUSED is payments' record and the operator's, never a customer's or a"
+                                + " merchant's");
+    }
+
+    private static DescribedPredicate<JavaClass> onTheSurface(Set<String> guarded) {
+        return new DescribedPredicate<>("on the customer or merchant surface, or a direct app dependency of it") {
+            @Override
+            public boolean test(JavaClass candidate) {
+                return guarded.contains(candidate.getName());
+            }
+        };
+    }
 
     static ArchRule rule(JavaClasses classes) {
         Set<String> guarded = guardedClassNames(classes);
-        DescribedPredicate<JavaClass> onTheSurface =
-                new DescribedPredicate<>("on the customer or merchant surface, or a direct app dependency of it") {
-                    @Override
-                    public boolean test(JavaClass candidate) {
-                        return guarded.contains(candidate.getName());
-                    }
-                };
+        DescribedPredicate<JavaClass> onTheSurface = onTheSurface(guarded);
         return noClasses()
                 .that(onTheSurface)
                 .should()
@@ -253,6 +294,16 @@ class NoCustomerSurfaceReadsRiskTest {
     static class PlantedSessionController {
         RiskDecision decision() {
             return RiskDecision.ALLOW;
+        }
+    }
+
+    /** A customer session route rendering the intent's own failure reason - the payment door's shape. */
+    @RestController
+    @RequestMapping(path = "/planted-payments")
+    @RequiresSession
+    static class PlantedPaymentController {
+        String reason(PaymentIntent intent) {
+            return intent.failureReason().map(Enum::name).orElse(null);
         }
     }
 

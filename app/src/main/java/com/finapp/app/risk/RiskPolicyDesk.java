@@ -203,8 +203,10 @@ public final class RiskPolicyDesk {
         Optional<Duration> hold;
         if (request.holdValidityHours() != null) {
             hold = Optional.of(Duration.ofHours(request.holdValidityHours()));
-        } else if (RiskDecision.HOLD.isAdmittedBy(operation)) {
-            // The plan's default (section 5): a withdrawal version that names no validity takes 72 h.
+        } else if (RiskPolicy.namesHoldValidity(operation, rules, scoreBands)) {
+            // The plan's default (section 5): a version that can decide HOLD and names no validity takes 72 h - a
+            // withdrawal's always, a card payment's when a band or a rule holds (P13-TSK-010); a card version that
+            // never holds names none.
             hold = Optional.of(RiskPolicy.DEFAULT_HOLD_VALIDITY);
         } else {
             hold = Optional.empty();
