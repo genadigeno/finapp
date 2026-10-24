@@ -174,5 +174,18 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   machines' record; `AUDITABLE_ACTIONS.md` and `ERROR_CONTRACT.md` gain the planned entries.
 - The SLA per kind is a policy figure the owner sets at activation; until then the default is the task's and is
   recorded here when built.
+- **Built by `P13-TSK-015` (2026-10-25) - decision 1, and decision 3's contract.** `risk V010` (the next free
+  number; planned `V008`): `risk_alert` born once by `UNIQUE (subject_ref, rule_code, window_start)` through one
+  `INSERT … ON CONFLICT ON CONSTRAINT risk_alert_born_once DO NOTHING`; the window a bucket of its kind aligned by
+  `CHECK` from a database instant that is the evidence's own; evidence by reference (signal, assessment, journal entry
+  ids, at most 100 each); never deleted. **Decision 1 corrected (dated note):** "`SUPPRESSED` — with a reason:
+  deduplicated into an open case's window, or an operator's reasoned suppression" no longer stands - the plan's
+  reconciliation is built: **the system's dedupe is `ATTACHED`** (decision 3's folding), and `SUPPRESSED` is only the
+  operator's four-eyes act (`Alerts.proposeSuppression` / `approveSuppression` / `rejectSuppression`; two `EMPLOYEE`s,
+  the approver never the proposer, by domain and by `CHECK`; audited `risk.AlertSuppressionProposed`,
+  `risk.AlertSuppressed`, `risk.AlertSuppressionRejected`). **Decision 3** is declared as the port `AlertFolding` for
+  `P13-TSK-016` (`NONE` wired: every alert stays `OPEN`, queued); the order is a birth at (R3)'s position, then the
+  case (R4), then the alert's attach (R5), and a transaction raises through one `raiseAll` - its alerts in key order,
+  every birth before any fold. The door and the queue stay `P13-TSK-018`'s.
 - **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
   this ADR against the code, corrects it in place with dated notes, and accepts it.

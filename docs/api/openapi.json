@@ -9012,6 +9012,41 @@
           }
         }
       },
+      "risk.AlertNotOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.AlertNotOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.AlertNotOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The alert is already attached to a case or suppressed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "risk.NotFound": {
         "content": {
           "application/problem+json": {
@@ -9318,6 +9353,41 @@
           }
         },
         "description": "[403] A holder never acts on a case, override or report whose subject is their own party; nothing was done.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.SuppressionStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.SuppressionStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.SuppressionStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The alert's suppression is not awaiting this act: a proposal already awaits a decision, or none does.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"

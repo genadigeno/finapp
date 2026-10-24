@@ -1883,6 +1883,63 @@ class OwnershipIsScopedTest {
                                         + " conditional on an outcome not yet recorded; it records payments' answer"
                                         + " and moves nothing of anyone's.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.insert",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P13-TSK-015. The id is minted by Alerts in this transaction for the alert it"
+                                        + " raises - the system's act inside T-eval or T-mon, no person's request; the"
+                                        + " row is risk's evidence that a rule fired on a subject, owned by no party,"
+                                        + " born once by risk_alert_born_once.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-015. An alert read by id: the id an attach names - -016's folding, from"
+                                        + " the alert this transaction raised, or its case door behind"
+                                        + " @RequiresPermission(RISK_INVESTIGATE) - or the receipt of an analyst's act"
+                                        + " on -018's suppression door; deliberately someone else's subject, the"
+                                        + " not-self rule judged by Alerts on every person's act.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-015. R5: the alert row FOR UPDATE for a suppression's proposal, approval"
+                                        + " or rejection behind -018's door (RISK_INVESTIGATE / RISK_CASE_APPROVE),"
+                                        + " after the analyst is placed in a party; the act proceeds only when the"
+                                        + " alert's subject's party is placed and is not the analyst's (fail closed,"
+                                        + " risk.SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.attach",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-015. OPEN -> ATTACHED, conditional on OPEN: the id is the alert -016's"
+                                        + " folding raised in this transaction, or the one its case door names behind"
+                                        + " RISK_INVESTIGATE (that door judging self-dealing on the case); the case id"
+                                        + " is the case the same transaction holds FOR UPDATE.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.propose",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-015. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), after the not-self rule), the write conditional on OPEN with no"
+                                        + " standing proposal; behind RISK_INVESTIGATE (-018's door), EMPLOYEE actors"
+                                        + " only by the domain and by CHECK.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.approve",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-015. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), after the not-self rule), the move conditional on OPEN over a"
+                                        + " standing proposal; behind RISK_CASE_APPROVE (-018's door), four eyes by the"
+                                        + " domain and by risk_alert_suppression_four_eyes.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.reject",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-015. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), after the not-self rule), the clearing conditional on OPEN over a"
+                                        + " standing proposal; behind -018's door; it suppresses nothing.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -51,6 +51,15 @@ public enum RiskErrorCode implements ErrorCode {
 
     OVERRIDE_STALE("risk.OverrideStale", 409, "The override is no longer awaiting a decision."),
 
+    // The alert's machine (P13-TSK-015; its door P13-TSK-018's): an alert attached or suppressed, and a suppression
+    // not in the state the act needs - the register's 409s (OverrideStale's shape).
+    ALERT_NOT_OPEN("risk.AlertNotOpen", 409, "The alert is already attached to a case or suppressed."),
+
+    SUPPRESSION_STALE(
+            "risk.SuppressionStale",
+            409,
+            "The alert's suppression is not awaiting this act: a proposal already awaits a decision, or none does."),
+
     // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
     REPROCESSING_NOT_BEHIND(
             "risk.ReprocessingNotBehind",

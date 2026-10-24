@@ -56,8 +56,9 @@ public enum RiskAuditAction implements AuditableAction {
     SELF_APPROVAL_REFUSED(
             "risk.SelfApprovalRefused",
             "A proposer tried to approve their own risk proposal - a policy version's activation (P13-TSK-002), an"
-                    + " override's approval (P13-TSK-012), a disposition's, an action's or a suppression's approval"
-                    + " (P13-TSK-016, -017, -018), a regulatory report's approval (P13-TSK-021) - and was refused"
+                    + " override's approval (P13-TSK-012), an alert's suppression (P13-TSK-015's machine, -018's door),"
+                    + " a disposition's or an action's approval (P13-TSK-016, -017), a regulatory report's approval"
+                    + " (P13-TSK-021) - and was refused"
                     + " 403 risk.SelfApprovalRefused before anything was written (INV-AUD-04, INV-RSK-07; also held by"
                     + " each table's four-eyes CHECK). Recorded FAILED in a transaction of its own after the act rolled"
                     + " back, so the attempt survives. Its target the proposal; the summary names it and the act -"
@@ -68,8 +69,10 @@ public enum RiskAuditAction implements AuditableAction {
     SELF_DEALING_REFUSED(
             "risk.SelfDealingRefused",
             "A holder tried to read a customer risk profile, read or replay a risk assessment, read or work a case,"
-                    + " approve an override or file a report whose subject is their own party - or could not be placed in"
-                    + " any party, which fails closed (the Phase 12 -> 13 gate's A7-6 applied forward) - and was refused"
+                    + " approve an override, propose, approve or reject an alert's suppression (P13-TSK-015) or file a"
+                    + " report whose subject is their own party - or could not be placed in any party, or (an alert's"
+                    + " suppression) the subject's party could not be placed, each of which fails closed (the Phase 12 ->"
+                    + " 13 gate's A7-6 applied forward) - and was refused"
                     + " 403 risk.SelfDealingRefused before anything was read or written (PHASE_13_PLAN.md section 11;"
                     + " first raised by P13-TSK-007's profile read, then by P13-TSK-004's assessment doors and"
                     + " P13-TSK-016's case doors). Recorded FAILED in a"
@@ -155,6 +158,39 @@ public enum RiskAuditAction implements AuditableAction {
                     + " approver whose door dispatched it, or the platform whose re-drive leg did; the effect itself is"
                     + " payments' act, audited by payments. The summary names the kind, the outcome and the attempts.",
             false),
+
+    /** An analyst proposed to suppress an open alert (`P13-TSK-015`'s machine; the door `-018`'s). */
+    ALERT_SUPPRESSION_PROPOSED(
+            "risk.AlertSuppressionProposed",
+            "A holder of RISK_INVESTIGATE proposed, with a reason code (SuppressionReason) and a text, to suppress an"
+                    + " open alert - to close it without a case (P13-TSK-015's machine, Alerts.proposeSuppression; the door"
+                    + " POST /v1/operator/risk/alerts/{id}/suppression is P13-TSK-018's): one live proposal per alert,"
+                    + " awaiting a DIFFERENT holder of RISK_CASE_APPROVE; never on the proposer's own party's alert, nor"
+                    + " on an alert whose subject the platform cannot place (risk.SelfDealingRefused, fail closed). The"
+                    + " text is the record's reason; the summary names the alert's kind and the reason code - never the"
+                    + " subject, the evidence or the text.",
+            true),
+
+    /** An alert was suppressed - a second analyst approving another's proposal (`P13-TSK-015`; the door `-018`'s). */
+    ALERT_SUPPRESSED(
+            "risk.AlertSuppressed",
+            "A holder of RISK_CASE_APPROVE other than its proposer approved, with a reason, the proposal to suppress an"
+                    + " open alert (OPEN -> SUPPRESSED; P13-TSK-015's machine, Alerts.approveSuppression; the door"
+                    + " .../suppression/approval is P13-TSK-018's; INV-RSK-07, INV-AUD-04 - risk_alert_suppression_four_eyes"
+                    + " beneath): the alert leaves investigation without a case. Never the system's act - the sweep's"
+                    + " deduplication of an alert into an open case is ATTACHED, its own fact, not audited. The summary"
+                    + " names the alert's kind and the reason code - never the subject.",
+            true),
+
+    /** A proposal to suppress an alert was rejected, or withdrawn by its proposer; the alert stays open. */
+    ALERT_SUPPRESSION_REJECTED(
+            "risk.AlertSuppressionRejected",
+            "A proposal to suppress an alert was rejected with a reason - or withdrawn by its proposer"
+                    + " (P13-TSK-015's machine, Alerts.rejectSuppression; the door .../suppression/rejection is"
+                    + " P13-TSK-018's): the proposal cleared from the alert, which stays OPEN and queued; this record and"
+                    + " the proposal's keep both acts. The summary names the alert's kind, the reason code and whether the"
+                    + " proposer withdrew it.",
+            true),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(

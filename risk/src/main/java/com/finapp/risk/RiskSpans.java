@@ -42,6 +42,13 @@ public final class RiskSpans {
      * `-023`'s schedule records it). T-eval's own velocity steps run inside {@link #EVALUATE}.
      */
     public static final String VELOCITY_PROOF = "risk.velocity.proof";
+    /**
+     * T-eval / T-mon - alerts raised, born once, and folded (`P13-TSK-015`): {@code Alerts.raiseAll} records it inside
+     * the caller's transaction.
+     */
+    public static final String ALERT_RAISE = "risk.alert.raise";
+    /** The suppression door - an alert's suppression proposed, approved or rejected (`-015`'s machine; `-018` records it). */
+    public static final String ALERT_SUPPRESS = "risk.alert.suppress";
     /** T-case - a case opened. */
     public static final String CASE_OPEN = "risk.case.open";
     /** T-case - an investigator's act on a case. */

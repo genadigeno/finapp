@@ -451,7 +451,7 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `velocity_window` | `V005` (`-006`) | primary key (dimension, subject_ref, window_kind, window_start); count, sum_minor, currency |
 | `customer_risk_profile`, `customer_risk_profile_version` | `V006` (`-007`) | head row + versions |
 | `risk_assessment`, `risk_policy` CHECKs regenerated for the card `HOLD` | `V008` (`-010` slice 2) | *added 2026-10-24: `-010` landed first in merge order and took the next free number; the rows below take the next free numbers at their builds (Flyway out-of-order off) - the coordinator's renumbering* |
-| `risk_alert` | `V008` (`-015`) — *the next free at its build* | born-once alerts: `UNIQUE (subject_ref, rule_code, window_start)` |
+| `risk_alert` | `V010` (`-015`) — *as built 2026-10-25, the next free at its build (`-010` took `V008`, `-012` `V009`)* | born-once alerts: `UNIQUE (subject_ref, rule_code, window_start)`; the window aligned by `CHECK`; the suppression's four eyes by `CHECK`; no `DELETE` |
 | `risk_case`, `risk_case_action`, `risk_case_event` | `V009` (`-016`) | the case machine with `revision`; one open per (subject, kind) |
 | `risk_action` | `V010` (`-017`) | the action machine; `UNIQUE (case_id, kind, target_ref)` live |
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
