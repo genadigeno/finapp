@@ -229,15 +229,17 @@ class RiskVocabulariesTest {
 
     @Test
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
-            + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007) -"
-            + " namespaced risk., the refusals 403, the policy codes the register's statuses")
+            + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
+            + " override doors' two and four (-012) - namespaced risk., the refusals 403, the policy codes the register's statuses")
     void theCodesAndActions() {
         // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
         assertThat(Arrays.stream(RiskErrorCode.values()).map(RiskErrorCode::code))
                 // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
                 .containsExactlyInAnyOrder("risk.NotFound", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
                         "risk.PolicyNotActive", "risk.PolicyStale", "risk.PolicyInvalid", "risk.ReasonRequired",
-                        "risk.ReprocessingNotBehind");
+                        "risk.ReprocessingNotBehind",
+                        // P13-TSK-012: the override doors' two.
+                        "risk.ActionNotProposable", "risk.OverrideStale");
         assertThat(RiskErrorCode.NOT_FOUND.status()).isEqualTo(404);
         assertThat(RiskErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
         assertThat(RiskErrorCode.SELF_DEALING_REFUSED.status()).isEqualTo(403);
@@ -246,23 +248,30 @@ class RiskVocabulariesTest {
         assertThat(RiskErrorCode.POLICY_INVALID.status()).isEqualTo(422);
         assertThat(RiskErrorCode.REASON_REQUIRED.status()).isEqualTo(422);
         assertThat(RiskErrorCode.REPROCESSING_NOT_BEHIND.status()).isEqualTo(422);
+        assertThat(RiskErrorCode.ACTION_NOT_PROPOSABLE.status()).isEqualTo(409);
+        assertThat(RiskErrorCode.OVERRIDE_STALE.status()).isEqualTo(409);
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
                 .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
                         "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
                         "risk.ReprocessingOrdered", "risk.ProfileRead",
                         // P13-TSK-004: the analyst's assessment read and replay.
-                        "risk.AssessmentRead", "risk.Replayed");
+                        "risk.AssessmentRead", "risk.Replayed",
+                        // P13-TSK-012: the override's three acts and its issued action's conclusion.
+                        "risk.OverrideProposed", "risk.OverrideApproved", "risk.OverrideRejected",
+                        "risk.ActionConcluded");
         for (RiskAuditAction action : RiskAuditAction.values()) {
             assertThat(action.description()).as(action.name()).isNotBlank();
         }
         // The platform's acts are reasoned by the act they follow; a person's discretionary act requires a reason.
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
-                RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ, RiskAuditAction.ASSESSMENT_READ)) {
+                RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ, RiskAuditAction.ASSESSMENT_READ,
+                RiskAuditAction.ACTION_CONCLUDED)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
         for (RiskAuditAction action : List.of(RiskAuditAction.POLICY_PROPOSED, RiskAuditAction.POLICY_ACTIVATED,
-                RiskAuditAction.POLICY_REJECTED, RiskAuditAction.REPROCESSING_ORDERED, RiskAuditAction.REPLAYED)) {
+                RiskAuditAction.POLICY_REJECTED, RiskAuditAction.REPROCESSING_ORDERED, RiskAuditAction.REPLAYED,
+                RiskAuditAction.OVERRIDE_PROPOSED, RiskAuditAction.OVERRIDE_APPROVED, RiskAuditAction.OVERRIDE_REJECTED)) {
             assertThat(action.requiresReason()).as("%s is a person's discretionary act", action).isTrue();
         }
     }

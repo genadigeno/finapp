@@ -29,8 +29,9 @@ import org.junit.jupiter.api.Test;
  * adds {@code V004}: {@code monitored_transaction}, {@code monitoring_watermark}; `P13-TSK-006` adds {@code V005}:
  * {@code velocity_window}; `P13-TSK-007` adds {@code V006}: {@code customer_risk_profile},
  * {@code customer_risk_profile_version}; `P13-TSK-004` adds {@code V007}: {@code risk_assessment},
- * {@code risk_assessment_input}, {@code risk_rule_hit}, {@code risk_reason}, {@code decision_override}) -
- * {@code BnplMigrationTest}'s idiom, as every schema-owning module has its own.
+ * {@code risk_assessment_input}, {@code risk_rule_hit}, {@code risk_reason}, {@code decision_override}; `P13-TSK-012`
+ * adds {@code V009}: the override's machine - no new table, its column-scoped {@code UPDATE}) - {@code BnplMigrationTest}'s
+ * idiom, as every schema-owning module has its own.
  *
  * <p>The migration-test idiom reads the SQL and holds it to the code; this class holds the <em>database</em> to it,
  * because a floor is only a control as it actually stands in the catalogue - a grant added by a later migration or by
@@ -146,7 +147,8 @@ class RiskMigrationTest {
                 "customer_risk_profile_moves_with_its_versions",
                 "customer_risk_profile_version_is_append_only",
                 "customer_risk_profile_version_is_born_in_sequence",
-                // V007 (P13-TSK-004): the override born PROPOSED over a refusal, unmoved until P13-TSK-012.
+                // V007 (P13-TSK-004): the override born PROPOSED over a refusal - its body replaced by name by V009
+                // (P13-TSK-012) with the machine, the same function.
                 "decision_override_permits_only_machine_edges",
                 // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
                 "holds_account_identifier_shape",
@@ -328,6 +330,36 @@ class RiskMigrationTest {
         }
     }
 
+    // ------------------------------------------------------------------ V009 (P13-TSK-012)
+
+    @Test
+    @DisplayName("V009: the override's grants - SELECT, INSERT and an UPDATE of the decision and the action's columns"
+            + " alone (never the proposal, the effect or the instants); no DELETE; the new constraints live and every"
+            + " constraint name unique in the schema")
+    void theOverrideGrants() throws SQLException {
+        assertThat(grantsOn("decision_override")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'decision_override' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("action", "action_attempts", "action_due_at", "action_outcome", "decided_by",
+                        "decided_by_type", "decision_reason", "status");
+        String statements = statementsOf(migration("V009__the_decision_override_machine.sql"));
+        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("CREATE TABLE");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname LIKE 'decision_override_%' ORDER BY conname")).contains(
+                "decision_override_action_is_the_effect", "decision_override_attempts_bounded",
+                "decision_override_conclusion_coherent", "decision_override_effect_is_known",
+                "decision_override_four_eyes", "decision_override_issued_awaits_or_concludes",
+                "decision_override_outcome_is_known", "decision_override_permit_coherent",
+                "decision_override_target_coherent");
+        assertThat(column("SELECT indexname FROM pg_indexes WHERE schemaname = 'risk'"
+                + " AND tablename = 'decision_override' ORDER BY indexname")).containsExactly(
+                "decision_override_action_due", "decision_override_one_live", "decision_override_one_standing",
+                "decision_override_pk");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
     // ------------------------------------------------------------------ V006 (P13-TSK-007)
 
     @Test
@@ -358,8 +390,8 @@ class RiskMigrationTest {
     @DisplayName("V007: the five tables SELECT and INSERT for the application and nothing else - no column UPDATE, no"
             + " DELETE - and every constraint name unique in the schema")
     void theAssessmentGrants() throws SQLException {
-        for (String table : List.of("risk_assessment", "risk_assessment_input", "risk_rule_hit", "risk_reason",
-                "decision_override")) {
+        // decision_override is V007's too, its column-scoped UPDATE V009's (P13-TSK-012) - theOverrideGrants below.
+        for (String table : List.of("risk_assessment", "risk_assessment_input", "risk_rule_hit", "risk_reason")) {
             assertThat(grantsOn(table)).as(table).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
             assertThat(column("SELECT column_name FROM information_schema.column_privileges"
                     + " WHERE table_schema = 'risk' AND table_name = '" + table + "' AND grantee = 'finapp_app'"

@@ -454,6 +454,15 @@ class OpenApiContractTest {
                         // RISK_INVESTIGATE, own party 403 risk.SelfDealingRefused.
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/{assessmentId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/{assessmentId}/replay",
+                        // P13-TSK-012: the risk officer's override doors - the overridden assessment read with its
+                        // overrides (audited risk.AssessmentRead), propose, approve (a second holder at or above C7,
+                        // MULTI_FACTOR) and reject; all RISK_OVERRIDE, keyed, own party 403 risk.SelfDealingRefused.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/{assessmentId}/overrides",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/{assessmentId}/overrides/{overrideId}",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

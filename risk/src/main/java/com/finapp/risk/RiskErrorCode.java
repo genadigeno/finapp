@@ -42,6 +42,15 @@ public enum RiskErrorCode implements ErrorCode {
     /** The policy doors' (P13-TSK-002) and the reprocessing door's (P13-TSK-019) - one code, the wave's. */
     REASON_REQUIRED("risk.ReasonRequired", 422, "A reason is required."),
 
+    // The override doors' two (P13-TSK-012): what cannot be overridden, and a proposal already decided.
+    ACTION_NOT_PROPOSABLE(
+            "risk.ActionNotProposable",
+            409,
+            "The override cannot be proposed now: the decision is an ALLOW or a CHALLENGE, nothing is held to refuse, or"
+                    + " the assessment already has a live proposal or an approved override."),
+
+    OVERRIDE_STALE("risk.OverrideStale", 409, "The override is no longer awaiting a decision."),
+
     // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
     REPROCESSING_NOT_BEHIND(
             "risk.ReprocessingNotBehind",

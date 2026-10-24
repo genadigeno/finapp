@@ -2156,7 +2156,10 @@ second `RISK_OVERRIDE` holder at or above the threshold (owner decision C7: the 
 or a `DENY`), one holder with a reason below it — recording the action it issues: the release of a held withdrawal (keyed
 `risk.action:<override id>` from the approval door; a Risk Action proper once `P13-TSK-017` folds it in), or, for a
 denied transfer, a one-time allowance for the same command reference that the customer's retry
-is evaluated against.
+is evaluated against. *(As built by `P13-TSK-012`, 2026-10-24: the proposal names its effect - a held withdrawal
+released or denied, a held card payment captured or voided, each through payments' keyed door after the approval
+commits; for a refused command (`DENY`, `REVIEW`) a **Resubmission**: nothing dispatched, the officers' judgement that
+the refusal was wrong recorded, the customer's resubmission judged afresh. The one-time allowance is not built.)*
 **Not:** an edit of the decision — the assessment stands as sealed and the override names it. Nor a Disposition (a
 case's end), nor an `ALLOW` undone: an `ALLOW` is never overridden after the fact, the money has moved and a case is
 the remedy. Nor credit's underwriting second approval.

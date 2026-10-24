@@ -16,8 +16,9 @@ import java.util.function.Supplier;
  * by the action's key and audited by payments as the caller's act, then handing the money to payments' capture or void
  * command. Risk records the outcome; payments owns the effect. {@code PaymentsHeldWithdrawalActions}' shape.
  *
- * <p><strong>Not yet called by risk</strong>: `-012`'s approval door and `-017`'s action schedule are its callers,
- * neither built - composed as a bean and tested directly until then.
+ * <p><strong>Called by risk since `P13-TSK-012`</strong>: {@code OverrideActions.dispatch} - an approved override's
+ * capture or void of a held card payment, from the approval door after its commit and from the re-drive leg, each on no
+ * risk transaction; `-017`'s action schedule next.
  *
  * <p><strong>The mapping</strong>: payments' {@code DONE}, {@code ALREADY} and {@code REFUSED} are risk's, word for word.
  * An id that is no platform identifier names no payment: {@code REFUSED}. Everything else payments throws - an

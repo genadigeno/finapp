@@ -90,8 +90,11 @@ dependencies {
     // schema floor proven LIVE (RiskMigrationTest). The module that owns the schema owns the proof of its floor.
     testImplementation(testFixtures(project(":platform")))
 
-    // The fixtures see this module's RiskPolicy (main) and sharedkernel's money - nothing else.
+    // The fixtures see this module's RiskPolicy (main) and sharedkernel's money - and, since P13-TSK-012's in-memory
+    // override store, platform's Actor, the type risk's override port takes. Nothing else.
     testFixturesImplementation(project(":sharedkernel"))
+    testFixturesImplementation(project(":platform"))
+    testFixturesImplementation(platform(libs.spring.boot.bom))
 }
 
 // The `database` tier's module-specific configuration - the container image, from the version catalog, exactly as

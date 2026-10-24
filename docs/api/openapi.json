@@ -8977,6 +8977,41 @@
           }
         }
       },
+      "risk.ActionNotProposable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.ActionNotProposable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.ActionNotProposable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The override cannot be proposed now: the decision is an ALLOW or a CHALLENGE, nothing is held to refuse, or the assessment already has a live proposal or an approved override.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "risk.NotFound": {
         "content": {
           "application/problem+json": {
@@ -9003,6 +9038,41 @@
           }
         },
         "description": "[404] No risk record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.OverrideStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.OverrideStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.OverrideStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The override is no longer awaiting a decision.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -21890,6 +21960,106 @@
         },
         "type": "object"
       },
+      "RiskOverriddenView": {
+        "properties": {
+          "assessment": {
+            "$ref": "#/components/schemas/RiskAssessmentView"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/RiskOverrideView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RiskOverrideDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskOverrideProposalRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "resolution": {
+            "pattern": "PROCEED|REFUSE",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskOverrideView": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actionAttempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "actionConcludedAt": {
+            "type": "string"
+          },
+          "actionDueAt": {
+            "type": "string"
+          },
+          "actionOutcome": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "overrideId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "requiresSecondPerson": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskPolicyDecisionRequest": {
         "properties": {
           "reason": {
@@ -33604,6 +33774,217 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskAssessmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/{assessmentId}/overrides": {
+      "get": {
+        "operationId": "readRiskOverrides",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskOverriddenView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeRiskOverride",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskOverrideProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskOverrideView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}": {
+      "get": {
+        "operationId": "readRiskOverride",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "overrideId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskOverriddenView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/approval": {
+      "post": {
+        "operationId": "approveRiskOverride",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "overrideId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskOverrideDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskOverrideView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/rejection": {
+      "post": {
+        "operationId": "rejectRiskOverride",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "assessmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "overrideId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskOverrideDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskOverrideView"
                 }
               }
             },

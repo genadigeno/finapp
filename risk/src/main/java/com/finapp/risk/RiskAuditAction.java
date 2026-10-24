@@ -94,7 +94,10 @@ public enum RiskAuditAction implements AuditableAction {
                     + " reason codes (GET /v1/operator/risk/assessments/{id}, P13-TSK-004; INV-RSK-01, INV-RSK-04),"
                     + " after the self-dealing judgement, recorded on the read's own transaction so nothing is served"
                     + " unrecorded. Its target the assessment; the summary its operation, its decision and whether its"
-                    + " seal holds - never an amount, a subject, a score or a rule's parameters (INV-RSK-08).",
+                    + " seal holds - never an amount, a subject, a score or a rule's parameters (INV-RSK-08). Raised too"
+                    + " by the risk officer's override desk under RISK_OVERRIDE (GET .../assessments/{id}/overrides,"
+                    + " P13-TSK-012): the overridden assessment served with its overrides, the summary door=override and"
+                    + " the overrides' count.",
             false),
 
     /** An analyst replayed a sealed risk assessment from its sealed inputs under its pinned policy and engine. */
@@ -106,6 +109,52 @@ public enum RiskAuditAction implements AuditableAction {
                     + " verdict is answered (bnpl.Replayed's shape). Its target the assessment; the reason the analyst's;"
                     + " the summary the verdict and the kinds that diverged - never a figure.",
             true),
+
+    /** An officer proposed an override of a DENY, HOLD or REVIEW decision (`P13-TSK-012`). */
+    OVERRIDE_PROPOSED(
+            "risk.OverrideProposed",
+            "A holder of RISK_OVERRIDE proposed, with a reason code and text, an override of a DENY, HOLD or REVIEW"
+                    + " decision (POST /v1/operator/risk/assessments/{id}/overrides, keyed risk.override:<actor>,"
+                    + " P13-TSK-012; ADR-0108 decision 7): the effect its approval will issue fixed now - a held"
+                    + " withdrawal released or denied, a held card payment captured or voided, or for a refused command a"
+                    + " RESUBMISSION that dispatches nothing - and C7's four eyes fixed with it; one standing override per"
+                    + " assessment; the decision itself is never edited, and an ALLOW or a CHALLENGE is never overridden."
+                    + " The summary names the assessment, the decision, the effect, the reason code and whether a second"
+                    + " holder is required - never an amount, a party or the text.",
+            true),
+
+    /** An override was approved - by a second holder where C7 requires one - its effect issued (`P13-TSK-012`). */
+    OVERRIDE_APPROVED(
+            "risk.OverrideApproved",
+            "A holder of RISK_OVERRIDE approved an override from a MULTI_FACTOR session"
+                    + " (POST .../overrides/{id}/approval, P13-TSK-012; C7: a holder other than its proposer at or above"
+                    + " the pinned threshold or for a DENY - the four-eyes CHECK beneath; below it the proposer's own"
+                    + " reasoned approval completes it, recorded byProposer=true), recording the action it issues under a"
+                    + " permit - dispatched after the approval commits through payments' keyed door, risk.action:<id> -"
+                    + " and announced risk.RiskActionRequested; a RESUBMISSION issues nothing. The summary names the"
+                    + " assessment, the effect, whether a second holder was required and whether the proposer approved -"
+                    + " never an amount.",
+            true),
+
+    /** A proposed override was rejected, or withdrawn by its proposer; the decision stands (`P13-TSK-012`). */
+    OVERRIDE_REJECTED(
+            "risk.OverrideRejected",
+            "A proposed override was rejected - or withdrawn by its proposer (POST .../overrides/{id}/rejection,"
+                    + " P13-TSK-012); it issued nothing and the decision stands (a held movement keeps its hold until its"
+                    + " expiry or another decision). The summary names the assessment, the effect and whether the proposer"
+                    + " withdrew it.",
+            true),
+
+    /** The outcome of an override's issued action was recorded (`P13-TSK-012`; `-017` raises it for its actions). */
+    ACTION_CONCLUDED(
+            "risk.ActionConcluded",
+            "The outcome payments answered to an action an approved override issued was recorded on the override,"
+                    + " once (P13-TSK-012; ADR-0112 decision 4; P13-TSK-017's risk_action rows raise it too): DONE,"
+                    + " ALREADY (the movement had left its hold by another hand - its expiry among them; an outcome, not"
+                    + " an error) or REFUSED (the hold's validity had lapsed, or no such movement). The actor is the"
+                    + " approver whose door dispatched it, or the platform whose re-drive leg did; the effect itself is"
+                    + " payments' act, audited by payments. The summary names the kind, the outcome and the attempts.",
+            false),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(

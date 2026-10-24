@@ -148,6 +148,30 @@ class RiskMonitoringScheduleTest {
     }
 
     @Test
+    @DisplayName("the override action leg (P13-TSK-012) runs last, as the platform, after the intake and the profiles;"
+            + " a leg that throws is counted claim.failed{kind=monitoring} and the tick's earlier work stands")
+    void theOverrideActionLegRunsLastAsThePlatform() {
+        World world = new World(1);
+        ScriptedLeg profiles = new ScriptedLeg(1);
+        List<String> driven = new ArrayList<>();
+        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), profiles, 3, () -> {
+            driven.add(com.finapp.platform.security.SecurityContext.require().type().name() + " after "
+                    + profiles.recomputed);
+            return 1;
+        }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        assertThat(schedule.sweepOnce()).isEqualTo(1);
+        assertThat(driven).containsExactly("SYSTEM after 1");
+
+        RiskMonitoringSchedule failing = new RiskMonitoringSchedule(world.intake(2), RiskMonitoringSchedule.ProfileLeg.NONE,
+                0, () -> {
+                    throw new IllegalStateException("the claim failed");
+                }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        failing.sweepOnce();
+        assertThat(world.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("the meters are registered eagerly, with bounded tags and no id")
     void metersAreEager() {
         World world = new World(0);

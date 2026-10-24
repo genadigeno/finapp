@@ -962,7 +962,13 @@ Each is `PHASE_13_PLAN.md` §15's; `-024` names the ones the plan does not.
   /v1/operator/risk/cases?status=&kind=&after=`); a take is one person's act; §9.5 when the case holds a withdrawal.
 - **An action failed** (`finapp.risk.action.failed{kind}` > 0): the owning domain refused or timed out past the retries;
   `FAILED` is re-proposable on the case and never re-dispatched by itself. A domain's "already so" is `DONE(ALREADY)`,
-  not this alert.
+  not this alert. *(Since `P13-TSK-012` the series counts an approved override's issued action too - a release, denial,
+  capture or void of a held movement - whose dispatch threw: nothing was recorded and the permit stands, so the
+  monitoring sweep's override leg re-drives the same key `risk.action:<override id>` each lease (2 min) until payments
+  answers. A count that keeps rising for one kind is payments' door failing - the push rail, a card authorisation still
+  in flight - read `GET /v1/operator/risk/assessments/{id}/overrides/{overrideId}` (`actionAttempts`, `actionDueAt`);
+  the money is never at risk meanwhile: a held withdrawal not released is failed by its own expiry, a capture hold not
+  captured voided by payments' deadline.)*
 - **A filing unknown** (`finapp.risk.report{status="FILED"}` with no acknowledgement past the provider's deadline): §9.4.
 
 ### 9.3 Reprocessing the monitoring from an earlier watermark - the order

@@ -10,8 +10,8 @@ import java.util.UUID;
  * hold under its row lock in payments' own transaction, keyed by {@code idempotencyKey} ({@code risk.action:<id>}) and
  * audited by payments, then hands the money to payments' existing capture or void command - the provider called
  * holding no connection (ADR-0046). The actions {@link ActionKind#CAPTURE_HELD_PAYMENT} and
- * {@link ActionKind#VOID_HELD_PAYMENT} are executed through it; no risk caller is wired until `-012`'s approval door and
- * `-017`'s action machine.
+ * {@link ActionKind#VOID_HELD_PAYMENT} are executed through it - first by {@link OverrideActions#dispatch} for an approved
+ * override of a card {@code HOLD} (`P13-TSK-012`), next by `-017`'s action machine.
  *
  * <p><strong>The shape.</strong> No unit of work - the door sends, so it runs in payments' own transactions, never inside
  * a risk one (T-act's shape); the subject is the payment intent's id; the reason is a code
