@@ -434,6 +434,17 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public Optional<PaymentIntent> findOwnedForUpdate(
+                Connection uow, PaymentIntentId id, UUID partyId) {
+            return findOwned(uow, id, partyId);
+        }
+
+        @Override
+        public boolean refuse(Connection uow, PaymentIntentId id, PaymentFailureReason reason) {
+            throw new UnsupportedOperationException("the capture never refuses an intent");
+        }
+
+        @Override
         public boolean transition(
                 Connection uow, PaymentIntentId id, PaymentIntentStatus from,
                 PaymentIntentStatus to) {

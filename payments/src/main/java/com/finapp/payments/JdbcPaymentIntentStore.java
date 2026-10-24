@@ -24,6 +24,9 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
             "id, party_id, customer_id, payment_method_id, credit_account_id, capture_mode,"
                     + " amount_minor, currency, scale, status, created_at, debit_account_id";
 
+    /** What a read returns: the birth columns and risk's refusal reason (`P13-TSK-010`, never written at birth). */
+    private static final String READ_COLUMNS = COLUMNS + ", failure_reason";
+
     @Override
     public boolean anyInFlightCrediting(
             Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
@@ -81,7 +84,7 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         Objects.requireNonNull(intent, "intent must not be null");
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT " + COLUMNS + " FROM payments.payment_intent WHERE id = ?")) {
+                        "SELECT " + READ_COLUMNS + " FROM payments.payment_intent WHERE id = ?")) {
             read.setObject(1, intent.value());
             try (ResultSet row = read.executeQuery()) {
                 return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
@@ -100,7 +103,7 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         // party_id = ? IS the ownership check, in the statement (ADR-0031).
-                        "SELECT " + COLUMNS + " FROM payments.payment_intent"
+                        "SELECT " + READ_COLUMNS + " FROM payments.payment_intent"
                                 + " WHERE id = ? AND party_id = ?")) {
             read.setObject(1, intent.value());
             read.setObject(2, partyId);
@@ -114,6 +117,51 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
     }
 
     @Override
+    public Optional<PaymentIntent> findOwnedForUpdate(
+            Connection unitOfWork, PaymentIntentId intent, UUID partyId) {
+        Objects.requireNonNull(intent, "intent must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // The ownership predicate in the statement (ADR-0031), the row locked: the
+                        // confirmation serialised under its intent before anything is judged (P13-TSK-010).
+                        "SELECT " + READ_COLUMNS + " FROM payments.payment_intent"
+                                + " WHERE id = ? AND party_id = ? FOR UPDATE")) {
+            read.setObject(1, intent.value());
+            read.setObject(2, partyId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("locking an owned payment intent", failure));
+        }
+    }
+
+    @Override
+    public boolean refuse(
+            Connection unitOfWork, PaymentIntentId intent, PaymentFailureReason reason) {
+        Objects.requireNonNull(intent, "intent must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+        if (reason.isAttemptReason()) {
+            throw new IllegalArgumentException(
+                    reason + " is an attempt's reason: an intent is refused only by risk (P13-TSK-010)");
+        }
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        // One conditional statement: the edge and its reason together, V034's trigger beneath.
+                        "UPDATE payments.payment_intent SET status = 'FAILED', failure_reason = ?"
+                                + " WHERE id = ? AND status = 'REQUIRES_CONFIRMATION'")) {
+            update.setString(1, reason.name());
+            update.setObject(2, intent.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("refusing payment intent " + intent, failure));
+        }
+    }
+
+    @Override
     public List<PaymentIntent> listFor(Connection unitOfWork, UUID partyId) {
         Objects.requireNonNull(partyId, "partyId must not be null");
         try (PreparedStatement read =
@@ -121,7 +169,7 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
                         // party_id = ? IS the ownership check, in the statement (ADR-0031).
                         // Newest first; the id (UUIDv7, time-ordered) breaks created_at ties
                         // deterministically, so two instances render one order.
-                        "SELECT " + COLUMNS + " FROM payments.payment_intent"
+                        "SELECT " + READ_COLUMNS + " FROM payments.payment_intent"
                                 + " WHERE party_id = ? ORDER BY created_at DESC, id DESC")) {
             read.setObject(1, partyId);
             try (ResultSet rows = read.executeQuery()) {
@@ -146,6 +194,11 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         // The machine's own legality first (INV-LIFE-02 in the writer too): a store asked for
         // an edge the machine does not carry is a caller defect, loud - never a quiet 0.
         if (!from.canTransitionTo(to)) {
+            throw new IllegalPaymentIntentTransitionException(intent, from, to);
+        }
+        if (from == PaymentIntentStatus.REQUIRES_CONFIRMATION && to == PaymentIntentStatus.FAILED) {
+            // Risk's refusal carries its reason in the same statement (refuse, P13-TSK-010): a bare status move
+            // here would fail an intent with no reason anywhere - V034's trigger refuses it too.
             throw new IllegalPaymentIntentTransitionException(intent, from, to);
         }
         try (PreparedStatement update =
@@ -212,6 +265,9 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
                 row.getTimestamp("created_at").toInstant(),
                 row.getObject("debit_account_id", UUID.class) == null
                         ? null
-                        : LedgerAccountId.of(row.getObject("debit_account_id", UUID.class)));
+                        : LedgerAccountId.of(row.getObject("debit_account_id", UUID.class)),
+                row.getString("failure_reason") == null
+                        ? null
+                        : PaymentFailureReason.valueOf(row.getString("failure_reason")));
     }
 }

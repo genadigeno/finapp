@@ -260,6 +260,21 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
   leg, `HOLD_EXPIRED`), the release and the denial payments' keyed doors behind risk's `HeldWithdrawalActions`; a release
   past `held_until` is refused — the expiry is the policy's outcome. The SYSTEM withdrawal on an instruction (a loan's
   payout) is not judged — it carries out a credit decision (owner item). `CaseOpener` is still `NONE` (`-016`).)*
+  *(Checkout payments built by `P13-TSK-010`, 2026-10-24 — payments `V034`, risk `V008`, both slices. Payments' own seam
+  `PaymentRiskDecision` answers `PERMIT`, `HOLD(validity)` (a card only) or `REFUSE`, consulted in the confirmation's Tx1
+  under the intent row's lock, after the eligibility checks and the routing plan and before anything of the dispatch is
+  written; the command reference is the intent's id, so one intent has one assessment and a re-evaluation replays the
+  sealed decision. Decision 3's table for checkout: `ALLOW` and a satisfied `CHALLENGE` permit; `DENY` (C1's fail-safe at
+  or above EUR 250 among them) and an unsatisfied `CHALLENGE` refuse - **terminally**: the intent `FAILED` with its own
+  `RISK_REFUSED` and no attempt, never re-confirmable (routing's refusal stays the re-confirmable one); the customer and
+  the merchant read the generic `FAILED` with no reason (C6). Decision 3's `HOLD` row for a card: the authorisation
+  dispatched as any card payment's and the capture deferred behind a capture hold whose `held_until` is the pinned
+  version's hold validity on the database clock - captured or voided exactly once by payments' keyed doors, or voided by
+  the deadline; `RiskDecision.admittedBy(CARD_PAYMENT)` gained `HOLD` (risk `V008`; the wallet payment's did not, C2),
+  and a card version names a hold validity exactly when it can decide `HOLD`. A `HOLD` is not counted. A top-up and a
+  pay-by-bank checkout are not judged (owner item). **The lock order:** the wallet payment's T-eval runs after the book
+  rail's pair lock, not before as the plan's §7.3 sketch read - risk rows last in the caller's transaction, the order
+  every transfer and withdrawal keeps.)*
 - `P13-TST-001` measures T-eval p50/p99/max per operation beside the sweep; `P13-TST-002` replays every decision in
   two JVMs.
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the

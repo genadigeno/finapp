@@ -35,6 +35,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
@@ -170,6 +171,14 @@ public class CheckoutService {
     }
 
     private final CheckoutSessions checkout;
+
+    /**
+     * The confirmation door's step-up advice (`P13-TSK-010`): {@code 403 identity.AssuranceRequired} before the
+     * confirmation writes anything, through an {@code app} port - this service names no risk type
+     * ({@code NoCustomerSurfaceReadsRiskTest}).
+     */
+    private final CheckoutDoorStepUp stepUp;
+
     private final CheckoutMeters meters;
     private final MerchantSettlement settlement;
 
@@ -216,7 +225,9 @@ public class CheckoutService {
             Clock clock,
             TransactionTemplate transactions,
             DataSource dataSource,
-            com.finapp.identity.MfaEnrolmentStore<Connection> enrolments) {
+            com.finapp.identity.MfaEnrolmentStore<Connection> enrolments,
+            CheckoutDoorStepUp stepUp) {
+        this.stepUp = Objects.requireNonNull(stepUp, "stepUp must not be null");
         this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
@@ -387,6 +398,23 @@ public class CheckoutService {
         // THE ONE UNWRAP ON THE INBOUND PATH: the presented value goes straight into the
         // token type, which hashes it to look the session up and never surrenders it again.
         CheckoutSessionToken presented = CheckoutSessionToken.of(body.sessionToken().expose());
+
+        // THE RISK STEP-UP, BEFORE ANY ROW (P13-TSK-010): a payment risk would challenge, under a session that does not
+        // satisfy the challenge, is answered identity's 403 here - in a transaction of its own that writes nothing -
+        // so the customer steps up and confirms again instead of meeting a refused payment. Never for a payment
+        // already judged, never over an instrument not the caller's (CheckoutDoorStepUp's rules).
+        CheckoutDoorStepUp.Answer stepUpAnswer =
+                inOneTransaction(
+                        unitOfWork ->
+                                stepUp.advise(
+                                        unitOfWork,
+                                        partyOf(unitOfWork, current),
+                                        current.identityId(),
+                                        presented,
+                                        Optional.ofNullable(body.paymentMethodId())));
+        if (stepUpAnswer != CheckoutDoorStepUp.Answer.PROCEED) {
+            throw CheckoutDoorStepUp.refusal(stepUpAnswer);
+        }
 
         PaymentIntentId intent;
         CheckoutSessionId sessionId;

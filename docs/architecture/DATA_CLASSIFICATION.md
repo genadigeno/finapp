@@ -3006,6 +3006,25 @@ reads `HELD`, a status word, and none of these columns.
 | `withdrawal` | `failure_detail` | `INTERNAL` | `HOLD_EXPIRED` or null - an enumerated detail, never text; the customer reads `RISK_REFUSED` and never the detail |
 | `withdrawal` | `held_resolution_key` | `INTERNAL` | The keyed door's idempotency key (`risk.action:<id>`) - an identifier of a risk action, never a note or a reason |
 
+### `payments` - the risk-judged payment and the capture hold - *added by `P13-TSK-010`*
+
+`payments V034`: what risk's verdict left on a person's checkout payment - the intent's own `RISK_REFUSED` when it was
+refused before any attempt, and slice 2's capture hold when a card payment was authorised and its capture deferred: when
+it was held and until when (the pinned policy's hold validity, both on the database clock), how it ended and the key of
+the door that ended it. Nothing of the judgement crosses: no reason text, no score, no case (`INV-RSK-08`); the customer
+reads the intent's generic `FAILED` or `PROCESSING`, and none of these columns.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `payment_intent` | `failure_reason` | `CONFIDENTIAL` | `RISK_REFUSED` or null - that a person's payment was refused is a fact about them (`payment_attempt.failure_reason`'s reasoning); internal - the customer's and the merchant's answers carry no reason |
+| `payment_capture_hold` | `intent_id` | `INTERNAL` | An identifier of a thing - the held intent |
+| `payment_capture_hold` | `attempt_id` | `INTERNAL` | An identifier of a thing - the held card attempt |
+| `payment_capture_hold` | `held_at` | `CONFIDENTIAL` | Dates a person's payment being held - the `withdrawal.held_at` reasoning; never a customer surface's |
+| `payment_capture_hold` | `held_until` | `CONFIDENTIAL` | When the hold's validity lapses: it discloses the review window - the `withdrawal.held_until` reasoning |
+| `payment_capture_hold` | `resolution` | `CONFIDENTIAL` | `CAPTURE`, `VOID`, `EXPIRED` or null - how a person's held payment ended, decided by a person or the deadline |
+| `payment_capture_hold` | `resolution_key` | `INTERNAL` | The keyed door's idempotency key (`risk.action:<id>`) - an identifier of a risk action, never a note or a reason |
+| `payment_capture_hold` | `resolved_at` | `CONFIDENTIAL` | Dates the resolution - the `held_at` reasoning |
+
 ### `lending` - the interest accrual and the servicing permit - *added by `P11-TSK-016`*
 
 `lending V010`: one row per account and accrued date - the base, the period's exact cumulative interest and what the date

@@ -59,8 +59,11 @@ public enum RiskDecision {
         return switch (operation) {
             case TRANSFER, CROSS_BORDER -> EnumSet.of(ALLOW, CHALLENGE, DENY, REVIEW);
             case WITHDRAWAL -> EnumSet.of(ALLOW, CHALLENGE, DENY, HOLD, REVIEW);
-            // HOLD joins CARD_PAYMENT with `-010`'s second slice, beside the capture-and-hold it needs.
-            case CARD_PAYMENT, WALLET_PAYMENT -> EnumSet.of(ALLOW, CHALLENGE, DENY);
+            // HOLD joined CARD_PAYMENT with `-010`'s second slice (2026-10-24, risk V008), beside the doors that honour
+            // it - payments' authorise-and-defer: the card authorised, its capture held until a person captures or
+            // voids it, or the hold validity lapses and payments voids it. A wallet has no native hold (C2).
+            case CARD_PAYMENT -> EnumSet.of(ALLOW, CHALLENGE, DENY, HOLD);
+            case WALLET_PAYMENT -> EnumSet.of(ALLOW, CHALLENGE, DENY);
             case CREDIT_SIGNAL, MONITORING -> EnumSet.noneOf(RiskDecision.class);
         };
     }

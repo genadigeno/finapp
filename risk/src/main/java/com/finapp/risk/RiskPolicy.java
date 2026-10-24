@@ -48,6 +48,24 @@ public record RiskPolicy(
     /** The reference currency every version is written in (C1's bands are EUR). */
     public static final CurrencyCode REFERENCE_CURRENCY = CurrencyCode.of("EUR");
 
+    /**
+     * Whether a version of {@code operation} with these rules and score bands names a hold validity (`P13-TSK-010`):
+     * a withdrawal's always (its native hold-then-dispatch, C2); another operation's exactly when it admits
+     * {@code HOLD} and one of its score bands or rules' hard decisions can decide it (a fail-safe band never holds).
+     * The one rule the version's own validation and the policy desk's default both read.
+     */
+    public static boolean namesHoldValidity(RiskOperation operation, List<RiskRule> rules, List<ScoreBand> scoreBands) {
+        Objects.requireNonNull(operation, "operation");
+        if (operation == RiskOperation.WITHDRAWAL) {
+            return true;
+        }
+        if (!RiskDecision.HOLD.isAdmittedBy(operation)) {
+            return false;
+        }
+        return scoreBands.stream().anyMatch(band -> band.decision() == RiskDecision.HOLD)
+                || rules.stream().anyMatch(rule -> rule.hardDecision().filter(RiskDecision.HOLD::equals).isPresent());
+    }
+
     /** The version is not complete, a parameter is outside its kind's schema, or a band maps to an unadmitted decision. */
     public static final class PolicyInvalid extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -123,11 +141,18 @@ public record RiskPolicy(
             if (!threshold.currency().equals(currency) || threshold.minorUnits() < 0) {
                 throw new PolicyInvalid("the override threshold is a non-negative amount in the version's currency");
             }
+            // The hold validity is named exactly where it can be used: a withdrawal's version always (its native
+            // hold-then-dispatch, C2), and - since `-010`'s second slice - a card payment's version exactly when one of
+            // its score bands or rules can decide HOLD (a fail-safe band never holds; a card version that never holds
+            // names none, so every version written before HOLD was admitted stays valid as written).
             boolean admitsHold = admitted.contains(RiskDecision.HOLD);
-            if (admitsHold != holdValidity.isPresent()) {
-                throw new PolicyInvalid(admitsHold
-                        ? operation + " admits HOLD: its version names the hold validity"
-                        : operation + " admits no HOLD: a hold validity has no meaning for it");
+            boolean namesHold = namesHoldValidity(operation, rules, scoreBands);
+            if (namesHold != holdValidity.isPresent()) {
+                throw new PolicyInvalid(namesHold
+                        ? operation + " can decide HOLD: its version names the hold validity"
+                        : operation + (admitsHold
+                                ? " decides no HOLD in this version: a hold validity has no meaning for it"
+                                : " admits no HOLD: a hold validity has no meaning for it"));
             }
             if (holdValidity.isPresent()) {
                 Duration validity = holdValidity.get();

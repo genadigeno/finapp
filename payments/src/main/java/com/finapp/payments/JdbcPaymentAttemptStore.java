@@ -218,6 +218,11 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 + " WHERE a.status = 'AUTHORIZED'"
                                 + "   AND a.interaction_model = 'TWO_STEP'"
                                 + "   AND i.capture_mode = 'AUTOMATIC'"
+                                // A held card payment is a person's to release (P13-TSK-010): an open, voided or
+                                // expired capture hold keeps the leg away; one released for CAPTURE is finished here
+                                // when the door's own capture never ran.
+                                + "   AND NOT EXISTS (SELECT 1 FROM payments.payment_capture_hold ch"
+                                + "     WHERE ch.attempt_id = a.id AND ch.resolution IS DISTINCT FROM 'CAPTURE')"
                                 + "   AND COALESCE(h.entered, a.created_at) <= ?"
                                 + " ORDER BY a.created_at, a.id"
                                 + " LIMIT ?")) {
@@ -331,7 +336,14 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE payments.payment_attempt SET status = ?, capture_reference = ?"
-                                + " WHERE id = ? AND status = ?")) {
+                                + " WHERE id = ? AND status = ?"
+                                // A held card payment's capture waits for its hold (P13-TSK-010, V034): an
+                                // authorisation whose capture hold is open, voided or expired is not dispatched -
+                                // the conditional answers false and the caller converges on AUTHORIZED; V034's
+                                // trigger refuses the same edge for every other writer.
+                                + " AND NOT EXISTS (SELECT 1 FROM payments.payment_capture_hold h"
+                                + "   WHERE h.attempt_id = payment_attempt.id"
+                                + "   AND h.resolution IS DISTINCT FROM 'CAPTURE')")) {
             update.setString(1, PaymentAttemptStatus.CAPTURE_DISPATCHED.name());
             update.setString(2, reference.value());
             update.setObject(3, attempt.value());

@@ -9,10 +9,11 @@ import java.util.stream.Collectors;
  * The payment-intent machine (ADR-0045, {@code PAYMENT_LIFECYCLES.md} §2, {@code INV-LIFE-01}):
  *
  * <pre>REQUIRES_CONFIRMATION ──&gt; PROCESSING ──&gt; SUCCEEDED
- *           │                        └───────&gt; FAILED
+ *           │  │                     └───────&gt; FAILED
+ *           │  └────────────────────────────────&gt; FAILED   (risk's refusal, P13-TSK-010: RISK_REFUSED, no attempt)
  *           └──────────────────────&gt; CANCELLED</pre>
  *
- * <p>Five states, four edges, and <strong>every state has a producer and is durably
+ * <p>Five states, five edges since `P13-TSK-010` (four until then), and <strong>every state has a producer and is durably
  * observable</strong> — ADR-0044's doctrine, applied to the machine it was written to precede.
  * Unlike the transfer's {@code INITIATED}, every state here is committed: creation commits
  * {@code REQUIRES_CONFIRMATION}, which is precisely the window that gives {@code CANCELLED} the
@@ -69,7 +70,9 @@ public enum PaymentIntentStatus {
     /**
      * The attempt failed. The mapped, enumerated reason is the <em>attempt's</em> fact
      * ({@code PAYMENT_LIFECYCLES.md} §2, {@code INV-PAY-03}) — this row carries no copy of it.
-     * Terminal; a customer who still wants to pay creates a new intent (ADR-0045 §4).
+     * Terminal; a customer who still wants to pay creates a new intent (ADR-0045 §4). Since `P13-TSK-010` also risk's
+     * refusal at the confirmation: reached straight from {@code REQUIRES_CONFIRMATION} with no attempt, the reason
+     * ({@code RISK_REFUSED}) then the intent's own, because no attempt exists to carry it.
      */
     FAILED,
 
@@ -82,7 +85,10 @@ public enum PaymentIntentStatus {
     /** The states reachable from this one. */
     public Set<PaymentIntentStatus> permittedTransitions() {
         return switch (this) {
-            case REQUIRES_CONFIRMATION -> EnumSet.of(PROCESSING, CANCELLED);
+            // FAILED from REQUIRES_CONFIRMATION is risk's refusal (P13-TSK-010, payments V034): committed in the
+            // confirmation's Tx1 before any attempt or dispatch, with the intent's own RISK_REFUSED - and terminal, so
+            // the refused intent is never confirmed again (routing's refusal, by contrast, moves nothing: ADR-0060).
+            case REQUIRES_CONFIRMATION -> EnumSet.of(PROCESSING, CANCELLED, FAILED);
             case PROCESSING -> EnumSet.of(SUCCEEDED, FAILED);
             case SUCCEEDED, FAILED, CANCELLED -> EnumSet.noneOf(PaymentIntentStatus.class);
         };

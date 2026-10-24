@@ -219,6 +219,10 @@ public final class PaymentAttempt {
                     "a payment attempt carries a failure reason exactly when FAILED - "
                             + status + " with reason " + failureReason + " is incoherent");
         }
+        if (failureReason != null && !failureReason.isAttemptReason()) {
+            throw new IllegalArgumentException(
+                    "an attempt never carries " + failureReason + " - the intent's reason (P13-TSK-010)");
+        }
 
         // The issuer's promise is one fact: reference and amount together or not at all.
         if ((authorizationProviderReference != null) != (authorizedAmount != null)) {
@@ -528,6 +532,11 @@ public final class PaymentAttempt {
     /** The try failed, at either stage, with the mapped reason — this row's fact. */
     public PaymentAttempt fail(PaymentFailureReason reason) {
         Objects.requireNonNull(reason, "a FAILED attempt requires its mapped reason");
+        if (!reason.isAttemptReason()) {
+            // RISK_REFUSED is the intent's (P13-TSK-010): a refusal precedes every attempt.
+            throw new IllegalArgumentException(
+                    "an attempt never fails " + reason + ": a risk refusal is committed before any attempt exists");
+        }
         requireLegal(PaymentAttemptStatus.FAILED);
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,

@@ -31,6 +31,9 @@ class RiskAssessmentMigrationTest {
 
     private static final String RESOURCE = "db/migration/risk/V007__the_sealed_assessment.sql";
 
+    /** risk V008 (P13-TSK-010): the decision admission and the policy knobs regenerated for CARD_PAYMENT's HOLD. */
+    private static final String HELD_CARD_PAYMENT = "db/migration/risk/V008__the_held_card_payment.sql";
+
     private static final List<String> MIGRATIONS = List.of(
             "db/migration/risk/V001__initialise_risk_schema.sql",
             "db/migration/risk/V002__risk_policy_versions_as_data.sql",
@@ -67,6 +70,14 @@ class RiskAssessmentMigrationTest {
         String reasons = Arrays.stream(ReasonCode.values()).filter(code -> code.source() != ReasonCode.Source.SEAM)
                 .map(code -> "'" + code.name() + "'").collect(Collectors.joining(", "));
         assertThat(sql).contains("CHECK (code IN (" + reasons + "))");
+        // The decisions each operation admits: V007's CHECK is applied history since risk V008 (P13-TSK-010) dropped and
+        // re-made it with CARD_PAYMENT's HOLD - the current definition is V008's, and THAT is held to admittedBy.
+        assertThat(sql).as("V007 as it was written: CARD_PAYMENT without HOLD")
+                .contains("OR (operation IN ('CARD_PAYMENT', 'WALLET_PAYMENT') AND decision IN ('ALLOW', 'CHALLENGE',"
+                        + " 'DENY'))");
+        String current = collapsed(statements(HELD_CARD_PAYMENT));
+        assertThat(current).contains("ALTER TABLE risk.risk_assessment DROP CONSTRAINT risk_assessment_decision_admitted;");
+        sql = current;
         for (RiskOperation operation : RiskOperation.values()) {
             if (!operation.judgesAMovement()) {
                 continue;
@@ -131,6 +142,24 @@ class RiskAssessmentMigrationTest {
         assertThat(v007).as("no name an earlier risk migration already holds").noneMatch(earlier::contains);
         assertThat(v007).allMatch(name -> name.startsWith("risk_assessment") || name.startsWith("risk_rule_hit_")
                 || name.startsWith("risk_reason_") || name.startsWith("decision_override_"));
+    }
+
+    @Test
+    @DisplayName("risk V008 (P13-TSK-010) declares no new name: it regenerates exactly the two widened CHECKs, each"
+            + " DROPped first, and names no other schema")
+    void theHeldCardPaymentRegeneratesTwoChecks() {
+        String sql = statements(HELD_CARD_PAYMENT);
+        assertThat(names(sql)).containsExactly("risk_assessment_decision_admitted", "risk_policy_knobs_coherent");
+        assertThat(sql).contains("ALTER TABLE risk.risk_assessment DROP CONSTRAINT risk_assessment_decision_admitted;")
+                .contains("ALTER TABLE risk.risk_policy DROP CONSTRAINT risk_policy_knobs_coherent;")
+                .doesNotContain("GRANT").doesNotContain("CREATE TABLE");
+        assertThat(ANOTHER_SCHEMA.matcher(sql).find()).isFalse();
+        java.util.Set<String> earlier = new java.util.HashSet<>();
+        for (String migration : MIGRATIONS) {
+            earlier.addAll(names(statements(migration)));
+        }
+        assertThat(earlier).as("both names are earlier migrations' constraints, re-made")
+                .contains("risk_assessment_decision_admitted", "risk_policy_knobs_coherent");
     }
 
     /** The constraint, index and trigger names a migration creates. */

@@ -9,9 +9,9 @@ import java.util.Objects;
  *
  * <p>Each kind names its <strong>target</strong> ({@link SubjectKind}) and the <strong>owning domain</strong> whose port
  * executes it - identity ({@code IdentityActions}), accounts ({@code AccountActions}), merchant ({@code MerchantActions}),
- * crossborder ({@code BeneficiaryActions}), payments ({@code HeldWithdrawalActions}) and kyc ({@code PartyRescreening}).
- * The two held-payment kinds are `-010`'s second slice's: declared so the vocabulary is whole, proposable only once that
- * slice lands (the task edits {@link #available}).
+ * crossborder ({@code BeneficiaryActions}), payments ({@code HeldWithdrawalActions}, {@code HeldPaymentActions}) and kyc
+ * ({@code PartyRescreening}). The two held-payment kinds are `-010`'s second slice's: declared with the vocabulary,
+ * available since that slice landed (2026-10-24) beside payments' doors and the {@code HeldPaymentActions} port.
  */
 public enum ActionKind {
 
@@ -42,11 +42,14 @@ public enum ActionKind {
     /** Deny a held withdrawal, releasing its hold. */
     DENY_HELD_WITHDRAWAL(SubjectKind.ACCOUNT, Domain.PAYMENTS, true),
 
-    /** Capture a held card payment (`-010`'s second slice; not yet proposable). */
-    CAPTURE_HELD_PAYMENT(SubjectKind.MERCHANT, Domain.PAYMENTS, false),
+    /**
+     * Capture a held card payment (`-010`'s second slice, 2026-10-24): payments' keyed capture door behind
+     * {@code HeldPaymentActions}.
+     */
+    CAPTURE_HELD_PAYMENT(SubjectKind.MERCHANT, Domain.PAYMENTS, true),
 
-    /** Void a held card payment (`-010`'s second slice; not yet proposable). */
-    VOID_HELD_PAYMENT(SubjectKind.MERCHANT, Domain.PAYMENTS, false),
+    /** Void a held card payment (`-010`'s second slice, 2026-10-24): payments' keyed void door. */
+    VOID_HELD_PAYMENT(SubjectKind.MERCHANT, Domain.PAYMENTS, true),
 
     /** Request kyc's rescreening of the party (`-022`). */
     RESCREEN_PARTY(SubjectKind.PARTY, Domain.KYC, true);
@@ -81,7 +84,7 @@ public enum ActionKind {
         return domain;
     }
 
-    /** True once the owning domain has a door for it - the two held-payment kinds wait for `-010`'s second slice. */
+    /** True once the owning domain has a door for it - every kind since `-010`'s second slice. */
     public boolean available() {
         return available;
     }

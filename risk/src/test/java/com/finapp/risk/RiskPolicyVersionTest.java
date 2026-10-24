@@ -154,6 +154,30 @@ class RiskPolicyVersionTest {
                 RiskPolicyFixtures.failSafe(RiskDecision.DENY), Optional.of(Duration.ofHours(720))).holdValidity())
                 .contains(Duration.ofHours(720));
 
+        // The card payment (P13-TSK-010's second slice): a version names a hold validity exactly when it can decide
+        // HOLD - a band or a rule - so the C8 fixture, which holds nothing, stays valid as written.
+        List<ScoreBand> holding = List.of(new ScoreBand(0, 299, RiskDecision.ALLOW),
+                new ScoreBand(300, 699, RiskDecision.HOLD), new ScoreBand(700, 1000, RiskDecision.DENY));
+        assertThatThrownBy(() -> judged(RiskOperation.CARD_PAYMENT, defaultRules(), holding,
+                RiskPolicyFixtures.failSafe(RiskDecision.DENY), Optional.empty()))
+                .isInstanceOf(RiskPolicy.PolicyInvalid.class).hasMessageContaining("CARD_PAYMENT can decide HOLD");
+        assertThat(judged(RiskOperation.CARD_PAYMENT, defaultRules(), holding,
+                RiskPolicyFixtures.failSafe(RiskDecision.DENY), Optional.of(Duration.ofHours(72))).holdValidity())
+                .contains(Duration.ofHours(72));
+        assertThat(judged(RiskOperation.CARD_PAYMENT, List.of(
+                RiskRule.deciding(1, RuleKind.AMOUNT_BAND, amount(2_500_00), RiskDecision.HOLD)), fourBands(),
+                RiskPolicyFixtures.failSafe(RiskDecision.DENY), Optional.of(Duration.ofHours(24))).holdValidity())
+                .as("a rule's hard HOLD is a HOLD the version can decide").contains(Duration.ofHours(24));
+        assertThatThrownBy(() -> judged(RiskOperation.CARD_PAYMENT, defaultRules(), List.of(
+                new ScoreBand(0, 1000, RiskDecision.ALLOW)), RiskPolicyFixtures.failSafe(RiskDecision.DENY),
+                Optional.of(Duration.ofHours(72))))
+                .isInstanceOf(RiskPolicy.PolicyInvalid.class).hasMessageContaining("decides no HOLD in this version");
+        assertThat(RiskPolicyFixtures.v1(RiskOperation.CARD_PAYMENT).holdValidity())
+                .as("the C8 card fixture holds nothing and names nothing").isEmpty();
+        assertThatThrownBy(() -> judged(RiskOperation.WALLET_PAYMENT, defaultRules(), holding,
+                RiskPolicyFixtures.failSafe(RiskDecision.DENY), Optional.of(Duration.ofHours(72))))
+                .isInstanceOf(RiskPolicy.PolicyInvalid.class).hasMessageContaining("WALLET_PAYMENT does not admit");
+
         assertThatThrownBy(() -> new RiskPolicy(RiskOperation.TRANSFER, RiskEngine.RISK_ENGINE_V1, EUR, defaultRules(),
                 fourBands(), List.of(), RiskPolicyFixtures.failSafe(RiskDecision.DENY), Optional.empty(),
                 Optional.of(Money.ofMinorUnits(1_000_00, EUR)), Optional.empty()))

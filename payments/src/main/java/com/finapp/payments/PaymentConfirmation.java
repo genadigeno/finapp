@@ -57,6 +57,17 @@ import lombok.RequiredArgsConstructor;
  * provider</strong>: the stranded-dispatch case belongs to the sweeper, so a retry can never
  * cause a second provider operation ({@code INV-PAY-04} end to end). No ledger effect
  * anywhere (ADR-0048): this class imports no posting type, structurally.
+ *
+ * <h2>Judged by risk in Tx1, under the intent (`P13-TSK-010`)</h2>
+ *
+ * <p>Tx1 locks the intent row first, so confirmations of one intent are serialised before any is judged. After the
+ * eligibility checks and the routing plan - and, for the wallet, the book rail's pair lock (money rows before risk's)
+ * - the required {@link PaymentRiskDecision} is asked once, its command reference the intent's id, before anything of
+ * the decision, the attempt or the intent's move is written: {@code PERMIT} routes and dispatches as before;
+ * {@code REFUSE} commits the intent {@code FAILED} with its own {@code RISK_REFUSED} - no attempt, no routing row,
+ * nothing sent, and <strong>terminal</strong>, where routing's refusal leaves the intent awaiting confirmation (ADR-0060
+ * §3); {@code HOLD} (a card only) dispatches the authorisation as any card payment's and defers the capture behind a
+ * {@link CaptureHold} born open beside the attempt.
  */
 @RequiredArgsConstructor
 public final class PaymentConfirmation {
@@ -100,6 +111,20 @@ public final class PaymentConfirmation {
      * rule).
      */
     @NonNull private final RailOperations operations;
+
+    /**
+     * The checkout payment's risk seam (`P13-TSK-010`) - required, with no defaulted overload: a confirmation composed
+     * without a judgement must not compile ({@code PaymentConfirmationSeamIsRequiredTest}). Consulted in Tx1 under the
+     * locked intent, after the eligibility checks (and, for the wallet, the book rail's pair lock) and before anything
+     * of the routing decision is written. Appended after {@link #operations} for the Lombok field-order rule.
+     */
+    @NonNull private final PaymentRiskDecision<java.sql.Connection> risk;
+
+    /** Slice 2's capture holds (`P13-TSK-010`): the hold a card payment's {@code HOLD} verdict is born with. */
+    @NonNull private final CaptureHoldStore<java.sql.Connection> captureHolds;
+
+    /** {@code PaymentCaptureDeferred} (`P13-TSK-010`): a held card payment, announced with Tx1. */
+    static final String CAPTURE_DEFERRED_EVENT_TYPE = "payments.PaymentCaptureDeferred";
 
     /** {@code RailSelected} (`P7-TSK-003`): the routed dispatch, published with Tx1. */
     static final String RAIL_SELECTED_EVENT_TYPE = "payments.RailSelected";
@@ -146,7 +171,7 @@ public final class PaymentConfirmation {
      * @throws UnknownPaymentInstrumentException the instrument was detached since creation;
      *     nothing written, the intent still awaits confirmation
      * @throws IllegalPaymentIntentTransitionException the intent is cancelled or already
-     *     terminal — the caller's 409, nothing written
+     *     terminal — risk's refusal included (`P13-TSK-010`): the caller's 409, nothing written
      * @throws NoEligibleRailException no declared rail can carry the payment (`P7-TSK-003`):
      *     the refusal IS written — a decision with no chosen rail, audited — and the intent
      *     still awaits confirmation, deliberately retryable after an operator acts
@@ -219,8 +244,12 @@ public final class PaymentConfirmation {
             PaymentIntentId intentId,
             Actor person,
             Correlation correlation) {
+        // UNDER THE INTENT (P13-TSK-010): the row FOR UPDATE first, so ten confirmations of one intent are serialised
+        // before any is judged - the nine read the winner's commit and converge (PROCESSING, SUCCEEDED) or are refused
+        // (FAILED: a risk refusal is terminal) having taken no money and no risk lock. Every money row and every risk
+        // row this transaction takes comes after this one (DISTRIBUTED_EXECUTION.md section 3).
         PaymentIntent intent =
-                intents.findOwned(uow, intentId, callerPartyId)
+                intents.findOwnedForUpdate(uow, intentId, callerPartyId)
                         .orElseThrow(UnknownPaymentException::new);
         if (intent.status() == PaymentIntentStatus.PROCESSING) {
             return converged(uow, intent);
@@ -311,6 +340,61 @@ public final class PaymentConfirmation {
             return refused(uow, intentId, policy, routingInputs, plan, person, correlation);
         }
 
+        // The chosen rail's DECLARED model must be the dispatch this command performs for the
+        // instrument's kind: AUTH_DISPATCHED for the card's two-step machine, AWAITING_PAYER for
+        // the push initiation (P7-TSK-009), the book rail's one-transaction execution
+        // (P7-TSK-011) - or the policy, the declaration and this command disagree: a wiring
+        // fault, loud before anything is written (the PaymentOutcomes precedent). Judged before
+        // the risk seam since P13-TSK-010, so a wiring fault is never judged.
+        RailId chosen = plan.chosen().orElseThrow();
+        InteractionModel dispatched =
+                switch (kind) {
+                    case CARD_TOKEN -> InteractionModel.TWO_STEP;
+                    case BANK_ACCOUNT -> InteractionModel.PUSH;
+                    case WALLET -> InteractionModel.BOOK;
+                };
+        if (rails.capabilitiesOf(chosen).interactionModel() != dispatched) {
+            throw new IllegalStateException(
+                    "routing chose '" + chosen.value() + "', whose interaction model is not"
+                            + " the " + dispatched + " machine this command dispatches"
+                            + " (P7-TSK-003): eligibility should have refused it");
+        }
+        if (dispatched == InteractionModel.PUSH && operations.pushRail(chosen).isEmpty()) {
+            // The directory's lookup (P9-TSK-014, ADR-0080 section 2): the routed rail speaks no
+            // push operation here - the whole transaction rolls back before anything is sent.
+            throw new PushRailUnavailableException();
+        }
+
+        // THE RISK SEAM (P13-TSK-010; PHASE_13_PLAN.md section 7.3): after every eligibility check and the routing
+        // plan, before anything of the decision, the attempt or the intent's move is written - so a refusal routes
+        // nothing and sends nothing. Money rows first, risk's last: the book rail's pair is locked HERE, ahead of
+        // T-eval's subject locks (held to commit), in the order every transfer and withdrawal takes its account rows
+        // before risk - never the reverse, which would close a cycle with a transfer of the same party.
+        if (dispatched == InteractionModel.BOOK) {
+            outcomes.lockBookPair(uow, intent);
+        }
+        PaymentVerdict verdict =
+                risk.check(
+                        uow,
+                        new PaymentRiskDecision.Judged(
+                                intentId,
+                                intent.partyId(),
+                                kind,
+                                intent.debitAccount(),
+                                intent.creditAccount(),
+                                intent.amount()));
+        Objects.requireNonNull(verdict, "the risk seam answers every confirmation");
+        if (verdict.kind() == PaymentVerdict.Kind.REFUSE) {
+            return refusedByRisk(uow, intent, kind, person, correlation);
+        }
+        if (verdict.kind() == PaymentVerdict.Kind.HOLD && kind != InstrumentKind.CARD_TOKEN) {
+            // C2: only the card's authorisation is a native hold. A HOLD for a wallet or a bank pay-in is a seam
+            // defect, loud - the whole transaction rolls back with its assessment, nothing written.
+            throw new IllegalStateException(
+                    "the risk seam answered HOLD for a " + kind + " payment: only a card authorisation holds"
+                            + " (P13-TSK-010, C2)");
+        }
+
         if (!intents.transition(
                 uow,
                 intentId,
@@ -344,31 +428,8 @@ public final class PaymentConfirmation {
                 now);
 
         // The winner: the attempt is born on the CHOSEN rail with its reference already
-        // minted and stored - before anything is sent (INV-PAY-04, ADR-0046). Which birth
-        // is the KIND's dispatch: AUTH_DISPATCHED for the card's two-step machine,
-        // AWAITING_PAYER for the push initiation (P7-TSK-009) - and the chosen rail's
-        // DECLARED model must be that dispatch's, or the policy, the declaration and this
-        // command disagree: a wiring fault, loud before anything is written (the
-        // PaymentOutcomes precedent).
-        RailId chosen = plan.chosen().orElseThrow();
-        InteractionModel dispatched =
-                switch (kind) {
-                    case CARD_TOKEN -> InteractionModel.TWO_STEP;
-                    case BANK_ACCOUNT -> InteractionModel.PUSH;
-                    case WALLET -> InteractionModel.BOOK;
-                };
-        if (rails.capabilitiesOf(chosen).interactionModel() != dispatched) {
-            throw new IllegalStateException(
-                    "routing chose '" + chosen.value() + "', whose interaction model is not"
-                            + " the " + dispatched + " machine this command dispatches"
-                            + " (P7-TSK-003): eligibility should have refused it");
-        }
-        if (dispatched == InteractionModel.PUSH && operations.pushRail(chosen).isEmpty()) {
-            // The directory's lookup (P9-TSK-014, ADR-0080 section 2): the routed rail speaks no
-            // push operation here - the whole transaction rolls back before anything is sent.
-            throw new PushRailUnavailableException();
-        }
-
+        // minted and stored - before anything is sent (INV-PAY-04, ADR-0046) - in the
+        // dispatch the instrument's kind decided above.
         if (dispatched == InteractionModel.BOOK) {
             // THE BOOK RAIL COMPLETES HERE, IN THIS TRANSACTION (P7-TSK-011, ADR-0059 §6):
             // no wire exists, so there is no connectionless gap, no Tx2 and no in-flight
@@ -411,6 +472,14 @@ public final class PaymentConfirmation {
                 recordDispatch(
                         uow, intentId, attempt, chosen, policy, routingInputs, plan, person,
                         correlation, now);
+        if (verdict.kind() == PaymentVerdict.Kind.HOLD) {
+            // SLICE 2 (P13-TSK-010): the card is authorised as any card payment is - this attempt, dispatched before the
+            // call - and its capture deferred: the hold born open beside the attempt, its window on the database clock.
+            // Nothing captures it until a person's keyed door or the expiry leg resolves it (the capture's conditional
+            // and V034's trigger refuse the dispatch while it stands).
+            captureHolds.insert(uow, intentId, attempt.id(), verdict.holdValidity().orElseThrow());
+            deferCapture(uow, intentId, attempt, person, correlation, now);
+        }
         return new Tx1Outcome(
                 Optional.of(new Dispatch(attempt, token, intent.amount(), decision)),
                 Optional.empty(),
@@ -538,6 +607,117 @@ public final class PaymentConfirmation {
                                         + ", policyVersion=" + policy.version()
                                         + ", steps=" + decision.steps().size())));
         return new Tx1Outcome(Optional.empty(), Optional.empty(), Optional.of(decision.id()));
+    }
+
+    /**
+     * Risk refused the payment (`P13-TSK-010`): the intent {@code REQUIRES_CONFIRMATION → FAILED} with its own
+     * {@code RISK_REFUSED} under the lock this transaction holds - no attempt, no routing decision, nothing sent -
+     * committed with the sealed assessment, the history row, the person's audit record ({@code FAILED}) and
+     * {@code payments.PaymentFailed}. Terminal: a re-confirmation reads {@code FAILED} and is refused by the machine; the
+     * customer's path is a new intent. The answer is the intent's generic failure - no attempt, so no reason renders.
+     */
+    private Tx1Outcome refusedByRisk(
+            java.sql.Connection uow,
+            PaymentIntent intent,
+            InstrumentKind kind,
+            Actor person,
+            Correlation correlation) {
+        PaymentIntent refused = intent.refuseByRisk();
+        if (!intents.refuse(uow, intent.id(), refused.failureReason().orElseThrow())) {
+            throw new IllegalStateException(
+                    "the locked intent " + intent.id() + " left REQUIRES_CONFIRMATION under its own lock");
+        }
+        Instant now = Instant.now(clock);
+        intents.recordTransition(
+                uow,
+                intent.id(),
+                PaymentIntentStatus.REQUIRES_CONFIRMATION,
+                PaymentIntentStatus.FAILED,
+                person,
+                now);
+        audit.append(
+                uow,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        person,
+                        now,
+                        PaymentsAuditAction.PAYMENT_RISK_REFUSED,
+                        PaymentCreation.TARGET_TYPE,
+                        intent.id().value().toString(),
+                        Optional.empty(),
+                        AuditOutcome.FAILED,
+                        correlation.correlationId(),
+                        // Identifiers and enumerated names - never an amount, a reason or a rule (INV-RSK-08).
+                        Optional.of("intent=" + intent.id() + ", instrument=" + kind.name())));
+        outbox.write(
+                uow,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        PaymentOutcomes.FAILED_EVENT_TYPE,
+                        PaymentCreation.EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        intent.id(),
+                        PaymentCreation.TARGET_TYPE,
+                        now,
+                        PaymentCreation.PRODUCER,
+                        correlation.correlationId(),
+                        correlation.cause().orElseThrow()),
+                EventPayload.of()
+                        .with("status", PaymentIntentStatus.FAILED.name())
+                        .with("failureReason", PaymentFailureReason.RISK_REFUSED.name())
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
+        return new Tx1Outcome(
+                Optional.empty(),
+                Optional.of(
+                        new ConfirmationResult(
+                                PaymentIntentStatus.FAILED, Optional.empty(), false, true)),
+                Optional.empty());
+    }
+
+    /**
+     * The held card payment's record (`P13-TSK-010`, slice 2): the deferral audited as the person's act beside their
+     * confirmation and announced {@code payments.PaymentCaptureDeferred} - identifiers and the status, nothing of the
+     * judgement.
+     */
+    private void deferCapture(
+            java.sql.Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttempt attempt,
+            Actor person,
+            Correlation correlation,
+            Instant now) {
+        audit.append(
+                uow,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        person,
+                        now,
+                        PaymentsAuditAction.PAYMENT_CAPTURE_DEFERRED,
+                        PaymentCreation.TARGET_TYPE,
+                        intentId.value().toString(),
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of("intent=" + intentId + ", attempt=" + attempt.id())));
+        outbox.write(
+                uow,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        CAPTURE_DEFERRED_EVENT_TYPE,
+                        PaymentCreation.EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        intentId,
+                        PaymentCreation.TARGET_TYPE,
+                        now,
+                        PaymentCreation.PRODUCER,
+                        correlation.correlationId(),
+                        correlation.cause().orElseThrow()),
+                EventPayload.of()
+                        .with("status", PaymentIntentStatus.PROCESSING.name())
+                        .with("attemptId", attempt.id().value().toString())
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
     }
 
     /** The retry's answer: the current states, no provider call, no second dispatch. */

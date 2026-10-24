@@ -41,11 +41,13 @@ class PaymentIntentTest {
     private static final Money AMOUNT = Money.ofMinorUnits(25_00, EUR);
 
     @Test
-    @DisplayName("the machine is pinned: five states, four edges, SUCCEEDED with no exit")
+    @DisplayName("the machine is pinned: five states, five edges (risk's refusal since P13-TSK-010), SUCCEEDED with"
+            + " no exit")
     void theMachineIsPinned() {
         assertThat(PaymentIntentStatus.REQUIRES_CONFIRMATION.permittedTransitions())
                 .containsExactlyInAnyOrder(
-                        PaymentIntentStatus.PROCESSING, PaymentIntentStatus.CANCELLED);
+                        PaymentIntentStatus.PROCESSING, PaymentIntentStatus.CANCELLED,
+                        PaymentIntentStatus.FAILED);
         assertThat(PaymentIntentStatus.PROCESSING.permittedTransitions())
                 .containsExactlyInAnyOrder(
                         PaymentIntentStatus.SUCCEEDED, PaymentIntentStatus.FAILED);
@@ -277,13 +279,67 @@ class PaymentIntentTest {
                 .isEqualTo("'SUCCEEDED', 'FAILED', 'CANCELLED'");
     }
 
-    /** The four doors out of a state, keyed by the state each targets. */
+    /**
+     * The doors out of a state, keyed by the state each targets. Two doors reach {@code FAILED} (`P13-TSK-010`):
+     * risk's refusal before the dispatch and the attempt's failure after it - the sweep takes the one its source owns,
+     * and {@link #theTwoFailuresAreTwoDoors} holds each refusing the other's source.
+     */
     private static Map<PaymentIntentStatus, UnaryOperator<PaymentIntent>> transitionDoors() {
         return Map.of(
                 PaymentIntentStatus.PROCESSING, PaymentIntent::confirm,
                 PaymentIntentStatus.CANCELLED, PaymentIntent::cancel,
                 PaymentIntentStatus.SUCCEEDED, PaymentIntent::succeed,
-                PaymentIntentStatus.FAILED, PaymentIntent::fail);
+                PaymentIntentStatus.FAILED,
+                intent -> intent.status() == PaymentIntentStatus.REQUIRES_CONFIRMATION
+                        ? intent.refuseByRisk()
+                        : intent.fail());
+    }
+
+    @Test
+    @DisplayName("risk's refusal (P13-TSK-010): REQUIRES_CONFIRMATION -> FAILED carrying the intent's own"
+            + " RISK_REFUSED, and terminal; the attempt's failure carries none; each door refuses the other's source")
+    void theTwoFailuresAreTwoDoors() {
+        PaymentIntent refused = intentIn(PaymentIntentStatus.REQUIRES_CONFIRMATION).refuseByRisk();
+        assertThat(refused.status()).isEqualTo(PaymentIntentStatus.FAILED);
+        assertThat(refused.failureReason()).contains(PaymentFailureReason.RISK_REFUSED);
+        assertThat(refused.status().isTerminal()).as("never confirmed again").isTrue();
+        assertThatThrownBy(refused::confirm).isInstanceOf(IllegalPaymentIntentTransitionException.class);
+
+        PaymentIntent failed = intentIn(PaymentIntentStatus.PROCESSING).fail();
+        assertThat(failed.failureReason()).as("a dispatched payment's reason is its attempt's").isEmpty();
+
+        assertThatThrownBy(() -> intentIn(PaymentIntentStatus.REQUIRES_CONFIRMATION).fail())
+                .as("an undispatched intent fails only as risk's refusal, with its reason")
+                .isInstanceOf(IllegalPaymentIntentTransitionException.class);
+        assertThatThrownBy(() -> intentIn(PaymentIntentStatus.PROCESSING).refuseByRisk())
+                .as("a dispatched payment is never refused by risk - its failure is its attempt's")
+                .isInstanceOf(IllegalPaymentIntentTransitionException.class);
+    }
+
+    @Test
+    @DisplayName("the refusal's reason on read-back (P13-TSK-010): only RISK_REFUSED, only on a FAILED row")
+    void theRefusalsReasonIsCoherentOnReadBack() {
+        assertThat(PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(), LedgerAccountId.next(IDS),
+                        CaptureMode.AUTOMATIC, AMOUNT, PaymentIntentStatus.FAILED, Instant.now(CLOCK), null,
+                        PaymentFailureReason.RISK_REFUSED)
+                .failureReason()).contains(PaymentFailureReason.RISK_REFUSED);
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(), LedgerAccountId.next(IDS),
+                        CaptureMode.AUTOMATIC, AMOUNT, PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null,
+                        PaymentFailureReason.RISK_REFUSED))
+                .as("a reason on a row that is not FAILED")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(), LedgerAccountId.next(IDS),
+                        CaptureMode.AUTOMATIC, AMOUNT, PaymentIntentStatus.FAILED, Instant.now(CLOCK), null,
+                        PaymentFailureReason.DECLINED))
+                .as("an attempt's reason on the intent")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(PaymentFailureReason.intentSqlValueList()).isEqualTo("'RISK_REFUSED'");
+        assertThat(PaymentFailureReason.sqlValueList())
+                .as("the attempt's CHECK is unchanged since V007")
+                .isEqualTo("'DECLINED', 'PROVIDER_UNAVAILABLE', 'NEVER_RECEIVED'");
     }
 
     /** An intent rehydrated in {@code status} — every status's coherent shape is the same. */

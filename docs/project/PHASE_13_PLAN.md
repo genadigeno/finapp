@@ -285,7 +285,13 @@ true for a transfer, for `-004`/`-009` to confirm for the withdrawal's in-lock j
 by `P13-TSK-009`, 2026-10-24: after its R2a locks a withdrawal touches only rows it created and the wallet row it already
 holds (a refusal's hold release re-locks that row), so it never waits on a money row while holding a velocity lock; the
 held withdrawal's doors and expiry take the withdrawal row then the wallet — payments' order — and never (R1) or (R2a).
-The argument in full: `DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)*
+The argument in full: `DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)* *(Confirmed by `P13-TSK-010`, 2026-10-24: the
+checkout confirmation's Tx1 takes the intent row, then its money rows - the credit account `FOR SHARE` for a card, the
+book rail's wallet pair `FOR UPDATE` for the wallet - and only then (R1)–(R3), so a velocity lock is never held while a
+wallet row is awaited; after T-eval it touches only rows it creates, rows it already holds, and (the wallet) the hold
+placement and the posting's projection rows. The held card payment's doors and deadline take the capture hold row and
+then the existing capture or void commands in their own transactions, never (R1) or (R2a). The argument in full:
+`DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)*
 
 ### 7.3 Couplings read in the code
 
@@ -323,6 +329,20 @@ The argument in full: `DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)*
   whether that is a `FAILED(RISK_REFUSED)` attempt row written before any dispatch or an intent-level refused state
   (`PaymentFailureReason.RISK_REFUSED`, payments `V034`), and the customer sees the intent's generic failure; `HOLD` (slice 2 of `-010`, cuttable) authorises and defers the capture. The book rail's wallet pair
   lock is unchanged.
+  *(As built, `P13-TSK-010`, 2026-10-24, both slices — Tx1 locks the intent row first (`findOwnedForUpdate`), then the
+  instrument, the credit account `FOR SHARE` (card/bank), the routing plan (no rail: routing's refusal, unjudged,
+  re-confirmable), the wallet's book pair `FOR UPDATE`, and then asks `PaymentRiskDecision` once, before anything of the
+  dispatch is written - **risk's rows after the pair**, not before it as this bullet's backlog sketch read, because R2a
+  is held to commit and a transfer of the same party takes the wallet row before its own R2a. The refusal is
+  **intent-level**: `REQUIRES_CONFIRMATION → FAILED` with the intent's own `RISK_REFUSED`, no attempt, no routing row,
+  terminal (`409 payments.NotConfirmable` for every re-confirmation); the customer reads `FAILED` with no reason and the
+  session `PAYMENT_PENDING`, the merchant the same. `app`'s `RiskPaymentRiskDecision` judges merchant-bound card
+  (`CARD_PAYMENT`) and wallet (`WALLET_PAYMENT`) payments under the intent's id - the party, the merchant from the
+  payable, the wallet's customer account for the wallet, no device - and answers `PERMIT` unjudged for a top-up and a
+  pay-by-bank checkout. Slice 2: a card `HOLD` authorises as any card payment and births an open capture hold
+  (`held_until` the pinned version's validity on the database clock); `HeldPayments.captureHeld`/`voidHeld` (keyed) and
+  the deadline leg on `PaymentSweeperSchedule` resolve it exactly once, the money then moved by the existing capture or
+  void. The checkout door asks T-advise first (`403 identity.AssuranceRequired`, nothing written).)*
 - **Credit:** `SnapshotFreezer` records `CreditRiskSignal.signal(uow, party)` in the snapshot (`:375`); the Phase 13
   adapter answers the profile's rating with seam version 2; a decision made under version 1 replays with `NOT_ASSESSED`.
 - **Actions:** identity's `IdentityAdministration.suspend`, accounts' suspension, merchant's `MerchantAdministration
@@ -411,14 +431,15 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `risk_signal` | `V003` (`-005`) | `UNIQUE (source_event_id)`; attributes typed and bounded |
 | `velocity_window` | `V005` (`-006`) | primary key (dimension, subject_ref, window_kind, window_start); count, sum_minor, currency |
 | `customer_risk_profile`, `customer_risk_profile_version` | `V006` (`-007`) | head row + versions |
-| `risk_alert` | `V008` (`-015`) | born-once alerts: `UNIQUE (subject_ref, rule_code, window_start)` |
+| `risk_assessment`, `risk_policy` CHECKs regenerated for the card `HOLD` | `V008` (`-010` slice 2) | *added 2026-10-24: `-010` landed first in merge order and took the next free number; the rows below take the next free numbers at their builds (Flyway out-of-order off) - the coordinator's renumbering* |
+| `risk_alert` | `V008` (`-015`) — *the next free at its build* | born-once alerts: `UNIQUE (subject_ref, rule_code, window_start)` |
 | `risk_case`, `risk_case_action`, `risk_case_event` | `V009` (`-016`) | the case machine with `revision`; one open per (subject, kind) |
 | `risk_action` | `V010` (`-017`) | the action machine; `UNIQUE (case_id, kind, target_ref)` live |
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
 | `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) | the filing artefact |
 | `screening_list_version`, `rescreening_permit` | `V012` (`-022`) | list facts; permits |
 | payments `withdrawal` `HELD`; `WithdrawalFailureReason.RISK_REFUSED` | payments `V033` (`-009`) | payments' own machine |
-| payments `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row | payments `V034` (`-010`) | payments' own |
+| payments `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row | payments `V034` (`-010`) | payments' own *(as built: the intent's `failure_reason`, the fifth intent edge, and slice 2's `payment_capture_hold`)* |
 | identity roles | identity `V023` (`-001`) | `RISK_ANALYST`, `RISK_OFFICER`, `AML_OFFICER` |
 
 Data classification: assessment inputs and rule hits `CONFIDENTIAL`; signal attributes at their source's level
@@ -556,6 +577,10 @@ payload is thrown, never acknowledged: the inbox has no "parking", the loud stal
 | `CROSS_BORDER` | `crossborder.CrossBorderLimitCheck`, `CrossBorderRiskDecision` | `RiskCrossBorderLimitCheck`, `RiskCrossBorderRiskDecision` | `ALLOW`, `CHALLENGE`, `DENY`, `REVIEW` | `-011` |
 | `CREDIT_SIGNAL` (not a movement) | `credit.CreditRiskSignal` | `RiskCreditRiskSignal` (seam version 2) | the rating code | `-007` |
 | `MONITORING` (not a movement; the sweep's policy, no seam) | — | — | alerts (§12.7) and the rating bands (§12.5) | `-019`, `-020`, `-007` |
+
+*(As built, `P13-TSK-010`, 2026-10-24: the card payment row's `HOLD` admitted - risk `V008`, `RiskDecision.admittedBy`
+- with the slice; a `CARD_PAYMENT` version names a hold validity exactly when one of its bands or rules can decide
+`HOLD`, so the C8 fixture, which holds nothing, stays valid; `WALLET_PAYMENT` admits no `HOLD`.)*
 
 A policy version is **per operation**; a band mapping to a decision the operation does not admit is refused at the
 policy door (`422 risk.PolicyInvalid`). BNPL applications and loan applications are judged through credit (the signal),

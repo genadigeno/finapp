@@ -3215,6 +3215,18 @@ only through the `app` port `WithdrawalStepUpAdvice` (a boolean). `NoCustomerSur
 `WithdrawalRiskSeamDatabaseTest#aHoldCommitsHeldWithTheHoldKept` (the `GET` reads `HELD` with no risk word) and
 `#theDoorsStepUpWritesNothing`.)*
 
+*(The checkout payment's part, `P13-TSK-010`, 2026-10-24: a refused payment is the intent's generic `FAILED` - the
+confirmation answers the session's `PAYMENT_PENDING`, as for a declined card, and `GET /v1/payments/{id}` reads `FAILED`
+with **no** `failureReason` (the intent's internal `RISK_REFUSED` is never rendered; a re-confirmation is the machine's
+`409 payments.NotConfirmable`); a held card payment reads `PROCESSING`, its session `PAYMENT_PENDING`; the merchant's
+session read the same; nothing of the capture hold reaches a surface. payments' seam carries no reason across
+(`PaymentVerdict`: `PERMIT`, `HOLD(validity)`, `REFUSE`); the held payment's doors take a reason **code**; the checkout
+door reaches risk only through the `app` port `CheckoutStepUpAdvice` (a boolean). `NoCustomerSurfaceReadsRiskTest`'s
+non-vacuity names `CheckoutConfirmationController`, `CheckoutService`, `PaymentController` and `PaymentService`, and its
+second rule `#noSurfaceReadsTheIntentsRiskRefusal` refuses any surface class reading `PaymentIntent.failureReason()`
+(planted-probe `#theRuleRefusesARenderedIntentReason`). Negative tests: `CheckoutDoorAdviceTest#theStepUpNamesNoRiskWord`; owed `PaymentRiskSeamDatabaseTest#aMerchantSeesOnlyTheGenericRefusal`,
+`#aRiskRefusedIntentCannotBeReconfirmed` and `#theDoorsStepUpWritesNothing`.)*
+
 ### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
 **Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through
 `MonitoredLedger` in the journal's own sequence from a durable watermark, and records exactly one

@@ -14,7 +14,7 @@ package com.finapp.payments;
  * The callers that perform those mappings are the commands and resolvers
  * ({@code P5-TSK-009}/{@code -010}/{@code -013}/{@code -014}).
  *
- * <p><strong>Three values now</strong> — the sweeper's arrived with its producer exactly as
+ * <p><strong>Three attempt values</strong> — the sweeper's arrived with its producer exactly as
  * promised ({@code P5-TSK-014}, the deliberately-few licence): {@link #NEVER_RECEIVED} is the
  * resolution of an explicit {@link QueryAnswer.Verdict#UNRECOGNISED}, and only that — the
  * provider answering in so many words that it never saw our reference. <strong>Deliberately
@@ -42,15 +42,41 @@ public enum PaymentFailureReason {
      * {@code FAILED} is the phase's most expensive mistake ({@code QueryAnswer}'s recorded
      * rule, consumed here).
      */
-    NEVER_RECEIVED;
+    NEVER_RECEIVED,
 
     /**
-     * The reasons as a SQL literal list — the one definition of the attempt table's
+     * Risk refused the payment at its confirmation (`P13-TSK-010`; {@code PHASE_13_PLAN.md} §7.3; payments
+     * {@code V034}): the <strong>intent's</strong> reason, never an attempt's - a refusal is committed in the
+     * confirmation's first transaction <em>before</em> any attempt is born or anything is sent, so the intent is the
+     * only row that can carry it ({@code INV-PAY-03}'s one-fact-one-place, applied to the one fact that has no attempt).
+     * Terminal for the intent: {@code REQUIRES_CONFIRMATION → FAILED}, never re-confirmable - the customer's path is a
+     * new intent. Internal: the customer's and the merchant's answers render the intent's generic {@code FAILED} with no
+     * reason ({@code INV-RSK-08}, C6).
+     */
+    RISK_REFUSED;
+
+    /** Whether an attempt may fail with this reason - every reason but {@link #RISK_REFUSED}, which is the intent's. */
+    public boolean isAttemptReason() {
+        return this != RISK_REFUSED;
+    }
+
+    /**
+     * The attempt's reasons as a SQL literal list — the one definition of the attempt table's
      * failure-reason {@code CHECK}, reconciled by {@code PaymentsMigrationTest}
-     * ({@code P5-TSK-008}; the {@code FailureReason.sqlValueList()} precedent).
+     * ({@code P5-TSK-008}; the {@code FailureReason.sqlValueList()} precedent). {@link #RISK_REFUSED} is not among
+     * them (`P13-TSK-010`): the attempt's {@code CHECK} is unchanged since {@code V007}.
      */
     public static String sqlValueList() {
         return java.util.Arrays.stream(values())
+                .filter(PaymentFailureReason::isAttemptReason)
+                .map(reason -> "'" + reason.name() + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    /** The intent's reasons as a SQL literal list - {@code V034}'s {@code payment_intent_failure_reason_is_known}. */
+    public static String intentSqlValueList() {
+        return java.util.Arrays.stream(values())
+                .filter(reason -> !reason.isAttemptReason())
                 .map(reason -> "'" + reason.name() + "'")
                 .collect(java.util.stream.Collectors.joining(", "));
     }

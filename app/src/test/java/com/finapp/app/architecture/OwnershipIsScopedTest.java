@@ -2951,6 +2951,50 @@ class OwnershipIsScopedTest {
                                         + " conditional transition it evidences, on the same"
                                         + " validated identifier.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.findOwnedForUpdate",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P13-TSK-010, findOwned's statement with FOR UPDATE: the confirmation's Tx1 locks"
+                                        + " the intent first, so confirmations of one intent are serialised before any"
+                                        + " is judged by risk - the identifier comes from the caller, and party_id = ?"
+                                        + " in the statement is the ownership check (not-yours and does-not-exist one"
+                                        + " empty answer, one 404).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.refuse",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwnedForUpdate",
+                                    "P13-TSK-010, risk's refusal: the conditional REQUIRES_CONFIRMATION -> FAILED"
+                                        + " with its RISK_REFUSED, on the identifier findOwnedForUpdate validated and"
+                                        + " locked in the same Tx1; the WHERE status row count the arbiter, with"
+                                        + " V034's edge function beneath.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.insert",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwnedForUpdate",
+                                    "P13-TSK-010 slice 2, the held card payment's birth: the intent passed"
+                                        + " findOwnedForUpdate in the same Tx1 and the attempt was minted beside it;"
+                                        + " V034's birth trigger refuses a hold not riding its own intent's card"
+                                        + " attempt.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-010 slice 2, findForIntent's and lock's statement: the intent id comes"
+                                        + " from risk's action machine or an approved override (HeldPayments'"
+                                        + " captureHeld/voidHeld, callable only as the platform or an employee) or the"
+                                        + " door's own re-read after its resolution - never a request's: no HTTP path"
+                                        + " reaches a capture hold.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.resolved",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-010 slice 2, the one conditional resolution (resolution IS NULL the"
+                                        + " arbiter, V034's trigger beneath): on the row a door just locked, or the row"
+                                        + " the expiry leg claimed FOR UPDATE SKIP LOCKED - an enumerated system-actor"
+                                        + " site - never a request's identifier.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.findForIntent",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -4173,6 +4217,10 @@ class OwnershipIsScopedTest {
                             "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
                             "com.finapp.app.payments.PaymentAuthorizationDatabaseTest"
                             + ".aStrangersPaymentIntentIsOneEmptyAnswer"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.findOwnedForUpdate",
+                            "com.finapp.app.payments.PaymentAuthorizationDatabaseTest"
+                            + ".aStrangersPaymentIntentIsNotLockedForThem"),
                     Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeOwned",
                             "com.finapp.app.domain.SessionOwnershipDatabaseTest"
