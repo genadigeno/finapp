@@ -275,6 +275,22 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
   pay-by-bank checkout are not judged (owner item). **The lock order:** the wallet payment's T-eval runs after the book
   rail's pair lock, not before as the plan's §7.3 sketch read - risk rows last in the caller's transaction, the order
   every transfer and withdrawal keeps.)*
+  *(Cross-border built by `P13-TSK-011`, 2026-10-24 — no migration; crossborder's one change, `CrossBorderInstruction`
+  gaining `quoteId`. Decision 3's table for a consumer whose **risk** seam is consulted first (crossborder's
+  authorization: risk, then limit): the limit seam refuses exactly a limit-decided refusal (`422 crossborder.LimitRefused`),
+  the risk seam every other non-permitting decision (`422 crossborder.RiskRefused`) - two disjoint sets covering every
+  refusal, so the committed code is `-008`'s in either order; the composition wires the pair together. The command
+  reference is the **quote's** id (one payment per quote): one assessment per movement however many keys try it, a
+  sealed refusal sticky for that quote. The judged amount is the quote's EUR figure (its source when EUR, else its
+  destination when the corridor converts to EUR) - reading (iii) above met: a corridor with no EUR leg (`USD-BHD-BH`,
+  `GBP-USD-US` in the O7 policy) is decided by the open-ended fail-safe band once a EUR version is active, the owner's
+  item. Decision 4's "always recorded" needed the door's help: crossborder's desk rolled every refusal back to its
+  savepoint, so it now keeps what was written since the savepoint for exactly the two seam refusals (by the seams'
+  position only risk's record), while a permit later refused by fx or payments rolls back with its count - `INV-RSK-01`'s
+  "a refused command's assessment commits with the refusal, and a rolled-back command leaves none". **The lock order:**
+  the cross-border first transaction took the quote and the source wallet `FOR UPDATE` *after* the seams, with (R2a)
+  held - neither of decision 6's shapes; `app`'s judgement now takes those rows first, in the Phase 9 order, then
+  (R1)–(R3).)*
 - `P13-TST-001` measures T-eval p50/p99/max per operation beside the sweep; `P13-TST-002` replays every decision in
   two JVMs.
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the

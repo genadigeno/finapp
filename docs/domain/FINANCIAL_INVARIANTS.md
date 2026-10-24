@@ -2912,6 +2912,13 @@ announcing; a duplicate the caller failed to serialise loses at the insert and a
 (`RiskEvaluation.RaceLost`), its count with it. The four tables are sealed for every writer by trigger. Probes:
 `MUTATION_TESTING.md` §2.)*
 
+*(Cross-border, `P13-TSK-011`, 2026-10-24: "a refused command's assessment commits with the refusal" needed the door's
+help - crossborder's desk rolled every refusal back to its savepoint, and now keeps what was written since it for
+exactly the two seam refusals (`CrossBorderPaymentDesk.keepsTheJudgement`; by the seams' position only risk's record
+exists), while a permit later refused by fx or payments rolls back with its count - "a rolled-back command leaves none".
+The command ref is the quote's id, so one cross-border movement has one assessment under any number of keys. Probes:
+`MUTATION_TESTING.md` §2.)*
+
 ### INV-RSK-02 — A risk decision never moves money, holds money or writes another domain's row
 **Statement:** The `risk` module posts no journal entry, places and releases no ledger hold, and
 inserts, updates or deletes no row outside schema `risk`. A decision changes a money movement only

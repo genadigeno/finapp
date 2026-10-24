@@ -291,7 +291,14 @@ book rail's wallet pair `FOR UPDATE` for the wallet - and only then (R1)–(R3),
 wallet row is awaited; after T-eval it touches only rows it creates, rows it already holds, and (the wallet) the hold
 placement and the posting's projection rows. The held card payment's doors and deadline take the capture hold row and
 then the existing capture or void commands in their own transactions, never (R1) or (R2a). The argument in full:
-`DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)*
+`DISTRIBUTED_EXECUTION.md` §3's Phase 13 row.)* *(Built by `P13-TSK-011`, 2026-10-24 — **the cross-border case needed a
+repair**: crossborder's first transaction holds no money row *at the seams' position*, but after them it takes the quote
+`FOR UPDATE` (fx's acceptance) and the source wallet `FOR UPDATE` (the hold) while (R2a) is held to commit - neither of
+this section's two shapes, and a cycle with a transfer, withdrawal or wallet payment of the same party, which takes the
+wallet and then the party's R2a. `app`'s judgement therefore takes those two rows first, in the Phase 9 order (the
+quote, then the wallet fx's acceptance resolves - `CrossBorderMovements.locked`), and only then (R1)–(R3); the
+acceptance and the hold re-lock rows already held. The argument in full: `DISTRIBUTED_EXECUTION.md` §3's Phase 13
+row.)*
 
 ### 7.3 Couplings read in the code
 
@@ -308,6 +315,18 @@ then the existing capture or void commands in their own transactions, never (R1)
   unchanged.)*
 - **Cross-border:** `CrossBorderAuthorization` consults the seams in its first transaction before the offer is
   accepted; a refusal consumes nothing (`422 crossborder.RiskRefused` / `LimitRefused`). Unchanged contract.
+  *(As built, `P13-TSK-011`, 2026-10-24 — `PaymentAuthorization` consults the risk seam, then the limit seam (the reverse
+  of transfers); `app`'s `RiskCrossBorderRiskDecision` runs T-eval for `(CROSS_BORDER, quote id)` - the quote is the
+  movement's identity before the payment's id exists, one payment per quote - and `RiskCrossBorderLimitCheck` is answered
+  from the seal: the limit seam refuses exactly a limit-decided refusal, the risk seam every other non-permitting
+  decision - disjoint, so the code is the same in either order. The contract's one change: `CrossBorderInstruction`
+  gains `quoteId` (the Phase 9 instruction named neither the movement nor the beneficiary). The judged amount is the
+  quote's EUR figure - its source when the source is EUR, else its destination when the corridor converts to EUR, else
+  the source as is and the recorded fail-safe decides (`USD-BHD-BH`, `GBP-USD-US`: owner item). "A refusal consumes
+  nothing" held by the authorization's position; **its assessment is kept** - the door spares its savepoint rollback for
+  exactly the two seam refusals, so the seal commits beside the claim's outcome, while a permit later refused by fx or
+  payments rolls back with its count. The door's T-advise before the claim (`403 identity.AssuranceRequired`, the `app`
+  port `CrossBorderStepUpAdvice`). The lock order repaired - §7.2's note.)*
 - **Withdrawals:** `Withdrawals` is hold-then-dispatch (ADR-0062 §6): the hold is judged under the wallet account's lock;
   the new `WithdrawalRiskDecision` is consulted there, in-lock, after the hold is placed and before the dispatch is
   committed; `HOLD` commits `HELD` with the hold kept; `DENY` commits `FAILED(RISK_REFUSED)` and releases the hold in
@@ -581,6 +600,10 @@ payload is thrown, never acknowledged: the inbox has no "parking", the loud stal
 *(As built, `P13-TSK-010`, 2026-10-24: the card payment row's `HOLD` admitted - risk `V008`, `RiskDecision.admittedBy`
 - with the slice; a `CARD_PAYMENT` version names a hold validity exactly when one of its bands or rules can decide
 `HOLD`, so the C8 fixture, which holds nothing, stays valid; `WALLET_PAYMENT` admits no `HOLD`.)*
+*(As built, `P13-TSK-011`, 2026-10-24: the `CROSS_BORDER` row unchanged - `ALLOW` and a satisfied `CHALLENGE` permit,
+an unsatisfied `CHALLENGE` and every `DENY`/`REVIEW` refuse, `REVIEW` calling `CaseOpener` (`NONE` until `-016`); the
+corridor (`SRC-DST-CC`) and the beneficiary (`DESTINATION`, `NEW_PAYEE`'s registration age) are inputs and dimensions,
+the judged amount the quote's EUR figure.)*
 
 A policy version is **per operation**; a band mapping to a decision the operation does not admit is refused at the
 policy door (`422 risk.PolicyInvalid`). BNPL applications and loan applications are judged through credit (the signal),

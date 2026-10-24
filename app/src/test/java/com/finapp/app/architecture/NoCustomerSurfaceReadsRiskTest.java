@@ -101,7 +101,11 @@ class NoCustomerSurfaceReadsRiskTest {
                 .anyMatch(name -> name.endsWith(".CheckoutConfirmationController"))
                 .anyMatch(name -> name.endsWith(".CheckoutService"))
                 .anyMatch(name -> name.endsWith(".PaymentController"))
-                .anyMatch(name -> name.endsWith(".PaymentService"));
+                .anyMatch(name -> name.endsWith(".PaymentService"))
+                // The cross-border payment door and its desk (P13-TSK-011): the step-up advice through an app port,
+                // the seams' refusal crossborder's own 422.
+                .anyMatch(name -> name.endsWith(".CrossBorderPaymentController"))
+                .anyMatch(name -> name.endsWith(".CrossBorderPaymentDesk"));
     }
 
     @Test

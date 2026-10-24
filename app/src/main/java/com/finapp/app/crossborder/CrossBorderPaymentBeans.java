@@ -1,5 +1,6 @@
 package com.finapp.app.crossborder;
 
+import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.crossborder.BeneficiaryStore;
 import com.finapp.crossborder.CorridorAvailabilityStore;
 import com.finapp.crossborder.CorridorPolicyStore;
@@ -12,11 +13,13 @@ import com.finapp.crossborder.JdbcPaymentStore;
 import com.finapp.crossborder.OfferStore;
 import com.finapp.crossborder.PaymentAuthorization;
 import com.finapp.crossborder.PaymentStore;
-import com.finapp.crossborder.PermitAllUntilPhase13;
 import com.finapp.crossborder.TransactionRunner;
+import com.finapp.fx.ConversionParticipants;
+import com.finapp.fx.QuoteStore;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.ledger.HoldService;
+import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.payments.JdbcOutboundCreditStore;
 import com.finapp.payments.OutboundCreditStore;
 import com.finapp.payments.PaymentRails;
@@ -24,6 +27,7 @@ import com.finapp.payments.ProviderEvidenceStore;
 import com.finapp.payments.RailOperations;
 import com.finapp.payments.RoutingStore;
 import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.idempotency.IdempotencyRecordStore;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -35,8 +39,13 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Wiring for the cross-border payment's authorization and dispatch (`P9-TSK-019`): the payment and outbound
- * credit stores, {@link CrossBorderExecution} over payments and ledger, the Phase 13 seams as
- * {@link PermitAllUntilPhase13} - named for what it is - the authorization and the door's desk.
+ * credit stores, {@link CrossBorderExecution} over payments and ledger, the authorization and the door's desk.
+ *
+ * <p><strong>The Phase 13 seams are risk's</strong> (`P13-TSK-011`): {@code CrossBorderRiskDecision} and
+ * {@code CrossBorderLimitCheck} are injected from {@code RiskCrossBorderBeans}, which wires the two together - this
+ * class no longer declares crossborder's {@code PermitAllUntilPhase13} (kept in crossborder as Phase 9's record and its
+ * own suite's subject, wired nowhere). The door gains its step-up advice ({@link CrossBorderDoorStepUp}) over the
+ * movement's facts ({@link CrossBorderMovements}), which the seams' judgement reads too.
  */
 @Configuration(proxyBeanMethods = false)
 public class CrossBorderPaymentBeans {
@@ -51,16 +60,30 @@ public class CrossBorderPaymentBeans {
         return new JdbcOutboundCreditStore();
     }
 
-    /** The limit seam - permits everything until Phase 13 (ADR-0081 point 8); the parameter is the control. */
+    /**
+     * A cross-border movement's facts for risk's judgement and the door's advice (`P13-TSK-011`): the offer, fx's quote
+     * row and participants (the wallet fx's acceptance debits), the accounts' stores.
+     */
     @Bean
-    CrossBorderLimitCheck<Connection> crossBorderLimitCheck() {
-        return new PermitAllUntilPhase13<>();
+    CrossBorderMovements crossBorderMovements(
+            OfferStore crossBorderOfferStore,
+            QuoteStore quoteStore,
+            ConversionParticipants conversionParticipants,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            CustomerAccountStore<Connection> customerAccountStore) {
+        return CrossBorderMovements.over(crossBorderOfferStore, quoteStore, conversionParticipants, ledgerAccountStore,
+                customerAccountStore);
     }
 
-    /** The risk seam - permits everything until Phase 13 (ADR-0081 point 8). */
+    /** The door's step-up check before the claim (`P13-TSK-011`): risk's advice through an {@code app} port. */
     @Bean
-    CrossBorderRiskDecision<Connection> crossBorderRiskDecision() {
-        return new PermitAllUntilPhase13<>();
+    CrossBorderDoorStepUp crossBorderDoorStepUp(
+            CrossBorderStepUpAdvice crossBorderStepUpAdvice,
+            IdempotencyRecordStore<Connection> idempotencyRecordStore,
+            CrossBorderMovements crossBorderMovements,
+            MfaEnrolmentStore<Connection> mfaEnrolmentStore) {
+        return new CrossBorderDoorStepUp(crossBorderStepUpAdvice, idempotencyRecordStore, crossBorderMovements,
+                mfaEnrolmentStore);
     }
 
     @Bean
@@ -111,10 +134,11 @@ public class CrossBorderPaymentBeans {
             Clock clock,
             com.finapp.crossborder.PaymentCancellation crossBorderPaymentCancellation,
             com.finapp.crossborder.CancellationStore crossBorderCancellationStore,
-            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics,
+            CrossBorderDoorStepUp crossBorderDoorStepUp) {
         return new CrossBorderPaymentDesk(crossBorderPaymentAuthorization, crossBorderFx, crossBorderExecution, identityStore,
                 mfaEnrolmentStore, idempotentExecutor, crossborderTransactionRunner, meterRegistry, clock,
-                crossBorderPaymentCancellation, crossBorderCancellationStore, crossBorderMetrics);
+                crossBorderPaymentCancellation, crossBorderCancellationStore, crossBorderMetrics, crossBorderDoorStepUp);
     }
 
     @Bean

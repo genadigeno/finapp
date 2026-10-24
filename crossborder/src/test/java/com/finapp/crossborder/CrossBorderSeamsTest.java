@@ -29,7 +29,7 @@ class CrossBorderSeamsTest {
     @DisplayName("PermitAllUntilPhase13 permits every instruction, through both seams")
     void theDefaultPermitsEverything() {
         CrossBorderInstruction instruction = new CrossBorderInstruction(
-                UUID.randomUUID(), CORRIDOR, Money.of(new BigDecimal("100.00"), CurrencyCode.of("EUR")));
+                UUID.randomUUID(), UUID.randomUUID(), CORRIDOR, Money.of(new BigDecimal("100.00"), CurrencyCode.of("EUR")));
         CrossBorderLimitCheck<Object> limits = new PermitAllUntilPhase13<>();
         CrossBorderRiskDecision<Object> risk = new PermitAllUntilPhase13<>();
         assertThat(limits.check(null, instruction)).isEqualTo(CrossBorderVerdict.PERMIT);
@@ -60,7 +60,7 @@ class CrossBorderSeamsTest {
     @DisplayName("an instruction's amount is in its corridor's source currency")
     void theInstructionIsCoherent() {
         assertThatThrownBy(() -> new CrossBorderInstruction(
-                        UUID.randomUUID(), CORRIDOR, Money.of(new BigDecimal("1.00"), CurrencyCode.of("USD"))))
+                        UUID.randomUUID(), UUID.randomUUID(), CORRIDOR, Money.of(new BigDecimal("1.00"), CurrencyCode.of("USD"))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
