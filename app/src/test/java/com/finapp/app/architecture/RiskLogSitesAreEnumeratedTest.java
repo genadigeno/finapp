@@ -64,6 +64,11 @@ class RiskLogSitesAreEnumeratedTest {
             "RiskActionDriver.java|\"Risk action dispatch failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionDriver.java|\"Risk action record failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk actions driven: {}\"|driven",
+            // P13-TSK-021: the filing's drive - a claim, a call or a record that failed: the exception's class alone,
+            // never a filing reference, the authority's answer or the report's content.
+            "RegulatoryFilingDriver.java|\"Regulatory filing claim failed: {}\"|failure.getClass().getSimpleName()",
+            "RegulatoryFilingDriver.java|\"Regulatory filing call failed: {}\"|failure.getClass().getSimpleName()",
+            "RegulatoryFilingDriver.java|\"Regulatory filing record failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action claim failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action sweep failed: {}\"|failure.getClass().getSimpleName()",
             "RiskEvaluationMetrics.java|\"risk evaluation fail-safe recorded: assessment={} operation={} cause={}\""

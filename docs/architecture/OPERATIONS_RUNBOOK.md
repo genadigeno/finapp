@@ -1013,6 +1013,15 @@ person does**: read the report (`AML_REPORT_FILE`), confirm with the authority b
 where the adapter cannot, and record the acknowledgement or the rejection through the operator door; a rejection is a new
 draft from the same case, approved and filed under four eyes again. Nothing of the inquiry, the report or its subject
 reaches a customer surface, a log line or an event payload beyond the report id and the jurisdiction (`INV-RSK-08`).
+*(As built by `P13-TSK-021`, 2026-10-25: the platform's own reference is the report's id; the drive's first attempt
+submits and every later one inquires by it (a definitive `NOT_RECEIVED` submits under the same reference - still the one
+filing); an unknown standing is asked again every `finapp.risk.filing.inquiry-interval` (15 min) by `RiskActionSchedule`'s
+report leg, and each answer is counted `finapp.risk.report.filing{outcome}` - `unknown` and `failed` the alert's inputs
+(`-024` writes the rule). The report is read at `GET /v1/operator/risk/cases/{caseId}/reports/{reportId}` under
+`AML_REPORT_APPROVE` (the `AML_OFFICER` role holds both report permissions), recorded `risk.RegulatoryReportRead`. **No
+operator door records the authority's answer by hand** - only the drive records it, as the platform; a report the
+authority confirmed outside the platform stays `FILED` and inquired until the adapter says so. A recording door, four
+eyes and audited, is the owner's to decide (`-024`'s runbook review).)*
 
 ### 9.5 Releasing or denying a held withdrawal
 

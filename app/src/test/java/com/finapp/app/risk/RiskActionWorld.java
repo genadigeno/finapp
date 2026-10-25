@@ -27,6 +27,11 @@ import com.finapp.risk.HeldPaymentActions;
 import com.finapp.risk.HeldWithdrawalActions;
 import com.finapp.risk.IdentityActions;
 import com.finapp.risk.MerchantActions;
+import com.finapp.risk.MonitoredParties;
+import com.finapp.risk.RegulatoryFilingProvider;
+import com.finapp.risk.RegulatoryReport;
+import com.finapp.risk.RegulatoryReportId;
+import com.finapp.risk.RegulatoryReports;
 import com.finapp.risk.RiskAction;
 import com.finapp.risk.RiskActionId;
 import com.finapp.risk.RiskActions;
@@ -43,6 +48,7 @@ import com.finapp.risk.ScoreBand;
 import com.finapp.risk.SignalSubject;
 import com.finapp.risk.SubjectKind;
 import com.finapp.risk.testing.InMemoryDecisionOverrideStore;
+import com.finapp.risk.testing.InMemoryRegulatoryReportStore;
 import com.finapp.risk.testing.InMemoryRiskActionStore;
 import com.finapp.risk.testing.InMemoryRiskAlertStore;
 import com.finapp.risk.testing.InMemoryRiskCaseStore;
@@ -63,6 +69,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -86,6 +93,10 @@ final class RiskActionWorld {
     final InMemoryRiskAlertStore alertStore = new InMemoryRiskAlertStore();
     final InMemoryRiskActionStore actionStore = new InMemoryRiskActionStore();
     final InMemoryDecisionOverrideStore overrideStore = new InMemoryDecisionOverrideStore();
+    /** `P13-TSK-021`: the regulatory report's rows, the party's accounts, the authority behind the port. */
+    final InMemoryRegulatoryReportStore reportStore = new InMemoryRegulatoryReportStore();
+    final Map<UUID, Set<UUID>> accountsOf = new HashMap<>();
+    final Authority authority = new Authority();
     final List<AuditRecord> audit = new ArrayList<>();
     final List<String> events = new ArrayList<>();
     final Map<String, UUID> partyOf = new HashMap<>();
@@ -108,6 +119,7 @@ final class RiskActionWorld {
             }
             var actionRows = actionStore.snapshot();
             var overrideRows = overrideStore.snapshot();
+            var reportRows = reportStore.snapshot();
             Map<IdempotencyKey, IdempotencyRecord> keys = new LinkedHashMap<>(claims);
             int audited = audit.size();
             depth++;
@@ -117,6 +129,7 @@ final class RiskActionWorld {
                 // Every refusal the suites drive is judged before a case step is written; the case store needs none.
                 actionStore.restore(actionRows);
                 overrideStore.restore(overrideRows);
+                reportStore.restore(reportRows);
                 claims.clear();
                 claims.putAll(keys);
                 audit.subList(audited, audit.size()).clear();
@@ -142,6 +155,10 @@ final class RiskActionWorld {
     final IdempotentExecutor executor = new IdempotentExecutor(new Claims(), RiskEvaluationWorld.CLOCK,
             Duration.ofDays(1), Duration.ofMinutes(1));
     final RiskActionDesk desk;
+    final RegulatoryReportMetrics reportMetrics = new RegulatoryReportMetrics(registry);
+    final RegulatoryReports reports;
+    final RegulatoryFilingDriver filings;
+    final RiskReportDesk reportDesk;
 
     RiskActionWorld() {
         this(5);
@@ -163,6 +180,86 @@ final class RiskActionWorld {
                 (unitOfWork, record) -> audit.add(record), actions, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK);
         driver = new RiskActionDriver(actions, transactions, metrics, RiskFlowScope.NONE, LEASE, perTick);
         desk = new RiskActionDesk(actions, cases, driver, executor, transactions, RiskFlowScope.NONE);
+        reports = new RegulatoryReports(reportStore, cases, caseStore, alertStore, new MonitoredParties() {
+            @Override
+            public Optional<UUID> partyOfAccount(Connection unitOfWork, UUID customerAccountId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Accounts accountsOf(Connection unitOfWork, UUID partyId) {
+                List<UUID> held = List.copyOf(accountsOf.getOrDefault(partyId, Set.of()));
+                return Accounts.of(held, held.stream().map(account -> Instant.parse("2026-01-01T00:00:00Z")).toList());
+            }
+        }, (unitOfWork, actor) -> Optional.ofNullable(partyOf.get(actor.id())), authority,
+                (unitOfWork, record) -> audit.add(record), outbox, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK,
+                reportMetrics);
+        filings = new RegulatoryFilingDriver(reports, transactions, reportMetrics, RiskFlowScope.NONE, LEASE,
+                Duration.ofMinutes(15), perTick);
+        reportDesk = new RiskReportDesk(reports, filings, executor, transactions, RiskFlowScope.NONE);
+    }
+
+    // ------------------------------------------------------------------ regulatory reports (`P13-TSK-021`)
+
+    /**
+     * An AML case of a fresh party with two accounts, opened by hand and taken by one analyst, disposed
+     * {@code CONFIRMED_SUSPICIOUS} with a second - its id.
+     */
+    String confirmedSuspicious() {
+        Taken taken = partyCase(CaseKind.AML);
+        UUID party = UUID.fromString(taken.riskCase().subject().ref());
+        accountsOf.put(party, new java.util.LinkedHashSet<>(List.of(RiskEvaluationWorld.IDS.next(),
+                RiskEvaluationWorld.IDS.next())));
+        Cases.Decided proposed = as(taken.investigator(), () -> transactions.inTransaction(uow ->
+                cases.proposeDisposition(uow, taken.riskCase().id(), taken.riskCase().revision(), "CONFIRMED_SUSPICIOUS",
+                        false, "the pattern is confirmed", taken.investigator(), correlation())));
+        Actor approver = analyst();
+        as(approver, () -> transactions.inTransaction(uow -> cases.approveDisposition(uow, taken.riskCase().id(),
+                proposed.dispositionId(), proposed.riskCase().revision(), "agreed", approver, correlation())));
+        return taken.id();
+    }
+
+    /** The report as it stands now. */
+    RegulatoryReport reportOf(String reportId) {
+        return reportStore.find(RiskEvaluationWorld.UNTOUCHABLE, RegulatoryReportId.of(UUID.fromString(reportId)))
+                .orElseThrow();
+    }
+
+    /**
+     * The authority behind the port: the simulated FIU of {@code app}, its knob settable - and, for a suite, a scripted
+     * throw after the call reached it (a lost answer). Each call records the risk transactions open around it and the
+     * acting principal, so a suite proves the call is made on no transaction and as the platform.
+     */
+    final class Authority implements RegulatoryFilingProvider {
+        SimulatedFilingProvider.Behaviour behaviour = SimulatedFilingProvider.Behaviour.ACKNOWLEDGE;
+        boolean loseNextAnswer;
+        final List<String> calls = new ArrayList<>();
+
+        @Override
+        public Optional<Declaration> declared(String jurisdiction) {
+            return simulated().declared(jurisdiction);
+        }
+
+        @Override
+        public Receipt file(Request request) {
+            calls.add("file|" + request.filingReference() + "|depth=" + depth + "|" + SecurityContext.require().type());
+            Receipt answered = simulated().file(request);
+            if (loseNextAnswer) {
+                loseNextAnswer = false;
+                throw new IllegalStateException("the answer was lost");
+            }
+            return answered;
+        }
+
+        @Override
+        public Receipt inquire(String filingReference) {
+            calls.add("inquire|" + filingReference + "|depth=" + depth + "|" + SecurityContext.require().type());
+            return simulated().inquire(filingReference);
+        }
+
+        private SimulatedFilingProvider simulated() {
+            return new SimulatedFilingProvider(behaviour, "FINAPP-EU-REF-0001");
+        }
     }
 
     // ------------------------------------------------------------------ people

@@ -115,6 +115,37 @@ class CaseWorklistTest {
     }
 
     @Test
+    @DisplayName("the file never carries a report (P13-TSK-021, -018's routed rule): the AML desk's REPORT_DRAFTED act is"
+            + " withheld from the investigator actions and their counts - not its id, nor that one exists")
+    void theFileWithholdsTheReport() {
+        OverrideWorld.Taken taken = world.partyCase(CaseKind.AML);
+        RiskCaseId id = taken.riskCase().id();
+        Cases.Decided proposed = world.cases.proposeDisposition(EvaluationWorld.UOW, id, taken.riskCase().revision(),
+                "CONFIRMED_SUSPICIOUS", false, "the pattern is confirmed", taken.investigator(),
+                OverrideWorld.correlation());
+        RiskCase disposed = world.cases.approveDisposition(EvaluationWorld.UOW, id, proposed.dispositionId(),
+                proposed.riskCase().revision(), "agreed", world.analyst(), OverrideWorld.correlation()).riskCase();
+        UUID report = EvaluationWorld.IDS.next();
+        world.caseStore.appendAction(EvaluationWorld.UOW, new CaseAction(report, id, disposed.revision() + 1,
+                CaseActionKind.REPORT_DRAFTED, new RiskCase.Person(EvaluationWorld.IDS.next().toString(),
+                        com.finapp.platform.security.ActorType.CUSTOMER), Optional.empty(), AlertEvidence.NONE,
+                Optional.empty(), false, Optional.empty(), "report-flow", Optional.empty()));
+
+        Actor reader = world.analyst();
+        CaseWorklist.CaseFile file = worklist.read(EvaluationWorld.UOW, id, reader);
+        assertThat(world.caseStore.actions(EvaluationWorld.UOW, id)).extracting(CaseAction::kind)
+                .as("the act is the case's").contains(CaseActionKind.REPORT_DRAFTED);
+        assertThat(file.actions()).extracting(CaseAction::kind).as("and never the analyst's file's")
+                .doesNotContain(CaseActionKind.REPORT_DRAFTED)
+                .contains(CaseActionKind.TAKEN, CaseActionKind.DISPOSITION_PROPOSED, CaseActionKind.DISPOSITION_APPROVED);
+        assertThat(file.actions()).extracting(CaseAction::id).doesNotContain(report);
+        assertThat(file.evidence()).extracting(CaseWorklist.EvidenceRef::id).doesNotContain(report);
+        worklist.record(EvaluationWorld.UOW, file, reader, OverrideWorld.correlation());
+        assertThat(world.audited("risk.CaseRead").get(0).changeSummary().orElseThrow())
+                .contains("actions=" + file.actions().size()).doesNotContain(report.toString());
+    }
+
+    @Test
     @DisplayName("the file: the case, its attached alert, its investigator actions, its history and its downstream"
             + " action, and every evidence reference it holds - by reference, each once; recorded risk.CaseRead with"
             + " the counts, never a note or a subject")

@@ -412,7 +412,18 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/risk/alerts/{alertId}/suppression/approval",
                             PermissionName.RISK_CASE_APPROVE),
                     entry("POST /v1/operator/risk/alerts/{alertId}/suppression/rejection",
-                            PermissionName.RISK_CASE_APPROVE)));
+                            PermissionName.RISK_CASE_APPROVE),
+                    // P13-TSK-021: the AML desk's regulatory report - drafted and approved (a second holder,
+                    // MULTI_FACTOR) under AML_REPORT_APPROVE, filed (MULTI_FACTOR, 202) under AML_REPORT_FILE, and read
+                    // (the narrative's one door, DESIGN-021 D9) under AML_REPORT_APPROVE; the negatives are
+                    // ReportApiTest's (another desk 403, no session 401, the drafter's approval 403).
+                    entry("POST /v1/operator/risk/cases/{caseId}/reports", PermissionName.AML_REPORT_APPROVE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/reports/{reportId}/approval",
+                            PermissionName.AML_REPORT_APPROVE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/reports/{reportId}/filing",
+                            PermissionName.AML_REPORT_FILE),
+                    entry("GET /v1/operator/risk/cases/{caseId}/reports/{reportId}",
+                            PermissionName.AML_REPORT_APPROVE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

@@ -63,7 +63,9 @@ class RiskEventsCarryOnlyCodesTest {
         /** A count or an ordinal: a small non-negative whole number. */
         COUNT(Pattern.compile("[0-9]{1,6}")),
         /** A code of a closed vocabulary - which one is the field's. */
-        CODE(Pattern.compile("[A-Z][A-Z0-9_]{0,63}"));
+        CODE(Pattern.compile("[A-Z][A-Z0-9_]{0,63}")),
+        /** A regulatory report's jurisdiction code - {@link ReportContent#JURISDICTION} (`P13-TSK-021`). */
+        JURISDICTION(ReportContent.JURISDICTION);
 
         final Pattern pattern;
 
@@ -137,6 +139,10 @@ class RiskEventsCarryOnlyCodesTest {
                 FieldShape.code(ActionOutcome.class));
         schemas.put(RiskActions.REQUESTED_EVENT, theAction);
         schemas.put(RiskActions.COMPLETED_EVENT, theAction);
+        // P13-TSK-021: the filing names the report and its jurisdiction - never the subject, an account, a transaction,
+        // a ground or the narrative (PHASE_13_PLAN.md section 10).
+        schemas.put(RegulatoryReports.FILED_EVENT, Map.of("reportId", FieldShape.id(), "jurisdiction",
+                new FieldShape(Shape.JURISDICTION, null)));
         return schemas;
     }
 
@@ -181,6 +187,11 @@ class RiskEventsCarryOnlyCodesTest {
         assertThat(violations(Cases.DISPOSED_EVENT, with(disposed, "disposition", "CLOSED_SOMEHOW")))
                 .as("a code outside the vocabulary").isNotEmpty();
         assertThat(violations("risk.SomethingNew", disposed)).as("a type without a schema").isNotEmpty();
+        Map<String, String> filed = Map.of("reportId", UUID.randomUUID().toString(), "jurisdiction", "EU-REF");
+        assertThat(violations(RegulatoryReports.FILED_EVENT, filed)).isEmpty();
+        assertThat(violations(RegulatoryReports.FILED_EVENT, with(filed, "subjectRef", UUID.randomUUID().toString())))
+                .as("the report's subject (P13-TSK-021)").isNotEmpty();
+        assertThat(violations(RegulatoryReports.FILED_EVENT, with(filed, "jurisdiction", "the EU"))).isNotEmpty();
     }
 
     // ------------------------------------------------------------------ the judgement
@@ -334,6 +345,14 @@ class RiskEventsCarryOnlyCodesTest {
         actions.drive(action.id());
         for (int i = 0; i < actions.events.size(); i++) {
             emitted.add(Map.entry(actions.events.get(i).eventType(), actions.payloads.get(i)));
+        }
+
+        // The regulatory report filed (P13-TSK-021) - and driven to its acknowledgement, which announces nothing.
+        ReportWorld reports = new ReportWorld();
+        RegulatoryReport filed = reports.filed(reports.confirmedSuspicious());
+        reports.drive(filed.id());
+        for (int i = 0; i < reports.events.size(); i++) {
+            emitted.add(Map.entry(reports.events.get(i).eventType(), reports.payloads.get(i)));
         }
     }
 

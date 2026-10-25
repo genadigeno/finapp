@@ -23,19 +23,30 @@ import org.springframework.context.SmartLifecycle;
  * ({@code finapp.risk.action.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  *
  * <p>It takes over `-012`'s override action leg on {@code RiskMonitoringSchedule}: the override's issued action is a
- * {@code risk_action} row since {@code risk V013}, under the override's own id, so its key is unchanged. `-021` adds the
- * {@code FILED} reports due an inquiry.
+ * {@code risk_action} row since {@code risk V013}, under the override's own id, so its key is unchanged.
+ *
+ * <p><strong>The report leg</strong> (`P13-TSK-021`, {@code DESIGN-021} D15 - the second leg the plan's table gives this
+ * schedule, landed with `-021` because `-017` merged first): after the action leg, each tick drives up to
+ * {@code finapp.risk.filing.reports-per-tick} {@code FILED} regulatory reports whose permit has come
+ * ({@link RegulatoryFilingDriver#inquireDue}: claimed {@code FOR UPDATE SKIP LOCKED} and committed, then asked of the
+ * authority on no transaction as the platform - inquired by the filing reference, never filed twice - and the answer
+ * recorded once). Its failed claims are counted {@code finapp.risk.sweeper.claim.failed{kind=report}} by the driver,
+ * which never throws, so a failing leg ends only itself; a failing action claim ends the action leg, never the report
+ * leg. No new scheduler: {@code LEASE_PROTECTED_SCHEDULERS} is unchanged.
  */
 @Slf4j
 public final class RiskActionSchedule implements SmartLifecycle {
 
     private final RiskActionDriver driver;
+    private final RegulatoryFilingDriver filings;
     private final RiskActionMetrics metrics;
     private final Duration pollInterval;
     private ScheduledExecutorService executor;
 
-    public RiskActionSchedule(RiskActionDriver driver, RiskActionMetrics metrics, Duration pollInterval) {
+    public RiskActionSchedule(RiskActionDriver driver, RegulatoryFilingDriver filings, RiskActionMetrics metrics,
+            Duration pollInterval) {
         this.driver = Objects.requireNonNull(driver, "driver");
+        this.filings = Objects.requireNonNull(filings, "filings");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -44,11 +55,16 @@ public final class RiskActionSchedule implements SmartLifecycle {
     }
 
     /**
-     * One tick: the due actions driven, bounded; a failed claim counted and the tick ended.
+     * One tick: the due actions driven, bounded - a failed claim counted and the action leg ended - then the due
+     * {@code FILED} reports asked of the authority, bounded (the report leg, `P13-TSK-021`).
      *
-     * @return how many actions this tick drove to a recorded outcome
+     * @return how many actions and report answers this tick recorded
      */
     public int sweepOnce() {
+        return actions() + filings.inquireDue();
+    }
+
+    private int actions() {
         try {
             int driven = driver.driveDue();
             if (driven > 0) {

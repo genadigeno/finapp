@@ -95,6 +95,21 @@ public enum RiskErrorCode implements ErrorCode {
             "The queue read is not admitted as asked: a status or kind outside the queue's vocabulary, a page of fewer"
                     + " than one row, or a cursor that names no row of the queue; nothing was served."),
 
+    // The regulatory report's doors (P13-TSK-021): every state conflict of the report one 409 - the register's planned
+    // status (the entry's 422 for the draft read as the register's, a state conflict, -015's precedent) - and the request
+    // the doors cannot take as asked 422 (DESIGN-021 D10).
+    REPORT_NOT_FILEABLE(
+            "risk.ReportNotFileable",
+            409,
+            "The regulatory report cannot take this act now: its case is not an AML case disposed CONFIRMED_SUSPICIOUS,"
+                    + " the case already has a live or accepted report, or the report is not awaiting this act."),
+
+    REPORT_REQUEST_INVALID(
+            "risk.ReportRequestInvalid",
+            422,
+            "The regulatory report is not drafted as asked: a jurisdiction no filing adapter declares, too many"
+                    + " attachments, or a reference that is no identifier; nothing was drafted."),
+
     // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
     REPROCESSING_NOT_BEHIND(
             "risk.ReprocessingNotBehind",
