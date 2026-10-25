@@ -50,7 +50,7 @@ class CustomerRiskProfileTest {
     private final RiskSignalsTest.RecordingOutbox outbox = new RiskSignalsTest.RecordingOutbox();
     private final Screening screening = new Screening();
     private final ProfileRecompute recompute = new ProfileRecompute(new RiskPolicies(policies), profiles,
-            new ProfileInputs(screening), outbox, IDS, CLOCK, CADENCE);
+            inputs(screening), AlertRaiser.NONE, outbox, IDS, CLOCK, CADENCE);
 
     @Test
     @DisplayName("the first recompute writes version 1 with its whole evaluation; an unchanged rating writes nothing but"
@@ -227,9 +227,9 @@ class CustomerRiskProfileTest {
         policies.activate(RiskPolicyFixtures.v1(RiskOperation.MONITORING));
         UUID party = IDS.next();
         ProfileRecompute failing = new ProfileRecompute(new RiskPolicies(policies), profiles,
-                new ProfileInputs((unitOfWork, p) -> {
+                inputs((unitOfWork, p) -> {
                     throw new IllegalStateException("the clearance could not be read");
-                }), outbox, IDS, CLOCK, CADENCE);
+                }), AlertRaiser.NONE, outbox, IDS, CLOCK, CADENCE);
         assertThatExceptionOfType(ProfileRecompute.RecomputeFailed.class)
                 .isThrownBy(() -> failing.recompute(UOW, party, FLOW))
                 .satisfies(failed -> assertThat(failed.partyId()).isEqualTo(party))
@@ -246,7 +246,17 @@ class CustomerRiskProfileTest {
     @DisplayName("the cadence is judged first: zero or negative refuses to build")
     void theCadenceIsPositive() {
         assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> new ProfileRecompute(
-                new RiskPolicies(policies), profiles, new ProfileInputs(screening), outbox, IDS, CLOCK, Duration.ZERO));
+                new RiskPolicies(policies), profiles, inputs(screening), AlertRaiser.NONE, outbox, IDS, CLOCK,
+                Duration.ZERO));
+    }
+
+    /**
+     * The profile's inputs over {@code screening} alone: no identity placed, so the account-takeover anchors stay
+     * {@code ABSENT} (`P13-TSK-013` - its own suites, {@code AtoSequenceTest}, place one).
+     */
+    static ProfileInputs inputs(ScreeningClearances screening) {
+        return new ProfileInputs(screening, new SignalReadings(new SignalReadingsTest.InMemoryStore()),
+                RiskPartyIdentities.NONE, new VelocityWindows(new FakeVelocityWindowStore(CLOCK.instant())));
     }
 
     // -----------------------------------------------------------------

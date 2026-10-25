@@ -6,6 +6,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +62,32 @@ public final class JdbcIdentityStore implements IdentityStore<Connection> {
         } catch (SQLException e) {
             throw new IdentityStorageException(
                     DatabaseFailure.describe("Could not read identity " + id, e));
+        }
+    }
+
+    @Override
+    public List<IdentityId> findIdsByParty(Connection unitOfWork, UUID partyId, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be positive");
+        }
+
+        String sql = "SELECT id FROM " + TABLE + " WHERE party_id = ? ORDER BY id LIMIT ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, partyId);
+            select.setInt(2, limit);
+            List<IdentityId> ids = new ArrayList<>();
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    ids.add(IdentityId.of((UUID) rows.getObject("id")));
+                }
+            }
+            return List.copyOf(ids);
+        } catch (SQLException e) {
+            // Never the party in the message: which party holds an identity is CONFIDENTIAL (INV-AUD-02).
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not read a party's identities", e));
         }
     }
 

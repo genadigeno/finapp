@@ -47,11 +47,15 @@ class VelocityWindowStatementsTest {
                 .isNotEqualTo(JdbcRiskPolicyStore.NAMESPACE);
         assertThat(JdbcVelocityWindowStore.SERIALISE_SQL).isEqualTo("SELECT pg_advisory_xact_lock(131, ?)");
         assertThat(JdbcVelocityWindowStore.NOW_SQL).isEqualTo("SELECT clock_timestamp()");
-        for (String read : List.of(JdbcVelocityWindowStore.FIND_SQL, JdbcVelocityWindowStore.LIVE_SQL)) {
+        for (String read : List.of(JdbcVelocityWindowStore.FIND_SQL, JdbcVelocityWindowStore.LIVE_SQL,
+                JdbcVelocityWindowStore.FIRST_COUNTED_SQL)) {
             assertThat(read).startsWith("SELECT ").doesNotContain("FOR UPDATE").doesNotContain("FOR SHARE")
                     .doesNotContain("now()");
         }
         assertThat(JdbcVelocityWindowStore.LIVE_SQL).contains("> clock_timestamp()");
+        // P13-TSK-013, a subject's first sighting: the primary key's prefix, the finest window - one index probe.
+        assertThat(JdbcVelocityWindowStore.FIRST_COUNTED_SQL).isEqualTo("SELECT min(w.window_start) FROM"
+                + " risk.velocity_window w WHERE w.dimension = ? AND w.subject_ref = ? AND w.window_kind = 'H1'");
     }
 
     @Test

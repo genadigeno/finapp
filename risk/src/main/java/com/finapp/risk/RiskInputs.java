@@ -18,14 +18,13 @@ import java.util.Set;
  * <p><strong>Where every reading comes from</strong> (the design's mapping, 2026-10-23). Risk computes from its own
  * tables: the velocity figures ({@link VelocityWindows}), the profile's rating ({@link CustomerRiskProfiles#current}),
  * the credential change and the recovery on the acting identity, the source account's age and a beneficiary payee's
- * first sighting ({@link SignalReadings}). This port answers the rest: the session's assurance
- * ({@link SessionAssurance}), the party's screening hit ({@link ScreeningClearances}), whether its KYC is approved,
- * whether the merchant is suspended, an account payee's first sighting and the authentication failures per window.
+ * first sighting ({@link SignalReadings}), and - since `P13-TSK-013` - an account payee's and a device's first sighting
+ * (the destination's and the device's earliest counted window, {@link VelocityWindows#firstCounted}). This port answers
+ * the rest: the session's assurance ({@link SessionAssurance}), the party's screening hit ({@link ScreeningClearances}),
+ * whether its KYC is approved, whether the merchant is suspended and the authentication failures per window.
  * <strong>A reading no source can answer is {@code ABSENT}, never a default</strong> - a rule over it does not fire and
- * its hit says {@code ABSENT}: today the authentication failures (identity's throttle counts a sliding lockout window,
- * not the rule's {@code H1}/{@code D1} windows, and its failure event names no identity, {@code INV-IDN-07}) and an
- * account payee's first sighting (no read of a party's payment history exists), and the session's assurance until a
- * {@code SessionAssurance} is wired (`-008`).
+ * its hit says {@code ABSENT}: today the authentication failures (identity's throttle counts consecutive failures toward
+ * a lockout, not the rule's {@code H1}/{@code D1} windows, and its failure event names no identity, {@code INV-IDN-07}).
  */
 @FunctionalInterface
 public interface RiskInputs {
@@ -47,7 +46,6 @@ public interface RiskInputs {
             Reading<Boolean> screeningHit,
             Reading<Boolean> kycApproved,
             Reading<Boolean> merchantSuspended,
-            Reading<FirstSeen> accountPayeeFirstSeen,
             Map<WindowKind, Long> authFailures) {
 
         public Readings {
@@ -55,7 +53,6 @@ public interface RiskInputs {
             Objects.requireNonNull(screeningHit, "screeningHit");
             Objects.requireNonNull(kycApproved, "kycApproved");
             Objects.requireNonNull(merchantSuspended, "merchantSuspended");
-            Objects.requireNonNull(accountPayeeFirstSeen, "accountPayeeFirstSeen");
             Objects.requireNonNull(authFailures, "authFailures");
             EnumMap<WindowKind, Long> ordered = new EnumMap<>(WindowKind.class);
             ordered.putAll(authFailures);
@@ -64,8 +61,7 @@ public interface RiskInputs {
 
         /** Every reading {@code ABSENT}. */
         public static Readings none() {
-            return new Readings(Reading.absent(), Reading.absent(), Reading.absent(), Reading.absent(),
-                    Reading.absent(), Map.of());
+            return new Readings(Reading.absent(), Reading.absent(), Reading.absent(), Reading.absent(), Map.of());
         }
 
         @Override

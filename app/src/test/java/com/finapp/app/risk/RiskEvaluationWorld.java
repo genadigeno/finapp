@@ -12,10 +12,15 @@ import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.telemetry.Spans;
+import com.finapp.risk.AlertFolding;
+import com.finapp.risk.AlertObserver;
+import com.finapp.risk.AlertRaiser;
+import com.finapp.risk.Alerts;
 import com.finapp.risk.CaseOpener;
 import com.finapp.risk.CustomerRiskProfiles;
 import com.finapp.risk.EvaluationBudget;
 import com.finapp.risk.Reading;
+import com.finapp.risk.RiskAssessmentId;
 import com.finapp.risk.RiskEvaluation;
 import com.finapp.risk.RiskEvaluationObserver;
 import com.finapp.risk.RiskInputs;
@@ -29,6 +34,7 @@ import com.finapp.risk.RiskPolicyVersionStatus;
 import com.finapp.risk.RiskSignal;
 import com.finapp.risk.RiskSignalStore;
 import com.finapp.risk.RiskStorageException;
+import com.finapp.risk.RiskSubjectParties;
 import com.finapp.risk.SessionAssurance;
 import com.finapp.risk.SignalKind;
 import com.finapp.risk.SignalReadings;
@@ -40,6 +46,7 @@ import com.finapp.risk.VelocityWindowStore;
 import com.finapp.risk.VelocityWindows;
 import com.finapp.risk.WindowKind;
 import com.finapp.risk.testing.InMemoryCustomerRiskProfileStore;
+import com.finapp.risk.testing.InMemoryRiskAlertStore;
 import com.finapp.risk.testing.InMemoryRiskAssessmentStore;
 import com.finapp.risk.testing.RiskPolicyFixtures;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -112,6 +119,18 @@ public final class RiskEvaluationWorld {
     public final List<CaseOpener.Decided> cases = new ArrayList<>();
     public final List<RiskEvaluationObserver.Report> reports = new ArrayList<>();
 
+    /** The alerts as born (`P13-TSK-013`) - the real {@link Alerts} over risk's in-memory store, the folding NONE. */
+    public final InMemoryRiskAlertStore alertStore = new InMemoryRiskAlertStore();
+
+    /** Every savepoint T-eval's budget opened, kept or undid, in order: {@code open 250ms}, {@code keep}, {@code undo}. */
+    public final List<String> savepoints = new ArrayList<>();
+
+    /** One scripted failure per alert raise, in order - the raise behind its own savepoint. */
+    public final Deque<RuntimeException> failRaise = new ArrayDeque<>();
+
+    /** Every raise T-eval reported unraised: the assessment's id and the cause's code. */
+    public final List<String> unraised = new ArrayList<>();
+
     /** One scripted failure per subject lock taken (R2a), in order. */
     public final Deque<RuntimeException> failSerialise = new ArrayDeque<>();
 
@@ -124,22 +143,30 @@ public final class RiskEvaluationWorld {
     /** What {@link RiskInputs} answers: the session's assurance from {@link #sessions}, the screening hit, nothing else. */
     public RiskInputs inputs = (unitOfWork, request, judged, now) -> new RiskInputs.Readings(
             reading(request.actor().flatMap(actor -> sessions.of(unitOfWork, actor))),
-            reading(screeningHit), Reading.absent(), Reading.absent(), Reading.absent(), Map.of());
+            reading(screeningHit), Reading.absent(), Reading.absent(), Map.of());
 
     public final RiskEvaluation evaluation;
+
+    /** The alert machine T-eval raises through - real, over {@link #alertStore}. */
+    public final Alerts alerts;
 
     public RiskEvaluationWorld() {
         EvaluationBudget budget = new EvaluationBudget() {
             @Override
             public Mark open(Connection unitOfWork, Optional<Duration> timeout) {
+                savepoints.add("open " + timeout.map(t -> t.toMillis() + "ms").orElse("-"));
                 return new Mark(new Object(), timeout.map(t -> "0"));
             }
 
             @Override
-            public void keep(Connection unitOfWork, Mark mark) {}
+            public void keep(Connection unitOfWork, Mark mark) {
+                savepoints.add("keep");
+            }
 
             @Override
-            public void undo(Connection unitOfWork, Mark mark) {}
+            public void undo(Connection unitOfWork, Mark mark) {
+                savepoints.add("undo");
+            }
         };
         OutboxWriter<Connection> outbox = (unitOfWork, envelope, payload, mediaType) -> {
             envelopes.add(envelope);
@@ -151,10 +178,35 @@ public final class RiskEvaluationWorld {
         CustomerRiskProfiles profiles = new CustomerRiskProfiles(profileStore, (unitOfWork, actor) -> Optional.empty(),
                 noAudit, IDS, CLOCK);
         RiskInputs delegating = (unitOfWork, request, judged, now) -> inputs.read(unitOfWork, request, judged, now);
+        alertStore.now = CLOCK.instant();
+        alerts = new Alerts(alertStore, AlertFolding.NONE, (unitOfWork, actor) -> Optional.empty(),
+                RiskSubjectParties.NONE, noAudit, outbox, IDS, CLOCK, Spans.NONE, AlertObserver.NONE);
+        AlertRaiser raiser = (unitOfWork, raised) -> {
+            if (!failRaise.isEmpty()) {
+                throw failRaise.pop();
+            }
+            return alerts.raiseAll(unitOfWork, raised);
+        };
+        RiskEvaluationObserver observer = new RiskEvaluationObserver() {
+            @Override
+            public void evaluated(Report report) {
+                reports.add(report);
+            }
+
+            @Override
+            public void alertsUnraised(RiskAssessmentId assessment, RiskOperation operation, String cause) {
+                unraised.add(assessment.value() + " " + cause);
+            }
+        };
         evaluation = new RiskEvaluation(new RiskPolicies(policyStore), new VelocityWindows(windowStore), profiles,
                 new SignalReadings(signalStore), delegating, assessmentStore, budget,
-                (unitOfWork, decided) -> cases.add(decided), outbox, reports::add,
+                (unitOfWork, decided) -> cases.add(decided), raiser, outbox, observer,
                 Spans.NONE, IDS, CLOCK);
+    }
+
+    /** The {@code risk.AlertRaised} events announced. */
+    public long alertsAnnounced() {
+        return envelopes.stream().filter(e -> e.eventType().equals(Alerts.EVENT_TYPE)).count();
     }
 
     /** Activates {@code policy} as its operation's version, retiring the one before. */
@@ -370,6 +422,22 @@ public final class RiskEvaluationWorld {
         @Override
         public List<VelocityWindow> live(Connection unitOfWork) {
             return rows.values().stream().filter(row -> row.key().windowEnd().isAfter(CLOCK.instant())).toList();
+        }
+
+        @Override
+        public Optional<Instant> firstCounted(Connection unitOfWork, VelocityDimension dimension, String subjectRef) {
+            return rows.keySet().stream()
+                    .filter(key -> key.dimension() == dimension && key.subjectRef().equals(subjectRef)
+                            && key.windowKind() == WindowKind.H1)
+                    .map(VelocityWindowKey::windowStart)
+                    .min(Comparator.naturalOrder());
+        }
+
+        /** A movement of {@code amount} counted for {@code subject} in {@code dimension}'s {@code H1} window at {@code at}. */
+        public void countedAt(VelocityDimension dimension, String subject, Instant at, Money amount) {
+            VelocityWindowKey key = new VelocityWindowKey(dimension, subject, WindowKind.H1,
+                    com.finapp.risk.WindowStarts.start(WindowKind.H1, at));
+            rows.put(key, new VelocityWindow(key, 1, amount, at));
         }
     }
 

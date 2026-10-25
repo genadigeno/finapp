@@ -35,12 +35,12 @@ class RiskEngineV1Test {
     // ------------------------------------------------------------------ the golden cases
 
     @Test
-    @DisplayName("a quiet EUR 100 transfer: eleven hits in declared order, none fired, score 0, the band at 0 - ALLOW,"
+    @DisplayName("a quiet EUR 100 transfer: twelve hits in declared order, none fired, score 0, the band at 0 - ALLOW,"
             + " no reason")
     void aQuietTransfer() {
         Verdict verdict = RiskEngineV1.evaluate(TRANSFER, quietTransfer(100_00).build());
-        assertThat(verdict.hits()).hasSize(11);
-        assertThat(verdict.hits()).extracting(RuleHit::ordinal).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+        assertThat(verdict.hits()).hasSize(12);
+        assertThat(verdict.hits()).extracting(RuleHit::ordinal).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         assertThat(verdict.hits()).extracting(RuleHit::kind).containsExactly(
                 TRANSFER.rules().stream().map(RiskRule::kind).toArray(RuleKind[]::new));
         assertThat(verdict.hits()).allMatch(hit -> hit.outcome() == RuleOutcome.NOT_FIRED);
@@ -176,7 +176,7 @@ class RiskEngineV1Test {
                 .subject(SignalSubject.of(SubjectKind.PARTY, PARTY))
                 .monitoring(new MonitoringReadings(Reading.absent(), flows, amounts, Map.of(), Map.of(), Map.of()))
                 .build());
-        assertThat(high.hits()).hasSize(11);
+        assertThat(high.hits()).hasSize(12);
         assertThat(high.fired()).extracting(RuleHit::kind).containsExactly(RuleKind.STRUCTURING, RuleKind.RAPID_IN_OUT);
         assertThat(high.fired().get(0).judged()).isEqualTo("amounts:D1:n=3,below=3,belowSum=265000");
         assertThat(high.fired().get(1).judged()).isEqualTo("flow:D1:in=100000,out=85000");
@@ -378,7 +378,8 @@ class RiskEngineV1Test {
                 + hit(8, "SESSION_ASSURANCE_BELOW", "NOT_FIRED", 0, "NONE", "assurance=MULTI_FACTOR") + ","
                 + hit(9, "SCREENING_HIT", "NOT_FIRED", 0, "NONE", "screeningHit=false") + ","
                 + hit(10, "PROFILE_RATING", "NOT_FIRED", 0, "NONE", "rating=LOW") + ","
-                + hit(11, "PROFILE_RATING", "NOT_FIRED", 0, "NONE", "rating=LOW")
+                + hit(11, "PROFILE_RATING", "NOT_FIRED", 0, "NONE", "rating=LOW") + ","
+                + hit(12, "RECENT_RECOVERY", "ABSENT", 0, "NONE", "ABSENT")
                 + "],\"score\":\"450\",\"decision\":\"CHALLENGE\",\"rating\":\"NONE\","
                 + "\"reasons\":[\"AMOUNT_BAND\",\"NEW_PAYEE\",\"AMOUNT_BAND\"],\"failSafeApplied\":\"false\"}";
         assertThat(CanonicalEvaluation.render(verdict)).isEqualTo(canonicalVerdict);
@@ -402,7 +403,8 @@ class RiskEngineV1Test {
                 .deviceFirstSeen(FirstSeen.daysAgo(100))
                 .sessionAssurance(RiskAssurance.MULTI_FACTOR)
                 .screeningHit(false)
-                .profileRating(RiskRating.LOW);
+                .profileRating(RiskRating.LOW)
+                .recovery(LastSeen.never());
     }
 
     private static RiskPolicy withdrawal(List<RiskRule> rules, List<ScoreBand> bands) {

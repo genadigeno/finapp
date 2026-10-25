@@ -3,6 +3,7 @@ package com.finapp.app.risk;
 import com.finapp.identity.IdentityStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.CustomerRiskProfileStore;
 import com.finapp.risk.CustomerRiskProfiles;
 import com.finapp.risk.JdbcCustomerRiskProfileStore;
@@ -10,8 +11,11 @@ import com.finapp.risk.ProfileHints;
 import com.finapp.risk.ProfileInputs;
 import com.finapp.risk.ProfileRecompute;
 import com.finapp.risk.RiskPolicies;
+import com.finapp.risk.RiskPartyIdentities;
 import com.finapp.risk.RiskSubjectParties;
 import com.finapp.risk.ScreeningClearances;
+import com.finapp.risk.SignalReadings;
+import com.finapp.risk.VelocityWindows;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
@@ -37,9 +41,12 @@ public class RiskProfileBeans {
         return new JdbcCustomerRiskProfileStore();
     }
 
-    /** The party behind a signal's subject - an identity's party; the other kinds placed by later tasks. */
+    /**
+     * The party behind a signal's subject - an identity's party; the other kinds placed by later tasks - and the reverse,
+     * the identities a party holds ({@link RiskPartyIdentities}, `P13-TSK-013`): one bean, both joins.
+     */
     @Bean
-    RiskSubjectParties riskSubjectParties(IdentityStore<Connection> identityStore) {
+    IdentitySubjectParties riskSubjectParties(IdentityStore<Connection> identityStore) {
         return new IdentitySubjectParties(identityStore);
     }
 
@@ -50,8 +57,9 @@ public class RiskProfileBeans {
     }
 
     @Bean
-    ProfileInputs profileInputs(ScreeningClearances screeningClearances) {
-        return new ProfileInputs(screeningClearances);
+    ProfileInputs profileInputs(ScreeningClearances screeningClearances, SignalReadings signalReadings,
+            RiskPartyIdentities riskPartyIdentities, VelocityWindows velocityWindows) {
+        return new ProfileInputs(screeningClearances, signalReadings, riskPartyIdentities, velocityWindows);
     }
 
     /** T-mon's profile leg: the pin, the head (R8), the engine over the MONITORING version, a version per change. */
@@ -60,12 +68,13 @@ public class RiskProfileBeans {
             RiskPolicies riskPolicies,
             CustomerRiskProfileStore customerRiskProfileStore,
             ProfileInputs profileInputs,
+            AlertRaiser alertRaiser,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock,
             @Value("${finapp.risk.profile.cadence:P1D}") Duration cadence) {
-        return new ProfileRecompute(riskPolicies, customerRiskProfileStore, profileInputs, outboxWriter, idGenerator,
-                clock, cadence);
+        return new ProfileRecompute(riskPolicies, customerRiskProfileStore, profileInputs, alertRaiser, outboxWriter,
+                idGenerator, clock, cadence);
     }
 
     @Bean

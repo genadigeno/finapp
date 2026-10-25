@@ -67,6 +67,32 @@ public final class JdbcVelocityWindowStore implements VelocityWindowStore {
             + " AND w.window_start + risk.velocity_window_length(w.window_kind) > clock_timestamp()"
             + " ORDER BY w.dimension, w.subject_ref, w.window_kind, w.window_start";
 
+    /**
+     * A subject's first counted movement in a role (`P13-TSK-013`): the start of its earliest {@code H1} window - the
+     * finest bucket, so the first sighting to the hour. One probe of the primary key's prefix
+     * {@code (dimension, subject_ref, window_kind)}, no lock; the windows are never removed
+     * ({@code velocity_window_is_never_removed}), so the earliest row stands.
+     */
+    static final String FIRST_COUNTED_SQL = "SELECT min(w.window_start) FROM risk.velocity_window w"
+            + " WHERE w.dimension = ? AND w.subject_ref = ? AND w.window_kind = 'H1'";
+
+    @Override
+    public Optional<Instant> firstCounted(Connection unitOfWork, VelocityDimension dimension, String subjectRef) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(FIRST_COUNTED_SQL)) {
+            select.setString(1, dimension.name());
+            select.setString(2, subjectRef);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                OffsetDateTime first = row.getObject(1, OffsetDateTime.class);
+                return first == null ? Optional.empty() : Optional.of(first.toInstant());
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a subject's first counted window", failure);
+        }
+    }
+
     @Override
     public Instant databaseNow(Connection unitOfWork) {
         try (PreparedStatement select = unitOfWork.prepareStatement(NOW_SQL);

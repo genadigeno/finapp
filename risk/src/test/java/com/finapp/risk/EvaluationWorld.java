@@ -67,6 +67,13 @@ final class EvaluationWorld {
     final Deque<RuntimeException> failSerialise = new ArrayDeque<>();
     final Deque<RuntimeException> failFind = new ArrayDeque<>();
     final Deque<RuntimeException> failInputs = new ArrayDeque<>();
+    final Deque<RuntimeException> failRaise = new ArrayDeque<>();
+
+    /** Every list of alerts T-eval asked to raise (`P13-TSK-013`), in order. */
+    final List<List<NewAlert>> raised = new ArrayList<>();
+
+    /** Every alert raise T-eval reported unraised: the assessment and the cause's code. */
+    final List<String> unraised = new ArrayList<>();
 
     final RiskEvaluation evaluation;
 
@@ -128,11 +135,30 @@ final class EvaluationWorld {
                 return assessmentStore.countedSince(unitOfWork, from);
             }
         };
+        AlertRaiser raiser = (unitOfWork, alerts) -> {
+            journal.add("raise " + alerts.size());
+            if (!failRaise.isEmpty()) {
+                throw failRaise.pop();
+            }
+            raised.add(List.copyOf(alerts));
+            return List.of();
+        };
+        RiskEvaluationObserver observer = new RiskEvaluationObserver() {
+            @Override
+            public void evaluated(Report report) {
+                reports.add(report);
+            }
+
+            @Override
+            public void alertsUnraised(RiskAssessmentId assessment, RiskOperation operation, String cause) {
+                unraised.add(assessment.value() + " " + cause);
+            }
+        };
         evaluation = new RiskEvaluation(new RiskPolicies(policyStore), new VelocityWindows(windowStore), profiles,
                 new SignalReadings(signalStore), inputs, journalled, budget, (unitOfWork, decided) -> {
                     journal.add("case " + decided.decision());
                     cases.add(decided);
-                }, outbox, reports::add, Spans.NONE, IDS, CLOCK);
+                }, raiser, outbox, observer, Spans.NONE, IDS, CLOCK);
     }
 
     /** Activates {@code policy} as its operation's version. */
@@ -225,6 +251,12 @@ final class EvaluationWorld {
         @Override
         public List<VelocityWindow> live(Connection unitOfWork) {
             return delegate.live(unitOfWork);
+        }
+
+        @Override
+        public Optional<Instant> firstCounted(Connection unitOfWork, VelocityDimension dimension, String subjectRef) {
+            journal.add("first " + dimension);
+            return delegate.firstCounted(unitOfWork, dimension, subjectRef);
         }
 
         /** The windows counted for {@code dimension}'s {@code subject}, of {@code kind}. */

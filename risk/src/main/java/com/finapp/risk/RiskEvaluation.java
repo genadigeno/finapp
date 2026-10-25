@@ -41,8 +41,16 @@ import java.util.function.Supplier;
  *                                                     ALLOW; a permitted fail-safe counted behind a savepoint of its own
  *   (R3) seal                 the assessment born     UNIQUE (operation, command_ref); a lost race aborts the caller
  *   announce                  the outbox              risk.RiskDecisionMade; risk.LimitBreached per limit rule breached
+ *   [savepoint, 250 ms]       the alerts              the sealed hits' account-takeover alerts, one raiseAll (-013)
  *   case                      CaseOpener              REVIEW, HOLD (NONE until -016)
  * </pre>
+ *
+ * <p><strong>The alerts</strong> (`P13-TSK-013`; {@link AccountTakeover}, {@link AtoSequence}): when the sealed hits show
+ * the account-takeover sequence, its alerts are raised after the seal - births at (R3)'s position, then the folds -
+ * through one {@link AlertRaiser#raiseAll}, behind a savepoint of their own under the read budget: a failed or
+ * timed-out raise is undone alone and reported ({@link RiskEvaluationObserver#alertsUnraised}), the decision and the
+ * caller's money transaction stand. A replay is answered from its seal and raises nothing; a fail-safe has no hits and
+ * raises nothing.
  *
  * <p><strong>The pin runs outside the statement timeout</strong>, behind its own savepoint: an evaluation that meets an
  * activation in flight <em>waits</em> for it and pins the successor (ADR-0109 decision 6, the A3-I1 rule); a timeout
@@ -83,6 +91,7 @@ public final class RiskEvaluation {
     private final RiskAssessmentStore assessments;
     private final EvaluationBudget budget;
     private final CaseOpener cases;
+    private final AlertRaiser alerts;
     private final OutboxWriter<Connection> outbox;
     private final RiskEvaluationObserver observer;
     private final Spans spans;
@@ -91,8 +100,8 @@ public final class RiskEvaluation {
 
     public RiskEvaluation(RiskPolicies policies, VelocityWindows windows, CustomerRiskProfiles profiles,
             SignalReadings signals, RiskInputs inputs, RiskAssessmentStore assessments, EvaluationBudget budget,
-            CaseOpener cases, OutboxWriter<Connection> outbox, RiskEvaluationObserver observer, Spans spans,
-            IdGenerator ids, Clock clock) {
+            CaseOpener cases, AlertRaiser alerts, OutboxWriter<Connection> outbox, RiskEvaluationObserver observer,
+            Spans spans, IdGenerator ids, Clock clock) {
         this.policies = Objects.requireNonNull(policies, "policies");
         this.windows = Objects.requireNonNull(windows, "windows");
         this.profiles = Objects.requireNonNull(profiles, "profiles");
@@ -101,6 +110,7 @@ public final class RiskEvaluation {
         this.assessments = Objects.requireNonNull(assessments, "assessments");
         this.budget = Objects.requireNonNull(budget, "budget");
         this.cases = Objects.requireNonNull(cases, "cases");
+        this.alerts = Objects.requireNonNull(alerts, "alerts");
         this.outbox = Objects.requireNonNull(outbox, "outbox");
         this.observer = Objects.requireNonNull(observer, "observer");
         this.spans = Objects.requireNonNull(spans, "spans");
@@ -250,6 +260,7 @@ public final class RiskEvaluation {
             throw new RaceLost(request);
         }
         announce(unitOfWork, request, assessment);
+        raiseAlerts(unitOfWork, request, assessment, judgement);
         if (assessment.decision() == RiskDecision.REVIEW || assessment.decision() == RiskDecision.HOLD) {
             cases.open(unitOfWork, new CaseOpener.Decided(assessment.id(), assessment.operation(),
                     assessment.commandRef(), request.party(), assessment.decision()));
@@ -261,6 +272,31 @@ public final class RiskEvaluation {
         return Assessed.of(assessment, false, assessment.decision() == RiskDecision.HOLD
                 ? judgement.version().flatMap(version -> version.policy().holdValidity())
                 : Optional.empty());
+    }
+
+    /**
+     * The sealed assessment's alerts (`P13-TSK-013`) - today the account-takeover sequence's ({@link AccountTakeover});
+     * `-014`'s join this one list, so the transaction raises through one {@code raiseAll}. Behind a savepoint of its own
+     * under the read budget: a raise that fails or waits past it on another transaction's uncommitted birth of the same
+     * key is undone alone and reported - the seal, the event and the caller's money transaction stand
+     * ({@code -015}'s note on {@link Alerts}: a failed birth would otherwise abort the caller).
+     */
+    private void raiseAlerts(Connection unitOfWork, RiskEvaluationRequest request, RiskAssessment assessment,
+            Judgement judgement) {
+        if (judgement.version().isEmpty() || judgement.cause().isPresent()) {
+            return;
+        }
+        if (AtoSequence.anchorsShown(assessment.operation(), assessment.hits()).isEmpty()) {
+            return;
+        }
+        // The alerts are built inside the savepoint too: nothing of the raise may abort the money transaction.
+        Attempt<List<Alerts.Raised>> attempt = attempt(unitOfWork, Optional.of(EvaluationBudget.READ_TIMEOUT),
+                () -> alerts.raiseAll(unitOfWork, AccountTakeover.alerts(judgement.verdict(), judgement.anchors(),
+                        request.party(), judgement.version().get().id(), Optional.of(assessment.id()),
+                        request.correlation(), Optional.of(request.causation()))));
+        if (attempt.failed()) {
+            observer.alertsUnraised(assessment.id(), assessment.operation(), attempt.cause().name());
+        }
     }
 
     /**
@@ -295,7 +331,10 @@ public final class RiskEvaluation {
     /** What one evaluation came to, before it is sealed. */
     private record Judgement(Verdict verdict, EvaluationInputs inputs, Optional<RiskPolicyVersion> version,
             Optional<UnavailableCause> cause, Optional<Boolean> challengeSatisfied, VelocityOutcome velocity,
-            Optional<Instant> cutAt) {}
+            Optional<Instant> cutAt, AccountTakeover.Anchors anchors) {}
+
+    /** What the reads came to: the sealed inputs, and the account-takeover anchors they were taken from. */
+    private record Read(EvaluationInputs inputs, AccountTakeover.Anchors anchors) {}
 
     /** The pin, then the judgement - counted when {@code count} (T-eval), peeked when not (T-advise). */
     private Judgement judgement(Connection unitOfWork, RiskEvaluationRequest request, boolean count) {
@@ -325,7 +364,8 @@ public final class RiskEvaluation {
         RiskPolicy policy = version.policy();
         WindowCut cut = windows.cut(unitOfWork, request.movement());
         Map<VelocityKey, VelocityReading> figures = windows.read(unitOfWork, cut, VelocityWindows.keysRead(policy));
-        EvaluationInputs sealed = read(unitOfWork, request, policy, figures, cut.at());
+        Read read = read(unitOfWork, request, policy, figures, cut.at());
+        EvaluationInputs sealed = read.inputs();
         Verdict verdict = RiskEngineV1.evaluate(policy, sealed);
         RiskDecision decision = verdict.decision().orElseThrow();
         Optional<Boolean> satisfied = challenge(decision, sealed, policy);
@@ -335,7 +375,7 @@ public final class RiskEvaluation {
             velocity = VelocityOutcome.COUNTED;
         }
         return new Judgement(verdict, sealed, Optional.of(version), Optional.empty(), satisfied, velocity,
-                Optional.of(cut.at()));
+                Optional.of(cut.at()), read.anchors());
     }
 
     /** T-advise's step: the figures peeked, nothing locked or counted. */
@@ -344,11 +384,11 @@ public final class RiskEvaluation {
         Instant now = windows.now(unitOfWork);
         Map<VelocityKey, VelocityReading> figures = windows.peek(unitOfWork, request.movement(),
                 VelocityWindows.keysRead(policy));
-        EvaluationInputs read = read(unitOfWork, request, policy, figures, now);
-        Verdict verdict = RiskEngineV1.evaluate(policy, read);
-        return new Judgement(verdict, read, Optional.of(version), Optional.empty(),
-                challenge(verdict.decision().orElseThrow(), read, policy), VelocityOutcome.NOT_PERMITTED,
-                Optional.empty());
+        Read read = read(unitOfWork, request, policy, figures, now);
+        Verdict verdict = RiskEngineV1.evaluate(policy, read.inputs());
+        return new Judgement(verdict, read.inputs(), Optional.of(version), Optional.empty(),
+                challenge(verdict.decision().orElseThrow(), read.inputs(), policy), VelocityOutcome.NOT_PERMITTED,
+                Optional.empty(), read.anchors());
     }
 
     /**
@@ -362,7 +402,7 @@ public final class RiskEvaluation {
         RiskDecision decision = verdict.decision().orElseThrow();
         if (!count || !VelocityWindows.permits(decision, false)) {
             return new Judgement(verdict, sealed, version, Optional.of(cause), Optional.empty(),
-                    VelocityOutcome.NOT_PERMITTED, Optional.empty());
+                    VelocityOutcome.NOT_PERMITTED, Optional.empty(), AccountTakeover.Anchors.none());
         }
         Attempt<Instant> counted = attempt(unitOfWork, Optional.of(EvaluationBudget.READ_TIMEOUT), () -> {
             WindowCut cut = windows.cut(unitOfWork, request.movement());
@@ -371,9 +411,9 @@ public final class RiskEvaluation {
         });
         return counted.failed()
                 ? new Judgement(verdict, sealed, version, Optional.of(cause), Optional.empty(),
-                        VelocityOutcome.UNCOUNTED, Optional.empty())
+                        VelocityOutcome.UNCOUNTED, Optional.empty(), AccountTakeover.Anchors.none())
                 : new Judgement(verdict, sealed, version, Optional.of(cause), Optional.empty(),
-                        VelocityOutcome.COUNTED, Optional.of(counted.value()));
+                        VelocityOutcome.COUNTED, Optional.of(counted.value()), AccountTakeover.Anchors.none());
     }
 
     /** The policy's fail-safe band for {@code amount} - the open-ended last one when its currency is not the policy's. */
@@ -396,12 +436,17 @@ public final class RiskEvaluation {
 
     /**
      * The inputs {@code policy} judges, read at {@code now} - the cut's database instant: the request's own, the
-     * window figures, and - only for a kind the policy carries - the profile's rating, the identity's credential change
-     * and recovery, the source account's age and the payee's first sighting; then {@link RiskInputs} for the rest. The
-     * device's first sighting stays {@code ABSENT}: no event carries a device hash today (`-005`), and reading the
-     * signals' silence as "never seen" would call every device new.
+     * window figures, and - only for a kind the policy carries - the profile's rating, the acting identity's credential
+     * change and recovery (the account-takeover anchors, kept for the alert), the source account's age, the payee's and
+     * the device's first sighting; then {@link RiskInputs} for the rest.
+     *
+     * <p><strong>The novelty readings</strong> (`P13-TSK-013`): a beneficiary payee from its registration signal; an
+     * account payee and a device from their earliest counted window ({@link VelocityWindows#firstCounted} - the first
+     * permitted movement that carried them), read after (R2a), so a subject's own concurrent movements are serialised
+     * before it. "Never counted" is {@code FirstSeen.never()}, read and found none - new. A request that carries no
+     * device leaves {@code NEW_DEVICE} {@code ABSENT} (no seam carries one today, `-008`), never "new".
      */
-    private EvaluationInputs read(Connection unitOfWork, RiskEvaluationRequest request, RiskPolicy policy,
+    private Read read(Connection unitOfWork, RiskEvaluationRequest request, RiskPolicy policy,
             Map<VelocityKey, VelocityReading> figures, Instant now) {
         Set<RuleKind> judged = kinds(policy);
         EvaluationInputs.Builder in = request.judged();
@@ -409,15 +454,9 @@ public final class RiskEvaluation {
         if (judged.contains(RuleKind.PROFILE_RATING)) {
             profiles.current(unitOfWork, request.party()).ifPresent(current -> in.profileRating(current.rating()));
         }
-        request.identity().ifPresent(identity -> {
-            SignalSubject subject = SignalSubject.of(SubjectKind.IDENTITY, identity);
-            if (judged.contains(RuleKind.RECENT_CREDENTIAL_CHANGE)) {
-                in.credentialChange(lastSeen(signals.latest(unitOfWork, subject, SignalKind.CREDENTIAL_CHANGED), now));
-            }
-            if (judged.contains(RuleKind.RECENT_RECOVERY)) {
-                in.recovery(lastSeen(signals.latest(unitOfWork, subject, SignalKind.RECOVERY_COMPLETED), now));
-            }
-        });
+        AccountTakeover.Anchors anchors = AccountTakeover.Anchors.read(unitOfWork, signals,
+                request.identity().map(List::of).orElse(List.of()), judged);
+        anchors.applyTo(in, now);
         if (judged.contains(RuleKind.ACCOUNT_AGE_BELOW)) {
             request.sourceAccount().ifPresent(account -> signals.age(unitOfWork,
                     SignalSubject.of(SubjectKind.ACCOUNT, account), SignalKind.ACCOUNT_OPENED, now)
@@ -436,11 +475,22 @@ public final class RiskEvaluation {
                                     SignalKind.BENEFICIARY_REGISTERED, now)
                             .ifPresent(age -> in.payeeFirstSeen(FirstSeen.daysAgo(days(age))));
                 } else {
-                    external.accountPayeeFirstSeen().value().ifPresent(in::payeeFirstSeen);
+                    in.payeeFirstSeen(firstSeen(unitOfWork, VelocityDimension.DESTINATION, to.id().toString(), now));
                 }
             });
         }
-        return in.build();
+        if (judged.contains(RuleKind.NEW_DEVICE)) {
+            request.device().ifPresent(device -> in.deviceFirstSeen(
+                    firstSeen(unitOfWork, VelocityDimension.DEVICE, device.value(), now)));
+        }
+        return new Read(in.build(), anchors);
+    }
+
+    /** A subject's first sighting in {@code dimension}, judged at {@code now}: whole days since, or never. */
+    private FirstSeen firstSeen(Connection unitOfWork, VelocityDimension dimension, String subject, Instant now) {
+        return windows.firstCounted(unitOfWork, dimension, subject)
+                .map(first -> FirstSeen.daysAgo(days(first.isAfter(now) ? Duration.ZERO : Duration.between(first, now))))
+                .orElse(FirstSeen.never());
     }
 
     private static Set<RuleKind> kinds(RiskPolicy policy) {
@@ -449,13 +499,6 @@ public final class RiskEvaluation {
             kinds.add(rule.kind());
         }
         return kinds;
-    }
-
-    private static LastSeen lastSeen(Optional<RiskSignal> latest, Instant now) {
-        return latest.map(signal -> {
-            long hours = signal.observedAt().isAfter(now) ? 0 : Duration.between(signal.observedAt(), now).toHours();
-            return LastSeen.hoursAgo(Math.min(hours, EvaluationInputs.MAX_HOURS));
-        }).orElse(LastSeen.never());
     }
 
     private static int days(Duration age) {

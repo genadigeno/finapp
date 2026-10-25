@@ -37,10 +37,13 @@ import java.util.Set;
  *       or not; no relationship or no case is {@code ABSENT};</li>
  *   <li><strong>the merchant suspended</strong> - merchant's own status: {@code SUSPENDED} or {@code CLOSED} is
  *       suspended for judging (a closed merchant takes no payment either); an unknown merchant is {@code ABSENT};</li>
- *   <li><strong>an account payee's first sighting</strong> and <strong>the authentication failures</strong> -
- *       {@code ABSENT}: no read of a party's payment history exists, and identity's throttle counts a sliding lockout
- *       window, not the rule's {@code H1}/{@code D1} windows (its failure event names no identity, {@code INV-IDN-07}).</li>
+ *   <li><strong>the authentication failures</strong> - {@code ABSENT}: identity's throttle counts consecutive failures
+ *       toward a lockout, not the rule's {@code H1}/{@code D1} windows, and its failure event names no identity
+ *       ({@code INV-IDN-07}).</li>
  * </ul>
+ *
+ * <p>An account payee's first sighting left this port with `P13-TSK-013`: risk answers it from its own velocity windows
+ * (the destination's earliest counted window), as it does a device's.
  */
 public final class PlatformRiskInputs implements RiskInputs {
 
@@ -78,7 +81,7 @@ public final class PlatformRiskInputs implements RiskInputs {
                 ? reading(request.merchant().flatMap(merchant -> merchants.findById(unitOfWork, MerchantId.of(merchant)))
                         .map(merchant -> merchant.status() != MerchantStatus.ACTIVE))
                 : Reading.absent();
-        return new Readings(assurance, screeningHit, kycApproved, merchantSuspended, Reading.absent(), Map.of());
+        return new Readings(assurance, screeningHit, kycApproved, merchantSuspended, Map.of());
     }
 
     private static <T> Reading<T> reading(Optional<T> answered) {

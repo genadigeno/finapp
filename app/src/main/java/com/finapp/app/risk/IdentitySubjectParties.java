@@ -2,10 +2,12 @@ package com.finapp.app.risk;
 
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.IdentityStore;
+import com.finapp.risk.RiskPartyIdentities;
 import com.finapp.risk.RiskSubjectParties;
 import com.finapp.risk.SignalSubject;
 import com.finapp.risk.SubjectKind;
 import java.sql.Connection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,8 +23,11 @@ import java.util.UUID;
  * party at all; their signals are recorded and pull no permit. The account's and the merchant's joins arrive with
  * `-020` (which must place a monitored transaction's subject anyway); a reference that is not an identity's shape
  * (never a UUIDv7) places nothing rather than stalling the inbox.
+ *
+ * <p><strong>The reverse</strong> (`P13-TSK-013`): {@link RiskPartyIdentities} - the identities a party holds, for the
+ * profile leg's account-takeover anchors (the signals name the identity; the leg judges the party).
  */
-public final class IdentitySubjectParties implements RiskSubjectParties {
+public final class IdentitySubjectParties implements RiskSubjectParties, RiskPartyIdentities {
 
     private final IdentityStore<Connection> identities;
 
@@ -40,6 +45,19 @@ public final class IdentitySubjectParties implements RiskSubjectParties {
                     .map(found -> found.partyId());
             case ACCOUNT, DEVICE, MERCHANT, BENEFICIARY, SESSION, CREDIT_AGREEMENT -> Optional.empty();
         };
+    }
+
+    /**
+     * The reverse join (`P13-TSK-013`; {@link RiskPartyIdentities}): the identities {@code partyId} holds - identity's
+     * {@code findIdsByParty}, every status, at most {@link RiskPartyIdentities#BOUND} - for the profile sweep's
+     * account-takeover anchors. Read on the recompute's connection under the profile head's lock, never cached.
+     */
+    @Override
+    public List<UUID> identitiesOf(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(partyId, "partyId");
+        return identities.findIdsByParty(unitOfWork, partyId, RiskPartyIdentities.BOUND).stream()
+                .map(IdentityId::value).toList();
     }
 
     private static Optional<IdentityId> identity(String ref) {

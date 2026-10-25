@@ -1,6 +1,8 @@
 package com.finapp.identity;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Reads identities and moves their status, in the caller's transaction.
@@ -45,6 +47,17 @@ public interface IdentityStore<T> {
      * exists.
      */
     Optional<Identity> findById(T unitOfWork, IdentityId id);
+
+    /**
+     * The identities that belong to {@code partyId}, in every status, ordered by id, at most {@code limit}.
+     *
+     * <p>Added by {@code P13-TSK-013}: risk's profile sweep judges a <em>party</em>, and the account-takeover signals it
+     * reads (a credential change, a completed recovery) name the <em>identity</em> - so it asks which identities the
+     * party holds. A read for a system flow, never a request's: the party comes from risk's own profile row, and the
+     * answer is identifiers only. Every status, for {@link #findById}'s reason: a suspended identity's recovery is still
+     * evidence. One range scan of {@code identity_by_party}.
+     */
+    List<IdentityId> findIdsByParty(T unitOfWork, UUID partyId, int limit);
 
     /**
      * Moves an identity to a new status, only if it is still in the one it was read at.

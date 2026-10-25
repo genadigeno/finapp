@@ -135,6 +135,19 @@ public final class VelocityWindows {
     }
 
     /**
+     * When {@code subjectRef} was first counted in {@code dimension} - its earliest {@code H1} window's start, or empty
+     * when no permitted movement ever carried it (`P13-TSK-013`: the novelty readings, a payee's and a device's first
+     * sighting from the windows themselves - no other table). No lock: T-eval reads it after (R2a), so a subject's own
+     * concurrent movements are already serialised.
+     */
+    public Optional<java.time.Instant> firstCounted(Connection unitOfWork, VelocityDimension dimension, String subjectRef) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(dimension, "dimension");
+        Objects.requireNonNull(subjectRef, "subjectRef");
+        return store.firstCounted(unitOfWork, dimension, subjectRef);
+    }
+
+    /**
      * (R2) counts the movement {@code cut} holds in every window it falls in - each dimension it carries, each window
      * kind - one upsert per window in sorted key order, <strong>only when {@code decision} permits the movement</strong>;
      * answers the windows after the movement, or nothing when it was refused. Call at most once per cut, after the

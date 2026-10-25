@@ -124,7 +124,8 @@ class RiskTransferSeamsTest {
         world.screeningHit = Optional.of(true);
         assertThat(judged(Holder.fresh(), Holder.fresh(), eur(100_00), RiskDecision.DENY))
                 .contains(FailureReason.RISK_REFUSED);
-        assertThat(lastAssessed().reasons()).containsExactly(ReasonCode.SCREENING_HIT);
+        // A never-paid payee is new since P13-TSK-013 (its first counted window), beside the screening's DENY.
+        assertThat(lastAssessed().reasons()).containsExactly(ReasonCode.NEW_PAYEE, ReasonCode.SCREENING_HIT);
         assertThat(judged(Holder.fresh(), Holder.fresh(), eur(10_000_00), RiskDecision.DENY))
                 .as("a tie - the limit's own DENY and the screening's: the limit seam runs first")
                 .contains(FailureReason.LIMIT_REFUSED);

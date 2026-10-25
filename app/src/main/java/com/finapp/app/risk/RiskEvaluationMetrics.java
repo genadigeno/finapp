@@ -1,6 +1,7 @@
 package com.finapp.app.risk;
 
 import com.finapp.risk.ReasonCode;
+import com.finapp.risk.RiskAssessmentId;
 import com.finapp.risk.RiskDecision;
 import com.finapp.risk.RiskEvaluationObserver;
 import com.finapp.risk.RiskOperation;
@@ -143,5 +144,16 @@ public final class RiskEvaluationMetrics implements RiskEvaluationObserver {
                 counter.increment();
             }
         });
+    }
+
+    /**
+     * A sealed assessment's alerts went unraised (`P13-TSK-013`): its raise was undone behind its savepoint - one line,
+     * the assessment's id, the operation and the cause's code (never a subject, a rule or a reading, {@code INV-RSK-08});
+     * no series of its own (plan section 15 names none - `-024`'s if wanted).
+     */
+    @Override
+    public void alertsUnraised(RiskAssessmentId assessment, RiskOperation operation, String cause) {
+        log.warn("risk alerts unraised behind their savepoint: assessment={} operation={} cause={}",
+                assessment.value(), operation.name(), cause);
     }
 }

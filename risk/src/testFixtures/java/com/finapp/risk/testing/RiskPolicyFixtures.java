@@ -37,7 +37,11 @@ import java.util.Set;
  * with {@code STRUCTURING} (≥ 3 movements each below EUR 1,000 summing above EUR 2,500 in 24 h), {@code RAPID_IN_OUT}
  * (≥ 80 % out within 24 h of in), {@code DORMANT_THEN_ACTIVE} (90 days dormant, then ≥ EUR 1,000 in 24 h), the
  * {@code ROUND_AMOUNT} weight, {@code CORRIDOR_HIGH_RISK} and its rating bands. Every one of the twenty-two kinds is
- * used by some fixture, so the engine (`-003`) and the battery have a parameterised row of each.
+ * used by some fixture, so the engine (`-003`) and the battery have a parameterised row of each. The account-takeover
+ * rules (`P13-TSK-013`): the withdrawal's {@code RECENT_CREDENTIAL_CHANGE} (24 h) {@code HOLD} and
+ * {@code RECENT_RECOVERY} (72 h) weight, confirmed; the transfer's {@code NEW_PAYEE} + {@code NEW_DEVICE} +
+ * {@code RECENT_RECOVERY} composite reaching {@code REVIEW}; the monitoring version's {@code RECENT_RECOVERY}, the
+ * retrospective anchor.
  *
  * <p><strong>Production activates none</strong>: no migration seeds a version; these are the suites', the engine's,
  * the battery's and the storm's input, proposed through the domain and activated by two test persons. This class
@@ -107,6 +111,10 @@ public final class RiskPolicyFixtures {
         rules.deciding(RuleKind.SCREENING_HIT, Map.of(), RiskDecision.DENY);
         rules.deciding(RuleKind.PROFILE_RATING, Map.of("rating", rating(RiskRating.PROHIBITED)), RiskDecision.DENY);
         rules.weighted(RuleKind.PROFILE_RATING, Map.of("rating", rating(RiskRating.HIGH)), 300);
+        // P13-TSK-013, the account-takeover composite (appended - the ordinals above unchanged): a new payee (250), a new
+        // device (200) and a recovery within 72 h (200) together reach REVIEW (650); any two stay below it. With the
+        // device ABSENT on every movement today, payee + recovery is 450 (CHALLENGE), and with the EUR 1,000 weight 650.
+        rules.weighted(RuleKind.RECENT_RECOVERY, Map.of("lookback_hours", hours(72)), 200);
         return judged(RiskOperation.TRANSFER, rules, fourBands(RiskDecision.REVIEW),
                 failSafe(1_000_00, RiskDecision.ALLOW, RiskDecision.DENY), Optional.empty());
     }
@@ -187,6 +195,10 @@ public final class RiskPolicyFixtures {
         rules.weighted(RuleKind.CHARGEBACK_RATIO, Map.of("window", window(WindowKind.D30), "ratio_bps", bps(100)), 300);
         rules.weighted(RuleKind.BNPL_MULTI_APPLICATION, Map.of("window", window(WindowKind.D7), "threshold_count",
                 count(3)), 200);
+        // P13-TSK-013, the retrospective account-takeover anchor (appended): a recovery completed within 72 h fires the
+        // profile leg's ACCOUNT_TAKEOVER alert; its weight (100) alone keeps a party in LOW. Not RECENT_CREDENTIAL_CHANGE:
+        // a password change alone would alert every customer who changes one.
+        rules.weighted(RuleKind.RECENT_RECOVERY, Map.of("lookback_hours", hours(72)), 100);
         return new RiskPolicy(RiskOperation.MONITORING, RiskEngine.RISK_ENGINE_V1, EUR, rules.list(), List.of(),
                 List.of(new RatingBand(0, 299, RiskRating.LOW), new RatingBand(300, 699, RiskRating.MEDIUM),
                         new RatingBand(700, 1000, RiskRating.HIGH)),

@@ -153,7 +153,8 @@ class TransferDoorAdviceTest {
 
     @Test
     @DisplayName("the advice port answered by T-advise: a EUR 600 transfer from a PASSWORD session needs a step-up, from"
-            + " a MULTI_FACTOR one it does not, under EUR 500 nobody does - and nothing is sealed, counted or announced")
+            + " a MULTI_FACTOR one it does not, under EUR 500 a password session only to a payee never paid (-013) -"
+            + " and nothing is sealed, counted or announced")
     void theAdviceWritesNothing() throws Exception {
         RiskEvaluationWorld world = new RiskEvaluationWorld();
         world.activate(RiskOperation.TRANSFER);
@@ -168,7 +169,14 @@ class TransferDoorAdviceTest {
                         Correlation.startingWith(CorrelationId.generate(RiskEvaluationWorld.IDS)))) {
             try (AutoCloseable presented = RiskEvaluationWorld.presenting(password)) {
                 assertThat(advice.stepUpRequired(RiskEvaluationWorld.UNTOUCHABLE, proposed(600_00))).isTrue();
-                assertThat(advice.stepUpRequired(RiskEvaluationWorld.UNTOUCHABLE, proposed(100_00))).isFalse();
+                // P13-TSK-013: a payee never paid is NEW_PAYEE (250); with the password session's 100 the CHALLENGE band.
+                assertThat(advice.stepUpRequired(RiskEvaluationWorld.UNTOUCHABLE, proposed(100_00)))
+                        .as("a new payee from a password session").isTrue();
+                world.windowStore.countedAt(com.finapp.risk.VelocityDimension.DESTINATION, destination.toString(),
+                        RiskEvaluationWorld.CLOCK.instant().minus(java.time.Duration.ofDays(60)),
+                        Money.ofMinorUnits(10_00, EUR));
+                assertThat(advice.stepUpRequired(RiskEvaluationWorld.UNTOUCHABLE, proposed(100_00)))
+                        .as("under EUR 500 to a payee paid before, nobody").isFalse();
             }
             try (AutoCloseable presented = RiskEvaluationWorld.presenting(mfa)) {
                 assertThat(advice.stepUpRequired(RiskEvaluationWorld.UNTOUCHABLE, proposed(600_00))).isFalse();
